@@ -1046,7 +1046,7 @@ export default function FundsMoneyPage() {
                         onClick={() => setFundPickerOpen(false)}
                     />
                     <div
-                        className="relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                        className="relative w-full max-w-[40rem] rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
                         style={{
                             backgroundColor: 'var(--bg-secondary)',
                             border: '2px solid var(--text-primary)',

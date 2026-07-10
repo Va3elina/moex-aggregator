@@ -526,7 +526,7 @@ export default function FundsTable({
                                                                 );
                                                             })()}
                                                             <span className={`${bare ? 'font-normal' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
-                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 168 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
+                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 240 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
                                                                         className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
