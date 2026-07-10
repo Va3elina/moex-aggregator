@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -220,6 +220,9 @@ export default function FundsMoneyPage() {
     const fundsFilterAppliedRef = useRef(false);
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
+    // Выбор фондов вынесен в разворачивающийся виджет-модалку (масштаб как у
+    // селектора актива на ОИ): таблетка сверху → модалка со списком фондов.
+    const [fundPickerOpen, setFundPickerOpen] = useState(false);
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
     // Tooltip position через STATE а не DOM-мутацию — иначе после React re-render
     // позиция сбрасывается до следующего mousemove → визуальный "коэффициент".
@@ -563,6 +566,7 @@ export default function FundsMoneyPage() {
     }, [flowsData]);
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
+    const CatIcon = currentCategory?.icon;
 
     // Обобщающий заголовок гистограммы притоков/оттоков. Единица — в скобках
     // «(млрд ₽)». На узких viewport'ах убираем подробности категории, чтобы
@@ -611,6 +615,36 @@ export default function FundsMoneyPage() {
 
             {/* Контролы */}
             <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+                {/* Селектор фондов — таблетка сверху (widget-flat, как селектор
+                    актива на ОИ), разворачивается в модалку-виджет со списком
+                    фондов. Заменяет прежнюю всегда-открытую таблицу под графиком. */}
+                <div data-tour="funds-table" style={{ order: 0 }}>
+                <button
+                    onClick={() => setFundPickerOpen(true)}
+                    title="Выбрать фонды для графика"
+                    className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
+                    style={{
+                        color: 'var(--text-primary)',
+                        fontSize: 'var(--fs-sm)',
+                        padding: 'var(--sp-2) var(--sp-4)',
+                        gap: 'var(--sp-3)',
+                        minWidth: 'clamp(150px, 22vw, 190px)',
+                        maxWidth: 240,
+                    }}
+                >
+                    {CatIcon && <CatIcon size={22} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />}
+                    <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+                        <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            Фонды: {currentCategory?.name ?? ''}
+                        </div>
+                        <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
+                            выбрано {visibleAccessibleFunds.length} из {accessibleFunds.length}
+                        </div>
+                    </div>
+                    <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
+                </button>
+                </div>
+
                 <div data-tour="funds-period" style={{ order: 3 }}>
                 <SegmentedControl<Period>
                     options={(Object.keys(PERIOD_LABELS) as Period[])
@@ -962,21 +996,54 @@ export default function FundsMoneyPage() {
 
             </div>{/* /tabbed-card */}
 
-            {/* Таблица фондов */}
-            <div data-tour="funds-table">
-            <FundsTable
-                data={data}
-                hiddenFunds={hiddenFunds}
-                collapsedSubcats={collapsedSubcats}
-                navSortDir={navSortDir}
-                aggregatedData={aggregatedData}
-                onToggleFundVisibility={toggleFundVisibility}
-                onSetHiddenFunds={setHiddenFunds}
-                onSetCollapsedSubcats={setCollapsedSubcats}
-                onSetNavSortDir={setNavSortDir}
-                onOpenFundCard={openFundCard}
-            />
-            </div>{/* /funds-table */}
+            {/* Модалка-виджет выбора фондов — открывается таблеткой в контролах.
+                Масштаб/шелл как у InstrumentSearchModal на ОИ: top-anchored,
+                max-w-xl, max-h-90vh, 2px border + hard shadow, скролл внутри. */}
+            {fundPickerOpen && (
+                <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
+                    <div
+                        className="absolute inset-0"
+                        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                        onClick={() => setFundPickerOpen(false)}
+                    />
+                    <div
+                        className="relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                        style={{
+                            backgroundColor: 'var(--bg-secondary)',
+                            border: '2px solid var(--text-primary)',
+                            boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+                            color: 'var(--text-primary)',
+                        }}
+                    >
+                        <div className="flex items-center justify-between flex-shrink-0" style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-2)' }}>
+                            <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Выбор фондов</span>
+                            <button
+                                onClick={() => setFundPickerOpen(false)}
+                                className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
+                                style={{ color: 'var(--text-secondary)' }}
+                                aria-label="Закрыть"
+                            >
+                                <X size={22} />
+                            </button>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>
+                            <FundsTable
+                                bare
+                                data={data}
+                                hiddenFunds={hiddenFunds}
+                                collapsedSubcats={collapsedSubcats}
+                                navSortDir={navSortDir}
+                                aggregatedData={aggregatedData}
+                                onToggleFundVisibility={toggleFundVisibility}
+                                onSetHiddenFunds={setHiddenFunds}
+                                onSetCollapsedSubcats={setCollapsedSubcats}
+                                onSetNavSortDir={setNavSortDir}
+                                onOpenFundCard={openFundCard}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Модальная карточка фонда — общая с «Покупками фондов».
                 enableDrilldown только для фондов акций (состав + клик в актив);
