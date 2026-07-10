@@ -964,6 +964,7 @@ def top_movers(
 def combined_portfolio(
     manager: str | None = Query(None, description="фильтр по УК: comma-separated uk_id; пусто=все"),
     funds: str | None = Query(None, description="фильтр по конкретным фондам: comma-separated тикеры; приоритет над manager; пусто=все"),
+    as_of: str | None = Query(None, description="YYYY-MM-DD — целевой месяц-снапшот (default=последний); каждый фонд берёт свой снапшот <= этой даты"),
     user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -990,7 +991,18 @@ def combined_portfolio(
     Фильтр фондов: funds (тикеры) приоритетнее manager (uk_id) — как в /movers; фронт
     резолвит выбранные УК в тикеры и шлёт их в `funds`.
     """
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    gate_cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    # Эффективная граница выбора снапшота = min(выбранный месяц as_of, gate_cutoff).
+    # as_of двигает портфель на исторический месяц; gate_cutoff не даёт Free/гостю
+    # заглянуть в свежий срез. Каждый фонд внутри берёт свой снапшот <= bound.
+    bound = gate_cutoff
+    if as_of:
+        try:
+            as_of_d = date.fromisoformat(as_of)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="as_of must be YYYY-MM-DD")
+        bound = min(gate_cutoff, as_of_d)
+    cutoff = bound  # ниже SQL выбирает снапшоты <= :cutoff
 
     # funds (тикеры фондов) приоритетнее manager (uk_id). Пусто = все whitelist-акции.
     fund_tickers = [p.strip() for p in funds.split(",")] if funds else []
@@ -1174,13 +1186,36 @@ def combined_portfolio(
     for fnd in included_funds:
         fnd.pop("_returns", None)
 
+    # Доступные месяцы для month-picker: один пункт на КАЛЕНДАРНЫЙ месяц (у разных
+    # УК разные дни конца месяца → схлопываем и берём MAX-дату месяца как as_of).
+    # Список — по всему whitelist акций (как в /movers), не по выбранному подмножеству:
+    # любой месяц из союза даёт портфель (каждый фонд резолвит свой снапшот <= него).
+    available_month_dates = db.execute(text("""
+        SELECT MAX(h.snapshot_date) AS d
+        FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
+        WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
+        GROUP BY date_trunc('month', h.snapshot_date)
+        ORDER BY d DESC
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).scalars().all()
+
+    # resolved_month — фактический месяц среза набора: самый свежий снапшот выбранных
+    # фондов, не позже bound. Именно его показывает пилюля актуальности данных.
+    resolved_month = None
+    snap_dates = [f["snapshot_date"] for f in included_funds if f["snapshot_date"]]
+    if snap_dates:
+        resolved_month = max(snap_dates)
+
     return {
         "num_funds": num_funds,
         "num_assets": len(holdings),
         "total_value_rub": total_value,
         "total_nav_rub": total_nav,
         "returns": portfolio_returns,
-        "snapshot_cutoff": (None if cutoff == _FAR_FUTURE else cutoff.isoformat()),
+        "as_of": as_of,
+        "resolved_month": resolved_month,
+        "available_months": [m.isoformat() for m in available_month_dates],
+        # Free/гость — дата-отсечка гейтинга (НЕ as_of): месяцы > неё заблокированы.
+        "snapshot_cutoff": (None if gate_cutoff == _FAR_FUTURE else gate_cutoff.isoformat()),
         "funds": included_funds,
         "holdings": holdings,
     }

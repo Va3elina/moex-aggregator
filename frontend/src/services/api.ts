@@ -1406,6 +1406,12 @@ export interface FundPortfolio {
     total_nav_rub: number;
     /** nav-взвешенная доходность набора по периодам. */
     returns: FundReturns;
+    /** Выбранный месяц-срез (echo параметра as_of), null = последний. */
+    as_of?: string | null;
+    /** Фактический месяц среза набора (max snapshot выбранных фондов <= bound). */
+    resolved_month?: string | null;
+    /** Календарные месяцы с данными (для month-picker), ISO, DESC. */
+    available_months?: string[];
     /** Дата-отсечка свежести (Free/гость): null = без задержки. */
     snapshot_cutoff?: string | null;
     funds: FundPortfolioFund[];
@@ -1416,12 +1422,14 @@ export async function getFundPortfolio(
     // `funds` — comma-separated ТИКЕРЫ фондов (фронт резолвит выбранные УК в тикеры).
     //   Приоритет над manager. Пусто = все фонды акций из whitelist.
     // `manager` — comma-separated uk_id (на случай API-клиента; фронт шлёт funds).
-    opts: { funds?: string; manager?: string } = {},
+    // `as_of` — YYYY-MM-DD целевой месяц-срез (пусто = последний).
+    opts: { funds?: string; manager?: string; as_of?: string } = {},
 ): Promise<FundPortfolio> {
-    const { funds, manager } = opts;
+    const { funds, manager, as_of } = opts;
     const params = new URLSearchParams();
     if (funds) params.set('funds', funds);
     if (manager) params.set('manager', manager);
+    if (as_of) params.set('as_of', as_of);
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/portfolio${qs ? `?${qs}` : ''}`);
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');

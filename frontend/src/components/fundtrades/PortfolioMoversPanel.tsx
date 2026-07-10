@@ -170,9 +170,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
             {head}
             {empty ? (
                 <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-                    {movers && movers.funds_in_month === 0
-                        ? 'За выбранный период у этих фондов ещё нет сопоставимого среза. Выберите период короче.'
-                        : 'Нет заметных чистых движений за период.'}
+                    Нет данных за этот период по выбранным УК. Выберите другие управляющие компании.
                 </div>
             ) : (
                 <>

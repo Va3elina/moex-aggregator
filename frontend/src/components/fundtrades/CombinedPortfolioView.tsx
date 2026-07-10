@@ -21,6 +21,7 @@ import Donut from '../funds/Donut';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
+import Dropdown from '../Dropdown';
 import { formatReturnPct, returnColor } from '../funds/FundDetailModal';
 import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
 
@@ -53,6 +54,16 @@ interface Props {
     // Задан — тумблер «По капиталу / По доле» рендерится в шапке блока
     // (десктоп-макет). Мобилка управляет режимом своими чипами в ⚙️-sheet.
     onModeChange?: (mode: 'rub' | 'share') => void;
+    // Клик по бумаге (строка таблицы / плитка карты) → «Потоки по компании».
+    onAssetClick?: (h: FundPortfolioHolding) => void;
+    // Month-picker актуальности данных (десктоп). Задан availableMonths →
+    // пилюля становится кликабельным Dropdown'ом месяцев. asOf undefined =
+    // последний. monthLocked/onMonthLockedClick — гейт свежего среза (Free/гость).
+    availableMonths?: string[];
+    asOf?: string;
+    onAsOfChange?: (m: string) => void;
+    monthLocked?: (m: string) => boolean;
+    onMonthLockedClick?: () => void;
 }
 
 const blockStyle = (isMobile: boolean): CSSProperties => ({
@@ -79,6 +90,12 @@ const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрел�
 function monthYearLower(iso: string): string {
     const d = new Date(iso);
     return `${MONTHS_LOWER[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// "2026-07-31" → "Июль 2026" — для пунктов month-picker (с заглавной).
+function monthYearCap(iso: string): string {
+    const s = monthYearLower(iso);
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function StatTile({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -126,7 +143,7 @@ function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; 
     );
 }
 
-export default function CombinedPortfolioView({ portfolio, loading, mode, period, variant = 'desktop', onModeChange }: Props) {
+export default function CombinedPortfolioView({ portfolio, loading, mode, period, variant = 'desktop', onModeChange, onAssetClick, availableMonths, asOf, onAsOfChange, monthLocked, onMonthLockedClick }: Props) {
     const [modalOpen, setModalOpen] = useState(false);
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const isMobile = variant === 'mobile';
@@ -196,12 +213,19 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         const ticker = resolveFundTicker(h.asset_name, h.isin);
         const hov = interactive && hoverIdx === idx;
         const link = interactive && idx < TREEMAP_TOP;
+        // Клик по бумаге (только в интерактивном превью, не в модалке) → потоки по компании.
+        const click = interactive && onAssetClick ? () => onAssetClick(h) : undefined;
         return (
             <div
                 key={h.akey}
                 onMouseEnter={link ? () => setHoverIdx(idx) : undefined}
                 onMouseLeave={link ? () => setHoverIdx(null) : undefined}
-                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                onClick={click}
+                role={click ? 'button' : undefined}
+                tabIndex={click ? 0 : undefined}
+                onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
+                title={click ? `Потоки по компании: ${fundAssetName(h.asset_name, h.isin)}` : undefined}
+                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <AssetLogo h={h} size={30} color={color} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
@@ -296,52 +320,64 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         );
     }
 
-    // ── Десктоп: карта «Структура» (ряды 2·3·3·2 из топ-10 + «Прочие») ──
+    // ── Десктоп: карта «Структура» (ряды 2·3·3·2 из топ-10) ──
+    // «Прочие» вынесены в отдельную полосу снизу: раньше они шли последней
+    // ПЛИТКОЙ в ряду и при узкой концентрации портфеля (напр. 1 фонд, где топ ~4%
+    // против «Прочие 39%») сплющивали соседние плитки до нечитаемого «Н. 4%».
+    // Теперь у плиток holding-ов есть минимальная ширина, а «Прочие» не борются
+    // с ними за место в ряду.
     const tmTop = sorted.slice(0, TREEMAP_TOP);
     const tmRestW = sorted.slice(TREEMAP_TOP).reduce((s, h) => s + wOf(h), 0);
-    const tmRows: { items: { h: FundPortfolioHolding; idx: number }[]; other?: number }[] = [];
+    const tmRows: { h: FundPortfolioHolding; idx: number }[][] = [];
     let cursor = 0;
     for (const size of TM_CHUNKS) {
         if (cursor >= tmTop.length) break;
-        tmRows.push({ items: tmTop.slice(cursor, cursor + size).map((h, j) => ({ h, idx: cursor + j })) });
+        tmRows.push(tmTop.slice(cursor, cursor + size).map((h, j) => ({ h, idx: cursor + j })));
         cursor += size;
     }
-    if (tmRows.length > 0 && tmRestW > 0.5) tmRows[tmRows.length - 1].other = tmRestW;
 
     const treemap = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {tmRows.map((row, ri) => {
-                const rowMax = Math.max(...row.items.map(({ h }) => wOf(h)), 0.0001);
+                const rowMax = Math.max(...row.map(({ h }) => wOf(h)), 0.0001);
                 // Высота ряда следует крупнейшему весу: топ-ряды визуально тяжелее.
                 const rowH = Math.round(Math.min(104, Math.max(62, 56 + 4.2 * rowMax)));
                 return (
                     <div key={ri} style={{ display: 'flex', gap: 6, height: rowH }}>
-                        {row.items.map(({ h, idx }) => {
+                        {row.map(({ h, idx }) => {
                             const w = wOf(h);
                             const color = fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length];
                             const dark = isLightHex(color);
                             const label = resolveFundTicker(h.asset_name, h.isin) ?? fundAssetName(h.asset_name, h.isin).split(' ')[0];
+                            const click = onAssetClick ? () => onAssetClick(h) : undefined;
                             return (
                                 <div
                                     key={h.akey}
                                     onMouseEnter={() => setHoverIdx(idx)}
                                     onMouseLeave={() => setHoverIdx(null)}
-                                    title={`${fundAssetName(h.asset_name, h.isin)} · ${w.toFixed(2)}%`}
-                                    style={{ flex: Math.max(w, 0.1), borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '9px 11px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: 'default' }}
+                                    onClick={click}
+                                    role={click ? 'button' : undefined}
+                                    tabIndex={click ? 0 : undefined}
+                                    onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
+                                    title={`${fundAssetName(h.asset_name, h.isin)} · ${w.toFixed(2)}%${click ? ' — потоки по компании' : ''}`}
+                                    // minWidth не даёт мелкой плитке (2-4%) схлопнуться в нечитаемый
+                                    // столбик рядом с крупной; flex по весу распределяет остаток.
+                                    style={{ flex: Math.max(w, 0.1), minWidth: 58, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '9px 11px', display: 'flex', flexDirection: 'column', overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
                                 >
                                     <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
                                     <div style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, opacity: 0.92, fontVariantNumeric: 'tabular-nums' }}>{w.toFixed(1).replace('.', ',')}%</div>
                                 </div>
                             );
                         })}
-                        {row.other != null && (
-                            <div style={{ flex: Math.max(row.other, 0.1), borderRadius: 10, background: 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-primary))', color: 'var(--text-primary)', padding: '9px 11px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
-                                <div style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>Прочие {Math.round(row.other)}%</div>
-                            </div>
-                        )}
                     </div>
                 );
             })}
+            {tmRestW > 0.5 && (
+                <div style={{ height: 42, borderRadius: 10, background: 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-primary))', color: 'var(--text-primary)', padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)' }}>Прочие бумаги</span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', fontVariantNumeric: 'tabular-nums' }}>{tmRestW.toFixed(1).replace('.', ',')}%</span>
+                </div>
+            )}
         </div>
     );
 
@@ -356,7 +392,19 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    {freshISO && (
+                    {availableMonths && availableMonths.length > 0 && onAsOfChange ? (
+                        // Кликабельный month-picker: зелёная точка = свежесть, Dropdown = месяц среза.
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <span title="Месяц среза данных портфеля" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
+                            <Dropdown<string>
+                                options={availableMonths.map((m) => ({ key: m, label: monthYearCap(m), locked: monthLocked?.(m) }))}
+                                value={asOf ?? availableMonths.find((m) => !(monthLocked?.(m))) ?? availableMonths[0]}
+                                onChange={onAsOfChange}
+                                onLockedClick={onMonthLockedClick ? () => onMonthLockedClick() : undefined}
+                                minWidth={132}
+                            />
+                        </div>
+                    ) : freshISO && (
                         <div title="Месяц самого свежего снапшота выбранных фондов" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
                             Актуальные данные <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>· {monthYearLower(freshISO)}</span>
@@ -372,6 +420,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                             onChange={onModeChange}
                             trailing={
                                 <HelpTooltip
+                                    align="right"
                                     title="Как считается вес"
                                     sections={[
                                         { heading: 'По капиталу', body: 'Доля бумаги от суммарной стоимости всех позиций выбранных фондов: крупные фонды влияют сильнее.' },
