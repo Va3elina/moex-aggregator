@@ -163,7 +163,9 @@
 <p class="sub">
   Кликни по иконке слева — откроется список всех лого из стикерпака.
   Выбери нужный или нажми «Без логотипа», если лого не нужно.
-  Чтобы увидеть только активы без картинки — кнопка «Только без лого».
+  Чтобы увидеть только активы, которым нужен стикер — кнопка «Только без лого»:
+  туда попадают и те, у кого сейчас generic-заглушка «кружок с буквой»
+  (Сегежа, Whoosh, Мечел, М.Видео, Софтлайн, СПБ биржа) — они помечены «заглушка».
   Затем «Скачать JSON» — файл с правками отправь Вадиму.
   Для новой компании, которой нет в паке, добавь PNG-файл
   <code>&lt;ТИКЕР&gt;.png</code> в <code>frontend/public/logos/</code>.
@@ -172,7 +174,7 @@
 <div class="legend">
   <span class="l-ok">не изменено</span>
   <span class="l-changed">изменено тобой</span>
-  <span class="l-noLogo">помечено как «без лого»</span>
+  <span class="l-noLogo">нужен стикер (нет лого / заглушка)</span>
 </div>
 
 <div id="content">
@@ -211,10 +213,11 @@ const NO_LOGO_BASES = new Set([
   'VI','RVI','RUSFAR3M','IB','BT',
 ]);
 
-// Бумаги, которые есть ТОЛЬКО в «Покупках фондов» (нет в каталоге ОИ/Сезонности,
-// поэтому не приходят из /api/instruments) и пока БЕЗ логотипа в стикерпаке.
+// Бумаги, которые есть ТОЛЬКО в «Покупках фондов» / «Потоках по компании»
+// (нет в каталоге ОИ/Сезонности, поэтому не приходят из /api/instruments).
 // Тикер = MOEX sec_id (как в fundConfig). Курируется вручную.
 const FUND_EXTRA = [
+  // Совсем без картинки (рисуются инициалы тикера)
   { ticker: 'ZAYM', name: 'Займер' },
   { ticker: 'DELI', name: 'Делимобиль' },
   { ticker: 'DIAS', name: 'Диасофт' },
@@ -224,7 +227,21 @@ const FUND_EXTRA = [
   { ticker: 'EUTR', name: 'ЕвроТранс' },
   { ticker: 'AQUA', name: 'Инарктика' },
   { ticker: 'HNFG', name: 'Хэндерсон' },
+  // Сейчас на generic-заглушке «кружок + буква» — нужен настоящий стикер
+  { ticker: 'SGZH', name: 'Сегежа Групп' },
+  { ticker: 'WUSH', name: 'Whoosh' },
+  { ticker: 'MTLR', name: 'Мечел' },
+  { ticker: 'MVID', name: 'М.Видео' },
+  { ticker: 'SOFL', name: 'Софтлайн' },
+  { ticker: 'SPBE', name: 'СПБ биржа' },
 ];
+
+// Generic-заглушки «сплошной кружок + одна буква», а не настоящие логотипы.
+// Файл существует, поэтому картинка рисуется — но её надо ЗАМЕНИТЬ.
+// Считаем их за «нет лого», чтобы попадали в фильтр и подсвечивались.
+const PLACEHOLDER_LOGOS = new Set([
+  'SGZH','WUSH','MTLR','MVID','SOFL','SPBE',
+]);
 
 function extractBase(sectype) {
   if (sectype.length > 4 && sectype.endsWith('F')) return sectype;
@@ -269,9 +286,9 @@ let activeKey = null;
 let filterChangedOnly = false;
 let filterMissingOnly = false;
 
-// «Без нормального лого» = помечено null ИЛИ ссылается на несуществующий файл.
+// «Без нормального лого» = помечено null, ИЛИ файла нет, ИЛИ файл — generic-заглушка.
 function isMissing(logo) {
-  return logo === null || !availableSet.has(logo);
+  return logo === null || !availableSet.has(logo) || PLACEHOLDER_LOGOS.has(logo);
 }
 
 // Найти запись актива по типу ключа (futures/stock/fund) и идентификатору.
@@ -368,7 +385,9 @@ function isDirty(key, original) {
 
 function buildCard(key, label, name, group, original, effective, dirty) {
   const card = document.createElement('div');
-  card.className = effective === null ? 'card no-logo' : (dirty ? 'card dirty' : 'card');
+  card.className = effective === null
+    ? 'card no-logo'
+    : (dirty ? 'card dirty' : (isMissing(effective) ? 'card no-logo' : 'card'));
   card.dataset.key = key;
 
   // Logo button
@@ -424,6 +443,13 @@ function buildCard(key, label, name, group, original, effective, dirty) {
   groupSpan.style.color = '#525968';
   groupSpan.textContent = ' · ' + group;
   metaEl.appendChild(groupSpan);
+  // Явная пометка: файл есть, но это generic-заглушка «кружок + буква».
+  if (!dirty && effective && PLACEHOLDER_LOGOS.has(effective)) {
+    const ph = document.createElement('span');
+    ph.style.color = '#FFA020';
+    ph.textContent = ' · заглушка';
+    metaEl.appendChild(ph);
+  }
   info.appendChild(tickerEl);
   info.appendChild(nameEl);
   info.appendChild(metaEl);
@@ -588,7 +614,8 @@ function renderPickerGrid(filter, original) {
   const f = filter.trim().toLowerCase();
   const grid = document.getElementById('modal-grid');
   grid.textContent = '';
-  const filtered = availableLogos.filter(l => !f || l.toLowerCase().includes(f));
+  // Generic-заглушки не предлагаем как вариант выбора — они и есть проблема.
+  const filtered = availableLogos.filter(l => !PLACEHOLDER_LOGOS.has(l) && (!f || l.toLowerCase().includes(f)));
   if (filtered.length === 0) {
     const empty = document.createElement('p');
     empty.style.color = '#7A8194';
