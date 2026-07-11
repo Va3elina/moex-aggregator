@@ -13,7 +13,7 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
-  type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time,
+  type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time, type IPriceLine,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 
@@ -170,7 +170,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
-  const alertHGuideRef = useRef<HTMLDivElement | null>(null);   // §R2-12: пунктир уровня, цвет = кроссхэйр
+  // §R2-17: превью-уровень алерта = НАТИВНАЯ price line (серый пунктир как кроссхэйр
+  // + цветной лейбл значения, ВЫРОВНЕННЫЙ по числам оси нативно). Одна на ось.
+  const previewLineRef = useRef<{ [k in 'left' | 'right']?: IPriceLine }>({});
+  const crossColorRef = useRef<string>('rgba(245,241,232,0.42)');   // цвет пунктира = кроссхэйр (тема)
   const dataSigRef = useRef<string>('');   // §R2-6 сигнатура данных для reveal-анимации
   const chartPrefs = useContext(ChartPrefsCtx);
   const lastFitRef = useRef<string | undefined>(undefined);
@@ -294,25 +297,22 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     };
     drawExpRef.current = drawExp;
 
-    // ── §OI-3 axis-алерты (как на сайте / TradingView): наведение над графиком/жёлобом
-    // ценовой оси → пунктирный уровень + чип «＋ <значение>» в жёлобе каждой активной
-    // оси; клик по чипу → onCreateAlert(level). Чипы живут пока курсор в пределах box
-    // (жёлоб-полосы держат их при переходе к клику); price = coordinateToPrice первой
-    // серии оси. Гейт — onCreateAlert + alertAxes; иначе слой невидим и инертен.
-    const alertHGuide = document.createElement('div');
-    // §R2-12: цвет пунктира уровня = цвет вертикального кроссхэйра (серый), а не accent.
-    // Обновляется в эффекте темы (◐) вместе с кроссхэйром.
-    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dotted ' + c.cross;
-    box.appendChild(alertHGuide);
-    alertHGuideRef.current = alertHGuide;
+    // ── §OI-3/§R2-17 axis-алерты (как на сайте / TradingView): превью-уровень —
+    // НАТИВНАЯ price line на первой серии оси: серый ПУНКТИР (цвет кроссхэйра) в поле
+    // графика + цветной ЛЕЙБЛ значения в жёлобе, выровненный по числам оси НАТИВНО (тот
+    // же форматтер и колонка, что тики и пилс последнего значения). Плюс DOM-кружок «+»
+    // в поле у оси — клик = onCreateAlert. Гейт — onCreateAlert + alertAxes; иначе инертно.
     const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
-    const alertChipParts: { [k in 'left' | 'right']?: { circle: HTMLDivElement; valpill: HTMLDivElement } } = {};
     const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
+    const hidePreview = (side: 'left' | 'right') => {
+      const pl = previewLineRef.current[side];
+      if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
+    };
     const hideChips = () => {
       if (alertChips.left) alertChips.left.style.display = 'none';
       if (alertChips.right) alertChips.right.style.display = 'none';
-      alertHGuide.style.display = 'none';
+      hidePreview('left'); hidePreview('right');
       alertPending.left = undefined; alertPending.right = undefined;
     };
     const showChipsAt = (rawY: number) => {
@@ -321,41 +321,25 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!ch || !onCreateAlertRef.current || !axes || axes.length === 0) { hideChips(); return; }
       const axisH = ch.timeScale().height() || 26;
       const y = Math.max(0, Math.min(box.clientHeight - axisH, rawY));
-      let any = false;
       for (const side of ['left', 'right'] as const) {
         const chip = alertChips[side];
         const info = axisInfoRef.current[side];
-        if (!chip || !axes.includes(side) || !info) { if (chip) chip.style.display = 'none'; alertPending[side] = undefined; continue; }
+        if (!chip || !axes.includes(side) || !info) { if (chip) chip.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
         const price = info.api.coordinateToPrice(y as number);
-        if (price == null) { chip.style.display = 'none'; alertPending[side] = undefined; continue; }
+        if (price == null) { chip.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
+        // Нативный уровень + лейбл (выровнен по числам оси НАТИВНО): пунктир серый (цвет
+        // кроссхэйра), лейбл — фон в цвет линии, текст белый, значение форматтером серии.
+        const pl = previewLineRef.current[side];
+        if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true, color: crossColorRef.current, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff' }); } catch { /* серия снята */ } }
+        // Кружок «+» — в поле у оси (выступает на график), в цвет линии.
+        const axisW = ch.priceScale(side).width() || 54;
+        const cw = 15;
         chip.style.top = y + 'px';
-        chip.style.display = 'inline-flex';
-        const parts = alertChipParts[side];
-        if (parts) {
-          const col = info.color || 'var(--accent,#FF5C2B)';
-          parts.circle.style.background = col;
-          parts.valpill.style.background = col;
-          parts.valpill.textContent = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
-          // §R2-16: value-пилс к ВНУТРЕННЕЙ кромке жёлоба (как нативные пилсы TV — они
-          // прижаты к полю): справа левым краем у поля, слева правым краем у поля;
-          // кружок «+» уходит в поле. offsetWidth валиден (пилс уже показан + текст задан).
-          const axisW = ch.priceScale(side).width() || 54;
-          chip.style.right = 'auto';
-          chip.style.left = (side === 'left'
-            ? Math.max(0, axisW - parts.valpill.offsetWidth)
-            : box.clientWidth - axisW - parts.circle.offsetWidth - 3) + 'px';
-        }
+        chip.style.display = 'flex';
+        chip.style.background = info.color || 'var(--accent,#FF5C2B)';
+        chip.style.left = (side === 'left' ? axisW + 2 : box.clientWidth - axisW - cw - 2) + 'px';
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
-        any = true;
       }
-      if (any) {
-        // §R2-11: пунктир уровня — только в поле графика; кончается перед ценовыми
-        // осями (не проходит сквозь жёлоба, где сидят пилсы и кружок «+»).
-        alertHGuide.style.left = (ch.priceScale('left').width() || 0) + 'px';
-        alertHGuide.style.right = (ch.priceScale('right').width() || 0) + 'px';
-        alertHGuide.style.top = y + 'px';
-        alertHGuide.style.display = 'block';
-      } else alertHGuide.style.display = 'none';
     };
     for (const side of ['left', 'right'] as const) {
       const strip = document.createElement('div');
@@ -363,27 +347,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       strip.addEventListener('mousemove', (e) => showChipsAt(e.clientY - box.getBoundingClientRect().top));
       box.appendChild(strip);
       alertStrips[side] = strip;
-      // §R2-9/R2-13 (как на сайте): значение-пилс ЗАПОДЛИЦО у оси (на уровне пилсов
-      // последнего значения, тот же вид/цвет линии), а кружок с «+» — со стороны ГРАФИКА
-      // (внутрь поля), «выступает на график». Цвета проставляются в showChipsAt.
+      // §R2-17: чип = только кружок «+» (значение показывает нативный лейбл price line,
+      // выровненный по числам оси). Позиция/цвет — в showChipsAt.
       const chip = document.createElement('div');
-      chip.style.cssText = 'position:absolute;' + (side === 'left' ? 'left:0' : 'right:0')
-        + ';transform:translateY(-50%);display:none;align-items:center;gap:3px;pointer-events:auto;cursor:pointer;z-index:7;white-space:nowrap';
-      const circle = document.createElement('div');
-      circle.style.cssText = 'width:15px;height:15px;border-radius:50%;display:flex;align-items:center;'
-        + 'justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;flex:0 0 auto;'
-        + 'box-shadow:0 1px 4px rgba(0,0,0,0.35)';
-      circle.textContent = '+';
-      const valpill = document.createElement('div');
-      // §R2-15: форма как у нативного пилса последнего значения TradingView —
-      // радиус ~2, компактный паддинг, обычный вес, без тени; выравнивание по оси.
-      valpill.style.cssText = 'padding:2px 4px;border-radius:2px;font-size:11px;font-weight:400;color:#fff;'
-        + 'font-variant-numeric:tabular-nums;line-height:1';
-      // Порядок: значение-пилс заподлицо у оси, кружок «+» — со стороны графика.
-      // Левая ось: [пилс][+] (плюс вправо, в поле). Правая: [+][пилс] (плюс влево, в поле).
-      if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
-      else { chip.appendChild(circle); chip.appendChild(valpill); }
-      alertChipParts[side] = { circle, valpill };
+      chip.style.cssText = 'position:absolute;display:none;width:15px;height:15px;border-radius:50%;'
+        + 'align-items:center;justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;'
+        + 'transform:translateY(-50%);pointer-events:auto;cursor:pointer;z-index:7;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      chip.textContent = '+';
       chip.title = 'Поставить алерт на этом уровне';
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -486,7 +456,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chartRef.current = null;
       seriesApiRef.current = [];
       axisInfoRef.current = {};
-      for (const el of [tip, legend, expLayer, expGuide, alertHGuide, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
+      for (const el of [tip, legend, expLayer, expGuide, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
     };
@@ -511,8 +481,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
             horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length), labelVisible: !(alertAxes && alertAxes.length) },
           },
     });
-    // §R2-12: держим пунктир уровня алерта в цвете кроссхэйра при смене темы (◐).
-    if (alertHGuideRef.current) alertHGuideRef.current.style.borderTopColor = c.cross;
+    // §R2-12/17: держим цвет пунктира превью-уровня = цвет кроссхэйра при смене темы (◐).
+    crossColorRef.current = c.cross;
+    for (const side of ['left', 'right'] as const) {
+      const pl = previewLineRef.current[side];
+      if (pl) { try { pl.applyOptions({ color: c.cross }); } catch { /* серия снята */ } }
+    }
   }, [dark, chartPrefs, alertAxes]);
 
   // ── серии (пересоздаём при смене набора/данных, зум сохраняем) ──
@@ -645,6 +619,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!axisInfoRef.current[sc]) {
         const d = series[i];
         axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color) };
+      }
+    }
+    // §R2-17: превью price line алерта на первой серии каждой оси (пересоздаём вместе
+    // с сериями). Изначально скрыта; показывается/двигается в showChipsAt при наведении.
+    previewLineRef.current = {};
+    for (const side of ['left', 'right'] as const) {
+      const info = axisInfoRef.current[side];
+      if (info) {
+        previewLineRef.current[side] = info.api.createPriceLine({
+          price: info.last ?? 0, color: crossColorRef.current, lineWidth: 1, lineStyle: LineStyle.Dotted,
+          lineVisible: false, axisLabelVisible: false, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff', title: '',
+        });
       }
     }
     layoutAlertRef.current?.();     // показать/скрыть полосы алертов под текущий набор осей
