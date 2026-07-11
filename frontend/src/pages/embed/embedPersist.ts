@@ -15,6 +15,8 @@
  * Только строки (никакого JSON) — иначе кавычки утекали в API-параметры
  * (урок [[terminal_extension]]: сырое чтение JSON-значения ломало clgroup → 422).
  */
+import { createContext, useCallback, useContext } from 'react';
+
 function pid(): string {
   try {
     return new URLSearchParams(window.location.search).get('pid') || '';
@@ -54,4 +56,34 @@ export function writeLS(key: string, value: string): void {
 
 export function readBoolLS(key: string, fallback: boolean): boolean {
   return readLS(key, fallback ? 'true' : 'false') === 'true';
+}
+
+/* ────────────────────── per-panel неймспейс ПЕСОЧНИЦЫ ──────────────────────
+ * В расширении pid приходит через ?pid= (каждая панель — свой iframe). Песочница
+ * рендерит embed'ы НАПРЯМУЮ (без iframe, URL один) → pid() пуст и панели делили
+ * глобальные ключи. EmbedPidCtx даёт pid вторым источником: SandboxPage оборачивает
+ * панель провайдером с её id, useEmbedPersist читает/пишет инстансные ключи с
+ * фолбэком на глобальный «шаблон» (та же семантика, что у ?pid=).
+ * Вне песочницы контекст пуст → rd/wr эквивалентны readLS/writeLS. */
+
+export const EmbedPidCtx = createContext('');
+
+export function useEmbedPersist() {
+  const ns = useContext(EmbedPidCtx);
+  // useCallback — чтобы rd/wr были стабильными и безопасными в deps эффектов.
+  const rd = useCallback((key: string, fallback: string): string => {
+    try {
+      if (ns) {
+        const v = localStorage.getItem(instKey(key, ns));
+        if (v !== null) return v;
+      }
+    } catch { /* partitioned storage */ }
+    return readLS(key, fallback);
+  }, [ns]);
+  const wr = useCallback((key: string, value: string): void => {
+    try { if (ns) localStorage.setItem(instKey(key, ns), value); } catch { /* quota */ }
+    writeLS(key, value);
+  }, [ns]);
+  const rdBool = useCallback((key: string, fallback: boolean): boolean => rd(key, fallback ? 'true' : 'false') === 'true', [rd]);
+  return { rd, wr, rdBool };
 }

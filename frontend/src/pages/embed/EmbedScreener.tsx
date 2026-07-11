@@ -17,7 +17,7 @@ import { getOiScreener, type OiScreenerRow } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type Clgroup = 'FIZ' | 'YUR';
 type ThresholdKey = '0' | '2' | '3' | '5';
@@ -51,18 +51,19 @@ function fmtDate(d: string): string {
 const MONO = { fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' as const };
 
 export default function EmbedScreener() {
-  const [clgroup, setClgroup] = useState<Clgroup>(() => readLS('frame:embed:screener:clgroup', 'FIZ') as Clgroup);
-  const [threshold, setThreshold] = useState<ThresholdKey>(() => readLS('frame:embed:screener:threshold', '2') as ThresholdKey);
-  const [group, setGroup] = useState<string>(() => readLS('frame:embed:screener:group', 'all'));
+  const { rd, wr } = useEmbedPersist();
+  const [clgroup, setClgroup] = useState<Clgroup>(() => rd('frame:embed:screener:clgroup', 'FIZ') as Clgroup);
+  const [threshold, setThreshold] = useState<ThresholdKey>(() => rd('frame:embed:screener:threshold', '2') as ThresholdKey);
+  const [group, setGroup] = useState<string>(() => rd('frame:embed:screener:group', 'all'));
 
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
   const [intradayDate, setIntradayDate] = useState<string | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
 
-  useEffect(() => { writeLS('frame:embed:screener:clgroup', clgroup); }, [clgroup]);
-  useEffect(() => { writeLS('frame:embed:screener:threshold', threshold); }, [threshold]);
-  useEffect(() => { writeLS('frame:embed:screener:group', group); }, [group]);
+  useEffect(() => { wr('frame:embed:screener:clgroup', clgroup); }, [clgroup]);
+  useEffect(() => { wr('frame:embed:screener:threshold', threshold); }, [threshold]);
+  useEffect(() => { wr('frame:embed:screener:group', group); }, [group]);
 
   useEffect(() => {
     let cancelled = false;

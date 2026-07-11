@@ -18,7 +18,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat, type ChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS, readBoolLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 type Timeframe = '1d' | '1w' | '1m';
@@ -49,26 +49,27 @@ const toSec = (t: string): number => {
 };
 
 export default function EmbedBuffett() {
+  const { rd, wr, rdBool } = useEmbedPersist();
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:buffett:fmt');
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
+    (params.get('mode') === 'cap-m2' || rd('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
   );
   const [timeframe, setTimeframe] = useState<Timeframe>(() => {
-    const v = params.get('timeframe') || readLS('frame:embed:buffett:timeframe', '1m');
+    const v = params.get('timeframe') || rd('frame:embed:buffett:timeframe', '1m');
     return v === '1d' || v === '1w' ? v : '1m';
   });
   // Прогноз (только cap-gdp): null = выкл, иначе целевой Кап/ВВП в %.
   const [forecastTarget, setForecastTarget] = useState<number | null>(() => {
-    const v = params.get('forecast') ?? readLS('frame:embed:buffett:forecast', '');
+    const v = params.get('forecast') ?? rd('frame:embed:buffett:forecast', '');
     const n = Number(v);
     return v && Number.isFinite(n) ? n : null;
   });
   const [showCap, setShowCap] = useState<boolean>(() =>
-    readBoolLS('frame:embed:buffett:showCap', true),
+    rdBool('frame:embed:buffett:showCap', true),
   );
 
   // Сырые точки cap-gdp нужны для клиентского прогноза (требуется gdp_ttm),
@@ -78,10 +79,10 @@ export default function EmbedBuffett() {
   const [ratio, setRatio] = useState<Series>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:embed:buffett:mode', viewMode); }, [viewMode]);
-  useEffect(() => { writeLS('frame:embed:buffett:timeframe', timeframe); }, [timeframe]);
-  useEffect(() => { writeLS('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); }, [forecastTarget]);
-  useEffect(() => { writeLS('frame:embed:buffett:showCap', String(showCap)); }, [showCap]);
+  useEffect(() => { wr('frame:embed:buffett:mode', viewMode); }, [viewMode]);
+  useEffect(() => { wr('frame:embed:buffett:timeframe', timeframe); }, [timeframe]);
+  useEffect(() => { wr('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); }, [forecastTarget]);
+  useEffect(() => { wr('frame:embed:buffett:showCap', String(showCap)); }, [showCap]);
 
   useEffect(() => {
     let cancelled = false;

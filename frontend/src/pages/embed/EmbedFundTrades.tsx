@@ -28,7 +28,7 @@ import {
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
@@ -228,14 +228,15 @@ function EmbedSection({
 // ─────────────────────────────── root ───────────────────────────────
 
 export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}) {
+  const { rd, wr } = useEmbedPersist();
   // lockTab — отдельный индикатор «Покупки фондов»: фиксируем вкладку movers,
   // таб-бар прячем, а название и первичные контролы (период/метрика) — в тулбар.
   const [tab, setTab] = useState<EmbedTab>(() => {
     if (lockTab) return lockTab;
-    const v = readLS('frame:embed:fundtrades:tab', 'movers');
+    const v = rd('frame:embed:fundtrades:tab', 'movers');
     return (['movers', 'snapshots', 'funds', 'company'] as const).includes(v as EmbedTab) ? (v as EmbedTab) : 'movers';
   });
-  useEffect(() => { if (!lockTab) writeLS('frame:embed:fundtrades:tab', tab); }, [tab, lockTab]);
+  useEffect(() => { if (!lockTab) wr('frame:embed:fundtrades:tab', tab); }, [tab, lockTab]);
 
   // Список фондов — загружается один раз, шарится между movers/snapshots/funds.
   const [funds, setFunds] = useState<FundWithHistory[]>([]);
@@ -248,8 +249,8 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   }, []);
 
   // ── movers state ──
-  const [period, setPeriod] = useState<FundTradesPeriod>(() => readLS('frame:embed:fundtrades:period', '1m') as FundTradesPeriod);
-  const [moverMetric, setMoverMetric] = useState<'weight' | 'amount'>(() => readLS('frame:embed:fundtrades:metric', 'weight') as 'weight' | 'amount');
+  const [period, setPeriod] = useState<FundTradesPeriod>(() => rd('frame:embed:fundtrades:period', '1m') as FundTradesPeriod);
+  const [moverMetric, setMoverMetric] = useState<'weight' | 'amount'>(() => rd('frame:embed:fundtrades:metric', 'weight') as 'weight' | 'amount');
   const [asOf, setAsOf] = useState<string | undefined>(undefined);
   const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
   const [acc, setAcc] = useState<FundTradesMover[]>([]);
@@ -258,8 +259,8 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   const [resolvedMonth, setResolvedMonth] = useState<string | null>(null);
   const [moversStatus, setMoversStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:embed:fundtrades:period', period); }, [period]);
-  useEffect(() => { writeLS('frame:embed:fundtrades:metric', moverMetric); }, [moverMetric]);
+  useEffect(() => { wr('frame:embed:fundtrades:period', period); }, [period]);
+  useEffect(() => { wr('frame:embed:fundtrades:metric', moverMetric); }, [moverMetric]);
 
   const fundsParam = useMemo(() => Array.from(selectedMoverFunds).join(','), [selectedMoverFunds]);
 
@@ -292,9 +293,9 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   );
 
   // ── funds tab state ──
-  const [fundSort, setFundSort] = useState<'return' | 'volume' | 'name'>(() => readLS('frame:embed:fundtrades:fundSort', 'return') as 'return' | 'volume' | 'name');
+  const [fundSort, setFundSort] = useState<'return' | 'volume' | 'name'>(() => rd('frame:embed:fundtrades:fundSort', 'return') as 'return' | 'volume' | 'name');
   const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
-  useEffect(() => { writeLS('frame:embed:fundtrades:fundSort', fundSort); }, [fundSort]);
+  useEffect(() => { wr('frame:embed:fundtrades:fundSort', fundSort); }, [fundSort]);
 
   const ukOptions = useMemo<UkOption[]>(() => {
     const map = new Map<string, UkOption>();
@@ -481,14 +482,15 @@ function MoverCol({ title, color, items, metric }: { title: string; color: strin
 // ─────────────────────────────── snapshots tab ───────────────────────────────
 
 function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
+  const { rd, wr } = useEmbedPersist();
   const [ticker, setTicker] = useState<string>('EQMX');
-  const [metric, setMetric] = useState<'amount' | 'weight'>(() => readLS('frame:embed:fundtrades:snapMetric', 'amount') as 'amount' | 'weight');
+  const [metric, setMetric] = useState<'amount' | 'weight'>(() => rd('frame:embed:fundtrades:snapMetric', 'amount') as 'amount' | 'weight');
   const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [review, setReview] = useState<FundSnapshotReview | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:embed:fundtrades:snapMetric', metric); }, [metric]);
+  useEffect(() => { wr('frame:embed:fundtrades:snapMetric', metric); }, [metric]);
 
   // Фонды с историей снапшотов (для пикера). funds приходят из root.
   const pickerFunds = useMemo<FundPickerFund[]>(

@@ -13,7 +13,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { getHeatmapData, getHeatmapImoex, type HeatmapResponse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type Universe = 'imoex' | 'all';
 type Metric = 'change' | 'vol';
@@ -48,16 +48,17 @@ function fmtVol(v: number): string {
 }
 
 export default function EmbedHeatmap() {
+  const { rd, wr } = useEmbedPersist();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const [universe, setUniverse] = useState<Universe>(() => readLS('frame:embed:heatmap:universe', 'imoex') as Universe);
-  const [metric, setMetric] = useState<Metric>(() => readLS('frame:embed:heatmap:metric', 'change') as Metric);
+  const [universe, setUniverse] = useState<Universe>(() => rd('frame:embed:heatmap:universe', 'imoex') as Universe);
+  const [metric, setMetric] = useState<Metric>(() => rd('frame:embed:heatmap:metric', 'change') as Metric);
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
 
-  useEffect(() => { writeLS('frame:embed:heatmap:universe', universe); }, [universe]);
-  useEffect(() => { writeLS('frame:embed:heatmap:metric', metric); }, [metric]);
+  useEffect(() => { wr('frame:embed:heatmap:universe', universe); }, [universe]);
+  useEffect(() => { wr('frame:embed:heatmap:metric', metric); }, [metric]);
 
   useEffect(() => {
     let cancelled = false;
