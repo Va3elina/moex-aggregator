@@ -193,7 +193,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
-        horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
+        // §R2-13: при активных axis-алертах прячем горизонтальную линию кроссхэйра —
+        // её роль играет наш inset-пунктир уровня (иначе две линии наслаиваются).
+        horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length) },
       },
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: false } },
@@ -299,7 +301,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const alertHGuide = document.createElement('div');
     // §R2-12: цвет пунктира уровня = цвет вертикального кроссхэйра (серый), а не accent.
     // Обновляется в эффекте темы (◐) вместе с кроссхэйром.
-    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dashed ' + c.cross;
+    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dotted ' + c.cross;
     box.appendChild(alertHGuide);
     alertHGuideRef.current = alertHGuide;
     const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
@@ -352,9 +354,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       strip.addEventListener('mousemove', (e) => showChipsAt(e.clientY - box.getBoundingClientRect().top));
       box.appendChild(strip);
       alertStrips[side] = strip;
-      // §R2-9 (как на сайте): значение-пилс (в цвете линии, размер как у пилса
-      // последнего значения) + отдельный кружок с «+» с ВНЕШНЕЙ стороны оси. Цвета
-      // проставляются в showChipsAt по цвету серии этой оси.
+      // §R2-9/R2-13 (как на сайте): значение-пилс ЗАПОДЛИЦО у оси (на уровне пилсов
+      // последнего значения, тот же вид/цвет линии), а кружок с «+» — со стороны ГРАФИКА
+      // (внутрь поля), «выступает на график». Цвета проставляются в showChipsAt.
       const chip = document.createElement('div');
       chip.style.cssText = 'position:absolute;' + (side === 'left' ? 'left:2px' : 'right:2px')
         + ';transform:translateY(-50%);display:none;align-items:center;gap:3px;pointer-events:auto;cursor:pointer;z-index:7;white-space:nowrap';
@@ -366,9 +368,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const valpill = document.createElement('div');
       valpill.style.cssText = 'padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#fff;'
         + 'font-variant-numeric:tabular-nums;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
-      // Порядок: у левой оси кружок СНАРУЖИ (слева) от значения; у правой — справа.
-      if (side === 'left') { chip.appendChild(circle); chip.appendChild(valpill); }
-      else { chip.appendChild(valpill); chip.appendChild(circle); }
+      // Порядок: значение-пилс заподлицо у оси, кружок «+» — со стороны графика.
+      // Левая ось: [пилс][+] (плюс вправо, в поле). Правая: [+][пилс] (плюс влево, в поле).
+      if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
+      else { chip.appendChild(circle); chip.appendChild(valpill); }
       alertChipParts[side] = { circle, valpill };
       chip.title = 'Поставить алерт на этом уровне';
       chip.addEventListener('click', (e) => {
@@ -493,12 +496,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         : {
             mode: CrosshairMode.Normal,
             vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-            horzLine: { color: c.cross, labelBackgroundColor: c.lab },
+            // §R2-13: горизонталь кроссхэйра прячем при axis-алертах (её заменяет наш пунктир).
+            horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length) },
           },
     });
     // §R2-12: держим пунктир уровня алерта в цвете кроссхэйра при смене темы (◐).
     if (alertHGuideRef.current) alertHGuideRef.current.style.borderTopColor = c.cross;
-  }, [dark, chartPrefs]);
+  }, [dark, chartPrefs, alertAxes]);
 
   // ── серии (пересоздаём при смене набора/данных, зум сохраняем) ──
   useEffect(() => {
