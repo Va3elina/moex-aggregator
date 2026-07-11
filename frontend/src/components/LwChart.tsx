@@ -193,9 +193,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
-        // §R2-13: при активных axis-алертах прячем горизонтальную линию кроссхэйра —
-        // её роль играет наш inset-пунктир уровня (иначе две линии наслаиваются).
-        horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length) },
+        // §R2-13/14: при активных axis-алертах прячем и линию, и ЛЕЙБЛ горизонтали
+        // кроссхэйра (её роль играет наш inset-пунктир + пилс алерта; иначе серый
+        // лейбл кроссхэйра дублировал пилс под ним).
+        horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length), labelVisible: !(alertAxes && alertAxes.length) },
       },
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: false } },
@@ -496,8 +497,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         : {
             mode: CrosshairMode.Normal,
             vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-            // §R2-13: горизонталь кроссхэйра прячем при axis-алертах (её заменяет наш пунктир).
-            horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length) },
+            // §R2-13/14: прячем линию И лейбл горизонтали кроссхэйра при axis-алертах.
+            horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: !(alertAxes && alertAxes.length), labelVisible: !(alertAxes && alertAxes.length) },
           },
     });
     // §R2-12: держим пунктир уровня алерта в цвете кроссхэйра при смене темы (◐).
