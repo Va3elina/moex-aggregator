@@ -54,6 +54,9 @@ const frameStyle: CSSProperties = {
 };
 
 // Тулбар — продолжение поверхности графика: без нижнего разделителя, на том же фоне.
+// z-index ВЫШЕ DOM-оверлеев графика (легенда 5 / тултип 6 / экспирации 4): поповеры
+// (⚙/дропдауны) рендерятся ВНУТРИ тулбара, и их собственный огромный z-index заперт
+// в его стекинг-контексте — при z:3 легенда просвечивала СКВОЗЬ открытую модалку.
 const toolbarRow: CSSProperties = {
   flexShrink: 0,
   display: 'flex',
@@ -62,7 +65,7 @@ const toolbarRow: CSSProperties = {
   minHeight: TOOLBAR_H,
   padding: '5px 8px',
   position: 'relative',
-  zIndex: 3,
+  zIndex: 20,
 };
 
 // Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ◐ ×) — §4.3: 24×24, без бордера, radius 5,
