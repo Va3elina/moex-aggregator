@@ -345,7 +345,17 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (parts) {
           parts.circle.style.background = col;
           parts.valpill.style.background = col;
-          parts.valpill.textContent = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
+          const txt = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
+          parts.valpill.textContent = txt;
+          // §R2-27: ширина = как у нативного лейбла — по строке с цифрами→'0'
+          // (defaultReplacementRe библиотеки) через connected-canvas (то же лицо
+          // шрифта, что у оси): совпадает с нативным пилсом и не дёргается при
+          // движении курсора. Текст прижат к колонке чисел (text-align к оси).
+          if (measCtx) {
+            const zw = measCtx.measureText(txt.replace(/[2-9]/g, '0')).width;
+            // 15.17 = border 1 + paddingInner 4.58 + paddingOuter 4.58 + tick 5
+            parts.valpill.style.width = (Math.ceil(zw) + 15.17) + 'px';
+          }
         }
         chip.style.top = y + 'px';
         chip.style.display = 'flex';
@@ -396,10 +406,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       // стороны (кромка у поля прямая); шрифт = шрифт оси, без тени и tabular-nums —
       // иначе пилс отличается от нативных по форме/размеру/посадке цифр.
       valpill.style.cssText = 'font:400 11px/15.58px Inter,-apple-system,sans-serif;color:#fff;'
-        + 'white-space:nowrap;pointer-events:none;'
+        + 'white-space:nowrap;pointer-events:none;box-sizing:border-box;'
         + (side === 'left'
-          ? 'padding:0 9.58px 0 5.58px;border-radius:2px 0 0 2px'
-          : 'padding:0 5.58px 0 9.58px;border-radius:0 2px 2px 0');
+          ? 'padding:0 9.58px 0 5.58px;border-radius:2px 0 0 2px;text-align:right'
+          : 'padding:0 5.58px 0 9.58px;border-radius:0 2px 2px 0;text-align:left');
       if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
       else { chip.appendChild(circle); chip.appendChild(valpill); }
       alertChipParts[side] = { circle, valpill };
@@ -411,25 +421,30 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     // DOM (замерено на проде: та же строка «11px Inter…» в connected-canvas на ~10%
     // шире/крупнее DOM) — тогда цифры DOM-пилса выглядят мельче нативных лейблов оси.
     // Калибруем кегль пилса по фактическому ratio canvas/DOM; в норме ratio=1 и стиль
-    // не меняется. Пересчёт после догрузки шрифтов (fonts.ready).
+    // не меняется. Пересчёт после догрузки шрифтов (fonts.ready). Тот же connected-canvas
+    // (measCanvas, живёт до unmount) — эталон ШИРИНЫ пилса: нативный лейбл меряет строку
+    // с цифрами→'0' (defaultReplacementRe, ширина не дёргается при тике значения) — width
+    // пилса считаем в showChipsAt так же, иначе пилс на пару px уже нативного.
     const PILL_FONT = 'Inter, -apple-system, sans-serif';
+    const measCanvas = document.createElement('canvas');
+    measCanvas.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none';
+    box.appendChild(measCanvas);
+    const measCtx = measCanvas.getContext('2d');
+    if (measCtx) measCtx.font = '11px ' + PILL_FONT;
     const setPillFont = () => {
       let ratio = 1;
       try {
-        const cv = document.createElement('canvas');
-        box.appendChild(cv);                 // connected: detached-canvas меряет другим лицом
-        const cx = cv.getContext('2d');
-        const sp = document.createElement('span');
-        sp.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:400 11px ' + PILL_FONT;
-        sp.textContent = '0123456789';
-        box.appendChild(sp);
-        if (cx) {
-          cx.font = '11px ' + PILL_FONT;
-          const cw = cx.measureText('0123456789').width;
+        if (measCtx) {
+          measCtx.font = '11px ' + PILL_FONT;   // после fonts.ready лицо могло смениться
+          const sp = document.createElement('span');
+          sp.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:400 11px ' + PILL_FONT;
+          sp.textContent = '0123456789';
+          box.appendChild(sp);
+          const cw = measCtx.measureText('0123456789').width;
           const dw = sp.getBoundingClientRect().width;
+          box.removeChild(sp);
           if (cw > 0 && dw > 0) ratio = Math.max(0.8, Math.min(1.5, cw / dw));
         }
-        box.removeChild(sp); box.removeChild(cv);
       } catch { /* калибровка не критична */ }
       const fs = Math.round(11 * ratio * 100) / 100;
       for (const side of ['left', 'right'] as const) {
@@ -536,7 +551,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chartRef.current = null;
       seriesApiRef.current = [];
       axisInfoRef.current = {};
-      for (const el of [tip, legend, expLayer, expGuide, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
+      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
     };
