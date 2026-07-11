@@ -336,10 +336,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         // кроссхэйра), лейбл — фон в цвет линии, текст белый, значение форматтером серии.
         const pl = previewLineRef.current[side];
         if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true, color: crossColorRef.current, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff' }); } catch { /* серия снята */ } }
-        // §R2-18/19: пока превью активно, прячем лейбл последнего значения — иначе
-        // движок расталкивает пересекающиеся лейблы. ⚠️ Дёргаем applyOptions ТОЛЬКО при
-        // смене состояния (не каждый mousemove) — иначе пересчёт шкалы каждый кадр = фриз.
-        try { if (info.api.options().lastValueVisible !== false) info.api.applyOptions({ lastValueVisible: false }); } catch { /* серия снята */ }
+        // §R2-20: прячем лейбл последнего значения ТОЛЬКО когда алерт-превью подходит к
+        // нему БЛИЗКО по Y (иначе движок расталкивает пересекающиеся лейблы). Далеко —
+        // лейбл виден. ⚠️ applyOptions на серии дёргаем лишь при смене состояния (иначе
+        // пересчёт ценовой шкалы на каждый кадр = фриз).
+        try {
+          const lastY = info.last != null ? info.api.priceToCoordinate(info.last) : null;
+          const wantLastVis = (lastY != null && Math.abs(y - lastY) < 20) ? false : (info.lastVisible ?? true);
+          if (info.api.options().lastValueVisible !== wantLastVis) info.api.applyOptions({ lastValueVisible: wantLastVis });
+        } catch { /* серия снята */ }
         // Кружок «+» — в поле у оси (выступает на график), в цвет линии.
         const axisW = ch.priceScale(side).width() || 54;
         const cw = 15;
