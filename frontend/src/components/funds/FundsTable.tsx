@@ -261,13 +261,13 @@ export default function FundsTable({
                             <col style={{ width: 40 }} />
                             <col />
                             <col style={{ width: 88 }} />
-                            {/* Ширины под uppercase-заголовки с шевроном (замер живых
-                                кнопок): «СЧА, МЛРД ₽» = 109px → колонка 132 (контент
-                                112), «ДОХОДНОСТЬ» = 97px → 120 (контент 100). Уже —
-                                кнопка СЧА наезжает на шеврон Доходности. Правые края
-                                колонок на месте: растут влево за счёт Названия. */}
-                            <col style={{ width: 132 }} />
-                            <col style={{ width: 120 }} />
+                            {/* Ширины под uppercase-заголовки-кнопки с шевроном (замер
+                                живой кнопки): «ДОХОДНОСТЬ» = 116px, «СЧА, МЛРД ₽» ~109px.
+                                Колонка = кнопка + px-2 с двух сторон (16) + запас под
+                                более широкий рендер шрифта (Яндекс). Уже — кнопка
+                                вылезает за ячейку, и хвост («Ь») обрезается. */}
+                            <col style={{ width: 136 }} />
+                            <col style={{ width: 142 }} />
                         </colgroup>
                     )}
                     <thead>
@@ -526,7 +526,7 @@ export default function FundsTable({
                                                                 );
                                                             })()}
                                                             <span className={`${bare ? 'font-normal' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
-                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 240 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
+                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 220 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
                                                                         className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
