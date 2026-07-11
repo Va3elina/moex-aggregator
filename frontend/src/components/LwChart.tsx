@@ -445,13 +445,16 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!any) { tip.style.display = 'none'; return; }
       tip.style.display = 'block';
       const w = box.clientWidth, tw = tip.offsetWidth, GAP = 16;
-      // §R2-10: по умолчанию тултип справа от курсора с зазором GAP от перекрестья;
-      // флип влево ТЕМ ЖЕ зазором только если у правого края не влезает (по переполнению,
-      // а не по середине графика) — убирает несимметричный прыжок на w/2.
-      let rawLeft = param.point.x + GAP;
-      if (rawLeft + tw > w - 6) rawLeft = param.point.x - tw - GAP;
+      // §R2-22 (выбор Вадима): СИММЕТРИЧНЫЙ флип по СЕРЕДИНЕ поля — курсор в левой
+      // половине → тултип справа от курсора; в правой → слева. Одинаковый зазор GAP от
+      // перекрестья с обеих сторон. Середина = центр ПОЛЯ (между ценовыми осями), а не бокса.
+      const chNow = chartRef.current;
+      const lAxis = chNow ? (chNow.priceScale('left').width() || 0) : 0;
+      const rAxis = chNow ? (chNow.priceScale('right').width() || 0) : 0;
+      const mid = (lAxis + (w - rAxis)) / 2;
+      const rawLeft = param.point.x < mid ? param.point.x + GAP : param.point.x - tw - GAP;
       tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
-      tip.style.top = Math.max(6, param.point.y - 8) + 'px';
+      tip.style.top = Math.max(6, Math.min(box.clientHeight - tip.offsetHeight - 6, param.point.y - 8)) + 'px';
     });
 
     // Вертикальный масштаб колесом: Shift+колесо где угодно ИЛИ колесо над осью цифр.
