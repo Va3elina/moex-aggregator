@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
-import { getChartData, getInstrument } from '../../services/api';
+import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
+import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
@@ -69,6 +70,33 @@ const OI_COLORS = {
 
 const num = (v: number | null): number => v ?? 0;
 
+// Метрики алерта ОИ для CreateAlertModal (ходовой набор: цена + резкое движение
+// позиции физ/юр). Цена — первой (дефолт при открытии). Полный набор (уровень ОИ,
+// экстремумы) живёт на странице OpenInterestPage; в панели — самые частые.
+const OI_ALERT_METRICS: AlertMetricOption[] = [
+  {
+    key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
+    ops: [
+      { value: 'cross', label: 'Пересечение (в любую сторону)' },
+      { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
+      { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
+    ],
+    hint: 'Сработает, когда цена фьючерса пересечёт заданный уровень. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.',
+  },
+  {
+    key: 'move_fiz', label: 'Резкое движение позиции — физлица',
+    indicator: 'oi_move', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда чистая позиция физлиц изменится за день во столько-то раз резче обычного (ATR за 14 дней). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день.',
+  },
+  {
+    key: 'move_yur', label: 'Резкое движение позиции — юрлица',
+    indicator: 'oi_move', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда чистая позиция юрлиц изменится за день во столько-то раз резче обычного (ATR за 14 дней). Обновляется раз в день.',
+  },
+];
+
 /** `initialInstrument` — стартовый актив от песочницы (спавн панели по клику на
  *  сигнале). Приоритет: проп → ?instrument= → localStorage. Дальше юзер меняет
  *  его сам, и панель живёт своей жизнью. */
@@ -92,6 +120,19 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
 
   const [data, setData] = useState<ChartData | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
+
+  // Алерты §5.6: мои алерты по этому активу (ценовые → пунктир на графике) +
+  // модалка постановки. Перезагружаем на смену актива И на закрытие модалки
+  // (alertOpen→false после создания подтягивает новый уровень).
+  const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
+  const [alertOpen, setAlertOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    listAlerts({ limit: 200 })
+      .then((r) => { if (alive) setMyAlerts(r.items); })
+      .catch(() => { /* алерты не критичны для графика */ });
+    return () => { alive = false; };
+  }, [instrument, alertOpen]);
 
   // Persist выбор.
   useEffect(() => { wr('frame:embed:oi:instrument', instrument); }, [instrument]);
@@ -283,6 +324,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return switches.slice(1).map((sw) => toSec(sw.date, intraday));
   }, [data, showExpirations, interval]);
 
+  // Ценовые алерты этого актива → пунктирные уровни на ЛЕВОЙ (ценовой) оси (§5.6).
+  const alertLines = useMemo(() => {
+    const lines = myAlerts
+      .filter((a) => a.status === 'active' && a.asset === instrument && a.indicator === 'price')
+      .map((a) => ({ price: a.threshold, color: 'var(--accent)', scale: 'left' as const, title: 'алерт' }));
+    return lines.length ? lines : undefined;
+  }, [myAlerts, instrument]);
+
   const displayName = instrumentName || displayTicker(instrument);
 
   // Серии для LwChart: цена (линия, левая ось) + показатель ОИ (area/линии, правая ось).
@@ -364,6 +413,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             </div>
           </DrawerSection>
           {oiVariant !== 'both' && <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />}
+          <button
+            type="button"
+            onClick={() => setAlertOpen(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+              padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'transparent',
+              color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            ＋ Поставить алерт
+          </button>
           <WheelHint>
             Колесо над графиком — <b>зум времени</b>; зажать и тащить — панорама;
             <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб. Наведи — тултип со значениями.
@@ -381,6 +441,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
             tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
+            priceLines={alertLines}
           />
         )}
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
@@ -393,6 +454,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           <EmbedMsg text={instrument ? 'Нет данных по этому инструменту' : 'Инструмент не выбран'} />
         )}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        {alertOpen && (
+          <CreateAlertModal
+            indicator="open_interest"
+            asset={instrument}
+            assetName={displayName}
+            metrics={OI_ALERT_METRICS}
+            onClose={() => setAlertOpen(false)}
+          />
+        )}
       </div>
     </EmbedFrame>
   );

@@ -62,6 +62,8 @@ interface LwChartProps {
   /** Метки экспираций (§5.6): серые кружки ОТДЕЛЬНЫМ DOM-слоем у оси дат, а не
    *  нативные маркеры на линии. Перерисовываются на зум/пан/ресайз. */
   expTimes?: number[];
+  /** Ценовые уровни-линии (§5.6 алерты): пунктир на первой серии указанной оси. */
+  priceLines?: { price: number; color?: string; scale?: 'left' | 'right'; title?: string }[];
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -130,7 +132,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expTimes }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expTimes, priceLines }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
@@ -356,6 +358,20 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       seriesApiRef.current.push(s);
     }
 
+    // Уровни-линии алертов (§5.6): рисуем на первой серии нужной оси. Живут вместе
+    // с серией (removeSeries снимает и линии), поэтому перерисовываются этим же
+    // эффектом при смене priceLines.
+    if (priceLines && priceLines.length) {
+      for (const pl of priceLines) {
+        const sc = pl.scale ?? 'left';
+        let idx = series.findIndex((d) => (d.scale ?? 'right') === sc);
+        if (idx < 0) idx = 0;
+        const s = seriesApiRef.current[idx];
+        if (!s) continue;
+        s.createPriceLine({ price: pl.price, color: rc(pl.color ?? 'var(--accent)'), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'алерт' });
+      }
+    }
+
     // Легенда: legendItems (оверрайд) либо по сериям; hideLegend → пусто (рисуем свою поверх).
     const legend = legendRef.current;
     if (legend) {
@@ -399,7 +415,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     }
 
     drawExpRef.current?.(); // метки экспираций — после заливки данных и установки окна
-  }, [series, markers, fitKey, expTimes, chartPrefs]);
+  }, [series, markers, fitKey, expTimes, chartPrefs, priceLines]);
 
   return <div ref={boxRef} style={{ position: 'relative', width: '100%', height }} />;
 }
