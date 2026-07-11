@@ -17,7 +17,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, Checklist } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
 type PeriodFilter = '1y' | '3y' | 'all';
@@ -37,19 +37,20 @@ const PERIODS: { id: PeriodFilter; label: string; months: number | null }[] = [
 ];
 
 export default function EmbedCbrFlows() {
+  const { rd, wr } = useEmbedPersist();
   const [params] = useSearchParams();
   const { theme } = useTheme();
 
   const [type, setType] = useState<CbrType>((params.get('type') as CbrType) || 'stocks');
   const [period, setPeriod] = useState<PeriodFilter>(
-    () => (params.get('period') || readLS('frame:embed:cbr:period', '1y')) as PeriodFilter,
+    () => (params.get('period') || rd('frame:embed:cbr:period', '1y')) as PeriodFilter,
   );
   // Скрытые категории. При смене типа — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:embed:cbr:period', period); }, [period]);
+  useEffect(() => { wr('frame:embed:cbr:period', period); }, [period]);
 
   useEffect(() => {
     let cancelled = false;

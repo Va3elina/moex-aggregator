@@ -22,7 +22,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -63,26 +63,27 @@ function fmtAbs(a: number): string {
 const fmtSigned = (v: number): string => (v < 0 ? '−' : '') + fmtAbs(v);
 const fmtInt = (v: number): string => Math.round(v).toLocaleString('ru-RU');
 
-function initCat(p: string | null): Category {
+function initCat(p: string | null, rd: (k: string, d: string) => string): Category {
   if (p && CATS.some((c) => c.id === p)) return p as Category;
-  const s = readLS('frame:embed:funds:category', '');
+  const s = rd('frame:embed:funds:category', '');
   if (s && CATS.some((c) => c.id === s)) return s as Category;
   return 'money_market';
 }
 
 /** `initialCategory` — стартовая категория от песочницы (спавн по клику на сигнале). */
 export default function EmbedFundsMoney({ initialCategory }: { initialCategory?: string } = {}) {
+  const { rd, wr } = useEmbedPersist();
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
-  const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category')));
-  const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
+  const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category'), rd));
+  const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || rd('frame:embed:funds:period', '1y')) as FundPeriod);
   // Default режим — Притоки-Оттоки (как дефолт страницы).
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || readLS('frame:embed:funds:viewMode', 'flows')) as ViewMode);
-  const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (readLS('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
-  const [showIndex, setShowIndex] = useState<boolean>(() => readLS('frame:embed:funds:showIndex', '1') !== '0');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
+  const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (rd('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
+  const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
 
   const [data, setData] = useState<FundsResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
@@ -90,11 +91,11 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const [flowsStatus, setFlowsStatus] = useState<LoadStatus>('idle');
 
   // Persist
-  useEffect(() => { writeLS('frame:embed:funds:category', category); }, [category]);
-  useEffect(() => { writeLS('frame:embed:funds:period', period); }, [period]);
-  useEffect(() => { writeLS('frame:embed:funds:viewMode', viewMode); }, [viewMode]);
-  useEffect(() => { writeLS('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
-  useEffect(() => { writeLS('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
+  useEffect(() => { wr('frame:embed:funds:category', category); }, [category]);
+  useEffect(() => { wr('frame:embed:funds:period', period); }, [period]);
+  useEffect(() => { wr('frame:embed:funds:viewMode', viewMode); }, [viewMode]);
+  useEffect(() => { wr('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
+  useEffect(() => { wr('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
 
   // ── AUM load ──
   useEffect(() => {

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
+import { EmbedPidCtx } from '../embed/embedPersist';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
@@ -564,9 +565,13 @@ export default function SandboxPage() {
           >
             <div style={panelBodyStyle}>
               <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id) }}>
-                <SandboxThemeScope eff={eff}>
-                  {renderIndicator(p.type, p.cfg, onSignal)}
-                </SandboxThemeScope>
+                {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
+                    две панели одного индикатора живут независимо (§2 мокапа). */}
+                <EmbedPidCtx.Provider value={p.id}>
+                  <SandboxThemeScope eff={eff}>
+                    {renderIndicator(p.type, p.cfg, onSignal)}
+                  </SandboxThemeScope>
+                </EmbedPidCtx.Provider>
               </SandboxWindowCtx.Provider>
             </div>
             {HANDLES.map((hd) => (

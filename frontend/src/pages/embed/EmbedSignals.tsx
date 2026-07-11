@@ -18,7 +18,7 @@ import { getAnomalyFeed, type AnomalyDeepLink, type AnomalyItem } from '../../se
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai';
 const POLL_MS = 90_000;
@@ -55,11 +55,12 @@ function ago(iso: string | null): string {
  * прежнее поведение (расширение / standalone pop-out).
  */
 export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink) => void }) {
-  const [source, setSource] = useState<SourceKey>(() => readLS('frame:embed:signals:source', 'all') as SourceKey);
+  const { rd, wr } = useEmbedPersist();
+  const [source, setSource] = useState<SourceKey>(() => rd('frame:embed:signals:source', 'all') as SourceKey);
   const [items, setItems] = useState<AnomalyItem[] | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
 
-  useEffect(() => { writeLS('frame:embed:signals:source', source); }, [source]);
+  useEffect(() => { wr('frame:embed:signals:source', source); }, [source]);
 
   // Поллинг ленты: старт + каждые 90с + на возврат фокуса. Транзиентную ошибку
   // поллинга не показываем, если данные уже есть (оставляем последнюю ленту).

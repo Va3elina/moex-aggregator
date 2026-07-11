@@ -25,7 +25,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown, WheelHint } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 // Компактные лейблы таймфрейма для инлайн-пилюль тулбара.
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -73,33 +73,34 @@ const num = (v: number | null): number => v ?? 0;
  *  сигнале). Приоритет: проп → ?instrument= → localStorage. Дальше юзер меняет
  *  его сам, и панель живёт своей жизнью. */
 export default function EmbedOpenInterest({ initialInstrument }: { initialInstrument?: string } = {}) {
+  const { rd, wr } = useEmbedPersist();
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:oi:fmt');
   const [instrument, setInstrument] = useState<string>(() =>
-    initialInstrument || params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
+    initialInstrument || params.get('instrument') || rd('frame:embed:oi:instrument', 'SR'),
   );
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
-  const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
-  const [interval, setIntervalValue] = useState<number>(() => Number(readLS('frame:embed:oi:interval', '24')) || 24);
-  const [displayMode, setDisplayMode] = useState<DisplayMode>(() => readLS('frame:embed:oi:displayMode', 'positions') as DisplayMode);
-  const [oiVariant, setOiVariant] = useState<OIVariant>(() => readLS('frame:embed:oi:oiVariant', 'net') as OIVariant);
-  const [showPrice, setShowPrice] = useState<boolean>(() => readLS('frame:embed:oi:showPrice', 'true') === 'true');
-  const [showExpirations, setShowExpirations] = useState<boolean>(() => readLS('frame:embed:oi:showExpirations', 'false') === 'true');
+  const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
+  const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
+  const [oiVariant, setOiVariant] = useState<OIVariant>(() => rd('frame:embed:oi:oiVariant', 'net') as OIVariant);
+  const [showPrice, setShowPrice] = useState<boolean>(() => rd('frame:embed:oi:showPrice', 'true') === 'true');
+  const [showExpirations, setShowExpirations] = useState<boolean>(() => rd('frame:embed:oi:showExpirations', 'false') === 'true');
 
   const [data, setData] = useState<ChartData | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   // Persist выбор.
-  useEffect(() => { writeLS('frame:embed:oi:instrument', instrument); }, [instrument]);
-  useEffect(() => { writeLS('frame:embed:oi:clgroup', clgroup); }, [clgroup]);
-  useEffect(() => { writeLS('frame:embed:oi:interval', String(interval)); }, [interval]);
-  useEffect(() => { writeLS('frame:embed:oi:displayMode', displayMode); }, [displayMode]);
-  useEffect(() => { writeLS('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
-  useEffect(() => { writeLS('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
-  useEffect(() => { writeLS('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
+  useEffect(() => { wr('frame:embed:oi:instrument', instrument); }, [instrument]);
+  useEffect(() => { wr('frame:embed:oi:clgroup', clgroup); }, [clgroup]);
+  useEffect(() => { wr('frame:embed:oi:interval', String(interval)); }, [interval]);
+  useEffect(() => { wr('frame:embed:oi:displayMode', displayMode); }, [displayMode]);
+  useEffect(() => { wr('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
+  useEffect(() => { wr('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
+  useEffect(() => { wr('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
 
   const changeInterval = (next: number) => setIntervalValue(next);
 

@@ -31,7 +31,7 @@ import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS, readBoolLS as readLSBool } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -76,16 +76,17 @@ function fmtPct(v: number, digits: number, signed = true): string {
 
 /** `initialInstrument` — стартовый актив от песочницы (см. EmbedOpenInterest). */
 export default function EmbedSeasonality({ initialInstrument }: { initialInstrument?: string } = {}) {
+  const { rd, wr, rdBool } = useEmbedPersist();
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const [stock, setStock] = useState<string>(() => initialInstrument || params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
-  const [chartType, setChartType] = useState<ChartType>(() => readLS('frame:embed:seasonality:chartType', 'histogram') as ChartType);
-  const [mode, setMode] = useState<SeasonalityMode>(() => readLS('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
-  const [excludeDividends, setExcludeDividends] = useState<boolean>(() => readLSBool('frame:embed:seasonality:excludeDividends', false));
-  const [showNoOutliers, setShowNoOutliers] = useState<boolean>(() => readLSBool('frame:embed:seasonality:showNoOutliers', false));
-  const [showCurrentYear, setShowCurrentYear] = useState<boolean>(() => readLSBool('frame:embed:seasonality:showCurrentYear', true));
+  const [stock, setStock] = useState<string>(() => initialInstrument || params.get('instrument') || rd('frame:embed:seasonality:stock', 'SBER'));
+  const [chartType, setChartType] = useState<ChartType>(() => rd('frame:embed:seasonality:chartType', 'histogram') as ChartType);
+  const [mode, setMode] = useState<SeasonalityMode>(() => rd('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
+  const [excludeDividends, setExcludeDividends] = useState<boolean>(() => rdBool('frame:embed:seasonality:excludeDividends', false));
+  const [showNoOutliers, setShowNoOutliers] = useState<boolean>(() => rdBool('frame:embed:seasonality:showNoOutliers', false));
+  const [showCurrentYear, setShowCurrentYear] = useState<boolean>(() => rdBool('frame:embed:seasonality:showCurrentYear', true));
 
   // Данные: база + опциональная медиана, отдельно для histogram и yearly.
   const [histBase, setHistBase] = useState<SeasonalityResponse | null>(null);
@@ -97,12 +98,12 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   // Стале-гард для отбрасывания устаревших ответов при быстром переключении.
   const reqIdRef = useRef(0);
 
-  useEffect(() => { writeLS('frame:embed:seasonality:stock', stock); }, [stock]);
-  useEffect(() => { writeLS('frame:embed:seasonality:chartType', chartType); }, [chartType]);
-  useEffect(() => { writeLS('frame:embed:seasonality:mode', mode); }, [mode]);
-  useEffect(() => { writeLS('frame:embed:seasonality:excludeDividends', String(excludeDividends)); }, [excludeDividends]);
-  useEffect(() => { writeLS('frame:embed:seasonality:showNoOutliers', String(showNoOutliers)); }, [showNoOutliers]);
-  useEffect(() => { writeLS('frame:embed:seasonality:showCurrentYear', String(showCurrentYear)); }, [showCurrentYear]);
+  useEffect(() => { wr('frame:embed:seasonality:stock', stock); }, [stock]);
+  useEffect(() => { wr('frame:embed:seasonality:chartType', chartType); }, [chartType]);
+  useEffect(() => { wr('frame:embed:seasonality:mode', mode); }, [mode]);
+  useEffect(() => { wr('frame:embed:seasonality:excludeDividends', String(excludeDividends)); }, [excludeDividends]);
+  useEffect(() => { wr('frame:embed:seasonality:showNoOutliers', String(showNoOutliers)); }, [showNoOutliers]);
+  useEffect(() => { wr('frame:embed:seasonality:showCurrentYear', String(showCurrentYear)); }, [showCurrentYear]);
 
   // Инструменты без дивидендов: тоггл прячем И всегда шлём excludeDividends=false.
   const hasDividends = !NON_DIVIDEND_TICKERS.has(stock);

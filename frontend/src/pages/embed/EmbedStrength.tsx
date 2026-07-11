@@ -17,7 +17,7 @@ import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: number; breadth: number; imoex: number }[];
@@ -48,23 +48,24 @@ const toSec = (t: string): number => {
 };
 
 export default function EmbedStrength() {
+  const { rd, wr } = useEmbedPersist();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const [ema, setEma] = useState<Ema>(() => (Number(readLS('frame:embed:strength:ema', '200')) || 200) as Ema);
-  const [chartMode, setChartMode] = useState<ChartMode>(() => readLS('frame:embed:strength:chartMode', 'histogram') as ChartMode);
-  const [universeBase, setUniverseBase] = useState<UniverseBase>(() => readLS('frame:embed:strength:universeBase', 'imoex') as UniverseBase);
-  const [currency, setCurrency] = useState<Currency>(() => readLS('frame:embed:strength:currency', 'rub') as Currency);
-  const [showPrice, setShowPrice] = useState<boolean>(() => readLS('frame:embed:strength:showPrice', 'true') !== 'false');
+  const [ema, setEma] = useState<Ema>(() => (Number(rd('frame:embed:strength:ema', '200')) || 200) as Ema);
+  const [chartMode, setChartMode] = useState<ChartMode>(() => rd('frame:embed:strength:chartMode', 'histogram') as ChartMode);
+  const [universeBase, setUniverseBase] = useState<UniverseBase>(() => rd('frame:embed:strength:universeBase', 'imoex') as UniverseBase);
+  const [currency, setCurrency] = useState<Currency>(() => rd('frame:embed:strength:currency', 'rub') as Currency);
+  const [showPrice, setShowPrice] = useState<boolean>(() => rd('frame:embed:strength:showPrice', 'true') !== 'false');
 
   const [synced, setSynced] = useState<Synced>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:embed:strength:ema', String(ema)); }, [ema]);
-  useEffect(() => { writeLS('frame:embed:strength:chartMode', chartMode); }, [chartMode]);
-  useEffect(() => { writeLS('frame:embed:strength:universeBase', universeBase); }, [universeBase]);
-  useEffect(() => { writeLS('frame:embed:strength:currency', currency); }, [currency]);
-  useEffect(() => { writeLS('frame:embed:strength:showPrice', String(showPrice)); }, [showPrice]);
+  useEffect(() => { wr('frame:embed:strength:ema', String(ema)); }, [ema]);
+  useEffect(() => { wr('frame:embed:strength:chartMode', chartMode); }, [chartMode]);
+  useEffect(() => { wr('frame:embed:strength:universeBase', universeBase); }, [universeBase]);
+  useEffect(() => { wr('frame:embed:strength:currency', currency); }, [currency]);
+  useEffect(() => { wr('frame:embed:strength:showPrice', String(showPrice)); }, [showPrice]);
 
   // Итоговый universe — как на странице: добавляем _usd в долларовом режиме.
   const universe: BreadthUniverse = currency === 'usd'

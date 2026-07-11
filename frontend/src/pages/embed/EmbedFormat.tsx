@@ -10,7 +10,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { LwSeries } from '../../components/LwChart';
 import { DrawerSection, SegGroup } from './EmbedSettings';
-import { readLS, writeLS } from './embedPersist';
+import { useEmbedPersist } from './embedPersist';
 
 export type ChartKind = 'line' | 'area' | 'histogram';
 export interface ChartFormat { kind: ChartKind; color: string | null } // color null = цвет индикатора
@@ -37,11 +37,12 @@ function parse(raw: string): ChartFormat {
 
 /** Формат с персистом в localStorage по ключу индикатора. `defKind` — родной тип серии. */
 export function useChartFormat(lsKey: string, defKind: ChartKind = 'line') {
+  const { rd, wr } = useEmbedPersist();
   const [fmt, setFmt] = useState<ChartFormat>(() => {
-    const raw = readLS(lsKey, '');
+    const raw = rd(lsKey, '');
     return raw ? parse(raw) : { ...DEF, kind: defKind };
   });
-  useEffect(() => { writeLS(lsKey, JSON.stringify(fmt)); }, [lsKey, fmt]);
+  useEffect(() => { wr(lsKey, JSON.stringify(fmt)); }, [lsKey, fmt, wr]);
   return {
     fmt,
     setKind: (kind: ChartKind) => setFmt((f) => ({ ...f, kind })),
