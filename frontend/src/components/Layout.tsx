@@ -32,7 +32,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/funds-money', label: 'Деньги в фондах' },
   { path: '/strength', label: 'Сила рынка' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
-  { path: '/fund-trades', label: 'Покупки фондов' },
+  { path: '/fund-trades', label: 'Сделки фондов' },
   { path: '/seasonality', label: 'Сезонность' },
   { path: '/cbr-flows', label: 'Поток капитала' },
   { path: '/buffett', label: 'Индикатор Баффетта' },

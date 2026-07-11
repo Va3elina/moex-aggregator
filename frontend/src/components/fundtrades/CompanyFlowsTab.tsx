@@ -430,7 +430,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                             getTargetElement={() => chartAnchorRef.current}
                             filename={`frame-company-flows-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
                             metadata={{
-                                title: 'Потоки по компании',
+                                title: 'Сделки фондов',
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
                                 ticker: selectedTicker,
                                 details: [

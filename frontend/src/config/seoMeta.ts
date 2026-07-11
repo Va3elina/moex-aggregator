@@ -262,7 +262,7 @@ export const SEO_META: Record<string, SeoMeta> = {
     '/api-docs': { title: 'API Документация | FRAME', description: '', noindex: true },
     // Пока не индексируем: SEO-описание/intro не заполнены. Когда будет готова
     // копия — снять noindex и дописать description/keywords/intro как у соседей.
-    '/fund-trades': { title: 'Покупки фондов | FRAME', description: '', noindex: true },
+    '/fund-trades': { title: 'Сделки фондов | FRAME', description: '', noindex: true },
 }
 
 /**

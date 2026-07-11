@@ -125,7 +125,7 @@ function LockedView() {
                         letterSpacing: '-0.01em',
                     }}
                 >
-                    Что покупают фонды
+                    Сделки фондов
                 </h1>
                 <p
                     style={{
@@ -173,7 +173,7 @@ function LockedView() {
                         onClick={() =>
                             showUpgrade({
                                 tier: 'pro',
-                                featureName: 'Что покупают фонды',
+                                featureName: 'Сделки фондов',
                                 indicator: 'fund_trades',
                             })
                         }
@@ -448,7 +448,7 @@ export default function FundTradesPage() {
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
                 icon={Wallet}
-                title="Что покупают фонды"
+                title="Сделки фондов"
                 subtitle="Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают"
             />
 
@@ -483,9 +483,9 @@ export default function FundTradesPage() {
                 value={tab}
                 onChange={setTab}
                 items={[
-                    { key: 'funds', label: 'Состав фондов', Icon: Wallet },
+                    { key: 'funds', label: 'Витрина', Icon: Wallet },
                     { key: 'portfolio', label: 'Общий портфель', Icon: Briefcase },
-                    { key: 'company', label: 'Потоки по компании', Icon: ArrowLeftRight },
+                    { key: 'company', label: 'По бумаге', Icon: ArrowLeftRight },
                 ]}
             />
 
@@ -1771,7 +1771,7 @@ function MoversColumn({
                                 : undefined}
                             role={clickable ? 'button' : undefined}
                             tabIndex={clickable ? 0 : undefined}
-                            title={clickable ? `Потоки по компании: ${mName}` : undefined}
+                            title={clickable ? `По бумаге: ${mName}` : undefined}
                             onMouseEnter={clickable ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                             onMouseLeave={clickable ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                             style={{
