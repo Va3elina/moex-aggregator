@@ -16,6 +16,7 @@ import {
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { FormatSection, applyFormat, useChartFormat, type ChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS, readBoolLS } from './embedPersist';
 
@@ -52,6 +53,7 @@ export default function EmbedBuffett() {
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
+  const { fmt, setKind, setColor } = useChartFormat('frame:embed:buffett:fmt');
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
   );
@@ -186,24 +188,29 @@ export default function EmbedBuffett() {
     const rAxis = (v: number) => (viewMode === 'cap-gdp' ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`);
     const map = (arr: Series) => arr.map((p) => ({ time: toSec(p.time), value: p.value }));
 
+    // `format` — ⚙ «Формат» (§6) применяется к ОСНОВНОЙ части серии; прогнозный
+    // хвост остаётся пунктирной линией (dashed-гистограмм не бывает), но цвет
+    // наследует выбранный.
     const pushSplit = (
       pts: Series, id: string, scale: 'left' | 'right', color: string,
       label: string, tipFmt: (v: number) => string, axisFmt: (v: number) => string,
+      format?: ChartFormat,
     ) => {
       if (pts.length === 0) return;
+      const mk = (d: LwSeries): LwSeries => (format ? applyFormat(d, format) : d);
       if (showForecast && pts.length > FC) {
         const cut = pts.length - FC;
-        out.push({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts.slice(0, cut)), tipFmt, axisFmt });
-        out.push({ id: `${id}-fore`, type: 'line', scale, color, lineWidth: 2, dashed: true, lastValueVisible: false, label: `${label} · прогноз`, data: map(pts.slice(cut - 1)), tipFmt, axisFmt });
+        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts.slice(0, cut)), tipFmt, axisFmt }));
+        out.push({ id: `${id}-fore`, type: 'line', scale, color: format?.color ?? color, lineWidth: 2, dashed: true, lastValueVisible: false, label: `${label} · прогноз`, data: map(pts.slice(cut - 1)), tipFmt, axisFmt });
       } else {
-        out.push({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts), tipFmt, axisFmt });
+        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts), tipFmt, axisFmt }));
       }
     };
 
     if (showCap) pushSplit(projected.cap, 'cap', 'left', 'var(--accent-secondary)', 'Капитализация (трлн ₽)', capTip, capAxis);
-    pushSplit(projected.ratio, 'ratio', 'right', 'var(--accent)', ratioLabel, rTip, rAxis);
+    pushSplit(projected.ratio, 'ratio', 'right', 'var(--accent)', ratioLabel, rTip, rAxis, fmt);
     return out;
-  }, [projected, showCap, showForecast, viewMode]);
+  }, [projected, showCap, showForecast, viewMode, fmt]);
 
   return (
     <EmbedFrame
@@ -232,6 +239,7 @@ export default function EmbedBuffett() {
           <DrawerSection label="Слои">
             <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
+          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />
         </>
       }
     >
