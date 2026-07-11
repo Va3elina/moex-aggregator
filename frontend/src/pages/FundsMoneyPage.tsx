@@ -1046,7 +1046,7 @@ export default function FundsMoneyPage() {
                         onClick={() => setFundPickerOpen(false)}
                     />
                     <div
-                        className="relative w-full max-w-[40rem] rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                        className="relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
                         style={{
                             backgroundColor: 'var(--bg-secondary)',
                             border: '2px solid var(--text-primary)',
@@ -1087,11 +1087,11 @@ export default function FundsMoneyPage() {
                                 <X size={22} />
                             </button>
                         </div>
-                        {/* Правый паддинг больше левого (40 vs 16): весь право-
-                            выровненный блок (СЧА/Доходность) уходит от правой кромки
-                            виджета, чтобы «Доходность» гарантированно не упиралась в
-                            край при любом рендере шрифта. */}
-                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 40px var(--sp-4) var(--sp-4)' }}>
+                        {/* Симметричные боковые отступы (16/16): строки одинаково
+                            отстоят от левого и правого краёв виджета. «Доходность» не
+                            обрезается за счёт достаточной ширины её колонки, а не за
+                            счёт асимметричного паддинга. */}
+                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>
                             <FundsTable
                                 bare
                                 data={data}
