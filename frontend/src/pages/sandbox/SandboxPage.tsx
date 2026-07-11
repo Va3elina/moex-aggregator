@@ -34,6 +34,7 @@ import {
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { EmbedPidCtx } from '../embed/embedPersist';
+import { ChartPrefsCtx, type ChartPrefs } from '../../components/LwChart';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
@@ -132,9 +133,16 @@ function renderIndicator(type: IndKind, cfg: PanelCfg | undefined, onSignal: (dl
 type SbTheme = 'dark' | 'light';
 interface Sheet { id: string; name: string }
 interface Panel { id: string; type: IndKind; x: number; y: number; w: number; h: number; z: number; themeOverride: SbTheme | null; cfg?: PanelCfg }
-/** Общие настройки песочницы (§9, раздел «Раскладка»). Персистятся вместе с раскладкой. */
-interface SbPrefs { snap: boolean; snapTh: number; grid: 'dots' | 'lines' | 'clean'; arrangeCols: 0 | 2 | 3 | 4 }
-const DEF_PREFS: SbPrefs = { snap: true, snapTh: 18, grid: 'dots', arrangeCols: 0 };
+/** Общие настройки песочницы (§9). Персистятся вместе с раскладкой. */
+interface SbPrefs {
+  snap: boolean; snapTh: number; grid: 'dots' | 'lines' | 'clean'; arrangeCols: 0 | 2 | 3 | 4;
+  // Дефолты графиков (прокидываются во ВСЕ панели через ChartPrefsCtx):
+  lineW: 1 | 2 | 3; crosshair: boolean; chartGrid: boolean; lastValue: boolean;
+}
+const DEF_PREFS: SbPrefs = {
+  snap: true, snapTh: 18, grid: 'dots', arrangeCols: 0,
+  lineW: 2, crosshair: true, chartGrid: true, lastValue: true,
+};
 
 interface Persisted { sbTheme: SbTheme; sheets: Sheet[]; activeSheet: string; bySheet: Record<string, Panel[]>; prefs?: SbPrefs }
 interface Guide { axis: 'v' | 'h'; pos: number }
@@ -217,6 +225,10 @@ export default function SandboxPage() {
     setSt((s) => ({ ...s, prefs: { ...DEF_PREFS, ...(s.prefs ?? {}), ...patch } }));
   }, []);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  // Дефолты графиков → во все панели (мемо, чтобы не пересоздавать чарты каждый рендер).
+  const chartPrefsValue = useMemo<ChartPrefs>(() => ({
+    lineWidth: prefs.lineW, crosshair: prefs.crosshair, grid: prefs.chartGrid, lastValue: prefs.lastValue,
+  }), [prefs.lineW, prefs.crosshair, prefs.chartGrid, prefs.lastValue]);
 
   // init zTop из загруженной раскладки
   useEffect(() => {
@@ -460,6 +472,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
   }, []);
 
   return (
+    <ChartPrefsCtx.Provider value={chartPrefsValue}>
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
       {/* ── Топбар 56px (§3.1) ── */}
       <div style={topbarStyle}>
@@ -686,6 +699,22 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
                   onChange={(v) => setPrefs({ arrangeCols: Number(v) as SbPrefs['arrangeCols'] })}
                 />
               </div>
+              <div>
+                <div className="sb-uc" style={{ marginBottom: 8 }}>Толщина линий</div>
+                <PrefPills
+                  value={String(prefs.lineW)}
+                  options={[{ id: '1', label: 'Тонкие' }, { id: '2', label: 'Обычные' }, { id: '3', label: 'Толстые' }]}
+                  onChange={(v) => setPrefs({ lineW: Number(v) as SbPrefs['lineW'] })}
+                />
+              </div>
+              <div>
+                <div className="sb-uc" style={{ marginBottom: 8 }}>Графики</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <PrefToggle label="Кроссхэйр" checked={prefs.crosshair} onChange={(v) => setPrefs({ crosshair: v })} />
+                  <PrefToggle label="Сетка графика" checked={prefs.chartGrid} onChange={(v) => setPrefs({ chartGrid: v })} />
+                  <PrefToggle label="Последнее значение на оси" checked={prefs.lastValue} onChange={(v) => setPrefs({ lastValue: v })} />
+                </div>
+              </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                 Настройки применяются сразу и запоминаются. Формат и цвет конкретного графика — в ⚙ на самой панели.
               </div>
@@ -714,6 +743,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
 
       <div style={footNote}>песочница · приватный превью</div>
     </div>
+    </ChartPrefsCtx.Provider>
   );
 }
 
@@ -735,6 +765,25 @@ function MenuItem({ ind, onPick }: { ind: IndicatorDef; onPick: (t: IndKind) => 
       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text)' }}>{ind.label}</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>{ind.desc}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Тоггл-переключатель для шторки настроек (§9). */
+function PrefToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'flex', alignItems: 'center', width: '100%', padding: '7px 10px', borderRadius: 8,
+        border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, cursor: 'pointer',
+      }}
+    >
+      <span style={{ textAlign: 'left' }}>{label}</span>
+      <span style={{ marginLeft: 'auto', width: 34, height: 18, borderRadius: 9, background: checked ? 'var(--accent)' : 'var(--border-strong)', position: 'relative', flexShrink: 0, transition: 'background .12s' }}>
+        <span style={{ position: 'absolute', top: 2, left: checked ? 18 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left .12s' }} />
       </span>
     </button>
   );
