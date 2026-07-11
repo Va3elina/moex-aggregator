@@ -13,12 +13,12 @@
  * потребитель — Сила рынка, а боевой одиночный LwChart (ОИ/Баффетт/Фонды/
  * Сезонность) не трогаем вообще. Общие типы (LwSeries) импортируются оттуда.
  */
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
 } from 'lightweight-charts';
-import { hideTvLogo, monthsYearsTickFmt, type LwSeries } from './LwChart';
+import { ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries } from './LwChart';
 
 export interface LwPane {
   series: LwSeries[];
@@ -73,6 +73,7 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
   const lastFitRef = useRef<string | undefined>(undefined);
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
   const paneCount = panes.length;
+  const chartPrefs = useContext(ChartPrefsCtx);
 
   // ── создание N чартов + связка (пересоздаётся при смене числа панелей) ──
   useEffect(() => {
@@ -227,20 +228,24 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paneCount]);
 
-  // ── тема ──
+  // ── тема + дефолты §9 (сетка/кроссхэйр) ──
   useEffect(() => {
     const c = themeColors(dark);
+    const gridCol = chartPrefs?.grid === false ? 'rgba(0,0,0,0)' : c.grid;
     chartsRef.current.forEach((chart) => {
       chart.applyOptions({
         layout: { textColor: c.text },
-        grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-        crosshair: {
-          vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-          horzLine: { color: c.cross, labelBackgroundColor: c.lab },
-        },
+        grid: { vertLines: { color: gridCol }, horzLines: { color: gridCol } },
+        crosshair: chartPrefs?.crosshair === false
+          ? { mode: CrosshairMode.Hidden }
+          : {
+              mode: CrosshairMode.Normal,
+              vertLine: { color: c.cross, labelBackgroundColor: c.lab },
+              horzLine: { color: c.cross, labelBackgroundColor: c.lab },
+            },
       });
     });
-  }, [dark]);
+  }, [dark, chartPrefs]);
 
   // ── серии всех панелей ──
   useEffect(() => {
@@ -264,16 +269,18 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
         const priceFormat = def.axisFmt
           ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
           : undefined;
-        const lw = (def.lineWidth ?? 2) as 1 | 2 | 3 | 4;
+        const lw = ((chartPrefs?.lineWidth ?? def.lineWidth ?? 2)) as 1 | 2 | 3 | 4;
+        const lastLine = chartPrefs?.lastValue ?? def.lastValueVisible ?? true;
+        const lastHist = chartPrefs?.lastValue ?? def.lastValueVisible ?? false;
         const col = rc(def.color);
         const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
         let s: AnySeries;
         if (def.type === 'line') {
-          s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+          s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else if (def.type === 'area') {
-          s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+          s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else {
-          s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? false, priceFormat });
+          s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
         }
         try {
           s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
@@ -318,7 +325,7 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
     } else if (savedRange) {
       lead.timeScale().setVisibleLogicalRange(savedRange);
     }
-  }, [panes, fitKey, initialBars, paneCount]);
+  }, [panes, fitKey, initialBars, paneCount, chartPrefs]);
 
   return (
     <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
