@@ -374,7 +374,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         const pr = parts ? parts.valpill.getBoundingClientRect() : null;
         const chipL = chip.getBoundingClientRect().left - boxL;
         if (side === 'right') {
-          const target = box.clientWidth - axisW;          // левая кромка пилса = граница поля
+          // §R2-29: граница поля — от ШИРИН ЧАРТА (лев.ось + поле), НЕ от box.clientWidth:
+          // TV округляет ширину таблицы вниз при дробной ширине контейнера, и box бывает
+          // на 1-2px шире таблицы — пилс вставал дальше от графика, чем нативный.
+          const target = (ch.priceScale('left').width() || 0) + (ch.timeScale().width() || (box.clientWidth - axisW));
           chip.style.left = (pr ? chipL + (target - (pr.left - boxL)) : target - 18) + 'px';
         } else {
           const target = axisW;                            // правая кромка пилса = граница поля
