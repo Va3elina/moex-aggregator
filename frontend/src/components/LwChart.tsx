@@ -42,6 +42,11 @@ export interface LwSeries {
 
 export interface LwMarker { time: number; text?: string; color?: string; position?: 'aboveBar' | 'belowBar' | 'inBar' }
 
+/** §OI-4: метка экспирации (смена контракта) — кружок у оси дат с hover-тултипом,
+ *  как на сайте (SimpleChart annotations). label — короткий код нового контракта
+ *  (2 символа в кружке), description — полный текст тултипа (напр. «SiM6 → SiU6»). */
+export interface LwExpiration { time: number; label: string; description: string }
+
 interface LwChartProps {
   series: LwSeries[];
   height: number;
@@ -59,11 +64,18 @@ interface LwChartProps {
   legendItems?: { label: string; color: string }[];
   /** Не строить легенду (когда рисуем свою статичную поверх — Сезонность-Календарь). */
   hideLegend?: boolean;
-  /** Метки экспираций (§5.6): серые кружки ОТДЕЛЬНЫМ DOM-слоем у оси дат, а не
-   *  нативные маркеры на линии. Перерисовываются на зум/пан/ресайз. */
-  expTimes?: number[];
+  /** Метки экспираций (§OI-4): кружок с кодом контракта у оси дат + hover-тултип
+   *  (from→to) + пунктирная вертикаль — как на сайте (SimpleChart annotations).
+   *  Отдельный DOM-слой; перерисовываются на зум/пан/ресайз. */
+  expirations?: LwExpiration[];
   /** Ценовые уровни-линии (§5.6 алерты): пунктир на первой серии указанной оси. */
   priceLines?: { price: number; color?: string; scale?: 'left' | 'right'; title?: string }[];
+  /** §OI-3: клик по «+» у ценовой оси → создать алерт на уровне под курсором (как в
+   *  TradingView / на сайте). axis — какая ось (left=цена, right=показатель ОИ);
+   *  price — уровень под курсором; currentValue — последнее значение серии этой оси. */
+  onCreateAlert?: (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => void;
+  /** На каких осях показывать кликабельный «+» (рисуется только если серия оси видна). */
+  alertAxes?: ('left' | 'right')[];
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -132,7 +144,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expTimes, priceLines }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
@@ -142,8 +154,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
   const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
-  const expTimesRef = useRef(expTimes); expTimesRef.current = expTimes;
+  const expRef = useRef(expirations); expRef.current = expirations;
   const drawExpRef = useRef<(() => void) | null>(null);
+  // §OI-3 axis-алерты: пропы через ref (смена не пересоздаёт чарт); axisInfoRef —
+  // первая серия каждой оси + её форматтер + последнее значение (заполняется в
+  // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
+  const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
+  const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
+  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number } }>({});
+  const layoutAlertRef = useRef<(() => void) | null>(null);
   const chartPrefs = useContext(ChartPrefsCtx);
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
@@ -198,39 +217,165 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     box.appendChild(legend);
     legendRef.current = legend;
 
-    // Слой экспираций (§5.6): серые кружки над осью дат. Позиция — timeToCoordinate,
-    // перерисовка на зум/пан (subscribeVisibleLogicalRangeChange) и ресайз.
-    // Цвет — CSS-var (DOM, не canvas) → сам следует за темой панели.
+    // ── Слой экспираций (§OI-4): кружок с кодом контракта у оси дат + hover-тултип
+    // (from→to) + общая пунктирная вертикаль — как на сайте (SimpleChart annotations).
+    // Позиции — timeToCoordinate; перерисовка на зум/пан/ресайз. Цвета — CSS-var (DOM,
+    // не canvas) → следуют за темой панели.
     const expLayer = document.createElement('div');
     expLayer.style.cssText = 'position:absolute;left:0;right:0;height:0;pointer-events:none;z-index:4';
     box.appendChild(expLayer);
+    const expGuide = document.createElement('div');
+    expGuide.style.cssText = 'position:absolute;top:0;width:0;display:none;pointer-events:none;z-index:3;border-left:1px dashed var(--text-secondary,#9A958C);opacity:0.45';
+    box.appendChild(expGuide);
+    const plotHeight = () => {
+      const ch = chartRef.current;
+      const axisH = ch ? (ch.timeScale().height() || 26) : 26;
+      return Math.max(0, box.clientHeight - axisH);
+    };
     const drawExp = () => {
       const ch = chartRef.current;
       if (!ch) return;
       while (expLayer.firstChild) expLayer.removeChild(expLayer.firstChild);
-      const times = expTimesRef.current;
-      if (!times || times.length === 0) return;
+      expGuide.style.display = 'none';
+      const exps = expRef.current;
+      if (!exps || exps.length === 0) return;
       const ts = ch.timeScale();
       const axisH = ts.height() || 26;
-      expLayer.style.bottom = axisH + 3 + 'px';
-      for (const t of times) {
-        const x = ts.timeToCoordinate(t as UTCTimestamp);
+      expLayer.style.bottom = axisH + 'px';
+      for (const ex of exps) {
+        const x = ts.timeToCoordinate(ex.time as UTCTimestamp);
         if (x == null) continue;
-        const dot = document.createElement('span');
-        dot.style.cssText = 'position:absolute;top:0;width:7px;height:7px;border-radius:50%;'
-          + 'transform:translate(-50%,-50%);opacity:0.8;background:var(--text-secondary,#9A958C);left:' + x + 'px';
-        expLayer.appendChild(dot);
+        const circle = document.createElement('div');
+        circle.style.cssText = [
+          'position:absolute', 'bottom:2px', 'left:' + x + 'px', 'transform:translateX(-50%)',
+          'width:17px', 'height:17px', 'border-radius:50%', 'display:flex', 'align-items:center',
+          'justify-content:center', 'font-size:8.5px', 'font-weight:700', 'cursor:default',
+          'pointer-events:auto', 'opacity:0.5', 'transition:opacity 0.12s', 'box-sizing:border-box',
+          'background:var(--bg-secondary,#26262B)', 'color:var(--text-secondary,#9A958C)',
+          'border:1px solid var(--border-color,rgba(245,241,232,0.18))',
+        ].join(';');
+        circle.textContent = (ex.label || '').slice(0, 2);
+        const tipEl = document.createElement('div');
+        tipEl.style.cssText = [
+          'position:absolute', 'bottom:calc(100% + 6px)', 'left:50%', 'transform:translateX(-50%)',
+          'display:none', 'white-space:nowrap', 'pointer-events:none', 'z-index:8',
+          'background:var(--bg-secondary,#17161A)', 'color:var(--text-primary,#F5F1E8)',
+          'border:1px solid var(--border-color,rgba(245,241,232,0.18))', 'border-radius:7px',
+          'padding:4px 8px', 'font-size:10.5px', 'font-weight:600', 'box-shadow:0 8px 22px rgba(0,0,0,0.45)',
+        ].join(';');
+        tipEl.textContent = ex.description || '';
+        circle.appendChild(tipEl);
+        circle.addEventListener('mouseenter', () => {
+          circle.style.opacity = '1';
+          tipEl.style.display = 'block';
+          expGuide.style.left = x + 'px';
+          expGuide.style.height = plotHeight() + 'px';
+          expGuide.style.display = 'block';
+        });
+        circle.addEventListener('mouseleave', () => {
+          circle.style.opacity = '0.5';
+          tipEl.style.display = 'none';
+          expGuide.style.display = 'none';
+        });
+        expLayer.appendChild(circle);
       }
     };
     drawExpRef.current = drawExp;
-    const onRange = () => drawExp();
+
+    // ── §OI-3 axis-алерты (как на сайте / TradingView): наведение над графиком/жёлобом
+    // ценовой оси → пунктирный уровень + чип «＋ <значение>» в жёлобе каждой активной
+    // оси; клик по чипу → onCreateAlert(level). Чипы живут пока курсор в пределах box
+    // (жёлоб-полосы держат их при переходе к клику); price = coordinateToPrice первой
+    // серии оси. Гейт — onCreateAlert + alertAxes; иначе слой невидим и инертен.
+    const alertHGuide = document.createElement('div');
+    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dashed var(--accent,#FF5C2B)';
+    box.appendChild(alertHGuide);
+    const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
+    const hideChips = () => {
+      if (alertChips.left) alertChips.left.style.display = 'none';
+      if (alertChips.right) alertChips.right.style.display = 'none';
+      alertHGuide.style.display = 'none';
+      alertPending.left = undefined; alertPending.right = undefined;
+    };
+    const showChipsAt = (rawY: number) => {
+      const ch = chartRef.current;
+      const axes = alertAxesRef.current;
+      if (!ch || !onCreateAlertRef.current || !axes || axes.length === 0) { hideChips(); return; }
+      const axisH = ch.timeScale().height() || 26;
+      const y = Math.max(0, Math.min(box.clientHeight - axisH, rawY));
+      let any = false;
+      for (const side of ['left', 'right'] as const) {
+        const chip = alertChips[side];
+        const info = axisInfoRef.current[side];
+        if (!chip || !axes.includes(side) || !info) { if (chip) chip.style.display = 'none'; alertPending[side] = undefined; continue; }
+        const price = info.api.coordinateToPrice(y as number);
+        if (price == null) { chip.style.display = 'none'; alertPending[side] = undefined; continue; }
+        chip.style.top = y + 'px';
+        chip.style.display = 'inline-flex';
+        chip.textContent = '＋ ' + (info.fmt ? info.fmt(price as number) : String(Math.round(price as number)));
+        alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
+        any = true;
+      }
+      if (any) { alertHGuide.style.top = y + 'px'; alertHGuide.style.display = 'block'; }
+      else alertHGuide.style.display = 'none';
+    };
+    for (const side of ['left', 'right'] as const) {
+      const strip = document.createElement('div');
+      strip.style.cssText = 'position:absolute;top:0;display:none;pointer-events:auto;z-index:6;cursor:crosshair;' + side + ':0';
+      strip.addEventListener('mousemove', (e) => showChipsAt(e.clientY - box.getBoundingClientRect().top));
+      box.appendChild(strip);
+      alertStrips[side] = strip;
+      const chip = document.createElement('div');
+      chip.style.cssText = [
+        'position:absolute', (side === 'left' ? 'left:2px' : 'right:2px'), 'transform:translateY(-50%)',
+        'display:none', 'align-items:center', 'pointer-events:auto', 'cursor:pointer', 'z-index:7',
+        'padding:2px 6px', 'border-radius:5px', 'font-size:10px', 'font-weight:700', 'white-space:nowrap',
+        'font-family:"JetBrains Mono",ui-monospace,monospace', 'color:#fff',
+        'background:var(--accent,#FF5C2B)', 'box-shadow:0 2px 8px rgba(0,0,0,0.35)',
+      ].join(';');
+      chip.title = 'Поставить алерт на этом уровне';
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const p = alertPending[side];
+        if (p && onCreateAlertRef.current) onCreateAlertRef.current(p);
+      });
+      box.appendChild(chip);
+      alertChips[side] = chip;
+    }
+    box.addEventListener('mouseleave', hideChips);
+    const layoutAlert = () => {
+      const ch = chartRef.current;
+      if (!ch) return;
+      const axisH = ch.timeScale().height() || 26;
+      const h = Math.max(0, box.clientHeight - axisH);
+      const axes = alertAxesRef.current;
+      for (const side of ['left', 'right'] as const) {
+        const strip = alertStrips[side];
+        if (!strip) continue;
+        const info = axisInfoRef.current[side];
+        const on = !!(onCreateAlertRef.current && axes && axes.includes(side) && info);
+        if (!on) { strip.style.display = 'none'; const c = alertChips[side]; if (c) c.style.display = 'none'; continue; }
+        const w = ch.priceScale(side).width() || 54;
+        strip.style.display = 'block';
+        strip.style.width = Math.max(28, w) + 'px';
+        strip.style.height = h + 'px';
+      }
+    };
+    layoutAlertRef.current = layoutAlert;
+
+    const onRange = () => { drawExp(); layoutAlert(); };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-    const expRo = new ResizeObserver(() => drawExp());
+    const expRo = new ResizeObserver(() => { drawExp(); layoutAlert(); });
     expRo.observe(box);
 
     chart.subscribeCrosshairMove((param) => {
       const defs = defsRef.current;
       const apis = seriesApiRef.current;
+      // §OI-3: чипы «+» алертов следуют за курсором над графиком (когда есть point).
+      // При уходе в жёлоб оси point=null → чипы держатся полосами (strip), не гасим тут.
+      if (param.point) showChipsAt(param.point.y);
       if (!param.time || !param.point || apis.length === 0) { tip.style.display = 'none'; return; }
       while (tip.firstChild) tip.removeChild(tip.firstChild);
       let any = false;
@@ -280,15 +425,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
 
     return () => {
       box.removeEventListener('wheel', onWheel, true);
+      box.removeEventListener('mouseleave', hideChips);
       expRo.disconnect();
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* уже снят */ }
       drawExpRef.current = null;
+      layoutAlertRef.current = null;
       chart.remove();
       chartRef.current = null;
       seriesApiRef.current = [];
-      if (tip.parentNode) tip.parentNode.removeChild(tip);
-      if (legend.parentNode) legend.parentNode.removeChild(legend);
-      if (expLayer.parentNode) expLayer.parentNode.removeChild(expLayer);
+      axisInfoRef.current = {};
+      for (const el of [tip, legend, expLayer, expGuide, alertHGuide, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -414,8 +562,23 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chart.timeScale().setVisibleLogicalRange(savedRange);
     }
 
-    drawExpRef.current?.(); // метки экспираций — после заливки данных и установки окна
-  }, [series, markers, fitKey, expTimes, chartPrefs, priceLines]);
+    // §OI-3: первая серия каждой оси + её форматтер + последнее значение — источник
+    // цены/пилюли для «+» алертов. Пересобираем вместе с сериями.
+    axisInfoRef.current = {};
+    for (let i = 0; i < series.length; i++) {
+      const sc = series[i].scale ?? 'right';
+      if (!axisInfoRef.current[sc]) {
+        const d = series[i];
+        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined };
+      }
+    }
+    layoutAlertRef.current?.();     // показать/скрыть полосы алертов под текущий набор осей
+    drawExpRef.current?.();         // метки экспираций — после заливки данных и установки окна
+  }, [series, markers, fitKey, expirations, chartPrefs, priceLines]);
+
+  // §OI-3: смена alertAxes (напр. вариант «both» выключает уровневые алерты) —
+  // пере-раскладываем полосы, не пересобирая серии.
+  useEffect(() => { layoutAlertRef.current?.(); }, [alertAxes]);
 
   return <div ref={boxRef} style={{ position: 'relative', width: '100%', height }} />;
 }
