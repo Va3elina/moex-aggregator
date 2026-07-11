@@ -417,8 +417,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     const out: LwSeries[] = [];
     // §OI-5: каждая линия окна — со своим форматом (тип/цвет) из sf.get(id).
     if (showPrice && chartData.length > 0) {
+      // §R2-15: шаг цены под магнитуду инструмента (зеркалит formatPrice). Дефолт
+      // minMove=1 ломал ось у валютных фьючерсов (ED ~1.14: нет целых тиков в
+      // диапазоне → левая ось пустая). ≥100 → 1, ≥10 → 0.01, иначе 0.0001.
+      const lastPx = Math.abs(chartData[chartData.length - 1].value);
+      const pxMinMove = lastPx >= 100 ? 1 : lastPx >= 10 ? 0.01 : 0.0001;
       out.push(applyFormat({
-        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName,
+        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove,
         data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
       }, sf.get('price')));
