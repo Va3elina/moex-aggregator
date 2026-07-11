@@ -359,7 +359,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       // последнего значения, тот же вид/цвет линии), а кружок с «+» — со стороны ГРАФИКА
       // (внутрь поля), «выступает на график». Цвета проставляются в showChipsAt.
       const chip = document.createElement('div');
-      chip.style.cssText = 'position:absolute;' + (side === 'left' ? 'left:2px' : 'right:2px')
+      chip.style.cssText = 'position:absolute;' + (side === 'left' ? 'left:0' : 'right:0')
         + ';transform:translateY(-50%);display:none;align-items:center;gap:3px;pointer-events:auto;cursor:pointer;z-index:7;white-space:nowrap';
       const circle = document.createElement('div');
       circle.style.cssText = 'width:15px;height:15px;border-radius:50%;display:flex;align-items:center;'
@@ -367,8 +367,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         + 'box-shadow:0 1px 4px rgba(0,0,0,0.35)';
       circle.textContent = '+';
       const valpill = document.createElement('div');
-      valpill.style.cssText = 'padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#fff;'
-        + 'font-variant-numeric:tabular-nums;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      // §R2-15: форма как у нативного пилса последнего значения TradingView —
+      // радиус ~2, компактный паддинг, обычный вес, без тени; выравнивание по оси.
+      valpill.style.cssText = 'padding:2px 4px;border-radius:2px;font-size:11px;font-weight:400;color:#fff;'
+        + 'font-variant-numeric:tabular-nums;line-height:1';
       // Порядок: значение-пилс заподлицо у оси, кружок «+» — со стороны графика.
       // Левая ось: [пилс][+] (плюс вправо, в поле). Правая: [+][пилс] (плюс влево, в поле).
       if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
