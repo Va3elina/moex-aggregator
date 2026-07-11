@@ -15,6 +15,7 @@ import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time,
 } from 'lightweight-charts';
+import ChartWatermark from './ChartWatermark';
 
 export interface LwPoint { time: number; value: number; color?: string }
 
@@ -76,6 +77,12 @@ interface LwChartProps {
   onCreateAlert?: (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => void;
   /** На каких осях показывать кликабельный «+» (рисуется только если серия оси видна). */
   alertAxes?: ('left' | 'right')[];
+  /** §OI-6: водяной знак «Фрейм» в левом-нижнем углу графика (как на сайте). По
+   *  умолчанию включён; передайте false чтобы скрыть. */
+  watermark?: boolean;
+  /** §OI-6: анимация появления серий (рост из плоской линии, easeOutCubic) при
+   *  первой отрисовке и смене fitKey. Не задан → без анимации (как раньше). */
+  animate?: boolean;
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -144,7 +151,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
@@ -163,6 +170,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
+  const animRafRef = useRef<number | null>(null);   // §OI-6 entrance-анимация
   const chartPrefs = useContext(ChartPrefsCtx);
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
@@ -426,6 +434,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     return () => {
       box.removeEventListener('wheel', onWheel, true);
       box.removeEventListener('mouseleave', hideChips);
+      if (animRafRef.current != null) cancelAnimationFrame(animRafRef.current);
       expRo.disconnect();
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* уже снят */ }
       drawExpRef.current = null;
@@ -477,6 +486,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const box = boxRef.current;
     const rc = (col: string | undefined): string => (box ? resolveColor(box, col) : (col ?? '#888888'));
 
+    // §OI-6: захватываем финальные (resolved) данные серий для entrance-анимации.
+    const built: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; real: { time: UTCTimestamp; value: number; color?: string }[] }[] = [];
+
     for (const def of series) {
       const scaleId = def.scale ?? 'right';
       const priceFormat = def.axisFmt
@@ -495,11 +507,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       } else {
         s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
       }
+      const mapped = def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) }));
       try {
-        s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+        s.setData(mapped);
       } catch (err) {
         console.error('LwChart setData failed:', def.id, err);
       }
+      built.push({ api: s, real: mapped });
       if (def.zeroLine) {
         s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
       }
@@ -550,7 +564,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       seriesApiRef.current[0].setMarkers(ms);
     }
 
-    if (fitKey !== lastFitRef.current) {
+    const fitChanged = fitKey !== lastFitRef.current;
+    if (fitChanged) {
       lastFitRef.current = fitKey;
       const total = Math.max(0, ...series.map((s) => s.data.length));
       if (initialBars && total > initialBars) {
@@ -560,6 +575,31 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       }
     } else if (savedRange) {
       chart.timeScale().setVisibleLogicalRange(savedRange);
+    }
+
+    // §OI-6: анимация появления — серии вырастают из плоской линии (среднего) к
+    // реальным значениям за ~480мс (easeOutCubic), как на сайте. Только при первой
+    // отрисовке и смене fitKey (инструмент/ТФ), чтобы не мигать на каждом тумблере.
+    if (animate && fitChanged) {
+      if (animRafRef.current != null) cancelAnimationFrame(animRafRef.current);
+      const items = built.filter((b) => b.real.length > 2);
+      if (items.length) {
+        const bases = items.map((b) => b.real.reduce((acc, p) => acc + p.value, 0) / b.real.length);
+        const dur = 480;
+        let t0 = 0;
+        const step = (ts: number) => {
+          if (!t0) t0 = ts;
+          const t = Math.min(1, (ts - t0) / dur);
+          const e = 1 - Math.pow(1 - t, 3);
+          for (let i = 0; i < items.length; i++) {
+            const b = items[i]; const base = bases[i];
+            try { b.api.setData(b.real.map((p) => ({ ...p, value: base + (p.value - base) * e }))); } catch { /* серия снята */ }
+          }
+          if (t < 1) { animRafRef.current = requestAnimationFrame(step); }
+          else { for (const b of items) { try { b.api.setData(b.real); } catch { /* снята */ } } animRafRef.current = null; }
+        };
+        animRafRef.current = requestAnimationFrame(step);
+      }
     }
 
     // §OI-3: первая серия каждой оси + её форматтер + последнее значение — источник
@@ -574,11 +614,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     }
     layoutAlertRef.current?.();     // показать/скрыть полосы алертов под текущий набор осей
     drawExpRef.current?.();         // метки экспираций — после заливки данных и установки окна
-  }, [series, markers, fitKey, expirations, chartPrefs, priceLines]);
+  }, [series, markers, fitKey, expirations, chartPrefs, priceLines, animate]);
 
   // §OI-3: смена alertAxes (напр. вариант «both» выключает уровневые алерты) —
   // пере-раскладываем полосы, не пересобирая серии.
   useEffect(() => { layoutAlertRef.current?.(); }, [alertAxes]);
 
-  return <div ref={boxRef} style={{ position: 'relative', width: '100%', height }} />;
+  return (
+    <div style={{ position: 'relative', width: '100%', height }}>
+      <div ref={boxRef} style={{ position: 'absolute', inset: 0 }} />
+      {watermark !== false && (
+        <ChartWatermark bottom={30} left={62} size={26} minSize={16} opacity={0.4} />
+      )}
+    </div>
+  );
 }

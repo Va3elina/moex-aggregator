@@ -24,7 +24,7 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
+import { FormatSection, applyFormat, useSeriesFormats } from './EmbedFormat';
 import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
@@ -126,7 +126,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const { fmt, setKind, setColor } = useChartFormat('frame:embed:oi:fmt');
+  const sf = useSeriesFormats('frame:embed:oi:fmts');   // §OI-5: формат на каждую линию
   const [instrument, setInstrument] = useState<string>(() =>
     initialInstrument || params.get('instrument') || rd('frame:embed:oi:instrument', 'SR'),
   );
@@ -415,40 +415,39 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const lwSeries = useMemo<LwSeries[]>(() => {
     const intraday = interval !== 24;
     const out: LwSeries[] = [];
+    // §OI-5: каждая линия окна — со своим форматом (тип/цвет) из sf.get(id).
     if (showPrice && chartData.length > 0) {
-      out.push({
+      out.push(applyFormat({
         id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName,
         data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
-      });
+      }, sf.get('price')));
     }
     if (oiSeries.secondary && oiSeries.secondary.length > 0) {
       if (oiVariant === 'both') {
-        out.push({
+        out.push(applyFormat({
           id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-        });
+        }, sf.get('oi-long')));
         if (oiSeries.third) {
-          out.push({
+          out.push(applyFormat({
             id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
             data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
             tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-          });
+          }, sf.get('oi-short')));
         }
       } else {
-        // Дефолт — линия (Вадим: «должны быть просто две линии»); ⚙ «Формат»
-        // может переключить в область/столбцы и перекрасить (applyFormat).
         out.push(applyFormat({
           id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-        }, fmt));
+        }, sf.get('oi')));
       }
     }
     return out;
-  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, fmt]);
+  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get]);
 
   return (
     <EmbedFrame
@@ -477,7 +476,18 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               <ToggleRow label="Экспирации" checked={showExpirations} onChange={setShowExpirations} hint="Метки смены контракта" />
             </div>
           </DrawerSection>
-          {oiVariant !== 'both' && <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />}
+          {/* §OI-5: формат каждой линии окна отдельно (тип: линия/область/столбцы + цвет). */}
+          {showPrice && (
+            <FormatSection label="Цена" fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} />
+          )}
+          {oiVariant === 'both' ? (
+            <>
+              <FormatSection label={labels.secondary} fmt={sf.get('oi-long')} onKind={(k) => sf.setKind('oi-long', k)} onColor={(c) => sf.setColor('oi-long', c)} />
+              <FormatSection label={labels.third} fmt={sf.get('oi-short')} onKind={(k) => sf.setKind('oi-short', k)} onColor={(c) => sf.setColor('oi-short', c)} />
+            </>
+          ) : (
+            <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} />
+          )}
           <WheelHint>
             <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми
             оранжевый <b>＋</b> на нужном уровне — как на сайте.<br />
@@ -500,6 +510,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             priceLines={alertLines}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
+            animate
           />
         )}
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
