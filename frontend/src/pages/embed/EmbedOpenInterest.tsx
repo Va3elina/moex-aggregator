@@ -14,7 +14,7 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -83,9 +83,16 @@ const OI_COLORS = {
 
 const num = (v: number | null): number => v ?? 0;
 
-// Метрики алерта ОИ для CreateAlertModal (ходовой набор: цена + резкое движение
-// позиции физ/юр). Цена — первой (дефолт при открытии). Полный набор (уровень ОИ,
-// экстремумы) живёт на странице OpenInterestPage; в панели — самые частые.
+// Подпись «ноги» величины ОИ (что на правой оси в текущем режиме) — для метрики
+// уровня ОИ в алерте по «+» на правой оси. Зеркалит OpenInterestPage.OI_LEG_LABEL.
+const OI_LEG_LABEL: Record<'net' | 'long' | 'short' | 'oi' | 'npart', string> = {
+  net: 'чистая позиция', long: 'длинные позиции', short: 'короткие позиции',
+  oi: 'открытый интерес', npart: 'число участников',
+};
+
+// Метрики алерта ОИ для CreateAlertModal: цена + УРОВЕНЬ ОИ (нога+группа, как на
+// графике) + резкое движение физ/юр. oi_level вставляется динамически (oiAlertMetrics
+// в компоненте) — отражает текущий вид правой оси, как «+» на сайте.
 const OI_ALERT_METRICS: AlertMetricOption[] = [
   {
     key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
@@ -134,18 +141,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [data, setData] = useState<ChartData | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  // Алерты §5.6: мои алерты по этому активу (ценовые → пунктир на графике) +
-  // модалка постановки. Перезагружаем на смену актива И на закрытие модалки
-  // (alertOpen→false после создания подтягивает новый уровень).
+  // Алерты §OI-3 (как на сайте): «+» на осях графика → модалка с префиллом уровня.
+  // Мои активные алерты этого актива → пунктир на графике (цена слева, ОИ справа).
+  // Перезагружаем на смену актива и на закрытие модалки (создали → подтянуть уровень).
   const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
-  const [alertOpen, setAlertOpen] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    listAlerts({ limit: 200 })
-      .then((r) => { if (alive) setMyAlerts(r.items); })
-      .catch(() => { /* алерты не критичны для графика */ });
-    return () => { alive = false; };
-  }, [instrument, alertOpen]);
+  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number; currentLabel?: string } | null>(null);
+  const reloadAlerts = useCallback(() => {
+    listAlerts({ limit: 200 }).then((r) => setMyAlerts(r.items)).catch(() => { /* не критично для графика */ });
+  }, []);
+  useEffect(() => { reloadAlerts(); }, [instrument, reloadAlerts]);
 
   // Persist выбор.
   useEffect(() => { wr('frame:embed:oi:instrument', instrument); }, [instrument]);
@@ -327,21 +331,81 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     ];
   }, [displayMode]);
 
-  // Метки экспираций (смена контракта) — DOM-слой у оси дат (§5.6 макета), а не
-  // маркеры на линии: серые кружки не заслоняют серию и не прыгают по цене.
-  const expTimes = useMemo<number[]>(() => {
-    if (!showExpirations) return [];
+  // §OI-4: метки экспираций (смена контракта) — кружок с кодом контракта у оси дат
+  // + hover-тултип (from→to), как на сайте. Данные из contract_switches.
+  const expirations = useMemo(() => {
+    if (!showExpirations) return [] as { time: number; label: string; description: string }[];
     const switches = data?.contract_switches;
     if (!switches || switches.length <= 1) return [];
     const intraday = interval !== 24;
-    return switches.slice(1).map((sw) => toSec(sw.date, intraday));
+    return switches.slice(1).map((sw) => ({
+      time: toSec(sw.date, intraday),
+      label: sw.to,
+      description: `${sw.from} → ${sw.to}`,
+    }));
   }, [data, showExpirations, interval]);
 
-  // Ценовые алерты этого актива → пунктирные уровни на ЛЕВОЙ (ценовой) оси (§5.6).
+  // §OI-3: какая величина ОИ сейчас на ПРАВОЙ оси (нога) — определяет метрику «+»
+  // алерта уровня ОИ и её подпись. Зеркалит OpenInterestPage.oiLeg.
+  const oiLeg: 'net' | 'long' | 'short' | 'oi' | 'npart' = useMemo(() => {
+    if (displayMode === 'participants') return 'npart';
+    switch (oiVariant) {
+      case 'long': return 'long';
+      case 'short': return 'short';
+      case 'oi': return 'oi';
+      default: return 'net';   // net + both (both отключает уровневый алерт ниже)
+    }
+  }, [displayMode, oiVariant]);
+  const oiLegLabel = OI_LEG_LABEL[oiLeg];
+  const oiLegUnit = oiLeg === 'npart' ? 'участников' : 'контрактов';
+
+  // Реестр метрик с динамическим oi_level (нога+группа = как на правой оси), как на
+  // сайте: цена, УРОВЕНЬ ОИ, затем резкое движение физ/юр.
+  const oiAlertMetrics = useMemo<AlertMetricOption[]>(() => {
+    const oiLevel: AlertMetricOption = {
+      key: 'oi_level', label: `Открытый интерес — ${oiLegLabel}`,
+      indicator: 'oi_level', metric: oiLeg, clgroup, unit: '',
+      ops: [
+        { value: 'cross', label: 'Пересечение (в любую сторону)' },
+        { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
+        { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
+      ],
+      hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.`,
+    };
+    return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
+  }, [clgroup, oiLeg, oiLegLabel]);
+
+  // §OI-3: клик по «+» у оси → модалка с префиллом (метрика по оси + уровень +
+  // «Сейчас: …»). Левая ось = цена (₽), правая = уровень ОИ (контракты/участники).
+  const handleCreateAlertFromChart = (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => {
+    const isOi = p.axis === 'right';
+    const currentLabel = isOi
+      ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} ${oiLegUnit}`
+      : `${formatPrice(p.currentValue)} ₽`;
+    setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.price, currentLabel });
+  };
+
+  // §OI-3: на каких осях кликабельный «+». Вариант «both» (3 линии) — уровневый
+  // алерт двусмыслен, выключаем целиком (как на сайте). Иначе: левая — если цена
+  // показана; правая (ОИ) — всегда.
+  const alertAxes = useMemo<('left' | 'right')[]>(() => {
+    if (oiVariant === 'both') return [];
+    const ax: ('left' | 'right')[] = [];
+    if (showPrice) ax.push('left');
+    ax.push('right');
+    return ax;
+  }, [oiVariant, showPrice]);
+
+  // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
   const alertLines = useMemo(() => {
-    const lines = myAlerts
-      .filter((a) => a.status === 'active' && a.asset === instrument && a.indicator === 'price')
-      .map((a) => ({ price: a.threshold, color: 'var(--accent)', scale: 'left' as const, title: 'алерт' }));
+    type Line = { price: number; color: string; scale: 'left' | 'right'; title: string };
+    const lines: Line[] = myAlerts
+      .filter((a) => a.status === 'active' && a.asset === instrument)
+      .flatMap((a): Line[] => {
+        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'алерт' }];
+        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', title: 'алерт' }];
+        return [];
+      });
     return lines.length ? lines : undefined;
   }, [myAlerts, instrument]);
 
@@ -414,20 +478,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             </div>
           </DrawerSection>
           {oiVariant !== 'both' && <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />}
-          <button
-            type="button"
-            onClick={() => setAlertOpen(true)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
-              padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'transparent',
-              color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-            }}
-          >
-            ＋ Поставить алерт
-          </button>
           <WheelHint>
+            <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми
+            оранжевый <b>＋</b> на нужном уровне — как на сайте.<br />
             Колесо над графиком — <b>зум времени</b>; зажать и тащить — панорама;
-            <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб. Наведи — тултип со значениями.
+            <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб.
           </WheelHint>
         </>
       }
@@ -436,13 +491,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChart
             series={lwSeries}
-            expTimes={expTimes}
+            expirations={expirations}
             height={chartH}
             dark={dark}
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
             tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
             priceLines={alertLines}
+            onCreateAlert={handleCreateAlertFromChart}
+            alertAxes={alertAxes}
           />
         )}
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
@@ -455,13 +512,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           <EmbedMsg text={instrument ? 'Нет данных по этому инструменту' : 'Инструмент не выбран'} />
         )}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-        {alertOpen && (
+        {chartAlertPrefill && (
           <CreateAlertModal
             indicator="open_interest"
             asset={instrument}
             assetName={displayName}
-            metrics={OI_ALERT_METRICS}
-            onClose={() => setAlertOpen(false)}
+            metrics={oiAlertMetrics}
+            prefill={chartAlertPrefill}
+            onClose={() => { setChartAlertPrefill(null); reloadAlerts(); }}
           />
         )}
       </div>
