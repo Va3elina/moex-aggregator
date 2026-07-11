@@ -168,7 +168,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
-  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string } }>({});
+  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string; lastVisible?: boolean } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
   // §R2-17: превью-уровень алерта = НАТИВНАЯ price line (серый пунктир как кроссхэйр
   // + цветной лейбл значения, ВЫРОВНЕННЫЙ по числам оси нативно). Одна на ось.
@@ -308,6 +308,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const hidePreview = (side: 'left' | 'right') => {
       const pl = previewLineRef.current[side];
       if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
+      // §R2-18: вернуть лейбл последнего значения (прятали на время превью, чтобы
+      // нативная коллизия лейблов не расталкивала их).
+      const info = axisInfoRef.current[side];
+      if (info) { try { info.api.applyOptions({ lastValueVisible: info.lastVisible ?? true }); } catch { /* серия снята */ } }
     };
     const hideChips = () => {
       if (alertChips.left) alertChips.left.style.display = 'none';
@@ -331,6 +335,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         // кроссхэйра), лейбл — фон в цвет линии, текст белый, значение форматтером серии.
         const pl = previewLineRef.current[side];
         if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true, color: crossColorRef.current, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff' }); } catch { /* серия снята */ } }
+        // §R2-18: пока превью активно, прячем лейбл последнего значения — иначе движок
+        // расталкивает пересекающиеся лейблы (алерт «толкал» пилс значения).
+        try { info.api.applyOptions({ lastValueVisible: false }); } catch { /* серия снята */ }
         // Кружок «+» — в поле у оси (выступает на график), в цвет линии.
         const axisW = ch.priceScale(side).width() || 54;
         const cw = 15;
@@ -618,7 +625,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const sc = series[i].scale ?? 'right';
       if (!axisInfoRef.current[sc]) {
         const d = series[i];
-        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color) };
+        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color), lastVisible: chartPrefs?.lastValue ?? d.lastValueVisible ?? (d.type === 'histogram' ? false : true) };
       }
     }
     // §R2-17: превью price line алерта на первой серии каждой оси (пересоздаём вместе
