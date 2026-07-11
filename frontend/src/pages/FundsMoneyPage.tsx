@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X, AlertCircle } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -61,13 +61,37 @@ const AUM_PERIODS: Period[] = ['1m', '1y', '3y', 'all'];
 
 // Категории
 // `genitive` — родительный падеж для подстановки в шаблоны вида
+// Категория «Золото»: вместо lucide-иконки — эмодзи. В Unicode нет слитка,
+// берём золотую монету 🪙 как ближайший «драгметалл». Компонент встаёт в тот же
+// слот, что и lucide-иконки: ChartTabs даёт className="ct-ico" (размер из CSS
+// --ico-sm), шапка-селектор — size={24}. size → fontSize, иначе наследуем --ico-sm.
+// color/strokeWidth эмодзи игнорирует (рендерится своим золотым цветом — и хорошо).
+function GoldIcon({ size, className, style }: { size?: number; strokeWidth?: number; className?: string; style?: React.CSSProperties }) {
+    return (
+        <span
+            className={className}
+            aria-hidden="true"
+            style={{
+                fontSize: size ?? 'var(--ico-sm)',
+                lineHeight: 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                ...style,
+            }}
+        >
+            🪙
+        </span>
+    );
+}
+
 // «фонды {genitive}» / «приток в фонды {genitive}». Русское склонение
 // нерегулярное — храним как data, а не вычисляем.
 const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: React.ElementType; index: string; comingSoon?: boolean }[] = [
     { key: 'money_market', name: 'Денежный рынок', genitive: 'денежного рынка', icon: Banknote, index: 'RUSFAR3M' },
     { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
     { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
-    { key: 'gold', name: 'Золото', genitive: 'золота', icon: Gem, index: 'GLDRUB_TOM' },
+    { key: 'gold', name: 'Золото', genitive: 'золота', icon: GoldIcon, index: 'GLDRUB_TOM' },
     // Раздел «Юань» — рабочий (NAV юаневых фондов в ₽, бенчмарк RUSFARCNY).
     { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY' },
 ];
