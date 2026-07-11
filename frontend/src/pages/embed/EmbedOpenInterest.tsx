@@ -23,16 +23,16 @@ import CreateAlertModal, { type AlertMetricOption } from '../../components/alert
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
-import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
-import { EmbedFrame, AssetButton, PillGroup, Dropdown, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
-// Компактные лейблы таймфрейма для инлайн-пилюль тулбара.
+// Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
-  { id: 5, label: '5м' },
-  { id: 60, label: '1ч' },
-  { id: 24, label: '1д' },
+  { id: 5, label: '5 мин' },
+  { id: 60, label: '1 час' },
+  { id: 24, label: '1 день' },
 ];
 
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -45,6 +45,16 @@ type DisplayMode = 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
 type Series = { time: string; value: number }[];
+
+// Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
+const CLGROUP_OPTS: { id: ClGroup; label: string }[] = [
+  { id: 'FIZ', label: 'Физлица' },
+  { id: 'YUR', label: 'Юрлица' },
+];
+const MODE_OPTS: { id: DisplayMode; label: string }[] = [
+  { id: 'positions', label: 'Объём позиций' },
+  { id: 'participants', label: 'Число трейдеров' },
+];
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
@@ -60,12 +70,15 @@ const toSec = (t: string, intraday: boolean): number => {
 };
 
 // Цвета ОИ — все через CSS-var (адаптируются к теме внутри iframe).
+// accent — фирменный оранжевый Фрейма (#FF5C2B): дефолт «Чистой позиции» (Вадим,
+// §OI-1). Юзер может перекрасить каждую линию через ⚙-Формат.
 const OI_COLORS = {
   primary: 'var(--chart-line-1)',
   amber: 'var(--oi-amber)',
   green: 'var(--oi-green)',
   red: 'var(--oi-red)',
   cyan: 'var(--oi-cyan)',
+  accent: 'var(--accent)',
 };
 
 const num = (v: number | null): number => v ?? 0;
@@ -280,7 +293,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       case 'long': return { secondary: OI_COLORS.green, third: '' };
       case 'short': return { secondary: OI_COLORS.red, third: '' };
       case 'both': return { secondary: OI_COLORS.green, third: OI_COLORS.red };
-      case 'net': return { secondary: OI_COLORS.cyan, third: '' };
+      case 'net': return { secondary: OI_COLORS.accent, third: '' };
       default: return { secondary: OI_COLORS.amber, third: '' };
     }
   }, [oiVariant]);
@@ -386,26 +399,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       toolbar={
         <>
-          <PillGroup value={interval} options={TF_COMPACT} onChange={changeInterval} />
+          <Dropdown value={interval} options={TF_COMPACT} onChange={changeInterval} title="Таймфрейм" />
+          <Dropdown value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} title="Группа участников" />
+          <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" />
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
         </>
       }
       more={
         <>
-          <DrawerSection label="Группа участников">
-            <SegGroup
-              value={clgroup}
-              options={[{ id: 'FIZ', label: 'Физлица' }, { id: 'YUR', label: 'Юрлица' }]}
-              onChange={(v) => setClgroup(v)}
-            />
-          </DrawerSection>
-          <DrawerSection label="Режим">
-            <SegGroup<DisplayMode>
-              value={displayMode}
-              options={[{ id: 'positions', label: 'Объём позиций' }, { id: 'participants', label: 'Число трейдеров' }]}
-              onChange={setDisplayMode}
-            />
-          </DrawerSection>
           <DrawerSection label="Слои">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <ToggleRow label="Цена" checked={showPrice} onChange={setShowPrice} hint="Линия цены фьючерса" />
