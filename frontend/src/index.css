@@ -1307,8 +1307,13 @@
    верхнюю границу (стык без шва и без нависаний). Верхние углы прямые.
    Тень 5×5 наследуется от .editorial-frame. */
 .editorial-frame.has-tabs {
+  /* position:relative — containing-block для абсолютных детей панели.
+     z-index НЕ задаём намеренно: любой z-index здесь создаёт stacking context
+     и запирает вложенные position:fixed модалки (поиск актива в «Потоках по
+     компании» уходил ПОД панель вместо оверлея). Язычок и так рисуется поверх
+     панели: у .chart-tabs z-index:2, у .chart-tab.is-active z-index:4 — стык
+     маскируется без z-index на самой панели. */
   position: relative;
-  z-index: 1;
 }
 [data-theme^="editorial"] .editorial-frame.has-tabs {
   border: 2px solid var(--text-primary);
