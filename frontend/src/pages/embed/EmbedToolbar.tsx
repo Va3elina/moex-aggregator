@@ -279,7 +279,7 @@ export function AssetButton({
   // компактнее и с мягким бордером. На сайте/в расширении — прежний вид.
   const sb = useContext(SandboxWindowCtx) !== null;
   return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
+    <div style={{ position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
       <button
         type="button"
         onClick={() => setOpen(true)}
