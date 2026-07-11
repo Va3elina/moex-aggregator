@@ -20,6 +20,7 @@ import {
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
+import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
@@ -75,6 +76,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
+  const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
   const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category')));
   const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
   // Default режим — Притоки-Оттоки (как дефолт страницы).
@@ -174,14 +176,14 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         axisFmt: fmtInt, tipFmt: (v) => Math.round(v).toLocaleString('ru-RU'),
       });
     }
-    out.push({
+    out.push(applyFormat({
       id: 'scha', type: 'area', scale: 'right', color: 'var(--chart-line-3)',
       areaTop: 'color-mix(in srgb, var(--chart-line-3) 22%, transparent)', lineWidth: 2, label: 'СЧА',
       data: nav.flatMap((p) => (p.nav != null ? [{ time: toSec(p.date), value: p.nav }] : [])),
       axisFmt: fmtAbs, tipFmt: (v) => fmtAbs(v) + ' ₽',
-    });
+    }, fmt));
     return out;
-  }, [viewMode, flowsData, data, showIndex]);
+  }, [viewMode, flowsData, data, showIndex, fmt]);
 
   const st = viewMode === 'flows' ? flowsStatus : status;
 
@@ -202,9 +204,12 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         </>
       }
       more={viewMode === 'aum' ? (
-        <DrawerSection label="Отображение">
-          <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
-        </DrawerSection>
+        <>
+          <DrawerSection label="Отображение">
+            <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
+          </DrawerSection>
+          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />
+        </>
       ) : undefined}
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>

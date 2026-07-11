@@ -23,6 +23,7 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown, WheelHint } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
@@ -76,6 +77,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
+  const { fmt, setKind, setColor } = useChartFormat('frame:embed:oi:fmt');
   const [instrument, setInstrument] = useState<string>(() =>
     initialInstrument || params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
   );
@@ -308,18 +310,18 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           });
         }
       } else {
-        // Линия, а не area: Вадим — «должны быть просто две линии». Для net (пересекает
-        // ноль) area заливалась от базы и выглядела сломанной → линия + пунктир zeroLine.
-        out.push({
+        // Дефолт — линия (Вадим: «должны быть просто две линии»); ⚙ «Формат»
+        // может переключить в область/столбцы и перекрасить (applyFormat).
+        out.push(applyFormat({
           id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-        });
+        }, fmt));
       }
     }
     return out;
-  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval]);
+  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, fmt]);
 
   return (
     <EmbedFrame
@@ -360,6 +362,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               <ToggleRow label="Экспирации" checked={showExpirations} onChange={setShowExpirations} hint="Метки смены контракта" />
             </div>
           </DrawerSection>
+          {oiVariant !== 'both' && <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />}
           <WheelHint>
             Колесо над графиком — <b>зум времени</b>; зажать и тащить — панорама;
             <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб. Наведи — тултип со значениями.
