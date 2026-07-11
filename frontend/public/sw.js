@@ -77,6 +77,18 @@ self.addEventListener('fetch', (event) => {
                 }
                 return response;
             })
-            .catch(() => caches.match(request).then((cached) => cached || caches.match('/')))
+            .catch(async (err) => {
+                const cached = await caches.match(request);
+                if (cached) return cached;
+                // Кэшированный shell — ТОЛЬКО для навигаций. Если отдать
+                // index.html вместо упавшего JS/CSS-запроса, dynamic import
+                // падает с мусорной ошибкой, а вкладка залипает на старом
+                // бандле (стейл-шелл ссылается на удалённые чанки).
+                if (request.mode === 'navigate') {
+                    const shell = await caches.match('/');
+                    if (shell) return shell;
+                }
+                throw err;
+            })
     );
 });
