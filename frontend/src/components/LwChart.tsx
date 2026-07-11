@@ -336,6 +336,14 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
           parts.circle.style.background = col;
           parts.valpill.style.background = col;
           parts.valpill.textContent = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
+          // §R2-16: value-пилс к ВНУТРЕННЕЙ кромке жёлоба (как нативные пилсы TV — они
+          // прижаты к полю): справа левым краем у поля, слева правым краем у поля;
+          // кружок «+» уходит в поле. offsetWidth валиден (пилс уже показан + текст задан).
+          const axisW = ch.priceScale(side).width() || 54;
+          chip.style.right = 'auto';
+          chip.style.left = (side === 'left'
+            ? Math.max(0, axisW - parts.valpill.offsetWidth)
+            : box.clientWidth - axisW - parts.circle.offsetWidth - 3) + 'px';
         }
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
         any = true;
