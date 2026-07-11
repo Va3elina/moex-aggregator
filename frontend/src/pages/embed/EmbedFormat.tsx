@@ -7,7 +7,7 @@
  * в обеих темах): это осознанный выбор пользователя, поэтому он одинаков на
  * сайте, в расширении и в песочнице.
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import type { LwSeries } from '../../components/LwChart';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
@@ -50,6 +50,31 @@ export function useChartFormat(lsKey: string, defKind: ChartKind = 'line') {
   };
 }
 
+/**
+ * §OI-5 — пер-серийный формат: карта {seriesId → ChartFormat} в одном JSON под
+ * ключом индикатора. Каждая линия окна (цена + каждая линия ОИ) кастомизируется
+ * отдельно: тип (линия/область/столбцы) + цвет. `get(id)` даёт формат серии (или
+ * дефолт), `setKind/setColor(id, …)` меняют её. Персист per-индикатор (pid-namespace).
+ */
+export function useSeriesFormats(lsKey: string) {
+  const { rd, wr } = useEmbedPersist();
+  const [map, setMap] = useState<Record<string, ChartFormat>>(() => {
+    const raw = rd(lsKey, '');
+    if (!raw) return {};
+    try {
+      const j = JSON.parse(raw) as Record<string, unknown>;
+      const out: Record<string, ChartFormat> = {};
+      for (const k of Object.keys(j)) out[k] = parse(JSON.stringify(j[k]));
+      return out;
+    } catch { return {}; }
+  });
+  useEffect(() => { wr(lsKey, JSON.stringify(map)); }, [lsKey, map, wr]);
+  const get = useCallback((id: string, defKind: ChartKind = 'line'): ChartFormat => map[id] ?? { kind: defKind, color: null }, [map]);
+  const setKind = useCallback((id: string, kind: ChartKind) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), kind } })), []);
+  const setColor = useCallback((id: string, color: string | null) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), color } })), []);
+  return { get, setKind, setColor };
+}
+
 /** Применить формат к серии: тип + цвет (+ градиент области / база столбцов). */
 export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
   const color = fmt.color ?? def.color;
@@ -65,14 +90,16 @@ export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
   return out;
 }
 
-/** ⚙-секция «Формат»: сегменты типа + свотчи цвета (первый — «Авто», сброс). */
-export function FormatSection({ fmt, onKind, onColor }: {
+/** ⚙-секция «Формат»: сегменты типа + свотчи цвета (первый — «Авто», сброс).
+ *  `label` — заголовок секции (для пер-серийного формата — имя линии). */
+export function FormatSection({ fmt, onKind, onColor, label = 'Формат' }: {
   fmt: ChartFormat;
   onKind: (k: ChartKind) => void;
   onColor: (c: string | null) => void;
+  label?: string;
 }) {
   return (
-    <DrawerSection label="Формат">
+    <DrawerSection label={label}>
       <SegGroup<ChartKind> value={fmt.kind} options={KINDS} onChange={onKind} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
         <button
