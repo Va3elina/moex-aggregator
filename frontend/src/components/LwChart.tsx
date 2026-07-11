@@ -333,8 +333,14 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
         any = true;
       }
-      if (any) { alertHGuide.style.top = y + 'px'; alertHGuide.style.display = 'block'; }
-      else alertHGuide.style.display = 'none';
+      if (any) {
+        // §R2-11: пунктир уровня — только в поле графика; кончается перед ценовыми
+        // осями (не проходит сквозь жёлоба, где сидят пилсы и кружок «+»).
+        alertHGuide.style.left = (ch.priceScale('left').width() || 0) + 'px';
+        alertHGuide.style.right = (ch.priceScale('right').width() || 0) + 'px';
+        alertHGuide.style.top = y + 'px';
+        alertHGuide.style.display = 'block';
+      } else alertHGuide.style.display = 'none';
     };
     for (const side of ['left', 'right'] as const) {
       const strip = document.createElement('div');
