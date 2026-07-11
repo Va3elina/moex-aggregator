@@ -308,10 +308,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const hidePreview = (side: 'left' | 'right') => {
       const pl = previewLineRef.current[side];
       if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
-      // §R2-18: вернуть лейбл последнего значения (прятали на время превью, чтобы
-      // нативная коллизия лейблов не расталкивала их).
+      // §R2-18/19: вернуть лейбл последнего значения (прятали на время превью, чтобы
+      // нативная коллизия лейблов не расталкивала их). ⚠️ applyOptions на СЕРИИ
+      // пересчитывает ценовую шкалу — дёргаем ТОЛЬКО при смене состояния (иначе фриз).
       const info = axisInfoRef.current[side];
-      if (info) { try { info.api.applyOptions({ lastValueVisible: info.lastVisible ?? true }); } catch { /* серия снята */ } }
+      if (info) { const want = info.lastVisible ?? true; try { if (info.api.options().lastValueVisible !== want) info.api.applyOptions({ lastValueVisible: want }); } catch { /* серия снята */ } }
     };
     const hideChips = () => {
       if (alertChips.left) alertChips.left.style.display = 'none';
@@ -335,9 +336,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         // кроссхэйра), лейбл — фон в цвет линии, текст белый, значение форматтером серии.
         const pl = previewLineRef.current[side];
         if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true, color: crossColorRef.current, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff' }); } catch { /* серия снята */ } }
-        // §R2-18: пока превью активно, прячем лейбл последнего значения — иначе движок
-        // расталкивает пересекающиеся лейблы (алерт «толкал» пилс значения).
-        try { info.api.applyOptions({ lastValueVisible: false }); } catch { /* серия снята */ }
+        // §R2-18/19: пока превью активно, прячем лейбл последнего значения — иначе
+        // движок расталкивает пересекающиеся лейблы. ⚠️ Дёргаем applyOptions ТОЛЬКО при
+        // смене состояния (не каждый mousemove) — иначе пересчёт шкалы каждый кадр = фриз.
+        try { if (info.api.options().lastValueVisible !== false) info.api.applyOptions({ lastValueVisible: false }); } catch { /* серия снята */ }
         // Кружок «+» — в поле у оси (выступает на график), в цвет линии.
         const axisW = ch.priceScale(side).width() || 54;
         const cw = 15;
