@@ -407,6 +407,38 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       alertChips[side] = chip;
     }
     box.addEventListener('mouseleave', hideChips);
+    // §R2-26: Chromium может резолвить вебфонт 'Inter' в canvas ДРУГИМ лицом, чем в
+    // DOM (замерено на проде: та же строка «11px Inter…» в connected-canvas на ~10%
+    // шире/крупнее DOM) — тогда цифры DOM-пилса выглядят мельче нативных лейблов оси.
+    // Калибруем кегль пилса по фактическому ratio canvas/DOM; в норме ratio=1 и стиль
+    // не меняется. Пересчёт после догрузки шрифтов (fonts.ready).
+    const PILL_FONT = 'Inter, -apple-system, sans-serif';
+    const setPillFont = () => {
+      let ratio = 1;
+      try {
+        const cv = document.createElement('canvas');
+        box.appendChild(cv);                 // connected: detached-canvas меряет другим лицом
+        const cx = cv.getContext('2d');
+        const sp = document.createElement('span');
+        sp.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:400 11px ' + PILL_FONT;
+        sp.textContent = '0123456789';
+        box.appendChild(sp);
+        if (cx) {
+          cx.font = '11px ' + PILL_FONT;
+          const cw = cx.measureText('0123456789').width;
+          const dw = sp.getBoundingClientRect().width;
+          if (cw > 0 && dw > 0) ratio = Math.max(0.8, Math.min(1.5, cw / dw));
+        }
+        box.removeChild(sp); box.removeChild(cv);
+      } catch { /* калибровка не критична */ }
+      const fs = Math.round(11 * ratio * 100) / 100;
+      for (const side of ['left', 'right'] as const) {
+        const p = alertChipParts[side];
+        if (p) p.valpill.style.font = '400 ' + fs + 'px/15.58px ' + PILL_FONT;
+      }
+    };
+    setPillFont();
+    try { document.fonts?.ready?.then(() => setPillFont()); } catch { /* старые браузеры */ }
     const layoutAlert = () => {
       const ch = chartRef.current;
       if (!ch) return;
