@@ -170,6 +170,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
+  const alertHGuideRef = useRef<HTMLDivElement | null>(null);   // §R2-12: пунктир уровня, цвет = кроссхэйр
   const dataSigRef = useRef<string>('');   // §R2-6 сигнатура данных для reveal-анимации
   const chartPrefs = useContext(ChartPrefsCtx);
   const lastFitRef = useRef<string | undefined>(undefined);
@@ -296,8 +297,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     // (жёлоб-полосы держат их при переходе к клику); price = coordinateToPrice первой
     // серии оси. Гейт — onCreateAlert + alertAxes; иначе слой невидим и инертен.
     const alertHGuide = document.createElement('div');
-    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dashed var(--accent,#FF5C2B)';
+    // §R2-12: цвет пунктира уровня = цвет вертикального кроссхэйра (серый), а не accent.
+    // Обновляется в эффекте темы (◐) вместе с кроссхэйром.
+    alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dashed ' + c.cross;
     box.appendChild(alertHGuide);
+    alertHGuideRef.current = alertHGuide;
     const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertChipParts: { [k in 'left' | 'right']?: { circle: HTMLDivElement; valpill: HTMLDivElement } } = {};
     const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
@@ -492,6 +496,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
             horzLine: { color: c.cross, labelBackgroundColor: c.lab },
           },
     });
+    // §R2-12: держим пунктир уровня алерта в цвете кроссхэйра при смене темы (◐).
+    if (alertHGuideRef.current) alertHGuideRef.current.style.borderTopColor = c.cross;
   }, [dark, chartPrefs]);
 
   // ── серии (пересоздаём при смене набора/данных, зум сохраняем) ──
