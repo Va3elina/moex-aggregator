@@ -257,12 +257,20 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const ts = ch.timeScale();
       const axisH = ts.height() || 26;
       expLayer.style.bottom = axisH + 'px';
+      // §R2-23: timeToCoordinate меряет от ЛЕВОГО КРАЯ ПОЛЯ (после левой ценовой оси),
+      // а слой — от края бокса → переводим (+paneL). Кружок, пересёкший ценовую ось
+      // (левую или правую), не рисуем вовсе — иначе при ресайзе/пане он наезжает на
+      // числа оси.
+      const paneL = ch.priceScale('left').width() || 0;
+      const paneW = ts.width() || Math.max(0, box.clientWidth - paneL - (ch.priceScale('right').width() || 0));
+      const R = 17 / 2;   // половина кружка
       for (const ex of exps) {
         const x = ts.timeToCoordinate(ex.time as UTCTimestamp);
-        if (x == null) continue;
+        if (x == null || x < R || x > paneW - R) continue;
+        const bx = paneL + x;
         const circle = document.createElement('div');
         circle.style.cssText = [
-          'position:absolute', 'bottom:2px', 'left:' + x + 'px', 'transform:translateX(-50%)',
+          'position:absolute', 'bottom:2px', 'left:' + bx + 'px', 'transform:translateX(-50%)',
           'width:17px', 'height:17px', 'border-radius:50%', 'display:flex', 'align-items:center',
           'justify-content:center', 'font-size:8.5px', 'font-weight:700', 'cursor:default',
           'pointer-events:auto', 'opacity:0.5', 'transition:opacity 0.12s', 'box-sizing:border-box',
@@ -283,7 +291,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         circle.addEventListener('mouseenter', () => {
           circle.style.opacity = '1';
           tipEl.style.display = 'block';
-          expGuide.style.left = x + 'px';
+          expGuide.style.left = bx + 'px';
           expGuide.style.height = plotHeight() + 'px';
           expGuide.style.display = 'block';
         });
@@ -341,19 +349,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         }
         chip.style.top = y + 'px';
         chip.style.display = 'flex';
-        // Выравнивание value-пилса по ПРАВОЙ колонке чисел оси (как нативные лейблы): правая
-        // ось — правый край у кромки бокса; левая — у кромки поля. Кружок «+» со стороны
-        // поля. z выше канваса → пилс ЛОЖИТСЯ на нативный лейбл последнего значения (не
-        // толкает/не прячет). PAD ≈ внутренний отступ лейблов TradingView.
+        // §R2-24: пилс сидит ТОЧНО как нативный лейбл — кромкой на границе поля
+        // (правая ось: левый край пилса = граница поля; левая ось: правый край =
+        // граница). Кружок «+» со стороны поля. z выше канваса → пилс ЛОЖИТСЯ на
+        // нативный лейбл последнего значения (не толкает/не прячет).
         const axisW = ch.priceScale(side).width() || 54;
-        const PAD = 3;
+        chip.style.right = 'auto';
         if (side === 'right') {
-          chip.style.left = 'auto';
-          chip.style.right = PAD + 'px';
+          const beforePill = parts ? parts.circle.offsetWidth + 3 : 18;   // «+» и gap перед пилсом
+          chip.style.left = (box.clientWidth - axisW - beforePill) + 'px';
         } else {
-          chip.style.right = 'auto';
-          const vpw = parts ? parts.valpill.offsetWidth : 44;
-          chip.style.left = Math.max(0, axisW - PAD - vpw) + 'px';
+          const vpw = parts ? parts.valpill.getBoundingClientRect().width : 44;
+          chip.style.left = (axisW - vpw) + 'px';
         }
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
       }
@@ -382,8 +389,17 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (p && onCreateAlertRef.current) onCreateAlertRef.current(p);
       });
       const valpill = document.createElement('div');
-      valpill.style.cssText = 'padding:2px 4px;border-radius:2px;font-size:11px;font-weight:400;color:#fff;'
-        + 'font-variant-numeric:tabular-nums;line-height:1;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      // §R2-24: точная копия геометрии НАТИВНОГО лейбла оси (PriceAxisViewRenderer,
+      // fontSize 11): высота 11 + 2×2.29 ≈ 15.58; текст в 9.58px от кромки поля
+      // (tick 5 + paddingInner 4.58) — та же колонка, что числа-тики; с внешней
+      // стороны 5.58 (paddingOuter 4.58 + border 1); скругление 2px ТОЛЬКО с внешней
+      // стороны (кромка у поля прямая); шрифт = шрифт оси, без тени и tabular-nums —
+      // иначе пилс отличается от нативных по форме/размеру/посадке цифр.
+      valpill.style.cssText = 'font:400 11px/15.58px Inter,-apple-system,sans-serif;color:#fff;'
+        + 'white-space:nowrap;pointer-events:none;'
+        + (side === 'left'
+          ? 'padding:0 9.58px 0 5.58px;border-radius:2px 0 0 2px'
+          : 'padding:0 5.58px 0 9.58px;border-radius:0 2px 2px 0');
       if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
       else { chip.appendChild(circle); chip.appendChild(valpill); }
       alertChipParts[side] = { circle, valpill };
@@ -445,14 +461,16 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!any) { tip.style.display = 'none'; return; }
       tip.style.display = 'block';
       const w = box.clientWidth, tw = tip.offsetWidth, GAP = 16;
-      // §R2-22 (выбор Вадима): СИММЕТРИЧНЫЙ флип по СЕРЕДИНЕ поля — курсор в левой
+      // §R2-22/25 (выбор Вадима): СИММЕТРИЧНЫЙ флип по СЕРЕДИНЕ поля — курсор в левой
       // половине → тултип справа от курсора; в правой → слева. Одинаковый зазор GAP от
-      // перекрестья с обеих сторон. Середина = центр ПОЛЯ (между ценовыми осями), а не бокса.
+      // перекрестья с обеих сторон. ВАЖНО: param.point.x — от ЛЕВОГО КРАЯ ПОЛЯ (после
+      // левой ценовой оси), а тултип позиционируем в боксе → переводим (+paneL), иначе
+      // флип едет и зазор несимметричен ровно на ширину левой оси.
       const chNow = chartRef.current;
-      const lAxis = chNow ? (chNow.priceScale('left').width() || 0) : 0;
-      const rAxis = chNow ? (chNow.priceScale('right').width() || 0) : 0;
-      const mid = (lAxis + (w - rAxis)) / 2;
-      const rawLeft = param.point.x < mid ? param.point.x + GAP : param.point.x - tw - GAP;
+      const paneL = chNow ? (chNow.priceScale('left').width() || 0) : 0;
+      const paneW = chNow ? (chNow.timeScale().width() || (w - paneL)) : w;
+      const cx = paneL + param.point.x;   // курсор в координатах бокса
+      const rawLeft = param.point.x < paneW / 2 ? cx + GAP : cx - tw - GAP;
       tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
       tip.style.top = Math.max(6, Math.min(box.clientHeight - tip.offsetHeight - 6, param.point.y - 8)) + 'px';
     });

@@ -194,7 +194,10 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
         tip.style.display = 'block';
         const box = boxes[i];
         const w = box.clientWidth, tw = tip.offsetWidth;
-        const rawLeft = param.point.x > w / 2 ? param.point.x - tw - 16 : param.point.x + 16;
+        // §R2-25: флип по середине ПОЛЯ (без правой оси). Левая ось скрыта →
+        // координаты param.point совпадают с боксом, перевод не нужен.
+        const paneW = chart.timeScale().width() || w;
+        const rawLeft = param.point.x > paneW / 2 ? param.point.x - tw - 16 : param.point.x + 16;
         tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
         tip.style.top = Math.max(6, param.point.y - 8) + 'px';
         suppress = true;
