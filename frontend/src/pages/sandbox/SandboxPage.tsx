@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity, ArrowLeftRight, Bell, CalendarDays, Contrast, Grid3x3, Layers, LayoutGrid,
-  ListFilter, Plus, PlusCircle, Scale, TrendingUp, Wallet, Waves, X as XIcon,
+  ListFilter, Plus, PlusCircle, Scale, SlidersHorizontal, TrendingUp, Wallet, Waves, X as XIcon,
   type LucideIcon,
 } from 'lucide-react';
 import './sandbox.css';
@@ -132,14 +132,16 @@ function renderIndicator(type: IndKind, cfg: PanelCfg | undefined, onSignal: (dl
 type SbTheme = 'dark' | 'light';
 interface Sheet { id: string; name: string }
 interface Panel { id: string; type: IndKind; x: number; y: number; w: number; h: number; z: number; themeOverride: SbTheme | null; cfg?: PanelCfg }
-interface Persisted { sbTheme: SbTheme; sheets: Sheet[]; activeSheet: string; bySheet: Record<string, Panel[]> }
+/** Общие настройки песочницы (§9, раздел «Раскладка»). Персистятся вместе с раскладкой. */
+interface SbPrefs { snap: boolean; snapTh: number; grid: 'dots' | 'lines' | 'clean'; arrangeCols: 0 | 2 | 3 | 4 }
+const DEF_PREFS: SbPrefs = { snap: true, snapTh: 18, grid: 'dots', arrangeCols: 0 };
+
+interface Persisted { sbTheme: SbTheme; sheets: Sheet[]; activeSheet: string; bySheet: Record<string, Panel[]>; prefs?: SbPrefs }
 interface Guide { axis: 'v' | 'h'; pos: number }
 
 const LS_KEY = 'frame:sandbox:v2';
 const TOPBAR_H = 56;
 const DRAG_STRIP = 44;       // «шапка-хват» — верхняя полоса панели (= тулбар embed'а)
-const SNAP_DRAG = 18;        // порог магнита при перетаскивании (§4.1)
-const SNAP_RESIZE = 16;      // порог магнита при ресайзе (§4.2)
 const MINW = 300, MINH = 200;
 const GUIDE_Z = 99990;       // направляющие — над панелями, под оверлеями
 const OVERLAY_Z = 100000;    // меню/поповеры/дровер (§7: панели при захвате уходят на высокий z)
@@ -177,6 +179,7 @@ function loadState(): Persisted {
     if (!s || !Array.isArray(s.sheets) || !s.sheets.length || !s.bySheet) return defaultState();
     if (!s.bySheet[s.activeSheet]) s.activeSheet = s.sheets[0].id;
     if (s.sbTheme !== 'light') s.sbTheme = 'dark';
+    s.prefs = { ...DEF_PREFS, ...(s.prefs ?? {}) };
     return s;
   } catch { return defaultState(); }
 }
@@ -209,6 +212,11 @@ export default function SandboxPage() {
   const saveTimer = useRef<number | undefined>(undefined);
 
   const panels = st.bySheet[st.activeSheet] || [];
+  const prefs = st.prefs ?? DEF_PREFS;
+  const setPrefs = useCallback((patch: Partial<SbPrefs>) => {
+    setSt((s) => ({ ...s, prefs: { ...DEF_PREFS, ...(s.prefs ?? {}), ...patch } }));
+  }, []);
+  const [prefsOpen, setPrefsOpen] = useState(false);
 
   // init zTop из загруженной раскладки
   useEffect(() => {
@@ -302,14 +310,14 @@ export default function SandboxPage() {
     const rc = canvasRef.current?.getBoundingClientRect(); if (!rc) return;
     setActivePanels((ps) => {
       const n = ps.length; if (!n) return ps;
-      const cols = n <= 2 ? n : n <= 6 ? 2 : 3;
+      const cols = prefs.arrangeCols || (n <= 2 ? n : n <= 6 ? 2 : 3);
       const rows = Math.ceil(n / cols);
       const M = 28, G = 20;
       const w = Math.floor((rc.width - M * 2 - G * (cols - 1)) / cols);
       const h = Math.floor((rc.height - M * 2 - G * (rows - 1)) / rows);
       return ps.map((p, i) => ({ ...p, x: M + (i % cols) * (w + G), y: M + Math.floor(i / cols) * (h + G), w, h }));
     });
-  }, [setActivePanels]);
+  }, [setActivePanels, prefs]);
 
   // ── драг + магнит(18) + направляющие (§4.1) ──
   const onDragStart = useCallback((e: React.PointerEvent, id: string) => {
@@ -324,14 +332,15 @@ export default function SandboxPage() {
     const others = list.filter((p) => p.id !== id);
     const cr = canvasRef.current!.getBoundingClientRect();
     const sx = e.clientX, sy = e.clientY, ox = start.x, oy = start.y;
+    const dragTh = prefs.snap ? prefs.snapTh : 0;
     try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
     const move = (ev: PointerEvent) => {
       let nx = ox + (ev.clientX - sx), ny = oy + (ev.clientY - sy);
       const gs: Guide[] = [];
       const xc = [0, cr.width - start.w]; others.forEach((q) => xc.push(q.x, q.x + q.w - start.w, q.x + q.w, q.x - start.w));
-      for (const c of xc) { if (Math.abs(nx - c) < SNAP_DRAG) { nx = c; gs.push({ axis: 'v', pos: nx }, { axis: 'v', pos: nx + start.w }); break; } }
+      for (const c of xc) { if (Math.abs(nx - c) < dragTh) { nx = c; gs.push({ axis: 'v', pos: nx }, { axis: 'v', pos: nx + start.w }); break; } }
       const yc = [0, cr.height - start.h]; others.forEach((q) => yc.push(q.y, q.y + q.h - start.h, q.y + q.h, q.y - start.h));
-      for (const c of yc) { if (Math.abs(ny - c) < SNAP_DRAG) { ny = c; gs.push({ axis: 'h', pos: ny }, { axis: 'h', pos: ny + start.h }); break; } }
+      for (const c of yc) { if (Math.abs(ny - c) < dragTh) { ny = c; gs.push({ axis: 'h', pos: ny }, { axis: 'h', pos: ny + start.h }); break; } }
       nx = Math.max(0, Math.min(cr.width - start.w, nx));
       ny = Math.max(0, Math.min(cr.height - start.h, ny));
       setGuides(gs);
@@ -355,15 +364,16 @@ export default function SandboxPage() {
     const sx = e.clientX, sy = e.clientY; const o = { x: start.x, y: start.y, w: start.w, h: start.h };
     const el = e.currentTarget as HTMLElement;
     try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
+        const resizeTh = prefs.snap ? Math.max(6, prefs.snapTh - 2) : 0;
+const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     const edgesY = others.flatMap((q) => [q.y, q.y + q.h]);
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - sx, dy = ev.clientY - sy;
       let x = o.x, y = o.y, w = o.w, h = o.h; const gs: Guide[] = [];
-      if (dir.includes('e')) { w = o.w + dx; const R = x + w; for (const c of [cr.width, ...edgesX]) { if (Math.abs(R - c) < SNAP_RESIZE) { w = c - x; gs.push({ axis: 'v', pos: c }); break; } } }
-      if (dir.includes('s')) { h = o.h + dy; const B = y + h; for (const c of [cr.height, ...edgesY]) { if (Math.abs(B - c) < SNAP_RESIZE) { h = c - y; gs.push({ axis: 'h', pos: c }); break; } } }
-      if (dir.includes('w')) { const R = o.x + o.w; let nx = o.x + dx; for (const c of [0, ...edgesX]) { if (Math.abs(nx - c) < SNAP_RESIZE) { nx = c; gs.push({ axis: 'v', pos: c }); break; } } x = nx; w = R - nx; }
-      if (dir.includes('n')) { const B = o.y + o.h; let ny = o.y + dy; for (const c of [0, ...edgesY]) { if (Math.abs(ny - c) < SNAP_RESIZE) { ny = c; gs.push({ axis: 'h', pos: c }); break; } } y = ny; h = B - ny; }
+      if (dir.includes('e')) { w = o.w + dx; const R = x + w; for (const c of [cr.width, ...edgesX]) { if (Math.abs(R - c) < resizeTh) { w = c - x; gs.push({ axis: 'v', pos: c }); break; } } }
+      if (dir.includes('s')) { h = o.h + dy; const B = y + h; for (const c of [cr.height, ...edgesY]) { if (Math.abs(B - c) < resizeTh) { h = c - y; gs.push({ axis: 'h', pos: c }); break; } } }
+      if (dir.includes('w')) { const R = o.x + o.w; let nx = o.x + dx; for (const c of [0, ...edgesX]) { if (Math.abs(nx - c) < resizeTh) { nx = c; gs.push({ axis: 'v', pos: c }); break; } } x = nx; w = R - nx; }
+      if (dir.includes('n')) { const B = o.y + o.h; let ny = o.y + dy; for (const c of [0, ...edgesY]) { if (Math.abs(ny - c) < resizeTh) { ny = c; gs.push({ axis: 'h', pos: c }); break; } } y = ny; h = B - ny; }
       if (w < MINW) { if (dir.includes('w')) x = o.x + o.w - MINW; w = MINW; }
       if (h < MINH) { if (dir.includes('n')) y = o.y + o.h - MINH; h = MINH; }
       if (x < 0) { w += x; x = 0; } if (y < 0) { h += y; y = 0; }
@@ -528,6 +538,9 @@ export default function SandboxPage() {
           <button type="button" className="sb-hoverable" onClick={toggleTheme} title="Тема оболочки" style={chromeBtn}>
             <Contrast size={16} />
           </button>
+          <button type="button" className="sb-hoverable" onClick={() => setPrefsOpen(true)} title="Настройки песочницы" style={chromeBtn}>
+            <SlidersHorizontal size={15} />
+          </button>
           <span style={proChip}>PRO</span>
           <div style={avatarStyle}>ВД</div>
         </div>
@@ -535,7 +548,7 @@ export default function SandboxPage() {
 
       {/* ── Холст (§3.2) ── */}
       <div ref={canvasRef} style={canvasStyle}>
-        <div style={dotGridStyle} />
+        <div style={gridBgStyle(prefs.grid)} />
 
         {panels.length === 0 && (
           <div style={emptyStyle}>
@@ -637,6 +650,50 @@ export default function SandboxPage() {
         </>
       )}
 
+      {/* ── Настройки песочницы (§9, «Раскладка») — правая шторка ── */}
+      {prefsOpen && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z, background: 'rgba(0,0,0,0.28)', animation: 'sb-fade .15s ease' }} onClick={() => setPrefsOpen(false)} />
+          <div style={{ ...signalsDrawerStyle, width: 320 }}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Настройки песочницы</span>
+              <button type="button" className="sb-hoverable" onClick={() => setPrefsOpen(false)} title="Закрыть" style={{ ...chromeBtn, width: 28, height: 28, marginLeft: 'auto', border: 'none' }}>
+                <XIcon size={16} />
+              </button>
+            </div>
+            <div className="sb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div>
+                <div className="sb-uc" style={{ marginBottom: 8 }}>Магнит панелей</div>
+                <PrefPills
+                  value={prefs.snap ? String(prefs.snapTh) : 'off'}
+                  options={[{ id: 'off', label: 'Выкл' }, { id: '12', label: 'Слабый' }, { id: '18', label: 'Обычный' }, { id: '28', label: 'Сильный' }]}
+                  onChange={(v) => (v === 'off' ? setPrefs({ snap: false }) : setPrefs({ snap: true, snapTh: Number(v) }))}
+                />
+              </div>
+              <div>
+                <div className="sb-uc" style={{ marginBottom: 8 }}>Подложка холста</div>
+                <PrefPills
+                  value={prefs.grid}
+                  options={[{ id: 'dots', label: 'Точки' }, { id: 'lines', label: 'Линии' }, { id: 'clean', label: 'Чисто' }]}
+                  onChange={(v) => setPrefs({ grid: v as SbPrefs['grid'] })}
+                />
+              </div>
+              <div>
+                <div className="sb-uc" style={{ marginBottom: 8 }}>«Выстроить» — колонки</div>
+                <PrefPills
+                  value={String(prefs.arrangeCols)}
+                  options={[{ id: '0', label: 'Авто' }, { id: '2', label: '2' }, { id: '3', label: '3' }, { id: '4', label: '4' }]}
+                  onChange={(v) => setPrefs({ arrangeCols: Number(v) as SbPrefs['arrangeCols'] })}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                Настройки применяются сразу и запоминаются. Формат и цвет конкретного графика — в ⚙ на самой панели.
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── Центр сигналов — выезжающий справа дровер (§6.10 / §7.3) ── */}
       {signalsOpen && (
         <>
@@ -680,6 +737,35 @@ function MenuItem({ ind, onPick }: { ind: IndicatorDef; onPick: (t: IndKind) => 
         <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>{ind.desc}</span>
       </span>
     </button>
+  );
+}
+
+/** Ряд пилюль-выборов для шторки настроек (§9). */
+function PrefPills({ value, options, onChange }: {
+  value: string;
+  options: { id: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            style={{
+              padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: on ? 700 : 500, cursor: 'pointer',
+              border: on ? '1.5px solid var(--accent)' : '1.5px solid var(--border)',
+              background: on ? 'var(--accent)' : 'transparent', color: on ? '#fff' : 'var(--text)',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -746,10 +832,13 @@ const avatarStyle: CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: '0 0 auto',
 };
 const canvasStyle: CSSProperties = { position: 'absolute', top: TOPBAR_H, left: 0, right: 0, bottom: 0, overflow: 'hidden', background: 'var(--bg)' };
-const dotGridStyle: CSSProperties = {
-  position: 'absolute', inset: 0, pointerEvents: 'none',
-  backgroundImage: 'radial-gradient(var(--dot) 1.1px, transparent 1.1px)', backgroundSize: '22px 22px',
-};
+// Подложка холста (§3.2, gridStyle дизайнера): точки / линии / чисто.
+function gridBgStyle(g: 'dots' | 'lines' | 'clean'): CSSProperties {
+  const base: CSSProperties = { position: 'absolute', inset: 0, pointerEvents: 'none' };
+  if (g === 'lines') return { ...base, backgroundImage: 'linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px)', backgroundSize: '32px 32px' };
+  if (g === 'clean') return { ...base, display: 'none' };
+  return { ...base, backgroundImage: 'radial-gradient(var(--dot) 1.1px, transparent 1.1px)', backgroundSize: '22px 22px' };
+}
 const emptyStyle: CSSProperties = {
   position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
 };
