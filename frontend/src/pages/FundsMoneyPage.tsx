@@ -1111,11 +1111,11 @@ export default function FundsMoneyPage() {
                                 <X size={22} />
                             </button>
                         </div>
-                        {/* Симметричные боковые отступы (16/16): строки одинаково
-                            отстоят от левого и правого краёв виджета. «Доходность» не
-                            обрезается за счёт достаточной ширины её колонки, а не за
-                            счёт асимметричного паддинга. */}
-                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>
+                        {/* Симметричные боковые отступы: padding одинаков слева/справа,
+                            а scrollbar-gutter both-edges резервирует место скроллбара
+                            С ОБЕИХ сторон — иначе вертикальный скроллбар (~11px справа)
+                            съедал правый отступ и строки стояли несимметрично. */}
+                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}>
                             <FundsTable
                                 bare
                                 data={data}
