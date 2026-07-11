@@ -353,8 +353,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
           // движении курсора. Текст прижат к колонке чисел (text-align к оси).
           if (measCtx) {
             const zw = measCtx.measureText(txt.replace(/[2-9]/g, '0')).width;
-            // 15.17 = border 1 + paddingInner 4.58 + paddingOuter 4.58 + tick 5
-            parts.valpill.style.width = (Math.ceil(zw) + 15.17) + 'px';
+            // 15.17 = border 1 + paddingInner 4.58 + paddingOuter 4.58 + tick 5;
+            // финальное округление до device-пикселей — как битмап нативного.
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            parts.valpill.style.width = (Math.round((Math.ceil(zw) + 15.17) * dpr) / dpr) + 'px';
           }
         }
         chip.style.top = y + 'px';
@@ -365,12 +367,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         // нативный лейбл последнего значения (не толкает/не прячет).
         const axisW = ch.priceScale(side).width() || 54;
         chip.style.right = 'auto';
+        // §R2-28: якорим кромку САМОГО пилса к границе поля по фактическим rect'ам —
+        // сумма ширин частей чипа (кружок+gap) давала ±2px от округлений flex-раскладки,
+        // и пилс вставал чуть дальше/ближе к графику, чем нативный лейбл.
+        const boxL = box.getBoundingClientRect().left;
+        const pr = parts ? parts.valpill.getBoundingClientRect() : null;
+        const chipL = chip.getBoundingClientRect().left - boxL;
         if (side === 'right') {
-          const beforePill = parts ? parts.circle.offsetWidth + 3 : 18;   // «+» и gap перед пилсом
-          chip.style.left = (box.clientWidth - axisW - beforePill) + 'px';
+          const target = box.clientWidth - axisW;          // левая кромка пилса = граница поля
+          chip.style.left = (pr ? chipL + (target - (pr.left - boxL)) : target - 18) + 'px';
         } else {
-          const vpw = parts ? parts.valpill.getBoundingClientRect().width : 44;
-          chip.style.left = (axisW - vpw) + 'px';
+          const target = axisW;                            // правая кромка пилса = граница поля
+          chip.style.left = (pr ? chipL + (target - (pr.right - boxL)) : Math.max(0, target - 44)) + 'px';
         }
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
       }
@@ -447,9 +455,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         }
       } catch { /* калибровка не критична */ }
       const fs = Math.round(11 * ratio * 100) / 100;
+      // §R2-28: высота = как у нативного лейбла ПОСЛЕ его битмап-округления:
+      // round(15.583×dpr) с поправкой до чётности tickHeight (у нативного totalHeight
+      // подгоняется под чётность тика) — на ретине это ровно 16.0, а наши прежние
+      // 15.58 давали «выглядывание» нативного лейбла из-под пилса сверху/снизу.
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const tickH = Math.max(1, Math.floor(dpr));
+      let hDev = Math.round(15.583 * dpr);
+      if (hDev % 2 !== tickH % 2) hDev += 1;
+      const lh = Math.round(hDev / dpr * 100) / 100;
       for (const side of ['left', 'right'] as const) {
         const p = alertChipParts[side];
-        if (p) p.valpill.style.font = '400 ' + fs + 'px/15.58px ' + PILL_FONT;
+        if (p) p.valpill.style.font = '400 ' + fs + 'px/' + lh + 'px ' + PILL_FONT;
       }
     };
     setPillFont();
