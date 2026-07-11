@@ -297,22 +297,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     };
     drawExpRef.current = drawExp;
 
-    // ── §OI-3/§R2-17 axis-алерты (как на сайте / TradingView): превью-уровень —
-    // НАТИВНАЯ price line на первой серии оси: серый ПУНКТИР (цвет кроссхэйра) в поле
-    // графика + цветной ЛЕЙБЛ значения в жёлобе, выровненный по числам оси НАТИВНО (тот
-    // же форматтер и колонка, что тики и пилс последнего значения). Плюс DOM-кружок «+»
-    // в поле у оси — клик = onCreateAlert. Гейт — onCreateAlert + alertAxes; иначе инертно.
+    // ── §OI-3/§R2-21 axis-алерты: превью-уровень = НАТИВНАЯ price line (только серый
+    // ПУНКТИР, цвет кроссхэйра, 1:1 с вертикалью) + DOM value-пилс значения ПОВЕРХ оси
+    // (z выше канваса → ложится на нативный лейбл последнего значения, не толкает и не
+    // прячет его), выровненный по правой колонке чисел оси. Плюс DOM-кружок «+» в поле.
+    // DOM-слой pointer-events:none (кроме кликабельного кружка) — не влияет на график.
     const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertChipParts: { [k in 'left' | 'right']?: { circle: HTMLDivElement; valpill: HTMLDivElement } } = {};
     const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
     const hidePreview = (side: 'left' | 'right') => {
       const pl = previewLineRef.current[side];
       if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
-      // §R2-18/19: вернуть лейбл последнего значения (прятали на время превью, чтобы
-      // нативная коллизия лейблов не расталкивала их). ⚠️ applyOptions на СЕРИИ
-      // пересчитывает ценовую шкалу — дёргаем ТОЛЬКО при смене состояния (иначе фриз).
-      const info = axisInfoRef.current[side];
-      if (info) { const want = info.lastVisible ?? true; try { if (info.api.options().lastValueVisible !== want) info.api.applyOptions({ lastValueVisible: want }); } catch { /* серия снята */ } }
     };
     const hideChips = () => {
       if (alertChips.left) alertChips.left.style.display = 'none';
@@ -332,26 +328,33 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (!chip || !axes.includes(side) || !info) { if (chip) chip.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
         const price = info.api.coordinateToPrice(y as number);
         if (price == null) { chip.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
-        // Нативный уровень + лейбл (выровнен по числам оси НАТИВНО): пунктир серый (цвет
-        // кроссхэйра), лейбл — фон в цвет линии, текст белый, значение форматтером серии.
+        // Серый пунктир уровня — нативная price line (БЕЗ лейбла: значение показывает DOM-пилс).
         const pl = previewLineRef.current[side];
-        if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true, color: crossColorRef.current, axisLabelColor: info.color ?? '#888888', axisLabelTextColor: '#ffffff' }); } catch { /* серия снята */ } }
-        // §R2-20: прячем лейбл последнего значения ТОЛЬКО когда алерт-превью подходит к
-        // нему БЛИЗКО по Y (иначе движок расталкивает пересекающиеся лейблы). Далеко —
-        // лейбл виден. ⚠️ applyOptions на серии дёргаем лишь при смене состояния (иначе
-        // пересчёт ценовой шкалы на каждый кадр = фриз).
-        try {
-          const lastY = info.last != null ? info.api.priceToCoordinate(info.last) : null;
-          const wantLastVis = (lastY != null && Math.abs(y - lastY) < 20) ? false : (info.lastVisible ?? true);
-          if (info.api.options().lastValueVisible !== wantLastVis) info.api.applyOptions({ lastValueVisible: wantLastVis });
-        } catch { /* серия снята */ }
-        // Кружок «+» — в поле у оси (выступает на график), в цвет линии.
-        const axisW = ch.priceScale(side).width() || 54;
-        const cw = 15;
+        if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: false, color: crossColorRef.current }); } catch { /* серия снята */ } }
+        // DOM value-пилс + кружок «+», в цвет линии. Значение — форматтером серии (как тики).
+        const parts = alertChipParts[side];
+        const col = info.color || 'var(--accent,#FF5C2B)';
+        if (parts) {
+          parts.circle.style.background = col;
+          parts.valpill.style.background = col;
+          parts.valpill.textContent = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
+        }
         chip.style.top = y + 'px';
         chip.style.display = 'flex';
-        chip.style.background = info.color || 'var(--accent,#FF5C2B)';
-        chip.style.left = (side === 'left' ? axisW + 2 : box.clientWidth - axisW - cw - 2) + 'px';
+        // Выравнивание value-пилса по ПРАВОЙ колонке чисел оси (как нативные лейблы): правая
+        // ось — правый край у кромки бокса; левая — у кромки поля. Кружок «+» со стороны
+        // поля. z выше канваса → пилс ЛОЖИТСЯ на нативный лейбл последнего значения (не
+        // толкает/не прячет). PAD ≈ внутренний отступ лейблов TradingView.
+        const axisW = ch.priceScale(side).width() || 54;
+        const PAD = 3;
+        if (side === 'right') {
+          chip.style.left = 'auto';
+          chip.style.right = PAD + 'px';
+        } else {
+          chip.style.right = 'auto';
+          const vpw = parts ? parts.valpill.offsetWidth : 44;
+          chip.style.left = Math.max(0, axisW - PAD - vpw) + 'px';
+        }
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
       }
     };
@@ -361,19 +364,29 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       strip.addEventListener('mousemove', (e) => showChipsAt(e.clientY - box.getBoundingClientRect().top));
       box.appendChild(strip);
       alertStrips[side] = strip;
-      // §R2-17: чип = только кружок «+» (значение показывает нативный лейбл price line,
-      // выровненный по числам оси). Позиция/цвет — в showChipsAt.
+      // §R2-21: чип = value-пилс (DOM, ложится ПОВЕРХ нативного лейбла последнего значения)
+      // + кружок «+» в поле. Контейнер pointer-events:none (не влияет на график); кликается
+      // только кружок. Порядок: левая ось [пилс][+], правая [+][пилс] — пилс у оси, + в поле.
       const chip = document.createElement('div');
-      chip.style.cssText = 'position:absolute;display:none;width:15px;height:15px;border-radius:50%;'
-        + 'align-items:center;justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;'
-        + 'transform:translateY(-50%);pointer-events:auto;cursor:pointer;z-index:7;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
-      chip.textContent = '+';
-      chip.title = 'Поставить алерт на этом уровне';
-      chip.addEventListener('click', (e) => {
+      chip.style.cssText = 'position:absolute;display:none;align-items:center;gap:3px;'
+        + 'transform:translateY(-50%);z-index:7;white-space:nowrap;pointer-events:none';
+      const circle = document.createElement('div');
+      circle.style.cssText = 'width:15px;height:15px;border-radius:50%;display:flex;align-items:center;'
+        + 'justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;flex:0 0 auto;'
+        + 'pointer-events:auto;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      circle.textContent = '+';
+      circle.title = 'Поставить алерт на этом уровне';
+      circle.addEventListener('click', (e) => {
         e.stopPropagation();
         const p = alertPending[side];
         if (p && onCreateAlertRef.current) onCreateAlertRef.current(p);
       });
+      const valpill = document.createElement('div');
+      valpill.style.cssText = 'padding:2px 4px;border-radius:2px;font-size:11px;font-weight:400;color:#fff;'
+        + 'font-variant-numeric:tabular-nums;line-height:1;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      if (side === 'left') { chip.appendChild(valpill); chip.appendChild(circle); }
+      else { chip.appendChild(circle); chip.appendChild(valpill); }
+      alertChipParts[side] = { circle, valpill };
       box.appendChild(chip);
       alertChips[side] = chip;
     }
