@@ -168,9 +168,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
-  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number } }>({});
+  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
-  const animRafRef = useRef<number | null>(null);   // §OI-6 entrance-анимация
+  const dataSigRef = useRef<string>('');   // §R2-6 сигнатура данных для reveal-анимации
   const chartPrefs = useContext(ChartPrefsCtx);
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
@@ -299,6 +299,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     alertHGuide.style.cssText = 'position:absolute;left:0;right:0;height:0;display:none;pointer-events:none;z-index:5;border-top:1px dashed var(--accent,#FF5C2B)';
     box.appendChild(alertHGuide);
     const alertChips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertChipParts: { [k in 'left' | 'right']?: { circle: HTMLDivElement; valpill: HTMLDivElement } } = {};
     const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
     const hideChips = () => {
@@ -322,7 +323,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (price == null) { chip.style.display = 'none'; alertPending[side] = undefined; continue; }
         chip.style.top = y + 'px';
         chip.style.display = 'inline-flex';
-        chip.textContent = '＋ ' + (info.fmt ? info.fmt(price as number) : String(Math.round(price as number)));
+        const parts = alertChipParts[side];
+        if (parts) {
+          const col = info.color || 'var(--accent,#FF5C2B)';
+          parts.circle.style.background = col;
+          parts.valpill.style.background = col;
+          parts.valpill.textContent = info.fmt ? info.fmt(price as number) : String(Math.round(price as number));
+        }
         alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
         any = true;
       }
@@ -335,14 +342,24 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       strip.addEventListener('mousemove', (e) => showChipsAt(e.clientY - box.getBoundingClientRect().top));
       box.appendChild(strip);
       alertStrips[side] = strip;
+      // §R2-9 (как на сайте): значение-пилс (в цвете линии, размер как у пилса
+      // последнего значения) + отдельный кружок с «+» с ВНЕШНЕЙ стороны оси. Цвета
+      // проставляются в showChipsAt по цвету серии этой оси.
       const chip = document.createElement('div');
-      chip.style.cssText = [
-        'position:absolute', (side === 'left' ? 'left:2px' : 'right:2px'), 'transform:translateY(-50%)',
-        'display:none', 'align-items:center', 'pointer-events:auto', 'cursor:pointer', 'z-index:7',
-        'padding:2px 6px', 'border-radius:5px', 'font-size:10px', 'font-weight:700', 'white-space:nowrap',
-        'font-family:"JetBrains Mono",ui-monospace,monospace', 'color:#fff',
-        'background:var(--accent,#FF5C2B)', 'box-shadow:0 2px 8px rgba(0,0,0,0.35)',
-      ].join(';');
+      chip.style.cssText = 'position:absolute;' + (side === 'left' ? 'left:2px' : 'right:2px')
+        + ';transform:translateY(-50%);display:none;align-items:center;gap:3px;pointer-events:auto;cursor:pointer;z-index:7;white-space:nowrap';
+      const circle = document.createElement('div');
+      circle.style.cssText = 'width:15px;height:15px;border-radius:50%;display:flex;align-items:center;'
+        + 'justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;flex:0 0 auto;'
+        + 'box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      circle.textContent = '+';
+      const valpill = document.createElement('div');
+      valpill.style.cssText = 'padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#fff;'
+        + 'font-variant-numeric:tabular-nums;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
+      // Порядок: у левой оси кружок СНАРУЖИ (слева) от значения; у правой — справа.
+      if (side === 'left') { chip.appendChild(circle); chip.appendChild(valpill); }
+      else { chip.appendChild(valpill); chip.appendChild(circle); }
+      alertChipParts[side] = { circle, valpill };
       chip.title = 'Поставить алерт на этом уровне';
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -406,9 +423,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       }
       if (!any) { tip.style.display = 'none'; return; }
       tip.style.display = 'block';
-      const w = box.clientWidth, tw = tip.offsetWidth;
-      // §5.4: после середины графика разворачиваем влево, чтобы не упираться в правый край.
-      const rawLeft = param.point.x > w / 2 ? param.point.x - tw - 16 : param.point.x + 16;
+      const w = box.clientWidth, tw = tip.offsetWidth, GAP = 16;
+      // §R2-10: по умолчанию тултип справа от курсора с зазором GAP от перекрестья;
+      // флип влево ТЕМ ЖЕ зазором только если у правого края не влезает (по переполнению,
+      // а не по середине графика) — убирает несимметричный прыжок на w/2.
+      let rawLeft = param.point.x + GAP;
+      if (rawLeft + tw > w - 6) rawLeft = param.point.x - tw - GAP;
       tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
       tip.style.top = Math.max(6, param.point.y - 8) + 'px';
     });
@@ -434,7 +454,6 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     return () => {
       box.removeEventListener('wheel', onWheel, true);
       box.removeEventListener('mouseleave', hideChips);
-      if (animRafRef.current != null) cancelAnimationFrame(animRafRef.current);
       expRo.disconnect();
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* уже снят */ }
       drawExpRef.current = null;
@@ -486,9 +505,6 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const box = boxRef.current;
     const rc = (col: string | undefined): string => (box ? resolveColor(box, col) : (col ?? '#888888'));
 
-    // §OI-6: захватываем финальные (resolved) данные серий для entrance-анимации.
-    const built: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; real: { time: UTCTimestamp; value: number; color?: string }[] }[] = [];
-
     for (const def of series) {
       const scaleId = def.scale ?? 'right';
       const priceFormat = def.axisFmt
@@ -507,13 +523,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       } else {
         s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
       }
-      const mapped = def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) }));
       try {
-        s.setData(mapped);
+        s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
       } catch (err) {
         console.error('LwChart setData failed:', def.id, err);
       }
-      built.push({ api: s, real: mapped });
       if (def.zeroLine) {
         s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
       }
@@ -577,28 +591,22 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chart.timeScale().setVisibleLogicalRange(savedRange);
     }
 
-    // §OI-6: анимация появления — серии вырастают из плоской линии (среднего) к
-    // реальным значениям за ~480мс (easeOutCubic), как на сайте. Только при первой
-    // отрисовке и смене fitKey (инструмент/ТФ), чтобы не мигать на каждом тумблере.
-    if (animate && fitChanged) {
-      if (animRafRef.current != null) cancelAnimationFrame(animRafRef.current);
-      const items = built.filter((b) => b.real.length > 2);
-      if (items.length) {
-        const bases = items.map((b) => b.real.reduce((acc, p) => acc + p.value, 0) / b.real.length);
-        const dur = 480;
-        let t0 = 0;
-        const step = (ts: number) => {
-          if (!t0) t0 = ts;
-          const t = Math.min(1, (ts - t0) / dur);
-          const e = 1 - Math.pow(1 - t, 3);
-          for (let i = 0; i < items.length; i++) {
-            const b = items[i]; const base = bases[i];
-            try { b.api.setData(b.real.map((p) => ({ ...p, value: base + (p.value - base) * e }))); } catch { /* серия снята */ }
-          }
-          if (t < 1) { animRafRef.current = requestAnimationFrame(step); }
-          else { for (const b of items) { try { b.api.setData(b.real); } catch { /* снята */ } } animRafRef.current = null; }
-        };
-        animRafRef.current = requestAnimationFrame(step);
+    // §R2-6 (как на сайте): анимация появления — CSS-«штора» слева направо (clip-path
+    // по всему холсту графика), на ПЕРВОЙ отрисовке и при ЛЮБОЙ смене данных
+    // (инструмент/ТФ/показатель/группа). Сигнатура данных отсекает срабатывания на
+    // смену priceLines/настроек (данные те же). Без autoscale-рывков — чистый reveal.
+    if (animate) {
+      const sig = series.map((s) => s.id + '#' + s.data.length + '#' + (s.data.length ? s.data[s.data.length - 1].value + '/' + s.data[0].value : '')).join('|');
+      if (sig !== dataSigRef.current) {
+        dataSigRef.current = sig;
+        const b = boxRef.current;
+        if (b) {
+          b.style.transition = 'none';
+          b.style.clipPath = 'inset(0 100% 0 0)';
+          void b.offsetWidth;   // reflow — зафиксировать стартовое (скрытое) состояние
+          b.style.transition = 'clip-path 0.55s cubic-bezier(0.22, 1, 0.36, 1)';
+          b.style.clipPath = 'inset(0 0 0 0)';
+        }
       }
     }
 
@@ -609,7 +617,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const sc = series[i].scale ?? 'right';
       if (!axisInfoRef.current[sc]) {
         const d = series[i];
-        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined };
+        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color) };
       }
     }
     layoutAlertRef.current?.();     // показать/скрыть полосы алертов под текущий набор осей
