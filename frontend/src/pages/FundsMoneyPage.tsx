@@ -1087,7 +1087,11 @@ export default function FundsMoneyPage() {
                                 <X size={22} />
                             </button>
                         </div>
-                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>
+                        {/* Правый паддинг больше левого (40 vs 16): весь право-
+                            выровненный блок (СЧА/Доходность) уходит от правой кромки
+                            виджета, чтобы «Доходность» гарантированно не упиралась в
+                            край при любом рендере шрифта. */}
+                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 40px var(--sp-4) var(--sp-4)' }}>
                             <FundsTable
                                 bare
                                 data={data}
