@@ -420,6 +420,21 @@ export default function SandboxPage() {
     });
   }, []);
 
+  // Drag-reorder вкладок (§3.3): нативный HTML5 DnD — перетащенный лист
+  // вставляется на позицию цели, сдвигая остальных.
+  const reorderSheets = useCallback((srcId: string, dstId: string) => {
+    if (srcId === dstId) return;
+    setSt((s) => {
+      const from = s.sheets.findIndex((x) => x.id === srcId);
+      const to = s.sheets.findIndex((x) => x.id === dstId);
+      if (from < 0 || to < 0) return s;
+      const sheets = [...s.sheets];
+      const [moved] = sheets.splice(from, 1);
+      sheets.splice(to, 0, moved);
+      return { ...s, sheets };
+    });
+  }, []);
+
   const deleteSheet = useCallback((id: string) => {
     setGuides([]);
     setSt((s) => {
@@ -468,10 +483,14 @@ export default function SandboxPage() {
               <button
                 key={sh.id}
                 type="button"
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData('text/frame-sheet', sh.id); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={(e) => { if (e.dataTransfer.types.includes('text/frame-sheet')) e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/frame-sheet'); if (src) reorderSheets(src, sh.id); }}
                 onClick={() => pickSheet(sh.id)}
                 onDoubleClick={() => setRenaming({ id: sh.id, value: sh.name })}
                 onContextMenu={(e) => { e.preventDefault(); pickSheet(sh.id); setSheetMenu({ id: sh.id, x: e.clientX, y: e.clientY }); }}
-                title="Двойной клик — переименовать · правый клик — меню"
+                title="Двойной клик — переименовать · правый клик — меню · тянуть — поменять порядок"
                 style={sheetTabStyle(on)}
               >
                 {sh.name}
