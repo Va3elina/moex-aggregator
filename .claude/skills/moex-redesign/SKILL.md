@@ -19,8 +19,13 @@ description: Editorial-редизайн сайта Frame. Use when user says "р
 - SW: `frame-v367`
 
 **Главное чтиво** (расположено в проектной памяти):
-- `~/.claude/projects/-Users-vadim-PyCharmMiscProject-MOEX/memory/design_system.md` — все tokens, helpers, anti-patterns
-- `~/.claude/projects/-Users-vadim-PyCharmMiscProject-MOEX/memory/recent_changes.md` — что сделано в последней сессии
+- ⚠️ Пути ниже — это личная память Claude Code **на Mac Вадима**
+  (`~/.claude/projects/-Users-vadim-PyCharmMiscProject-MOEX/memory/`), она не переносится
+  между машинами/аккаунтами. На этой машине эквивалентного `design_system.md`/
+  `recent_changes.md` нет — если нужны детали tokens/helpers/anti-patterns, спроси Вадима
+  напрямую или попроси его экспортировать эти файлы.
+- `design_system.md` — все tokens, helpers, anti-patterns
+- `recent_changes.md` — что сделано в последней сессии
 
 ## Quick reference — что использовать в новом коде
 
@@ -42,13 +47,19 @@ description: Editorial-редизайн сайта Frame. Use when user says "р
 
 ## ⚠️ Прежде чем начать любую правку
 
-1. **Открыть соответствующий jsx-референс** из `~/Downloads/design_handoff_frame_redesign/`
+1. **Открыть соответствующий jsx-референс** из папки design_handoff (см. ниже, где лежит на этой машине)
 2. **Сверять pixel-by-pixel**: толщина линий, цвета, отступы, типографика
 3. **НЕ копипастить код** из референса — это дизайн-референс уровня Figma, а не production код. Цель — воссоздать в нашем стеке (React/Vite, Tailwind + CSS-vars).
 
 ## Где лежит референс
 
-`/Users/vadim/Downloads/design_handoff_frame_redesign/`:
+⚠️ Ниже — путь на Mac Вадима (`/Users/vadim/Downloads/design_handoff_frame_redesign/`).
+Сама папка — не часть git-репозитория, это отдельный набор файлов, который нужно
+получить от Вадима отдельно (архивом/облаком) и положить в удобное место на этой
+машине (например `C:/MOEX/local_archive/design_handoff_frame_redesign/`) — на новой
+машине по умолчанию её нет.
+
+Внутри:
 
 | Файл | Что внутри |
 |---|---|

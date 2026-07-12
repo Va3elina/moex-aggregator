@@ -100,7 +100,9 @@ ssh ... 'docker exec frame-api-1 python3 -m Funds.manual_scha_backfill /data/man
 ssh ... 'rm -rf /opt/frame/data/manual_scha/reimport_X'  # cleanup после
 ```
 Verify: `SELECT ticker, COUNT(DISTINCT snapshot_date), AVG(assets) ... WHERE source='interfax_manual'`.
-Локальный архив: `~/Downloads/funds_organized/<УК>/<TICKER — Name>/<date>.<ext>` + INDEX.md.
+Локальный архив (per-оператор, свой на каждой машине — на Mac Вадима был
+`~/Downloads/funds_organized/...`, на Windows заведи аналог, напр.
+`C:/MOEX/local_archive/funds_organized/`): `<УК>/<TICKER — Name>/<date>.<ext>` + INDEX.md.
 
 ## Подводные камни (data-integrity — спот-чек при КАЖДОМ импорте)
 - **wrong-fund**: ZIP под именем фонда A может содержать фонд B (был «Арендный поток»

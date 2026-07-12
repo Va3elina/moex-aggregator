@@ -36,7 +36,7 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
 
 **Почему `IdentitiesOnly=yes`**: SSH-агент по умолчанию предлагает все ключи подряд → каждый ключ = 1 auth attempt → fail2ban ban на 24 часа после 3+ failed.
 
-**Какой USER**: `root` (Вадим, для управления контейнерами и git) или `alexgondon` (коллега, для тех же целей с sudo).
+**Какой USER**: `root` (Вадим, для управления контейнерами и git), `alexgondon` (коллега, с sudo) или `severina` (доступ с 2026-07-12, вход только по ключу без пароля, группы `sudo` NOPASSWD/`docker`/`users` — под этим юзером команды через `sudo <cmd>`; см. `severina-server-access.md` в корне репо для деталей онбординга).
 
 ### 2. НЕ probe'и сервер
 
