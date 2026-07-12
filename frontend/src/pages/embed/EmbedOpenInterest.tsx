@@ -512,6 +512,23 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
         </>
       }
+      actions={
+        status === 'ok' && data && lwSeries.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            title="Экспорт графика"
+            aria-label="Экспорт графика"
+            style={{
+              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
+              cursor: 'pointer', flexShrink: 0, padding: 0,
+            }}
+          >
+            <Camera size={15} />
+          </button>
+        ) : undefined
+      }
       more={
         <>
           <DrawerSection label="Слои">
@@ -557,26 +574,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             animate
           />
         )}
-        {/* Экспорт графика — угол над холстом (data-export-ignore → не в снимке).
-            Открывает ExportModal (скрин контейнера LwChart → превью → рисование → PNG/буфер). */}
-        {status === 'ok' && data && lwSeries.length > 0 && (
-          <button
-            type="button"
-            data-export-ignore="true"
-            onClick={() => setExportOpen(true)}
-            title="Экспорт графика"
-            aria-label="Экспорт графика"
-            style={{
-              position: 'absolute', top: 8, right: 8, width: 30, height: 30, zIndex: 6,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              borderRadius: 7, border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
-              background: 'color-mix(in srgb, var(--bg-primary, #111) 62%, transparent)',
-              color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, backdropFilter: 'blur(2px)',
-            }}
-          >
-            <Camera size={15} />
-          </button>
-        )}
+        {/* Модалка экспорта (триггер 📷 — в тулбаре рядом с ⚙, см. actions). Снимает
+            контейнер LwChart → превью → рисование → PNG/буфер. Portal → место в дереве неважно. */}
         {exportOpen && chartBoxRef.current && (
           <Suspense fallback={null}>
             <ExportModal
