@@ -16,7 +16,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2 } from 'lucide-react';
+import {
+  Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
+  MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
+} from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
@@ -63,12 +66,18 @@ const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'participants', label: 'Число трейдеров' },
 ];
 
-// Инструменты рисования (модель TradingView) — левая панель. Ядро v1.
-const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2 }[] = [
+// Инструменты рисования (модель TradingView) — левая панель. rot — поворот иконки (vline).
+const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; rot?: number }[] = [
   { id: 'select', title: 'Выделение / перемещение', Icon: MousePointer2 },
   { id: 'trend', title: 'Трендовая линия', Icon: TrendingUp },
+  { id: 'ray', title: 'Луч', Icon: MoveUpRight },
+  { id: 'arrow', title: 'Стрелка', Icon: ArrowUpRight },
   { id: 'hline', title: 'Горизонтальная линия', Icon: Minus },
+  { id: 'vline', title: 'Вертикальная линия', Icon: Minus, rot: 90 },
   { id: 'rect', title: 'Прямоугольник', Icon: Square },
+  { id: 'ellipse', title: 'Эллипс', Icon: Circle },
+  { id: 'fib', title: 'Фибоначчи', Icon: AlignJustify },
+  { id: 'brush', title: 'Кисть', Icon: Brush },
   { id: 'text', title: 'Текст', Icon: Type },
 ];
 const DRAW_COLORS = ['#FF5C2B', '#5DA3E9', '#5BD49C', '#EF6F6F', '#E0A34E', '#F5F1E8'];
@@ -166,6 +175,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [drawColor, setDrawColor] = useState('#FF5C2B');
   const [drawings, setDrawings] = useState<LwDrawing[]>([]);
   const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
+  const [drawMagnet, setDrawMagnet] = useState(false);   // привязка к бару/цене
+  const [drawHidden, setDrawHidden] = useState(false);   // скрыть рисунки (глаз)
+  const [drawLocked, setDrawLocked] = useState(false);   // замок (запрет перемещения)
   const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
@@ -648,6 +660,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawWidth={2}
             selectedDrawId={selectedDrawId}
             onSelectDraw={setSelectedDrawId}
+            drawMagnet={drawMagnet}
+            drawHidden={drawHidden}
+            drawLocked={drawLocked}
           />
         )}
         {/* Панель инструментов рисования слева (модель TradingView) — только в режиме
@@ -661,6 +676,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 88%, transparent)',
               border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
               boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+              maxHeight: 'calc(100% - 16px)', overflowY: 'auto',
             }}
           >
             {DRAW_TOOLS.map((t) => (
@@ -672,7 +688,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
                 onClick={() => setDrawTool(t.id)}
                 style={drawToolBtn(drawTool === t.id)}
               >
-                <t.Icon size={16} />
+                <t.Icon size={16} style={t.rot ? { transform: `rotate(${t.rot}deg)` } : undefined} />
               </button>
             ))}
             <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
@@ -691,6 +707,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
                 <span style={{ width: 13, height: 13, borderRadius: '50%', background: c, display: 'inline-block' }} />
               </button>
             ))}
+            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
+            {/* Утилиты: магнит / скрыть / замок */}
+            <button type="button" title="Магнит: привязка к бару и цене" aria-label="Магнит" onClick={() => setDrawMagnet((v) => !v)} style={drawToolBtn(drawMagnet)}>
+              <Magnet size={16} />
+            </button>
+            <button type="button" title={drawHidden ? 'Показать рисунки' : 'Скрыть рисунки'} aria-label="Скрыть рисунки" onClick={() => setDrawHidden((v) => !v)} style={drawToolBtn(drawHidden)}>
+              {drawHidden ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <button type="button" title={drawLocked ? 'Разблокировать рисунки' : 'Заблокировать (запрет перемещения)'} aria-label="Замок" onClick={() => setDrawLocked((v) => !v)} style={drawToolBtn(drawLocked)}>
+              {drawLocked ? <Lock size={16} /> : <LockOpen size={16} />}
+            </button>
             <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
             <button
               type="button"

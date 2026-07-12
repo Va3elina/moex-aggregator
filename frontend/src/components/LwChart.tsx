@@ -55,9 +55,10 @@ export interface LwExpiration { time: number; label: string; description: string
 // ── Рисование (модель TradingView): фигуры живут в координатах {logical, price},
 // перепроецируются на зум/пан/ресайз (как метки экспираций) → «ездят» с графиком.
 // logical — дробный индекс бара (timeScale.coordinateToLogical) → свободная позиция.
-export type LwDrawTool = 'select' | 'trend' | 'hline' | 'rect' | 'text';
+export type LwDrawShape = 'trend' | 'hline' | 'vline' | 'ray' | 'arrow' | 'rect' | 'ellipse' | 'fib' | 'brush' | 'text';
+export type LwDrawTool = 'select' | LwDrawShape;
 export interface LwDrawPoint { logical: number; price: number }
-export interface LwDrawing { id: string; tool: 'trend' | 'hline' | 'rect' | 'text'; pts: LwDrawPoint[]; color: string; width: number; text?: string }
+export interface LwDrawing { id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number; text?: string }
 
 interface LwChartProps {
   series: LwSeries[];
@@ -108,6 +109,9 @@ interface LwChartProps {
   drawWidth?: number;                   // толщина для новых фигур
   selectedDrawId?: string | null;       // выделенная фигура (для подсветки/удаления)
   onSelectDraw?: (id: string | null) => void;
+  drawMagnet?: boolean;                  // привязка новых точек к бару/цене серии
+  drawHidden?: boolean;                  // временно скрыть все рисунки (глаз)
+  drawLocked?: boolean;                  // замок: запретить выделение/перемещение
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -184,7 +188,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -205,6 +209,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const drawWidthRef = useRef(drawWidth); drawWidthRef.current = drawWidth;
   const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
   const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
+  const drawMagnetRef = useRef(drawMagnet); drawMagnetRef.current = drawMagnet;
+  const drawHiddenRef = useRef(drawHidden); drawHiddenRef.current = drawHidden;
+  const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
   const drawShapesRef = useRef<(() => void) | null>(null);
   // §OI-3 axis-алерты: пропы через ref (смена не пересоздаёт чарт); axisInfoRef —
   // первая серия каждой оси + её форматтер + последнее значение (заполняется в
@@ -595,27 +602,75 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       for (const k in attrs) e.setAttribute(k, String(attrs[k]));
       return e;
     };
+    // Snap (магнит): точка → ближайший бар (logical→round) + цена закрытия этого бара.
+    const primaryDef = () => defsRef.current.find((s) => (s.scale ?? 'right') === 'left') ?? defsRef.current.find((s) => (s.scale ?? 'right') === 'right') ?? defsRef.current[0];
+    const snap = (lp: LwDrawPoint | null, allow = true): LwDrawPoint | null => {
+      if (!lp || !allow || !drawMagnetRef.current) return lp;
+      const L = Math.round(lp.logical); const data = primaryDef()?.data;
+      if (data && L >= 0 && L < data.length) return { logical: L, price: data[L].value };
+      return { ...lp, logical: L };
+    };
+    const priceY = (price: number): number | null => { const s = drawSeries(); const y = s ? s.priceToCoordinate(price) : null; return y == null ? null : (y as number); };
+    // Луч: продлить a→b до границы поля.
+    const rayEnd = (a: { x: number; y: number }, b: { x: number; y: number }, pb: { left: number; width: number; height: number }) => {
+      const dx = b.x - a.x, dy = b.y - a.y; if (!dx && !dy) return b;
+      let t = Infinity;
+      if (dx > 0) t = Math.min(t, (pb.left + pb.width - a.x) / dx);
+      if (dx < 0) t = Math.min(t, (pb.left - a.x) / dx);
+      if (dy > 0) t = Math.min(t, (pb.height - a.y) / dy);
+      if (dy < 0) t = Math.min(t, (0 - a.y) / dy);
+      if (!isFinite(t) || t < 1) t = 1;
+      return { x: a.x + dx * t, y: a.y + dy * t };
+    };
+    const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+    const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);   // старт с 1 точки
+
     const renderOne = (d: LwDrawing, sel: boolean, preview = false) => {
       const col = d.color, w = d.width, op = preview ? '0.7' : '1', pb = plotBox();
+      const dot = (x: number, y: number) => drawSvg.appendChild(svgEl('circle', { cx: x, cy: y, r: 4, fill: col }));
       if (d.tool === 'hline') {
         const xy = lp2xy(d.pts[0]); if (!xy) return;
         drawSvg.appendChild(svgEl('line', { x1: pb.left, y1: xy.y, x2: pb.left + pb.width, y2: xy.y, stroke: col, 'stroke-width': w, opacity: op }));
-        if (sel) drawSvg.appendChild(svgEl('circle', { cx: pb.left + pb.width / 2, cy: xy.y, r: 4, fill: col }));
-      } else if (d.tool === 'trend') {
-        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+        if (sel) dot(pb.left + pb.width / 2, xy.y);
+      } else if (d.tool === 'vline') {
+        const xy = lp2xy(d.pts[0]); if (!xy) return;
+        drawSvg.appendChild(svgEl('line', { x1: xy.x, y1: 0, x2: xy.x, y2: pb.height, stroke: col, 'stroke-width': w, opacity: op }));
+        if (sel) dot(xy.x, pb.height / 2);
+      } else if (d.tool === 'trend' || d.tool === 'ray' || d.tool === 'arrow') {
+        const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (!a || !b0) return;
+        const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
         drawSvg.appendChild(svgEl('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
-        if (sel) { drawSvg.appendChild(svgEl('circle', { cx: a.x, cy: a.y, r: 4, fill: col })); drawSvg.appendChild(svgEl('circle', { cx: b.x, cy: b.y, r: 4, fill: col })); }
-      } else if (d.tool === 'rect') {
+        if (d.tool === 'arrow') {
+          const ang = Math.atan2(b0.y - a.y, b0.x - a.x), ah = 9 + w * 2;
+          for (const s of [-0.42, 0.42]) drawSvg.appendChild(svgEl('line', { x1: b0.x, y1: b0.y, x2: b0.x - ah * Math.cos(ang - s), y2: b0.y - ah * Math.sin(ang - s), stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
+        }
+        if (sel) { dot(a.x, a.y); dot(b0.x, b0.y); }
+      } else if (d.tool === 'rect' || d.tool === 'ellipse') {
         const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
         const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
-        drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: col, 'fill-opacity': '0.13', stroke: col, 'stroke-width': w, opacity: op }));
-        if (sel) drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: 'none', stroke: col, 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+        if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: col, 'fill-opacity': '0.13', stroke: col, 'stroke-width': w, opacity: op }));
+        else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill: col, 'fill-opacity': '0.13', stroke: col, 'stroke-width': w, opacity: op }));
+        if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+      } else if (d.tool === 'fib') {
+        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+        const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x), p0 = d.pts[0].price, p1 = d.pts[1].price;
+        for (const lv of FIB) {
+          const yy = priceY(p0 + (p1 - p0) * lv); if (yy == null) continue;
+          drawSvg.appendChild(svgEl('line', { x1: xL, y1: yy, x2: xR, y2: yy, stroke: col, 'stroke-width': 1, opacity: preview ? '0.6' : '0.85', 'stroke-dasharray': lv === 0 || lv === 1 ? '0' : '3 3' }));
+          const t = svgEl('text', { x: xL + 3, y: yy - 2, fill: col, 'font-size': 9.5, 'font-family': 'Inter,sans-serif', opacity: op }); t.textContent = lv.toFixed(3);
+          drawSvg.appendChild(t);
+        }
+        if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+      } else if (d.tool === 'brush') {
+        if (d.pts.length < 2) { const xy = lp2xy(d.pts[0]); if (xy) dot(xy.x, xy.y); return; }
+        const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[];
+        drawSvg.appendChild(svgEl('polyline', { points: pnts.map((p) => `${p.x},${p.y}`).join(' '), fill: 'none', stroke: col, 'stroke-width': w, opacity: op, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
       } else if (d.tool === 'text') {
         const xy = lp2xy(d.pts[0]); if (!xy) return;
         const t = svgEl('text', { x: xy.x, y: xy.y, fill: col, 'font-size': 13 + w * 2, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, opacity: op });
         t.textContent = d.text || 'Текст';
         drawSvg.appendChild(t);
-        if (sel) drawSvg.appendChild(svgEl('circle', { cx: xy.x - 4, cy: xy.y - 5, r: 3, fill: col }));
+        if (sel) dot(xy.x - 4, xy.y - 5);
       }
     };
     let dragState: null | { mode: 'create' | 'move'; d: LwDrawing; orig?: LwDrawPoint[]; startXY: { x: number; y: number } } = null;
@@ -623,6 +678,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const drawShapes = () => {
       if (!chartRef.current) return;
       while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
+      if (drawHiddenRef.current) return;   // «глаз»: временно скрыть все рисунки
       const selId = selectedDrawIdRef.current;
       for (const d of (drawingsRef.current ?? [])) renderOne(d, d.id === selId);
       if (dragState) renderOne(dragState.d, false, true);
@@ -640,12 +696,16 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
     };
     const hitTest = (bx: number, by: number): LwDrawing | null => {
-      const list = drawingsRef.current ?? [];
+      const list = drawingsRef.current ?? [], pb = plotBox();
       for (let i = list.length - 1; i >= 0; i--) {
         const d = list[i];
         if (d.tool === 'hline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(by - xy.y) < 6) return d; }
-        else if (d.tool === 'trend') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b && distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; }
-        else if (d.tool === 'rect') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
+        else if (d.tool === 'vline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 6) return d; }
+        else if (d.tool === 'trend' || d.tool === 'arrow') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b && distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; }
+        else if (d.tool === 'ray') { const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (a && b0) { const b = rayEnd(a, b0, pb); if (distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; } }
+        else if (d.tool === 'rect' || d.tool === 'ellipse') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
+        else if (d.tool === 'fib') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x); if (bx >= xL - 5 && bx <= xR + 5) { const p0 = d.pts[0].price, p1 = d.pts[1].price; for (const lv of FIB) { const yy = priceY(p0 + (p1 - p0) * lv); if (yy != null && Math.abs(by - yy) < 6) return d; } } } }
+        else if (d.tool === 'brush') { const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[]; for (let j = 1; j < pnts.length; j++) if (distToSeg(bx, by, pnts[j - 1].x, pnts[j - 1].y, pnts[j].x, pnts[j].y) < 6) return d; }
         else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 44 && Math.abs(by - (xy.y - 6)) < 14) return d; }
       }
       return null;
@@ -657,18 +717,19 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const tool = drawToolRef.current ?? 'select';
       const { x, y } = relXY(e);
       if (tool === 'select') {
+        if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }   // замок: не выделяем/не двигаем
         const hit = hitTest(x, y);
         selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
         if (hit) { dragState = { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } }; try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ } }
         drawShapes(); return;
       }
-      const lp = xy2lp(x, y); if (!lp) return;
+      const lp = snap(xy2lp(x, y), tool !== 'brush'); if (!lp) return;
       const color = drawColorRef.current || '#FF5C2B', width = drawWidthRef.current || 2;
       if (tool === 'text') {
         const txt = window.prompt('Текст:'); if (txt) commit([...(drawingsRef.current ?? []), { id: uid(), tool: 'text', pts: [lp], color, width, text: txt }]);
         return;
       }
-      const d: LwDrawing = tool === 'hline' ? { id: uid(), tool: 'hline', pts: [lp], color, width } : { id: uid(), tool, pts: [lp, lp], color, width };
+      const d: LwDrawing = ONE_PT.has(tool) ? { id: uid(), tool, pts: [lp], color, width } : { id: uid(), tool, pts: [lp, lp], color, width };
       dragState = { mode: 'create', d, startXY: { x, y } };
       try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
       drawShapes();
@@ -677,8 +738,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!dragState) return;
       const { x, y } = relXY(e);
       if (dragState.mode === 'create') {
-        const lp = xy2lp(x, y); if (!lp) return;
-        dragState.d.pts = dragState.d.tool === 'hline' ? [lp] : [dragState.d.pts[0], lp];
+        const t = dragState.d.tool;
+        if (t === 'brush') {
+          const lp = xy2lp(x, y); if (!lp) return;   // кисть: без магнита
+          const lastXY = lp2xy(dragState.d.pts[dragState.d.pts.length - 1]);
+          if (!lastXY || Math.hypot(x - lastXY.x, y - lastXY.y) >= 2.5) dragState.d.pts = [...dragState.d.pts, lp];
+        } else {
+          const lp = snap(xy2lp(x, y)); if (!lp) return;
+          dragState.d.pts = ONE_PT.has(t) ? [lp] : [dragState.d.pts[0], lp];
+        }
       } else {
         const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
         dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
@@ -690,7 +758,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       try { drawHit.releasePointerCapture(e.pointerId); } catch { /* уже */ }
       const ds = dragState; dragState = null;
       if (ds.mode === 'create') {
-        if (ds.d.tool === 'trend' || ds.d.tool === 'rect') { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
+        if (ds.d.tool === 'brush') { if (ds.d.pts.length < 2) { drawShapes(); return; } }
+        else if (!ONE_PT.has(ds.d.tool)) { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
         commit([...(drawingsRef.current ?? []), ds.d]);
         selectedDrawIdRef.current = ds.d.id; onSelectDrawRef.current?.(ds.d.id);
       } else {
@@ -1000,7 +1069,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
 
   // Рисование: перерисовать фигуры + пересинхронить интерактивность оверлея при смене
   // карандаша/инструмента/фигур/выделения/стиля (сам чарт не пересоздаётся).
-  useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth]);
+  useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height }}>
