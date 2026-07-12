@@ -82,9 +82,9 @@ function GoldBarsIcon({ size = 24, strokeWidth = 2, className, style }: { size?:
             aria-hidden="true"
             style={style}
         >
-            <path d="M8 13 L16 13 L15.25 8 L8.75 8 Z" />
-            <path d="M3 20 L11 20 L10.25 15 L3.75 15 Z" />
-            <path d="M13 20 L21 20 L20.25 15 L13.75 15 Z" />
+            <path d="M7 12 L17 12 L16 4 L8 4 Z" />
+            <path d="M2 21 L11 21 L10 13 L3 13 Z" />
+            <path d="M13 21 L22 21 L21 13 L14 13 Z" />
         </svg>
     );
 }
