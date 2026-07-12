@@ -20,7 +20,7 @@ const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, trans
 // Fade-out длинных имён вместо троеточия (bare): имя занимает всю ширину колонки
 // (flex:1), длинный текст плавно растворяется у правого края. Короткие имена не
 // затухают — маска приходится на пустое место справа. Полное имя — в title.
-const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 52px), transparent 100%)';
+const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 30px), transparent 100%)';
 
 // Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
 // обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
@@ -284,12 +284,12 @@ export default function FundsTable({
                             <col style={{ width: 40 }} />
                             <col />
                             <col style={{ width: 88 }} />
-                            {/* Ширины под uppercase-заголовки-кнопки с шевроном (замер
-                                живой кнопки): «ДОХОДНОСТЬ» = 116px, «СЧА (МЛРД ₽)» ~109px.
-                                Колонка = кнопка + px-2 с двух сторон (16) + запас под
-                                более широкий рендер шрифта (Яндекс). Уже — кнопка
-                                вылезает за ячейку, и хвост («Ь») обрезается. */}
-                            <col style={{ width: 136 }} />
+                            {/* Ширины под uppercase-заголовки-кнопки с шевроном + значения.
+                                «СЧА» короткая → колонку держит значение (до «1705.43»),
+                                поэтому 74px. «ДОХОДНОСТЬ» = 116px кнопка → 142px. Узкая
+                                колонка СЧА отдаёт ~60px колонке «Название», иначе имена
+                                съедаются в узкой (576px) модалке. */}
+                            <col style={{ width: 74 }} />
                             <col style={{ width: 142 }} />
                         </colgroup>
                     )}
@@ -302,7 +302,7 @@ export default function FundsTable({
                             <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Название</th>
                             <th className={`${bare ? 'px-2 text-right' : 'px-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Тикер</th>
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
-                                {renderSortButton('nav', 'СЧА (млрд ₽)')}
+                                {renderSortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
                             </th>
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
                                 {renderSortButton('y1', 'Доходность', 'Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
