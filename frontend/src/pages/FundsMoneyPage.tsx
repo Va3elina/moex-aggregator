@@ -61,30 +61,25 @@ const AUM_PERIODS: Period[] = ['1m', '1y', '3y', 'all'];
 
 // Категории
 // `genitive` — родительный падеж для подстановки в шаблоны вида
-// Категория «Золото»: кастомная монохромная иконка «слитки» в стиле lucide
-// (stroke=currentColor, fill=none, round-стыки). В наборе lucide подходящей нет,
-// а эмодзи цветной и выбивается из ряда однотонных иконок вкладок. Пропсы как у
-// lucide-иконок: ChartTabs зовёт <Icon className="ct-ico" /> без size (размер из
-// CSS --ico-sm перебивает width/height-атрибуты), шапка-селектор — size={24} +
-// цвет через style. Три трапеции-слитка пирамидкой (2 снизу + 1 сверху).
-function GoldBarsIcon({ size = 24, strokeWidth = 2, className, style }: { size?: number; strokeWidth?: number; className?: string; style?: React.CSSProperties }) {
+// Категория «Золото»: глиф из логотипа TradingView для GLDRUB_TOM — три слитка
+// пирамидкой, нарисованы как полые трапеции (внешняя минус внутренняя, nonzero-
+// заливка). Золотой фон-квадрат TradingView убран (прозрачный), заливка →
+// currentColor, поэтому иконка монохромная и наследует цвет вкладки, как соседние
+// lucide-иконки. viewBox обрезан по bounding box слитков, чтобы глиф заполнял слот
+// по ширине (иначе выглядел мелким). Пропсы как у lucide: ChartTabs зовёт с
+// className="ct-ico" (размер из CSS --ico-sm), шапка-селектор — size + цвет в style.
+function GoldBarsIcon({ size = 24, className, style }: { size?: number; strokeWidth?: number; className?: string; style?: React.CSSProperties }) {
     return (
         <svg
             className={className}
             width={size}
             height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            viewBox="7 12 42 27"
+            fill="currentColor"
             aria-hidden="true"
             style={style}
         >
-            <path d="M7 12 L17 12 L16 4 L8 4 Z" />
-            <path d="M2 21 L11 21 L10 13 L3 13 Z" />
-            <path d="M13 21 L22 21 L21 13 L14 13 Z" />
+            <path d="M21.248 21.555h13.784l-2.01-5.393a1.17 1.17 0 00-.41-.553l-11.364 5.946zm-.038-6.401C21.698 13.842 22.772 13 23.956 13h8.151c1.184 0 2.258.842 2.747 2.154l2.009 5.393c.603 1.618-.371 3.453-1.831 3.453h-14c-1.46 0-2.433-1.835-1.831-3.453l2.01-5.393h-.001zM10.235 35.555h13.757l-2.01-5.393a1.171 1.171 0 00-.41-.553l-11.337 5.946zm-.039-6.401C10.685 27.842 11.76 27 12.943 27h8.124c1.184 0 2.259.842 2.747 2.154l2.009 5.393c.603 1.618-.37 3.453-1.831 3.453H10.017c-1.46 0-2.433-1.835-1.83-3.453l2.01-5.393zm35.89 6.401h-13.85l11.43-5.945c.179.126.323.316.413.553l2.008 5.392zM34.945 27c-1.184 0-2.259.842-2.747 2.154l-2.009 5.393c-.603 1.618.37 3.453 1.831 3.453h14.067c1.46 0 2.433-1.835 1.83-3.453l-2.01-5.393C45.422 27.842 44.348 27 43.164 27h-8.22z" />
         </svg>
     );
 }
