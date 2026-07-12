@@ -19,7 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
   MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
-  Ruler, Layers, X as XIcon,
+  Ruler, Layers, X as XIcon, GripVertical,
 } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -186,6 +186,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [drawDash, setDrawDash] = useState<LwDash>('solid');  // стиль линии по умолчанию
   const [drawOpacity, setDrawOpacity] = useState(1);     // прозрачность по умолчанию
   const [layersOpen, setLayersOpen] = useState(false);   // панель «Слои» (список фигур)
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null);   // DnD переупорядочивания слоёв
+  // Переставить фигуру fromId на позицию toId в массиве (z-order).
+  const reorderLayer = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setDrawings((ds) => {
+      const arr = ds.slice();
+      const fi = arr.findIndex((d) => d.id === fromId), ti = arr.findIndex((d) => d.id === toId);
+      if (fi < 0 || ti < 0) return ds;
+      const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m); return arr;
+    });
+  };
   const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
   // Текущий стиль для тулбара свойств: выделенный элемент (если есть) или дефолты для новых.
   const selectedDraw = drawings.find((d) => d.id === selectedDrawId) || null;
@@ -807,12 +818,19 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             {[...drawings].reverse().map((d) => (
               <div
                 key={d.id}
+                draggable
+                onDragStart={() => setDragLayerId(d.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => { if (dragLayerId) reorderLayer(dragLayerId, d.id); setDragLayerId(null); }}
+                onDragEnd={() => setDragLayerId(null)}
                 onClick={() => setSelectedDrawId(d.id)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', borderRadius: 6, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 5, padding: '4px 4px', borderRadius: 6, cursor: 'pointer',
                   background: selectedDrawId === d.id ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
+                  opacity: dragLayerId === d.id ? 0.5 : 1,
                 }}
               >
+                <GripVertical size={12} style={{ color: 'var(--text-muted, #888)', cursor: 'grab', flexShrink: 0 }} />
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: d.color, flexShrink: 0 }} />
                 <span style={{ flex: 1, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: d.hidden ? 'var(--text-muted, #888)' : 'var(--text-primary)' }}>
                   {DRAW_TOOL_NAME[d.tool] || d.tool}{d.tool === 'text' && d.text ? `: ${d.text}` : ''}

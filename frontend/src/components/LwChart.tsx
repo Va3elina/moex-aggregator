@@ -705,7 +705,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (sel) dot(xy.x - 4, xy.y - 5);
       }
     };
-    let dragState: null | { mode: 'create' | 'move'; d: LwDrawing; orig?: LwDrawPoint[]; startXY: { x: number; y: number } } = null;
+    let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number } } = null;
+    const HANDLE_R = 8;   // радиус захвата вершины (ручки) для правки формы
     const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
     const drawShapes = () => {
       if (!chartRef.current) return;
@@ -753,7 +754,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }   // замок: не выделяем/не двигаем
         const hit = hitTest(x, y);
         selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
-        if (hit) { dragState = { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } }; try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ } }
+        if (hit) {
+          // клик у ВЕРШИНЫ (ручки) → правка формы (тащим точку); иначе двигаем всю фигуру.
+          let vi = -1;
+          if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
+          dragState = vi >= 0
+            ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, vi, startXY: { x, y } }
+            : { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
+          try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+        }
         drawShapes(); return;
       }
       const lp = snap(xy2lp(x, y), tool !== 'brush'); if (!lp) return;
@@ -785,6 +794,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
           const lp = snap(xy2lp(x, y)); if (!lp) return;
           dragState.d.pts = ONE_PT.has(t) ? [lp] : [dragState.d.pts[0], lp];
         }
+      } else if (dragState.mode === 'vertex') {
+        const lp = snap(xy2lp(x, y)); if (!lp) return;
+        const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
       } else {
         const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
         dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
