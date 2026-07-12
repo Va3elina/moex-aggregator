@@ -61,27 +61,31 @@ const AUM_PERIODS: Period[] = ['1m', '1y', '3y', 'all'];
 
 // Категории
 // `genitive` — родительный падеж для подстановки в шаблоны вида
-// Категория «Золото»: вместо lucide-иконки — эмодзи. В Unicode нет слитка,
-// берём золотую монету 🪙 как ближайший «драгметалл». Компонент встаёт в тот же
-// слот, что и lucide-иконки: ChartTabs даёт className="ct-ico" (размер из CSS
-// --ico-sm), шапка-селектор — size={24}. size → fontSize, иначе наследуем --ico-sm.
-// color/strokeWidth эмодзи игнорирует (рендерится своим золотым цветом — и хорошо).
-function GoldIcon({ size, className, style }: { size?: number; strokeWidth?: number; className?: string; style?: React.CSSProperties }) {
+// Категория «Золото»: кастомная монохромная иконка «слитки» в стиле lucide
+// (stroke=currentColor, fill=none, round-стыки). В наборе lucide подходящей нет,
+// а эмодзи цветной и выбивается из ряда однотонных иконок вкладок. Пропсы как у
+// lucide-иконок: ChartTabs зовёт <Icon className="ct-ico" /> без size (размер из
+// CSS --ico-sm перебивает width/height-атрибуты), шапка-селектор — size={24} +
+// цвет через style. Три трапеции-слитка пирамидкой (2 снизу + 1 сверху).
+function GoldBarsIcon({ size = 24, strokeWidth = 2, className, style }: { size?: number; strokeWidth?: number; className?: string; style?: React.CSSProperties }) {
     return (
-        <span
+        <svg
             className={className}
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
             aria-hidden="true"
-            style={{
-                fontSize: size ?? 'var(--ico-sm)',
-                lineHeight: 1,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                ...style,
-            }}
+            style={style}
         >
-            🪙
-        </span>
+            <path d="M8 13 L16 13 L15.25 8 L8.75 8 Z" />
+            <path d="M3 20 L11 20 L10.25 15 L3.75 15 Z" />
+            <path d="M13 20 L21 20 L20.25 15 L13.75 15 Z" />
+        </svg>
     );
 }
 
@@ -91,7 +95,7 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
     { key: 'money_market', name: 'Денежный рынок', genitive: 'денежного рынка', icon: Banknote, index: 'RUSFAR3M' },
     { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
     { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
-    { key: 'gold', name: 'Золото', genitive: 'золота', icon: GoldIcon, index: 'GLDRUB_TOM' },
+    { key: 'gold', name: 'Золото', genitive: 'золота', icon: GoldBarsIcon, index: 'GLDRUB_TOM' },
     // Раздел «Юань» — рабочий (NAV юаневых фондов в ₽, бенчмарк RUSFARCNY).
     { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY' },
 ];
