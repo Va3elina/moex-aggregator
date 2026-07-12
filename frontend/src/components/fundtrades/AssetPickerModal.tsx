@@ -256,14 +256,15 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         </div>
 
         {/* Колонка объёма (₽) — единственная, под сорт-заголовком, по правому краю
-            (вес/число фондов убраны по образцу Сезонности). */}
+            (вес/число фондов убраны по образцу Сезонности). Вес 600 — как значения
+            объёма в поиске «Открытых позиций» (InstrumentSearchModal), нейтральнее 700. */}
         <span
           className="flex-shrink-0 text-right"
           style={{
             width: COL.volume,
             fontSize: 'var(--fs-sm)',
             fontVariantNumeric: 'tabular-nums',
-            fontWeight: 700,
+            fontWeight: 600,
             color: 'var(--text-primary)',
           }}
         >
