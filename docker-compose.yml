@@ -41,12 +41,13 @@ services:
     # Дефолты (shared_buffers=128MB/work_mem=4MB) не использовали имеющуюся RAM:
     # тяжёлые сортировки лились на диск, горячие страницы перечитывались. Замер до/
     # после: тёплый sort-запрос 737мс→246мс (~3×), дисковые чтения 34497→0.
-    # Значения под 4ГБ-VM. shared_buffers=512MB (НЕ 1GB) намеренно консервативно:
-    # деплой собирает api-образ (frontend tsc+vite ≈2GB) НА проде, своп=0 →
-    # больший upfront-резерв рискует OOM (история: OOM при ≥512MB+build). 512МБ
-    # всё равно кэширует горячие таблицы графиков (~274МБ), а work_mem-выигрыш на
-    # сортировках от shared_buffers не зависит. При апгрейде до 8ГБ —
-    # shared_buffers=2GB, work_mem=32MB, effective_cache_size=6GB.
+    # Значения под 8ГБ-VM (апгрейд 2026-07-12: 4GB/2CPU→8GB/4CPU/77GB).
+    # shared_buffers=2GB (~25% RAM) + effective_cache_size=6GB (~75%). Безопасно
+    # по OOM: даже на пике деплоя (api build frontend tsc+vite ≈2GB НА проде,
+    # своп=0) 2GB pg + 2GB build + ~1.5GB прочее ≈ 5.5GB из 8 → ~2.5GB запас.
+    # История: на 4ГБ держали 512MB именно из-за OOM-риска при build (OOM при
+    # ≥512MB+build) — удвоение RAM этот риск снял. work_mem-выигрыш на сортировках
+    # от shared_buffers не зависит (отдельный буфер на сортировку).
     # pg_stat_statements + track_io_timing (пост-инцидент 02.07.2026, I/O-шторм):
     # без per-query статистики разбор «кто пёк диск» упирается в отсутствие
     # истории. track_io_timing даёт blk_read/write_time в разрезе запросов.
@@ -58,11 +59,11 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=512MB"
+      - "shared_buffers=2GB"
       - "-c"
-      - "work_mem=24MB"
+      - "work_mem=32MB"
       - "-c"
-      - "effective_cache_size=2560MB"
+      - "effective_cache_size=6GB"
       - "-c"
       - "maintenance_work_mem=256MB"
       - "-c"
