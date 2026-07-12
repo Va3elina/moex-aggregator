@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity, ArrowLeftRight, Bell, CalendarDays, Contrast, Grid3x3, Layers, LayoutGrid,
-  ListFilter, Plus, PlusCircle, Scale, SlidersHorizontal, TrendingUp, Wallet, Waves, X as XIcon,
+  ListFilter, LogOut, Plus, PlusCircle, Scale, SlidersHorizontal, TrendingUp, Wallet, Waves, X as XIcon,
   type LucideIcon,
 } from 'lucide-react';
 import './sandbox.css';
@@ -494,9 +494,11 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       {/* ── Топбар 56px (§3.1) ── */}
       <div style={topbarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {/* Настоящий логотип Frame (4 угловых брекета) в акценте + русское название. */}
-          <FrameLogo size={24} color="var(--accent)" showWordmark={false} />
-          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', color: 'var(--text)' }}>Фрейм</span>
+          {/* Бренд-марк как в шапке сайта: глиф + wordmark «FRAME» (латиница, акцент).
+              Клик по логотипу — выход на главный сайт. */}
+          <a href="/" title="На главный сайт" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+            <FrameLogo size={22} color="var(--accent)" showWordmark />
+          </a>
         </div>
 
         <div style={dividerV} />
@@ -574,6 +576,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           </button>
           <span style={proChip}>PRO</span>
           <div style={avatarStyle}>ВД</div>
+          {/* Выход на главный сайт (входа в песочницу с сайта пока нет — по решению Вадима). */}
+          <a href="/" className="sb-hoverable" title="Выйти на сайт" aria-label="Выйти на сайт" style={{ ...chromeBtn, textDecoration: 'none', color: 'var(--muted)' }}>
+            <LogOut size={16} />
+          </a>
         </div>
       </div>
 
