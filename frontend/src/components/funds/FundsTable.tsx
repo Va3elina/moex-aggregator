@@ -25,6 +25,13 @@ const OI_NUM_STYLE: React.CSSProperties = {
     fontVariantNumeric: 'tabular-nums',
 };
 
+// Числа СЧА — приглушённо-серые (var(--text-secondary)), как столбец «Объём» в
+// поиске ОИ, а не насыщенно-чёрные. Доходность остаётся семантически цветной.
+const OI_NUM_SCHA_STYLE: React.CSSProperties = {
+    ...OI_NUM_STYLE,
+    color: 'var(--text-secondary)',
+};
+
 // Типографика заголовков колонок в bare-режиме — как в шапке поиска ОИ
 // (renderSortHeader в InstrumentSearchModal, замер: 12.5px / 800 / uppercase /
 // letter-spacing 0.04em). fontSize наследуется от tr (fs-xs).
@@ -323,7 +330,7 @@ export default function FundsTable({
                                     <>
                                         <td
                                             className="px-2 py-1 text-right cursor-pointer select-none"
-                                            style={OI_NUM_STYLE}
+                                            style={OI_NUM_SCHA_STYLE}
                                             onClick={toggleAllFunds}
                                         >
                                             {navSumBln(data?.funds ?? []).toFixed(2)}
@@ -437,7 +444,7 @@ export default function FundsTable({
                                                     <>
                                                         <td
                                                             className="px-2 py-1 text-right cursor-pointer select-none"
-                                                            style={OI_NUM_STYLE}
+                                                            style={OI_NUM_SCHA_STYLE}
                                                             onClick={toggleCollapse}
                                                         >
                                                             {navSumBln(groupFunds).toFixed(2)}
@@ -556,7 +563,7 @@ export default function FundsTable({
                                                     >
                                                         {fund.ticker}
                                                     </td>
-                                                    <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right`} style={bare ? OI_NUM_STYLE : undefined}>
+                                                    <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right`} style={bare ? OI_NUM_SCHA_STYLE : undefined}>
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
                                                     {(() => {
