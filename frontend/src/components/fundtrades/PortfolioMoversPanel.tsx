@@ -4,7 +4,7 @@
 //
 // Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г/3Г
 // живёт в шапке блока (prop onPeriodChange), под заголовком — фактический
-// диапазон месяцев консенсуса («чистая покупка · январь – июль 2026»). Полосы
+// диапазон месяцев консенсуса («январь – июль 2026»). Полосы
 // нейтральные, величины тёмные: направление читается секциями «Чистые покупки ↑» /
 // «Чистые продажи ↓», единица (млрд/млн ₽) приглушена отдельным спаном.
 //
@@ -89,8 +89,8 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     // Подзаголовок: фактический диапазон месяцев консенсуса, пока он не
     // приехал — словесный период («за полгода»).
     const sub = movers?.resolved_month
-        ? `чистая покупка · ${monthRangeLabel(movers.resolved_month, period)}`
-        : `чистая покупка ${PERIOD_SUB[period]}`;
+        ? monthRangeLabel(movers.resolved_month, period)
+        : PERIOD_SUB[period];
 
     const head = (
         <div style={{ marginBottom: 4 }}>
