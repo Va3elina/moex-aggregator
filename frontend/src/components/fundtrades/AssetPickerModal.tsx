@@ -256,8 +256,9 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         </div>
 
         {/* Колонка объёма (₽) — единственная, под сорт-заголовком, по правому краю
-            (вес/число фондов убраны по образцу Сезонности). Вес 600 — как значения
-            объёма в поиске «Открытых позиций» (InstrumentSearchModal), нейтральнее 700. */}
+            (вес/число фондов убраны по образцу Сезонности). Вес 600 + серый
+            text-secondary (muted для пустого) — как значения объёма в поиске
+            «Открытых позиций» (InstrumentSearchModal): нейтральнее насыщенного 700. */}
         <span
           className="flex-shrink-0 text-right"
           style={{
@@ -265,7 +266,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
             fontSize: 'var(--fs-sm)',
             fontVariantNumeric: 'tabular-nums',
             fontWeight: 600,
-            color: 'var(--text-primary)',
+            color: asset.last_amount_rub != null ? 'var(--text-secondary)' : 'var(--text-muted)',
           }}
         >
           {asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'}
