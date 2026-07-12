@@ -14,6 +14,7 @@ import { createContext, useContext, useEffect, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time, type IPriceLine,
+  type Logical, type Coordinate,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 
@@ -51,6 +52,13 @@ export interface LwMarker { time: number; text?: string; color?: string; positio
  *  (2 символа в кружке), description — полный текст тултипа (напр. «SiM6 → SiU6»). */
 export interface LwExpiration { time: number; label: string; description: string }
 
+// ── Рисование (модель TradingView): фигуры живут в координатах {logical, price},
+// перепроецируются на зум/пан/ресайз (как метки экспираций) → «ездят» с графиком.
+// logical — дробный индекс бара (timeScale.coordinateToLogical) → свободная позиция.
+export type LwDrawTool = 'select' | 'trend' | 'hline' | 'rect' | 'text';
+export interface LwDrawPoint { logical: number; price: number }
+export interface LwDrawing { id: string; tool: 'trend' | 'hline' | 'rect' | 'text'; pts: LwDrawPoint[]; color: string; width: number; text?: string }
+
 interface LwChartProps {
   series: LwSeries[];
   height: number;
@@ -86,6 +94,16 @@ interface LwChartProps {
   /** §OI-6: анимация появления серий (рост из плоской линии, easeOutCubic) при
    *  первой отрисовке и смене fitKey. Не задан → без анимации (как раньше). */
   animate?: boolean;
+  /** Рисование (модель TradingView). Аддитивно — не задано → слой не создаётся,
+   *  прочие embed'ы не тронуты. Только ОИ передаёт эти пропы. */
+  drawActive?: boolean;                 // карандаш вкл → оверлей ловит события, пан выкл
+  drawTool?: LwDrawTool;                // активный инструмент
+  drawings?: LwDrawing[];               // фигуры (из embed-стейта, персист снаружи)
+  onDrawingsChange?: (d: LwDrawing[]) => void;
+  drawColor?: string;                   // цвет для новых фигур
+  drawWidth?: number;                   // толщина для новых фигур
+  selectedDrawId?: string | null;       // выделенная фигура (для подсветки/удаления)
+  onSelectDraw?: (id: string | null) => void;
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -154,7 +172,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -166,6 +184,16 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const expRef = useRef(expirations); expRef.current = expirations;
   const drawExpRef = useRef<(() => void) | null>(null);
+  // Рисование — пропы через рефы (setup-эффект `[]` читает актуальные значения).
+  const drawActiveRef = useRef(drawActive); drawActiveRef.current = drawActive;
+  const drawToolRef = useRef(drawTool); drawToolRef.current = drawTool;
+  const drawingsRef = useRef(drawings); drawingsRef.current = drawings;
+  const onDrawingsChangeRef = useRef(onDrawingsChange); onDrawingsChangeRef.current = onDrawingsChange;
+  const drawColorRef = useRef(drawColor); drawColorRef.current = drawColor;
+  const drawWidthRef = useRef(drawWidth); drawWidthRef.current = drawWidth;
+  const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
+  const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
+  const drawShapesRef = useRef<(() => void) | null>(null);
   // §OI-3 axis-алерты: пропы через ref (смена не пересоздаёт чарт); axisInfoRef —
   // первая серия каждой оси + её форматтер + последнее значение (заполняется в
   // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
@@ -505,9 +533,152 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     };
     layoutAlertRef.current = layoutAlert;
 
-    const onRange = () => { drawExp(); layoutAlert(); };
+    // ─────────────────────────── Слой рисования (модель TradingView) ───────────────────────────
+    // SVG-оверлей в координатах {logical, price} → перепроецируется на зум/пан/ресайз (как
+    // экспирации). Точки хранятся в logical (дробный индекс бара) + price → фигуры «ездят»
+    // с графиком. pointer-events включаются только в режиме карандаша (drawActive).
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    const drawSvg = document.createElementNS(SVGNS, 'svg');
+    drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:visible;pointer-events:none;touch-action:none';
+    box.appendChild(drawSvg);
+
+    const drawSeries = () => axisInfoRef.current.left?.api ?? axisInfoRef.current.right?.api ?? seriesApiRef.current[0];
+    const paneLeftW = () => { const ch = chartRef.current; if (!ch) return 0; try { return ch.priceScale('left').width() || 0; } catch { return 0; } };
+    const lp2xy = (p: LwDrawPoint): { x: number; y: number } | null => {
+      const ch = chartRef.current; if (!ch) return null;
+      const xc = ch.timeScale().logicalToCoordinate(p.logical as Logical);
+      const s = drawSeries(); const yc = s ? s.priceToCoordinate(p.price) : null;
+      if (xc == null || yc == null) return null;
+      return { x: paneLeftW() + (xc as number), y: yc as number };
+    };
+    const xy2lp = (bx: number, by: number): LwDrawPoint | null => {
+      const ch = chartRef.current; if (!ch) return null;
+      const logical = ch.timeScale().coordinateToLogical((bx - paneLeftW()) as Coordinate);
+      const s = drawSeries(); const price = s ? s.coordinateToPrice(by as Coordinate) : null;
+      if (logical == null || price == null) return null;
+      return { logical: logical as number, price: price as number };
+    };
+    const plotBox = () => {
+      const ch = chartRef.current; const pl = paneLeftW();
+      const w = ch ? (ch.timeScale().width() || (box.clientWidth - pl)) : (box.clientWidth - pl);
+      const axisH = ch ? (ch.timeScale().height() || 26) : 26;
+      return { left: pl, width: w, height: Math.max(0, box.clientHeight - axisH) };
+    };
+    const svgEl = (tag: string, attrs: Record<string, string | number>) => {
+      const e = document.createElementNS(SVGNS, tag);
+      for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+      return e;
+    };
+    const renderOne = (d: LwDrawing, sel: boolean, preview = false) => {
+      const col = d.color, w = d.width, op = preview ? '0.7' : '1', pb = plotBox();
+      if (d.tool === 'hline') {
+        const xy = lp2xy(d.pts[0]); if (!xy) return;
+        drawSvg.appendChild(svgEl('line', { x1: pb.left, y1: xy.y, x2: pb.left + pb.width, y2: xy.y, stroke: col, 'stroke-width': w, opacity: op }));
+        if (sel) drawSvg.appendChild(svgEl('circle', { cx: pb.left + pb.width / 2, cy: xy.y, r: 4, fill: col }));
+      } else if (d.tool === 'trend') {
+        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+        drawSvg.appendChild(svgEl('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
+        if (sel) { drawSvg.appendChild(svgEl('circle', { cx: a.x, cy: a.y, r: 4, fill: col })); drawSvg.appendChild(svgEl('circle', { cx: b.x, cy: b.y, r: 4, fill: col })); }
+      } else if (d.tool === 'rect') {
+        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
+        drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: col, 'fill-opacity': '0.13', stroke: col, 'stroke-width': w, opacity: op }));
+        if (sel) drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: 'none', stroke: col, 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+      } else if (d.tool === 'text') {
+        const xy = lp2xy(d.pts[0]); if (!xy) return;
+        const t = svgEl('text', { x: xy.x, y: xy.y, fill: col, 'font-size': 13 + w * 2, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, opacity: op });
+        t.textContent = d.text || 'Текст';
+        drawSvg.appendChild(t);
+        if (sel) drawSvg.appendChild(svgEl('circle', { cx: xy.x - 4, cy: xy.y - 5, r: 3, fill: col }));
+      }
+    };
+    let dragState: null | { mode: 'create' | 'move'; d: LwDrawing; orig?: LwDrawPoint[]; startXY: { x: number; y: number } } = null;
+    const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+    const drawShapes = () => {
+      if (!chartRef.current) return;
+      while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
+      const selId = selectedDrawIdRef.current;
+      for (const d of (drawingsRef.current ?? [])) renderOne(d, d.id === selId);
+      if (dragState) renderOne(dragState.d, false, true);
+    };
+    const syncDrawInteractivity = () => {
+      const on = !!drawActiveRef.current;
+      drawSvg.style.pointerEvents = on ? 'auto' : 'none';
+      drawSvg.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
+    };
+    drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
+
+    const distToSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0; t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    };
+    const hitTest = (bx: number, by: number): LwDrawing | null => {
+      const list = drawingsRef.current ?? [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const d = list[i];
+        if (d.tool === 'hline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(by - xy.y) < 6) return d; }
+        else if (d.tool === 'trend') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b && distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; }
+        else if (d.tool === 'rect') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
+        else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 44 && Math.abs(by - (xy.y - 6)) < 14) return d; }
+      }
+      return null;
+    };
+    const relXY = (e: PointerEvent) => { const r = box.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const commit = (next: LwDrawing[]) => { drawingsRef.current = next; onDrawingsChangeRef.current?.(next); drawShapes(); };
+    const onDrawDown = (e: PointerEvent) => {
+      if (!drawActiveRef.current) return;
+      const tool = drawToolRef.current ?? 'select';
+      const { x, y } = relXY(e);
+      if (tool === 'select') {
+        const hit = hitTest(x, y);
+        selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
+        if (hit) { dragState = { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } }; try { drawSvg.setPointerCapture(e.pointerId); } catch { /* нет capture */ } }
+        drawShapes(); return;
+      }
+      const lp = xy2lp(x, y); if (!lp) return;
+      const color = drawColorRef.current || '#FF5C2B', width = drawWidthRef.current || 2;
+      if (tool === 'text') {
+        const txt = window.prompt('Текст:'); if (txt) commit([...(drawingsRef.current ?? []), { id: uid(), tool: 'text', pts: [lp], color, width, text: txt }]);
+        return;
+      }
+      const d: LwDrawing = tool === 'hline' ? { id: uid(), tool: 'hline', pts: [lp], color, width } : { id: uid(), tool, pts: [lp, lp], color, width };
+      dragState = { mode: 'create', d, startXY: { x, y } };
+      try { drawSvg.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+      drawShapes();
+    };
+    const onDrawMove = (e: PointerEvent) => {
+      if (!dragState) return;
+      const { x, y } = relXY(e);
+      if (dragState.mode === 'create') {
+        const lp = xy2lp(x, y); if (!lp) return;
+        dragState.d.pts = dragState.d.tool === 'hline' ? [lp] : [dragState.d.pts[0], lp];
+      } else {
+        const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
+        dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
+      }
+      drawShapes();
+    };
+    const onDrawUp = (e: PointerEvent) => {
+      if (!dragState) return;
+      try { drawSvg.releasePointerCapture(e.pointerId); } catch { /* уже */ }
+      const ds = dragState; dragState = null;
+      if (ds.mode === 'create') {
+        if (ds.d.tool === 'trend' || ds.d.tool === 'rect') { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
+        commit([...(drawingsRef.current ?? []), ds.d]);
+        selectedDrawIdRef.current = ds.d.id; onSelectDrawRef.current?.(ds.d.id);
+      } else {
+        commit((drawingsRef.current ?? []).map((x) => (x.id === ds.d.id ? ds.d : x)));
+      }
+    };
+    drawSvg.addEventListener('pointerdown', onDrawDown);
+    drawSvg.addEventListener('pointermove', onDrawMove);
+    drawSvg.addEventListener('pointerup', onDrawUp);
+    syncDrawInteractivity();
+
+    const onRange = () => { drawExp(); layoutAlert(); drawShapes(); };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-    const expRo = new ResizeObserver(() => { drawExp(); layoutAlert(); });
+    const expRo = new ResizeObserver(() => { drawExp(); layoutAlert(); drawShapes(); });
     expRo.observe(box);
 
     chart.subscribeCrosshairMove((param) => {
@@ -584,7 +755,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chartRef.current = null;
       seriesApiRef.current = [];
       axisInfoRef.current = {};
-      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right]) {
+      drawShapesRef.current = null;
+      drawSvg.removeEventListener('pointerdown', onDrawDown);
+      drawSvg.removeEventListener('pointermove', onDrawMove);
+      drawSvg.removeEventListener('pointerup', onDrawUp);
+      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right, drawSvg]) {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
     };
@@ -790,6 +965,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   // §OI-3: смена alertAxes (напр. вариант «both» выключает уровневые алерты) —
   // пере-раскладываем полосы, не пересобирая серии.
   useEffect(() => { layoutAlertRef.current?.(); }, [alertAxes]);
+
+  // Рисование: перерисовать фигуры + пересинхронить интерактивность оверлея при смене
+  // карандаша/инструмента/фигур/выделения/стиля (сам чарт не пересоздаётся).
+  useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height }}>
