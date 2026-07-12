@@ -285,7 +285,7 @@ export default function FundsTable({
                             <col />
                             <col style={{ width: 88 }} />
                             {/* Ширины под uppercase-заголовки-кнопки с шевроном (замер
-                                живой кнопки): «ДОХОДНОСТЬ» = 116px, «СЧА, МЛРД ₽» ~109px.
+                                живой кнопки): «ДОХОДНОСТЬ» = 116px, «СЧА (МЛРД ₽)» ~109px.
                                 Колонка = кнопка + px-2 с двух сторон (16) + запас под
                                 более широкий рендер шрифта (Яндекс). Уже — кнопка
                                 вылезает за ячейку, и хвост («Ь») обрезается. */}
@@ -302,7 +302,7 @@ export default function FundsTable({
                             <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Название</th>
                             <th className={`${bare ? 'px-2 text-right' : 'px-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Тикер</th>
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
-                                {renderSortButton('nav', 'СЧА, млрд ₽')}
+                                {renderSortButton('nav', 'СЧА (млрд ₽)')}
                             </th>
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
                                 {renderSortButton('y1', 'Доходность', 'Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
