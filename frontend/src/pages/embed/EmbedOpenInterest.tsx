@@ -24,8 +24,8 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
-import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
+import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS, kindOptions, type ChartKind } from './EmbedFormat';
+import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
@@ -484,8 +484,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       toolbar={
         <>
-          <Dropdown value={interval} options={TF_COMPACT} onChange={changeInterval} title="Таймфрейм" />
-          <Dropdown value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} title="Группа участников" />
+          {/* §OI-toolbar: ТФ и Физ/Юр — горизонтальные пилюли (не дропдаун), как в Т-Терминале.
+              ОИ-бэк поддерживает лишь 3 гранулярности свечей (5м/1ч/1д) → «избранное» ТФ не нужно. */}
+          <PillGroup value={interval} options={TF_COMPACT} onChange={changeInterval} />
+          <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
+          {/* Вид графика (для серии цены) — быстрый доступ в тулбаре; синхронен с ⚙ Формат «Цена». */}
+          {showPrice && (
+            <Dropdown value={sf.get('price').kind} options={kindOptions(OHLC_KINDS)} onChange={(k) => sf.setKind('price', k as ChartKind)} title="Вид графика" />
+          )}
           <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" />
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
         </>

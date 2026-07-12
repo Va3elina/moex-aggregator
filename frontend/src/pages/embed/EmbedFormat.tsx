@@ -27,6 +27,11 @@ export const DEFAULT_KINDS: ChartKind[] = ['line', 'area'];
 // Серия цены фьючерса (несёт OHLC): + свечи/бары (порт режимов графика с сайта).
 export const OHLC_KINDS: ChartKind[] = ['line', 'area', 'candlestick', 'bar'];
 
+/** Опции {id,label} для тулбар-контрола «Вид графика» (единый источник подписей). */
+export function kindOptions(kinds: ChartKind[] = OHLC_KINDS): { id: ChartKind; label: string }[] {
+  return kinds.map((id) => ({ id, label: KIND_LABELS[id] }));
+}
+
 // CC-палитра дизайнера: price / up / down / sec / amber / cyan.
 const SWATCHES = ['#5DA3E9', '#5BD49C', '#EF6F6F', '#9B8BF0', '#E0A34E', '#57C7C7'];
 
