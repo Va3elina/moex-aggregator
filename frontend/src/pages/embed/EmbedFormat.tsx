@@ -86,9 +86,12 @@ export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
   const color = fmt.color ?? def.color;
   const out: LwSeries = { ...def, type: fmt.kind, color };
   if (fmt.kind === 'area') {
-    // Заливка приглушена (13%, было 22%) — тоньше и меньше «давит» на график; низ прозрачный.
-    out.areaTop = `color-mix(in srgb, ${color} 13%, transparent)`;
-    out.areaBottom = undefined;
+    // Градиент как на сайте (SimpleChart): верх ~18%, низ — МЯГКИЙ ПОЛ 2% (не полный
+    // ноль). Полностью прозрачный низ фейдил заливку в ничто у серий, чья линия сидит
+    // высоко в своём диапазоне (ОИ) → «область не включалась». 2%-пол делает её видимой
+    // по всей высоте, оставаясь тонкой (Вадим: «не сильно яркая»).
+    out.areaTop = `color-mix(in srgb, ${color} 18%, transparent)`;
+    out.areaBottom = `color-mix(in srgb, ${color} 2%, transparent)`;
   } else {
     delete out.areaTop;
     delete out.areaBottom;

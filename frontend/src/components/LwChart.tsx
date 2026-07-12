@@ -653,11 +653,14 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       } else if (def.type === 'candlestick') {
         // up/down = палитра «Покупки/Продажи» (та же, что у свечей сайта): в editorial
         // это сине-стальной/янтарь, не зелёный/красный (дальтоник-палитра проекта).
+        // lastValueVisible:false — нативный last-value label свечи красится по up/down
+        // (мигает зелёным/красным на оси цены); наш §R2-пилс при наведении даёт значение
+        // в фиксированном цвете. Для OHLC отключаем мигающий лейбл.
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
       } else if (def.type === 'bar') {
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addBarSeries({ upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addBarSeries({ upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
       } else {
         s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
       }
