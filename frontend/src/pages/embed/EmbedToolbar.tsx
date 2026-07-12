@@ -83,12 +83,15 @@ const sbWinBtn: CSSProperties = {
 export function EmbedFrame({
   lead,
   toolbar,
+  actions,
   more,
   moreLabel = 'Ещё',
   children,
 }: {
   lead?: ReactNode;
   toolbar?: ReactNode;
+  /** Иконки-действия справа, рядом с ⚙ (напр. 📷 экспорт). Borderless, без рамки. */
+  actions?: ReactNode;
   more?: ReactNode;
   moreLabel?: string;
   children: ReactNode;
@@ -104,22 +107,27 @@ export function EmbedFrame({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {toolbar}
         </div>
-        {more && (
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              ref={moreBtnRef}
-              type="button"
-              onClick={() => setMoreOpen((v) => !v)}
-              title="Ещё настройки"
-              aria-label="Ещё настройки"
-              style={iconBtnStyle(moreOpen)}
-            >
-              <Settings size={15} />
-            </button>
-            {moreOpen && (
-              <Popover anchorEl={moreBtnRef.current} align="right" onClose={() => setMoreOpen(false)} title={moreLabel}>
-                {more}
-              </Popover>
+        {(actions || more) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            {actions}
+            {more && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  ref={moreBtnRef}
+                  type="button"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  title="Ещё настройки"
+                  aria-label="Ещё настройки"
+                  style={iconBtnStyle(moreOpen)}
+                >
+                  <Settings size={15} />
+                </button>
+                {moreOpen && (
+                  <Popover anchorEl={moreBtnRef.current} align="right" onClose={() => setMoreOpen(false)} title={moreLabel}>
+                    {more}
+                  </Popover>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -170,6 +178,7 @@ export function Popover({
   align = 'left',
   title,
   width,
+  compact = false,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -177,8 +186,10 @@ export function Popover({
   align?: 'left' | 'right';
   title?: string;
   /** Ширина поповера. Дефолт 300px (⚙-дровер с секциями). Компактные дропдауны
-   *  тулбара передают 'max-content' → ширина по содержимому, а не растянутые 300px. */
+   *  тулбара передают ширину кнопки → список ровно под кнопкой, не растянут вправо. */
   width?: string;
+  /** Тесный padding (4px) — для тулбар-дропдаунов, чтобы подписи влезали при ширине кнопки. */
+  compact?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number }>({ top: -9999, left: 6 });
@@ -233,10 +244,10 @@ export function Popover({
     border: 'var(--emb-pop-bw, 1.5px) solid var(--border-color, rgba(128,128,128,0.4))',
     borderRadius: 10,
     boxShadow: '0 12px 34px rgba(0,0,0,0.4)',
-    padding: 12,
+    padding: compact ? 4 : 12,
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
+    gap: compact ? 4 : 14,
   };
 
   return (
@@ -399,17 +410,24 @@ export function Dropdown<T extends string | number>({
   title?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [btnW, setBtnW] = useState<number>();   // ширина кнопки → ширина списка (Вадим)
   const btnRef = useRef<HTMLButtonElement>(null);
   const cur = options.find((o) => o.id === value);
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
-      <button ref={btnRef} type="button" title={title} style={ddBtnStyle(open)} onClick={() => setOpen((v) => !v)}>
+      <button
+        ref={btnRef}
+        type="button"
+        title={title}
+        style={ddBtnStyle(open)}
+        onClick={() => { if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
+      >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
         <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
       </button>
       {open && (
-        <Popover anchorEl={btnRef.current} align="left" width="max-content" onClose={() => setOpen(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 132 }}>
+        <Popover anchorEl={btnRef.current} align="left" compact width={btnW ? `${btnW}px` : 'max-content'} onClose={() => setOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {options.map((o) => {
               const on = o.id === value;
               return (
@@ -447,7 +465,9 @@ function iconBtnStyle(active: boolean): CSSProperties {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
+    // Без рамки (Вадим: «убери контейнер вокруг кнопки настройки»); фон-подсветка
+    // только в активном состоянии (открыт поповер).
+    border: 'none',
     borderRadius: 7,
     background: active ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
     color: active ? 'var(--accent)' : 'var(--text-secondary)',
