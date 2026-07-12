@@ -304,6 +304,20 @@ export default function SandboxPage() {
 
   const close = useCallback((id: string) => setActivePanels((ps) => ps.filter((p) => p.id !== id)), [setActivePanels]);
 
+  // Индикатор просит новый размер под свой контент (напр. Сезонность — под срез/
+  // режим, §6.11). Позиция (x,y) не трогаем — только w/h, клампим к MINW/MINH и
+  // оставшемуся месту холста от текущего левого верхнего угла панели.
+  const resizePanel = useCallback((id: string, reqW: number, reqH: number) => {
+    const rc = canvasRef.current?.getBoundingClientRect();
+    const cw = rc?.width ?? window.innerWidth, ch = rc?.height ?? (window.innerHeight - TOPBAR_H);
+    setActivePanels((ps) => ps.map((p) => {
+      if (p.id !== id) return p;
+      const w = Math.max(MINW, Math.min(reqW, cw - p.x - 8));
+      const h = Math.max(MINH, Math.min(reqH, ch - p.y - 8));
+      return { ...p, w, h };
+    }));
+  }, [setActivePanels]);
+
   // ⤢ развернуть / восстановить (§4.3). Прежние габариты — в ref (транзиентно).
   const expand = useCallback((id: string) => {
     const rc = canvasRef.current?.getBoundingClientRect();
@@ -592,7 +606,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id) }}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
                 {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
                     две панели одного индикатора живут независимо (§2 мокапа). */}
                 <EmbedPidCtx.Provider value={p.id}>
