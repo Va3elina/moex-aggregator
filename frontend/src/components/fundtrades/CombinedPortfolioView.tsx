@@ -254,7 +254,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{w.toFixed(2)}%</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'color-mix(in srgb, var(--text-primary) 72%, transparent)' }}>{w.toFixed(2)}%</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{fmtVolShort(h.value_rub)}</span>
                 <span style={{ textAlign: 'right', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{h.funds_holding} ф.</span>
             </div>
@@ -276,7 +276,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <AssetLogo h={h} size={22} color={color} />
                     <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)', flexShrink: 0 }}>{w.toFixed(2)}%</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'color-mix(in srgb, var(--text-primary) 72%, transparent)', flexShrink: 0 }}>{w.toFixed(2)}%</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, paddingLeft: 30 }}>
                     <div style={{ flex: 1, minWidth: 0, height: 6, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 4, overflow: 'hidden' }}>
