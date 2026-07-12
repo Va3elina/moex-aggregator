@@ -365,7 +365,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         // (правая ось: левый край пилса = граница поля; левая ось: правый край =
         // граница). Кружок «+» со стороны поля. z выше канваса → пилс ЛОЖИТСЯ на
         // нативный лейбл последнего значения (не толкает/не прячет).
-        const axisW = ch.priceScale(side).width() || 54;
+        // §R2-30: та же гонка layout'а, что и в layoutAlert() — шкала могла только что
+        // сменить visible, .width() ещё бросает Error('Value is null')
+        let axisW = 54;
+        try { axisW = ch.priceScale(side).width() || 54; } catch { /* см. комментарий выше */ }
         chip.style.right = 'auto';
         // §R2-28: якорим кромку САМОГО пилса к границе поля по фактическим rect'ам —
         // сумма ширин частей чипа (кружок+gap) давала ±2px от округлений flex-раскладки,
@@ -377,7 +380,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
           // §R2-29: граница поля — от ШИРИН ЧАРТА (лев.ось + поле), НЕ от box.clientWidth:
           // TV округляет ширину таблицы вниз при дробной ширине контейнера, и box бывает
           // на 1-2px шире таблицы — пилс вставал дальше от графика, чем нативный.
-          const target = (ch.priceScale('left').width() || 0) + (ch.timeScale().width() || (box.clientWidth - axisW));
+          let leftW = 0;
+          try { leftW = ch.priceScale('left').width() || 0; } catch { /* см. комментарий выше */ }
+          const target = leftW + (ch.timeScale().width() || (box.clientWidth - axisW));
           chip.style.left = (pr ? chipL + (target - (pr.left - boxL)) : target - 18) + 'px';
         } else {
           const target = axisW;                            // правая кромка пилса = граница поля
@@ -486,7 +491,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         const info = axisInfoRef.current[side];
         const on = !!(onCreateAlertRef.current && axes && axes.includes(side) && info);
         if (!on) { strip.style.display = 'none'; const c = alertChips[side]; if (c) c.style.display = 'none'; continue; }
-        const w = ch.priceScale(side).width() || 54;
+        // приоритетная шкала могла только что сменить visible → внутренний layout lightweight-charts
+        // ещё не пересчитан в этом тике, и .width() бросает Error('Value is null') (§R2-30)
+        let w = 54;
+        try { w = ch.priceScale(side).width() || 54; } catch { /* см. комментарий выше */ }
         strip.style.display = 'block';
         strip.style.width = Math.max(28, w) + 'px';
         strip.style.height = h + 'px';
@@ -748,8 +756,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         });
       }
     }
-    layoutAlertRef.current?.();     // показать/скрыть полосы алертов под текущий набор осей
-    drawExpRef.current?.();         // метки экспираций — после заливки данных и установки окна
+    // §R2-30: priceScale('left'/'right').applyOptions({visible}) выше меняет видимость шкалы
+    // синхронно, но внутренний layout lightweight-charts под неё пересчитывается только на
+    // следующем кадре — любой .width() в этом же тике на только что показанной шкале даёт
+    // Error('Value is null'). И layoutAlert, и drawExp читают priceScale(side).width()
+    // (drawExp — строки paneL/paneW), поэтому откладываем ОБА на rAF (refs занулены в cleanup
+    // → при размонтировании до кадра вызовы — no-op).
+    requestAnimationFrame(() => { layoutAlertRef.current?.(); drawExpRef.current?.(); });
   }, [series, markers, fitKey, expirations, chartPrefs, priceLines, animate]);
 
   // §OI-3: смена alertAxes (напр. вариант «both» выключает уровневые алерты) —
