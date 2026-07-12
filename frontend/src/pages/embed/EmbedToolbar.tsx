@@ -426,8 +426,10 @@ export function Dropdown<T extends string | number>({
         <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
       </button>
       {open && (
-        <Popover anchorEl={btnRef.current} align="left" compact width={btnW ? `${btnW}px` : 'max-content'} onClose={() => setOpen(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        // Ширина = по контенту (влезает самое длинное словосочетание, без гориз. ползунка),
+        // но не у́же кнопки (minWidth = ширина кнопки) — Вадим.
+        <Popover anchorEl={btnRef.current} align="left" compact width="max-content" onClose={() => setOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: btnW }}>
             {options.map((o) => {
               const on = o.id === value;
               return (
