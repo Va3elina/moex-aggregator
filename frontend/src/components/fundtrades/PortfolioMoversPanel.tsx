@@ -138,7 +138,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
 
     const empty = buys.length === 0 && sells.length === 0;
 
-    const row = (m: FundTradesMover, positive: boolean, last: boolean) => {
+    const row = (m: FundTradesMover, last: boolean) => {
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
         const ticker = resolveFundTicker(m.asset_name, isin);
@@ -187,9 +187,9 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
             ) : (
                 <>
                     {buys.length > 0 && sectionLabel('Чистые покупки', true)}
-                    {buys.slice(0, 5).map((m, i) => row(m, true, i === Math.min(5, buys.length) - 1))}
+                    {buys.slice(0, 5).map((m, i) => row(m, i === Math.min(5, buys.length) - 1))}
                     {sells.length > 0 && sectionLabel('Чистые продажи', false, 16)}
-                    {sells.slice(0, 5).map((m, i) => row(m, false, i === Math.min(5, sells.length) - 1))}
+                    {sells.slice(0, 5).map((m, i) => row(m, i === Math.min(5, sells.length) - 1))}
                 </>
             )}
         </div>
