@@ -14,10 +14,10 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Camera } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import { Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2 } from 'lucide-react';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -62,6 +62,24 @@ const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'positions', label: 'Объём позиций' },
   { id: 'participants', label: 'Число трейдеров' },
 ];
+
+// Инструменты рисования (модель TradingView) — левая панель. Ядро v1.
+const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2 }[] = [
+  { id: 'select', title: 'Выделение / перемещение', Icon: MousePointer2 },
+  { id: 'trend', title: 'Трендовая линия', Icon: TrendingUp },
+  { id: 'hline', title: 'Горизонтальная линия', Icon: Minus },
+  { id: 'rect', title: 'Прямоугольник', Icon: Square },
+  { id: 'text', title: 'Текст', Icon: Type },
+];
+const DRAW_COLORS = ['#FF5C2B', '#5DA3E9', '#5BD49C', '#EF6F6F', '#E0A34E', '#F5F1E8'];
+function drawToolBtn(active: boolean): CSSProperties {
+  return {
+    width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    border: 'none', borderRadius: 7, cursor: 'pointer', padding: 0,
+    background: active ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'transparent',
+    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+  };
+}
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
@@ -142,6 +160,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // instrument хранит КОРЕНЬ ('SR'), а видеть надо последний активный контракт.
   const [frontContract, setFrontContract] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);   // модалка экспорта графика
+  // Рисование (модель TradingView): карандаш → режим, фигуры персистят per-инструмент.
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawTool, setDrawTool] = useState<LwDrawTool>('select');
+  const [drawColor, setDrawColor] = useState('#FF5C2B');
+  const [drawings, setDrawings] = useState<LwDrawing[]>([]);
+  const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
+  const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -193,6 +218,32 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       .catch(() => { /* контракт не критичен */ });
     return () => { cancelled = true; };
   }, [instrument]);
+
+  // Рисунки — персист per-инструмент («под каждый актив», Вадим). Загрузка при смене
+  // инструмента; сохранение при изменении (ключ берём из ref → без затирания при switch).
+  const instrumentRef = useRef(instrument); instrumentRef.current = instrument;
+  useEffect(() => {
+    const raw = rd(`frame:embed:oi:draw:${instrument}`, '');
+    try { setDrawings(raw ? (JSON.parse(raw) as LwDrawing[]) : []); } catch { setDrawings([]); }
+    setSelectedDrawId(null);
+  }, [instrument]);
+  useEffect(() => {
+    if (!drawSaveReady.current) { drawSaveReady.current = true; return; }  // пропуск маунта
+    wr(`frame:embed:oi:draw:${instrumentRef.current}`, JSON.stringify(drawings));
+  }, [drawings]);
+
+  // Delete/Backspace в режиме рисования → удалить выделенную фигуру.
+  useEffect(() => {
+    if (!drawMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
+        setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId));
+        setSelectedDrawId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawMode, selectedDrawId]);
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
@@ -514,19 +565,35 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       actions={
         status === 'ok' && data && lwSeries.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setExportOpen(true)}
-            title="Экспорт графика"
-            aria-label="Экспорт графика"
-            style={{
-              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
-              cursor: 'pointer', flexShrink: 0, padding: 0,
-            }}
-          >
-            <Camera size={15} />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => { setDrawMode((v) => !v); setSelectedDrawId(null); }}
+              title="Рисование на графике"
+              aria-label="Рисование на графике"
+              style={{
+                width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                border: 'none', borderRadius: 7, cursor: 'pointer', flexShrink: 0, padding: 0,
+                background: drawMode ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'transparent',
+                color: drawMode ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportOpen(true)}
+              title="Экспорт графика"
+              aria-label="Экспорт графика"
+              style={{
+                width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
+                cursor: 'pointer', flexShrink: 0, padding: 0,
+              }}
+            >
+              <Camera size={15} />
+            </button>
+          </>
         ) : undefined
       }
       more={
@@ -572,7 +639,71 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             animate
+            drawActive={drawMode}
+            drawTool={drawTool}
+            drawings={drawings}
+            onDrawingsChange={setDrawings}
+            drawColor={drawColor}
+            drawWidth={2}
+            selectedDrawId={selectedDrawId}
+            onSelectDraw={setSelectedDrawId}
           />
+        )}
+        {/* Панель инструментов рисования слева (модель TradingView) — только в режиме
+            карандаша. data-export-ignore → не попадает в снимок графика. */}
+        {drawMode && status === 'ok' && data && lwSeries.length > 0 && (
+          <div
+            data-export-ignore="true"
+            style={{
+              position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', zIndex: 8,
+              display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 10,
+              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 88%, transparent)',
+              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            {DRAW_TOOLS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                title={t.title}
+                aria-label={t.title}
+                onClick={() => setDrawTool(t.id)}
+                style={drawToolBtn(drawTool === t.id)}
+              >
+                <t.Icon size={16} />
+              </button>
+            ))}
+            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
+            {DRAW_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title="Цвет"
+                onClick={() => setDrawColor(c)}
+                style={{
+                  width: 26, height: 26, borderRadius: 7, cursor: 'pointer', padding: 0,
+                  border: drawColor === c ? '2px solid var(--text-primary)' : '1px solid transparent',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <span style={{ width: 13, height: 13, borderRadius: '50%', background: c, display: 'inline-block' }} />
+              </button>
+            ))}
+            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
+            <button
+              type="button"
+              title={selectedDrawId ? 'Удалить выделенное' : 'Очистить всё'}
+              aria-label="Удалить"
+              onClick={() => {
+                if (selectedDrawId) { setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); }
+                else if (drawings.length && window.confirm('Удалить все рисунки?')) setDrawings([]);
+              }}
+              style={drawToolBtn(false)}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         )}
         {/* Модалка экспорта (триггер 📷 — в тулбаре рядом с ⚙, см. actions). Снимает
             контейнер LwChart → превью → рисование → PNG/буфер. Portal → место в дереве неважно. */}
