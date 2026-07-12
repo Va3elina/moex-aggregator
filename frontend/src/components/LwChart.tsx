@@ -17,11 +17,14 @@ import {
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 
-export interface LwPoint { time: number; value: number; color?: string }
+// value ВСЕГДА = close (для OHLC-серий тоже) — чтобы пилс последнего значения,
+// сигнатура reveal-анимации и alert-«+» (все читают def.data[].value) работали
+// без спец-веток. open/high/low нужны только candlestick/bar при отрисовке.
+export interface LwPoint { time: number; value: number; color?: string; open?: number; high?: number; low?: number; close?: number }
 
 export interface LwSeries {
   id: string;
-  type: 'line' | 'area' | 'histogram';
+  type: 'line' | 'area' | 'histogram' | 'candlestick' | 'bar';
   data: LwPoint[];
   color: string;
   scale?: 'left' | 'right';
@@ -154,7 +157,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
 export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
+  const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
   const defsRef = useRef<LwSeries[]>(series);
   defsRef.current = series;
   // Читаем через ref, чтобы смена пропа-функции/массива не пересоздавала чарт/серии.
@@ -168,7 +171,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
-  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram'>; fmt?: (v: number) => string; last?: number; color?: string; lastVisible?: boolean } }>({});
+  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>; fmt?: (v: number) => string; last?: number; color?: string; lastVisible?: boolean } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
   // §R2-17: превью-уровень алерта = НАТИВНАЯ price line (серый пунктир как кроссхэйр
   // + цветной лейбл значения, ВЫРОВНЕННЫЙ по числам оси нативно). Одна на ось.
@@ -517,8 +520,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       while (tip.firstChild) tip.removeChild(tip.firstChild);
       let any = false;
       for (let i = 0; i < apis.length; i++) {
-        const dp = param.seriesData.get(apis[i]) as { value?: number } | undefined;
-        if (!dp || dp.value == null) continue;
+        // OHLC-серии (candlestick/bar) отдают {open,high,low,close} без value → берём close.
+        const dp = param.seriesData.get(apis[i]) as { value?: number; close?: number } | undefined;
+        const dv = dp ? (dp.value ?? dp.close) : undefined;
+        if (dv == null) continue;
         any = true;
         const def = defs[i];
         const row = document.createElement('div');
@@ -529,7 +534,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         lbl.textContent = def?.label || '';
         const val = document.createElement('span');
         val.style.cssText = "margin-left:auto;font-weight:700;font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;padding-left:14px;color:" + (def?.color || 'inherit');
-        val.textContent = def?.tipFmt ? def.tipFmt(dp.value) : String(Math.round(dp.value));
+        val.textContent = def?.tipFmt ? def.tipFmt(dv) : String(Math.round(dv));
         row.appendChild(dot); row.appendChild(lbl); row.appendChild(val);
         tip.appendChild(row);
       }
@@ -638,17 +643,31 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const lastLine = chartPrefs?.lastValue ?? def.lastValueVisible ?? true;
       const lastHist = chartPrefs?.lastValue ?? def.lastValueVisible ?? false;
       const col = rc(def.color);
-      let s: ISeriesApi<'Line' | 'Area' | 'Histogram'>;
+      let s: ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>;
       const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
+      const isOhlc = def.type === 'candlestick' || def.type === 'bar';
       if (def.type === 'line') {
         s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
       } else if (def.type === 'area') {
         s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+      } else if (def.type === 'candlestick') {
+        // up/down = палитра «Покупки/Продажи» (та же, что у свечей сайта): в editorial
+        // это сине-стальной/янтарь, не зелёный/красный (дальтоник-палитра проекта).
+        const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
+        s = chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+      } else if (def.type === 'bar') {
+        const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
+        s = chart.addBarSeries({ upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
       } else {
         s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
       }
       try {
-        s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+        // union-тип s → .setData требует точного типа данных: касты по ветке.
+        if (isOhlc) {
+          (s as ISeriesApi<'Candlestick'>).setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, open: p.open ?? p.value, high: p.high ?? p.value, low: p.low ?? p.value, close: p.close ?? p.value })));
+        } else {
+          (s as ISeriesApi<'Line'>).setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+        }
       } catch (err) {
         console.error('LwChart setData failed:', def.id, err);
       }

@@ -12,14 +12,20 @@ import type { LwSeries } from '../../components/LwChart';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
 
-export type ChartKind = 'line' | 'area' | 'histogram';
+export type ChartKind = 'line' | 'area' | 'histogram' | 'candlestick' | 'bar';
 export interface ChartFormat { kind: ChartKind; color: string | null } // color null = цвет индикатора
 
-const KINDS: { id: ChartKind; label: string }[] = [
-  { id: 'line', label: 'Линия' },
-  { id: 'area', label: 'Область' },
-  { id: 'histogram', label: 'Столбцы' },
-];
+// Реестр «id → подпись». 'histogram' («Столбцы») больше НЕ в выбираемых наборах
+// (убран по фидбеку Вадима), но остаётся валидным типом для нативных серий (funds-flow)
+// и совместимости со старым персистом.
+const KIND_LABELS: Record<ChartKind, string> = {
+  line: 'Линия', area: 'Область', candlestick: 'Свечи', bar: 'Бары', histogram: 'Столбцы',
+};
+// Дефолт выбора — линия/область. Свечи/бары требуют OHLC → включаются только явным
+// пропом kinds у серии, где OHLC есть (цена фьючерса) — на прочих индикаторах их нет.
+export const DEFAULT_KINDS: ChartKind[] = ['line', 'area'];
+// Серия цены фьючерса (несёт OHLC): + свечи/бары (порт режимов графика с сайта).
+export const OHLC_KINDS: ChartKind[] = ['line', 'area', 'candlestick', 'bar'];
 
 // CC-палитра дизайнера: price / up / down / sec / amber / cyan.
 const SWATCHES = ['#5DA3E9', '#5BD49C', '#EF6F6F', '#9B8BF0', '#E0A34E', '#57C7C7'];
@@ -29,7 +35,7 @@ const DEF: ChartFormat = { kind: 'line', color: null };
 function parse(raw: string): ChartFormat {
   try {
     const j = JSON.parse(raw) as Partial<ChartFormat>;
-    const kind = KINDS.some((k) => k.id === j.kind) ? (j.kind as ChartKind) : 'line';
+    const kind = (j.kind && j.kind in KIND_LABELS ? j.kind : 'line') as ChartKind;
     const color = typeof j.color === 'string' && SWATCHES.includes(j.color) ? j.color : null;
     return { kind, color };
   } catch { return DEF; }
@@ -92,16 +98,19 @@ export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
 }
 
 /** ⚙-секция «Формат»: сегменты типа + свотчи цвета (первый — «Авто», сброс).
- *  `label` — заголовок секции (для пер-серийного формата — имя линии). */
-export function FormatSection({ fmt, onKind, onColor, label = 'Формат' }: {
+ *  `label` — заголовок секции (для пер-серийного формата — имя линии).
+ *  `kinds` — какие режимы доступны (дефолт линия/область; цена фьючерса → OHLC_KINDS). */
+export function FormatSection({ fmt, onKind, onColor, label = 'Формат', kinds = DEFAULT_KINDS }: {
   fmt: ChartFormat;
   onKind: (k: ChartKind) => void;
   onColor: (c: string | null) => void;
   label?: string;
+  kinds?: ChartKind[];
 }) {
+  const opts = kinds.map((id) => ({ id, label: KIND_LABELS[id] }));
   return (
     <DrawerSection label={label}>
-      <SegGroup<ChartKind> value={fmt.kind} options={KINDS} onChange={onKind} />
+      <SegGroup<ChartKind> value={fmt.kind} options={opts} onChange={onKind} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
         <button
           type="button"
