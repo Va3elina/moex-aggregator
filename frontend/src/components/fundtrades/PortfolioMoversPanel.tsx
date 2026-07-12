@@ -116,7 +116,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                     />
                 )}
             </div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 4 }}>{sub}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 0 }}>{sub}</div>
         </div>
     );
 
