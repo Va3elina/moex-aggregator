@@ -483,9 +483,9 @@ export default function FundTradesPage() {
                 value={tab}
                 onChange={setTab}
                 items={[
-                    { key: 'funds', label: 'Витрина', Icon: Wallet },
                     { key: 'portfolio', label: 'Общий портфель', Icon: Briefcase },
                     { key: 'company', label: 'По бумаге', Icon: ArrowLeftRight },
+                    { key: 'funds', label: 'Витрина', Icon: Wallet },
                 ]}
             />
 
