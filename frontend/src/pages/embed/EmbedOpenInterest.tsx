@@ -20,7 +20,7 @@ import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
   MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
 } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -178,7 +178,24 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [drawMagnet, setDrawMagnet] = useState(false);   // привязка к бару/цене
   const [drawHidden, setDrawHidden] = useState(false);   // скрыть рисунки (глаз)
   const [drawLocked, setDrawLocked] = useState(false);   // замок (запрет перемещения)
+  const [drawWidth, setDrawWidth] = useState(2);         // толщина по умолчанию
+  const [drawDash, setDrawDash] = useState<LwDash>('solid');  // стиль линии по умолчанию
+  const [drawOpacity, setDrawOpacity] = useState(1);     // прозрачность по умолчанию
   const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
+  // Текущий стиль для тулбара свойств: выделенный элемент (если есть) или дефолты для новых.
+  const selectedDraw = drawings.find((d) => d.id === selectedDrawId) || null;
+  const curColor = selectedDraw?.color ?? drawColor;
+  const curWidth = selectedDraw?.width ?? drawWidth;
+  const curDash: LwDash = selectedDraw?.dash ?? drawDash;
+  const curOpacity = selectedDraw?.opacity ?? drawOpacity;
+  // Применить стиль: меняет дефолт (для новых фигур) И, если выделен элемент — патчит его.
+  const applyStyle = (patch: Partial<Pick<LwDrawing, 'color' | 'width' | 'dash' | 'opacity'>>) => {
+    if (patch.color !== undefined) setDrawColor(patch.color);
+    if (patch.width !== undefined) setDrawWidth(patch.width);
+    if (patch.dash !== undefined) setDrawDash(patch.dash);
+    if (patch.opacity !== undefined) setDrawOpacity(patch.opacity);
+    if (selectedDrawId) setDrawings((ds) => ds.map((d) => (d.id === selectedDrawId ? { ...d, ...patch } : d)));
+  };
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -657,13 +674,57 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawings={drawings}
             onDrawingsChange={setDrawings}
             drawColor={drawColor}
-            drawWidth={2}
+            drawWidth={drawWidth}
+            drawDash={drawDash}
+            drawOpacity={drawOpacity}
             selectedDrawId={selectedDrawId}
             onSelectDraw={setSelectedDrawId}
+            onToolReset={() => setDrawTool('select')}
             drawMagnet={drawMagnet}
             drawHidden={drawHidden}
             drawLocked={drawLocked}
           />
+        )}
+        {/* Тулбар свойств (модель TradingView / скрины Вадима): стиль линии · толщина ·
+            цвет · прозрачность · удалить. Редактирует ВЫДЕЛЕННЫЙ элемент, иначе — дефолт
+            для новых. Горизонтальный, сверху по центру. data-export-ignore. */}
+        {drawMode && status === 'ok' && data && lwSeries.length > 0 && (
+          <div
+            data-export-ignore="true"
+            style={{
+              position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 9,
+              display: 'flex', alignItems: 'center', gap: 3, padding: '4px 7px', borderRadius: 9,
+              maxWidth: 'calc(100% - 90px)', flexWrap: 'wrap', justifyContent: 'center',
+              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 92%, transparent)',
+              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            {(['solid', 'dashed', 'dotted'] as LwDash[]).map((id) => (
+              <button key={id} type="button" title={id === 'solid' ? 'Сплошная' : id === 'dashed' ? 'Штриховой пунктир' : 'Точечный пунктир'} onClick={() => applyStyle({ dash: id })} style={drawToolBtn(curDash === id)}>
+                <svg width={18} height={12} style={{ display: 'block' }}><line x1={1} y1={6} x2={17} y2={6} stroke="currentColor" strokeWidth={2} strokeDasharray={id === 'solid' ? undefined : id === 'dashed' ? '4 3' : '0.5 3'} strokeLinecap={id === 'dotted' ? 'round' : 'butt'} /></svg>
+              </button>
+            ))}
+            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
+            {[1, 2, 3, 4].map((wv) => (
+              <button key={wv} type="button" title={`${wv}px`} onClick={() => applyStyle({ width: wv })} style={{ ...drawToolBtn(curWidth === wv), width: 24, fontSize: 11, fontWeight: 700 }}>{wv}</button>
+            ))}
+            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
+            {DRAW_COLORS.map((c) => (
+              <button key={c} type="button" title="Цвет" onClick={() => applyStyle({ color: c })} style={{ width: 20, height: 20, borderRadius: 5, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: curColor === c ? '2px solid var(--text-primary)' : '1px solid transparent' }}>
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: c, display: 'inline-block' }} />
+              </button>
+            ))}
+            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
+            <input type="range" min={10} max={100} value={Math.round(curOpacity * 100)} title="Прозрачность" onChange={(e) => applyStyle({ opacity: Number(e.target.value) / 100 })} style={{ width: 66, accentColor: 'var(--accent)' }} />
+            <span style={{ fontSize: 10, color: 'var(--text-secondary)', minWidth: 30, textAlign: 'right' }}>{Math.round(curOpacity * 100)}%</span>
+            {selectedDrawId && (
+              <>
+                <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
+                <button type="button" title="Удалить выделенное" onClick={() => { setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); }} style={drawToolBtn(false)}><Trash2 size={15} /></button>
+              </>
+            )}
+          </div>
         )}
         {/* Панель инструментов рисования слева (модель TradingView) — только в режиме
             карандаша. data-export-ignore → не попадает в снимок графика. */}
@@ -691,22 +752,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
                 <t.Icon size={16} style={t.rot ? { transform: `rotate(${t.rot}deg)` } : undefined} />
               </button>
             ))}
-            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
-            {DRAW_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title="Цвет"
-                onClick={() => setDrawColor(c)}
-                style={{
-                  width: 26, height: 26, borderRadius: 7, cursor: 'pointer', padding: 0,
-                  border: drawColor === c ? '2px solid var(--text-primary)' : '1px solid transparent',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <span style={{ width: 13, height: 13, borderRadius: '50%', background: c, display: 'inline-block' }} />
-              </button>
-            ))}
+            {/* Цвет/стиль/толщина/прозрачность — в горизонтальном тулбаре свойств сверху. */}
             <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
             {/* Утилиты: магнит / скрыть / замок */}
             <button type="button" title="Магнит: привязка к бару и цене" aria-label="Магнит" onClick={() => setDrawMagnet((v) => !v)} style={drawToolBtn(drawMagnet)}>
