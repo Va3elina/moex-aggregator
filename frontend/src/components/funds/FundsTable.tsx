@@ -17,6 +17,11 @@ const FUND_COLORS = [
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 
+// Fade-out длинных имён вместо троеточия (bare): имя занимает всю ширину колонки
+// (flex:1), длинный текст плавно растворяется у правого края. Короткие имена не
+// затухают — маска приходится на пустое место справа. Полное имя — в title.
+const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 22px), transparent 100%)';
+
 // Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
 // обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
 // Табличные цифры оставляем для выравнивания по правому краю. Заголовки колонок
@@ -545,18 +550,48 @@ export default function FundsTable({
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}
-                                                            <span className={`${bare ? 'font-normal' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
-                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 220 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
-                                                                {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
+                                                            {bare ? (
+                                                                <>
+                                                                    {/* Имя занимает всю доступную ширину (flex:1) и растворяется
+                                                                        у правого края маской — fade-out вместо троеточия. */}
                                                                     <span
-                                                                        className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
-                                                                        style={{ opacity: 0.6 }}
-                                                                        title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                        title={fund.name}
+                                                                        className="font-normal"
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            minWidth: 0,
+                                                                            overflow: 'hidden',
+                                                                            whiteSpace: 'nowrap',
+                                                                            maskImage: NAME_FADE,
+                                                                            WebkitMaskImage: NAME_FADE,
+                                                                        }}
                                                                     >
-                                                                        <AlertCircle size={17} strokeWidth={2.2} />
+                                                                        {stripUkName(fund.name, fund.uk_id)}
                                                                     </span>
-                                                                )}
-                                                            </span>
+                                                                    {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
+                                                                        <span
+                                                                            className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
+                                                                            style={{ opacity: 0.6 }}
+                                                                            title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                        >
+                                                                            <AlertCircle size={17} strokeWidth={2.2} />
+                                                                        </span>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <span className="font-medium inline-flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                                                                    <span title={fund.name}>{stripUkName(fund.name, fund.uk_id)}</span>
+                                                                    {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
+                                                                        <span
+                                                                            className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
+                                                                            style={{ opacity: 0.6 }}
+                                                                            title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                        >
+                                                                            <AlertCircle size={17} strokeWidth={2.2} />
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td
