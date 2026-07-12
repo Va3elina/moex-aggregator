@@ -835,7 +835,7 @@ export default function FundTradesPage() {
                             </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: vw >= 1120 ? 'minmax(0, 1fr) minmax(0, 1.85fr)' : '1fr', alignItems: 'stretch' }}>
-                            <div style={{ padding: '14px 16px 16px', minWidth: 0 }}>
+                            <div style={{ padding: '10px 16px 16px', minWidth: 0 }}>
                                 <PortfolioMoversPanel
                                     movers={portfolioMovers}
                                     loading={portfolioMoversLoading}
@@ -845,7 +845,7 @@ export default function FundTradesPage() {
                                     onAssetClick={openCompanyFlows}
                                 />
                             </div>
-                            <div style={{ padding: '14px 16px 16px', minWidth: 0, borderLeft: vw >= 1120 ? '1.5px solid var(--border-color)' : 'none', borderTop: vw >= 1120 ? 'none' : '1.5px solid var(--border-color)' }}>
+                            <div style={{ padding: '10px 16px 16px', minWidth: 0, borderLeft: vw >= 1120 ? '1.5px solid var(--border-color)' : 'none', borderTop: vw >= 1120 ? 'none' : '1.5px solid var(--border-color)' }}>
                                 <CombinedPortfolioView
                                     portfolio={portfolio}
                                     loading={portfolioLoading}

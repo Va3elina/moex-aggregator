@@ -112,23 +112,25 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         : PERIOD_SUB[period];
 
     const head = (
-        <div style={{ marginBottom: 4 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Покупки фондов</span>
-                {onPeriodChange && (
-                    <SegmentedControl<MoversPeriod>
-                        options={[
-                            { key: '1m', label: '1М' },
-                            { key: '6m', label: '6М' },
-                            { key: '1y', label: '1Г' },
-                            { key: '3y', label: '3Г' },
-                        ]}
-                        value={period}
-                        onChange={onPeriodChange}
-                    />
-                )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+            {/* Заголовок + период стопкой, выровнены по верху — текст не провисает
+                относительно высокого сегмент-контрола справа. */}
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Покупки фондов</span>
+                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</span>
             </div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 0 }}>{sub}</div>
+            {onPeriodChange && (
+                <SegmentedControl<MoversPeriod>
+                    options={[
+                        { key: '1m', label: '1М' },
+                        { key: '6m', label: '6М' },
+                        { key: '1y', label: '1Г' },
+                        { key: '3y', label: '3Г' },
+                    ]}
+                    value={period}
+                    onChange={onPeriodChange}
+                />
+            )}
         </div>
     );
 
