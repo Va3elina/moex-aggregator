@@ -432,9 +432,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           className="flex-shrink-0 text-right"
           style={{
             width: COL.volume,
-            fontSize: 'var(--fs-sm)',
+            // Как числа в поиске «Деньги в фондах»: вес 400, fs-xs (а не 600/fs-sm).
+            fontSize: 'var(--fs-xs)',
             fontVariantNumeric: 'tabular-nums',
-            fontWeight: 600,
+            fontWeight: 400,
             opacity: accessible ? 1 : 0.45,
             color: inst.daily_volume ? 'var(--text-secondary)' : 'var(--text-muted)',
           }}
@@ -447,9 +448,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           className="flex-shrink-0 text-right"
           style={{
             width: COL.change,
-            fontSize: 'var(--fs-sm)',
+            // Как числа в поиске «Деньги в фондах»: вес 400, fs-xs (а не 600/fs-sm).
+            fontSize: 'var(--fs-xs)',
             fontVariantNumeric: 'tabular-nums',
-            fontWeight: 600,
+            fontWeight: 400,
             opacity: accessible ? 1 : 0.45,
             color: inst.day_change_pct == null
               ? 'var(--text-muted)'
