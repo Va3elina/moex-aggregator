@@ -557,7 +557,7 @@ export default function FundsTable({
                                                         </div>
                                                     </td>
                                                     <td
-                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4'} py-1 text-theme-secondary font-mono cursor-pointer`}
+                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4 font-mono'} py-1 text-theme-secondary cursor-pointer`}
                                                         style={bare ? { fontSize: 'var(--fs-xs)' } : undefined}
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
