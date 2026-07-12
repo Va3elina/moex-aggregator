@@ -635,6 +635,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
             tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
+            timeVisible={interval !== 24}
             priceLines={alertLines}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
