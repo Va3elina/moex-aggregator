@@ -426,6 +426,22 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           )}
         </div>
 
+        {/* Объём — нейтральный, постоянный вид: значения НЕ меняют вес/цвет при
+            смене сортировки (активная колонка обозначена только в шапке). */}
+        <span
+          className="flex-shrink-0 text-right"
+          style={{
+            width: COL.volume,
+            fontSize: 'var(--fs-sm)',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 600,
+            opacity: accessible ? 1 : 0.45,
+            color: inst.daily_volume ? 'var(--text-secondary)' : 'var(--text-muted)',
+          }}
+        >
+          {inst.daily_volume ? formatCompact(inst.daily_volume) : '—'}
+        </span>
+
         {/* Изм. % — семантический цвет (зелёный/красный), постоянный вид. */}
         <span
           className="flex-shrink-0 text-right"
@@ -441,22 +457,6 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           }}
         >
           {inst.day_change_pct != null ? `${inst.day_change_pct >= 0 ? '+' : ''}${inst.day_change_pct.toFixed(2)}%` : '—'}
-        </span>
-
-        {/* Объём — нейтральный, постоянный вид: значения НЕ меняют вес/цвет при
-            смене сортировки (активная колонка обозначена только в шапке). */}
-        <span
-          className="flex-shrink-0 text-right"
-          style={{
-            width: COL.volume,
-            fontSize: 'var(--fs-sm)',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 600,
-            opacity: accessible ? 1 : 0.45,
-            color: inst.daily_volume ? 'var(--text-secondary)' : 'var(--text-muted)',
-          }}
-        >
-          {inst.daily_volume ? formatCompact(inst.daily_volume) : '—'}
         </span>
 
         {/* Lock-слот (фикс. 18px — звезда не смещается между заблок./доступными) */}
@@ -631,7 +631,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           style={{ scrollbarGutter: 'stable' }}
         >
           {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
-              ([иконка 28]·gap·[Актив flex-1]·[Изм.]·[Объём]·[lock 18]·[звезда 28]) */}
+              ([иконка 28]·gap·[Актив flex-1]·[Объём]·[Изм.]·[lock 18]·[звезда 28]) */}
           {!loading && (
             <div
               className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2 mb-1.5"
@@ -643,8 +643,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                   (Изм./Объём). Слева — растягивающийся спейсер, чтобы контролы
                   сортировки оставались выровнены по колонкам строк. */}
               <span className="flex-1" aria-hidden="true" />
-              {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
               {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
+              {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
               <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
               <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
             </div>
