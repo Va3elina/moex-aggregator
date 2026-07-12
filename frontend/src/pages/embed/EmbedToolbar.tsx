@@ -21,7 +21,7 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon, GripVertical } from 'lucide-react';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -109,6 +109,13 @@ export function EmbedFrame({
   return (
     <div style={frameStyle}>
       <div style={toolbarRow}>
+        {/* Грип-хват окна ПЕСОЧНИЦЫ: тулбар бывает забит кнопками и «взять» окно не за что.
+            Не button → проходит фильтр onDragStart (тянем только не-интерактивное). Только в песочнице. */}
+        {win && (
+          <div title="Перетащить окно" aria-hidden style={{ display: 'flex', alignItems: 'center', color: 'var(--muted, #9A958C)', cursor: 'grab', flexShrink: 0, marginLeft: -2 }}>
+            <GripVertical size={15} />
+          </div>
+        )}
         {lead}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {toolbar}

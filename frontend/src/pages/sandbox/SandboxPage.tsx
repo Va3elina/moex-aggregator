@@ -37,6 +37,7 @@ import { EmbedPidCtx } from '../embed/embedPersist';
 import { ChartPrefsCtx, type ChartPrefs } from '../../components/LwChart';
 import FrameLogo from '../../components/FrameLogo';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
 import EmbedSeasonality from '../embed/EmbedSeasonality';
@@ -96,7 +97,7 @@ const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
   // колонки нужны вширь) — шире и чуть ниже, чем было (470×420).
   heatmap: { w: 640, h: 380 },
 };
-const DEFAULT_SIZE = { w: 520, h: 360 };
+const DEFAULT_SIZE = { w: 560, h: 400 };   // чуть больше — тулбар не так забит на старте
 
 /** Стартовые настройки панели (из deep_link сигнала). Дальше панель живёт сама. */
 interface PanelCfg { instrument?: string; category?: string }
@@ -209,6 +210,8 @@ const HANDLES: { dir: string; style: CSSProperties }[] = [
 ];
 
 export default function SandboxPage() {
+  const { user } = useAuth();   // реальный юзер для аватара шапки
+  const avatarInitial = (user?.display_name?.trim()?.[0] || user?.email?.[0] || '?').toUpperCase();
   const [st, setSt] = useState<Persisted>(loadState);
   const [menuOpen, setMenuOpen] = useState(false);
   const [signalsOpen, setSignalsOpen] = useState(false);
@@ -574,8 +577,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           <button type="button" className="sb-hoverable" onClick={() => setPrefsOpen(true)} title="Настройки песочницы" style={chromeBtn}>
             <SlidersHorizontal size={15} />
           </button>
-          <span style={proChip}>PRO</span>
-          <div style={avatarStyle}>ВД</div>
+          {/* Реальный аватар юзера: картинка (avatar_url) или инициал. PRO-чип убран (Вадим). */}
+          {user?.avatar_url
+            ? <img src={user.avatar_url} alt="" style={{ ...avatarStyle, objectFit: 'cover' }} />
+            : <div style={avatarStyle} title={user?.display_name || user?.email || ''}>{avatarInitial}</div>}
           {/* Выход на главный сайт (входа в песочницу с сайта пока нет — по решению Вадима). */}
           <a href="/" className="sb-hoverable" title="Выйти на сайт" aria-label="Выйти на сайт" style={{ ...chromeBtn, textDecoration: 'none', color: 'var(--muted)' }}>
             <LogOut size={16} />
@@ -891,10 +896,6 @@ const badgeStyle: CSSProperties = {
   position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9,
   background: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: '16px',
   textAlign: 'center', pointerEvents: 'none',
-};
-const proChip: CSSProperties = {
-  fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--accent)', border: '1px solid var(--accent)',
-  borderRadius: 5, padding: '3px 6px', flex: '0 0 auto',
 };
 const avatarStyle: CSSProperties = {
   width: 30, height: 30, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)',
