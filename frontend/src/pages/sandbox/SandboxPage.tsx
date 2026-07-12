@@ -35,6 +35,7 @@ import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { EmbedPidCtx } from '../embed/embedPersist';
 import { ChartPrefsCtx, type ChartPrefs } from '../../components/LwChart';
+import FrameLogo from '../../components/FrameLogo';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
@@ -479,8 +480,9 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       {/* ── Топбар 56px (§3.1) ── */}
       <div style={topbarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <div style={logoSquare}>Ф</div>
-          <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', color: 'var(--text)' }}>Фрейм</span>
+          {/* Настоящий логотип Frame (4 угловых брекета) в акценте + русское название. */}
+          <FrameLogo size={24} color="var(--accent)" showWordmark={false} />
+          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', color: 'var(--text)' }}>Фрейм</span>
         </div>
 
         <div style={dividerV} />
@@ -827,10 +829,6 @@ const rootStyle: CSSProperties = {
 const topbarStyle: CSSProperties = {
   position: 'absolute', top: 0, left: 0, right: 0, height: TOPBAR_H, display: 'flex', alignItems: 'center', gap: 14,
   padding: '0 16px', borderBottom: '1px solid var(--border)', background: 'var(--panel)', zIndex: 50,
-};
-const logoSquare: CSSProperties = {
-  width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: '#fff', fontWeight: 800, fontSize: 15,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
 };
 const dividerV: CSSProperties = { width: 1, height: 22, background: 'var(--border)', flex: '0 0 auto' };
 function sheetTabStyle(on: boolean): CSSProperties {
