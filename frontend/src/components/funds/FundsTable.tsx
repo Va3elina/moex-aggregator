@@ -20,7 +20,7 @@ const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, trans
 // Fade-out длинных имён вместо троеточия (bare): имя занимает всю ширину колонки
 // (flex:1), длинный текст плавно растворяется у правого края. Короткие имена не
 // затухают — маска приходится на пустое место справа. Полное имя — в title.
-const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 22px), transparent 100%)';
+const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 52px), transparent 100%)';
 
 // Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
 // обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
