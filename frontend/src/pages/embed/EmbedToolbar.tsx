@@ -169,12 +169,16 @@ export function Popover({
   anchorEl,
   align = 'left',
   title,
+  width,
 }: {
   children: ReactNode;
   onClose: () => void;
   anchorEl: HTMLElement | null;
   align?: 'left' | 'right';
   title?: string;
+  /** Ширина поповера. Дефолт 300px (⚙-дровер с секциями). Компактные дропдауны
+   *  тулбара передают 'max-content' → ширина по содержимому, а не растянутые 300px. */
+  width?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number }>({ top: -9999, left: 6 });
@@ -220,7 +224,8 @@ export function Popover({
     top: pos.top,
     ...(pos.right !== undefined ? { right: pos.right } : { left: pos.left ?? 6 }),
     zIndex: 2147483000,
-    width: 'min(300px, calc(100vw - 20px))',
+    width: width ?? 'min(300px, calc(100vw - 20px))',
+    maxWidth: 'calc(100vw - 20px)',
     maxHeight: 'calc(100vh - 80px)',
     overflowY: 'auto',
     background: 'var(--bg-base, var(--bg-primary))',
@@ -403,8 +408,8 @@ export function Dropdown<T extends string | number>({
         <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
       </button>
       {open && (
-        <Popover anchorEl={btnRef.current} align="left" onClose={() => setOpen(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Popover anchorEl={btnRef.current} align="left" width="max-content" onClose={() => setOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 132 }}>
             {options.map((o) => {
               const on = o.id === value;
               return (
