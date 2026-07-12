@@ -138,11 +138,10 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
 
     const empty = buys.length === 0 && sells.length === 0;
 
-    const row = (m: FundTradesMover, positive: boolean, last: boolean) => {
+    const row = (m: FundTradesMover, last: boolean) => {
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
         const ticker = resolveFundTicker(m.asset_name, isin);
-        const cnt = positive ? m.funds_buying : m.funds_selling;
         const num = fmtSignedNum(m.total_delta_amount, scale.div, scale.dec);
         const click = onAssetClick ? () => onAssetClick(m) : undefined;
         return (
@@ -160,7 +159,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(m.asset_name, isin)}</span>
-                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
+                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{ticker}</span>
                 </span>
                 {/* Полосы нейтральные — направление задают секции «Чистые покупки/продажи». */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
@@ -188,9 +187,9 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
             ) : (
                 <>
                     {buys.length > 0 && sectionLabel('Чистые покупки', true)}
-                    {buys.slice(0, 5).map((m, i) => row(m, true, i === Math.min(5, buys.length) - 1))}
+                    {buys.slice(0, 5).map((m, i) => row(m, i === Math.min(5, buys.length) - 1))}
                     {sells.length > 0 && sectionLabel('Чистые продажи', false, 16)}
-                    {sells.slice(0, 5).map((m, i) => row(m, false, i === Math.min(5, sells.length) - 1))}
+                    {sells.slice(0, 5).map((m, i) => row(m, i === Math.min(5, sells.length) - 1))}
                 </>
             )}
         </div>
