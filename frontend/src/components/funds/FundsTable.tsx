@@ -433,9 +433,8 @@ export default function FundsTable({
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
-                                                            {subcat}
+                                                            {subcat === 'Управляемые фонды акций' ? 'Управляемые фонды' : subcat}
                                                         </span>
-                                                        <span className="text-xs text-theme-secondary">({groupFunds.length})</span>
                                                         {subcat && SUBCATEGORY_HELP[subcat] && (
                                                             <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
                                                                 <HelpTooltip content={SUBCATEGORY_HELP[subcat]} size={18} />

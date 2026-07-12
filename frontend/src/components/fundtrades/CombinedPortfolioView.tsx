@@ -49,7 +49,14 @@ const DONUT_TOP = 11;
 const LIST_PREVIEW = 11;
 
 // Сетка строки списка (десктоп): логотип · имя (фикс) · полоса · вес · объём · фнд.
-const D_GRID = '30px 136px minmax(48px, 1fr) 60px 76px 38px';
+const D_GRID = '30px 104px minmax(48px, 1fr) 60px 76px 38px';
+
+// Длинное имя обрезаем плавным затуханием справа (fade-out), не многоточием.
+const FADE_MASK = 'linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%)';
+const nameFade: CSSProperties = {
+    overflow: 'hidden', whiteSpace: 'nowrap',
+    maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK,
+};
 
 interface Props {
     portfolio: FundPortfolio | null;
@@ -239,8 +246,8 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
             >
                 <AssetLogo h={h} size={30} color={color} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(h.asset_name, h.isin)}</span>
-                    {ticker && <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{ticker}</span>}
+                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
+                    {ticker && <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{ticker}</span>}
                 </span>
                 {/* Полосы нейтральные — цвет несёт карта «Структура» справа. */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
@@ -267,7 +274,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <AssetLogo h={h} size={22} color={color} />
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fundAssetName(h.asset_name, h.isin)}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
                     <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)', flexShrink: 0 }}>{w.toFixed(2)}%</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, paddingLeft: 30 }}>

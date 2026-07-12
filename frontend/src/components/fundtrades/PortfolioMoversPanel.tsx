@@ -46,6 +46,13 @@ function fmtSignedParts(v: number): { num: string; unit: string } {
 const MONTHS_LOWER = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
     'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
+// Длинное имя обрезаем не многоточием, а плавным затуханием справа (fade-out).
+const FADE_MASK = 'linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%)';
+const nameFade: CSSProperties = {
+    overflow: 'hidden', whiteSpace: 'nowrap',
+    maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK,
+};
+
 // Диапазон консенсуса: конец = resolved_month, начало = минус длина периода.
 // «янв – июл 2026», через границу года — «окт 2025 – июл 2026».
 function monthRangeLabel(endISO: string, period: MoversPeriod): string {
@@ -140,12 +147,12 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 title={click ? `По бумаге: ${fundAssetName(m.asset_name, isin)}` : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
-                style={{ display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr) minmax(30px, 0.8fr) 96px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) 96px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(m.asset_name, isin)}</span>
-                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
+                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(m.asset_name, isin)}</span>
+                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
                 </span>
                 {/* Полосы нейтральные — направление задают секции «Чистые покупки/продажи». */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
