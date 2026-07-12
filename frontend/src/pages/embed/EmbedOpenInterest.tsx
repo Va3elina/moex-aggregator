@@ -19,9 +19,9 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
   MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
-  Ruler, Layers, X as XIcon, GripVertical,
+  Ruler, Layers, X as XIcon, GripVertical, Repeat,
 } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash, type LwMagnet } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -179,7 +179,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [drawColor, setDrawColor] = useState('#FF5C2B');
   const [drawings, setDrawings] = useState<LwDrawing[]>([]);
   const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
-  const [drawMagnet, setDrawMagnet] = useState(false);   // привязка к бару/цене
+  const [drawMagnet, setDrawMagnet] = useState<LwMagnet>('off');   // магнит: off→weak→strong (цикл)
+  const [drawKeep, setDrawKeep] = useState(false);       // «остаться в режиме рисования» (не сбрасывать инструмент)
   const [drawHidden, setDrawHidden] = useState(false);   // скрыть рисунки (глаз)
   const [drawLocked, setDrawLocked] = useState(false);   // замок (запрет перемещения)
   const [drawWidth, setDrawWidth] = useState(2);         // толщина по умолчанию
@@ -695,7 +696,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawOpacity={drawOpacity}
             selectedDrawId={selectedDrawId}
             onSelectDraw={setSelectedDrawId}
-            onToolReset={() => setDrawTool('select')}
+            onToolReset={() => { if (!drawKeep) setDrawTool('select'); }}
             drawMagnet={drawMagnet}
             drawHidden={drawHidden}
             drawLocked={drawLocked}
@@ -771,7 +772,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             {/* Цвет/стиль/толщина/прозрачность — в горизонтальном тулбаре свойств сверху. */}
             <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
             {/* Утилиты: магнит / скрыть / замок */}
-            <button type="button" title="Магнит: привязка к бару и цене" aria-label="Магнит" onClick={() => setDrawMagnet((v) => !v)} style={drawToolBtn(drawMagnet)}>
+            <button type="button" title={`Магнит: ${drawMagnet === 'off' ? 'выкл' : drawMagnet === 'weak' ? 'слабый (рядом с OHLC)' : 'сильный (всегда к OHLC)'} — клик для смены`} aria-label="Магнит" onClick={() => setDrawMagnet((m) => (m === 'off' ? 'weak' : m === 'weak' ? 'strong' : 'off'))} style={{ ...drawToolBtn(drawMagnet !== 'off'), position: 'relative' }}>
+              {drawMagnet === 'strong' && <span style={{ position: 'absolute', top: 3, right: 4, width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)' }} />}
               <Magnet size={16} />
             </button>
             <button type="button" title={drawHidden ? 'Показать рисунки' : 'Скрыть рисунки'} aria-label="Скрыть рисунки" onClick={() => setDrawHidden((v) => !v)} style={drawToolBtn(drawHidden)}>
@@ -779,6 +781,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             </button>
             <button type="button" title={drawLocked ? 'Разблокировать рисунки' : 'Заблокировать (запрет перемещения)'} aria-label="Замок" onClick={() => setDrawLocked((v) => !v)} style={drawToolBtn(drawLocked)}>
               {drawLocked ? <Lock size={16} /> : <LockOpen size={16} />}
+            </button>
+            <button type="button" title={drawKeep ? 'Один-за-раз (по умолчанию)' : 'Остаться в режиме рисования (рисовать подряд)'} aria-label="Остаться в режиме" onClick={() => setDrawKeep((v) => !v)} style={drawToolBtn(drawKeep)}>
+              <Repeat size={16} />
             </button>
             <button type="button" title="Слои (список фигур)" aria-label="Слои" onClick={() => setLayersOpen((v) => !v)} style={drawToolBtn(layersOpen)}>
               <Layers size={16} />

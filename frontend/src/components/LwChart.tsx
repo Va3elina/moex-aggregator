@@ -59,6 +59,7 @@ export type LwDrawShape = 'trend' | 'hline' | 'vline' | 'ray' | 'arrow' | 'rect'
 export type LwDrawTool = 'select' | LwDrawShape;
 export interface LwDrawPoint { logical: number; price: number }
 export type LwDash = 'solid' | 'dashed' | 'dotted';
+export type LwMagnet = 'off' | 'weak' | 'strong';   // магнит TradingView: слабый (рядом) / сильный (всегда)
 export interface LwDrawing { id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number; text?: string; dash?: LwDash; opacity?: number; hidden?: boolean }
 
 interface LwChartProps {
@@ -110,7 +111,7 @@ interface LwChartProps {
   drawWidth?: number;                   // толщина для новых фигур
   selectedDrawId?: string | null;       // выделенная фигура (для подсветки/удаления)
   onSelectDraw?: (id: string | null) => void;
-  drawMagnet?: boolean;                  // привязка новых точек к бару/цене серии
+  drawMagnet?: LwMagnet;                 // магнит: off | weak (рядом) | strong (всегда) — к ближайшему OHLC
   drawHidden?: boolean;                  // временно скрыть все рисунки (глаз)
   drawLocked?: boolean;                  // замок: запретить выделение/перемещение
   drawDash?: LwDash;                     // стиль линии для НОВЫХ фигур
@@ -608,10 +609,22 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     // Snap (магнит): точка → ближайший бар (logical→round) + цена закрытия этого бара.
     const primaryDef = () => defsRef.current.find((s) => (s.scale ?? 'right') === 'left') ?? defsRef.current.find((s) => (s.scale ?? 'right') === 'right') ?? defsRef.current[0];
     const snap = (lp: LwDrawPoint | null, allow = true): LwDrawPoint | null => {
-      if (!lp || !allow || !drawMagnetRef.current) return lp;
+      const mode = drawMagnetRef.current;
+      if (!lp || !allow || !mode || mode === 'off') return lp;
       const L = Math.round(lp.logical); const data = primaryDef()?.data;
-      if (data && L >= 0 && L < data.length) return { logical: L, price: data[L].value };
-      return { ...lp, logical: L };
+      if (!data || L < 0 || L >= data.length) return { ...lp, logical: L };
+      const pt = data[L];
+      // ближайшее из O/H/L/C (value=close-фолбэк) к курсору — как магнит TradingView.
+      const cands = [pt.open, pt.high, pt.low, pt.close, pt.value].filter((v): v is number => v != null);
+      if (!cands.length) return { ...lp, logical: L };
+      let best = cands[0], bd = Infinity;
+      for (const v of cands) { const dd = Math.abs(v - lp.price); if (dd < bd) { bd = dd; best = v; } }
+      if (mode === 'weak') {
+        // слабый: притягиваем ТОЛЬКО если курсор рядом с OHLC (≤12px), иначе точка свободна.
+        const yb = priceY(best), yc = priceY(lp.price);
+        if (yb == null || yc == null || Math.abs(yb - yc) > 12) return lp;
+      }
+      return { logical: L, price: best };
     };
     const priceY = (price: number): number | null => { const s = drawSeries(); const y = s ? s.priceToCoordinate(price) : null; return y == null ? null : (y as number); };
     // Луч: продлить a→b до границы поля.
@@ -625,7 +638,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!isFinite(t) || t < 1) t = 1;
       return { x: a.x + dx * t, y: a.y + dy * t };
     };
-    const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+    // Дефолтный набор уровней Фибоначчи TradingView (11 уровней 0..4.236, вкл. расширения).
+    const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
     const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);   // старт с 1 точки
 
     // Стиль линии → stroke-dasharray. Точки = round-cap + нулевой дэш.
@@ -669,10 +683,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       } else if (d.tool === 'fib') {
         const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
         const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x), p0 = d.pts[0].price, p1 = d.pts[1].price;
+        const fpF = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(4));
         for (const lv of FIB) {
-          const yy = priceY(p0 + (p1 - p0) * lv); if (yy == null) continue;
+          const price = p0 + (p1 - p0) * lv;
+          const yy = priceY(price); if (yy == null) continue;
           drawSvg.appendChild(svgEl('line', { x1: xL, y1: yy, x2: xR, y2: yy, stroke: col, 'stroke-width': 1, opacity: String((d.opacity == null ? 0.85 : d.opacity * 0.85) * (preview ? 0.7 : 1)), 'stroke-dasharray': lv === 0 || lv === 1 ? '0' : '3 3' }));
-          const t = svgEl('text', { x: xL + 3, y: yy - 2, fill: col, 'font-size': 9.5, 'font-family': 'Inter,sans-serif', opacity: op }); t.textContent = lv.toFixed(3);
+          // подпись = коэффициент + цена (как в TradingView)
+          const t = svgEl('text', { x: xL + 3, y: yy - 2, fill: col, 'font-size': 9.5, 'font-family': 'Inter,sans-serif', opacity: op }); t.textContent = `${lv.toFixed(3)} (${fpF(price)})`;
           drawSvg.appendChild(t);
         }
         if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
@@ -691,7 +708,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         const dPct = d.pts[0].price !== 0 ? (dP / Math.abs(d.pts[0].price)) * 100 : 0;
         const dBars = Math.round(Math.abs(d.pts[1].logical - d.pts[0].logical));
         const fmtN = (n: number) => (Math.abs(n) >= 100 ? n.toFixed(0) : Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(4));
-        const label = `${dP >= 0 ? '+' : ''}${fmtN(dP)} (${dPct >= 0 ? '+' : ''}${dPct.toFixed(2)}%) · ${dBars} бар`;
+        // Время-span между точками (как в TradingView: бары + прошедшее время). Время берём из данных серии.
+        const timeAt = (logical: number): number | null => { const dt = primaryDef()?.data; if (!dt || !dt.length) return null; const L = Math.max(0, Math.min(dt.length - 1, Math.round(logical))); return dt[L].time; };
+        const fmtDur = (secs: number): string => { const s = Math.abs(secs), dd = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); return dd >= 1 ? (hh > 0 ? `${dd}д ${hh}ч` : `${dd}д`) : hh >= 1 ? (mm > 0 ? `${hh}ч ${mm}м` : `${hh}ч`) : `${mm}м`; };
+        const t0 = timeAt(d.pts[0].logical), t1 = timeAt(d.pts[1].logical);
+        const span = t0 != null && t1 != null ? ` · ${fmtDur(t1 - t0)}` : '';
+        const label = `${dP >= 0 ? '+' : ''}${fmtN(dP)} (${dPct >= 0 ? '+' : ''}${dPct.toFixed(2)}%) · ${dBars} бар${span}`;
         const cx = x + rw / 2, lbW = label.length * 5.6 + 12, top = y - 4;
         drawSvg.appendChild(svgEl('rect', { x: cx - lbW / 2, y: top - 16, width: lbW, height: 16, rx: 4, fill: mc, opacity: op }));
         const t = svgEl('text', { x: cx, y: top - 4.5, fill: '#fff', 'font-size': 10.5, 'font-family': 'Inter,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op }); t.textContent = label;
