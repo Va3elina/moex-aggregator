@@ -38,15 +38,15 @@ const RET_ORDER: PeriodKey[] = ['y1', 'm6', 'm3', 'm1'];
 // area = rowH × width ∝ вес. Строки отсортированы по убыванию, поэтому верхние
 // ряды крупнее. TM_H_BUDGET — суммарная высота рядов (px), TM_ROW_MIN — минимум
 // на ряд для читаемости мелких строк.
-const TREEMAP_TOP = 11;
-const TM_CHUNKS = [2, 3, 3, 3];
+const TREEMAP_TOP = 10;
+const TM_CHUNKS = [2, 3, 3, 2];
 const TM_H_BUDGET = 300;
 const TM_ROW_MIN = 46;
 
 // Мобилка (пончик): слайсы и превью списка держим равными, наведение на любой
 // сектор подсвечивает строку и наоборот, без «слепых» секторов.
-const DONUT_TOP = 11;
-const LIST_PREVIEW = 11;
+const DONUT_TOP = 10;
+const LIST_PREVIEW = 10;
 
 // Сетка строки списка (десктоп): логотип · имя (фикс) · полоса · вес · объём · фнд.
 const D_GRID = '30px 104px minmax(48px, 1fr) 60px 76px 38px';
