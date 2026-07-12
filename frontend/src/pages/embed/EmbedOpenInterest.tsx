@@ -24,7 +24,7 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { FormatSection, applyFormat, useSeriesFormats } from './EmbedFormat';
+import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
 import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
@@ -44,7 +44,8 @@ type ClGroup = 'FIZ' | 'YUR';
 type DisplayMode = 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
-type Series = { time: string; value: number }[];
+// value = close; open/high/low опциональны (нужны только режимам свечи/бары цены).
+type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number }[];
 
 // Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
 const CLGROUP_OPTS: { id: ClGroup; label: string }[] = [
@@ -221,7 +222,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   }, []);
 
   const chartData = useMemo<Series>(
-    () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close })),
+    // value=close + полный OHLC (для режимов свечи/бары; линия/область берут value).
+    () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close })),
     [data],
   );
 
@@ -438,7 +440,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       const pxMinMove = lastPx >= 100 ? 1 : lastPx >= 10 ? 0.01 : 0.0001;
       out.push(applyFormat({
         id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove,
-        data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+        // OHLC пробрасываем — режимы «Свечи»/«Бары» рисуют по ним; линия/область берут value.
+        data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value, open: p.open, high: p.high, low: p.low, close: p.close })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
       }, sf.get('price')));
     }
@@ -497,7 +500,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           </DrawerSection>
           {/* §OI-5: формат каждой линии окна отдельно (тип: линия/область/столбцы + цвет). */}
           {showPrice && (
-            <FormatSection label="Цена" fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} />
+            <FormatSection label="Цена" kinds={OHLC_KINDS} fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} />
           )}
           {oiVariant === 'both' ? (
             <>
