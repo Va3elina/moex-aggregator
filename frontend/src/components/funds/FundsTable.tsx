@@ -17,16 +17,19 @@ const FUND_COLORS = [
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 
-// Стиль чисел в столбцах СЧА/Доходность (bare) — как значения в поиске ОИ
-// (InstrumentSearchModal): вес 600, табличные цифры, обычный шрифт (не mono).
-// Заголовки колонок этим не трогаем.
+// Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
+// обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
+// Табличные цифры оставляем для выравнивания по правому краю. Заголовки колонок
+// этим не трогаем. Цвет доходности переопределяется семантически в самой ячейке.
 const OI_NUM_STYLE: React.CSSProperties = {
-    fontWeight: 600,
+    fontWeight: 400,
+    fontSize: 'var(--fs-xs)',
+    color: 'var(--text-secondary)',
     fontVariantNumeric: 'tabular-nums',
 };
 
-// Числа СЧА — приглушённо-серые (var(--text-secondary)), как столбец «Объём» в
-// поиске ОИ, а не насыщенно-чёрные. Доходность остаётся семантически цветной.
+// Числа СЧА — приглушённо-серые (var(--text-secondary)), как тикеры в поиске
+// ОИ. Доходность остаётся семантически цветной.
 const OI_NUM_SCHA_STYLE: React.CSSProperties = {
     ...OI_NUM_STYLE,
     color: 'var(--text-secondary)',
