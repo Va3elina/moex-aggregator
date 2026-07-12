@@ -80,10 +80,14 @@ function ukKey(f: { uk_id?: number | string | null; uk?: string | null }): strin
 
 // ─────────────────────────────── shared bits ───────────────────────────────
 
-// Локальный таб-бар (pills) ВНУТРИ виджета. Узкий, переносится на узких панелях.
+// Локальный таб-бар (pills) ВНУТРИ виджета. Живёт в тулбаре EmbedFrame — там
+// у родителя overflow:hidden в ОДНУ строку (§4.1), поэтому flexWrap тут не
+// сработал бы (лишние строки просто обрежутся, а ⚙ наедет на обрезанную
+// вкладку — реальный баг на узкой панели у MINW=300). Вместо wrap — горизонтальный
+// скролл в один ряд: узко — скроллим тач/колесом, не теряем доступ к вкладкам.
 function TabBar({ tab, onChange }: { tab: EmbedTab; onChange: (t: EmbedTab) => void }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0, marginBottom: 8 }}>
+    <div className="styled-scrollbar" style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 6, flexShrink: 1, minWidth: 0 }}>
       {TABS.map((t) => {
         const on = t.id === tab;
         return (
@@ -405,7 +409,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       more={more}
     >
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}>
+        <div className="styled-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}>
           {tab === 'movers' && (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, position: 'relative' }}>
               {moversStatus === 'ok' ? (
@@ -598,7 +602,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
 
       {/* Лента месяцев */}
       {snapshotsList && snapshotsList.snapshots.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, flexShrink: 0 }}>
+        <div className="styled-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, flexShrink: 0 }}>
           {snapshotsList.snapshots.map((s) => {
             const on = s.snapshot_date === selectedDate;
             return (
@@ -629,7 +633,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
       )}
 
       {/* Тело */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
+      <div className="styled-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
         {status === 'empty' && <EmbedMsg text={`У ${ticker} пока нет снапшотов`} />}

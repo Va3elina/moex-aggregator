@@ -382,9 +382,13 @@ export function PillGroup<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+    // flexShrink:1 + overflowX:auto — на узкой панели (неск. PillGroup/Dropdown в
+    // одной строке тулбара, у родителя overflow:hidden в §4.1) группа скроллится
+    // сама вместо того, чтобы обрезаться границей родителя и залезать под ⚙.
+    // flexShrink:0 на самих кнопках — сжимается контейнер (скролл), не текст пилюль.
+    <div className="styled-scrollbar" style={{ display: 'inline-flex', gap: 4, flexShrink: 1, minWidth: 0, overflowX: 'auto' }}>
       {options.map((o) => (
-        <button key={String(o.id)} type="button" title={o.title} style={pillStyle(o.id === value)} onClick={() => onChange(o.id)}>
+        <button key={String(o.id)} type="button" title={o.title} style={{ ...pillStyle(o.id === value), flexShrink: 0 }} onClick={() => onChange(o.id)}>
           {o.label}
         </button>
       ))}
