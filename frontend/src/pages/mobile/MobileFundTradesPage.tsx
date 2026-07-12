@@ -835,9 +835,9 @@ export default function MobileFundTradesPage() {
               {([
                 // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
                 // оставлен — вернуть = дописать строки обратно.
-                { id: 'funds' as const, label: 'Витрина', icon: Wallet },
                 { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
                 { id: 'company' as const, label: 'По бумаге', icon: ArrowLeftRight },
+                { id: 'funds' as const, label: 'Витрина', icon: Wallet },
               ]).map((t) => {
                 const Icon = t.icon;
                 return (
