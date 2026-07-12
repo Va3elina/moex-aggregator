@@ -154,7 +154,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 title={click ? `По бумаге: ${fundAssetName(m.asset_name, isin)}` : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
-                style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) 72px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) max-content', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
