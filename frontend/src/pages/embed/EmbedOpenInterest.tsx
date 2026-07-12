@@ -131,6 +131,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     initialInstrument || params.get('instrument') || rd('frame:embed:oi:instrument', 'SR'),
   );
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
+  // Актуальный фьючерсный контракт (напр. 'SRZ5') для показа в кнопке актива —
+  // instrument хранит КОРЕНЬ ('SR'), а видеть надо последний активный контракт.
+  const [frontContract, setFrontContract] = useState<string | null>(null);
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -171,6 +174,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       .catch(() => { /* имя не критично */ });
     return () => { cancelled = true; };
   }, [instrument, instrumentName]);
+
+  // Активный фьючерсный контракт — при любой смене инструмента (порт логики сайта,
+  // OpenInterestPage): getInstrument отдаёт front_secid из календаря контрактов;
+  // для спота/ошибки — null → в кнопке актива fallback на displayTicker(корень).
+  useEffect(() => {
+    let cancelled = false;
+    getInstrument(instrument)
+      .then((inst) => { if (!cancelled) setFrontContract(inst?.front_secid || null); })
+      .catch(() => { /* контракт не критичен */ });
+    return () => { cancelled = true; };
+  }, [instrument]);
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
@@ -458,7 +472,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     <EmbedFrame
       lead={
         <AssetButton
-          ticker={displayTicker(instrument)}
+          ticker={frontContract || displayTicker(instrument)}
           filterType="futures"
           hideLowActivity
           current={instrument}
@@ -495,9 +509,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           )}
           <WheelHint>
             <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми
-            оранжевый <b>＋</b> на нужном уровне — как на сайте.<br />
-            Колесо над графиком — <b>зум времени</b>; зажать и тащить — панорама;
-            <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб.
+            оранжевый <b>＋</b> на нужном уровне — как на сайте.
           </WheelHint>
         </>
       }
