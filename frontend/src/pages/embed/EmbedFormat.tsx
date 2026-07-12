@@ -80,7 +80,8 @@ export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
   const color = fmt.color ?? def.color;
   const out: LwSeries = { ...def, type: fmt.kind, color };
   if (fmt.kind === 'area') {
-    out.areaTop = `color-mix(in srgb, ${color} 22%, transparent)`;
+    // Заливка приглушена (13%, было 22%) — тоньше и меньше «давит» на график; низ прозрачный.
+    out.areaTop = `color-mix(in srgb, ${color} 13%, transparent)`;
     out.areaBottom = undefined;
   } else {
     delete out.areaTop;
