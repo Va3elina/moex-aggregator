@@ -5,8 +5,9 @@
 // Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г/3Г
 // живёт в шапке блока (prop onPeriodChange), под заголовком — фактический
 // диапазон месяцев консенсуса («чистая покупка · январь – июль 2026»). Полосы
-// нейтральные, величины тёмные: направление читается секциями «Докупили ↗» /
-// «Распродали ↘», единица (млрд/млн ₽) приглушена отдельным спаном.
+// нейтральные, величины тёмные: направление читается секциями «Чистые покупки» /
+// «Чистые продажи» с однотонным глифом-графиком (рост/падение на currentColor),
+// единица (млрд/млн ₽) приглушена отдельным спаном.
 //
 // variant='embedded' — без собственной карточки (блок внутри общей карточки
 // вкладки). Клик по строке — «Потоки по компании».
@@ -64,6 +65,21 @@ function MoverLogo({ m, size }: { m: FundTradesMover; size: number }) {
         <span style={{ width: size, height: size, borderRadius: '50%', background: 'var(--text-muted)', color: '#fff', fontSize: Math.round(size * 0.42), fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>
             {(fundAssetName(m.asset_name, isin).trim().charAt(0) || '?').toUpperCase()}
         </span>
+    );
+}
+
+// Однотонный глиф-график направления: ломаная со стрелкой на currentColor,
+// форма как у 📈/📉, но в один тон под цвет текста (editorial, без эмодзи).
+function TrendGlyph({ up }: { up: boolean }) {
+    const line = up ? 'M3 15.5 L9 10 L13 12.5 L20 5.5' : 'M3 6.5 L9 12 L13 9.5 L20 16.5';
+    const head = up ? 'M14.5 5.5 L20 5.5 L20 11' : 'M14.5 16.5 L20 16.5 L20 11';
+    return (
+        <svg width="1.02em" height="1.02em" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round"
+            style={{ flexShrink: 0, display: 'block' }} aria-hidden="true">
+            <path d={line} />
+            <path d={head} />
+        </svg>
     );
 }
 
@@ -147,7 +163,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(m.asset_name, isin)}</span>
                     <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
                 </span>
-                {/* Полосы нейтральные — направление задают секции «Докупили/Распродали». */}
+                {/* Полосы нейтральные — направление задают секции «Чистые покупки/продажи». */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
@@ -159,9 +175,9 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         );
     };
 
-    const sectionLabel = (text: string, arrow: string, mt = 0) => (
+    const sectionLabel = (text: string, up: boolean, mt = 0) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: `${mt}px 0 4px` }}>
-            {text}<span style={{ fontSize: '0.92em' }}>{arrow}</span>
+            {text}<TrendGlyph up={up} />
         </div>
     );
 
@@ -174,9 +190,9 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 </div>
             ) : (
                 <>
-                    {buys.length > 0 && sectionLabel('Докупили', '↗')}
+                    {buys.length > 0 && sectionLabel('Чистые покупки', true)}
                     {buys.slice(0, 5).map((m, i) => row(m, true, i === Math.min(5, buys.length) - 1))}
-                    {sells.length > 0 && sectionLabel('Распродали', '↘', 16)}
+                    {sells.length > 0 && sectionLabel('Чистые продажи', false, 16)}
                     {sells.slice(0, 5).map((m, i) => row(m, false, i === Math.min(5, sells.length) - 1))}
                 </>
             )}
