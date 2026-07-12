@@ -452,6 +452,59 @@ function iconBtnStyle(active: boolean): CSSProperties {
   };
 }
 
+/**
+ * IconMenu — кнопка-иконка (28×28) → поповер со строками «иконка + подпись».
+ * Триггер показывает иконку текущего варианта (стиль Т-Терминала: «Вид графика»).
+ */
+export function IconMenu<T extends string | number>({
+  value,
+  options,
+  onChange,
+  title,
+}: {
+  value: T;
+  options: { id: T; label: string; icon: ReactNode }[];
+  onChange: (v: T) => void;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const cur = options.find((o) => o.id === value);
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button ref={btnRef} type="button" title={title} style={iconBtnStyle(open)} onClick={() => setOpen((v) => !v)}>
+        {cur?.icon}
+      </button>
+      {open && (
+        <Popover anchorEl={btnRef.current} align="left" onClose={() => setOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 148 }}>
+            {options.map((o) => {
+              const on = o.id === value;
+              return (
+                <button
+                  key={String(o.id)}
+                  type="button"
+                  onClick={() => { onChange(o.id); setOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left',
+                    padding: '8px 10px', borderRadius: 7, border: 'none',
+                    background: on ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
+                    color: on ? 'var(--accent)' : 'var(--text-primary)',
+                    fontWeight: on ? 800 : 600, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', flexShrink: 0 }}>{o.icon}</span>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── period readout + wheel hint ───────────────────────── */
 
 /** Дим-readout текущего периода в тулбаре (не кнопка — период меняется Shift+колесом). */
