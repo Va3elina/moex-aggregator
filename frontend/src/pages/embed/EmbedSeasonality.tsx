@@ -16,7 +16,7 @@
  * Контролы: тип графика + разрез в тулбаре; дивиденды/медиана/текущий год — в ⚙.
  * Виджет целиком под PRO-токеном → тир-гейтинга/онбординга/экспорта нет.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LwChart, { type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -30,11 +30,24 @@ import {
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, AssetButton, PillGroup, Dropdown } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, PillGroup, Dropdown, SandboxWindowCtx } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
+
+// Размер панели под конкретный срез (§6.11 — «минимально необходимый размер под
+// таймфрейм»): категориальным гистограммам нужна разная ширина под число баров
+// (5 дней недели vs 31 день месяца vs 8 часовых баров intraday), годовой
+// траектории — больше и ширины (252 торг. дня), и высоты (непрерывная линия,
+// не бары). Работает только внутри песочницы — onResize там, дальше не задан.
+const SIZE_BY_VIEW: Record<string, { w: number; h: number }> = {
+  'histogram|intraday': { w: 480, h: 340 },
+  'histogram|weekday': { w: 420, h: 340 },
+  'histogram|monthday': { w: 680, h: 380 },
+  'histogram|monthly': { w: 540, h: 360 },
+  yearly: { w: 640, h: 420 },
+};
 
 const CHART_TYPES: { id: ChartType; label: string }[] = [
   { id: 'histogram', label: 'Календарь' },
@@ -87,6 +100,16 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   const [excludeDividends, setExcludeDividends] = useState<boolean>(() => rdBool('frame:embed:seasonality:excludeDividends', false));
   const [showNoOutliers, setShowNoOutliers] = useState<boolean>(() => rdBool('frame:embed:seasonality:showNoOutliers', false));
   const [showCurrentYear, setShowCurrentYear] = useState<boolean>(() => rdBool('frame:embed:seasonality:showCurrentYear', true));
+
+  // §6.11: панель песочницы принимает размер под текущий срез при каждой смене
+  // типа графика/режима (не только при спавне) — 31 бар «внутри месяца» не
+  // помещается в размер под 5 баров «по дням недели», и наоборот жаль места.
+  const windowCtx = useContext(SandboxWindowCtx);
+  useEffect(() => {
+    const sz = SIZE_BY_VIEW[chartType === 'histogram' ? `histogram|${mode}` : 'yearly'];
+    if (sz) windowCtx?.onResize?.(sz.w, sz.h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartType, mode]);
 
   // Данные: база + опциональная медиана, отдельно для histogram и yearly.
   const [histBase, setHistBase] = useState<SeasonalityResponse | null>(null);

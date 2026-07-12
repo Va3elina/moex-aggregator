@@ -29,7 +29,13 @@ import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon } fr
  * кнопки окна (⤢ развернуть / × закрыть) СПРАВА в ту же строку тулбара — единая шапка
  * по §4.1 спеки. В расширении/на сайте контекст пуст → ничего лишнего.
  */
-export interface SandboxWindowControls { onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void }
+export interface SandboxWindowControls {
+  onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void;
+  /** Индикатор просит панель принять размер w×h (напр. Сезонность — под срез/режим).
+   *  SandboxPage сам клампит к границам холста и MINW/MINH; на сайте/расширении
+   *  контекста нет → вызов недоступен, embed просто не резайзит. */
+  onResize?: (w: number, h: number) => void;
+}
 export const SandboxWindowCtx = createContext<SandboxWindowControls | null>(null);
 import InstrumentIcon from '../../components/InstrumentIcon';
 import InstrumentSearchModal from '../../components/InstrumentSearchModal';

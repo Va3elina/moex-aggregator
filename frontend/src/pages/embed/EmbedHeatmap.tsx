@@ -13,7 +13,6 @@
  * Метрика меняет ВТОРУЮ строку в плитке (изм.% / оборот); цвет всегда по change_1d.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTheme } from '../../contexts/ThemeContext';
 import { getHeatmapData, getHeatmapImoex, type HeatmapResponse, type HeatmapStock } from '../../services/api';
 import { squarify, type SquarifyRect } from '../../utils/squarify';
 import { EmbedMsg } from './embedUi';
@@ -33,15 +32,26 @@ const METRICS: { id: Metric; label: string; title: string }[] = [
   { id: 'vol', label: 'Объём', title: 'Оборот за день' },
 ];
 
-// Цвет плитки (порт heatColor мокапа): мешаем зелёный/красный к фону темы,
-// интенсивность по |изменению| (насыщение к ±4%). Ноль — нейтральный фон.
-function heatColor(ch: number, dark: boolean): string {
-  const base: [number, number, number] = dark ? [26, 26, 30] : [240, 236, 226];
-  const tint: [number, number, number] = ch >= 0 ? [91, 212, 156] : [239, 111, 111];
-  const a = Math.min(1, Math.abs(ch) / 4);
-  const k = 0.25 + a * 0.7;
-  const mix = (i: number) => Math.round(base[i] + (tint[i] - base[i]) * k);
-  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+// Цвет плитки — 1:1 порт getColor с десктопной HeatmapPage (earth-tone: тёмный
+// центр #2a2a2a → brick/clay на падении, forest green на росте; НЕ зависит от
+// темы страницы — треймап всегда тёмный, как на сайте). maxChange=0.8 — тот же
+// порог, что и в change_1d ветке оригинала (embed красит только по change_1d).
+function heatColor(ch: number): string {
+  const maxChange = 0.8;
+  const t = Math.min(Math.abs(ch) / maxChange, 1);
+  if (ch > 0) {
+    const r = Math.round(42 + t * (45 - 42));
+    const g = Math.round(42 + t * (107 - 42));
+    const b = Math.round(42 + t * (63 - 42));
+    return `rgb(${r},${g},${b})`;
+  }
+  if (ch < 0) {
+    const r = Math.round(42 + t * (122 - 42));
+    const g = Math.round(42 + t * (53 - 42));
+    const b = Math.round(42 + t * (40 - 42));
+    return `rgb(${r},${g},${b})`;
+  }
+  return '#2a2a2a';
 }
 
 const fmtPct = (v: number): string => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(1).replace('.', ',') + '%';
@@ -63,8 +73,6 @@ const MIN_TILE_AREA = 14; // если под плитки в секторе ос
 
 export default function EmbedHeatmap() {
   const { rd, wr } = useEmbedPersist();
-  const { theme } = useTheme();
-  const dark = theme !== 'editorial-light';
 
   const [universe, setUniverse] = useState<Universe>(() => rd('frame:embed:heatmap:universe', 'imoex') as Universe);
   const [metric, setMetric] = useState<Metric>(() => rd('frame:embed:heatmap:metric', 'change') as Metric);
@@ -180,18 +188,21 @@ export default function EmbedHeatmap() {
                   style={{
                     position: 'absolute',
                     left: t.x + 1, top: t.y + 1, width: Math.max(0, t.width - 2), height: Math.max(0, t.height - 2),
-                    borderRadius: 5, background: heatColor(ch, dark),
+                    borderRadius: 5, background: heatColor(ch),
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
                     overflow: 'hidden', cursor: 'default',
                   }}
                 >
+                  {/* Заливка плитки всегда тёмная (earth-tone, независимо от темы страницы,
+                      как на сайте) → текст всегда белый, не var(--text-primary) (в светлой
+                      теме он тёмный — нечитаем на тёмном тайле). */}
                   {showTicker && (
-                    <span style={{ fontSize: fs, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                    <span style={{ fontSize: fs, fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
                       {st.secId}
                     </span>
                   )}
                   {showSub && (
-                    <span style={{ fontSize: Math.round(fs * 0.72), fontWeight: 700, color: 'var(--text-primary)', opacity: 0.85, fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontSize: Math.round(fs * 0.72), fontWeight: 700, color: '#fff', opacity: 0.85, fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' }}>
                       {metric === 'change' ? fmtPct(ch) : fmtVol(st.value_1d ?? 0)}
                     </span>
                   )}
