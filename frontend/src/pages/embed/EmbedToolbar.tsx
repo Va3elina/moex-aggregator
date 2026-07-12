@@ -437,13 +437,16 @@ export function Dropdown<T extends string | number>({
                   onClick={() => { onChange(o.id); setOpen(false); }}
                   style={{
                     textAlign: 'left',
-                    padding: '8px 10px',
+                    padding: '7px 9px',
                     borderRadius: 7,
                     border: 'none',
                     background: on ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
                     color: on ? 'var(--accent)' : 'var(--text-primary)',
-                    fontWeight: on ? 800 : 600,
-                    fontSize: 12.5,
+                    // Размер/жирность как у кнопки-триггера (CTL_FS/CTL_FW) — Вадим: «как сверху».
+                    // Активный чуть жирнее для индикации выбора. nowrap — чтобы «1 день» не переносился.
+                    fontWeight: on ? 800 : CTL_FW,
+                    fontSize: CTL_FS,
+                    whiteSpace: 'nowrap',
                     cursor: 'pointer',
                   }}
                 >
