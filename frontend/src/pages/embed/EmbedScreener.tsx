@@ -50,7 +50,9 @@ function fmtDate(d: string): string {
 
 const MONO = { fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' as const };
 
-export default function EmbedScreener() {
+/** `onPick` — клик по строке сигнала (§6.10 модели песочницы: как лента аномалий,
+ *  открывает панель ОИ на этом активе). Не задан → строки не кликабельны (сайт/расширение). */
+export default function EmbedScreener({ onPick }: { onPick?: (r: OiScreenerRow) => void } = {}) {
   const { rd, wr } = useEmbedPersist();
   const [clgroup, setClgroup] = useState<Clgroup>(() => rd('frame:embed:screener:clgroup', 'FIZ') as Clgroup);
   const [threshold, setThreshold] = useState<ThresholdKey>(() => rd('frame:embed:screener:threshold', '2') as ThresholdKey);
@@ -140,7 +142,7 @@ export default function EmbedScreener() {
           {status === 'ok' && visible.length === 0 && (
             <EmbedMsg text={threshold !== '0' ? 'Тихий день — резких движений нет' : 'Нет активов по фильтру'} />
           )}
-          {status === 'ok' && visible.map((r) => <ScreenerRow key={r.sectype} r={r} />)}
+          {status === 'ok' && visible.map((r) => <ScreenerRow key={r.sectype} r={r} onClick={onPick ? () => onPick(r) : undefined} />)}
         </div>
         {status === 'ok' && dateLabel && (
           <div style={{ ...MONO, flexShrink: 0, padding: '6px 12px', fontSize: 10.5, color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color, rgba(128,128,128,0.18))', textAlign: 'right' }}>
@@ -152,7 +154,7 @@ export default function EmbedScreener() {
   );
 }
 
-function ScreenerRow({ r }: { r: OiScreenerRow }) {
+function ScreenerRow({ r, onClick }: { r: OiScreenerRow; onClick?: () => void }) {
   const dim = r.status === 'illiquid' || r.status === 'nodata';
   const long = (r.net_pct ?? 0) >= 0;
   const perekosColor = long ? 'var(--oi-green)' : 'var(--oi-red)';
@@ -162,6 +164,8 @@ function ScreenerRow({ r }: { r: OiScreenerRow }) {
 
   return (
     <div
+      onClick={onClick}
+      title={onClick ? `Открыть открытые позиции — ${r.name}` : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -169,6 +173,7 @@ function ScreenerRow({ r }: { r: OiScreenerRow }) {
         padding: '8px 12px',
         borderBottom: '0.5px solid var(--border-color, rgba(128,128,128,0.22))',
         opacity: dim ? 0.55 : 1,
+        cursor: onClick ? 'pointer' : 'default',
       }}
     >
       <span style={{ flexShrink: 0, lineHeight: 0 }}>

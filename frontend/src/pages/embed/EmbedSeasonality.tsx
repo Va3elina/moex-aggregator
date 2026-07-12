@@ -180,6 +180,9 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     const out: LwSeries[] = [{
       id: 'season', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
       color: 'var(--oi-green)', label: 'Ср. изменение',
+      // Ось категориальная (срез, не время) — «последний бар» ничего не значит,
+      // пилюля last-value на оси только путает (не зависит от тумблера песочницы).
+      lastValueVisible: false,
       data: bars.map((b, i) => ({
         time: T0 + i * DAY,
         value: b.avg_change,

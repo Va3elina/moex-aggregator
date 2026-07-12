@@ -117,7 +117,7 @@ function renderIndicator(type: IndKind, cfg: PanelCfg | undefined, onSignal: (dl
     case 'signals': return <EmbedSignals onPick={onSignal} />;
     case 'oi': return <EmbedOpenInterest initialInstrument={cfg?.instrument} />;
     case 'seasonality': return <EmbedSeasonality initialInstrument={cfg?.instrument} />;
-    case 'screener': return <EmbedScreener />;
+    case 'screener': return <EmbedScreener onPick={(r) => onSignal({ route: '/oi', secid: r.sectype })} />;
     case 'buffett': return <EmbedBuffett />;
     case 'strength': return <EmbedStrength />;
     case 'funds-money': return <EmbedFundsMoney initialCategory={cfg?.category} />;
