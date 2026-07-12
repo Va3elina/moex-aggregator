@@ -88,7 +88,9 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 #   - forwarded-allow-ips=* : доверять X-Forwarded-* от nginx (через docker
 #     network IP, не 127.0.0.1). Без этого RateLimitMiddleware видит
 #     всех юзеров под одним IP 172.18.x.x и сразу лимитит.
-#   - workers 3: 4-ядерная VM, 3 worker'a используют ~75% CPU.
+#   - workers 3: 4-ядерная VM (8ГБ, апгрейд 2026-07-12 с 2 ядер). 3 uvicorn-воркера
+#     (async, IO-bound) свободно ложатся на 4 ядра; число к ядрам жёстко не привязано —
+#     воркеры простаивают на await (сеть/БД), а не жгут CPU. При росте нагрузки можно 4-5.
 # Non-root запуск через docker-compose `user: 1000:1000` (api сервис).
 CMD ["gunicorn", "api.main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
