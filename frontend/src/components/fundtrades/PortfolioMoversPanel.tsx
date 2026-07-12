@@ -105,11 +105,11 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     const maxAbs = Math.max(0.0001, ...absVals);
     const scale = scaleOf(maxAbs);
 
-    // Подзаголовок: «чистая покупка · ноя 2025 – май 2026». Единица (млрд/млн ₽)
-    // живёт рядом с легендами секций, не здесь.
+    // Подзаголовок — только диапазон месяцев консенсуса («апр – май 2026»).
+    // Единица (млрд/млн ₽) живёт рядом с легендами секций, не здесь.
     const sub = movers?.resolved_month
-        ? `чистая покупка · ${monthRangeLabel(movers.resolved_month, period)}`
-        : `чистая покупка ${PERIOD_SUB[period]}`;
+        ? monthRangeLabel(movers.resolved_month, period)
+        : PERIOD_SUB[period];
 
     const head = (
         <div style={{ marginBottom: 4 }}>
@@ -174,7 +174,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     const sectionLabel = (text: string, up: boolean, mt = 0) => (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: `${mt}px 0 4px` }}>
             {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
-            {hasData && <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>{scale.unit}</span>}
+            {hasData && <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({scale.unit})</span>}
         </div>
     );
 
