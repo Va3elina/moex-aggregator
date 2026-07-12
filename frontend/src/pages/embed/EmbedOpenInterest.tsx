@@ -14,9 +14,8 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChartLine, ChartArea, ChartCandlestick } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
@@ -25,8 +24,8 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS, kindOptions, type ChartKind } from './EmbedFormat';
-import { EmbedFrame, AssetButton, Dropdown, PillGroup, IconMenu, WheelHint } from './EmbedToolbar';
+import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
+import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
@@ -57,31 +56,6 @@ const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'positions', label: 'Объём позиций' },
   { id: 'participants', label: 'Число трейдеров' },
 ];
-
-// Иконка OHLC-бара (в lucide нет): вертикаль high↔low + тик открытия слева + тик
-// закрытия справа, два бара — как глиф «Бары» в Т-Терминале.
-function OhlcBarIcon({ size = 15 }: { size?: number }): ReactNode {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <line x1="8" y1="4" x2="8" y2="20" />
-      <line x1="8" y1="8" x2="4.5" y2="8" />
-      <line x1="8" y1="15" x2="11.5" y2="15" />
-      <line x1="17" y1="7" x2="17" y2="21" />
-      <line x1="17" y1="11" x2="13.5" y2="11" />
-      <line x1="17" y1="17" x2="20.5" y2="17" />
-    </svg>
-  );
-}
-function kindIcon(k: ChartKind): ReactNode {
-  switch (k) {
-    case 'area': return <ChartArea size={15} />;
-    case 'candlestick': return <ChartCandlestick size={15} />;
-    case 'bar': return <OhlcBarIcon size={15} />;
-    default: return <ChartLine size={15} />;   // line
-  }
-}
-// Опции контрола «Вид графика» (иконка + подпись) для серии цены.
-const CHART_TYPE_OPTS = kindOptions(OHLC_KINDS).map((o) => ({ ...o, icon: kindIcon(o.id) }));
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
@@ -510,14 +484,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       toolbar={
         <>
-          {/* §OI-toolbar: ТФ и Физ/Юр — горизонтальные пилюли (не дропдаун), как в Т-Терминале.
-              ОИ-бэк поддерживает лишь 3 гранулярности свечей (5м/1ч/1д) → «избранное» ТФ не нужно. */}
-          <PillGroup value={interval} options={TF_COMPACT} onChange={changeInterval} />
+          {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
+              горизонтальные пилюли (2 пункта). Вид графика убран из тулбара → настраивается
+              per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике). */}
+          <Dropdown value={interval} options={TF_COMPACT} onChange={changeInterval} title="Таймфрейм" />
           <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
-          {/* Вид графика (для серии цены) — иконка-меню как в Т-Терминале; синхронен с ⚙ Формат «Цена». */}
-          {showPrice && (
-            <IconMenu value={sf.get('price').kind} options={CHART_TYPE_OPTS} onChange={(k) => sf.setKind('price', k)} title="Вид графика" />
-          )}
           <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" />
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
         </>
@@ -530,7 +501,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               <ToggleRow label="Экспирации" checked={showExpirations} onChange={setShowExpirations} hint="Метки смены контракта" />
             </div>
           </DrawerSection>
-          {/* §OI-5: формат каждой линии окна отдельно (тип: линия/область/столбцы + цвет). */}
+          {/* §OI-5: формат КАЖДОЙ линии окна отдельно (тип + цвет) — разбивка по тому, что на
+              графике: Цена (линия/область/свечи/бары), линии ОИ (линия/область). Подписи ниже
+              адаптивны: Чистая позиция / Открытый интерес / Покупки / Продажи (или Покупки+Продажи). */}
           {showPrice && (
             <FormatSection label="Цена" kinds={OHLC_KINDS} fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} />
           )}
