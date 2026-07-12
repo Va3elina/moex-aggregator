@@ -256,7 +256,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 </div>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{w.toFixed(2)}%</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{fmtVolShort(h.value_rub)}</span>
-                <span style={{ textAlign: 'right', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{h.funds_holding} ф.</span>
+                <span style={{ textAlign: 'right', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{h.funds_holding}</span>
             </div>
         );
     };
