@@ -91,7 +91,9 @@ const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
   strength: { w: 560, h: 420 },
   oi: { w: 640, h: 440 },
   seasonality: { w: 600, h: 440 },
-  heatmap: { w: 470, h: 420 },
+  // Треймап читается лучше в landscape (лейблы горизонтальные, секторные
+  // колонки нужны вширь) — шире и чуть ниже, чем было (470×420).
+  heatmap: { w: 640, h: 380 },
 };
 const DEFAULT_SIZE = { w: 520, h: 360 };
 
