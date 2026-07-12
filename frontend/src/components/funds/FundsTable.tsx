@@ -607,8 +607,11 @@ export default function FundsTable({
                                                         const br = isLocked ? null : bestReturn(fund.returns);
                                                         return (
                                                             <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right whitespace-nowrap`} style={{
-                                                                color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
+                                                                // OI_NUM_STYLE даёт вес/размер/tabular (и серый по умолчанию для «—»),
+                                                                // а семантический цвет доходности перекрывает его — иначе значения
+                                                                // становились серыми вместо зелёного/красного.
                                                                 ...(bare ? OI_NUM_STYLE : {}),
+                                                                ...(br ? { color: br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' } : {}),
                                                             }}>
                                                                 {isLocked || !br ? '—' : (
                                                                     <>
