@@ -84,6 +84,8 @@ const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; r
 ];
 // tool → короткое имя для панели слоёв.
 const DRAW_TOOL_NAME: Record<string, string> = Object.fromEntries(DRAW_TOOLS.filter((t) => t.id !== 'select').map((t) => [t.id, t.title]));
+// Хоткеи инструментов (как в TradingView) — показываем в тултипе кнопки.
+const DRAW_HOTKEY: Record<string, string> = { trend: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V', fib: 'Alt+F', rect: 'Alt+⇧R' };
 const DRAW_COLORS = ['#FF5C2B', '#5DA3E9', '#5BD49C', '#EF6F6F', '#E0A34E', '#F5F1E8'];
 function drawToolBtn(active: boolean): CSSProperties {
   return {
@@ -278,14 +280,25 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     wr(`frame:embed:oi:draw:${instrumentRef.current}`, JSON.stringify(drawings));
   }, [drawings]);
 
-  // Delete/Backspace в режиме рисования → удалить выделенную фигуру.
+  // Клавиатура в режиме рисования: удаление, Esc, хоткеи инструментов (как в TradingView).
+  // e.code (физическая клавиша) — надёжнее e.key, т.к. Alt+буква на Mac даёт диакритику.
   useEffect(() => {
     if (!drawMode) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
-        setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId));
-        setSelectedDrawId(null);
+        setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); return;
       }
+      if (e.key === 'Escape') { setDrawTool('select'); setSelectedDrawId(null); return; }
+      if (!e.altKey) return;
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyH') { e.preventDefault(); setDrawHidden((v) => !v); return; }  // Ctrl/Cmd+Alt+H — скрыть все
+      if (e.ctrlKey || e.metaKey) return;
+      let tool: LwDrawTool | null = null;
+      if (e.code === 'KeyT') tool = 'trend';
+      else if (e.code === 'KeyH') tool = 'hline';
+      else if (e.code === 'KeyV') tool = 'vline';
+      else if (e.code === 'KeyF') tool = 'fib';
+      else if (e.shiftKey && e.code === 'KeyR') tool = 'rect';   // Alt+Shift+R
+      if (tool) { e.preventDefault(); setDrawTool(tool); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -761,7 +774,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               <button
                 key={t.id}
                 type="button"
-                title={t.title}
+                title={t.title + (DRAW_HOTKEY[t.id] ? ` (${DRAW_HOTKEY[t.id]})` : '')}
                 aria-label={t.title}
                 onClick={() => setDrawTool(t.id)}
                 style={drawToolBtn(drawTool === t.id)}

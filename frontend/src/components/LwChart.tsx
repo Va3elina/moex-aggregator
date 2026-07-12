@@ -813,7 +813,23 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
           const lastXY = lp2xy(dragState.d.pts[dragState.d.pts.length - 1]);
           if (!lastXY || Math.hypot(x - lastXY.x, y - lastXY.y) >= 2.5) dragState.d.pts = [...dragState.d.pts, lp];
         } else {
-          const lp = snap(xy2lp(x, y)); if (!lp) return;
+          // Shift-модификаторы (как в TradingView): тренд/луч/стрелка → угол по 45°;
+          // прямоугольник/эллипс → квадрат/круг. Считаем в пикселях от первой точки.
+          let px = x, py = y;
+          if (e.shiftKey && !ONE_PT.has(t)) {
+            const aXY = lp2xy(dragState.d.pts[0]);
+            if (aXY) {
+              const dx = x - aXY.x, dy = y - aXY.y;
+              if (t === 'trend' || t === 'ray' || t === 'arrow') {
+                const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), dist = Math.hypot(dx, dy);
+                px = aXY.x + dist * Math.cos(ang); py = aXY.y + dist * Math.sin(ang);
+              } else if (t === 'rect' || t === 'ellipse') {
+                const sz = Math.max(Math.abs(dx), Math.abs(dy));
+                px = aXY.x + (dx < 0 ? -sz : sz); py = aXY.y + (dy < 0 ? -sz : sz);
+              }
+            }
+          }
+          const lp = snap(xy2lp(px, py)); if (!lp) return;
           dragState.d.pts = ONE_PT.has(t) ? [lp] : [dragState.d.pts[0], lp];
         }
       } else if (dragState.mode === 'vertex') {
