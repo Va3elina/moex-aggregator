@@ -19,6 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
   MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
+  Ruler, Layers, X as XIcon,
 } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -78,8 +79,11 @@ const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; r
   { id: 'ellipse', title: 'Эллипс', Icon: Circle },
   { id: 'fib', title: 'Фибоначчи', Icon: AlignJustify },
   { id: 'brush', title: 'Кисть', Icon: Brush },
+  { id: 'ruler', title: 'Линейка', Icon: Ruler },
   { id: 'text', title: 'Текст', Icon: Type },
 ];
+// tool → короткое имя для панели слоёв.
+const DRAW_TOOL_NAME: Record<string, string> = Object.fromEntries(DRAW_TOOLS.filter((t) => t.id !== 'select').map((t) => [t.id, t.title]));
 const DRAW_COLORS = ['#FF5C2B', '#5DA3E9', '#5BD49C', '#EF6F6F', '#E0A34E', '#F5F1E8'];
 function drawToolBtn(active: boolean): CSSProperties {
   return {
@@ -181,6 +185,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [drawWidth, setDrawWidth] = useState(2);         // толщина по умолчанию
   const [drawDash, setDrawDash] = useState<LwDash>('solid');  // стиль линии по умолчанию
   const [drawOpacity, setDrawOpacity] = useState(1);     // прозрачность по умолчанию
+  const [layersOpen, setLayersOpen] = useState(false);   // панель «Слои» (список фигур)
   const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
   // Текущий стиль для тулбара свойств: выделенный элемент (если есть) или дефолты для новых.
   const selectedDraw = drawings.find((d) => d.id === selectedDrawId) || null;
@@ -764,6 +769,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             <button type="button" title={drawLocked ? 'Разблокировать рисунки' : 'Заблокировать (запрет перемещения)'} aria-label="Замок" onClick={() => setDrawLocked((v) => !v)} style={drawToolBtn(drawLocked)}>
               {drawLocked ? <Lock size={16} /> : <LockOpen size={16} />}
             </button>
+            <button type="button" title="Слои (список фигур)" aria-label="Слои" onClick={() => setLayersOpen((v) => !v)} style={drawToolBtn(layersOpen)}>
+              <Layers size={16} />
+            </button>
             <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
             <button
               type="button"
@@ -777,6 +785,42 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             >
               <Trash2 size={16} />
             </button>
+          </div>
+        )}
+        {/* Панель «Слои»: список фигур (клик — выделить, глаз — скрыть, корзина — удалить). */}
+        {drawMode && layersOpen && status === 'ok' && data && lwSeries.length > 0 && (
+          <div
+            data-export-ignore="true"
+            style={{
+              position: 'absolute', left: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 9,
+              width: 194, maxHeight: 'calc(100% - 20px)', overflowY: 'auto', padding: 6, borderRadius: 10,
+              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 94%, transparent)',
+              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, padding: '0 2px' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Слои ({drawings.length})</span>
+              <button type="button" onClick={() => setLayersOpen(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2 }}><XIcon size={13} /></button>
+            </div>
+            {drawings.length === 0 && <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', padding: '4px 2px' }}>Нет фигур</div>}
+            {[...drawings].reverse().map((d) => (
+              <div
+                key={d.id}
+                onClick={() => setSelectedDrawId(d.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', borderRadius: 6, cursor: 'pointer',
+                  background: selectedDrawId === d.id ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
+                }}
+              >
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: d.color, flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: d.hidden ? 'var(--text-muted, #888)' : 'var(--text-primary)' }}>
+                  {DRAW_TOOL_NAME[d.tool] || d.tool}{d.tool === 'text' && d.text ? `: ${d.text}` : ''}
+                </span>
+                <button type="button" title={d.hidden ? 'Показать' : 'Скрыть'} onClick={(e) => { e.stopPropagation(); setDrawings((ds) => ds.map((x) => (x.id === d.id ? { ...x, hidden: !x.hidden } : x))); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2, flexShrink: 0 }}>{d.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                <button type="button" title="Удалить" onClick={(e) => { e.stopPropagation(); setDrawings((ds) => ds.filter((x) => x.id !== d.id)); if (selectedDrawId === d.id) setSelectedDrawId(null); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2, flexShrink: 0 }}><Trash2 size={13} /></button>
+              </div>
+            ))}
           </div>
         )}
         {/* Модалка экспорта (триггер 📷 — в тулбаре рядом с ⚙, см. actions). Снимает
