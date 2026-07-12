@@ -34,13 +34,17 @@ interface Props {
 
 const isIsin = (s?: string | null): s is string => !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
 
-// Величина со знаком, единица отдельно: «+1.96» + «млрд ₽» (единица приглушена).
-function fmtSignedParts(v: number): { num: string; unit: string } {
-    const a = Math.abs(v);
-    const s = v > 0 ? '+' : '−';
-    if (a >= 1e9) return { num: `${s}${(a / 1e9).toFixed(2)}`, unit: 'млрд ₽' };
-    if (a >= 1e6) return { num: `${s}${(a / 1e6).toFixed(1)}`, unit: 'млн ₽' };
-    return { num: `${s}${Math.round(a / 1e3)}`, unit: 'тыс ₽' };
+// Единица одна на весь блок (по максимуму) и вынесена в подзаголовок — не в
+// каждую строку. Масштаб задаёт делитель и число знаков: млрд 2, млн 1, тыс 0.
+function scaleOf(maxAbs: number): { unit: string; div: number; dec: number } {
+    if (maxAbs >= 1e9) return { unit: 'млрд ₽', div: 1e9, dec: 2 };
+    if (maxAbs >= 1e6) return { unit: 'млн ₽', div: 1e6, dec: 1 };
+    return { unit: 'тыс ₽', div: 1e3, dec: 0 };
+}
+
+// Величина со знаком в общей единице блока: «+9.02», «−4.39».
+function fmtSignedNum(v: number, div: number, dec: number): string {
+    return `${v > 0 ? '+' : '−'}${(Math.abs(v) / div).toFixed(dec)}`;
 }
 
 const MONTHS_LOWER = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
@@ -93,11 +97,19 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         ? { display: 'flex', flexDirection: 'column', minWidth: 0 }
         : { ...blockStyle, ...(isMobile ? { padding: '12px 14px 14px' } : null) };
 
-    // Подзаголовок: фактический диапазон месяцев консенсуса, пока он не
-    // приехал — словесный период («за полгода»).
+    const buys = movers?.top_accumulated ?? [];
+    const sells = movers?.top_reduced ?? [];
+    const absVals = [...buys, ...sells].map((m) => Math.abs(m.total_delta_amount));
+    const hasData = absVals.length > 0;
+    // Общий масштаб полос — по обеим секциям, чтобы распродажи и докупки сравнивались.
+    const maxAbs = Math.max(0.0001, ...absVals);
+    const scale = scaleOf(maxAbs);
+
+    // Подзаголовок: «чистая покупка, млрд ₽ · ноя 2025 – май 2026». Единица одна
+    // на блок, приезжает вместе с данными; пока их нет — словесный период.
     const sub = movers?.resolved_month
-        ? monthRangeLabel(movers.resolved_month, period)
-        : PERIOD_SUB[period];
+        ? `чистая покупка${hasData ? `, ${scale.unit}` : ''} · ${monthRangeLabel(movers.resolved_month, period)}`
+        : `чистая покупка ${PERIOD_SUB[period]}`;
 
     const head = (
         <div style={{ marginBottom: 4 }}>
@@ -124,18 +136,14 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         return <div style={wrapStyle}>{head}<div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: '10px 0' }}>Собираем движения…</div></div>;
     }
 
-    const buys = movers?.top_accumulated ?? [];
-    const sells = movers?.top_reduced ?? [];
     const empty = buys.length === 0 && sells.length === 0;
-    // Общий масштаб полос — по обеим секциям, чтобы распродажи и докупки сравнивались.
-    const maxAbs = Math.max(0.0001, ...[...buys, ...sells].map((m) => Math.abs(m.total_delta_amount)));
 
     const row = (m: FundTradesMover, positive: boolean, last: boolean) => {
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
         const ticker = resolveFundTicker(m.asset_name, isin);
         const cnt = positive ? m.funds_buying : m.funds_selling;
-        const { num, unit } = fmtSignedParts(m.total_delta_amount);
+        const num = fmtSignedNum(m.total_delta_amount, scale.div, scale.dec);
         const click = onAssetClick ? () => onAssetClick(m) : undefined;
         return (
             <div
@@ -147,7 +155,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 title={click ? `По бумаге: ${fundAssetName(m.asset_name, isin)}` : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
-                style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) 96px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) 72px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
@@ -158,10 +166,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
-                <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{num}</span>
-                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginLeft: 4 }}>{unit}</span>
-                </span>
+                <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{num}</span>
             </div>
         );
     };
