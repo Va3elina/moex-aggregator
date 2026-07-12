@@ -414,7 +414,13 @@ export function Dropdown<T extends string | number>({
   const btnRef = useRef<HTMLButtonElement>(null);
   const cur = options.find((o) => o.id === value);
   return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
+    // display:inline-flex — без него это блочный контейнер с одним inline-block
+    // ребёнком (кнопкой): браузер резервирует ~3px «фантомного» подстрочного
+    // пространства (line-height/baseline инлайн-контекста) ПОД кнопкой, и она
+    // визуально съезжает вниз относительно соседних PillGroup-пилюль в тулбаре
+    // (те уже inline-flex). display:flex убирает инлайн-контекст → кнопка
+    // ровно по центру, как остальные контролы.
+    <div style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}>
       <button
         ref={btnRef}
         type="button"

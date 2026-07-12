@@ -912,8 +912,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
         : undefined;
       const lw = ((chartPrefs?.lineWidth ?? def.lineWidth ?? 2)) as 1 | 2 | 3 | 4;
-      const lastLine = chartPrefs?.lastValue ?? def.lastValueVisible ?? true;
-      const lastHist = chartPrefs?.lastValue ?? def.lastValueVisible ?? false;
+      // Явный def.lastValueVisible (автор графика знает, что «последнее значение»
+      // тут бессмысленно — категориальная гистограмма Сезонности, поток Фондов)
+      // побеждает глобальный тумблер песочницы. Тумблер решает только когда
+      // сам индикатор не имеет мнения (не задал lastValueVisible).
+      const lastLine = def.lastValueVisible ?? chartPrefs?.lastValue ?? true;
+      const lastHist = def.lastValueVisible ?? chartPrefs?.lastValue ?? false;
       const col = rc(def.color);
       let s: ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>;
       const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
@@ -1035,7 +1039,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const sc = series[i].scale ?? 'right';
       if (!axisInfoRef.current[sc]) {
         const d = series[i];
-        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color), lastVisible: chartPrefs?.lastValue ?? d.lastValueVisible ?? (d.type === 'histogram' ? false : true) };
+        axisInfoRef.current[sc] = { api: seriesApiRef.current[i], fmt: d.axisFmt, last: d.data.length ? d.data[d.data.length - 1].value : undefined, color: rc(d.color), lastVisible: d.lastValueVisible ?? chartPrefs?.lastValue ?? (d.type === 'histogram' ? false : true) };
       }
     }
     // §R2-17: превью price line алерта на первой серии каждой оси (пересоздаём вместе

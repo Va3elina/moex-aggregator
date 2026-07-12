@@ -273,8 +273,9 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
           ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
           : undefined;
         const lw = ((chartPrefs?.lineWidth ?? def.lineWidth ?? 2)) as 1 | 2 | 3 | 4;
-        const lastLine = chartPrefs?.lastValue ?? def.lastValueVisible ?? true;
-        const lastHist = chartPrefs?.lastValue ?? def.lastValueVisible ?? false;
+        // Явный def.lastValueVisible побеждает глобальный тумблер песочницы (см. LwChart.tsx).
+        const lastLine = def.lastValueVisible ?? chartPrefs?.lastValue ?? true;
+        const lastHist = def.lastValueVisible ?? chartPrefs?.lastValue ?? false;
         const col = rc(def.color);
         const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
         let s: AnySeries;
@@ -312,6 +313,21 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
           item.appendChild(lbl);
           legend.appendChild(item);
         }
+      }
+    });
+
+    // Выровнять ширину правой ценовой шкалы между панелями. Каждая панель сама
+    // подгоняет ширину шкалы под самый длинный лейбл своих значений (индекс
+    // «2 226» шире, чем breadth «4,3%») — из-за этого plot area отличается по
+    // ширине между панелями и общая вертикаль кроссхэйра/сетки едет по X. Фикс —
+    // штатный приём lightweight-charts для вертикального стека чартов (см. доку
+    // minimumWidth): меряем максимум и форсим его на всех панелях. rAF — библиотека
+    // пересчитывает фактическую ширину шкалы под новые данные не синхронно с
+    // setData, а в своём цикле рендера; без задержки .width() отдаёт старое значение.
+    requestAnimationFrame(() => {
+      const maxScaleW = Math.max(0, ...charts.map((ch) => ch.priceScale('right').width()));
+      if (maxScaleW > 0) {
+        charts.forEach((ch) => ch.priceScale('right').applyOptions({ minimumWidth: maxScaleW }));
       }
     });
 

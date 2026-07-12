@@ -36,11 +36,6 @@ const CATS: { id: Category; label: string }[] = [
   { id: 'gold', label: 'Золото' },
   { id: 'yuan', label: 'Юань' },
 ];
-const PERIODS: { id: FundPeriod; label: string }[] = [
-  { id: '1y', label: '1Г' },
-  { id: '3y', label: '3Г' },
-  { id: 'all', label: 'Всё' },
-];
 const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
   { id: '1d', label: 'День' },
   { id: '1w', label: 'Неделя' },
@@ -79,7 +74,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
   const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category'), rd));
-  const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || rd('frame:embed:funds:period', '1y')) as FundPeriod);
+  // Период убран из UI (неуместен в песочнице) — грузим всю историю, зум колесом,
+  // как ОИ/Сила рынка/Сезонность.
+  const period: FundPeriod = 'all';
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (rd('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
@@ -92,7 +89,6 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   // Persist
   useEffect(() => { wr('frame:embed:funds:category', category); }, [category]);
-  useEffect(() => { wr('frame:embed:funds:period', period); }, [period]);
   useEffect(() => { wr('frame:embed:funds:viewMode', viewMode); }, [viewMode]);
   useEffect(() => { wr('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
   useEffect(() => { wr('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
@@ -157,6 +153,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       return [{
         id: 'flow', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
         color: 'var(--oi-green)', label: 'Чистый поток',
+        // Периодический нетто-поток — «последнее значение» на оси неинформативно
+        // (не тренд, не текущая цена), только пилюля лишняя.
+        lastValueVisible: false,
         data: flows.map((f) => {
           const val = (f.flow ?? 0) * 1e9;
           return { time: toSec(f.period_end), value: val, color: val >= 0 ? 'var(--oi-green)' : 'var(--oi-red)' };
@@ -201,7 +200,6 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           {viewMode === 'flows' && (
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
           )}
-          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
       more={viewMode === 'aum' ? (
