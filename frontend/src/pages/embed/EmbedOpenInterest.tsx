@@ -14,8 +14,9 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Camera } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
@@ -29,6 +30,11 @@ import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './Embed
 import { useEmbedPersist } from './embedPersist';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
+// Экспорт графика (скрин → превью → рисование → скачать/копировать) — переиспользуем
+// движко-агностичный ExportModal сайта на контейнере LwChart. Ленивый чанк (html2canvas
+// грузится только при первом открытии).
+const ExportModal = lazy(() => import('../../components/export/ExportModal'));
+
 const TF_COMPACT: { id: number; label: string }[] = [
   { id: 5, label: '5 мин' },
   { id: 60, label: '1 час' },
@@ -135,6 +141,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Актуальный фьючерсный контракт (напр. 'SRZ5') для показа в кнопке актива —
   // instrument хранит КОРЕНЬ ('SR'), а видеть надо последний активный контракт.
   const [frontContract, setFrontContract] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);   // модалка экспорта графика
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -427,6 +434,18 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
 
   const displayName = instrumentName || displayTicker(instrument);
 
+  // Метаданные для шапки экспортируемого PNG (composeFramedCanvas): актив/тикер/детали.
+  const exportMeta = useMemo(() => ({
+    title: 'Открытый интерес',
+    asset: displayName,
+    ticker: frontContract || instrument,
+    details: [
+      TF_COMPACT.find((t) => t.id === interval)?.label,
+      clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
+      labels.secondary,
+    ].filter((x): x is string => !!x),
+  }), [displayName, frontContract, instrument, interval, clgroup, labels.secondary]);
+
   // Серии для LwChart: цена (линия, левая ось) + показатель ОИ (area/линии, правая ось).
   const lwSeries = useMemo<LwSeries[]>(() => {
     const intraday = interval !== 24;
@@ -537,6 +556,36 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             alertAxes={alertAxes}
             animate
           />
+        )}
+        {/* Экспорт графика — угол над холстом (data-export-ignore → не в снимке).
+            Открывает ExportModal (скрин контейнера LwChart → превью → рисование → PNG/буфер). */}
+        {status === 'ok' && data && lwSeries.length > 0 && (
+          <button
+            type="button"
+            data-export-ignore="true"
+            onClick={() => setExportOpen(true)}
+            title="Экспорт графика"
+            aria-label="Экспорт графика"
+            style={{
+              position: 'absolute', top: 8, right: 8, width: 30, height: 30, zIndex: 6,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 7, border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
+              background: 'color-mix(in srgb, var(--bg-primary, #111) 62%, transparent)',
+              color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, backdropFilter: 'blur(2px)',
+            }}
+          >
+            <Camera size={15} />
+          </button>
+        )}
+        {exportOpen && chartBoxRef.current && (
+          <Suspense fallback={null}>
+            <ExportModal
+              targetElement={chartBoxRef.current}
+              filename={`frame-oi-${instrument}-${interval}`}
+              metadata={exportMeta}
+              onClose={() => setExportOpen(false)}
+            />
+          </Suspense>
         )}
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
             пустой холст без объяснения (аудит). */}
