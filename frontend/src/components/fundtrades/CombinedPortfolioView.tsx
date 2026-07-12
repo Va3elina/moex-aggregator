@@ -385,12 +385,12 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                                     // Ширина ∝ весу (flex). minWidth — мягкий пол, чтобы очень
                                     // мелкая плитка сохранила подпись; ряды отсортированы, поэтому
                                     // соседи близки по весу и пол почти не искажает пропорции.
-                                    // gap/justify-center + lineHeight:1 на обеих строках дают
-                                    // гарантированный зазор: при минимальной высоте ряда (46px)
-                                    // 6+14+2+11+6=39 < 46, тикер и % больше не наезжают друг
-                                    // на друга (раньше падинг 8 + line-height normal съедали
-                                    // весь бюджет впритык, и строки слипались/наезжали).
-                                    style={{ flex: Math.max(w, 0.1), minWidth: 44, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '6px 10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
+                                    // Подпись прижата к верхнему левому углу (justify-start).
+                                    // lineHeight:1 + gap дают гарантированный зазор: при
+                                    // минимальной высоте ряда (46px) 6+14+2+11=33 < 46, тикер
+                                    // и % не наезжают (раньше падинг 8 + line-height normal
+                                    // съедали бюджет впритык, и строки слипались/наезжали).
+                                    style={{ flex: Math.max(w, 0.1), minWidth: 44, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '6px 10px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 2, overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
                                 >
                                     <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
                                     <div style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, lineHeight: 1, opacity: 0.92, fontVariantNumeric: 'tabular-nums' }}>{w.toFixed(1).replace('.', ',')}%</div>
