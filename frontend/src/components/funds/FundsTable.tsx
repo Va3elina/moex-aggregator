@@ -17,6 +17,14 @@ const FUND_COLORS = [
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 
+// Стиль чисел в столбцах СЧА/Доходность (bare) — как значения в поиске ОИ
+// (InstrumentSearchModal): вес 600, табличные цифры, обычный шрифт (не mono).
+// Заголовки колонок этим не трогаем.
+const OI_NUM_STYLE: React.CSSProperties = {
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+};
+
 // Типографика заголовков колонок в bare-режиме — как в шапке поиска ОИ
 // (renderSortHeader в InstrumentSearchModal, замер: 12.5px / 800 / uppercase /
 // letter-spacing 0.04em). fontSize наследуется от tr (fs-xs).
@@ -314,7 +322,8 @@ export default function FundsTable({
                                 {bare && (
                                     <>
                                         <td
-                                            className="px-2 py-1 text-right font-mono cursor-pointer select-none"
+                                            className="px-2 py-1 text-right cursor-pointer select-none"
+                                            style={OI_NUM_STYLE}
                                             onClick={toggleAllFunds}
                                         >
                                             {navSumBln(data?.funds ?? []).toFixed(2)}
@@ -427,7 +436,8 @@ export default function FundsTable({
                                                 {bare && (
                                                     <>
                                                         <td
-                                                            className="px-2 py-1 text-right font-mono cursor-pointer select-none"
+                                                            className="px-2 py-1 text-right cursor-pointer select-none"
+                                                            style={OI_NUM_STYLE}
                                                             onClick={toggleCollapse}
                                                         >
                                                             {navSumBln(groupFunds).toFixed(2)}
@@ -546,14 +556,15 @@ export default function FundsTable({
                                                     >
                                                         {fund.ticker}
                                                     </td>
-                                                    <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right font-mono`}>
+                                                    <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right`} style={bare ? OI_NUM_STYLE : undefined}>
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
                                                     {(() => {
                                                         const br = isLocked ? null : bestReturn(fund.returns);
                                                         return (
-                                                            <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right font-mono whitespace-nowrap`} style={{
+                                                            <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right whitespace-nowrap`} style={{
                                                                 color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
+                                                                ...(bare ? OI_NUM_STYLE : {}),
                                                             }}>
                                                                 {isLocked || !br ? '—' : (
                                                                     <>
