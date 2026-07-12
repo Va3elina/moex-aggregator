@@ -43,11 +43,11 @@ function fmtSignedParts(v: number): { num: string; unit: string } {
     return { num: `${s}${Math.round(a / 1e3)}`, unit: 'тыс ₽' };
 }
 
-const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
-    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const MONTHS_LOWER = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 // Диапазон консенсуса: конец = resolved_month, начало = минус длина периода.
-// «январь – июль 2026», через границу года — «октябрь 2025 – июль 2026».
+// «янв – июл 2026», через границу года — «окт 2025 – июл 2026».
 function monthRangeLabel(endISO: string, period: MoversPeriod): string {
     const end = new Date(endISO);
     const start = new Date(end.getFullYear(), end.getMonth() - PERIOD_MONTHS[period], 1);
@@ -93,7 +93,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         : `чистая покупка ${PERIOD_SUB[period]}`;
 
     const head = (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Покупки фондов</span>
                 {onPeriodChange && (
