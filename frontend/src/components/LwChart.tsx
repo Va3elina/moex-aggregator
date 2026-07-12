@@ -157,12 +157,20 @@ export function hideTvLogo() {
 
 // Ось времени по-русски (как в макете дизайнера песочницы): год / месяц / день / время.
 const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-function ruTickMark(time: unknown, type: number): string {
+const DAY_S = 86400;
+/** spanDays — сколько дней сейчас видно на графике (только при timeVisible).
+ *  lightweight-charts сам решает per-тик тип (день/время) по локальному шагу
+ *  соседних меток — при мультидневном зуме это иногда даёт ОДНУ «осиротевшую»
+ *  метку времени (напр. «12:00») среди чисел дней подряд («…10, 11, 12:00»),
+ *  что читается как обрыв номера дня. Поэтому при виде > ~суток печатаем день
+ *  вместо времени ВСЕГДА — время только когда в кадре примерно день или меньше
+ *  (там оно однозначно читается и не путается с номером дня). */
+function ruTickMark(time: unknown, type: number, spanDays = 0): string {
   const t = typeof time === 'number' ? time : 0;
   const d = new Date(t * 1000);
   if (type === 0) return String(d.getUTCFullYear());
   if (type === 1) return MONTHS_RU[d.getUTCMonth()];
-  if (type === 2) return String(d.getUTCDate());
+  if (type === 2 || spanDays > 1.25) return String(d.getUTCDate());
   return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
 }
 
@@ -227,7 +235,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
       rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
-      timeScale: { borderVisible: false, rightOffset: 6, timeVisible: !!timeVisible, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => (tickFmtRef.current ? tickFmtRef.current(time as unknown as number, type) : ruTickMark(time, type)) },
+      timeScale: {
+        borderVisible: false, rightOffset: 6, timeVisible: !!timeVisible, secondsVisible: false,
+        tickMarkFormatter: (time: Time, type: number) => {
+          if (tickFmtRef.current) return tickFmtRef.current(time as unknown as number, type);
+          const vr = chartRef.current?.timeScale().getVisibleRange();
+          const spanDays = vr ? ((vr.to as number) - (vr.from as number)) / DAY_S : 0;
+          return ruTickMark(time, type, spanDays);
+        },
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
