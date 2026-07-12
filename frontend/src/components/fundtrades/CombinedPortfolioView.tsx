@@ -162,8 +162,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     const isMobile = variant === 'mobile';
     const embedded = variant === 'embedded';
     // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
-    // embedded — тянемся на всю высоту ячейки (outer grid stretch), чтобы футер
-    // «Прочие бумаги» можно было прижать к нижнему краю блока (marginTop:auto).
+    // embedded — тянемся на всю высоту ячейки (outer grid stretch), чтобы блок
+    // выравнивался с соседним по высоте; ссылка «Прочие бумаги» идёт сразу под
+    // последней строкой списка (10-й актив), без прижатия к низу.
     const wrapStyle: CSSProperties = embedded
         ? { position: 'relative', minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }
         : blockStyle(isMobile);
@@ -299,7 +300,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     // marginTop:auto — прижимает футер к низу колонки-таблицы (десктоп, flex-col).
     // На мобилке (обычный поток) auto схлопывается в 0 и просто идёт под списком.
     const restBtn = sorted.length > LIST_PREVIEW && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, marginTop: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
             <button
                 onClick={() => setModalOpen(true)}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
