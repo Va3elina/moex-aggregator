@@ -72,6 +72,10 @@ interface LwChartProps {
   /** Оверрайд формата меток оси времени (§5.2 / категориальная ось Сезонности).
    *  Не задан → русские год/месяц/день/время (ruTickMark). */
   tickFmt?: (time: number, type: number) => string;
+  /** Интрадей-таймфреймы (ОИ 5м/1ч): без этого lightweight-charts никогда не
+   *  генерирует тик-марки типа Time — ось всегда только дата, даже если
+   *  бары идут внутри одного дня. Не задан → false (дневные графики как раньше). */
+  timeVisible?: boolean;
   /** Оверрайд авто-легенды (напр. одна серия «Чистый поток» → 2 пункта «Приток/Отток»). */
   legendItems?: { label: string; color: string }[];
   /** Не строить легенду (когда рисуем свою статичную поверх — Сезонность-Календарь). */
@@ -172,7 +176,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -223,7 +227,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
       rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
-      timeScale: { borderVisible: false, rightOffset: 6, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => (tickFmtRef.current ? tickFmtRef.current(time as unknown as number, type) : ruTickMark(time, type)) },
+      timeScale: { borderVisible: false, rightOffset: 6, timeVisible: !!timeVisible, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => (tickFmtRef.current ? tickFmtRef.current(time as unknown as number, type) : ruTickMark(time, type)) },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
@@ -541,6 +545,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const drawSvg = document.createElementNS(SVGNS, 'svg');
     drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:visible;pointer-events:none;touch-action:none';
     box.appendChild(drawSvg);
+    // Прозрачный DIV-слой ПЕРЕХВАТА событий поверх SVG: пустой <svg> не хиттестит пустые
+    // области → клики проваливались на канвас (фигуры не рисовались). Хиттест фигур у нас
+    // по координатам (hitTest), а не по DOM, поэтому ловим всё на этом div.
+    const drawHit = document.createElement('div');
+    drawHit.style.cssText = 'position:absolute;inset:0;z-index:8;pointer-events:none;touch-action:none';
+    box.appendChild(drawHit);
 
     const drawSeries = () => axisInfoRef.current.left?.api ?? axisInfoRef.current.right?.api ?? seriesApiRef.current[0];
     const paneLeftW = () => { const ch = chartRef.current; if (!ch) return 0; try { return ch.priceScale('left').width() || 0; } catch { return 0; } };
@@ -603,8 +613,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     };
     const syncDrawInteractivity = () => {
       const on = !!drawActiveRef.current;
-      drawSvg.style.pointerEvents = on ? 'auto' : 'none';
-      drawSvg.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
+      drawHit.style.pointerEvents = on ? 'auto' : 'none';
+      drawHit.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
     };
     drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
 
@@ -633,7 +643,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (tool === 'select') {
         const hit = hitTest(x, y);
         selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
-        if (hit) { dragState = { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } }; try { drawSvg.setPointerCapture(e.pointerId); } catch { /* нет capture */ } }
+        if (hit) { dragState = { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } }; try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ } }
         drawShapes(); return;
       }
       const lp = xy2lp(x, y); if (!lp) return;
@@ -644,7 +654,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       }
       const d: LwDrawing = tool === 'hline' ? { id: uid(), tool: 'hline', pts: [lp], color, width } : { id: uid(), tool, pts: [lp, lp], color, width };
       dragState = { mode: 'create', d, startXY: { x, y } };
-      try { drawSvg.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+      try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
       drawShapes();
     };
     const onDrawMove = (e: PointerEvent) => {
@@ -661,7 +671,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     };
     const onDrawUp = (e: PointerEvent) => {
       if (!dragState) return;
-      try { drawSvg.releasePointerCapture(e.pointerId); } catch { /* уже */ }
+      try { drawHit.releasePointerCapture(e.pointerId); } catch { /* уже */ }
       const ds = dragState; dragState = null;
       if (ds.mode === 'create') {
         if (ds.d.tool === 'trend' || ds.d.tool === 'rect') { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
@@ -671,9 +681,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         commit((drawingsRef.current ?? []).map((x) => (x.id === ds.d.id ? ds.d : x)));
       }
     };
-    drawSvg.addEventListener('pointerdown', onDrawDown);
-    drawSvg.addEventListener('pointermove', onDrawMove);
-    drawSvg.addEventListener('pointerup', onDrawUp);
+    drawHit.addEventListener('pointerdown', onDrawDown);
+    drawHit.addEventListener('pointermove', onDrawMove);
+    drawHit.addEventListener('pointerup', onDrawUp);
     syncDrawInteractivity();
 
     const onRange = () => { drawExp(); layoutAlert(); drawShapes(); };
@@ -756,10 +766,10 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       seriesApiRef.current = [];
       axisInfoRef.current = {};
       drawShapesRef.current = null;
-      drawSvg.removeEventListener('pointerdown', onDrawDown);
-      drawSvg.removeEventListener('pointermove', onDrawMove);
-      drawSvg.removeEventListener('pointerup', onDrawUp);
-      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right, drawSvg]) {
+      drawHit.removeEventListener('pointerdown', onDrawDown);
+      drawHit.removeEventListener('pointermove', onDrawMove);
+      drawHit.removeEventListener('pointerup', onDrawUp);
+      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right, drawSvg, drawHit]) {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
     };
@@ -791,6 +801,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (pl) { try { pl.applyOptions({ color: c.cross }); } catch { /* серия снята */ } }
     }
   }, [dark, chartPrefs, alertAxes]);
+
+  // Смена таймфрейма (интрадей ⇄ дневной) не пересоздаёт чарт (нет [] в deps выше) —
+  // timeVisible нужно применять реактивно, иначе ось застревает в режиме первого маунта.
+  useEffect(() => {
+    chartRef.current?.applyOptions({ timeScale: { timeVisible: !!timeVisible } });
+  }, [timeVisible]);
 
   // ── серии (пересоздаём при смене набора/данных, зум сохраняем) ──
   useEffect(() => {
