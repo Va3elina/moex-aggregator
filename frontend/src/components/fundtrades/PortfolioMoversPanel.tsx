@@ -142,7 +142,6 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
         const ticker = resolveFundTicker(m.asset_name, isin);
-        const cnt = positive ? m.funds_buying : m.funds_selling;
         const num = fmtSignedNum(m.total_delta_amount, scale.div, scale.dec);
         const click = onAssetClick ? () => onAssetClick(m) : undefined;
         return (
@@ -160,7 +159,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(m.asset_name, isin)}</span>
-                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
+                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{ticker}</span>
                 </span>
                 {/* Полосы нейтральные — направление задают секции «Чистые покупки/продажи». */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
