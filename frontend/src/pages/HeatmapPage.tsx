@@ -610,7 +610,7 @@ export default function HeatmapPage() {
   };
 
   return (
-    <div className="max-w-full mx-auto px-2 md:px-4 py-3 md:py-4">
+    <div className="max-w-full mx-auto px-2 md:px-4 py-6 md:py-8">
       <PageHeader
         icon={Grid3X3}
         title="Карта рынка"
