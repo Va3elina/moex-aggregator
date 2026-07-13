@@ -335,6 +335,19 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return () => { cancelled = true; };
   }, [instrument, clgroup, interval]);
 
+  // Список ТФ в дропдауне — только те, где у ЭТОГО актива реально есть OI-данные
+  // (available_intervals из ответа /api/chart, независим от запрошенного interval).
+  // У EOD-only фьючерсов (неликвидные мини-контракты вроде PXU6) интрадей-ОИ нет
+  // вообще — не предлагаем 5м/1ч в списке, вместо того чтобы дать выбрать и потом
+  // молча погасить линию (авто-коррекция interval — в эффекте загрузки выше).
+  // Пока данные не пришли (первая загрузка) — показываем все три, не мигаем.
+  const tfOptions = useMemo(() => {
+    const avail = data?.available_intervals;
+    if (!avail || avail.length === 0) return TF_COMPACT;
+    const filtered = TF_COMPACT.filter((t) => avail.includes(t.id));
+    return filtered.length > 0 ? filtered : TF_COMPACT;
+  }, [data]);
+
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
   const [chartH, setChartH] = useState(280);
@@ -626,8 +639,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         <>
           {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
               горизонтальные пилюли (2 пункта). Вид графика убран из тулбара → настраивается
-              per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике). */}
-          <Dropdown value={interval} options={TF_COMPACT} onChange={changeInterval} title="Таймфрейм" />
+              per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике).
+              Список фильтруется по tfOptions — неликвидные EOD-only фьючерсы (напр.
+              PXU6 «Полюс мини») не отдают интрадей-ОИ вообще, так что 5м/1ч для них
+              просто не предлагаем, а не молча гасим линию после выбора. */}
+          <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" />
           <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
           <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" />
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
