@@ -117,7 +117,14 @@ export function EmbedFrame({
           </div>
         )}
         {lead}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {/* Узкая панель (§4.1): контролов больше, чем влезает в строку. Раньше
+            overflow:hidden молча обрезал контейнер, а единственный shrink-able
+            элемент (PillGroup, напр. Физ/Юр) хватал на себя весь дефицит места
+            и визуально «сплющивался» кнопкой справа — выглядело как баг, а не
+            как осознанный скролл. Теперь скроллится ЦЕЛИКОМ вся полоса
+            контролов как одно целое (все контролы — flexShrink:0, полный
+            размер), без выборочного сжатия одного виджета. */}
+        <div className="styled-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
           {toolbar}
         </div>
         {(actions || more) && (
@@ -382,11 +389,11 @@ export function PillGroup<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    // flexShrink:1 + overflowX:auto — на узкой панели (неск. PillGroup/Dropdown в
-    // одной строке тулбара, у родителя overflow:hidden в §4.1) группа скроллится
-    // сама вместо того, чтобы обрезаться границей родителя и залезать под ⚙.
-    // flexShrink:0 на самих кнопках — сжимается контейнер (скролл), не текст пилюль.
-    <div className="styled-scrollbar" style={{ display: 'inline-flex', gap: 4, flexShrink: 1, minWidth: 0, overflowX: 'auto' }}>
+    // flexShrink:0 — группа держит полный размер и не сплющивается сама по себе;
+    // на узкой панели теперь скроллится ЦЕЛИКОМ вся строка тулбара (родитель
+    // в EmbedFrame, §4.1), а не отдельные виджеты вперемешку с рядом стоящими
+    // жёсткими Dropdown (было видно как «Физ/Юр ужимаются кнопкой справа»).
+    <div style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
       {options.map((o) => (
         <button key={String(o.id)} type="button" title={o.title} style={{ ...pillStyle(o.id === value), flexShrink: 0 }} onClick={() => onChange(o.id)}>
           {o.label}
