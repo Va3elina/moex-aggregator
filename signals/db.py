@@ -376,6 +376,26 @@ def get_asset_name(sectype: str) -> Optional[str]:
     return row.name if row else None
 
 
+def has_intraday_oi(sectype: str) -> bool:
+    """True если у тикера есть интрадей-снэпшоты ОИ (interval 5/60) за последнюю
+    неделю, False если данные только дневные (interval=24, одна точка в сутки —
+    напр. PX «Полюс мини», проверено вживую 2026-07-13). Используется content-
+    пайплайном (signals/content_match.py), чтобы не тратить лишние проверки на
+    активы, где новых данных внутри дня физически не появится."""
+    with SessionLocal() as session:
+        exists = session.execute(
+            text("""
+                SELECT EXISTS(
+                    SELECT 1 FROM open_interest
+                    WHERE sectype = :sectype AND interval IN (5, 60)
+                      AND tradedate >= CURRENT_DATE - 7
+                )
+            """),
+            {"sectype": sectype},
+        ).scalar()
+    return bool(exists)
+
+
 def last_signal_ts(asset: str, indicator: str, signal_type: str) -> Optional[datetime]:
     """Timestamp последнего сигнала для (asset, indicator, signal_type). None если не было."""
     with SessionLocal() as session:

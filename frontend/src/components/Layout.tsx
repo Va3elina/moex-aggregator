@@ -6,7 +6,7 @@ import { useSSE } from '../hooks/useSSE';
 import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
-import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
+import { Menu, X, LogIn, BarChart3, Newspaper } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
@@ -266,6 +266,28 @@ export default function Layout() {
                   aria-label="Статистика сайта (admin)"
                 >
                   <BarChart3
+                    style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
+                    strokeWidth={2}
+                  />
+                </button>
+              )}
+
+              {/* Admin Content News link — только для role=admin (📰 → /admin/content-news) */}
+              {isAuthenticated && user?.role === 'admin' && (
+                <button
+                  onClick={() => navigate('/admin/content-news')}
+                  className="editorial-press grid place-items-center rounded-full"
+                  style={{
+                    color: 'var(--accent)',
+                    border: '1.5px solid var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                  }}
+                  title="Новости (content-пайплайн)"
+                  aria-label="Новости (admin)"
+                >
+                  <Newspaper
                     style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
                     strokeWidth={2}
                   />

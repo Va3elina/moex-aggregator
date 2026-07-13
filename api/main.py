@@ -46,6 +46,7 @@ from api.routers import analytics  # ← Custom analytics: POST /event + GET /st
 from api.routers import extension  # ← /api/extension/* (токены для расширения терминала)
 from api.routers import alerts  # ← /api/alerts/* (Telegram alert-bot: привязка + алерты)
 from api.routers import anomalies  # ← /api/anomalies/* (лента всплывающих аномалий: тосты+колокол)
+from api.routers import content_news  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -325,6 +326,8 @@ app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
 app.include_router(extension.router)  # ← /api/extension/* (ext-токены: генерация/обмен)
 app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих аномалий)
+app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
+app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, shared secret)
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты
