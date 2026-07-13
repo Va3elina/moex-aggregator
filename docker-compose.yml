@@ -216,6 +216,10 @@ services:
       # не монтируются → 404; csv_export/api_access=False даже для Pro).
       # Включить на запуске: PUBLIC_API_CSV_ENABLED=1 в .env + фронт API_CSV_ENABLED=true.
       - PUBLIC_API_CSV_ENABLED=${PUBLIC_API_CSV_ENABLED:-}
+      # Content-пайплайн («завод постов»): shared secret для server-to-server
+      # callback от Шага А/В (см. api/routers/content_news.py internal_router).
+      # Пусто = /api/internal/content-news/* всегда 403 (безопасный дефолт).
+      - CONTENT_AI_INTERNAL_TOKEN=${CONTENT_AI_INTERNAL_TOKEN:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
       # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).
