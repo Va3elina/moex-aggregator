@@ -74,12 +74,19 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
   const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category'), rd));
-  // Период убран из UI (неуместен в песочнице) — грузим всю историю, зум колесом,
-  // как ОИ/Сила рынка/Сезонность.
-  const period: FundPeriod = 'all';
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (rd('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
+  // Период убран из UI (неуместен в песочнице) — но НЕ 'all' всегда: дневная
+  // сетка потоков за всю историю фонда — сотни-тысячи баров вплотную, график
+  // читается как шум. Сайт (FundsMoneyPage.FLOW_MIN_PERIODS) по умолчанию
+  // кэпает дневной срез 1 годом — зеркалим тот же кэп программно, без
+  // дискретного контрола: зум остаётся колесом, просто первичная загрузка
+  // не тянет вообще всё. Недельный/месячный срез уже редкий → можно шире.
+  const period: FundPeriod = viewMode !== 'flows' ? 'all'
+    : flowTimeframe === '1d' ? '1y'
+    : flowTimeframe === '1w' ? '3y'
+    : 'all';
   const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
 
   const [data, setData] = useState<FundsResp | null>(null);

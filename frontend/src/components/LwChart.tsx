@@ -1176,11 +1176,19 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   // карандаша/инструмента/фигур/выделения/стиля (сам чарт не пересоздаётся).
   useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked]);
 
+  // 62px — отступ под реально существующую левую ценовую шкалу (индекс/цена
+  // слева, как на ОИ/СЧА-Фондах). Если ни одна серия НЕ сидит на 'left' —
+  // сама шкала визуально пустая (0 контента → 0 ширины в lightweight-charts,
+  // см. Сила рынка/minimumWidth), и watermark на 62px повисал в пустоте
+  // посреди графика вместо того чтобы прижаться к левому краю (Притоки/Оттоки
+  // и любой другой график с одной серией на правой оси).
+  const hasLeftAxisSeries = series.some((s) => s.scale === 'left');
+
   return (
     <div style={{ position: 'relative', width: '100%', height }}>
       <div ref={boxRef} style={{ position: 'absolute', inset: 0 }} />
       {watermark !== false && (
-        <ChartWatermark bottom={30} left={62} size={26} minSize={16} opacity={0.4} />
+        <ChartWatermark bottom={30} left={hasLeftAxisSeries ? 62 : 12} size={26} minSize={16} opacity={0.4} />
       )}
     </div>
   );
