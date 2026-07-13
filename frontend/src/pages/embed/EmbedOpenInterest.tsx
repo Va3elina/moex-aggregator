@@ -312,6 +312,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     getChartData(instrument, instrument, 'futures', interval, clgroup, true, loadPeriodFor(interval))
       .then((res) => {
         if (cancelled) return;
+        // ТФ персистится per-embed и не сбрасывается при смене актива (клик по
+        // сигналу в скринере) — у неликвидных фьючерсов (EOD-only) внутридневного
+        // ОИ нет вообще, а цена интрадей грузится всегда (ISS её отдаёт любому
+        // активу) → без этой проверки ОИ-линия молча пропадала бы, показывая
+        // только цену. available_intervals не зависит от запрошенного interval
+        // (считается по sectype+clgroup) — значит он достоверен и для «плохого» ТФ.
+        const avail = res?.available_intervals;
+        if (avail && avail.length > 0 && !avail.includes(interval)) {
+          setIntervalValue(avail.includes(24) ? 24 : avail[avail.length - 1]);
+          return;
+        }
         const hasData = (res?.candles?.length ?? 0) > 0;
         setData(res);
         setStatus(hasData ? 'ok' : 'empty');
