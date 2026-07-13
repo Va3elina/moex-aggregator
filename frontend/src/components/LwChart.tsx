@@ -75,6 +75,12 @@ interface LwChartProps {
   /** Оверрайд формата меток оси времени (§5.2 / категориальная ось Сезонности).
    *  Не задан → русские год/месяц/день/время (ruTickMark). */
   tickFmt?: (time: number, type: number) => string;
+  /** Оверрайд лейбла даты в нативном кроссхэйре (полоска у оси времени под курсором).
+   *  Нужен там же, где tickFmt категориальный (Сезонность): время там синтетическое
+   *  (T0 + индекс бара), родной форматтер lightweight-charts превращает его в
+   *  случайную «реальную» дату — надо подставить ту же категориальную подпись, что
+   *  и на самой оси. Не задан → нативный формат (реальные даты — как раньше). */
+  crosshairTimeFmt?: (time: number) => string;
   /** Интрадей-таймфреймы (ОИ 5м/1ч): без этого lightweight-charts никогда не
    *  генерирует тик-марки типа Time — ось всегда только дата, даже если
    *  бары идут внутри одного дня. Не задан → false (дневные графики как раньше). */
@@ -194,7 +200,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, crosshairTimeFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -202,6 +208,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   defsRef.current = series;
   // Читаем через ref, чтобы смена пропа-функции/массива не пересоздавала чарт/серии.
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
+  const crosshairTimeFmtRef = useRef(crosshairTimeFmt); crosshairTimeFmtRef.current = crosshairTimeFmt;
   const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const expRef = useRef(expirations); expRef.current = expirations;
@@ -247,7 +254,13 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const chart = createChart(box, {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: 11 },
-      localization: { locale: 'ru-RU' },
+      localization: {
+        locale: 'ru-RU',
+        // Снапшот на монтаже: категориальные графики (Сезонность) передают проп
+        // все время жизни компонента, обычные — никогда, так что «включён/выключен»
+        // не меняется на лету — только сама подпись (через ref, ниже).
+        ...(crosshairTimeFmtRef.current ? { timeFormatter: (t: Time) => crosshairTimeFmtRef.current!(t as unknown as number) } : {}),
+      },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
       rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
