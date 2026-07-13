@@ -98,14 +98,16 @@ export default function PageHeader({
             {subtitle}
           </p>
         )}
-        {sourceNote && (
-          <p
-            className="mt-0.5"
-            style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }}
-          >
-            {sourceNote}
-          </p>
-        )}
+        {/* Строка рендерится ВСЕГДА (даже без sourceNote, с nbsp-заглушкой) —
+            иначе высота хедера отличалась бы между страницами с/без sourceNote
+            (было 76px vs 94px) и всё, что ниже (вкладки, график), прыгало бы
+            по Y при переходе между индикаторами через навигацию. */}
+        <p
+          className="mt-0.5"
+          style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }}
+        >
+          {sourceNote || ' '}
+        </p>
       </div>
       {rightSlot && <div className="flex-shrink-0">{rightSlot}</div>}
     </div>
