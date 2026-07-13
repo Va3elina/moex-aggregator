@@ -228,7 +228,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     const maxAbs = Math.max(...bars.map((b) => Math.abs(b.avg_change)), 0.01);
     const digits = pctDigits(maxAbs);
     const out: LwSeries[] = [{
-      id: 'season', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
+      id: 'season', type: 'histogram', scale: 'right', base: 0,
       color: 'var(--oi-green)', label: 'Ср. изменение',
       // Ось категориальная (срез, не время) — «последний бар» ничего не значит,
       // пилюля last-value на оси только путает (не зависит от тумблера песочницы).
