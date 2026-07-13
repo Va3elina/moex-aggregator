@@ -19,6 +19,10 @@ import OpenInterestPage from './pages/OpenInterestPage';
 import HeatmapPage from './pages/HeatmapPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
+// MobileStrengthPage — единственная mobile-страница НЕ через lazy(): «Сила рынка» —
+// частый nav-таб, а lazy-чанк добавлял сериализованный round-trip (чанк → потом
+// fetch данных) ПЕРЕД первым API-запросом. Остальные mobile-страницы остаются lazy.
+import MobileStrengthPage from './pages/mobile/MobileStrengthPage';
 import BuffettPage from './pages/BuffettPage';
 import CbrFlowsPage from './pages/CbrFlowsPage';
 import LoginPage from './pages/LoginPage';
@@ -61,7 +65,6 @@ const MobileCbrFlowsPage = lazy(() => import('./pages/mobile/MobileCbrFlowsPage'
 const MobileFundsMoneyPage = lazy(() => import('./pages/mobile/MobileFundsMoneyPage'));
 const MobileFundTradesPage = lazy(() => import('./pages/mobile/MobileFundTradesPage'));
 const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalityPage'));
-const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
 const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'));
 const MobilePricingPage = lazy(() => import('./pages/mobile/MobilePricingPage'));
 // Песочница/конструктор — приватный роут /sandbox (вне навигации). Тянет все embed'ы → lazy.

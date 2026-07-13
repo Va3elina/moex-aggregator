@@ -408,7 +408,7 @@ async def get_current_breadth(
         "classification": classification,
         "stocks": sorted(stocks_data, key=lambda x: x["diff_percent"], reverse=True)
     }
-    get_or_set(cache_key, result, ttl=300)  # 5 минут
+    get_or_set(cache_key, result, ttl=900)  # 15 минут — снижает частоту холодных пересчётов EMA по ~200 бумагам
     return result
 
 
