@@ -158,7 +158,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       if (!flows.length) return [];
       // flow приходит в МЛРД ₽ → в рубли (×1e9), чтобы компактный формат дал «млрд».
       return [{
-        id: 'flow', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
+        id: 'flow', type: 'histogram', scale: 'right', base: 0,
         color: 'var(--oi-green)', label: 'Чистый поток',
         // Периодический нетто-поток — «последнее значение» на оси неинформативно
         // (не тренд, не текущая цена), только пилюля лишняя.
