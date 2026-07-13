@@ -70,6 +70,21 @@ const NON_DIVIDEND_TICKERS = new Set([
   'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
 ]);
 
+// Инструменты без интрадей-среза: живут в index_data (дневные точки Yahoo/MOEX),
+// а не в candles — «Внутри дня» для них физически невозможен (копия
+// INDEX_DATA_INSTRUMENTS из api/routers/seasonality.py, минус IMOEX — у него
+// есть часовые свечи, см. INDICES_WITH_INTRADAY). Раньше: юзер смотрел SBER на
+// «Внутри дня», переключался на GOLD/BRENT/RTSI и т.п. — persisted mode
+// оставался 'intraday', бэк отвечал 404 «Нет интрадей данных», а виджет просто
+// показывал общее «Ошибка загрузки» без объяснения (§ баг того же класса, что
+// и available_intervals у ОИ).
+const NO_INTRADAY_TICKERS = new Set([
+  'RTSI', 'GLDRUB_TOM', 'RGBITR', 'RGBI', 'RVI',
+  'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM', 'MCFTR', 'RUSFAR3M',
+  'BRENT', 'NATGAS_HH', 'GOLD', 'SILVER', 'PLATINUM', 'PALLADIUM',
+  'COPPER', 'ALUMINUM', 'WHEAT', 'LIT', 'TTF_GAS', 'NICKEL',
+]);
+
 // Полная история — как FULL_HISTORY_ITERS на странице.
 const FULL_HISTORY_ITERS = 9999;
 
@@ -96,7 +111,14 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
 
   const [stock, setStock] = useState<string>(() => initialInstrument || params.get('instrument') || rd('frame:embed:seasonality:stock', 'SBER'));
   const [chartType, setChartType] = useState<ChartType>(() => rd('frame:embed:seasonality:chartType', 'histogram') as ChartType);
-  const [mode, setMode] = useState<SeasonalityMode>(() => rd('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
+  // Клэмп на маунте: если persisted stock — тикер без интрадей (index_data,
+  // напр. GOLD/RTSI с прошлой сессии), а persisted mode — 'intraday', сразу
+  // берём 'weekday' — иначе первый же фетч 404-нется (см. NO_INTRADAY_TICKERS).
+  const [mode, setMode] = useState<SeasonalityMode>(() => {
+    const initStock = initialInstrument || params.get('instrument') || rd('frame:embed:seasonality:stock', 'SBER');
+    const persisted = rd('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode;
+    return persisted === 'intraday' && NO_INTRADAY_TICKERS.has(initStock) ? 'weekday' : persisted;
+  });
   const [excludeDividends, setExcludeDividends] = useState<boolean>(() => rdBool('frame:embed:seasonality:excludeDividends', false));
   const [showNoOutliers, setShowNoOutliers] = useState<boolean>(() => rdBool('frame:embed:seasonality:showNoOutliers', false));
   const [showCurrentYear, setShowCurrentYear] = useState<boolean>(() => rdBool('frame:embed:seasonality:showCurrentYear', true));
@@ -131,6 +153,11 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   // Инструменты без дивидендов: тоггл прячем И всегда шлём excludeDividends=false.
   const hasDividends = !NON_DIVIDEND_TICKERS.has(stock);
   const effExcludeDividends = hasDividends && excludeDividends;
+
+  // Инструменты без интрадей (index_data) — «Внутри дня» не предлагаем в
+  // дропдауне (не даём выбрать заведомо нерабочий срез, см. NO_INTRADAY_TICKERS).
+  const supportsIntraday = !NO_INTRADAY_TICKERS.has(stock);
+  const modeOptions = supportsIntraday ? MODES : MODES.filter((m) => m.id !== 'intraday');
 
   // Фетч: база + (опционально) медиана параллельно. По chartType — гистограмма
   // или годовая. Стале-ответы отбрасываем по reqId.
@@ -292,13 +319,18 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
           excludeType="futures"
           showIntradayBadge={false}
           current={stock}
-          onSelect={(secid) => { setStock(secid); }}
+          onSelect={(secid) => {
+            setStock(secid);
+            // Переключились на тикер без интрадей, пока стоял «Внутри дня» —
+            // откатываем сразу в том же батче, до первого фетча (иначе 404).
+            if (mode === 'intraday' && NO_INTRADAY_TICKERS.has(secid)) setMode('weekday');
+          }}
         />
       }
       toolbar={
         <>
           <PillGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} />
-          {isHist && <Dropdown<SeasonalityMode> value={mode} options={MODES} onChange={setMode} title="Разрез" />}
+          {isHist && <Dropdown<SeasonalityMode> value={mode} options={modeOptions} onChange={setMode} title="Разрез" />}
         </>
       }
       more={
