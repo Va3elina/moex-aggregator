@@ -430,6 +430,10 @@ export function Dropdown<T extends string | number>({
   const [btnW, setBtnW] = useState<number>();   // ширина кнопки → ширина списка (Вадим)
   const btnRef = useRef<HTMLButtonElement>(null);
   const cur = options.find((o) => o.id === value);
+  // Один вариант (напр. ТФ у EOD-only фьючерса — только «1 день») → выбирать
+  // нечего: убираем стрелочку (не обещаем список, которого нет) и не открываем
+  // попап по клику.
+  const single = options.length <= 1;
   return (
     // display:inline-flex — без него это блочный контейнер с одним inline-block
     // ребёнком (кнопкой): браузер резервирует ~3px «фантомного» подстрочного
@@ -442,13 +446,13 @@ export function Dropdown<T extends string | number>({
         ref={btnRef}
         type="button"
         title={title}
-        style={ddBtnStyle(open)}
-        onClick={() => { if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
+        style={{ ...ddBtnStyle(open), cursor: single ? 'default' : 'pointer' }}
+        onClick={() => { if (single) return; if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
-        <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
+        {!single && <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />}
       </button>
-      {open && (
+      {open && !single && (
         // Ширина = по контенту (влезает самое длинное словосочетание, без гориз. ползунка),
         // но не у́же кнопки (minWidth = ширина кнопки) — Вадим.
         <Popover anchorEl={btnRef.current} align="left" compact width="max-content" onClose={() => setOpen(false)}>
