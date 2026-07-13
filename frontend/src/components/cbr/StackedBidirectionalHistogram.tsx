@@ -22,6 +22,7 @@ import { getCategoryColor } from './cbrPalette';
 import { getCategoryShortLabel } from './cbrCategoryInfo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { chartFontScale } from '../chart/chartTypography';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartDatePill from '../chart/ChartDatePill';
 import ChartWatermark from '../ChartWatermark';
@@ -92,6 +93,25 @@ export default function StackedBidirectionalHistogram({
   const [hover, setHover] = useState<HoverState | null>(null);
   const vw = useViewportWidth();
   const isMobile = vw < 768;
+
+  // Ширина СВОЕГО контейнера (не window.innerWidth) — на full-page /cbr-flows
+  // это одно и то же (chart занимает почти весь viewport), но в узкой панели
+  // песочницы container << viewport: без этого легенда/число X-меток берутся
+  // по РАЗМЕРУ ОКНА браузера, а не панели → максимальный шрифт легенды +
+  // 6 дат-меток набиваются в 300px и налезают друг на друга. containerW=0 до
+  // первого измерения → используем vw как fallback (без ResizeObserver flash).
+  const [containerW, setContainerW] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setContainerW(Math.round(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fontScale = chartFontScale(containerW || vw);
 
   // Entrance animation: grow-from-zero wave.
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
@@ -268,7 +288,7 @@ export default function StackedBidirectionalHistogram({
           paddingBottom: 'var(--chart-legend-mb, 2px)',
         }}
       >
-        <ChartLegend items={legendItems} />
+        <ChartLegend items={legendItems} fontSize={fontScale.legend} dotSize={fontScale.legendDot} />
       </div>
 
       {/* ═══ Контейнер chart — flex: 1 (берёт оставшуюся высоту) ═══ */}
@@ -450,7 +470,12 @@ export default function StackedBidirectionalHistogram({
           }}
         >
           {(() => {
-            const tickCount = Math.min(isMobile ? 3 : 6, periods.length);
+            // Число X-меток по РЕАЛЬНОЙ ширине контейнера, не isMobile (viewport) —
+            // на узкой панели песочницы (containerW ~300-500) 6 дат друг на друга
+            // налезают; используем vw-fallback пока containerW не измерен.
+            const cw = containerW || vw;
+            const maxTicks = cw < 420 ? 3 : cw < 640 ? 4 : cw < 900 ? 5 : 6;
+            const tickCount = Math.min(maxTicks, periods.length);
             if (tickCount < 2) {
               // Edge case: 1 period — single centered label
               const p = periods[0];
