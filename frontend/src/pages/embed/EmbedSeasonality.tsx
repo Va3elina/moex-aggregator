@@ -309,6 +309,25 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     };
   }, [isHist]);
 
+  // Лейбл нативного кроссхэйра (полоска у оси времени под курсором): время у нас
+  // синтетическое (T0 + индекс), родной форматтер lightweight-charts показал бы
+  // случайную «реальную» дату 2001 года — вместо этого подставляем ту же
+  // категориальную подпись, что и на оси (Календарь), либо день+месяц без
+  // фиктивного года (Годовая).
+  const crosshairTimeFmt = useMemo(() => {
+    if (isHist) {
+      const labels = bars.map((b) => b.label);
+      return (time: number) => {
+        const idx = Math.round((time - T0) / DAY);
+        return labels[idx] ?? '';
+      };
+    }
+    return (time: number) => {
+      const d = new Date(time * 1000);
+      return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]}`;
+    };
+  }, [isHist, bars]);
+
   const lwSeries = isHist ? histSeries : yearlySeries;
 
   return (
@@ -359,6 +378,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
             dark={dark}
             fitKey={`${chartType}|${stock}|${mode}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
             tickFmt={isHist ? histTickFmt : yearlyTickFmt}
+            crosshairTimeFmt={crosshairTimeFmt}
             legendItems={isHist
               ? [
                   { label: 'Рост', color: 'var(--oi-green)' },

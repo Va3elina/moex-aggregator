@@ -24,7 +24,6 @@
     { id: 'strength', label: 'Сила рынка', group: 'market' },
     { id: 'funds-money', label: 'Фонды', group: 'market' },
     { id: 'fund-trades', label: 'Сделки фондов', group: 'market' },
-    { id: 'fund-movers', label: 'Покупки фондов', group: 'market' },
     { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' }
   ];
 
@@ -50,8 +49,7 @@
     'strength':    { w: 600, h: 620 }, // два графика (IMOEX + breadth) — выше
     'funds-money': { w: 660, h: 560 },
     'cbr-flows':   { w: 660, h: 580 },
-    'fund-trades': { w: 560, h: 560 },
-    'fund-movers': { w: 600, h: 560 }  // две колонки Покупают/Продают
+    'fund-trades': { w: 560, h: 560 }
   };
   var DEFAULT_SIZE = { w: 620, h: 560 };
 
