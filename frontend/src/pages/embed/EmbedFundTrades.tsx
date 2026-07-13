@@ -364,7 +364,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
             moversStatus === 'ok' || moversStatus === 'empty' ? (
               <PortfolioMoversPanel
                 movers={moversData}
-                loading={moversStatus === 'loading'}
+                loading={false}
                 period={moversPeriod}
                 variant="embedded"
                 onPeriodChange={setMoversPeriod}
