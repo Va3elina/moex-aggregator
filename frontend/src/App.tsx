@@ -80,6 +80,7 @@ const FundTradesPage = lazy(() => import('./pages/FundTradesPage'));
 const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
 const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
+const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
 const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 
@@ -290,6 +291,7 @@ export default function App() {
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
+            <Route path="/admin/content-news" element={<AdminContentNewsPage />} />
           </Route>
         </Routes>
         </Suspense>

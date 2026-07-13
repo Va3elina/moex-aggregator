@@ -1986,3 +1986,93 @@ export async function getLowActivityAssets(): Promise<string[]> {
         return [];
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Admin: Content news Kanban (/admin/content-news)
+// ═══════════════════════════════════════════════════════════════════
+
+export type ContentCandidateStatus =
+  | 'candidate' | 'discarded' | 'pending' | 'draft_ready'
+  | 'no_data' | 'in_review' | 'published' | 'rejected';
+
+export interface ContentCandidate {
+  id: number;
+  status: ContentCandidateStatus;
+  source: string | null;
+  headline: string;
+  tickers: string[];
+  futures_ticker: string | null;
+  event_type: string | null;
+  importance_1_5: number | null;
+  reasoning: string | null;
+  matched_anomaly_id: number | null;
+  thread_key: string | null;
+  parent_candidate_id: number | null;
+  forwards_count: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  pending_expires_at: string | null;
+  published_at: string | null;
+  reviewer_action: string | null;
+}
+
+export interface ContentCandidateDetail extends ContentCandidate {
+  raw_text: string | null;
+  draft_text: string | null;
+  synth_declined_reason: string | null;
+  reviewer_id: number | null;
+  thread: ContentCandidate[];
+}
+
+export interface ContentCandidateList {
+  items: ContentCandidate[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listContentCandidates(
+  status: ContentCandidateStatus,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<ContentCandidateList> {
+  const params = new URLSearchParams({ status });
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  const response = await apiFetch(`${API_BASE}/api/admin/content-candidates?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch content candidates');
+  }
+  return response.json();
+}
+
+export async function getContentCandidateDetail(id: number): Promise<ContentCandidateDetail> {
+  const response = await apiFetch(`${API_BASE}/api/admin/content-candidates/${id}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Кандидат не найден');
+    throw new Error('Failed to fetch content candidate detail');
+  }
+  return response.json();
+}
+
+export async function updateContentCandidateStatus(
+  id: number,
+  status: ContentCandidateStatus,
+): Promise<ContentCandidate> {
+  const response = await apiFetch(`${API_BASE}/api/admin/content-candidates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Кандидат не найден');
+    if (response.status === 422) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.detail || 'Недопустимый переход статуса');
+    }
+    throw new Error('Failed to update content candidate status');
+  }
+  return response.json();
+}
