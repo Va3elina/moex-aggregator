@@ -6,8 +6,8 @@ Telegram Alert-Bot (Frame) — host-side long-poll поллер. Phase 1: при
 Под systemd (frame-alert-bot.service, auto-restart). ENV (.env корня): ALERT_BOT_TOKEN.
 
 DB: используем общий api.database.SessionLocal. На хосте DB_URL указывает на @db:5432
-(docker-network) — переопределяем на 127.0.0.1 ДО импорта api.database (как делает
-signals/run.sh через sed, только in-process т.к. процесс долгоживущий).
+(docker-network) — переопределяем на 127.0.0.1 ДО импорта api.database, только
+in-process т.к. процесс долгоживущий.
 
 Команды: /start <token> — привязка; /menu — меню; /alerts /stop /resume /help.
 Phase B: inline-навигация (меню → список → карточка → пауза/возобновить/удалить)

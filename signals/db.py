@@ -396,62 +396,6 @@ def has_intraday_oi(sectype: str) -> bool:
     return bool(exists)
 
 
-def last_signal_ts(asset: str, indicator: str, signal_type: str) -> Optional[datetime]:
-    """Timestamp последнего сигнала для (asset, indicator, signal_type). None если не было."""
-    with SessionLocal() as session:
-        ts = session.execute(
-            text("""
-                SELECT MAX(ts) FROM signal_log
-                WHERE asset = :asset
-                  AND indicator = :indicator
-                  AND signal_type = :signal_type
-            """),
-            {"asset": asset, "indicator": indicator, "signal_type": signal_type},
-        ).scalar()
-    return ts
-
-
-def insert_signal_log(
-    *,
-    asset: str,
-    indicator: str,
-    signal_type: str,
-    direction: str,
-    z_score: float,
-    raw_value: float,
-    channel_id: int,
-    message_id: Optional[int] = None,
-    message_text: Optional[str] = None,
-) -> int:
-    """Записать факт публикации сигнала. Возвращает id вставленной строки."""
-    with SessionLocal() as session:
-        result = session.execute(
-            text("""
-                INSERT INTO signal_log
-                    (asset, indicator, signal_type, direction,
-                     z_score, raw_value, channel_id, message_id, message_text)
-                VALUES
-                    (:asset, :indicator, :signal_type, :direction,
-                     :z_score, :raw_value, :channel_id, :message_id, :message_text)
-                RETURNING id
-            """),
-            {
-                "asset": asset,
-                "indicator": indicator,
-                "signal_type": signal_type,
-                "direction": direction,
-                "z_score": z_score,
-                "raw_value": raw_value,
-                "channel_id": channel_id,
-                "message_id": message_id,
-                "message_text": message_text,
-            },
-        )
-        row_id = result.scalar()
-        session.commit()
-    return row_id
-
-
 def get_buffett_current(mode: str = "cap_gdp") -> Optional[tuple]:
     """Текущий индикатор Баффета: (ratio_%, cap_млрд) на последнюю доступную дату.
 
