@@ -66,3 +66,13 @@ CONTENT_WINDOW_HOURS = 6       # окно кросс-издательской к
 CONTENT_WORD_OVERLAP_MIN = 3   # минимум значимых слов пересечения между источниками
 CONTENT_IMPORTANCE_MIN = 3     # порог значимости (Шаг А) для продолжения в pending
 CONTENT_PENDING_DAYS = 5       # окно ожидания подтверждения данными (Шаг Б)
+
+# Этап 9 — review-бот. Публикует через config.BOT_TOKEN (тот же бот, что и
+# send_signal_post — у него нет активного getUpdates-поллера нигде, кроме
+# content_review_bot.py, конфликта с alert_bot.py (ALERT_BOT_TOKEN, другой
+# токен) нет). Карточки на ревью шлём в личку ADMIN_USER_ID.
+# CONTENT_CHANNEL_ID — ТЕСТОВЫЙ канал на старте (не боевой @FrameTool) —
+# Вадим создаёт канал, добавляет бота админом, даёт chat_id (обычно -100...).
+CONTENT_CHANNEL_ID = int(os.getenv("CONTENT_CHANNEL_ID", "0"))
+# users.id того же админа, что получает карточки — для reviewer_id (FK).
+CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))

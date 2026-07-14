@@ -1,0 +1,17 @@
+[Unit]
+Description=Frame content-пайплайн review-bot (host-side long-poll)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/frame
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/frame/signals/.venv/bin/python -m signals.content_review_bot
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/frame/logs/content_review_bot.log
+StandardError=append:/opt/frame/logs/content_review_bot.log
+
+[Install]
+WantedBy=multi-user.target

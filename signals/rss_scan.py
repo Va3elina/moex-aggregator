@@ -38,8 +38,12 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
+import pipeline_heartbeat              # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
+from signals.content_ai import (       # noqa: E402
+    _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
+)
 
 _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://xn--80aklbnczmv.xn--p1ai)"
 HTTP_TIMEOUT = 15
@@ -114,7 +118,9 @@ _INSERT = text("""
     VALUES
         ('candidate', 'rss', :headline, :raw_text, ARRAY[]::text[],
          CAST(:sources AS JSONB), now(), now())
+    RETURNING id
 """)
+_MARK_DISPATCHED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
 
 
 def _find_convergent_groups(items: list[dict]) -> list[list[dict]]:
@@ -153,7 +159,8 @@ def _find_convergent_groups(items: list[dict]) -> list[list[dict]]:
 
 def run_once() -> dict:
     summary = {"feeds_ok": 0, "feeds_failed": 0, "items": 0,
-               "convergent_groups": 0, "inserted": 0, "skipped_dup": 0, "errors": 0}
+               "convergent_groups": 0, "inserted": 0, "skipped_dup": 0, "errors": 0,
+               "step_a_fired": 0, "step_a_fire_errors": 0}
 
     all_items: list[dict] = []
     for family, url in RSS_FEEDS:
@@ -168,8 +175,21 @@ def run_once() -> dict:
     groups = _find_convergent_groups(all_items)
     summary["convergent_groups"] = len(groups)
 
+    # Событийный вызов Шага А: сразу после вставки НОВОГО кандидата, а не
+    # ожидая отдельный крон-поллер (content_ai.py остаётся редкой подстраховкой
+    # на случай, если этот вызов не долетел — см. его докстроку). Токены/список
+    # тикеров читаем ОДИН раз на весь прогон, не на каждую вставку.
+    internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
+    token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
+    can_fire = bool(internal_token and token_a)
+    if not can_fire:
+        print("[rss_scan] CONTENT_AI_INTERNAL_TOKEN / CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A "
+              "не заданы — новые кандидаты вставятся, но Шаг А не будет вызван сразу "
+              "(дождутся content_ai.py по расписанию)")
+
     db = SessionLocal()
     try:
+        known_tickers = _known_tickers_line(db) if can_fire else ""
         for group in groups:
             group.sort(key=lambda it: it["dt"])
             earliest = group[0]
@@ -183,16 +203,33 @@ def run_once() -> dict:
                      "published_at": it["dt"].isoformat(), "title": it["title"]}
                     for it in group
                 ]
-                db.execute(_INSERT, {
+                raw_text = earliest["desc"] or headline
+                new_id = db.execute(_INSERT, {
                     "headline": headline,
-                    "raw_text": earliest["desc"] or headline,
+                    "raw_text": raw_text,
                     "sources": json.dumps(sources, ensure_ascii=False),
-                })
+                }).scalar()
+                db.commit()  # ДО fire — Routine PATCH'ит через отдельное соединение (API), строка должна уже существовать
                 summary["inserted"] += 1
+
+                if can_fire:
+                    try:
+                        payload = _step_a_payload(
+                            {"id": new_id, "source": "rss", "headline": headline, "raw_text": raw_text},
+                            internal_token, known_tickers,
+                        )
+                        _fire(TRIGGER_ID_STEP_A, token_a, payload)
+                        db.execute(_MARK_DISPATCHED, {"id": new_id})
+                        db.commit()
+                        summary["step_a_fired"] += 1
+                    except Exception as e:
+                        summary["step_a_fire_errors"] += 1
+                        print(f"[rss_scan] step-a fire failed for candidate {new_id}: "
+                              f"{type(e).__name__}: {e}")
             except Exception as e:
+                db.rollback()
                 summary["errors"] += 1
                 print(f"[rss_scan] insert failed for {headline!r}: {type(e).__name__}: {e}")
-        db.commit()
     except Exception as e:
         db.rollback()
         summary["errors"] += 1
@@ -203,8 +240,13 @@ def run_once() -> dict:
 
 
 def main():
+    t0 = datetime.now(timezone.utc)
     s = run_once()
+    dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] rss_scan: {s}")
+    pipeline_heartbeat.record_pipeline_run(
+        "content_rss_scan", s["errors"] == 0, str(s), dur
+    )
 
 
 if __name__ == "__main__":

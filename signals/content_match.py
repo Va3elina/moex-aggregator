@@ -32,12 +32,17 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
+import pipeline_heartbeat                  # noqa: E402
 from api.database import SessionLocal      # noqa: E402
 from signals import config                 # noqa: E402
 from signals.db import has_intraday_oi     # noqa: E402
+from signals.content_ai import (           # noqa: E402
+    _fire, _step_c_payload, TRIGGER_ID_STEP_C,
+)
 
 _SELECT_PENDING = text("""
-    SELECT id, futures_ticker, thread_key, created_at, pending_expires_at, last_checked_at
+    SELECT id, futures_ticker, thread_key, created_at, pending_expires_at, last_checked_at,
+           headline, tickers, event_type, reasoning
     FROM content_candidates
     WHERE status = 'pending' AND futures_ticker IS NOT NULL
 """)
@@ -54,7 +59,7 @@ _ALREADY_USED = text("""
 # они достаются watch-thread'у как follow-up к уже готовому черновику, не как
 # замена ему.
 _FIND_MATCH = text("""
-    SELECT id, signal_date, severity_value, direction, headline
+    SELECT id, signal_date, severity_value, direction, headline, asset_id, asset_name, type
     FROM anomalies
     WHERE asset_id = :futures_ticker
       AND signal_date BETWEEN :date_from AND :date_to
@@ -83,7 +88,16 @@ _MARK_NO_DATA = text("""
 
 def run_once() -> dict:
     summary = {"checked": 0, "skipped_daily_already_checked": 0,
-               "matched": 0, "expired": 0, "still_pending": 0, "errors": 0}
+               "matched": 0, "expired": 0, "still_pending": 0, "errors": 0,
+               "step_c_fired": 0, "step_c_fire_errors": 0}
+
+    internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
+    token_c = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_C", "")
+    can_fire = bool(internal_token and token_c)
+    if not can_fire:
+        print("[content_match] CONTENT_AI_INTERNAL_TOKEN / CLAUDE_ROUTINE_FIRE_TOKEN_STEP_C "
+              "не заданы — draft_ready проставится, но Шаг В не будет вызван сразу "
+              "(дождётся content_ai.py по расписанию)")
 
     db = SessionLocal()
     try:
@@ -121,7 +135,28 @@ def run_once() -> dict:
 
                 if match:
                     db.execute(_MARK_DRAFT_READY, {"id": row["id"], "anomaly_id": match["id"]})
+                    db.commit()  # ДО fire — Routine PATCH'ит через отдельное соединение (API)
                     summary["matched"] += 1
+
+                    if can_fire:
+                        try:
+                            payload_row = {
+                                "id": row["id"], "headline": row["headline"],
+                                "tickers": row["tickers"], "event_type": row["event_type"],
+                                "reasoning": row["reasoning"],
+                                "asset_id": match["asset_id"], "asset_name": match["asset_name"],
+                                "anomaly_type": match["type"], "direction": match["direction"],
+                                "severity_value": match["severity_value"],
+                                "signal_date": match["signal_date"],
+                                "anomaly_headline": match["headline"],
+                            }
+                            _fire(TRIGGER_ID_STEP_C, token_c,
+                                  _step_c_payload(payload_row, internal_token))
+                            summary["step_c_fired"] += 1
+                        except Exception as e:
+                            summary["step_c_fire_errors"] += 1
+                            print(f"[content_match] step-c fire failed for candidate "
+                                  f"{row['id']}: {type(e).__name__}: {e}")
                     continue
 
                 expires = row["pending_expires_at"]
@@ -146,8 +181,13 @@ def run_once() -> dict:
 
 
 def main():
+    t0 = datetime.now(timezone.utc)
     s = run_once()
+    dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] content_match: {s}")
+    pipeline_heartbeat.record_pipeline_run(
+        "content_match", s["errors"] == 0, str(s), dur
+    )
 
 
 if __name__ == "__main__":
