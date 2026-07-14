@@ -37,6 +37,18 @@ RSS-кандидатов за ночь) выстрелил бы их ВСЕ ра
 
 Запуск раз в 15-20 минут (Routine-сессии не мгновенные):
   /opt/frame/signals/content_ai.sh   (cron, напр. */15 * * * *)
+
+⚠️ Найдено 2026-07-14: Routine-сессия иногда падает на этапе провижининга
+облачного контейнера (Anthropic-инфраструктура, ДО старта Claude Code) — живой
+случай, 3 кандидата зависли в status='candidate' навсегда, потому что этот
+бэкстоп существовал, но не был на кроне. Если Routine сломана системно (не
+разовый сбой), бесконечный ретрай молча жжёт деньги без результата —
+MAX_DISPATCH_ATTEMPTS (028_content_candidates_dispatch_attempts) ограничивает
+число ПОВТОРНЫХ выстрелов ЭТОГО бэкстопа (не оригинальный fire из
+rss_scan.py/etc — тот не считается попыткой ретрая). После лимита Шаг А сдаётся
+в discarded с честной причиной, Шаг В — откатывается в pending (тот же путь,
+что и при явном отказе модели, content_news.py:apply_step_c) — тред не
+теряется, content_match.py может поймать более позднюю аномалию заново.
 """
 import os
 from datetime import datetime, timedelta, timezone
@@ -66,6 +78,9 @@ TRIGGER_ID_STEP_C = "trig_01KPtMNbEYNfqewKvwhdo4rj"   # frame-content-step-c
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
+MAX_DISPATCH_ATTEMPTS = 3    # сколько раз ЭТОТ бэкстоп повторяет зависшего кандидата,
+                              # прежде чем сдаться (см. docstring — защита от бесконечного
+                              # ретрая системно сломанной Routine)
 INTERNAL_API_HOST = "https://xn--80aklbnczmv.xn--p1ai"  # ⚠️ punycode: кириллица ломает curl внутри Routine
 
 _ANTHROPIC_HEADERS_BASE = {
@@ -75,7 +90,7 @@ _ANTHROPIC_HEADERS_BASE = {
 }
 
 _SELECT_CANDIDATES = text("""
-    SELECT id, source, headline, raw_text, last_checked_at
+    SELECT id, source, headline, raw_text, last_checked_at, dispatch_attempts
     FROM content_candidates
     WHERE status = 'candidate'
       AND (last_checked_at IS NULL OR last_checked_at < :cutoff)
@@ -85,7 +100,7 @@ _SELECT_CANDIDATES = text("""
 
 _SELECT_DRAFT_READY = text("""
     SELECT c.id, c.headline, c.tickers, c.event_type, c.futures_ticker, c.reasoning,
-           c.category, c.match_type,
+           c.category, c.match_type, c.dispatch_attempts,
            a.asset_id, a.asset_name, a.type AS anomaly_type, a.direction,
            a.severity_value, a.signal_date, a.headline AS anomaly_headline
     FROM content_candidates c
@@ -97,7 +112,25 @@ _SELECT_DRAFT_READY = text("""
 """)
 
 _MARK_DISPATCHED = text("""
-    UPDATE content_candidates SET last_checked_at = now() WHERE id = :id
+    UPDATE content_candidates
+    SET last_checked_at = now(), dispatch_attempts = dispatch_attempts + 1
+    WHERE id = :id
+""")
+
+# Лимит попыток исчерпан — Routine либо системно сломана, либо candidate
+# неудачный (не тратим деньги дальше). Шаг А: честный отказ (discarded), как
+# и любой другой content_candidate, не прошедший оценку. Шаг В: откат в
+# pending с причиной — тот же путь, что при явном отказе модели
+# (apply_step_c), thread не теряется, content_match.py подхватит заново.
+_GIVE_UP_STEP_A = text("""
+    UPDATE content_candidates
+    SET status = 'discarded', reasoning = :reasoning, updated_at = now()
+    WHERE id = :id
+""")
+_GIVE_UP_STEP_C = text("""
+    UPDATE content_candidates
+    SET status = 'pending', synth_declined_reason = :reason, updated_at = now()
+    WHERE id = :id
 """)
 
 
@@ -197,7 +230,8 @@ def _step_c_payload(row, internal_token: str) -> str:
 
 
 def run_once() -> dict:
-    summary = {"step_a_fired": 0, "step_c_fired": 0, "errors": 0, "skipped_no_token": 0}
+    summary = {"step_a_fired": 0, "step_c_fired": 0, "errors": 0, "skipped_no_token": 0,
+               "step_a_gave_up": 0, "step_c_gave_up": 0}
 
     internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
     token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
@@ -218,6 +252,14 @@ def run_once() -> dict:
         known_tickers = _known_tickers_line(db) if candidates else ""
         known_categories = _known_categories_line(db) if candidates else ""
         for row in candidates:
+            if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
+                db.execute(_GIVE_UP_STEP_A, {
+                    "id": row["id"],
+                    "reasoning": f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                                 f"попыток бэкстопа — сдаёмся (см. content_ai.py)",
+                })
+                summary["step_a_gave_up"] += 1
+                continue
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
                       _step_a_payload(row, internal_token, known_tickers, known_categories))
@@ -233,6 +275,14 @@ def run_once() -> dict:
             _SELECT_DRAFT_READY, {"cutoff": cutoff, "batch_limit": BATCH_LIMIT}
         ).mappings().all()
         for row in draft_ready:
+            if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
+                db.execute(_GIVE_UP_STEP_C, {
+                    "id": row["id"],
+                    "reason": f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                              f"попыток бэкстопа — откат в pending (см. content_ai.py)",
+                })
+                summary["step_c_gave_up"] += 1
+                continue
             try:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(row, internal_token))
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
