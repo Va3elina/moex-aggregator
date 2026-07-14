@@ -2114,6 +2114,38 @@ a.btn-accent:active {
   100% { transform: translateX(-50%); }
 }
 
+/* Live-точка — используется в LiveDot (AdminContentNewsPage, колонка "Ждёт
+   подтверждения"): показывает, что скан идёт в фоне сам по себе, а не что
+   доска стоит на месте. Цвет параметризован через --live-dot-color (инлайн
+   per-use), т.к. колонки красятся разными tint'ами (STATUS_META). */
+@keyframes live-dot-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live-dot-color, var(--accent)) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--live-dot-color, var(--accent)) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live-dot-color, var(--accent)) 0%, transparent); }
+}
+.live-dot {
+  animation: live-dot-pulse 2s ease-out infinite;
+}
+
+/* Карточка content-пайплайна, только что появившаяся в колонке или сдвинутая
+   пайплайном (не пользователем) — короткая вспышка фона, чтобы движение
+   конвейера было видно глазом. 2.2s ~= таймауту снятия freshIds в
+   AdminContentNewsPage.tsx (KanbanColumn). */
+@keyframes card-flash {
+  0%   { background-color: color-mix(in srgb, var(--accent) 22%, var(--bg-secondary)); }
+  100% { background-color: var(--bg-secondary); }
+}
+.content-card-fresh {
+  animation: card-flash 2.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .content-card-fresh {
+    animation: none;
+  }
+}
+
 /* Stack layout on mobile */
 .mobile-stack {
   display: grid;
