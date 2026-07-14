@@ -20,6 +20,7 @@ Granularity-осознанность (измерено вживую 2026-07-13: 
   /opt/frame/signals/content_match.sh   (cron, напр. 15 * * * *)
 """
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
@@ -39,6 +40,11 @@ from signals.db import has_intraday_oi     # noqa: E402
 from signals.content_ai import (           # noqa: E402
     _fire, _step_c_payload, TRIGGER_ID_STEP_C,
 )
+
+# Найдено 2026-07-14 (session 3, см. rss_scan.py) — пауза между _fire() подряд
+# в одном прогоне, иначе несколько облачных контейнеров запрашиваются
+# одновременно и конкурируют за мощность аккаунта.
+FIRE_STAGGER_SEC = 8
 
 _SELECT_PENDING = text("""
     SELECT id, futures_ticker, category, thread_key, created_at, pending_expires_at,
@@ -187,6 +193,7 @@ def run_once() -> dict:
                             _fire(TRIGGER_ID_STEP_C, token_c,
                                   _step_c_payload(payload_row, internal_token))
                             summary["step_c_fired"] += 1
+                            time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                         except Exception as e:
                             summary["step_c_fire_errors"] += 1
                             print(f"[content_match] step-c fire failed for candidate "

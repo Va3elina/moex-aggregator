@@ -21,6 +21,7 @@ thread_key НЕ проставляется здесь (RSS ещё не знае�
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from itertools import combinations
@@ -47,6 +48,13 @@ from signals.content_ai import (       # noqa: E402
 
 _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://xn--80aklbnczmv.xn--p1ai)"
 HTTP_TIMEOUT = 15
+
+# Найдено 2026-07-14 (session 3): несколько _fire() подряд без паузы в одном
+# прогоне (напр. 2 новых кандидата за один тик) почти одновременно просят
+# облако поднять Claude Code cloud-контейнер — конкуренция за мощность
+# аккаунта (общую с интерактивными сессиями) роняет часть попыток на этапе
+# «Cloud-Container wird eingerichtet», ещё до старта самой Routine-сессии.
+FIRE_STAGGER_SEC = 8
 
 # Проверено вживую 2026-07-13. family — домен издателя (для дедупа самодублей
 # одного СМИ по нескольким рубрикам, см. докстрока выше).
@@ -223,6 +231,7 @@ def run_once() -> dict:
                         db.execute(_MARK_DISPATCHED, {"id": new_id})
                         db.commit()
                         summary["step_a_fired"] += 1
+                        time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                     except Exception as e:
                         summary["step_a_fire_errors"] += 1
                         print(f"[rss_scan] step-a fire failed for candidate {new_id}: "

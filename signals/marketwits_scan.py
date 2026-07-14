@@ -30,6 +30,7 @@ Telethon пытается заблокированные РКН IPv4-адрес�
 """
 import os
 import statistics
+import time
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
@@ -52,6 +53,11 @@ from signals.content_ai import (       # noqa: E402
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
 MIN_BASELINE_COUNT = 10   # холодный старт: не решаем про хайп, пока мало истории
+
+# Найдено 2026-07-14 (session 3, см. rss_scan.py) — пауза между _fire() подряд
+# в одном прогоне, иначе несколько облачных контейнеров запрашиваются
+# одновременно и конкурируют за мощность аккаунта.
+FIRE_STAGGER_SEC = 8
 
 _EXISTS_WATCH = text("SELECT 1 FROM markettwits_watch WHERE message_id = :id")
 _INSERT_WATCH = text("""
@@ -211,6 +217,7 @@ def run_once() -> dict:
                         db.execute(_MARK_DISPATCHED, {"id": new_id})
                         db.commit()
                         summary["step_a_fired"] += 1
+                        time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                     except Exception as e:
                         summary["step_a_fire_errors"] += 1
                         print(f"[marketwits_scan] step-a fire failed for candidate "
