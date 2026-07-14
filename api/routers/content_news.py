@@ -41,10 +41,10 @@ STATUS_VALUES = (
 )
 
 _COLUMNS = """
-  id, status, source, headline, tickers, futures_ticker, event_type,
-  importance_1_5, reasoning, matched_anomaly_id, thread_key, parent_candidate_id,
-  forwards_count, created_at, updated_at, pending_expires_at, published_at,
-  reviewer_action
+  id, status, source, headline, tickers, futures_ticker, category, match_type,
+  event_type, importance_1_5, reasoning, matched_anomaly_id, thread_key,
+  parent_candidate_id, forwards_count, created_at, updated_at, pending_expires_at,
+  published_at, reviewer_action
 """
 
 
@@ -55,6 +55,8 @@ class ContentCandidateOut(BaseModel):
     headline: str
     tickers: list[str] = []
     futures_ticker: Optional[str] = None
+    category: Optional[str] = None
+    match_type: Optional[str] = None   # 'ticker' | 'category' — бейдж на карточке ревью
     event_type: Optional[str] = None
     importance_1_5: Optional[int] = None
     reasoning: Optional[str] = None
@@ -88,6 +90,7 @@ def _row_to_out(r) -> ContentCandidateOut:
     return ContentCandidateOut(
         id=r["id"], status=r["status"], source=r["source"], headline=r["headline"],
         tickers=list(r["tickers"] or []), futures_ticker=r["futures_ticker"],
+        category=r["category"], match_type=r["match_type"],
         event_type=r["event_type"], importance_1_5=r["importance_1_5"],
         reasoning=r["reasoning"], matched_anomaly_id=r["matched_anomaly_id"],
         thread_key=r["thread_key"], parent_candidate_id=r["parent_candidate_id"],
@@ -260,6 +263,7 @@ def _require_internal_token(x_internal_token: str = Header(default="")) -> None:
 class StepAResult(BaseModel):
     relevant: bool
     tickers: list[str] = []
+    category: Optional[str] = None   # заполняется, ТОЛЬКО когда tickers пуст (см. apply_step_a)
     event_type: Optional[str] = None
     importance_1_5: int
     reasoning: str
@@ -305,9 +309,21 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
             futures_ticker = m
             break
 
+    # Категория — ТОЛЬКО подстраховка, когда точный тикер не резолвился (см. docstring
+    # выше). Валидируем против asset_category_map тем же принципом, что known_tickers —
+    # не доверяем строке от модели напрослово, вдруг она сама что-то придумала за
+    # пределами реального списка категорий.
+    category = None
+    if not futures_ticker and body.category:
+        category = db.execute(
+            text("SELECT category FROM asset_category_map WHERE category = :c LIMIT 1"),
+            {"c": body.category},
+        ).scalar()
+
     db.execute(text("""
         UPDATE content_candidates
         SET status = 'pending', tickers = :tickers, futures_ticker = :futures_ticker,
+            category = :category,
             event_type = :event_type, importance_1_5 = :importance, reasoning = :reasoning,
             thread_key = COALESCE(thread_key, :thread_key),
             pending_expires_at = now() + make_interval(days => :pending_days),
@@ -315,13 +331,15 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
         WHERE id = :id
     """), {
         "id": candidate_id, "tickers": body.tickers, "futures_ticker": futures_ticker,
+        "category": category,
         "event_type": body.event_type, "importance": body.importance_1_5,
         "reasoning": body.reasoning,
-        "thread_key": f"rss:{body.tickers[0]}" if body.tickers else None,
+        "thread_key": (f"rss:{body.tickers[0]}" if body.tickers
+                       else f"category:{category}" if category else None),
         "pending_days": 5,
     })
     db.commit()
-    return {"status": "pending", "futures_ticker": futures_ticker}
+    return {"status": "pending", "futures_ticker": futures_ticker, "category": category}
 
 
 @internal_router.patch("/{candidate_id}/step-c", dependencies=[Depends(_require_internal_token)])

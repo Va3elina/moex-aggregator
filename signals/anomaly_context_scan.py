@@ -71,11 +71,11 @@ _EXISTS_CANDIDATE = text(
 )
 _INSERT_CANDIDATE = text("""
     INSERT INTO content_candidates
-        (status, source, headline, raw_text, tickers, futures_ticker, event_type,
+        (status, source, headline, raw_text, tickers, futures_ticker, match_type, event_type,
          importance_1_5, reasoning, matched_anomaly_id, thread_key, sources,
          created_at, updated_at)
     VALUES
-        ('draft_ready', 'anomaly_first', :headline, :raw_text, :tickers, :futures_ticker,
+        ('draft_ready', 'anomaly_first', :headline, :raw_text, :tickers, :futures_ticker, 'ticker',
          'other', 4, :reasoning, :anomaly_id, :thread_key, CAST(:sources AS JSONB),
          now(), now())
     RETURNING id

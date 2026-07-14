@@ -2002,6 +2002,8 @@ export interface ContentCandidate {
   headline: string;
   tickers: string[];
   futures_ticker: string | null;
+  category: string | null;
+  match_type: 'ticker' | 'category' | null;
   event_type: string | null;
   importance_1_5: number | null;
   reasoning: string | null;

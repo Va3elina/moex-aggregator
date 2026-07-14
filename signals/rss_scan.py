@@ -42,7 +42,7 @@ import pipeline_heartbeat              # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 from signals.content_ai import (       # noqa: E402
-    _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
+    _fire, _step_a_payload, _known_tickers_line, _known_categories_line, TRIGGER_ID_STEP_A,
 )
 
 _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://xn--80aklbnczmv.xn--p1ai)"
@@ -190,6 +190,7 @@ def run_once() -> dict:
     db = SessionLocal()
     try:
         known_tickers = _known_tickers_line(db) if can_fire else ""
+        known_categories = _known_categories_line(db) if can_fire else ""
         for group in groups:
             group.sort(key=lambda it: it["dt"])
             earliest = group[0]
@@ -216,7 +217,7 @@ def run_once() -> dict:
                     try:
                         payload = _step_a_payload(
                             {"id": new_id, "source": "rss", "headline": headline, "raw_text": raw_text},
-                            internal_token, known_tickers,
+                            internal_token, known_tickers, known_categories,
                         )
                         _fire(TRIGGER_ID_STEP_A, token_a, payload)
                         db.execute(_MARK_DISPATCHED, {"id": new_id})
