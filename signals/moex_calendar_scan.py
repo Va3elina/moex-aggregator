@@ -37,6 +37,7 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
+import pipeline_heartbeat              # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 
@@ -158,8 +159,13 @@ def run_once(lookahead_days: int | None = None) -> dict:
 
 
 def main():
+    t0 = datetime.now(timezone.utc)
     s = run_once()
+    dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] moex_calendar_scan: {s}")
+    pipeline_heartbeat.record_pipeline_run(
+        "content_moex_calendar", s["errors"] == 0, str(s), dur
+    )
 
 
 if __name__ == "__main__":
