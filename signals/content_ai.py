@@ -85,6 +85,7 @@ _SELECT_CANDIDATES = text("""
 
 _SELECT_DRAFT_READY = text("""
     SELECT c.id, c.headline, c.tickers, c.event_type, c.futures_ticker, c.reasoning,
+           c.category, c.match_type,
            a.asset_id, a.asset_name, a.type AS anomaly_type, a.direction,
            a.severity_value, a.signal_date, a.headline AS anomaly_headline
     FROM content_candidates c
@@ -114,6 +115,10 @@ _SELECT_KNOWN_TICKERS = text(
     "SELECT stock_ticker, display_name FROM ticker_futures_map ORDER BY stock_ticker"
 )
 
+_SELECT_KNOWN_CATEGORIES = text(
+    "SELECT DISTINCT category FROM asset_category_map ORDER BY category"
+)
+
 
 def _known_tickers_line(db) -> str:
     """Реальный список отслеживаемых тикеров — ГРУНТ для Шага А, чтобы модель
@@ -128,25 +133,57 @@ def _known_tickers_line(db) -> str:
     return ", ".join(f"{t}={name}" for t, name in rows)
 
 
-def _step_a_payload(row, internal_token: str, known_tickers: str) -> str:
+def _known_categories_line(db) -> str:
+    """Список категорий (найдено 2026-07-14, session 3, db/migrations/027) —
+    ПОДСТРАХОВКА для новостей без конкретного эмитента (санкции против сектора,
+    «рынок акций растёт», «рубль укрепляется») — тикер назван лишь в ~17%
+    реального рыночного контента (разбор 90-дневной выборки Thor). ТОЛЬКО когда
+    tickers пуст — категория НЕ замена тикеру, а fallback на случай, когда
+    known_tickers объективно не может сработать (тема шире одной компании)."""
+    rows = db.execute(_SELECT_KNOWN_CATEGORIES).fetchall()
+    if not rows:
+        return "(пусто)"
+    return ", ".join(r[0] for r in rows)
+
+
+def _step_a_payload(row, internal_token: str, known_tickers: str, known_categories: str) -> str:
     return (
         f"candidate_id: {row['id']}\n"
         f"source: {row['source']}\n"
         f"headline: {row['headline']}\n"
         f"raw_text: {row['raw_text'] or row['headline']}\n"
         f"known_tickers (ТОЛЬКО из этого списка, больше ниоткуда): {known_tickers}\n"
+        f"known_categories (заполняй category ТОЛЬКО если tickers пуст И тема явно "
+        f"попадает в одну из категорий ниже — иначе оставь category пустым; ТОЛЬКО "
+        f"из этого списка, больше ниоткуда): {known_categories}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
     )
 
 
 def _step_c_payload(row, internal_token: str) -> str:
+    # .get() не [] — вызывается и из anomaly_context_scan.py (Шаг Б′), чей payload_row
+    # не знает про category/match_type (там всегда точный тикер через ticker_futures_map).
+    match_type = row.get("match_type") or "ticker"
+    match_note = (
+        # category-матч (найдено 2026-07-14, session 3) — аномалия найдена по ТЕМЕ/
+        # СЕКТОРУ, а не по названной в новости компании. Конкретный актив ниже может
+        # быть НЕ той же компанией, о которой новость — писать обобщённо про
+        # сектор/рынок/категорию, НЕ утверждать, что именно ЭТА компания отреагировала
+        # на именно ЭТУ новость.
+        f"category — конкретный эмитент в новости НЕ назван, аномалия найдена по "
+        f"категории «{row.get('category')}». Формулируй обобщённо (сектор/рынок в целом), "
+        "НЕ приписывай движение конкретно активу ниже как прямое следствие новости."
+        if match_type == "category" else
+        "ticker — аномалия найдена по точному совпадению названной в новости компании."
+    )
     return (
         f"candidate_id: {row['id']}\n"
         f"headline: {row['headline']}\n"
         f"tickers: {', '.join(row['tickers'] or [])}\n"
         f"event_type: {row['event_type'] or ''}\n"
         f"reasoning (Шаг А): {row['reasoning'] or ''}\n"
+        f"match_type: {match_type} ({match_note})\n"
         f"matched_anomaly:\n"
         f"  asset: {row['asset_id']} ({row['asset_name'] or ''})\n"
         f"  type: {row['anomaly_type']}\n"
@@ -179,10 +216,11 @@ def run_once() -> dict:
             _SELECT_CANDIDATES, {"cutoff": cutoff, "batch_limit": BATCH_LIMIT}
         ).mappings().all()
         known_tickers = _known_tickers_line(db) if candidates else ""
+        known_categories = _known_categories_line(db) if candidates else ""
         for row in candidates:
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
-                      _step_a_payload(row, internal_token, known_tickers))
+                      _step_a_payload(row, internal_token, known_tickers, known_categories))
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_a_fired"] += 1
             except Exception as e:

@@ -116,7 +116,8 @@ _SELECT_NEW_DRAFTS = text("""
 """)
 
 _SELECT_CANDIDATE = text("""
-    SELECT id, headline, tickers, draft_text, status FROM content_candidates WHERE id = :id
+    SELECT id, headline, tickers, draft_text, status, category, match_type
+    FROM content_candidates WHERE id = :id
 """)
 
 _MARK_NOTIFIED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
@@ -150,10 +151,14 @@ def _card_view(row):
     и реальная публикация (apply_custom_emoji), чтобы «Одобрить» не преподносил
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
-    cid, headline, tickers, draft_text, status = row
+    cid, headline, tickers, draft_text, status, category, match_type = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
-    tick = html.escape(", ".join(tickers or []) or "—")
-    txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
+    tick = html.escape(", ".join(tickers or []) or (category or "—"))
+    warn = (
+        "\n🔶 <b>категория, не тикер</b> — эмитент новостью не назван, проверьте связь внимательнее\n"
+        if match_type == "category" else ""
+    )
+    txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}{warn}\n\n{body}"
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
