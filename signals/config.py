@@ -76,3 +76,17 @@ CONTENT_PENDING_DAYS = 5       # окно ожидания подтвержде�
 CONTENT_CHANNEL_ID = int(os.getenv("CONTENT_CHANNEL_ID", "0"))
 # users.id того же админа, что получает карточки — для reviewer_id (FK).
 CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
+
+# Этап 6 — MarketTwits (репост-хайп). Формула калибрована вживую 2026-07-13
+# (лонгитюдный замер 20 постов, 9 раундов за 2 часа) — два чекпоинта, не
+# постоянный поллинг. MTP_CHECKPOINT_*_MIN — окно допуска вокруг чекпоинта
+# (крон ~раз в 15 мин, точного попадания в минуту не будет).
+MARKETTWITS_CHANNEL = "markettwits"
+MTP_CHECKPOINT_1_MIN = 15
+MTP_CHECKPOINT_2_MIN = 90
+MTP_CHECKPOINT_TOLERANCE_MIN = 20   # проверяем в окне [checkpoint, checkpoint+tolerance] —
+                                     # шире кроновского интервала (~15 мин), чтобы не
+                                     # промахнуться мимо окна между двумя тиками
+MTP_HYPE_RATIO_MIN = 3.0            # ×N к медиане fwd_90 последних наблюдений — тот же
+                                     # ATR-стиль порога, что и у OI/фондов (PUBLIC_RATIO_MIN)
+MTP_BASELINE_WINDOW = 50            # сколько последних fwd_90-наблюдений берём для медианы
