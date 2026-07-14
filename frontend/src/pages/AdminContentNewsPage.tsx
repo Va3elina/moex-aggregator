@@ -11,7 +11,7 @@
  * без общего barrier-запроса, колонки друг от друга не зависят. Клик по
  * карточке → детальная модалка (полный текст/обоснование/тред).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Newspaper, RefreshCw, Repeat2, Zap, Link2 } from 'lucide-react';
 import Card from '../components/Card';
@@ -83,6 +83,31 @@ function statusTone(status: ContentCandidateStatus): 'neutral' | 'accent' | 'war
   return 'neutral';
 }
 
+// Маленькая дышащая точка — "мониторинг идёт прямо сейчас в фоне", не просто
+// статичная пилюля-статус. Цвет параметризуется через CSS-переменную (см.
+// .live-dot в index.css), respects prefers-reduced-motion сам через CSS.
+function LiveDot({ color, title }: { color: string; title: string }) {
+  return (
+    <span
+      className="live-dot inline-block rounded-full flex-shrink-0"
+      style={{
+        width: 6, height: 6, marginRight: 5,
+        backgroundColor: color,
+        ['--live-dot-color' as string]: color,
+      } as React.CSSProperties}
+      title={title}
+    />
+  );
+}
+
+// Доска живая — событийный пайплайн реально двигает карточки между колонками
+// в фоне (Шаг А/Б/Б′/В стреляют сразу, не ждут открытия страницы). Без
+// авто-обновления это было незаметно: доска выглядела статичной, хотя под
+// капотом всё движется. 40с — тот же порядок, что и в исходном плане
+// («polling 30-60с, без SSE» — нагрузка на горстку карточек в день не требует
+// сложности вебсокетов).
+const AUTO_REFRESH_MS = 40_000;
+
 export default function AdminContentNewsPage() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -97,6 +122,11 @@ export default function AdminContentNewsPage() {
       navigate('/', { replace: true });
     }
   }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    const id = setInterval(() => setRefreshTick((t) => t + 1), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
@@ -184,12 +214,36 @@ function KanbanColumn({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Карточки, появившиеся в этой колонке или изменившиеся с прошлого фетча —
+  // подсвечиваем на секунду-две, чтобы движение конвейера было ВИДНО, а не
+  // только теоретически подразумевалось. seenRef переживает ре-рендеры, не
+  // триггерит их сам.
+  const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
+  const seenRef = useRef<Map<number, string>>(new Map());
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     listContentCandidates(status, { limit: 50 })
-      .then((r) => { setItems(r.items); setTotal(r.total); })
+      .then((r) => {
+        setItems(r.items);
+        setTotal(r.total);
+        if (!isFirstLoad.current) {
+          const fresh = new Set<number>();
+          for (const it of r.items) {
+            const prevStamp = seenRef.current.get(it.id);
+            const stamp = it.updated_at || it.created_at || '';
+            if (prevStamp === undefined || prevStamp !== stamp) fresh.add(it.id);
+          }
+          if (fresh.size > 0) {
+            setFreshIds(fresh);
+            setTimeout(() => setFreshIds(new Set()), 2200);
+          }
+        }
+        isFirstLoad.current = false;
+        seenRef.current = new Map(r.items.map((it) => [it.id, it.updated_at || it.created_at || '']));
+      })
       .catch((e: Error) => setError(e.message || 'Ошибка загрузки'))
       .finally(() => setLoading(false));
   }, [status, refreshTick]);
@@ -198,9 +252,10 @@ function KanbanColumn({
     <div className="flex flex-col flex-shrink-0" style={{ width: 300, marginRight: 'var(--sp-3)' }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 'var(--sp-2)', gap: 'var(--sp-2)' }}>
         <span
-          className="font-semibold uppercase truncate"
-          style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.06em', color: meta.tint }}
+          className="font-semibold uppercase truncate inline-flex items-center"
+          style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.06em', color: meta.tint, gap: 6 }}
         >
+          {status === 'pending' && <LiveDot color={meta.tint} title="Мониторинг активен — ждём подтверждения данными" />}
           {meta.label}
         </span>
         <span
@@ -240,7 +295,12 @@ function KanbanColumn({
           </p>
         )}
         {items.map((it) => (
-          <ContentCard key={it.id} item={it} onClick={() => onOpenCard(it.id)} />
+          <ContentCard
+            key={it.id}
+            item={it}
+            fresh={freshIds.has(it.id)}
+            onClick={() => onOpenCard(it.id)}
+          />
         ))}
       </div>
     </div>
@@ -251,16 +311,29 @@ function KanbanColumn({
 // CARD
 // ════════════════════════════════════════════════════════════════════════════
 
-function ContentCard({ item, onClick }: { item: ContentCandidate; onClick: () => void }) {
+function ContentCard({
+  item, fresh, onClick,
+}: {
+  item: ContentCandidate;
+  fresh: boolean;
+  onClick: () => void;
+}) {
   const left = item.thread_key ? threadColor(item.thread_key) : 'transparent';
   const dLeft = item.status === 'pending' ? daysLeft(item.pending_expires_at) : null;
+  // Тикаем раз в 20с только чтобы форсировать пересчёт fmtRelative — без
+  // этого «3 мин назад» застывает до следующего фетча колонки.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 20_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <Card
       padding="sm"
       hoverable
       onClick={onClick}
-      className="cursor-pointer"
+      className={`cursor-pointer${fresh ? ' content-card-fresh' : ''}`}
       style={{ borderLeft: `3px solid ${left}` }}
     >
       <p
