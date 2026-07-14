@@ -51,6 +51,7 @@ rss_scan.py/etc — тот не считается попыткой ретрая
 теряется, content_match.py может поймать более позднюю аномалию заново.
 """
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -81,6 +82,11 @@ BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ 
 MAX_DISPATCH_ATTEMPTS = 3    # сколько раз ЭТОТ бэкстоп повторяет зависшего кандидата,
                               # прежде чем сдаться (см. docstring — защита от бесконечного
                               # ретрая системно сломанной Routine)
+# Найдено 2026-07-14 (session 3, см. rss_scan.py): несколько _fire() подряд без
+# паузы в одном прогоне (до BATCH_LIMIT штук) почти одновременно просят облако
+# поднять cloud-контейнер — конкуренция за мощность аккаунта роняет часть
+# попыток на этапе провижининга, ещё до старта самой Routine-сессии.
+FIRE_STAGGER_SEC = 8
 INTERNAL_API_HOST = "https://xn--80aklbnczmv.xn--p1ai"  # ⚠️ punycode: кириллица ломает curl внутри Routine
 
 _ANTHROPIC_HEADERS_BASE = {
@@ -265,6 +271,7 @@ def run_once() -> dict:
                       _step_a_payload(row, internal_token, known_tickers, known_categories))
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_a_fired"] += 1
+                time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[content_ai] step-a fire failed for candidate {row['id']}: "
@@ -287,6 +294,7 @@ def run_once() -> dict:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(row, internal_token))
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_c_fired"] += 1
+                time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[content_ai] step-c fire failed for candidate {row['id']}: "

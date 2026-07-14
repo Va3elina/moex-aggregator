@@ -32,6 +32,7 @@ content_match.py). Не нашлась — аномалия остаётся б�
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
@@ -51,6 +52,11 @@ from signals.rss_scan import RSS_FEEDS, _fetch_feed  # noqa: E402 — переи
 from signals.content_ai import (       # noqa: E402
     _fire, _step_c_payload, TRIGGER_ID_STEP_C,
 )
+
+# Найдено 2026-07-14 (session 3, см. rss_scan.py) — пауза между _fire() подряд
+# в одном прогоне, иначе несколько облачных контейнеров запрашиваются
+# одновременно и конкурируют за мощность аккаунта.
+FIRE_STAGGER_SEC = 8
 
 _SELECT_ORPHAN_ANOMALIES = text("""
     SELECT a.id, a.asset_id, a.asset_name, a.type, a.direction, a.severity_value,
@@ -191,6 +197,7 @@ def run_once() -> dict:
                         db.execute(_MARK_DISPATCHED, {"id": new_id})
                         db.commit()
                         summary["step_c_fired"] += 1
+                        time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                     except Exception as e:
                         summary["step_c_fire_errors"] += 1
                         print(f"[anomaly_context_scan] step-c fire failed for candidate "
