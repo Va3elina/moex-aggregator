@@ -128,7 +128,7 @@ interface LwChartProps {
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
  *  вне песочницы контекст null → поведение движка прежнее. Применяется к LwChart и
  *  LwChartPanes. */
-export interface ChartPrefs { lineWidth?: 1 | 2 | 3; crosshair?: boolean; grid?: boolean; lastValue?: boolean }
+export interface ChartPrefs { lineWidth?: 1 | 2 | 3; crosshair?: boolean; grid?: boolean; lastValue?: boolean; watermark?: boolean }
 export const ChartPrefsCtx = createContext<ChartPrefs | null>(null);
 
 function themeColors(dark: boolean) {
@@ -1200,7 +1200,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   return (
     <div style={{ position: 'relative', width: '100%', height }}>
       <div ref={boxRef} style={{ position: 'absolute', inset: 0 }} />
-      {watermark !== false && (
+      {watermark !== false && chartPrefs?.watermark !== false && (
         <ChartWatermark bottom={30} left={hasLeftAxisSeries ? 62 : 12} size={26} minSize={16} opacity={0.4} />
       )}
     </div>
