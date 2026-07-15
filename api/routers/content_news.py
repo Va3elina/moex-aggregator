@@ -21,6 +21,7 @@
 content_candidates (db/migrations/022_content_candidates.sql) — там же полное
 описание state machine статусов.
 """
+import html
 import os
 from typing import Optional
 
@@ -309,6 +310,38 @@ class StepCResult(BaseModel):
     declined_reason: Optional[str] = None
 
 
+# Фирменные custom-emoji Frame (пак t.me/addemoji/Frametool) — та же карта, что
+# в signals/publish/telegram.py, продублирована здесь: signals/ НЕ копируется в
+# api-образ (см. Dockerfile), а объём кода мал. НЕ синхронизировать вручную —
+# если пак поменяется, поправить в обоих местах.
+_HYPE_EMOJI_MAP = {
+    "🔥": "5454087765559909583",
+    "⛔️": "5454074292247499750",
+    "📣": "5453896063989620863",
+    "💡": "5454396453449408225",
+    "🔍": "5454392549324136501",
+    "◽️": "5454003420992151507",
+}
+_HYPE_LOGO_SIGNATURE_IDS = (
+    "5456376948768936418",  # скобка (без белого фона)
+    "5456183761139961304",  # «FRA» (без белого фона)
+    "5454037394183462308",  # «ME» (без белого фона)
+)
+_HYPE_KANBAN_URL = "https://xn--80aklbnczmv.xn--p1ai/admin/content-news"  # punycode таймфрейм.рф
+
+
+def _apply_hype_emoji(html_text: str) -> str:
+    """Заменить НАШИ декоративные plain-эмодзи на премиальные custom-emoji Frame.
+    Вызывать ПОСЛЕДНИМ шагом, когда HTML-разметка (<b>/<i>) уже настоящая —
+    в отличие от apply_custom_emoji() (signals/publish/telegram.py) эта версия
+    НЕ делает html.escape всей строки (иначе наши же теги превратились бы в текст)."""
+    logo = "".join(f'<tg-emoji emoji-id="{eid}">😀</tg-emoji>' for eid in _HYPE_LOGO_SIGNATURE_IDS)
+    result = html_text.replace("😀😀😀", logo)
+    for emoji, emoji_id in _HYPE_EMOJI_MAP.items():
+        result = result.replace(emoji, f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>')
+    return result
+
+
 def _notify_hype_colleague(source: Optional[str], headline: str, tickers: list[str],
                             importance: int, reasoning: Optional[str]) -> None:
     """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
@@ -321,13 +354,22 @@ def _notify_hype_colleague(source: Optional[str], headline: str, tickers: list[s
         return
     tick = ", ".join(tickers) if tickers else "без тикера"
     text_msg = (
-        f"📰 {source or '?'} · {tick} · значимость {importance}/5\n\n"
-        f"{headline}\n\n{reasoning or ''}"
+        f"🔍 <b>{html.escape(source or '?')}</b> · {html.escape(tick)} · "
+        f"значимость {importance}/5\n\n"
+        f"📣 {html.escape(headline or '')}\n\n"
+        f"💡 {html.escape(reasoning or '')}\n\n"
+        f"<i>😀😀😀 автопост-пайплайн</i>"
     )[:4000]
+    text_msg = _apply_hype_emoji(text_msg)
     try:
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text_msg},
+            json={
+                "chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [[
+                    {"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL},
+                ]]},
+            },
             timeout=10,
         )
     except Exception as e:
