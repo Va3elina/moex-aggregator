@@ -124,6 +124,13 @@ CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
 TG_HYPE_CHANNELS = ["markettwits", "newssmartlab"]
 MTP_CHECKPOINT_EARLY_MIN = 3        # только измерение, не влияет на решение
 MTP_CHECKPOINT_EARLY_TOLERANCE_MIN = 7
+# Промежуточный чекпоинт (найдено 2026-07-15, 95 постов с fwd_3+fwd_15): сигнал
+# на +3мин у реального хайпа виден (85-113 репостов при медиане канала ~4), но
+# зашумлён — обычные (не хайповые) посты тоже дают 35-72 к 3 минуте и потом
+# плато. Нужна точка МЕЖДУ 3 и 15, чтобы понять, где проходит реальная граница
+# (Вадим спрашивал про 8-10 минут) — тоже ТОЛЬКО измерение, не влияет на решение.
+MTP_CHECKPOINT_MID_MIN = 8
+MTP_CHECKPOINT_MID_TOLERANCE_MIN = 5
 MTP_CHECKPOINT_1_MIN = 15           # decision-чекпоинт (был 90)
 MTP_CHECKPOINT_TOLERANCE_MIN = 20   # проверяем в окне [checkpoint, checkpoint+tolerance] —
                                      # шире кроновского интервала, чтобы не промахнуться

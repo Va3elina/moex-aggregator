@@ -87,6 +87,16 @@ _UPDATE_FWD_EARLY = text("""
     WHERE channel = :channel AND message_id = :id
 """)
 
+_SELECT_PENDING_MID = text("""
+    SELECT message_id FROM tg_channel_watch
+    WHERE channel = :channel AND fwd_8 IS NULL
+      AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
+""")
+_UPDATE_FWD_MID = text("""
+    UPDATE tg_channel_watch SET fwd_8 = :fwd, fwd_8_at = now()
+    WHERE channel = :channel AND message_id = :id
+""")
+
 _SELECT_PENDING_DECISION = text("""
     SELECT message_id, posted_at, msg_text FROM tg_channel_watch
     WHERE channel = :channel AND fwd_15 IS NULL
@@ -162,6 +172,25 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             print(f"[tg_hype_scan] {channel}: checkpoint-early failed for {row['message_id']}: "
                   f"{type(e).__name__}: {e}")
 
+    # ── 2b. Промежуточный чекпоинт +8мин — ТОЖЕ только измерение ──
+    cutoff_min = now - timedelta(minutes=config.MTP_CHECKPOINT_MID_MIN)
+    cutoff_max = now - timedelta(
+        minutes=config.MTP_CHECKPOINT_MID_MIN + config.MTP_CHECKPOINT_MID_TOLERANCE_MIN)
+    pending_mid = db.execute(_SELECT_PENDING_MID, {
+        "channel": channel, "cutoff_min": cutoff_min, "cutoff_max": cutoff_max,
+    }).mappings().all()
+    for row in pending_mid:
+        try:
+            fresh = client.get_messages(entity, ids=row["message_id"])
+            fwd = (fresh.forwards or 0) if fresh else 0
+            db.execute(_UPDATE_FWD_MID, {"channel": channel, "id": row["message_id"], "fwd": fwd})
+            db.commit()
+            summary["checked_mid"] += 1
+        except Exception as e:
+            summary["errors"] += 1
+            print(f"[tg_hype_scan] {channel}: checkpoint-mid failed for {row['message_id']}: "
+                  f"{type(e).__name__}: {e}")
+
     # ── 3. Decision-чекпоинт +15мин: финальное решение о хайпе ──
     cutoff_min = now - timedelta(minutes=config.MTP_CHECKPOINT_1_MIN)
     cutoff_max = now - timedelta(minutes=config.MTP_CHECKPOINT_1_MIN + config.MTP_CHECKPOINT_TOLERANCE_MIN)
@@ -223,7 +252,7 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
 
 
 def run_once() -> dict:
-    summary = {"fetched": 0, "new_watched": 0, "checked_early": 0, "checked_decision": 0,
+    summary = {"fetched": 0, "new_watched": 0, "checked_early": 0, "checked_mid": 0, "checked_decision": 0,
                "promoted": 0, "step_a_fired": 0, "step_a_fire_errors": 0, "errors": 0}
 
     api_id = os.environ.get("MTP_API_ID", "")
