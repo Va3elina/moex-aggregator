@@ -50,7 +50,7 @@ import pipeline_heartbeat              # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 from signals.content_ai import (       # noqa: E402
-    _fire, _step_a_payload, _known_tickers_line, _known_categories_line, TRIGGER_ID_STEP_A,
+    _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
 )
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
@@ -190,11 +190,10 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             if can_fire:
                 try:
                     known_tickers = _known_tickers_line(db)
-                    known_categories = _known_categories_line(db)
                     payload = _step_a_payload(
                         {"id": new_id, "source": channel, "headline": headline,
                          "raw_text": row["msg_text"] or headline},
-                        internal_token, known_tickers, known_categories,
+                        internal_token, known_tickers,
                     )
                     _fire(TRIGGER_ID_STEP_A, token_a, payload)
                     db.execute(_MARK_DISPATCHED, {"id": new_id})

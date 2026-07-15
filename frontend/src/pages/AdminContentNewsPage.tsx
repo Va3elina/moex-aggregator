@@ -2,7 +2,7 @@
  * AdminContentNewsPage — admin-only Kanban состояний content-пайплайна («Новости»).
  *
  * Пайплайн (реализация — отдельная задача, эта страница только визуализирует
- * состояния): RSS/Telegram-агрегаторы → кросс-источниковая конвергенция →
+ * состояния): календарь MOEX + TG-каналы-хайп (MarketTwits/newssmartlab) →
  * оценка ИИ → сверка с данными (OI/потоки фондов) → черновик поста → ревью в
  * Telegram-боте → публикация. 8 колонок = 8 статусов content_candidates
  * (db/migrations/022). Источник — api/routers/content_news.py.
@@ -347,22 +347,13 @@ function ContentCard({
         {item.headline}
       </p>
 
-      {(item.source || item.tickers.length > 0 || item.category) && (
+      {(item.source || item.tickers.length > 0) && (
         <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
           {item.source && <Pill>{item.source}</Pill>}
           {item.tickers.slice(0, 4).map((t) => (
             <Pill key={t} tone="accent">{t}</Pill>
           ))}
-          {item.tickers.length === 0 && item.category && (
-            <Pill tone="warning">{item.category}</Pill>
-          )}
         </div>
-      )}
-
-      {item.match_type === 'category' && (
-        <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--warning)', marginBottom: 'var(--sp-2)' }}>
-          🔶 категория, не тикер — эмитент новостью не назван, проверьте связь внимательнее
-        </p>
       )}
 
       <div className="flex items-center justify-between" style={{ gap: 'var(--sp-2)' }}>
@@ -543,15 +534,6 @@ function CandidateDetailModal({
           {detail.tickers.length > 0 && (
             <div className="flex flex-wrap" style={{ gap: 'var(--sp-1)' }}>
               {detail.tickers.map((t) => <Pill key={t} tone="accent">{t}</Pill>)}
-            </div>
-          )}
-
-          {detail.tickers.length === 0 && detail.category && (
-            <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)' }}>
-              <Pill tone="warning">{detail.category}</Pill>
-              <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--warning)' }}>
-                🔶 категория, не тикер — эмитент новостью не назван
-              </span>
             </div>
           )}
 
