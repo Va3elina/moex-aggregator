@@ -224,6 +224,11 @@ services:
       # api/routers/content_news.py:_notify_hype_colleague).
       - HYPE_NOTIFY_BOT_TOKEN=${HYPE_NOTIFY_BOT_TOKEN:-}
       - HYPE_NOTIFY_CHAT_ID=${HYPE_NOTIFY_CHAT_ID:-}
+      # Cloudflare-релей для обхода РКН — api.telegram.org недоступен напрямую
+      # с прод-сервера (см. signals/publish/telegram.py). Без этой переменной
+      # _notify_hype_colleague падает с ConnectionError "Network is unreachable"
+      # (живой инцидент 2026-07-15).
+      - TELEGRAM_API_ROOT=${TELEGRAM_API_ROOT:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
       # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).

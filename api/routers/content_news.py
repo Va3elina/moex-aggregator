@@ -368,9 +368,15 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
     if source_url:
         buttons.insert(0, {"text": "Открыть пост", "url": source_url})
+    # api.telegram.org НЕ доступен напрямую с прод-сервера (РФ, РКН) — та же
+    # проблема, что и у остальных ботов (см. signals/publish/telegram.py),
+    # обходится тем же Cloudflare-релеем через TELEGRAM_API_ROOT. Живой
+    # инцидент 2026-07-15: первые 2 реальных кандидата после деплоя фичи упали
+    # с ConnectionError "Network is unreachable" при прямом обращении.
+    api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     try:
         requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
+            f"{api_root}/bot{token}/sendMessage",
             json={
                 "chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
                 "reply_markup": {"inline_keyboard": [buttons]},
