@@ -393,7 +393,13 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     if row["status"] != "candidate":
         raise HTTPException(status_code=409, detail=f"Ожидался статус 'candidate', сейчас '{row['status']}'")
 
-    if not body.relevant or body.importance_1_5 < 3:
+    if not body.relevant:
+        # Шум/шутка/пустышка — ИИ сам решил, что это не новость вообще. Единственный
+        # случай, когда коллега НЕ получает уведомление (см. ниже) — остальные
+        # ветки (низкая importance / нет тикера) для "завода постов" — брак, но
+        # коллеге всё равно интересны (2026-07-15, запрос Вадима: коллеге — любой
+        # реальный хайп по всем темам, "заводу" — только то, что можно смэтчить
+        # с тикером).
         db.execute(text("""
             UPDATE content_candidates
             SET status = 'discarded', tickers = :tickers, event_type = :event_type,
@@ -404,10 +410,24 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
         db.commit()
         return {"status": "discarded"}
 
-    # Прошёл и хайп-фильтр (иначе кандидата бы не создали), и Шаг А (релевантно,
-    # значимость ≥3) — коллега видит его независимо от исхода резолва тикера ниже.
+    # Прошёл хайп-фильтр (иначе кандидата бы не создали) И Шаг А признал реальной
+    # новостью (не шум/шутка) — коллега видит его НЕЗАВИСИМО от importance-порога
+    # "завода постов" ниже (тот калиброван под "можно ли написать пост про
+    # конкретную компанию" — разные критерии, макро/геополитика без тикера тоже
+    # интересны коллеге, даже если "заводу" их писать не из чего).
     _notify_hype_colleague(row["source"], row["headline"], body.tickers,
                             body.importance_1_5, body.reasoning)
+
+    if body.importance_1_5 < 3:
+        db.execute(text("""
+            UPDATE content_candidates
+            SET status = 'discarded', tickers = :tickers, event_type = :event_type,
+                importance_1_5 = :importance, reasoning = :reasoning, updated_at = now()
+            WHERE id = :id
+        """), {"id": candidate_id, "tickers": body.tickers, "event_type": body.event_type,
+               "importance": body.importance_1_5, "reasoning": body.reasoning})
+        db.commit()
+        return {"status": "discarded"}
 
     futures_ticker = None
     for t in body.tickers:
