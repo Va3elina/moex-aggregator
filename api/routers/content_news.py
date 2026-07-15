@@ -342,33 +342,38 @@ def _apply_hype_emoji(html_text: str) -> str:
     return result
 
 
-def _notify_hype_colleague(source: Optional[str], headline: str, tickers: list[str],
+def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optional[str],
+                            source_url: Optional[str], tickers: list[str],
                             importance: int, reasoning: Optional[str]) -> None:
     """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
     прошедшем и хайп-фильтр (tg_hype_scan.py — иначе кандидата бы не было), и Шаг А
     (ИИ-фильтр релевантности) — независимо от того, резолвился ли потом тикер.
-    Best-effort: сбой отправки НЕ должен ронять приёмку результата Шага А."""
+    Полный текст исходного поста (не только заголовок) + ссылка на оригинал в
+    MarketTwits/Smartlab (запрос Вадима 2026-07-15). Best-effort: сбой отправки
+    НЕ должен ронять приёмку результата Шага А."""
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
     chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
     if not token or not chat_id:
         return
     tick = ", ".join(tickers) if tickers else "без тикера"
+    body = raw_text or headline or ""
     text_msg = (
         f"🔍 <b>{html.escape(source or '?')}</b> · {html.escape(tick)} · "
         f"значимость {importance}/5\n\n"
-        f"📣 {html.escape(headline or '')}\n\n"
+        f"📣 {html.escape(body)}\n\n"
         f"💡 {html.escape(reasoning or '')}\n\n"
         f"<i>😀😀😀 автопост-пайплайн</i>"
     )[:4000]
     text_msg = _apply_hype_emoji(text_msg)
+    buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
+    if source_url:
+        buttons.insert(0, {"text": "Открыть пост", "url": source_url})
     try:
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={
                 "chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
-                "reply_markup": {"inline_keyboard": [[
-                    {"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL},
-                ]]},
+                "reply_markup": {"inline_keyboard": [buttons]},
             },
             timeout=10,
         )
@@ -385,7 +390,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     без единого шанса когда-либо подтвердиться (content_match.py требует
     futures_ticker IS NOT NULL)."""
     row = db.execute(
-        text("SELECT status, source, headline FROM content_candidates WHERE id = :id"),
+        text("SELECT status, source, headline, raw_text, source_url FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
@@ -415,8 +420,8 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     # "завода постов" ниже (тот калиброван под "можно ли написать пост про
     # конкретную компанию" — разные критерии, макро/геополитика без тикера тоже
     # интересны коллеге, даже если "заводу" их писать не из чего).
-    _notify_hype_colleague(row["source"], row["headline"], body.tickers,
-                            body.importance_1_5, body.reasoning)
+    _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"],
+                            body.tickers, body.importance_1_5, body.reasoning)
 
     if body.importance_1_5 < 3:
         db.execute(text("""

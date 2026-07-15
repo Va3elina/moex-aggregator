@@ -110,9 +110,9 @@ _EXISTS_CANDIDATE = text(
 )
 _INSERT_CANDIDATE = text("""
     INSERT INTO content_candidates
-        (status, source, headline, raw_text, tickers, created_at, updated_at)
+        (status, source, headline, raw_text, tickers, source_url, created_at, updated_at)
     VALUES
-        ('candidate', :channel, :headline, :raw_text, ARRAY[]::text[], now(), now())
+        ('candidate', :channel, :headline, :raw_text, ARRAY[]::text[], :source_url, now(), now())
     RETURNING id
 """)
 _MARK_DISPATCHED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
@@ -193,6 +193,7 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
 
             new_id = db.execute(_INSERT_CANDIDATE, {
                 "channel": channel, "headline": headline, "raw_text": row["msg_text"] or headline,
+                "source_url": f"https://t.me/{channel}/{row['message_id']}",
             }).scalar()
             db.execute(_MARK_PROMOTED, {"channel": channel, "id": row["message_id"]})
             db.commit()
