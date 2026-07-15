@@ -95,8 +95,6 @@ PUBLIC_FUND_MIN_NAV_FRAC = 0.0
 
 # ─── Content-пайплайн («завод постов») ──────────────────────────────────────
 CALENDAR_LOOKAHEAD_DAYS = 14   # на сколько дней вперёд смотрит MOEX-календарь
-CONTENT_WINDOW_HOURS = 6       # окно кросс-издательской конвергенции RSS
-CONTENT_WORD_OVERLAP_MIN = 3   # минимум значимых слов пересечения между источниками
 CONTENT_IMPORTANCE_MIN = 3     # порог значимости (Шаг А) для продолжения в pending
 CONTENT_PENDING_DAYS = 5       # окно ожидания подтверждения данными (Шаг Б)
 
@@ -110,11 +108,14 @@ CONTENT_CHANNEL_ID = int(os.getenv("CONTENT_CHANNEL_ID", "0"))
 # users.id того же админа, что получает карточки — для reviewer_id (FK).
 CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
 
-# Этап 6 — MarketTwits (репост-хайп). Формула калибрована вживую 2026-07-13
-# (лонгитюдный замер 20 постов, 9 раундов за 2 часа) — два чекпоинта, не
-# постоянный поллинг. MTP_CHECKPOINT_*_MIN — окно допуска вокруг чекпоинта
-# (крон ~раз в 15 мин, точного попадания в минуту не будет).
-MARKETTWITS_CHANNEL = "markettwits"
+# Этап 6 — репост-хайп TG-каналов (MarketTwits + newssmartlab). Формула
+# калибрована вживую 2026-07-13 на @markettwits (лонгитюдный замер 20 постов,
+# 9 раундов за 2 часа) — два чекпоинта, не постоянный поллинг. Baseline
+# (медиана fwd_90) считается ОТДЕЛЬНО по каждому каналу (tg_channel_watch.channel) —
+# репосты у разных каналов не сравнимы напрямую (разный размер аудитории).
+# MTP_CHECKPOINT_*_MIN — окно допуска вокруг чекпоинта (крон ~раз в 15 мин,
+# точного попадания в минуту не будет).
+TG_HYPE_CHANNELS = ["markettwits", "newssmartlab"]
 MTP_CHECKPOINT_1_MIN = 15
 MTP_CHECKPOINT_2_MIN = 90
 MTP_CHECKPOINT_TOLERANCE_MIN = 20   # проверяем в окне [checkpoint, checkpoint+tolerance] —
@@ -123,12 +124,3 @@ MTP_CHECKPOINT_TOLERANCE_MIN = 20   # проверяем в окне [checkpoint
 MTP_HYPE_RATIO_MIN = 3.0            # ×N к медиане fwd_90 последних наблюдений — тот же
                                      # ATR-стиль порога, что и у OI/фондов (PUBLIC_RATIO_MIN)
 MTP_BASELINE_WINDOW = 50            # сколько последних fwd_90-наблюдений берём для медианы
-
-# Шаг Б′ — «аномалия сначала» (обратное направление, найдено 2026-07-14).
-# Порог ВЫШЕ пассивной сверки (Шаг Б) — здесь мы САМИ идём искать повод,
-# а не подтверждаем уже пришедшую новость, планка строже.
-ANOMALY_FIRST_RATIO_MIN = 5.0
-ANOMALY_FIRST_MIN_AGE_HOURS = 24     # дать шанс обычным каналам (RSS/MarketTwits) поймать раньше
-ANOMALY_FIRST_MAX_AGE_DAYS = 4       # старше — уже не повод для свежего поста
-ANOMALY_FIRST_NEWS_WINDOW_DAYS = 2   # окно поиска новости вокруг даты сигнала (±)
-ANOMALY_FIRST_SOURCES_MIN = 2        # минимум независимых изданий для подтверждения
