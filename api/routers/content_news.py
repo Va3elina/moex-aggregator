@@ -24,6 +24,7 @@ content_candidates (db/migrations/022_content_candidates.sql) — там же п
 import os
 from typing import Optional
 
+import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -308,6 +309,31 @@ class StepCResult(BaseModel):
     declined_reason: Optional[str] = None
 
 
+def _notify_hype_colleague(source: Optional[str], headline: str, tickers: list[str],
+                            importance: int, reasoning: Optional[str]) -> None:
+    """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
+    прошедшем и хайп-фильтр (tg_hype_scan.py — иначе кандидата бы не было), и Шаг А
+    (ИИ-фильтр релевантности) — независимо от того, резолвился ли потом тикер.
+    Best-effort: сбой отправки НЕ должен ронять приёмку результата Шага А."""
+    token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
+    chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    tick = ", ".join(tickers) if tickers else "без тикера"
+    text_msg = (
+        f"📰 {source or '?'} · {tick} · значимость {importance}/5\n\n"
+        f"{headline}\n\n{reasoning or ''}"
+    )[:4000]
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text_msg},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[content_news] hype-notify failed for candidate: {type(e).__name__}: {e}")
+
+
 @internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token)])
 def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага А (извлечение). Тут же — Шаг А2 (маппинг тикера,
@@ -317,7 +343,8 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     без единого шанса когда-либо подтвердиться (content_match.py требует
     futures_ticker IS NOT NULL)."""
     row = db.execute(
-        text("SELECT status FROM content_candidates WHERE id = :id"), {"id": candidate_id},
+        text("SELECT status, source, headline FROM content_candidates WHERE id = :id"),
+        {"id": candidate_id},
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Кандидат не найден")
@@ -334,6 +361,11 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
                "importance": body.importance_1_5, "reasoning": body.reasoning})
         db.commit()
         return {"status": "discarded"}
+
+    # Прошёл и хайп-фильтр (иначе кандидата бы не создали), и Шаг А (релевантно,
+    # значимость ≥3) — коллега видит его независимо от исхода резолва тикера ниже.
+    _notify_hype_colleague(row["source"], row["headline"], body.tickers,
+                            body.importance_1_5, body.reasoning)
 
     futures_ticker = None
     for t in body.tickers:
