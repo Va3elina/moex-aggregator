@@ -344,27 +344,26 @@ def _apply_hype_emoji(html_text: str) -> str:
 
 def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optional[str],
                             source_url: Optional[str], tickers: list[str],
-                            importance: int, reasoning: Optional[str]) -> None:
+                            importance: int) -> None:
     """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
     прошедшем и хайп-фильтр (tg_hype_scan.py — иначе кандидата бы не было), и Шаг А
     (ИИ-фильтр релевантности) — независимо от того, резолвился ли потом тикер.
-    Полный текст исходного поста (не только заголовок) + ссылка на оригинал в
-    MarketTwits/Smartlab (запрос Вадима 2026-07-15). Best-effort: сбой отправки
-    НЕ должен ронять приёмку результата Шага А."""
+    Минимум наших правок (запрос Вадима 2026-07-15) — сам пост идёт ВЕРБАТИМ, как
+    в источнике: только html.escape, БЕЗ подстановки кастом-эмодзи Frame (та
+    портила бы визуал оригинала, если в посте уже есть похожий эмодзи) и без
+    декоративного обвеса/подписи. Однострочная шапка (источник/тикер/значимость)
+    — это метаданные ОТ НАС, не часть поста, ей эмодзи-замена не грозит визуалу
+    оригинала. Best-effort: сбой отправки НЕ должен ронять приёмку Шага А."""
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
     chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
     if not token or not chat_id:
         return
     tick = ", ".join(tickers) if tickers else "без тикера"
     body = raw_text or headline or ""
-    text_msg = (
-        f"🔍 <b>{html.escape(source or '?')}</b> · {html.escape(tick)} · "
-        f"значимость {importance}/5\n\n"
-        f"📣 {html.escape(body)}\n\n"
-        f"💡 {html.escape(reasoning or '')}\n\n"
-        f"<i>😀😀😀 автопост-пайплайн</i>"
-    )[:4000]
-    text_msg = _apply_hype_emoji(text_msg)
+    header = _apply_hype_emoji(
+        f"<b>{html.escape(source or '?')}</b> · {html.escape(tick)} · значимость {importance}/5"
+    )
+    text_msg = f"{header}\n\n{html.escape(body)}"[:4000]
     buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
     if source_url:
         buttons.insert(0, {"text": "Открыть пост", "url": source_url})
@@ -427,7 +426,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     # конкретную компанию" — разные критерии, макро/геополитика без тикера тоже
     # интересны коллеге, даже если "заводу" их писать не из чего).
     _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"],
-                            body.tickers, body.importance_1_5, body.reasoning)
+                            body.tickers, body.importance_1_5)
 
     if body.importance_1_5 < 3:
         db.execute(text("""
