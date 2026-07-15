@@ -311,10 +311,11 @@ class StepCResult(BaseModel):
 @internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token)])
 def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага А (извлечение). Тут же — Шаг А2 (маппинг тикера,
-    БЕЗ ИИ): резолвим первый известный тикер через ticker_futures_map. Если
-    ничего не резолвилось — кандидат всё равно уходит в pending, но
-    content_match.py (Шаг Б) требует futures_ticker IS NOT NULL, так что просто
-    зависнет непроверенным до ручного добавления тикера в справочник."""
+    БЕЗ ИИ): резолвим первый известный тикер через ticker_futures_map. Категорийный
+    фолбэк убран (2026-07-15) — матчим СТРОГО по тикеру, поэтому если ничего не
+    резолвилось, кандидат отбрасывается сразу, а не зависает в pending на 5 дней
+    без единого шанса когда-либо подтвердиться (content_match.py требует
+    futures_ticker IS NOT NULL)."""
     row = db.execute(
         text("SELECT status FROM content_candidates WHERE id = :id"), {"id": candidate_id},
     ).mappings().first()
@@ -342,6 +343,23 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
         if m:
             futures_ticker = m
             break
+
+    if not futures_ticker:
+        db.execute(text("""
+            UPDATE content_candidates
+            SET status = 'discarded', tickers = :tickers, event_type = :event_type,
+                importance_1_5 = :importance,
+                reasoning = :reasoning, updated_at = now()
+            WHERE id = :id
+        """), {
+            "id": candidate_id, "tickers": body.tickers, "event_type": body.event_type,
+            "importance": body.importance_1_5,
+            "reasoning": (body.reasoning or "") +
+                         " [конкретный тикер не резолвился — категорийный матчинг убран, "
+                         "точного совпадения для Шага Б нет]",
+        })
+        db.commit()
+        return {"status": "discarded"}
 
     db.execute(text("""
         UPDATE content_candidates
