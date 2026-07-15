@@ -104,34 +104,71 @@ def _row_to_out(r) -> ContentCandidateOut:
 @router.get("", response_model=ContentCandidateListOut)
 def list_candidates(
     status: str = Query(..., description="одна из колонок доски — см. STATUS_VALUES"),
+    source: Optional[str] = Query(None, description="фильтр по источнику (markettwits/newssmartlab/moex_calendar)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     """Карточки одной колонки Kanban, свежие сначала. Фронт зовёт это по разу
-    на каждую из 8 колонок (без общего barrier-запроса — колонки independent)."""
+    на каждую из 8 колонок (без общего barrier-запроса — колонки independent).
+    source — необязательный фильтр (переключатель источника на доске), не путать
+    со status: колонка = status, вкладка над доской = source."""
     if status not in STATUS_VALUES:
         raise HTTPException(status_code=422, detail=f"Неизвестный статус: {status}")
 
+    where_source = "AND source = :source" if source else ""
+    params = {"status": status, "limit": limit, "offset": offset}
+    if source:
+        params["source"] = source
+
     total = db.execute(
-        text("SELECT count(*) FROM content_candidates WHERE status = :status"),
-        {"status": status},
+        text(f"SELECT count(*) FROM content_candidates WHERE status = :status {where_source}"),
+        params,
     ).scalar() or 0
 
     rows = db.execute(
         text(f"""
             SELECT {_COLUMNS} FROM content_candidates
-            WHERE status = :status
+            WHERE status = :status {where_source}
             ORDER BY created_at DESC
             LIMIT :limit OFFSET :offset
         """),
-        {"status": status, "limit": limit, "offset": offset},
+        params,
     ).mappings().all()
 
     return ContentCandidateListOut(
         items=[_row_to_out(r) for r in rows], total=total, limit=limit, offset=offset,
     )
+
+
+class SourceStatsOut(BaseModel):
+    source: str
+    total: int
+    by_status: dict[str, int]
+
+
+@router.get("/stats/by-source", response_model=list[SourceStatsOut])
+def stats_by_source(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Статистика по источникам (markettwits/newssmartlab/moex_calendar) — сколько
+    новостей каждый источник поставил и на какой стадии они сейчас. Источники
+    считаются НЕЗАВИСИМО (одна и та же новость, пойманная и MarketTwits, и
+    Smartlab, — это ДВЕ разные строки content_candidates, дубли не схлопываются
+    здесь намеренно, чтобы видеть вклад каждого канала отдельно)."""
+    rows = db.execute(text("""
+        SELECT COALESCE(source, '(без источника)') AS source, status, count(*) AS cnt
+        FROM content_candidates
+        GROUP BY source, status
+    """)).mappings().all()
+
+    by_source: dict[str, dict[str, int]] = {}
+    for r in rows:
+        by_source.setdefault(r["source"], {})[r["status"]] = r["cnt"]
+
+    return [
+        SourceStatsOut(source=src, total=sum(counts.values()), by_status=counts)
+        for src, counts in sorted(by_source.items(), key=lambda kv: -sum(kv[1].values()))
+    ]
 
 
 @router.get("/{candidate_id}", response_model=ContentCandidateDetailOut)

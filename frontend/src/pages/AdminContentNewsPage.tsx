@@ -22,12 +22,25 @@ import {
   listContentCandidates,
   getContentCandidateDetail,
   updateContentCandidateStatus,
+  getContentCandidateStatsBySource,
 } from '../services/api';
 import type {
   ContentCandidate,
   ContentCandidateDetail,
   ContentCandidateStatus,
+  ContentCandidateSourceStats,
 } from '../services/api';
+
+// Человекочитаемые названия источников — остальные (напр. будущие каналы)
+// просто показываются как есть (raw source из БД).
+const SOURCE_LABELS: Record<string, string> = {
+  markettwits: 'MarketTwits',
+  newssmartlab: 'Smartlab',
+  moex_calendar: 'Календарь MOEX',
+};
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] || source;
+}
 
 const COLUMN_ORDER: ContentCandidateStatus[] = [
   'candidate', 'discarded', 'pending', 'draft_ready',
@@ -113,6 +126,7 @@ export default function AdminContentNewsPage() {
   const navigate = useNavigate();
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
 
   // Guard: только admin (тот же паттерн, что AdminStatsPage — silent redirect,
   // реальный гейт всё равно на бэке через require_admin).
@@ -176,12 +190,19 @@ export default function AdminContentNewsPage() {
         </button>
       </div>
 
+      <SourceStatsBar
+        refreshTick={refreshTick}
+        active={sourceFilter}
+        onSelect={setSourceFilter}
+      />
+
       {/* Board — горизонтальный скролл колонок (работает и на мобилке свайпом) */}
       <div className="flex items-start overflow-x-auto" style={{ paddingBottom: 'var(--sp-3)' }}>
         {COLUMN_ORDER.map((status) => (
           <KanbanColumn
             key={status}
             status={status}
+            source={sourceFilter}
             refreshTick={refreshTick}
             onOpenCard={setSelectedId}
           />
@@ -199,13 +220,92 @@ export default function AdminContentNewsPage() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// SOURCE STATS BAR — вкладки-переключатели «Все / MarketTwits / Smartlab / …»
+// над доской + счётчик на каждой. Источники считаются НЕЗАВИСИМО: одна и та же
+// новость, пойманная и MarketTwits, и Smartlab, — это ДВЕ разные строки
+// content_candidates (см. api/routers/content_news.py:stats_by_source), дубли
+// намеренно не схлопываются — так видно вклад каждого канала отдельно.
+// ════════════════════════════════════════════════════════════════════════════
+
+function SourceStatsBar({
+  refreshTick, active, onSelect,
+}: {
+  refreshTick: number;
+  active: string | null;
+  onSelect: (source: string | null) => void;
+}) {
+  const [stats, setStats] = useState<ContentCandidateSourceStats[]>([]);
+
+  useEffect(() => {
+    getContentCandidateStatsBySource().then(setStats).catch(() => setStats([]));
+  }, [refreshTick]);
+
+  if (stats.length === 0) return null;
+  const total = stats.reduce((s, r) => s + r.total, 0);
+
+  return (
+    <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)', marginBottom: 'var(--sp-4)' }}>
+      <SourceTab label="Все источники" count={total} active={active === null} onClick={() => onSelect(null)} />
+      {stats.map((s) => (
+        <SourceTab
+          key={s.source}
+          label={sourceLabel(s.source)}
+          count={s.total}
+          active={active === s.source}
+          onClick={() => onSelect(s.source)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SourceTab({
+  label, count, active, onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="editorial-press inline-flex items-center rounded-full font-semibold"
+      style={{
+        gap: 6,
+        padding: 'var(--sp-1) var(--sp-3)',
+        fontSize: 'var(--fs-xs)',
+        border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border-color)'}`,
+        backgroundColor: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+      }}
+    >
+      {label}
+      <span
+        className="rounded-full font-semibold"
+        style={{
+          fontSize: 'var(--fs-2xs)',
+          padding: '0 6px',
+          color: active ? 'var(--accent)' : 'var(--text-muted)',
+          backgroundColor: 'var(--bg-secondary)',
+        }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // KANBAN COLUMN
 // ════════════════════════════════════════════════════════════════════════════
 
 function KanbanColumn({
-  status, refreshTick, onOpenCard,
+  status, source, refreshTick, onOpenCard,
 }: {
   status: ContentCandidateStatus;
+  source: string | null;
   refreshTick: number;
   onOpenCard: (id: number) => void;
 }) {
@@ -225,7 +325,7 @@ function KanbanColumn({
   useEffect(() => {
     setLoading(true);
     setError(null);
-    listContentCandidates(status, { limit: 50 })
+    listContentCandidates(status, { limit: 50, source: source || undefined })
       .then((r) => {
         setItems(r.items);
         setTotal(r.total);
@@ -246,7 +346,7 @@ function KanbanColumn({
       })
       .catch((e: Error) => setError(e.message || 'Ошибка загрузки'))
       .finally(() => setLoading(false));
-  }, [status, refreshTick]);
+  }, [status, source, refreshTick]);
 
   return (
     <div className="flex flex-col flex-shrink-0" style={{ width: 300, marginRight: 'var(--sp-3)' }}>
@@ -349,7 +449,7 @@ function ContentCard({
 
       {(item.source || item.tickers.length > 0) && (
         <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
-          {item.source && <Pill>{item.source}</Pill>}
+          {item.source && <Pill>{sourceLabel(item.source)}</Pill>}
           {item.tickers.slice(0, 4).map((t) => (
             <Pill key={t} tone="accent">{t}</Pill>
           ))}
@@ -525,7 +625,7 @@ function CandidateDetailModal({
         <div className="flex flex-col" style={{ gap: 'var(--sp-3)' }}>
           <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)' }}>
             <Pill tone={statusTone(detail.status)}>{STATUS_META[detail.status].label}</Pill>
-            {detail.source && <Pill>{detail.source}</Pill>}
+            {detail.source && <Pill>{sourceLabel(detail.source)}</Pill>}
             {detail.importance_1_5 != null && (
               <Pill tone="accent">Значимость {detail.importance_1_5}/5</Pill>
             )}
