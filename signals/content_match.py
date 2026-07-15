@@ -47,10 +47,10 @@ from signals.content_ai import (           # noqa: E402
 FIRE_STAGGER_SEC = 8
 
 _SELECT_PENDING = text("""
-    SELECT id, futures_ticker, category, thread_key, created_at, pending_expires_at,
+    SELECT id, futures_ticker, thread_key, created_at, pending_expires_at,
            last_checked_at, headline, tickers, event_type, reasoning
     FROM content_candidates
-    WHERE status = 'pending' AND (futures_ticker IS NOT NULL OR category IS NOT NULL)
+    WHERE status = 'pending' AND futures_ticker IS NOT NULL
 """)
 
 _ALREADY_USED = text("""
@@ -74,28 +74,9 @@ _FIND_MATCH = text("""
     LIMIT 1
 """)
 
-# Категорийный fallback (найдено 2026-07-14, session 3, db/migrations/027) — когда
-# новость не называет конкретную компанию, но Шаг А определил тему (category).
-# Тут, В ОТЛИЧИЕ от _FIND_MATCH, разные строки — это РАЗНЫЕ активы (не повторные
-# сигналы одного и того же), поэтому порядок другой: берём САМУЮ СИЛЬНУЮ аномалию
-# в категории (severity_value DESC), а не самую раннюю — это самый заметный повод
-# для поста, а не "первое подтверждение" (нечего подтверждать — конкретный актив
-# новостью не назван).
-_FIND_MATCH_BY_CATEGORY = text("""
-    SELECT a.id, a.signal_date, a.severity_value, a.direction, a.headline,
-           a.asset_id, a.asset_name, a.type
-    FROM anomalies a
-    JOIN asset_category_map m ON m.sectype = a.asset_id
-    WHERE m.category = :category
-      AND a.signal_date BETWEEN :date_from AND :date_to
-      AND a.id != ALL(:exclude_ids)
-    ORDER BY a.severity_value DESC, a.signal_date ASC, a.id ASC
-    LIMIT 1
-""")
-
 _MARK_DRAFT_READY = text("""
     UPDATE content_candidates
-    SET status = 'draft_ready', matched_anomaly_id = :anomaly_id, match_type = :match_type,
+    SET status = 'draft_ready', matched_anomaly_id = :anomaly_id,
         last_checked_at = now(), updated_at = now()
     WHERE id = :id
 """)
@@ -132,14 +113,10 @@ def run_once() -> dict:
         for row in pending:
             try:
                 ft = row["futures_ticker"]
-                category = row["category"]
 
                 # Дневные-only активы: не проверять повторно чаще раза в сутки —
                 # новых данных всё равно не будет до следующего EOD-снэпшота.
-                # Категорийные кандидаты (ft отсутствует) в эту логику не попадают —
-                # категория обычно покрывает несколько активов сразу, среди которых
-                # почти всегда есть интрадей, троттлить нечем.
-                if ft and not has_intraday_oi(ft):
+                if not has_intraday_oi(ft):
                     lc = row["last_checked_at"]
                     if lc and lc.astimezone(timezone.utc).date() == now.date():
                         summary["skipped_daily_already_checked"] += 1
@@ -157,22 +134,14 @@ def run_once() -> dict:
                 date_from = created.date() - timedelta(days=1)
                 date_to = created.date() + timedelta(days=config.CONTENT_PENDING_DAYS)
 
-                if ft:
-                    match = db.execute(_FIND_MATCH, {
-                        "futures_ticker": ft, "date_from": date_from, "date_to": date_to,
-                        "exclude_ids": used,
-                    }).mappings().first()
-                    match_type = "ticker"
-                else:
-                    match = db.execute(_FIND_MATCH_BY_CATEGORY, {
-                        "category": category, "date_from": date_from, "date_to": date_to,
-                        "exclude_ids": used,
-                    }).mappings().first()
-                    match_type = "category"
+                match = db.execute(_FIND_MATCH, {
+                    "futures_ticker": ft, "date_from": date_from, "date_to": date_to,
+                    "exclude_ids": used,
+                }).mappings().first()
 
                 if match:
                     db.execute(_MARK_DRAFT_READY, {
-                        "id": row["id"], "anomaly_id": match["id"], "match_type": match_type,
+                        "id": row["id"], "anomaly_id": match["id"],
                     })
                     db.commit()  # ДО fire — Routine PATCH'ит через отдельное соединение (API)
                     summary["matched"] += 1
@@ -183,7 +152,6 @@ def run_once() -> dict:
                                 "id": row["id"], "headline": row["headline"],
                                 "tickers": row["tickers"], "event_type": row["event_type"],
                                 "reasoning": row["reasoning"],
-                                "category": category, "match_type": match_type,
                                 "asset_id": match["asset_id"], "asset_name": match["asset_name"],
                                 "anomaly_type": match["type"], "direction": match["direction"],
                                 "severity_value": match["severity_value"],
