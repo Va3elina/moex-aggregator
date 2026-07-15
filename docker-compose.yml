@@ -220,6 +220,10 @@ services:
       # callback от Шага А/В (см. api/routers/content_news.py internal_router).
       # Пусто = /api/internal/content-news/* всегда 403 (безопасный дефолт).
       - CONTENT_AI_INTERNAL_TOKEN=${CONTENT_AI_INTERNAL_TOKEN:-}
+      # Уведомление коллеги о кандидатах, прошедших хайп+ИИ-фильтр (@hypeframebot,
+      # api/routers/content_news.py:_notify_hype_colleague).
+      - HYPE_NOTIFY_BOT_TOKEN=${HYPE_NOTIFY_BOT_TOKEN:-}
+      - HYPE_NOTIFY_CHAT_ID=${HYPE_NOTIFY_CHAT_ID:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
       # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).
