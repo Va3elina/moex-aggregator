@@ -41,7 +41,7 @@ from signals.content_ai import (           # noqa: E402
     _fire, _step_c_payload, TRIGGER_ID_STEP_C,
 )
 
-# Найдено 2026-07-14 (session 3, см. rss_scan.py) — пауза между _fire() подряд
+# Найдено 2026-07-14 (session 3) — пауза между _fire() подряд
 # в одном прогоне, иначе несколько облачных контейнеров запрашиваются
 # одновременно и конкурируют за мощность аккаунта.
 FIRE_STAGGER_SEC = 8
