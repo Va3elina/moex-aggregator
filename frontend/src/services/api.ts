@@ -2033,15 +2033,31 @@ export interface ContentCandidateList {
 
 export async function listContentCandidates(
   status: ContentCandidateStatus,
-  opts: { limit?: number; offset?: number } = {},
+  opts: { limit?: number; offset?: number; source?: string } = {},
 ): Promise<ContentCandidateList> {
   const params = new URLSearchParams({ status });
   if (opts.limit !== undefined) params.set('limit', String(opts.limit));
   if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  if (opts.source) params.set('source', opts.source);
   const response = await apiFetch(`${API_BASE}/api/admin/content-candidates?${params}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error('Доступ только для администратора');
     throw new Error('Failed to fetch content candidates');
+  }
+  return response.json();
+}
+
+export interface ContentCandidateSourceStats {
+  source: string;
+  total: number;
+  by_status: Record<string, number>;
+}
+
+export async function getContentCandidateStatsBySource(): Promise<ContentCandidateSourceStats[]> {
+  const response = await apiFetch(`${API_BASE}/api/admin/content-candidates/stats/by-source`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch content candidate source stats');
   }
   return response.json();
 }
