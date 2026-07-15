@@ -241,6 +241,9 @@ export default function SandboxPage() {
   // Дефолты графиков → во все панели (мемо, чтобы не пересоздавать чарты каждый рендер).
   const chartPrefsValue = useMemo<ChartPrefs>(() => ({
     lineWidth: prefs.lineW, crosshair: prefs.crosshair, grid: prefs.chartGrid, lastValue: prefs.lastValue,
+    // Песочница — приватный конструктор-терминал (не сайтовая витрина), водяной
+    // знак «Фрейм» на графиках здесь ни к чему (панелей и так тесно).
+    watermark: false,
   }), [prefs.lineW, prefs.crosshair, prefs.chartGrid, prefs.lastValue]);
 
   // init zTop из загруженной раскладки
