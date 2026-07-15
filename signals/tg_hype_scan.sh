@@ -1,8 +1,9 @@
 #!/bin/bash
 # Wrapper: Этап 6 content-пайплайна — репост-хайп TG-каналов (MTProto),
 # см. config.TG_HYPE_CHANNELS (markettwits, newssmartlab).
-# Раз в 15 минут (чекпоинты дискретные, см. модульную докстроку):
-#   */15 * * * * /opt/frame/signals/tg_hype_scan.sh >> /opt/frame/logs/tg_hype_scan.log 2>&1
+# Раз в 5 минут (чаще, чем раньше — нужно поймать узкое окно измерительного
+# чекпоинта +3мин; чекпоинты дискретные, см. модульную докстроку):
+#   */5 * * * * /opt/frame/signals/tg_hype_scan.sh >> /opt/frame/logs/tg_hype_scan.log 2>&1
 set -eu
 
 cd /opt/frame
