@@ -114,9 +114,10 @@ _SELECT_CANDIDATES = text("""
 """)
 
 _SELECT_DRAFT_READY = text("""
-    SELECT c.id, c.headline, c.tickers, c.event_type, c.futures_ticker, c.reasoning,
-           c.dispatch_attempts,
-           a.asset_id, a.asset_name, a.type AS anomaly_type, a.direction,
+    SELECT c.id, c.headline, c.raw_text, c.tickers, c.event_type, c.futures_ticker,
+           c.reasoning, c.dispatch_attempts, c.forwards_count,
+           a.id AS anomaly_id, a.asset_id, a.asset_name, a.type AS anomaly_type,
+           a.clgroup AS anomaly_clgroup, a.direction,
            a.severity_value, a.signal_date, a.headline AS anomaly_headline
     FROM content_candidates c
     JOIN anomalies a ON a.id = c.matched_anomaly_id
@@ -124,6 +125,14 @@ _SELECT_DRAFT_READY = text("""
       AND (c.last_checked_at IS NULL OR c.last_checked_at < :cutoff)
     ORDER BY c.id
     LIMIT :batch_limit
+""")
+
+_SELECT_RECENT_SIGNALS = text("""
+    SELECT asset_name, direction, severity_value, signal_date
+    FROM anomalies
+    WHERE scope = 'public' AND type = 'oi_move' AND id != :exclude_id
+    ORDER BY signal_date DESC, id DESC
+    LIMIT 5
 """)
 
 _MARK_DISPATCHED = text("""
@@ -256,13 +265,55 @@ def _hype_filter_payload(candidate_id: int, source: str, raw_text: str, internal
     )
 
 
-def _step_c_payload(row, internal_token: str) -> str:
+def _oi_context_line(asset_id: str, clgroup: str | None) -> str:
+    """История позиции физлиц по инструменту — рамка «где мы относительно
+    исторического макс/мин», ту же самую подсвечивает скринер сигналов. Без
+    неё Шаг В брал историческую аналогию из памяти модели (галлюцинация);
+    с ней есть настоящая фактура для честного «как было раньше»."""
+    from signals.db import get_position_series
+    clg = clgroup or "FIZ"
+    series = get_position_series(asset_id, clg, days=730)
+    if len(series) < 30:
+        return "(недостаточно истории по этому инструменту для контекста)"
+    pcts = []
+    for _d, net, _npart, plong, pshort in series:
+        gross = (plong or 0) - (pshort or 0)
+        pcts.append((net / gross * 100) if gross else 0.0)
+    today_pct = pcts[-1]
+    hist_max, hist_min = max(pcts), min(pcts)
+    trend_30 = pcts[-30]
+    trend = "растёт" if today_pct > trend_30 else "снижается" if today_pct < trend_30 else "без изменений"
+    return (f"текущий перекос физлиц (net/gross): {today_pct:.1f}%; "
+            f"диапазон за 2 года: [{hist_min:.1f}%; {hist_max:.1f}%]; "
+            f"тенденция за 30 дней: {trend}")
+
+
+def _recent_signals_line(db, exclude_anomaly_id: int) -> str:
+    """Сравнимые недавние публичные OI-сигналы по ДРУГИМ тикерам — фактура
+    для «для масштаба: N был ×M», вместо выдуманного сравнения."""
+    rows = db.execute(
+        _SELECT_RECENT_SIGNALS, {"exclude_id": exclude_anomaly_id}
+    ).fetchall()
+    if not rows:
+        return "(нет сравнимых недавних сигналов)"
+    parts = []
+    for name, direction, severity, sig_date in rows:
+        word = "лонг" if direction == "up" else "шорт"
+        parts.append(f"{name}: ×{severity:g} {word} ({sig_date})")
+    return "; ".join(parts)
+
+
+def _step_c_payload(db, row, internal_token: str) -> str:
+    oi_context = _oi_context_line(row["asset_id"], row["anomaly_clgroup"])
+    recent_signals = _recent_signals_line(db, row["anomaly_id"])
     return (
         f"candidate_id: {row['id']}\n"
         f"headline: {row['headline']}\n"
+        f"raw_text: {row['raw_text'] or row['headline']}\n"
         f"tickers: {', '.join(row['tickers'] or [])}\n"
         f"event_type: {row['event_type'] or ''}\n"
         f"reasoning (Шаг А): {row['reasoning'] or ''}\n"
+        f"forwards_count: {row['forwards_count'] if row['forwards_count'] is not None else '(нет данных)'}\n"
         f"matched_anomaly:\n"
         f"  asset: {row['asset_id']} ({row['asset_name'] or ''})\n"
         f"  type: {row['anomaly_type']}\n"
@@ -270,6 +321,8 @@ def _step_c_payload(row, internal_token: str) -> str:
         f"  multiplier: x{row['severity_value']}\n"
         f"  signal_date: {row['signal_date']}\n"
         f"  headline: {row['anomaly_headline']}\n"
+        f"oi_context: {oi_context}\n"
+        f"recent_signals: {recent_signals}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
     )
@@ -333,7 +386,7 @@ def run_once() -> dict:
                 _notify_pipeline_stuck("В", row["id"], give_up_reason)
                 continue
             try:
-                _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(row, internal_token))
+                _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token))
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_c_fired"] += 1
                 time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше

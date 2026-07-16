@@ -69,7 +69,8 @@ FIRE_STAGGER_SEC = 8
 
 _SELECT_PENDING = text("""
     SELECT id, futures_ticker, thread_key, created_at, pending_expires_at,
-           step_b_checked_at, headline, tickers, event_type, reasoning
+           step_b_checked_at, headline, raw_text, tickers, event_type, reasoning,
+           forwards_count
     FROM content_candidates
     WHERE status = 'pending' AND futures_ticker IS NOT NULL
 """)
@@ -86,7 +87,8 @@ _ALREADY_USED = text("""
 # они достаются watch-thread'у как follow-up к уже готовому черновику, не как
 # замена ему.
 _FIND_MATCH = text("""
-    SELECT id, signal_date, severity_value, direction, headline, asset_id, asset_name, type
+    SELECT id, signal_date, severity_value, direction, headline, asset_id, asset_name,
+           type, clgroup
     FROM anomalies
     WHERE asset_id = :futures_ticker
       AND signal_date BETWEEN :date_from AND :date_to
@@ -171,16 +173,20 @@ def run_once() -> dict:
                         try:
                             payload_row = {
                                 "id": row["id"], "headline": row["headline"],
+                                "raw_text": row["raw_text"],
                                 "tickers": row["tickers"], "event_type": row["event_type"],
                                 "reasoning": row["reasoning"],
+                                "forwards_count": row["forwards_count"],
+                                "anomaly_id": match["id"],
                                 "asset_id": match["asset_id"], "asset_name": match["asset_name"],
                                 "anomaly_type": match["type"], "direction": match["direction"],
+                                "anomaly_clgroup": match["clgroup"],
                                 "severity_value": match["severity_value"],
                                 "signal_date": match["signal_date"],
                                 "anomaly_headline": match["headline"],
                             }
                             _fire(TRIGGER_ID_STEP_C, token_c,
-                                  _step_c_payload(payload_row, internal_token))
+                                  _step_c_payload(db, payload_row, internal_token))
                             summary["step_c_fired"] += 1
                             time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                         except Exception as e:
