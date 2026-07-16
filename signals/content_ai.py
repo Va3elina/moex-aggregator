@@ -147,6 +147,37 @@ _GIVE_UP_STEP_C = text("""
 """)
 
 
+def _notify_pipeline_stuck(step: str, candidate_id: int, reason: str) -> None:
+    """Найдено 2026-07-16 (Вадим): give-up после MAX_DISPATCH_ATTEMPTS менял
+    статус кандидата МОЛЧА — узнавали о сломанной Routine (env-misconfig,
+    кончившаяся подписка) только постфактум, через ручные 409 часы спустя.
+    Сюда — та же связка HYPE_NOTIFY_BOT_TOKEN/CHAT_ID + TELEGRAM_API_ROOT
+    релей, что и у api/routers/content_news.py:_notify_hype_colleague, но
+    вызывается ХОСТ-СКРИПТОМ (content_ai.py уже на host, не в api-контейнере
+    — .env читает напрямую, дублировать docker-compose проброс не нужно).
+    Best-effort — сбой отправки не должен ронять сам бэкстоп."""
+    token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
+    chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    text_msg = (
+        f"⚠️ Шаг {step} сдался по кандидату #{candidate_id} после "
+        f"{MAX_DISPATCH_ATTEMPTS} попыток бэкстопа — Routine не ответила.\n\n"
+        f"{reason}\n\n"
+        f"Проверь окружение/подписку (см. скилл moex-content-routines: "
+        f"environment_id/allowed_tools, лимиты аккаунта)."
+    )
+    api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
+    try:
+        requests.post(
+            f"{api_root}/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text_msg},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[content_ai] pipeline-stuck notify failed: {type(e).__name__}: {e}")
+
+
 def _fire(trigger_id: str, bearer_token: str, text_payload: str) -> None:
     resp = requests.post(
         FIRE_URL_TMPL.format(trigger_id=trigger_id),
@@ -241,12 +272,11 @@ def run_once() -> dict:
         known_tickers = _known_tickers_line(db) if candidates else ""
         for row in candidates:
             if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
-                db.execute(_GIVE_UP_STEP_A, {
-                    "id": row["id"],
-                    "reasoning": f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
-                                 f"попыток бэкстопа — сдаёмся (см. content_ai.py)",
-                })
+                give_up_reason = (f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                                   f"попыток бэкстопа — сдаёмся (см. content_ai.py)")
+                db.execute(_GIVE_UP_STEP_A, {"id": row["id"], "reasoning": give_up_reason})
                 summary["step_a_gave_up"] += 1
+                _notify_pipeline_stuck("А", row["id"], give_up_reason)
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
@@ -265,12 +295,11 @@ def run_once() -> dict:
         ).mappings().all()
         for row in draft_ready:
             if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
-                db.execute(_GIVE_UP_STEP_C, {
-                    "id": row["id"],
-                    "reason": f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
-                              f"попыток бэкстопа — откат в pending (см. content_ai.py)",
-                })
+                give_up_reason = (f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                                   f"попыток бэкстопа — откат в pending (см. content_ai.py)")
+                db.execute(_GIVE_UP_STEP_C, {"id": row["id"], "reason": give_up_reason})
                 summary["step_c_gave_up"] += 1
+                _notify_pipeline_stuck("В", row["id"], give_up_reason)
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(row, internal_token))
