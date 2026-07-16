@@ -46,9 +46,13 @@ def load_fund_categories() -> dict:
         # показать ни линию динамики, ни приток/отток (нет «изменения») —
         # выглядит как мусор. Скрываем такие фонды из «Денег в фондах», пока
         # фетчер не накопит историю (новый фонд → появится после backfill).
+        # subcategory='Авторские' (облигационные авторские стратегии, напр.
+        # «Рублёвые перспективы») скрыты целиком из «Денег в фондах» — по
+        # запросу продукта, фонд-стратегия не сопоставим с остальными группами.
         rows = conn.execute(text(
             "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds f "
             "WHERE (SELECT count(*) FROM fund_data fd WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2 "
+            "AND subcategory IS DISTINCT FROM 'Авторские' "
             "ORDER BY category, subcategory_order, ticker"
         )).fetchall()
 
