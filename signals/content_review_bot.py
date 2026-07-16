@@ -11,9 +11,12 @@ sendPhoto/sendMessage — у него нет своего getUpdates-полле�
 
 Поток: content_ai.py (Шаг В) пишет draft_text → status='draft_ready' остаётся
 (матрица переходов в db/migrations/022). Этот бот подхватывает НОВЫЕ
-draft_ready-с-черновиком кандидаты (last_checked_at IS NULL — сюда их не
-трогают ни content_match.py, ни content_ai.py, семантика поля свободна),
-шлёт карточку в личку. Три действия:
+draft_ready-с-черновиком кандидаты (reviewer_notified_at IS NULL, СВОЯ
+колонка — миграция 037). ⚠️ Раньше здесь читалась last_checked_at, но её же
+писал content_match.py в ТОЙ ЖЕ команде, что ставила status='draft_ready' —
+условие никогда не выполнялось, бот не сработал НИ РАЗУ (найдено 2026-07-16,
+0 published/rejected через него). См. content_match.py за подробностями.
+Шлёт карточку в личку. Три действия:
   ✅ Одобрить  → публикует в CONTENT_CHANNEL_ID (ТЕСТОВЫЙ канал на старте!),
                  status: draft_ready → in_review → published (та же пара
                  переходов, что и ручная кнопка в админ-Kanban — держим
@@ -111,7 +114,7 @@ def answer_cb(callback_query_id, text_msg: str = "") -> None:
 # ── DB helpers ────────────────────────────────────────────────────────────
 _SELECT_NEW_DRAFTS = text("""
     SELECT id FROM content_candidates
-    WHERE status = 'draft_ready' AND draft_text IS NOT NULL AND last_checked_at IS NULL
+    WHERE status = 'draft_ready' AND draft_text IS NOT NULL AND reviewer_notified_at IS NULL
     ORDER BY id
 """)
 
@@ -120,7 +123,7 @@ _SELECT_CANDIDATE = text("""
     FROM content_candidates WHERE id = :id
 """)
 
-_MARK_NOTIFIED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
+_MARK_NOTIFIED = text("UPDATE content_candidates SET reviewer_notified_at = now() WHERE id = :id")
 
 _UPDATE_DRAFT = text("""
     UPDATE content_candidates SET draft_text = :t, updated_at = now() WHERE id = :id
