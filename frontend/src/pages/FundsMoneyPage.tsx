@@ -1075,6 +1075,11 @@ export default function FundsMoneyPage() {
                             border: '2px solid var(--text-primary)',
                             boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
                             color: 'var(--text-primary)',
+                            // max-w-xl (576px) не хватало колонке «Название» у длинных имён
+                            // облигационных фондов («Фонд Долгосрочные гособлигации» и т.п.) —
+                            // они фейдились почти целиком. +104px уходят авто-колонке Название
+                            // (Тикер/СЧА/Доходность — фиксированные px в colgroup).
+                            maxWidth: 680,
                         }}
                     >
                         {/* Заголовок + дата данных в ОДНОМ ряду (заголовок, затем
