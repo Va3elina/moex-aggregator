@@ -404,6 +404,11 @@ def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = D
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Кандидат не найден")
+    db.execute(text("""
+        UPDATE content_candidates SET hype_filter_result = :result, hype_filter_checked_at = now()
+        WHERE id = :id
+    """), {"id": candidate_id, "result": body.is_news})
+    db.commit()
     if body.is_news:
         _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"])
     return {"notified": body.is_news}

@@ -127,6 +127,11 @@ _INSERT_CANDIDATE = text("""
     RETURNING id
 """)
 _MARK_DISPATCHED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
+_MARK_HYPE_FILTER_DISPATCHED = text("""
+    UPDATE content_candidates
+    SET hype_filter_dispatch_attempts = hype_filter_dispatch_attempts + 1, hype_filter_checked_at = now()
+    WHERE id = :id
+""")
 
 
 def _headline_from_text(msg_text: str) -> str:
@@ -258,6 +263,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                         new_id, channel, row["msg_text"] or headline, internal_token,
                     )
                     _fire(TRIGGER_ID_HYPE_FILTER, token_hype, hf_payload)
+                    db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": new_id})
+                    db.commit()
                     summary["hype_filter_fired"] += 1
                     time.sleep(FIRE_STAGGER_SEC)
                 except Exception as e:
