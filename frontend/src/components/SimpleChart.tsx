@@ -1729,14 +1729,6 @@ export default function SimpleChart({
           {/* Тултип: дата вверху вертикальной линии + карточка значений. В жёлобе
               оси НЕ показываем (там только горизонталь + «+» пилсы). */}
           {tooltip.visible && !tooltip.inGutter && (() => {
-            const cardWidth = tokens.tooltipCardWidth;
-            const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
-            let cardX = isRightHalf
-              ? tooltip.x - cardWidth - 8
-              : tooltip.x + 8;
-            // Viewport bounds: не выходим за пределы SVG области
-            cardX = Math.max(0, Math.min(cardX, chartWidth + padding.left - cardWidth));
-
             const fmtSecondary = formatSecondaryValue || formatValue;
             const fmtThird = formatThirdValue || formatValue;
 
@@ -1750,6 +1742,34 @@ export default function SimpleChart({
             if (showThird && tooltip.thirdValue !== undefined) {
               lines.push({ color: thirdColor, label: thirdLabel, value: fmtThird(tooltip.thirdValue) });
             }
+
+            // Ширина карточки — по факту самого длинного label+value (напр.
+            // Баффетт: "Капитализация / ВВП" + "64.19%" не помещались в
+            // фиксированные 200px и label обрезался троеточием). Меряем
+            // реальным canvas-текстом (тот же шрифт/размер что и TOOLTIP.labelStyle/
+            // valueStyle), берём максимум по строкам, кламп сверху по ширине графика
+            // чтобы карточка не вылезала за пределы SVG.
+            const tooltipFontSize = fluid.fs2xs(vw);
+            const dotW = fluid.sp2(vw);
+            const dotGap = fluid.sp1(vw);
+            const rowGap = fluid.sp2(vw);
+            const paddingX = fluid.sp2(vw) * 2;
+            const contentWidth = lines.reduce((max, line) => {
+              const labelW = measureText(line.label, tooltipFontSize, 400);
+              const valueW = measureText(line.value, tooltipFontSize, 600);
+              return Math.max(max, dotW + dotGap + labelW + rowGap + valueW);
+            }, 0);
+            const cardWidth = Math.min(
+              Math.max(tokens.tooltipCardWidth, Math.ceil(contentWidth + paddingX)),
+              chartWidth - 8,
+            );
+
+            const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
+            let cardX = isRightHalf
+              ? tooltip.x - cardWidth - 8
+              : tooltip.x + 8;
+            // Viewport bounds: не выходим за пределы SVG области
+            cardX = Math.max(0, Math.min(cardX, chartWidth + padding.left - cardWidth));
 
             // Padding 8px сверху/снизу + lineHeight per row, fluid от vw
             const cardHeight = 16 + lines.length * tokens.tooltipLineHeight;
@@ -1771,7 +1791,7 @@ export default function SimpleChart({
                       <div key={i} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                         <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
                           <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: line.color }} />
-                          <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{line.label}</span>
+                          <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{line.label}</span>
                         </div>
                         <span className={`${TOOLTIP.valueClass} text-theme-primary whitespace-nowrap`} style={TOOLTIP.valueStyle}>{line.value}</span>
                       </div>
