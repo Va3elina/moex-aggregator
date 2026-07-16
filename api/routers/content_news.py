@@ -22,6 +22,7 @@ content_candidates (db/migrations/022_content_candidates.sql) — там же п
 описание state machine статусов.
 """
 import html
+import json
 import os
 from typing import Optional
 
@@ -342,8 +343,14 @@ def _apply_hype_emoji(html_text: str) -> str:
     return result
 
 
+# Фото постов MarketTwits/Smartlab (Вадим 2026-07-16: "посты без фото приходят")
+# — качает signals/tg_hype_scan.py (host-side, MTProto), api-контейнер только
+# читает через volume-маунт (docker-compose.yml), см. media_filename.
+_MEDIA_DIR = "/data/content_media"
+
+
 def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optional[str],
-                            source_url: Optional[str]) -> None:
+                            source_url: Optional[str], media_filename: Optional[str] = None) -> None:
     """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
     прошедшем и хайп-фильтр (tg_hype_scan.py), и Шаг Н (независимый ИИ-фильтр
     «шутка/мусор vs реальная новость», apply_hype_filter ниже) — НИКАК не
@@ -362,25 +369,40 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
         return
     body = raw_text or headline or ""
     header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
-    text_msg = f"{header}\n\n{html.escape(body)}"[:4000]
+    text_msg = f"{header}\n\n{html.escape(body)}"
     buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
     if source_url:
         buttons.insert(0, {"text": "Открыть пост", "url": source_url})
+    reply_markup = {"inline_keyboard": [buttons]}
     # api.telegram.org НЕ доступен напрямую с прод-сервера (РФ, РКН) — та же
     # проблема, что и у остальных ботов (см. signals/publish/telegram.py),
     # обходится тем же Cloudflare-релеем через TELEGRAM_API_ROOT. Живой
     # инцидент 2026-07-15: первые 2 реальных кандидата после деплоя фичи упали
     # с ConnectionError "Network is unreachable" при прямом обращении.
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
+    media_path = os.path.join(_MEDIA_DIR, media_filename) if media_filename else None
     try:
-        requests.post(
-            f"{api_root}/bot{token}/sendMessage",
-            json={
-                "chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
-                "reply_markup": {"inline_keyboard": [buttons]},
-            },
-            timeout=10,
-        )
+        if media_path and os.path.isfile(media_path):
+            # caption лимит Telegram — 1024 символа (не 4096, как у text у sendMessage).
+            with open(media_path, "rb") as photo_file:
+                requests.post(
+                    f"{api_root}/bot{token}/sendPhoto",
+                    data={
+                        "chat_id": chat_id, "caption": text_msg[:1024], "parse_mode": "HTML",
+                        "reply_markup": json.dumps(reply_markup),
+                    },
+                    files={"photo": photo_file},
+                    timeout=20,
+                )
+        else:
+            requests.post(
+                f"{api_root}/bot{token}/sendMessage",
+                json={
+                    "chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML",
+                    "reply_markup": reply_markup,
+                },
+                timeout=10,
+            )
     except Exception as e:
         print(f"[content_news] hype-notify failed for candidate: {type(e).__name__}: {e}")
 
@@ -399,7 +421,7 @@ def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = D
     параллельный, независимый side-канал, Шаг А продолжает решать судьбу
     кандидата в pipeline сам по себе."""
     row = db.execute(
-        text("SELECT source, headline, raw_text, source_url FROM content_candidates WHERE id = :id"),
+        text("SELECT source, headline, raw_text, source_url, media_filename FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
@@ -410,7 +432,8 @@ def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = D
     """), {"id": candidate_id, "result": body.is_news})
     db.commit()
     if body.is_news:
-        _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"])
+        _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"],
+                                row["media_filename"])
     return {"notified": body.is_news}
 
 

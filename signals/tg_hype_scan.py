@@ -66,6 +66,12 @@ from signals.content_ai import (       # noqa: E402
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
 MIN_BASELINE_COUNT = 10   # холодный старт: не решаем про хайп, пока мало истории на канале
 
+# Фото поста (Вадим 2026-07-16: "посты без фото приходят") — качаем ТОЛЬКО для
+# промотированных (реальный хайп-кандидат), не для каждого проверенного сообщения.
+# api-контейнер читает тот же каталог read-only (docker-compose.yml volume).
+MEDIA_DIR = os.path.join(_ROOT, "data", "content_media")
+os.makedirs(MEDIA_DIR, exist_ok=True)
+
 # Найдено 2026-07-14 (session 3) — пауза между _fire() подряд в одном прогоне,
 # иначе несколько облачных контейнеров запрашиваются одновременно и
 # конкурируют за мощность аккаунта.
@@ -121,9 +127,9 @@ _EXISTS_CANDIDATE = text(
 )
 _INSERT_CANDIDATE = text("""
     INSERT INTO content_candidates
-        (status, source, headline, raw_text, tickers, source_url, created_at, updated_at)
+        (status, source, headline, raw_text, tickers, source_url, media_filename, created_at, updated_at)
     VALUES
-        ('candidate', :channel, :headline, :raw_text, ARRAY[]::text[], :source_url, now(), now())
+        ('candidate', :channel, :headline, :raw_text, ARRAY[]::text[], :source_url, :media_filename, now(), now())
     RETURNING id
 """)
 _MARK_DISPATCHED = text("UPDATE content_candidates SET last_checked_at = now() WHERE id = :id")
@@ -227,9 +233,20 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                 db.commit()
                 continue
 
+            media_filename = None
+            if getattr(fresh, "photo", None):
+                candidate_filename = f"{channel}_{row['message_id']}.jpg"
+                try:
+                    client.download_media(fresh, file=os.path.join(MEDIA_DIR, candidate_filename))
+                    media_filename = candidate_filename
+                except Exception as e:
+                    print(f"[tg_hype_scan] {channel}: photo download failed for "
+                          f"{row['message_id']}: {type(e).__name__}: {e}")
+
             new_id = db.execute(_INSERT_CANDIDATE, {
                 "channel": channel, "headline": headline, "raw_text": row["msg_text"] or headline,
                 "source_url": f"https://t.me/{channel}/{row['message_id']}",
+                "media_filename": media_filename,
             }).scalar()
             db.execute(_MARK_PROMOTED, {"channel": channel, "id": row["message_id"]})
             db.commit()
