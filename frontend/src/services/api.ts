@@ -963,32 +963,10 @@ export async function getAnalyticsStats(opts: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Funnel + A/B assignment
-// (Cohort / Realtime / experiments-CRUD удалены 2026-06-16 — мёртвый код:
-//  на бэке эндпоинтов больше нет, на фронте блоки уже были вырезаны.)
-// ═══════════════════════════════════════════════════════════════════
-
-export interface FunnelResponse {
-  period_days: number;
-  steps: { step: number; label: string; sessions: number; conversion_pct: number }[];
-}
-
-export async function getAnalyticsFunnel(opts: {
-  steps: string;
-  days?: number;
-}): Promise<FunnelResponse> {
-  const params = new URLSearchParams({ steps: opts.steps });
-  if (opts.days !== undefined) params.set('days', String(opts.days));
-  const response = await apiFetch(`${API_BASE}/api/analytics/funnel?${params}`);
-  if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Failed to fetch funnel');
-  }
-  return response.json();
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // Admin: Users panel
+// (Funnel удалён 2026-07-16 вместе с бэкенд-эндпоинтом /api/analytics/funnel —
+//  воронка не давала пользы и была самым дорогим запросом admin-stats.
+//  Cohort / Realtime / A/B удалены ещё 2026-06-16.)
 // ═══════════════════════════════════════════════════════════════════
 
 export interface AdminUser {
@@ -1004,6 +982,9 @@ export interface AdminUser {
   oauth_provider: string | null;
   avatar_url: string | null;
   plan: string | null;
+  // Опциональные: отдаёт только list-эндпоинт /users (не /users/{id})
+  plan_expires_at?: string | null;
+  is_paid?: boolean;
   sessions_count: number;
   events_count: number;
   last_active_ts: string | null;
@@ -1013,11 +994,14 @@ export async function listAdminUsers(opts: {
   days?: number;
   sort?: string;
   search?: string;
-}): Promise<{ period_days: number; users: AdminUser[] }> {
+  /** all / paid / free / admin */
+  filter?: string;
+}): Promise<{ period_days: number; total_count: number; paid_count: number; users: AdminUser[] }> {
   const params = new URLSearchParams();
   if (opts.days !== undefined) params.set('days', String(opts.days));
   if (opts.sort) params.set('sort', opts.sort);
   if (opts.search) params.set('search', opts.search);
+  if (opts.filter && opts.filter !== 'all') params.set('filter', opts.filter);
   const response = await apiFetch(`${API_BASE}/api/analytics/users?${params}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error('Доступ только для администратора');

@@ -13,7 +13,7 @@
  * коротким preview-сниппетом.
  */
 import { useState, useEffect, useRef } from 'react';
-import { HelpCircle, X, ArrowUpRight } from 'lucide-react';
+import { HelpCircle, Info, X, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { MethodologyEntry } from '../data/methodology';
 
@@ -36,9 +36,13 @@ interface HelpTooltipProps {
    *  левый край поповера у иконки, растёт вправо. 'right' — правый край у
    *  иконки, растёт ВЛЕВО (для «?» у правой границы блока, чтобы не вылезал). */
   align?: 'left' | 'right';
+  /** Иконка триггера: 'help' (default, «?» — методология индикаторов) или
+   *  'info' («i» в кружке — пояснения метрик, admin-stats). */
+  icon?: 'help' | 'info';
 }
 
-export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo, align = 'left' }: HelpTooltipProps) {
+export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo, align = 'left', icon = 'help' }: HelpTooltipProps) {
+  const IconCmp = icon === 'info' ? Info : HelpCircle;
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -188,7 +192,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
           aria-label="Методология индикатора"
           title="Методология индикатора"
         >
-          <HelpCircle size={size} strokeWidth={1.8} />
+          <IconCmp size={size} strokeWidth={1.8} />
         </Link>
       </span>
     );
@@ -204,10 +208,10 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
         onMouseEnter={hoverOpen}
         onMouseLeave={hoverClose}
         style={{ ...iconStyle, cursor: 'help', background: 'transparent', border: 'none', padding: 0 }}
-        aria-label="Подсказка о методологии"
+        aria-label={icon === 'info' ? 'Как считается метрика' : 'Подсказка о методологии'}
         aria-expanded={open}
       >
-        <HelpCircle size={size} strokeWidth={1.8} />
+        <IconCmp size={size} strokeWidth={1.8} />
       </button>
       {popover}
     </span>
