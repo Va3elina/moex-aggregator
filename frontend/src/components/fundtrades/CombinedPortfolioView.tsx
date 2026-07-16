@@ -24,7 +24,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import { formatReturnPct, returnColor } from '../funds/FundDetailModal';
+import { formatReturnPct } from '../funds/FundDetailModal';
 import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
