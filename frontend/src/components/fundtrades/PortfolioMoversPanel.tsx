@@ -151,7 +151,6 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     const row = (m: FundTradesMover, last: boolean) => {
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
-        const ticker = resolveFundTicker(m.asset_name, isin);
         const num = fmtSignedNum(m.total_delta_amount, scale.div, scale.dec);
         const click = onAssetClick ? () => onAssetClick(m) : undefined;
         return (
@@ -167,10 +166,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) max-content', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <MoverLogo m={m} size={30} />
-                <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(m.asset_name, isin)}</span>
-                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{ticker}</span>
-                </span>
+                <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(m.asset_name, isin)}</span>
                 {/* Полосы нейтральные — направление задают секции «Чистые покупки/продажи». */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />

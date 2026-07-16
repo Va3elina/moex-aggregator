@@ -1,7 +1,7 @@
 // CombinedPortfolioView — блок «Обзор портфеля» на вкладке «Общий портфель».
 //
 // Редизайн (июль 2026, макет Claude Design): на десктопе слева таблица бумаг
-// «логотип · имя+тикер · полоса · вес · объём · фондов» (полосы нейтральные,
+// «логотип · имя · полоса · вес · объём · фондов» (полосы нейтральные,
 // цвет несёт только карта), справа колонка «Структура» — карта-блоки топ-11
 // бумаг брендовыми цветами (площадь ∝ весу) + «Прочие», под ней плитка
 // доходности. Режим
@@ -236,7 +236,6 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         const w = wOf(h);
         const color = fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length];
         const pct = Math.max(2, (w / maxW) * 100);
-        const ticker = resolveFundTicker(h.asset_name, h.isin);
         const hov = interactive && hoverIdx === idx;
         const link = interactive && idx < TREEMAP_TOP;
         // Клик по бумаге (только в интерактивном превью, не в модалке) → потоки по компании.
@@ -254,17 +253,14 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <AssetLogo h={h} size={30} color={color} />
-                <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
-                    {ticker && <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', ...nameFade }}>{ticker}</span>}
-                </span>
+                <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
                 {/* Полосы нейтральные — цвет несёт карта «Структура» справа. */}
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-primary)' }}>{w.toFixed(2)}%</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{fmtVolShort(h.value_rub)}</span>
-                <span style={{ textAlign: 'right', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{h.funds_holding}</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{h.funds_holding}</span>
             </div>
         );
     };
