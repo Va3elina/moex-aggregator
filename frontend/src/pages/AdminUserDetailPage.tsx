@@ -168,7 +168,10 @@ export default function AdminUserDetailPage() {
                   {data.user.created_at && (
                     <span className="flex items-center gap-1"><Calendar size={11} />Создан: {fmtDate(data.user.created_at)}</span>
                   )}
-                  {data.user.last_login_at && (
+                  {data.user.last_seen_at && (
+                    <span className="flex items-center gap-1"><Clock size={11} />Был(а): {fmtDateTime(data.user.last_seen_at)}</span>
+                  )}
+                  {data.user.last_login_at && data.user.last_login_at !== data.user.last_seen_at && (
                     <span className="flex items-center gap-1"><Clock size={11} />Логин: {fmtDateTime(data.user.last_login_at)}</span>
                   )}
                   {data.user.last_login_ip && (

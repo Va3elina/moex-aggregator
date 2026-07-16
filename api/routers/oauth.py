@@ -27,6 +27,7 @@ import os
 import hashlib
 import hmac
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -207,6 +208,9 @@ def _make_token_response(user: User, is_new: bool, db=None) -> dict:
     token_pair = create_token_pair(user_id=user.id, role=user.role or "user")
     if db is not None:
         from api.routers.auth import persist_refresh_token
+        # OAuth-вход — тоже вход: без этой строки last_login_at заполнялся
+        # только у парольных юзеров (у OAuth-аккаунтов вечный NULL).
+        user.last_login_at = datetime.now(timezone.utc)
         persist_refresh_token(db, user.id, token_pair.refresh_token)
         db.commit()
     return {
