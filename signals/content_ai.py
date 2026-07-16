@@ -86,6 +86,8 @@ TRIGGER_ID_HYPE_FILTER = os.environ.get("TRIGGER_ID_HYPE_FILTER", "")
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
+BATCH_LIMIT_HYPE_FILTER = 3  # Шаг Н — намеренно МЕНЬШЕ BATCH_LIMIT (Вадим 2026-07-16:
+                              # не заваливать Routine параллельными повторами разом)
 MAX_DISPATCH_ATTEMPTS = 3    # сколько раз ЭТОТ бэкстоп повторяет зависшего кандидата,
                               # прежде чем сдаться (см. docstring — защита от бесконечного
                               # ретрая системно сломанной Routine)
@@ -128,6 +130,30 @@ _MARK_DISPATCHED = text("""
     UPDATE content_candidates
     SET last_checked_at = now(), dispatch_attempts = dispatch_attempts + 1
     WHERE id = :id
+""")
+
+# Бэкстоп Шага Н (найдено 2026-07-16) — раньше tg_hype_scan.py стрелял РОВНО
+# один раз и никогда не повторял (в отличие от Шага А/В, у которых уже был
+# этот бэкстоп) — молчаливая потеря при любом сбое Routine (env-misconfig,
+# кончившаяся подписка и т.п., см. живой инцидент того же дня). source_url
+# IS NOT NULL — только tg_hype-кандидаты (markettwits/newssmartlab), у
+# moex_calendar Шаг Н не запускается вообще, им нечего ждать.
+_SELECT_HYPE_FILTER_PENDING = text("""
+    SELECT id, source, headline, raw_text, hype_filter_dispatch_attempts
+    FROM content_candidates
+    WHERE hype_filter_result IS NULL AND source_url IS NOT NULL
+      AND hype_filter_dispatch_attempts > 0 AND hype_filter_dispatch_attempts < :max_attempts
+      AND (hype_filter_checked_at IS NULL OR hype_filter_checked_at < :cutoff)
+    ORDER BY id
+    LIMIT :batch_limit
+""")
+_MARK_HYPE_FILTER_DISPATCHED = text("""
+    UPDATE content_candidates
+    SET hype_filter_dispatch_attempts = hype_filter_dispatch_attempts + 1, hype_filter_checked_at = now()
+    WHERE id = :id
+""")
+_GIVE_UP_HYPE_FILTER = text("""
+    UPDATE content_candidates SET hype_filter_checked_at = now() WHERE id = :id
 """)
 
 # Лимит попыток исчерпан — Routine либо системно сломана, либо candidate
@@ -251,11 +277,16 @@ def _step_c_payload(row, internal_token: str) -> str:
 
 def run_once() -> dict:
     summary = {"step_a_fired": 0, "step_c_fired": 0, "errors": 0, "skipped_no_token": 0,
-               "step_a_gave_up": 0, "step_c_gave_up": 0}
+               "step_a_gave_up": 0, "step_c_gave_up": 0,
+               "hype_filter_fired": 0, "hype_filter_gave_up": 0}
 
     internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
     token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
     token_c = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_C", "")
+    # Шаг Н — отдельный токен, отдельная проверка (не блокирует А/В, если ещё
+    # не создан в UI, и наоборот — см. skill moex-content-routines).
+    token_hype = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_HYPE_FILTER", "")
+    can_fire_hype = bool(internal_token and token_hype and TRIGGER_ID_HYPE_FILTER)
     if not internal_token or not token_a or not token_c:
         summary["skipped_no_token"] = 1
         print("[content_ai] отсутствует CONTENT_AI_INTERNAL_TOKEN / "
@@ -311,6 +342,45 @@ def run_once() -> dict:
                 print(f"[content_ai] step-c fire failed for candidate {row['id']}: "
                       f"{type(e).__name__}: {e}")
         db.commit()
+
+        # Бэкстоп Шага Н — намеренно МАЛЕНЬКИЙ BATCH_LIMIT_HYPE_FILTER (не
+        # BATCH_LIMIT, как у А/В) + тот же FIRE_STAGGER_SEC между вызовами:
+        # Вадим попросил не заваливать Routine параллельными запросами разом
+        # (риск конкуренции за облачный контейнер, см. FIRE_STAGGER_SEC выше).
+        if can_fire_hype:
+            hype_pending = db.execute(_SELECT_HYPE_FILTER_PENDING, {
+                "cutoff": cutoff, "max_attempts": MAX_DISPATCH_ATTEMPTS,
+                "batch_limit": BATCH_LIMIT_HYPE_FILTER,
+            }).mappings().all()
+            for row in hype_pending:
+                try:
+                    _fire(TRIGGER_ID_HYPE_FILTER, token_hype,
+                          _hype_filter_payload(row["id"], row["source"], row["raw_text"] or row["headline"],
+                                                internal_token))
+                    db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": row["id"]})
+                    db.commit()
+                    summary["hype_filter_fired"] += 1
+                    time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                except Exception as e:
+                    summary["errors"] += 1
+                    print(f"[content_ai] hype-filter fire failed for candidate {row['id']}: "
+                          f"{type(e).__name__}: {e}")
+
+            # Отдельный проход — кандидаты, у которых уже был последний (MAX-й)
+            # повтор и ответа так и не было: сдаёмся молча (это side-канал коллеги,
+            # не влияет на "завод" — но notify всё равно, тот же принцип, что у А/В).
+            gave_up = db.execute(text("""
+                SELECT id FROM content_candidates
+                WHERE hype_filter_result IS NULL AND source_url IS NOT NULL
+                  AND hype_filter_dispatch_attempts >= :max_attempts
+                  AND hype_filter_checked_at < :cutoff
+            """), {"max_attempts": MAX_DISPATCH_ATTEMPTS, "cutoff": cutoff}).scalars().all()
+            for cid in gave_up:
+                db.execute(_GIVE_UP_HYPE_FILTER, {"id": cid})
+                summary["hype_filter_gave_up"] += 1
+                _notify_pipeline_stuck("Н", cid, f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                                                   f"попыток бэкстопа — сдаёмся (см. content_ai.py)")
+            db.commit()
     except Exception as e:
         db.rollback()
         summary["errors"] += 1
