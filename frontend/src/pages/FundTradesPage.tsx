@@ -50,6 +50,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import ChartTabs from '../components/ChartTabs';
+import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName } from '../config/fundConfig';
@@ -531,7 +532,17 @@ export default function FundTradesPage() {
                         дополнительной бежевой подложки и внутренней рамки. */}
                     <div>
                     {loading && funds.length === 0 && (
-                        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем фонды…</div>
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                                gap: 14,
+                            }}
+                        >
+                            {Array.from({ length: cols * 2 }, (_, i) => (
+                                <Skeleton key={i} height={220} rounded="md" />
+                            ))}
+                        </div>
                     )}
                     {!loading && funds.length === 0 && !error && (
                         <EmptyState message="Фонды не найдены." />

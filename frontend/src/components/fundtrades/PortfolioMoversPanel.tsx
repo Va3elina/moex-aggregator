@@ -15,6 +15,7 @@ import { type CSSProperties } from 'react';
 import { fundAssetName, resolveFundTicker } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
+import Skeleton from '../Skeleton';
 import type { FundTradesMovers, FundTradesMover } from '../../services/api';
 
 export type MoversPeriod = '1m' | '6m' | '1y' | '3y';
@@ -135,7 +136,14 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     );
 
     if (loading && !movers) {
-        return <div style={wrapStyle}>{head}<div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: '10px 0' }}>Собираем движения…</div></div>;
+        // Высота skeleton'а держит примерный размер финального списка (до 5
+        // строк «Покупки» + до 5 строк «Продажи»), чтобы контейнер не «прыгал».
+        return (
+            <div style={wrapStyle}>
+                {head}
+                <Skeleton height={420} rounded="lg" />
+            </div>
+        );
     }
 
     const empty = buys.length === 0 && sells.length === 0;

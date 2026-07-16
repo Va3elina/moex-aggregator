@@ -23,6 +23,7 @@ import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
+import Skeleton from '../Skeleton';
 import { formatReturnPct, returnColor } from '../funds/FundDetailModal';
 import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
 
@@ -192,7 +193,14 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     }, [sorted, mode]);
 
     if (loading && !portfolio) {
-        return <div style={{ ...wrapStyle, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Собираем общий портфель…</div>;
+        // Высота skeleton'а держит примерный финальный размер блока (карта
+        // TM_H_BUDGET + список LIST_PREVIEW строк), чтобы контейнер не «прыгал»
+        // между loading и загруженным состоянием.
+        return (
+            <div style={wrapStyle}>
+                <Skeleton height={TM_H_BUDGET + 160} rounded="lg" />
+            </div>
+        );
     }
     if (!portfolio || portfolio.num_funds === 0 || sorted.length === 0) {
         return (
