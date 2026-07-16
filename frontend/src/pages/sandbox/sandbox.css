@@ -23,7 +23,7 @@
   --accent-soft: rgba(255, 92, 43, 0.16);
   --grid-line: rgba(245, 241, 232, 0.05);
   --dot: rgba(245, 241, 232, 0.10);
-  --shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  --shadow: none;
   --hover: rgba(245, 241, 232, 0.06);
   --c-price: #5DA3E9;
   --c-up: #5BD49C;
@@ -62,7 +62,7 @@
   --accent-soft: rgba(255, 92, 43, 0.12);
   --grid-line: rgba(10, 10, 10, 0.05);
   --dot: rgba(10, 10, 10, 0.12);
-  --shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  --shadow: none;
   --hover: rgba(10, 10, 10, 0.05);
   --c-price: #5DA3E9;
   --c-up: #5BD49C;
