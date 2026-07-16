@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from api.cache import get_or_compute
 from api.database import get_engine
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional, require_admin
@@ -200,25 +201,34 @@ async def get_stats(
 ):
     """Aggregated metrics для admin-stats страницы.
 
+    Ответ кэшируется в Redis на 3 мин (single-flight): страница дёргает
+    /stats на каждое переключение периода/сегмента/устройства, и без кэша
+    каждый клик = ~7 SQL-запросов. Данные аналитики не realtime-критичны.
+
     Возвращает структуру:
     {
       "summary": {
-        "dau": 42,
+        "uniques": 42,
         "sessions": 187,
         "avg_session_sec": 263,
         "events": 12453,
-        "delta_dau": +5,                  # vs предыдущий равный период
+        "delta_uniques": +5,              # vs предыдущий равный период
         "delta_sessions_pct": +12,
         "delta_avg_session_sec": +8,
         "delta_events_pct": +18
       },
-      "trends": [{"date": "2026-05-01", "dau": 38, "sessions": 142}, ...],
+      "trends": [{"date": "2026-05-01", "uniques": 38, "sessions": 142}, ...],
       "top_pages": [{"path": "/heatmap", "views": 432}, ...],
       "top_instruments": [{"secid": "SBER", "selects": 87}, ...],
       "top_exports": [{"indicator": "oi", "count": 23}, ...],
       "mode_distribution": [{"mode": "yearly", "count": 156}, ...]
     }
     """
+    cache_key = f"admin:stats:{days}:{segment}:{device}"
+    return get_or_compute(cache_key, lambda: _compute_stats(days, segment, device), ttl=180)
+
+
+def _compute_stats(days: int, segment: str, device: str) -> dict:
     engine = get_engine()
     now = datetime.utcnow()
     period_start = now - timedelta(days=days)
@@ -377,6 +387,18 @@ async def get_stats(
             return None
         return int(round((curr - prev) / prev * 100))
 
+    # Дни без событий добиваем нулями: GROUP BY отдаёт только дни, где события
+    # были, и линия графика «перепрыгивала» пустые дни — динамика выглядела
+    # лучше, чем есть (особенно на узких сегментах: guest+tablet и т.п.).
+    trend_map = {r[0]: (int(r[1]), int(r[2])) for r in trends_rows}
+    trends: list[dict] = []
+    day = period_start.date()
+    last_day = now.date()
+    while day <= last_day:
+        u, s = trend_map.get(day, (0, 0))
+        trends.append({"date": day.isoformat(), "uniques": u, "sessions": s})
+        day += timedelta(days=1)
+
     return {
         "period_days": days,
         "segment": segment,
@@ -401,12 +423,9 @@ async def get_stats(
             ),
             "delta_avg_session_sec": avg_session_sec - prev_avg_sec,
         },
-        "trends": [
-            # Per-day: «uniques» здесь это настоящий дневной distinct-count
-            # (GROUP BY server_ts::date) — честный daily-unique по дням.
-            {"date": r[0].isoformat(), "uniques": int(r[1]), "sessions": int(r[2])}
-            for r in trends_rows
-        ],
+        # Per-day: «uniques» здесь это настоящий дневной distinct-count
+        # (GROUP BY server_ts::date) — честный daily-unique по дням.
+        "trends": trends,
         "top_pages": [{"path": r[0], "views": int(r[1])} for r in top_pages],
         "top_instruments": [{"secid": r[0], "selects": int(r[1])} for r in top_instruments],
         "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
@@ -415,103 +434,13 @@ async def get_stats(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# GET /funnel — step-by-step конверсия
+# GET /funnel — УДАЛЕНО (2026-07-16, редизайн admin-stats)
 # ════════════════════════════════════════════════════════════════════════════
-#
-# Параметр steps — список шагов через запятую, формат:
-#   "pageview:/,pageview:/seasonality,instrument_select,chart_export"
-#
-# Шаг = "event_type" ИЛИ "event_type:event_path".
-# Для каждой сессии определяем последовательность достигнутых шагов
-# (in-order, как в funnel — нужно дойти до step N через все предыдущие).
-# Возвращаем число сессий на каждом шаге.
-
-@router.get("/funnel")
-async def get_funnel(
-    steps: str = Query(..., description="Шаги через запятую: 'pageview:/,instrument_select'"),
-    days: int = Query(7, ge=1, le=180),
-    user=Depends(require_admin),
-):
-    """Conversion funnel: для каждого step возвращает число сессий, дошедших до него.
-
-    Логика in-order: сессия засчитывается в step N только если она прошла steps 0..N-1
-    (хотя бы по одному event на каждом шаге, и в правильном временном порядке).
-    """
-    period_start = datetime.utcnow() - timedelta(days=days)
-
-    # Parse steps
-    parsed_steps: list[tuple[str, Optional[str]]] = []
-    for part in steps.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if ":" in part:
-            t, p = part.split(":", 1)
-            parsed_steps.append((t.strip(), p.strip()))
-        else:
-            parsed_steps.append((part, None))
-
-    if not parsed_steps:
-        raise HTTPException(400, "steps must contain at least one step")
-    if len(parsed_steps) > 8:
-        raise HTTPException(400, "max 8 steps")
-
-    engine = get_engine()
-    with engine.connect() as conn:
-        # Для каждой сессии считаем earliest timestamp каждого шага.
-        # Сессия засчитывается в step N если ts(N) > ts(N-1) > ... > ts(0).
-        cte_parts = []
-        params: dict[str, Any] = {"period_start": period_start}
-        for i, (etype, epath) in enumerate(parsed_steps):
-            params[f"t{i}"] = etype
-            path_clause = ""
-            if epath is not None:
-                params[f"p{i}"] = epath
-                path_clause = f" AND event_path = :p{i}"
-            cte_parts.append(f"""
-                step_{i} AS (
-                    SELECT session_id, MIN(server_ts) AS ts
-                    FROM analytics_events
-                    WHERE server_ts >= :period_start
-                      AND event_type = :t{i}{path_clause}
-                    GROUP BY session_id
-                )
-            """)
-
-        # JOIN всех CTE с условием прогресса по времени
-        cte_sql = ", ".join(cte_parts)
-        # Step 0 — все сессии прошедшие первый шаг
-        # Step N (N>0) — те которые прошли N-1 + step N произошёл позже
-        step_counts: list[dict] = []
-        with conn.begin():
-            for i, (etype, epath) in enumerate(parsed_steps):
-                where_chain = ""
-                joins = ""
-                for k in range(i + 1):
-                    if k == 0:
-                        joins += f" FROM step_0"
-                    else:
-                        joins += f" JOIN step_{k} ON step_{k}.session_id = step_0.session_id"
-                        where_chain += f" AND step_{k}.ts > step_{k - 1}.ts"
-                query = text(f"""
-                    WITH {cte_sql}
-                    SELECT COUNT(DISTINCT step_0.session_id) {joins}
-                    WHERE 1=1 {where_chain}
-                """)
-                result = conn.execute(query, params).fetchone()
-                count = int(result[0]) if result else 0
-                label = f"{etype}:{epath}" if epath else etype
-                step_counts.append({"step": i, "label": label, "sessions": count})
-
-    # Считаем conversion rate по отношению к step 0
-    base = step_counts[0]["sessions"] if step_counts else 0
-    for s in step_counts:
-        s["conversion_pct"] = round(s["sessions"] / base * 100, 1) if base > 0 else 0.0
-
-    return {
-        "period_days": days,
-        "steps": step_counts,
-    }
+# Воронка конверсии удалена по решению Вадима — не давала пользы (шаги
+# «pageview:/ → pageview:/x» не отражали реальные пути), при этом была самым
+# дорогим эндпоинтом страницы: до 5 последовательных multi-CTE запросов на
+# каждое переключение периода. Вместе с ней вырезаны FunnelChart +
+# getAnalyticsFunnel/FunnelResponse на фронте (AdminStatsPage / services/api.ts).
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -625,16 +554,20 @@ async def get_alerts_stats(
 @router.get("/users")
 async def list_users(
     days: int = Query(30, ge=1, le=365, description="За сколько дней считать stats"),
-    sort: str = Query("last_active", description="last_active / events / sessions / created"),
+    sort: str = Query("last_active", description="last_active / events / sessions / created / plan"),
     search: str = Query("", description="Поиск по email или display_name"),
+    flt: str = Query("all", alias="filter", description="all / paid / free / admin"),
     user=Depends(require_admin),
 ):
     """List всех users с aggregated stats за последние N дней.
 
-    Возвращает: id, email, display_name, role, created_at, last_login_at,
-    is_active, oauth_provider, plan (active subscription tier),
-    sessions_count, events_count, last_active_ts (из analytics_events),
-    countries (последние 3 уникальных).
+    filter: paid — есть активная подписка сейчас; free — нет активной подписки
+    (админы исключены — они не клиенты); admin — role=admin.
+
+    Возвращает users[] (id, email, display_name, role, created_at, last_login_at,
+    is_active, oauth_provider, plan/plan_expires_at/is_paid — активная подписка,
+    sessions_count, events_count, last_active_ts) + total_count/paid_count —
+    счётчики по ВСЕЙ базе (без учёта filter/search) для шапки блока.
     """
     engine = get_engine()
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -646,6 +579,9 @@ async def list_users(
         "events": "events_count DESC",
         "sessions": "sessions_count DESC",
         "created": "u.created_at DESC",
+        # «Сначала платные»: активная подписка → раньше истекающие сверху
+        # (за ними надо следить), внутри групп — по свежести активности.
+        "plan": "(sub.tier IS NOT NULL) DESC, sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
     }
     order_by = order_clauses.get(sort, order_clauses["last_active"])
 
@@ -655,15 +591,23 @@ async def list_users(
         where_search = " AND (u.email ILIKE :q OR u.display_name ILIKE :q OR u.username ILIKE :q)"
         params["q"] = f"%{search_clean}%"
 
+    where_filter = {
+        "paid": " AND sub.tier IS NOT NULL",
+        "free": " AND sub.tier IS NULL AND u.role <> 'admin'",
+        "admin": " AND u.role = 'admin'",
+    }.get(flt, "")
+
     with engine.connect() as conn:
+        # LATERAL вместо трёх коррелированных подзапросов на подписку: одна
+        # строка «текущая активная подписка» на пользователя, и по ней же
+        # работают WHERE-фильтр paid/free и сортировка plan.
         rows = conn.execute(text(f"""
             SELECT
                 u.id, u.email, u.display_name, u.username, u.role,
                 u.is_active, u.is_verified, u.created_at, u.last_login_at,
                 u.oauth_provider, u.avatar_url,
-                (SELECT s.tier FROM subscriptions s
-                  WHERE s.user_id = u.id AND s.status = 'active'
-                  ORDER BY s.created_at DESC LIMIT 1) AS plan,
+                sub.tier AS plan,
+                sub.expires_at AS plan_expires_at,
                 (SELECT COUNT(DISTINCT ae.session_id) FROM analytics_events ae
                   WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
                 (SELECT COUNT(*) FROM analytics_events ae
@@ -671,13 +615,29 @@ async def list_users(
                 (SELECT MAX(ae.server_ts) FROM analytics_events ae
                   WHERE ae.user_id = u.id) AS last_active_ts
             FROM users u
-            WHERE 1=1 {where_search}
+            LEFT JOIN LATERAL (
+                SELECT s.tier, s.expires_at
+                FROM subscriptions s
+                WHERE s.user_id = u.id AND s.status = 'active'
+                ORDER BY s.created_at DESC
+                LIMIT 1
+            ) sub ON TRUE
+            WHERE 1=1 {where_search}{where_filter}
             ORDER BY {order_by}
             LIMIT 200
         """), params).fetchall()
 
+        totals = conn.execute(text("""
+            SELECT
+                (SELECT COUNT(*) FROM users) AS total,
+                (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
+                  WHERE s.status = 'active') AS paid
+        """)).fetchone()
+
     return {
         "period_days": days,
+        "total_count": int(totals[0]) if totals else 0,
+        "paid_count": int(totals[1]) if totals else 0,
         "users": [
             {
                 "id": int(r[0]),
@@ -692,9 +652,11 @@ async def list_users(
                 "oauth_provider": r[9],
                 "avatar_url": r[10],
                 "plan": r[11],
-                "sessions_count": int(r[12]) if r[12] else 0,
-                "events_count": int(r[13]) if r[13] else 0,
-                "last_active_ts": r[14].isoformat() if r[14] else None,
+                "plan_expires_at": r[12].isoformat() if r[12] else None,
+                "is_paid": r[11] is not None,
+                "sessions_count": int(r[13]) if r[13] else 0,
+                "events_count": int(r[14]) if r[14] else 0,
+                "last_active_ts": r[15].isoformat() if r[15] else None,
             }
             for r in rows
         ],
