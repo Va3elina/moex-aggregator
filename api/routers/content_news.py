@@ -343,26 +343,25 @@ def _apply_hype_emoji(html_text: str) -> str:
 
 
 def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optional[str],
-                            source_url: Optional[str], tickers: list[str],
-                            importance: int) -> None:
+                            source_url: Optional[str]) -> None:
     """Ставится в известность отдельный получатель (коллега) о каждом кандидате,
-    прошедшем и хайп-фильтр (tg_hype_scan.py — иначе кандидата бы не было), и Шаг А
-    (ИИ-фильтр релевантности) — независимо от того, резолвился ли потом тикер.
+    прошедшем и хайп-фильтр (tg_hype_scan.py), и Шаг Н (независимый ИИ-фильтр
+    «шутка/мусор vs реальная новость», apply_hype_filter ниже) — НИКАК не
+    завязано на тикер/компанию/значимость завода постов (2026-07-16, прямой
+    запрос Вадима: Шаг А калиброван под «можно ли написать пост», из-за чего
+    реально важные, но нетикерные новости — макро/геополитика — molчa резались
+    ДО уведомления; коллеге нужен независимый критерий).
     Минимум наших правок (запрос Вадима 2026-07-15) — сам пост идёт ВЕРБАТИМ, как
     в источнике: только html.escape, БЕЗ подстановки кастом-эмодзи Frame (та
     портила бы визуал оригинала, если в посте уже есть похожий эмодзи) и без
-    декоративного обвеса/подписи. Однострочная шапка (источник/тикер/значимость)
-    — это метаданные ОТ НАС, не часть поста, ей эмодзи-замена не грозит визуалу
-    оригинала. Best-effort: сбой отправки НЕ должен ронять приёмку Шага А."""
+    декоративного обвеса/подписи. Однострочная шапка (источник) — это метаданные
+    ОТ НАС, не часть поста. Best-effort: сбой отправки НЕ должен ронять приёмку."""
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
     chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
     if not token or not chat_id:
         return
-    tick = ", ".join(tickers) if tickers else "без тикера"
     body = raw_text or headline or ""
-    header = _apply_hype_emoji(
-        f"<b>{html.escape(source or '?')}</b> · {html.escape(tick)} · значимость {importance}/5"
-    )
+    header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
     text_msg = f"{header}\n\n{html.escape(body)}"[:4000]
     buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
     if source_url:
@@ -386,6 +385,30 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
         print(f"[content_news] hype-notify failed for candidate: {type(e).__name__}: {e}")
 
 
+class HypeFilterResult(BaseModel):
+    is_news: bool
+    reason: Optional[str] = None
+
+
+@internal_router.patch("/{candidate_id}/hype-filter", dependencies=[Depends(_require_internal_token)])
+def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = Depends(get_db)):
+    """Приёмка результата Шага Н — независимого от Шага А фильтра «шутка/мусор
+    vs реальная новость» (см. signals/content_ai.py:_hype_filter_payload,
+    TRIGGER_ID_HYPE_FILTER). Единственная цель — решить, уведомлять ли коллегу;
+    статус самого кандидата (state machine завода постов) НЕ трогает — это
+    параллельный, независимый side-канал, Шаг А продолжает решать судьбу
+    кандидата в pipeline сам по себе."""
+    row = db.execute(
+        text("SELECT source, headline, raw_text, source_url FROM content_candidates WHERE id = :id"),
+        {"id": candidate_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+    if body.is_news:
+        _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"])
+    return {"notified": body.is_news}
+
+
 @internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token)])
 def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага А (извлечение). Тут же — Шаг А2 (маппинг тикера,
@@ -395,7 +418,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     без единого шанса когда-либо подтвердиться (content_match.py требует
     futures_ticker IS NOT NULL)."""
     row = db.execute(
-        text("SELECT status, source, headline, raw_text, source_url FROM content_candidates WHERE id = :id"),
+        text("SELECT status FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
@@ -404,12 +427,6 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
         raise HTTPException(status_code=409, detail=f"Ожидался статус 'candidate', сейчас '{row['status']}'")
 
     if not body.relevant:
-        # Шум/шутка/пустышка — ИИ сам решил, что это не новость вообще. Единственный
-        # случай, когда коллега НЕ получает уведомление (см. ниже) — остальные
-        # ветки (низкая importance / нет тикера) для "завода постов" — брак, но
-        # коллеге всё равно интересны (2026-07-15, запрос Вадима: коллеге — любой
-        # реальный хайп по всем темам, "заводу" — только то, что можно смэтчить
-        # с тикером).
         db.execute(text("""
             UPDATE content_candidates
             SET status = 'discarded', tickers = :tickers, event_type = :event_type,
@@ -419,14 +436,6 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
                "importance": body.importance_1_5, "reasoning": body.reasoning})
         db.commit()
         return {"status": "discarded"}
-
-    # Прошёл хайп-фильтр (иначе кандидата бы не создали) И Шаг А признал реальной
-    # новостью (не шум/шутка) — коллега видит его НЕЗАВИСИМО от importance-порога
-    # "завода постов" ниже (тот калиброван под "можно ли написать пост про
-    # конкретную компанию" — разные критерии, макро/геополитика без тикера тоже
-    # интересны коллеге, даже если "заводу" их писать не из чего).
-    _notify_hype_colleague(row["source"], row["headline"], row["raw_text"], row["source_url"],
-                            body.tickers, body.importance_1_5)
 
     if body.importance_1_5 < 3:
         db.execute(text("""

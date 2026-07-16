@@ -60,6 +60,7 @@ from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 from signals.content_ai import (       # noqa: E402
     _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
+    _hype_filter_payload, TRIGGER_ID_HYPE_FILTER,
 )
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
@@ -139,6 +140,7 @@ def _headline_from_text(msg_text: str) -> str:
 
 
 def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token_a: str,
+                   can_fire_hype: bool, token_hype: str,
                    internal_token: str, summary: dict) -> None:
     entity = client.get_entity(channel)
 
@@ -245,6 +247,23 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                     summary["step_a_fire_errors"] += 1
                     print(f"[tg_hype_scan] {channel}: step-a fire failed for candidate "
                           f"{new_id}: {type(e).__name__}: {e}")
+
+            # Шаг Н — независимый фильтр «шутка/мусор vs реальная новость» для
+            # уведомления коллеги (см. TRIGGER_ID_HYPE_FILTER). Не завязан на
+            # Шаг А/тикеры, отдельный Routine — пока не создан в UI, token_hype
+            # пуст и фильтр просто не стреляет (см. run_once).
+            if can_fire_hype:
+                try:
+                    hf_payload = _hype_filter_payload(
+                        new_id, channel, row["msg_text"] or headline, internal_token,
+                    )
+                    _fire(TRIGGER_ID_HYPE_FILTER, token_hype, hf_payload)
+                    summary["hype_filter_fired"] += 1
+                    time.sleep(FIRE_STAGGER_SEC)
+                except Exception as e:
+                    summary["hype_filter_fire_errors"] += 1
+                    print(f"[tg_hype_scan] {channel}: hype-filter fire failed for candidate "
+                          f"{new_id}: {type(e).__name__}: {e}")
         except Exception as e:
             summary["errors"] += 1
             print(f"[tg_hype_scan] {channel}: checkpoint-decision failed for {row['message_id']}: "
@@ -253,7 +272,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
 
 def run_once() -> dict:
     summary = {"fetched": 0, "new_watched": 0, "checked_early": 0, "checked_mid": 0, "checked_decision": 0,
-               "promoted": 0, "step_a_fired": 0, "step_a_fire_errors": 0, "errors": 0}
+               "promoted": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
+               "hype_filter_fired": 0, "hype_filter_fire_errors": 0, "errors": 0}
 
     api_id = os.environ.get("MTP_API_ID", "")
     api_hash = os.environ.get("MTP_API_HASH", "")
@@ -265,6 +285,11 @@ def run_once() -> dict:
     internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
     token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
     can_fire = bool(internal_token and token_a)
+
+    # Шаг Н (см. TRIGGER_ID_HYPE_FILTER) — опционален: пока Routine не создана
+    # в UI и/или токен не задан в .env, просто не стреляет (не ошибка).
+    token_hype = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_HYPE_FILTER", "")
+    can_fire_hype = bool(internal_token and token_hype and TRIGGER_ID_HYPE_FILTER)
 
     now = datetime.now(timezone.utc)
     db = SessionLocal()
@@ -278,7 +303,8 @@ def run_once() -> dict:
 
         for channel in config.TG_HYPE_CHANNELS:
             try:
-                _scan_channel(client, db, channel, now, can_fire, token_a, internal_token, summary)
+                _scan_channel(client, db, channel, now, can_fire, token_a,
+                               can_fire_hype, token_hype, internal_token, summary)
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[tg_hype_scan] {channel}: fatal: {e}")
