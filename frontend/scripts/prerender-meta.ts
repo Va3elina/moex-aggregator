@@ -96,13 +96,18 @@ const NAV_LINKS = Object.entries(SEO_META)
     .filter(([, m]) => m.breadcrumb === 'Индикаторы' && !m.noindex)
     .map(([p, m]) => {
         const label = escapeText(m.title.split(' | ')[0].split(' — ')[0]);
-        return `<li style="margin:0"><a href="${p}" style="color:#1a1a1a">${label}</a></li>`;
+        return (
+            '<li style="margin:0">' +
+            `<a href="${p}" style="color:#F5F1E8;text-decoration:underline;` +
+            'text-underline-offset:3px;display:inline-block;padding:4px 0">' +
+            `${label}</a></li>`
+        );
     })
     .join('');
 const NAV_BLOCK =
-    '<nav aria-label="Индикаторы Фрейма" style="margin-top:28px">' +
+    '<nav aria-label="Индикаторы Фрейма" style="margin-top:32px">' +
     '<ul style="list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;' +
-    'gap:10px 18px;justify-content:center;font-size:0.95rem">' +
+    'gap:8px 24px;font-size:1rem;line-height:1.5">' +
     NAV_LINKS +
     '</ul></nav>';
 
@@ -201,16 +206,25 @@ function renderRoute(path: string, meta: SeoMeta): string {
     if (!meta.noindex) {
         const h1 = escapeText(meta.title.split(' | ')[0]);
         const intro = escapeText(meta.intro || meta.description || '');
-        // Блок ВИЗУАЛЬНО СКРЫТ (sr-only/off-screen): иначе он мелькал тёмным
-        // текстом до монтирования React (FOUC). Не-JS краулеры читают текст из
-        // HTML-исходника (CSS-позиционирование им безразлично), JS-краулеры и
-        // пользователи получают React-контент (он заменяет #root при гидрации) —
-        // SEO не страдает, флэша нет.
+        // Блок ВИДИМЫЙ и стилизован под тёмную editorial-тему (до React страница
+        // всегда тёмная — background-color:#0B0D12 в инлайне <html>). Прятать его
+        // sr-only-клипом нельзя: YandexMobileBot почти не исполняет JS, и скрытый
+        // блок оставлял ему ПУСТУЮ страницу — Вебмастер выдал NOT_MOBILE_FRIENDLY
+        // (нет видимого контента → нечего признать адаптивным). Видимый блок с
+        // fluid-типографикой (clamp, без фиксированных ширин, шрифт ≥16px)
+        // проходит критерии мобилопригодности, а для пользователя выглядит как
+        // мгновенный first paint в цветах темы — React заменяет #root при монтировании.
         const block =
-            '<div class="seo-prerender" style="position:absolute;width:1px;height:1px;' +
-            'overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);margin:-1px;padding:0;border:0">' +
-            `<h1 style="font-size:1.7rem;line-height:1.25;font-weight:700;margin:0 0 14px">${h1}</h1>` +
-            (intro ? `<p style="font-size:1.05rem;line-height:1.65;color:#555;margin:0">${intro}</p>` : '') +
+            '<div class="seo-prerender" style="max-width:720px;margin:0 auto;' +
+            'padding:clamp(28px,7vw,72px) 20px;color:#F5F1E8;' +
+            'font-family:Inter,system-ui,-apple-system,sans-serif">' +
+            '<h1 style="font-family:Archivo,Inter,system-ui,sans-serif;' +
+            'font-size:clamp(1.45rem,1.1rem+1.8vw,2.1rem);line-height:1.25;' +
+            `font-weight:800;letter-spacing:-0.01em;margin:0 0 16px">${h1}</h1>` +
+            (intro
+                ? '<p style="font-size:clamp(1rem,0.95rem+0.3vw,1.125rem);' +
+                  `line-height:1.65;color:#9A9A9A;margin:0">${intro}</p>`
+                : '') +
             NAV_BLOCK +
             '</div>';
         html = html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
