@@ -103,6 +103,15 @@ if echo "$changed" | grep -qE '^signals/alert_bot\.py$'; then
   systemctl restart frame-alert-bot
 fi
 
+# content-review-bot — тоже host-side systemd long-poll (не докер, не крон).
+# Найдено 2026-07-16: без этого правила код бота молча оставался устаревшим
+# после деплоя сколь угодно долго (реальный инцидент — бот не работал НИ РАЗУ
+# с момента создания, т.к. рестарт после фиксов никто не делал вручную).
+if echo "$changed" | grep -qE '^signals/content_review_bot\.py$'; then
+  echo "=== content_review_bot changed -> systemctl restart ==="
+  systemctl restart frame-content-review-bot
+fi
+
 # nginx — конфиг монтируется в frame-nginx-1; git reset кладёт новый файл, но
 # nginx подхватит его только по reload. Валидируем (nginx -t) и reload'им БЕЗ
 # рестарта (graceful, без разрыва соединений). Только если менялся conf.
