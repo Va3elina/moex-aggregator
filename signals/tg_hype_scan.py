@@ -9,19 +9,20 @@
 просмотры — слабый сигнал (разброс ~9×), репосты — сильный (разброс ~3000×,
 p50=80/p90=302/p99=969).
 
-Изначально решение принималось на чекпоинте +90мин (два чекпоинта, был расчёт
-на "поздний всплеск" у части постов). Найдено 2026-07-15 (замер 78 постов с
-обоими чекпоинтами): у ВСЕХ 6 постов, реально пересёкших порог хайпа, fwd_15
-уже был выше ×3 к медиане fwd_15-истории — ждать до +90мин не требовалось НИ
-РАЗУ. Решение переехало на +15мин (MTP_CHECKPOINT_1_MIN), baseline считается
-на fwd_15. +90мин-чекпоинт убран целиком.
+Изначально решение принималось на чекпоинте +90мин, потом +15мин (найдено
+2026-07-15: у ВСЕХ 6 реально хайповых постов fwd_15 уже был выше ×3 к медиане
+— ждать до +90мин не требовалось НИ РАЗУ). Найдено 2026-07-16 (219 постов с
+fwd_3+fwd_15, 38 promoted): на +3мин у promoted было видно только 46%
+итогового fwd_15-сигнала (против 73% на +8мин) — формально более рискованная
+точка, но Вадим осознанно выбрал скорость: decision-чекпоинт переехал сразу
+на +3мин (MTP_CHECKPOINT_1_MIN), baseline теперь на fwd_3, не fwd_15.
 
-fwd_3 (MTP_CHECKPOINT_EARLY_MIN) — ЕЩЁ более ранний чекпоинт, ПОКА ТОЛЬКО для
-измерения (ни на что не влияет) — копим данные, чтобы через несколько дней
-честно ответить, можно ли сократить decision-чекпоинт ниже 15 минут (см.
-db/migrations/031_tg_channel_watch_early_checkpoint).
+fwd_5/fwd_6/fwd_7/fwd_8 — ТОЛЬКО измерение (ни на что не влияют), держим как
+запасные точки на случай, если 3 минуты дадут слишком много ложных
+срабатываний/пропусков и decision-чекпоинт придётся вернуть выше (см.
+db/migrations/031, 038_tg_channel_watch_fine_checkpoints).
 
-Baseline (медиана fwd_15) считается ОТДЕЛЬНО по каждому каналу — репосты
+Baseline (медиана fwd_3) считается ОТДЕЛЬНО по каждому каналу — репосты
 разных каналов не сравнимы напрямую (разный размер аудитории), поэтому
 tg_channel_watch хранит канал и все выборки baseline фильтруются по нему.
 
@@ -33,11 +34,11 @@ Telethon пытается заблокированные РКН IPv4-адрес�
 сам, переживает рестарты процесса) — общий на все каналы, отдельный логин
 на каждый канал не нужен (это один Telegram-аккаунт, читающий N каналов).
 
-Запуск раз в 5 минут — чаще, чем раньше (было 15), чтобы физически успевать
-поймать более узкое окно измерительного чекпоинта +3мин (чекпоинты
-дискретные, cron должен успевать поймать окно
-[checkpoint, checkpoint+MTP_CHECKPOINT_*_TOLERANCE_MIN]):
-  /opt/frame/signals/tg_hype_scan.sh   (cron, напр. */5 * * * *)
+Запуск раз в 2 минуты — учащено (было 5, до этого 15), т.к. измерительные
+точки теперь лежат вплотную (5/6/7 мин, шаг 1 минута) — крон раз в 5 мин не
+успевал бы разделить их (чекпоинты дискретные, крон должен успевать поймать
+окно [checkpoint, checkpoint+MTP_CHECKPOINT_*_TOLERANCE_MIN]):
+  /opt/frame/signals/tg_hype_scan.sh   (cron, напр. */2 * * * *)
 """
 import os
 import statistics
@@ -84,42 +85,48 @@ _INSERT_WATCH = text("""
     ON CONFLICT (channel, message_id) DO NOTHING
 """)
 
-_SELECT_PENDING_EARLY = text("""
-    SELECT message_id FROM tg_channel_watch
+# Измерительные чекпоинты (ни на что не влияют, только копят данные) — общий
+# цикл вместо копипасты под каждую точку. Каждый кортеж: (колонка, минуты,
+# допуск-минуты, ключ в summary). Порядок — по возрастанию минут.
+MEASURE_CHECKPOINTS = [
+    ("fwd_5", config.MTP_CHECKPOINT_5_MIN, config.MTP_CHECKPOINT_5_TOLERANCE_MIN, "checked_5"),
+    ("fwd_6", config.MTP_CHECKPOINT_6_MIN, config.MTP_CHECKPOINT_6_TOLERANCE_MIN, "checked_6"),
+    ("fwd_7", config.MTP_CHECKPOINT_7_MIN, config.MTP_CHECKPOINT_7_TOLERANCE_MIN, "checked_7"),
+    ("fwd_8", config.MTP_CHECKPOINT_8_MIN, config.MTP_CHECKPOINT_8_TOLERANCE_MIN, "checked_8"),
+]
+
+
+def _select_pending_sql(col: str):
+    return text(f"""
+        SELECT message_id FROM tg_channel_watch
+        WHERE channel = :channel AND {col} IS NULL
+          AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
+    """)
+
+
+def _update_fwd_sql(col: str):
+    return text(f"""
+        UPDATE tg_channel_watch SET {col} = :fwd, {col}_at = now()
+        WHERE channel = :channel AND message_id = :id
+    """)
+
+
+# Decision-чекпоинт (+3мин, MTP_CHECKPOINT_1_MIN) — единственный, что решает
+# судьбу поста, пишет в fwd_3 (см. docstring выше, было fwd_15→fwd_8). Нужен
+# msg_text (для headline/raw_text кандидата), поэтому отдельный SELECT, не через хелпер.
+_SELECT_PENDING_DECISION = text("""
+    SELECT message_id, posted_at, msg_text FROM tg_channel_watch
     WHERE channel = :channel AND fwd_3 IS NULL
       AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
 """)
-_UPDATE_FWD_EARLY = text("""
-    UPDATE tg_channel_watch SET fwd_3 = :fwd, fwd_3_at = now()
-    WHERE channel = :channel AND message_id = :id
-""")
-
-_SELECT_PENDING_MID = text("""
-    SELECT message_id FROM tg_channel_watch
-    WHERE channel = :channel AND fwd_8 IS NULL
-      AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
-""")
-_UPDATE_FWD_MID = text("""
-    UPDATE tg_channel_watch SET fwd_8 = :fwd, fwd_8_at = now()
-    WHERE channel = :channel AND message_id = :id
-""")
-
-_SELECT_PENDING_DECISION = text("""
-    SELECT message_id, posted_at, msg_text FROM tg_channel_watch
-    WHERE channel = :channel AND fwd_15 IS NULL
-      AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
-""")
-_UPDATE_FWD_DECISION = text("""
-    UPDATE tg_channel_watch SET fwd_15 = :fwd, fwd_15_at = now()
-    WHERE channel = :channel AND message_id = :id
-""")
+_UPDATE_FWD_DECISION = _update_fwd_sql("fwd_3")
 _MARK_PROMOTED = text(
     "UPDATE tg_channel_watch SET promoted = TRUE WHERE channel = :channel AND message_id = :id"
 )
 _RECENT_FWD_DECISION = text("""
-    SELECT fwd_15 FROM tg_channel_watch
-    WHERE channel = :channel AND fwd_15 IS NOT NULL
-    ORDER BY fwd_15_at DESC LIMIT :n
+    SELECT fwd_3 FROM tg_channel_watch
+    WHERE channel = :channel AND fwd_3 IS NOT NULL
+    ORDER BY fwd_3_at DESC LIMIT :n
 """)
 
 _EXISTS_CANDIDATE = text(
@@ -166,45 +173,26 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             summary["new_watched"] += 1
     db.commit()
 
-    # ── 2. Ранний чекпоинт +3мин — ТОЛЬКО измерение, ни на что не влияет ──
-    cutoff_min = now - timedelta(minutes=config.MTP_CHECKPOINT_EARLY_MIN)
-    cutoff_max = now - timedelta(
-        minutes=config.MTP_CHECKPOINT_EARLY_MIN + config.MTP_CHECKPOINT_EARLY_TOLERANCE_MIN)
-    pending_early = db.execute(_SELECT_PENDING_EARLY, {
-        "channel": channel, "cutoff_min": cutoff_min, "cutoff_max": cutoff_max,
-    }).mappings().all()
-    for row in pending_early:
-        try:
-            fresh = client.get_messages(entity, ids=row["message_id"])
-            fwd = (fresh.forwards or 0) if fresh else 0
-            db.execute(_UPDATE_FWD_EARLY, {"channel": channel, "id": row["message_id"], "fwd": fwd})
-            db.commit()
-            summary["checked_early"] += 1
-        except Exception as e:
-            summary["errors"] += 1
-            print(f"[tg_hype_scan] {channel}: checkpoint-early failed for {row['message_id']}: "
-                  f"{type(e).__name__}: {e}")
+    # ── 2. Измерительные чекпоинты (5/6/7/8мин) — ТОЛЬКО измерение, ни на что не влияют ──
+    for col, minutes, tolerance, summary_key in MEASURE_CHECKPOINTS:
+        cutoff_min = now - timedelta(minutes=minutes)
+        cutoff_max = now - timedelta(minutes=minutes + tolerance)
+        pending = db.execute(_select_pending_sql(col), {
+            "channel": channel, "cutoff_min": cutoff_min, "cutoff_max": cutoff_max,
+        }).mappings().all()
+        for row in pending:
+            try:
+                fresh = client.get_messages(entity, ids=row["message_id"])
+                fwd = (fresh.forwards or 0) if fresh else 0
+                db.execute(_update_fwd_sql(col), {"channel": channel, "id": row["message_id"], "fwd": fwd})
+                db.commit()
+                summary[summary_key] += 1
+            except Exception as e:
+                summary["errors"] += 1
+                print(f"[tg_hype_scan] {channel}: checkpoint-{col} failed for {row['message_id']}: "
+                      f"{type(e).__name__}: {e}")
 
-    # ── 2b. Промежуточный чекпоинт +8мин — ТОЖЕ только измерение ──
-    cutoff_min = now - timedelta(minutes=config.MTP_CHECKPOINT_MID_MIN)
-    cutoff_max = now - timedelta(
-        minutes=config.MTP_CHECKPOINT_MID_MIN + config.MTP_CHECKPOINT_MID_TOLERANCE_MIN)
-    pending_mid = db.execute(_SELECT_PENDING_MID, {
-        "channel": channel, "cutoff_min": cutoff_min, "cutoff_max": cutoff_max,
-    }).mappings().all()
-    for row in pending_mid:
-        try:
-            fresh = client.get_messages(entity, ids=row["message_id"])
-            fwd = (fresh.forwards or 0) if fresh else 0
-            db.execute(_UPDATE_FWD_MID, {"channel": channel, "id": row["message_id"], "fwd": fwd})
-            db.commit()
-            summary["checked_mid"] += 1
-        except Exception as e:
-            summary["errors"] += 1
-            print(f"[tg_hype_scan] {channel}: checkpoint-mid failed for {row['message_id']}: "
-                  f"{type(e).__name__}: {e}")
-
-    # ── 3. Decision-чекпоинт +15мин: финальное решение о хайпе ──
+    # ── 3. Decision-чекпоинт +3мин: финальное решение о хайпе ──
     cutoff_min = now - timedelta(minutes=config.MTP_CHECKPOINT_1_MIN)
     cutoff_max = now - timedelta(minutes=config.MTP_CHECKPOINT_1_MIN + config.MTP_CHECKPOINT_TOLERANCE_MIN)
     pending_decision = db.execute(_SELECT_PENDING_DECISION, {
@@ -295,7 +283,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
 
 
 def run_once() -> dict:
-    summary = {"fetched": 0, "new_watched": 0, "checked_early": 0, "checked_mid": 0, "checked_decision": 0,
+    summary = {"fetched": 0, "new_watched": 0,
+               "checked_5": 0, "checked_6": 0, "checked_7": 0, "checked_8": 0, "checked_decision": 0,
                "promoted": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
                "hype_filter_fired": 0, "hype_filter_fire_errors": 0, "errors": 0}
 
