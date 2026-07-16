@@ -631,10 +631,17 @@ def create_alerts_batch(
     return AlertBatchResult(created=created, skipped=skipped, errors=errors)
 
 
+# Индикаторы, у которых timeframe реально меняет расчёт (см. alerts_run.py::compute_value
+# — только они читают a.timeframe через _TF_INTERVAL). oi_extreme/price/funds_flow/
+# strength_level/buffett_* его игнорируют — редактирование для них бессмысленно.
+TIMEFRAME_INDICATORS = ("oi_move", "oi_participants", "oi_level")
+
+
 @router.patch("/{alert_id}", response_model=AlertOut)
 def update_alert(
     alert_id: int,
     status: Optional[str] = None,
+    timeframe: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -646,6 +653,16 @@ def update_alert(
         _log_alert_event(
             db, alert_id=a.id, user_id=user.id,
             event="resumed" if status == "active" else "paused",
+            asset=a.asset, indicator=a.indicator, source=a.source,
+        )
+    if timeframe is not None and timeframe != a.timeframe:
+        if timeframe not in ("5m", "1h", "1d"):
+            raise HTTPException(status_code=400, detail="некорректный таймфрейм")
+        if a.indicator not in TIMEFRAME_INDICATORS:
+            raise HTTPException(status_code=400, detail="для этого индикатора таймфрейм нельзя менять")
+        a.timeframe = timeframe
+        _log_alert_event(
+            db, alert_id=a.id, user_id=user.id, event="tf_changed",
             asset=a.asset, indicator=a.indicator, source=a.source,
         )
     db.commit()

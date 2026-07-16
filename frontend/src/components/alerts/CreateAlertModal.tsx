@@ -93,8 +93,8 @@ const SIGNAL_LEVELS: SignalLevel[] = [
 // Таймфрейм раннего срабатывания дневного сигнала. Один и тот же дневной сигнал,
 // но net_сейчас берётся из последнего бара выбранного интервала: 5м / 1ч ловят
 // дневной сдвиг раньше (доступны у ликвидных активов), 1д — публикация раз в день.
-type TfOption = { key: string; label: string };
-const TIMEFRAMES: TfOption[] = [
+export type TfOption = { key: string; label: string };
+export const TIMEFRAMES: TfOption[] = [
     { key: '5m', label: '5 мин' },
     { key: '1h', label: '1 час' },
     { key: '1d', label: '1 день' },

@@ -14,13 +14,15 @@ import {
 } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
-    listAlerts, deleteAlert, deleteAllAlerts, setAlertStatus,
+    listAlerts, deleteAlert, deleteAllAlerts, setAlertStatus, setAlertTimeframe,
+    getIntradayAssets,
     type AlertInfo,
 } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import MessengerChoice from '../alerts/MessengerChoice';
 import AlertFiresList from './AlertFiresList';
+import { TIMEFRAMES } from '../alerts/CreateAlertModal';
 
 /** Inline-глиф колокольчика — повторяет кнопку-колокол с индикаторов (Bell в обведённом
  *  кружке), чтобы текст «кнопкой …» указывал на реальный контрол, а не на эмодзи. */
@@ -47,6 +49,22 @@ const iconBtn: CSSProperties = {
     background: 'var(--bg-primary)', display: 'inline-flex',
     alignItems: 'center', justifyContent: 'center',
 };
+// Мини-пилл для таймфрейма в карточке алерта — тот же язык, что и pill() в
+// CreateAlertModal (заливка accent + жёсткая тень на выборе), но уменьшенный под
+// плотную строку списка, а не под простор модалки.
+const tfPill = (active: boolean, disabled: boolean): CSSProperties => ({
+    padding: '3px 8px', borderRadius: 6, fontSize: 'var(--fs-2xs)', fontWeight: 700,
+    border: '1.5px solid var(--text-primary)',
+    background: active ? 'var(--accent)' : 'var(--bg-primary)',
+    color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
+    boxShadow: active ? '2px 2px 0 0 var(--text-primary)' : 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+    transition: 'box-shadow 0.12s, background 0.12s',
+});
+// Индикаторы, у которых таймфрейм реально влияет на расчёт (см. TIMEFRAME_INDICATORS
+// в api/routers/alerts.py) — только для них показываем переключатель.
+const TF_ELIGIBLE = new Set(['oi_move', 'oi_participants', 'oi_level']);
 
 const OP_LABEL: Record<string, string> = {
     gt: 'выше', lt: 'ниже', cross: 'пересечёт',
@@ -133,6 +151,15 @@ export default function TelegramAlertsSection() {
     const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());  // раскрытые секторы
     const [openFires, setOpenFires] = useState<number | null>(null);          // alert.id с раскрытой историей
 
+    // Активы с внутридневными данными (5м/1ч доступны только у них) — тот же
+    // источник, что и в конструкторе алерта (CreateAlertModal), грузим один раз.
+    const [intradaySet, setIntradaySet] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        let cancelled = false;
+        getIntradayAssets().then((list) => { if (!cancelled) setIntradaySet(new Set(list)); }).catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
+
     // Грузим первую страницу. items/total из контракта Agent A (listAlerts→{items,total}).
     const loadAlerts = useCallback(async (offset: number) => {
         const page = await listAlerts({ limit: PAGE_LIMIT, offset });
@@ -187,6 +214,11 @@ export default function TelegramAlertsSection() {
     };
     const toggle = async (a: AlertInfo) => {
         try { await setAlertStatus(a.id, a.status === 'active' ? 'paused' : 'active'); refresh(); }
+        catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
+    };
+    const changeTimeframe = async (a: AlertInfo, tf: string) => {
+        if (tf === (a.timeframe || '1d')) return;
+        try { await setAlertTimeframe(a.id, tf as '5m' | '1h' | '1d'); refresh(); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
     const remove = async (a: AlertInfo) => {
@@ -422,6 +454,29 @@ export default function TelegramAlertsSection() {
                                                                             {condLabel(a)}
                                                                             {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
                                                                         </div>
+                                                                        {TF_ELIGIBLE.has(a.indicator) && (
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                                                                                <span style={{ color: sub, fontSize: 'var(--fs-2xs)' }}>Проверка:</span>
+                                                                                {TIMEFRAMES.map((tf) => {
+                                                                                    const intraday = tf.key !== '1d';
+                                                                                    const disabled = intraday && !intradaySet.has(a.asset);
+                                                                                    const active = (a.timeframe || '1d') === tf.key;
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={tf.key}
+                                                                                            type="button"
+                                                                                            disabled={disabled}
+                                                                                            title={disabled ? 'Внутридневные данные недоступны для этого актива' : undefined}
+                                                                                            onClick={() => changeTimeframe(a, tf.key)}
+                                                                                            className="editorial-press"
+                                                                                            style={tfPill(active, disabled)}
+                                                                                        >
+                                                                                            {tf.label}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
                                                                         <button
                                                                             onClick={() => setOpenFires(firesOpen ? null : a.id)}
                                                                             disabled={firesN === 0}
