@@ -41,6 +41,7 @@ Telethon пытается заблокированные РКН IPv4-адрес�
   /opt/frame/signals/tg_hype_scan.sh   (cron, напр. */2 * * * *)
 """
 import os
+import re
 import statistics
 import time
 from datetime import datetime, timedelta, timezone
@@ -147,6 +148,18 @@ _MARK_HYPE_FILTER_DISPATCHED = text("""
 """)
 
 
+# Smartlab подписывает КАЖДЫЙ пост фиксированным футером-рекламой своего
+# канала в MAX (2026-07-16, Вадим: "убираем [мы в max]") — не часть новости,
+# режем при сохранении, чтобы не тянуть его дальше в уведомление/Kanban/черновик.
+_SMARTLAB_FOOTER_RE = re.compile(
+    r"\n*\[мы в max\]\(https://max\.ru/newssmartlab\)\s*$", re.IGNORECASE
+)
+
+
+def _strip_known_footers(msg_text: str) -> str:
+    return _SMARTLAB_FOOTER_RE.sub("", msg_text or "").rstrip()
+
+
 def _headline_from_text(msg_text: str) -> str:
     """Заголовок = первая содержательная строка (посты часто начинаются
     с эмодзи-тегов вроде ⚠️🇺🇸#санкции на отдельной строке)."""
@@ -167,7 +180,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
         summary["fetched"] += 1
         posted = m.date if m.date.tzinfo else m.date.replace(tzinfo=timezone.utc)
         res = db.execute(_INSERT_WATCH, {
-            "channel": channel, "id": m.id, "posted_at": posted, "text": (m.text or "")[:2000],
+            "channel": channel, "id": m.id, "posted_at": posted,
+            "text": _strip_known_footers(m.text or "")[:2000],
         })
         if res.rowcount:
             summary["new_watched"] += 1
