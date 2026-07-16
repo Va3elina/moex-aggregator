@@ -24,7 +24,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import { formatReturnPct, returnColor } from '../funds/FundDetailModal';
+import { formatReturnPct } from '../funds/FundDetailModal';
 import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
@@ -228,7 +228,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     const kpis = (
         <>
             <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
-            <StatTile label={`Доходность · ${PERIOD_LABEL[retK]}`} value={formatReturnPct(ret ?? undefined)} color={returnColor(ret ?? undefined)} />
+            <StatTile label={`Доходность · ${PERIOD_LABEL[retK]}`} value={formatReturnPct(ret ?? undefined)} color="var(--text-muted)" />
         </>
     );
 
@@ -507,7 +507,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                     <div style={{ marginTop: 16 }}>
                         <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
                             <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность · {PERIOD_LABEL[retK]}</div>
-                            <div style={{ fontSize: 'var(--fs-xl, 22px)', fontWeight: 800, marginTop: 4, fontVariantNumeric: 'tabular-nums', color: returnColor(ret ?? undefined) }}>{formatReturnPct(ret ?? undefined)}</div>
+                            <div style={{ fontSize: 'var(--fs-xl, 22px)', fontWeight: 800, marginTop: 4, fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>{formatReturnPct(ret ?? undefined)}</div>
                         </div>
                     </div>
                 </div>
