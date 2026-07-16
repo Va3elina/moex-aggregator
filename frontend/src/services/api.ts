@@ -1860,6 +1860,13 @@ export async function setAlertStatus(id: number, status: 'active' | 'paused'): P
     if (!resp.ok) throw new Error('Не удалось изменить алерт');
     return resp.json();
 }
+// Таймфрейм источника сигнала ('5m'|'1h'|'1d') — только для oi_move/oi_participants/
+// oi_level (см. TIMEFRAME_INDICATORS в api/routers/alerts.py); для остальных бэк вернёт 400.
+export async function setAlertTimeframe(id: number, timeframe: '5m' | '1h' | '1d'): Promise<AlertInfo> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?timeframe=${timeframe}`, { method: 'PATCH' });
+    if (!resp.ok) throw new Error('Не удалось изменить таймфрейм');
+    return resp.json();
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Лента аномалий — всплывающие тосты + колокол. Бэкенд: /api/anomalies/*
