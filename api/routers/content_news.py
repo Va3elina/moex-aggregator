@@ -21,9 +21,11 @@
 content_candidates (db/migrations/022_content_candidates.sql) — там же полное
 описание state machine статусов.
 """
+import difflib
 import html
 import json
 import os
+import re
 from typing import Optional
 
 import requests
@@ -331,6 +333,14 @@ _HYPE_LOGO_SIGNATURE_IDS = (
 _HYPE_KANBAN_URL = "https://xn--80aklbnczmv.xn--p1ai/admin/content-news"  # punycode таймфрейм.рф
 
 
+def _normalize_for_similarity(text_val: Optional[str]) -> str:
+    """Заголовок → нижний регистр, без пунктуации/эмодзи/лишних пробелов —
+    для difflib-сравнения дублей одной новости из разных источников
+    (см. apply_step_a). Достаточно грубо — источники репостят почти
+    verbatim, тонкая нормализация не нужна."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", (text_val or "").lower())).strip()
+
+
 def _apply_hype_emoji(html_text: str) -> str:
     """Заменить НАШИ декоративные plain-эмодзи на премиальные custom-emoji Frame.
     Вызывать ПОСЛЕДНИМ шагом, когда HTML-разметка (<b>/<i>) уже настоящая —
@@ -446,7 +456,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     без единого шанса когда-либо подтвердиться (content_match.py требует
     futures_ticker IS NOT NULL)."""
     row = db.execute(
-        text("SELECT status FROM content_candidates WHERE id = :id"),
+        text("SELECT status, headline FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
@@ -501,6 +511,51 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
         })
         db.commit()
         return {"status": "discarded"}
+
+    # Дубликат одной новости в разных каналах (Вадим 2026-07-16: "VK продаёт
+    # RuStore" пришла и от MarketTwits, и от Smartlab почти одновременно —
+    # два кандидата на заводе про один и тот же тикер/событие). ⚠️ Пересечение
+    # тикеров САМО ПО СЕБЕ ненадёжно — проверено на реальных данных: id 715
+    # ("#X5 #отчетность", пустая метка) и 717 ("X5 объявляет о росте выручки
+    # на 9,9%...", реальная новость) созданы с разницей 7 минут, тот же
+    # тикер, но это РАЗНЫЕ события — по одному тикеру совпадение отбросило
+    # бы настоящую новость 717 как "дубликат" пустышки 715. Поэтому тикер —
+    # только предварительный фильтр кандидатов, финальное решение — по
+    # текстовому сходству заголовков (difflib, без ИИ: оба live-примера
+    # дают чистое разделение — реальный дубликат VKCO ratio=0.98, разные
+    # X5/GAZP-новости ratio=0.15-0.25, порог 0.6 берёт с запасом).
+    ticker_matches = db.execute(text("""
+        SELECT id, headline FROM content_candidates
+        WHERE id != :id AND tickers && :tickers
+          AND created_at > now() - interval '6 hours'
+        ORDER BY created_at ASC
+    """), {"id": candidate_id, "tickers": body.tickers}).mappings().all()
+    own_norm = _normalize_for_similarity(row["headline"])
+    duplicate_of = None
+    for m in ticker_matches:
+        ratio = difflib.SequenceMatcher(None, own_norm, _normalize_for_similarity(m["headline"])).ratio()
+        if ratio >= 0.6:
+            duplicate_of = m["id"]
+            break
+    if duplicate_of:
+        db.execute(text("""
+            UPDATE content_candidates
+            SET status = 'discarded', tickers = :tickers, futures_ticker = :futures_ticker,
+                event_type = :event_type, importance_1_5 = :importance,
+                thread_key = COALESCE(thread_key, :thread_key),
+                parent_candidate_id = :parent_id,
+                reasoning = :reasoning, updated_at = now()
+            WHERE id = :id
+        """), {
+            "id": candidate_id, "tickers": body.tickers, "futures_ticker": futures_ticker,
+            "event_type": body.event_type, "importance": body.importance_1_5,
+            "thread_key": f"ticker:{body.tickers[0]}" if body.tickers else None,
+            "parent_id": duplicate_of,
+            "reasoning": (body.reasoning or "") + f" [дубликат кандидата #{duplicate_of} — "
+                         "тот же тикер + похожий текст (та же новость из другого источника) в пределах 6ч]",
+        })
+        db.commit()
+        return {"status": "discarded", "duplicate_of": duplicate_of}
 
     db.execute(text("""
         UPDATE content_candidates
