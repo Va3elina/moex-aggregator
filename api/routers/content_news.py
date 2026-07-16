@@ -374,8 +374,10 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     декоративного обвеса/подписи. Однострочная шапка (источник) — это метаданные
     ОТ НАС, не часть поста. Best-effort: сбой отправки НЕ должен ронять приёмку."""
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
-    chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
-    if not token or not chat_id:
+    # Несколько получателей — через запятую (2026-07-16, добавление коллеги
+    # №2 к рассылке @hypeframebot).
+    chat_ids = [c.strip() for c in os.environ.get("HYPE_NOTIFY_CHAT_ID", "").split(",") if c.strip()]
+    if not token or not chat_ids:
         return
     body = raw_text or headline or ""
     header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
@@ -391,30 +393,31 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     # с ConnectionError "Network is unreachable" при прямом обращении.
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     media_path = os.path.join(_MEDIA_DIR, media_filename) if media_filename else None
-    try:
-        if media_path and os.path.isfile(media_path):
-            # caption лимит Telegram — 1024 символа (не 4096, как у text у sendMessage).
-            with open(media_path, "rb") as photo_file:
+    for chat_id in chat_ids:
+        try:
+            if media_path and os.path.isfile(media_path):
+                # caption лимит Telegram — 1024 символа (не 4096, как у text у sendMessage).
+                with open(media_path, "rb") as photo_file:
+                    requests.post(
+                        f"{api_root}/bot{token}/sendPhoto",
+                        data={
+                            "chat_id": chat_id, "caption": text_msg[:1024], "parse_mode": "HTML",
+                            "reply_markup": json.dumps(reply_markup),
+                        },
+                        files={"photo": photo_file},
+                        timeout=20,
+                    )
+            else:
                 requests.post(
-                    f"{api_root}/bot{token}/sendPhoto",
-                    data={
-                        "chat_id": chat_id, "caption": text_msg[:1024], "parse_mode": "HTML",
-                        "reply_markup": json.dumps(reply_markup),
+                    f"{api_root}/bot{token}/sendMessage",
+                    json={
+                        "chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML",
+                        "reply_markup": reply_markup,
                     },
-                    files={"photo": photo_file},
-                    timeout=20,
+                    timeout=10,
                 )
-        else:
-            requests.post(
-                f"{api_root}/bot{token}/sendMessage",
-                json={
-                    "chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML",
-                    "reply_markup": reply_markup,
-                },
-                timeout=10,
-            )
-    except Exception as e:
-        print(f"[content_news] hype-notify failed for candidate: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"[content_news] hype-notify failed for chat_id={chat_id}: {type(e).__name__}: {e}")
 
 
 class HypeFilterResult(BaseModel):
