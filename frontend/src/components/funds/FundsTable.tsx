@@ -17,10 +17,45 @@ const FUND_COLORS = [
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 
-// Fade-out длинных имён вместо троеточия (bare): имя занимает всю ширину колонки
-// (flex:1), длинный текст плавно растворяется у правого края. Короткие имена не
-// затухают — маска приходится на пустое место справа. Полное имя — в title.
+// Fade-out длинных имён вместо троеточия (bare): длинный текст плавно
+// растворяется у правого края. Полное имя — в title.
 const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 30px), transparent 100%)';
+
+// Имя фонда в bare-строке. Бокс сжимается до содержимого (flex 0 1 auto),
+// чтобы значок [!] стоял вплотную к тексту, а фейд-маска накладывается
+// ТОЛЬКО когда текст реально обрезан — иначе она замазывала хвост даже
+// коротких имён (маска считается от бокса, бокс = ширина текста).
+// Обрезанность меряем по факту (scrollWidth vs clientWidth) и пересчитываем
+// на ресайз строки.
+function FadedName({ name, display }: { name: string; display: string }) {
+    const ref = React.useRef<HTMLSpanElement>(null);
+    const [clipped, setClipped] = React.useState(false);
+    React.useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const check = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+        check();
+        const ro = new ResizeObserver(check);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [display]);
+    return (
+        <span
+            ref={ref}
+            title={name}
+            className="font-normal"
+            style={{
+                flex: '0 1 auto',
+                minWidth: 0,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                ...(clipped ? { maskImage: NAME_FADE, WebkitMaskImage: NAME_FADE } : {}),
+            }}
+        >
+            {display}
+        </span>
+    );
+}
 
 // Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
 // обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
@@ -551,24 +586,7 @@ export default function FundsTable({
                                                             })()}
                                                             {bare ? (
                                                                 <>
-                                                                    {/* Имя сжимается только когда не помещается (flex-shrink),
-                                                                        а не растягивается на всю ширину — иначе значок [!]
-                                                                        оказывался оторван от текста коротких имён. Маска
-                                                                        фейдит правый край и срабатывает только при обрезке. */}
-                                                                    <span
-                                                                        title={fund.name}
-                                                                        className="font-normal"
-                                                                        style={{
-                                                                            flex: '0 1 auto',
-                                                                            minWidth: 0,
-                                                                            overflow: 'hidden',
-                                                                            whiteSpace: 'nowrap',
-                                                                            maskImage: NAME_FADE,
-                                                                            WebkitMaskImage: NAME_FADE,
-                                                                        }}
-                                                                    >
-                                                                        {stripUkName(fund.name, fund.uk_id)}
-                                                                    </span>
+                                                                    <FadedName name={fund.name} display={stripUkName(fund.name, fund.uk_id)} />
                                                                     {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                         <span
                                                                             className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
