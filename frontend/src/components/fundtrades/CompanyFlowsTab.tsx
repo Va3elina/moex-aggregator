@@ -24,6 +24,7 @@ import {
     type CompanyFlowsResponse,
 } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
+import Skeleton from '../Skeleton';
 import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
@@ -296,17 +297,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
 
     // ── Рендер ──
     if (assetsLoading) {
+        // Высота skeleton'а держит примерный размер финального контента (ряд
+        // контролов + график chartHeight), чтобы контейнер не «прыгал», когда
+        // список бумаг приходит с бэкенда.
         return (
-            <div className="flex items-center justify-center" style={{ padding: 'var(--sp-10)' }}>
-                <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
-                    <div
-                        className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
-                        style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-                    />
-                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>
-                        Загрузка бумаг…
-                    </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--sp-2)' }}>
+                    <Skeleton width={170} height={40} rounded="md" />
+                    <Skeleton width={90} height={40} rounded="md" />
+                    <Skeleton width={150} height={40} rounded="md" />
                 </div>
+                <Skeleton height={chartHeight} rounded="lg" />
             </div>
         );
     }
