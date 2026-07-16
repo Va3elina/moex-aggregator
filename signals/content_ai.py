@@ -116,6 +116,7 @@ _SELECT_CANDIDATES = text("""
 _SELECT_DRAFT_READY = text("""
     SELECT c.id, c.headline, c.raw_text, c.tickers, c.event_type, c.futures_ticker,
            c.reasoning, c.dispatch_attempts, c.forwards_count,
+           c.thread_key, c.created_at,
            a.id AS anomaly_id, a.asset_id, a.asset_name, a.type AS anomaly_type,
            a.clgroup AS anomaly_clgroup, a.direction,
            a.severity_value, a.signal_date, a.headline AS anomaly_headline
@@ -133,6 +134,14 @@ _SELECT_RECENT_SIGNALS = text("""
     WHERE scope = 'public' AND type = 'oi_move' AND id != :exclude_id
     ORDER BY signal_date DESC, id DESC
     LIMIT 5
+""")
+
+_SELECT_PRIOR_POST = text("""
+    SELECT headline, draft_text, published_at, updated_at
+    FROM content_candidates
+    WHERE thread_key = :thread_key AND id != :self_id AND draft_text IS NOT NULL
+    ORDER BY COALESCE(published_at, updated_at) DESC
+    LIMIT 1
 """)
 
 _MARK_DISPATCHED = text("""
@@ -303,9 +312,34 @@ def _recent_signals_line(db, exclude_anomaly_id: int) -> str:
     return "; ".join(parts)
 
 
+def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
+    """Более ранний опубликованный/готовый пост по этому же треду — фактура
+    для честного «продолжение истории» вместо повторного изобретения того же
+    сюжета с нуля. reused_signal=True добавляет явную оговорку: сам сигнал ОИ
+    не новый (дневной актив, новых данных сегодня физически не появится),
+    Шаг В не должен подавать ×N как случившееся заново."""
+    if not thread_key:
+        return "(нет — новый тред)"
+    row = db.execute(
+        _SELECT_PRIOR_POST, {"thread_key": thread_key, "self_id": self_id}
+    ).mappings().first()
+    if not row:
+        return "(нет — новый тред)"
+    note = ""
+    if reused_signal:
+        note = ("ВНИМАНИЕ: аномалия та же самая, что и в посте ниже — новых данных "
+                 "по позициям сегодня нет (актив дневной, разово в сутки). НЕ подавай "
+                 "×N как случившееся заново, пиши только обновление новостной истории.\n")
+    when = row["published_at"] or row["updated_at"]
+    return f"{note}пост от {when}:\n{row['draft_text'] or row['headline']}"
+
+
 def _step_c_payload(db, row, internal_token: str) -> str:
     oi_context = _oi_context_line(row["asset_id"], row["anomaly_clgroup"])
     recent_signals = _recent_signals_line(db, row["anomaly_id"])
+    created_at = row.get("created_at")
+    reused_signal = bool(created_at and row["signal_date"] < created_at.date())
+    prior_post = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     return (
         f"candidate_id: {row['id']}\n"
         f"headline: {row['headline']}\n"
@@ -323,6 +357,7 @@ def _step_c_payload(db, row, internal_token: str) -> str:
         f"  headline: {row['anomaly_headline']}\n"
         f"oi_context: {oi_context}\n"
         f"recent_signals: {recent_signals}\n"
+        f"prior_post: {prior_post}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
     )
