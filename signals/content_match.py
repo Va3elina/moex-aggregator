@@ -12,8 +12,22 @@ Granularity-осознанность (измерено вживую 2026-07-13: 
 снэпшот ОИ, лаг обнаружения сигнала ~21ч от новости; блю-чипы вроде GAZPF/SBERF —
 интрадей каждые 5-60 мин): для активов БЕЗ интрадей-данных (has_intraday_oi=False)
 повторная проверка чаще раза в сутки бессмысленна — new данных всё равно не
-появится до следующего EOD-снэпшота. last_checked_at не даёт лишний раз дёргать
-такие кандидаты в рамках одного дня.
+появится до следующего EOD-снэпшота. **step_b_checked_at** (СВОЯ колонка, не
+last_checked_at, миграция 037) не даёт лишний раз дёргать такие кандидаты в
+рамках одного дня.
+
+⚠️ **Найдено 2026-07-16: last_checked_at раньше была одной колонкой на три
+несвязанных смысла** (tg_hype_scan.py — "продиспатчил Шаг А", content_match —
+"уже проверял сегодня", content_review_bot.py — "ещё не отправлял ревьюеру") —
+взаимно затирали друг друга: content_match ставил last_checked_at=now() ровно
+в той же команде, что переводила статус в draft_ready, а content_review_bot
+ждал last_checked_at IS NULL как признак "не отправлено" — условие никогда не
+выполнялось, ревью-бот НИ РАЗУ не сработал (0 published/rejected через него).
+Плюс дневные-only тикеры ложно считались "уже проверенными сегодня" из-за
+марки tg_hype_scan сразу при создании кандидата, ещё ДО первой реальной
+попытки сверки. **Теперь у content_match — своя step_b_checked_at, у
+content_review_bot — своя reviewer_notified_at, last_checked_at остаётся
+только за tg_hype_scan/content_ai.py (диспатч-троттлинг Шага А/В).**
 
 Запуск раз в 5 минут (Вадим 2026-07-16: раз в час — слишком редко, кандидат
 может ждать до 55 минут совпадения, которое УЖЕ лежит в anomalies, просто
@@ -55,7 +69,7 @@ FIRE_STAGGER_SEC = 8
 
 _SELECT_PENDING = text("""
     SELECT id, futures_ticker, thread_key, created_at, pending_expires_at,
-           last_checked_at, headline, tickers, event_type, reasoning
+           step_b_checked_at, headline, tickers, event_type, reasoning
     FROM content_candidates
     WHERE status = 'pending' AND futures_ticker IS NOT NULL
 """)
@@ -84,17 +98,17 @@ _FIND_MATCH = text("""
 _MARK_DRAFT_READY = text("""
     UPDATE content_candidates
     SET status = 'draft_ready', matched_anomaly_id = :anomaly_id,
-        last_checked_at = now(), updated_at = now()
+        step_b_checked_at = now(), updated_at = now()
     WHERE id = :id
 """)
 
 _MARK_CHECKED = text("""
-    UPDATE content_candidates SET last_checked_at = now() WHERE id = :id
+    UPDATE content_candidates SET step_b_checked_at = now() WHERE id = :id
 """)
 
 _MARK_NO_DATA = text("""
     UPDATE content_candidates
-    SET status = 'no_data', last_checked_at = now(), updated_at = now()
+    SET status = 'no_data', step_b_checked_at = now(), updated_at = now()
     WHERE id = :id
 """)
 
@@ -124,7 +138,7 @@ def run_once() -> dict:
                 # Дневные-only активы: не проверять повторно чаще раза в сутки —
                 # новых данных всё равно не будет до следующего EOD-снэпшота.
                 if not has_intraday_oi(ft):
-                    lc = row["last_checked_at"]
+                    lc = row["step_b_checked_at"]
                     if lc and lc.astimezone(timezone.utc).date() == now.date():
                         summary["skipped_daily_already_checked"] += 1
                         continue
