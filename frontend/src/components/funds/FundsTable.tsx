@@ -551,13 +551,15 @@ export default function FundsTable({
                                                             })()}
                                                             {bare ? (
                                                                 <>
-                                                                    {/* Имя занимает всю доступную ширину (flex:1) и растворяется
-                                                                        у правого края маской — fade-out вместо троеточия. */}
+                                                                    {/* Имя сжимается только когда не помещается (flex-shrink),
+                                                                        а не растягивается на всю ширину — иначе значок [!]
+                                                                        оказывался оторван от текста коротких имён. Маска
+                                                                        фейдит правый край и срабатывает только при обрезке. */}
                                                                     <span
                                                                         title={fund.name}
                                                                         className="font-normal"
                                                                         style={{
-                                                                            flex: 1,
+                                                                            flex: '0 1 auto',
                                                                             minWidth: 0,
                                                                             overflow: 'hidden',
                                                                             whiteSpace: 'nowrap',
