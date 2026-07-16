@@ -97,6 +97,25 @@ _FIND_MATCH = text("""
     LIMIT 1
 """)
 
+# Найдено 2026-07-16 (VK/Google Play): для активов БЕЗ интрадей-данных
+# (has_intraday_oi=False) новая аномалия физически не появится до следующего
+# EOD-снэпшота — если единственная дневная аномалия уже использована ПЕРВЫМ
+# постом треда, все последующие кандидаты (развитие той же новости) никогда
+# не найдут "новую" и тихо протухнут в no_data через CONTENT_PENDING_DAYS,
+# даже когда новость реально продолжается (см. VK: −8.5% на фоне удаления
+# из Google Play, тред ticker:VKCO). Разрешаем ОДИН follow-up на УЖЕ
+# использованном сигнале (len(used_real) == 1 — ровно один прежний пост,
+# не больше) — Шаг В получит prior_post и явную оговорку "сигнал не новый"
+# (см. content_ai.py::_step_c_payload), напишет продолжение, а не повтор.
+_FIND_REUSE_ANOMALY = text("""
+    SELECT id, signal_date, severity_value, direction, headline, asset_id, asset_name,
+           type, clgroup
+    FROM anomalies
+    WHERE id = ANY(:used_ids)
+    ORDER BY signal_date DESC, id DESC
+    LIMIT 1
+""")
+
 _MARK_DRAFT_READY = text("""
     UPDATE content_candidates
     SET status = 'draft_ready', matched_anomaly_id = :anomaly_id,
@@ -147,11 +166,10 @@ def run_once() -> dict:
 
                 summary["checked"] += 1
 
-                used = [r[0] for r in db.execute(
+                used_real = [r[0] for r in db.execute(
                     _ALREADY_USED, {"thread_key": row["thread_key"]}
                 ).fetchall()] if row["thread_key"] else []
-                if not used:
-                    used = [0]  # ALL(:exclude_ids) на пустом массиве не работает как ожидается
+                used = used_real or [0]  # ALL(:exclude_ids) на пустом массиве не работает как ожидается
 
                 created = row["created_at"]
                 date_from = created.date() - timedelta(days=1)
@@ -161,6 +179,15 @@ def run_once() -> dict:
                     "futures_ticker": ft, "date_from": date_from, "date_to": date_to,
                     "exclude_ids": used,
                 }).mappings().first()
+
+                if not match and not has_intraday_oi(ft) and len(used_real) == 1:
+                    # Дневной актив, новой аномалии сегодня не будет, сигнал уже
+                    # использован РОВНО одним прежним постом — один follow-up
+                    # на переиспользованном сигнале, не больше (см. комментарий
+                    # у _FIND_REUSE_ANOMALY).
+                    match = db.execute(
+                        _FIND_REUSE_ANOMALY, {"used_ids": used_real}
+                    ).mappings().first()
 
                 if match:
                     db.execute(_MARK_DRAFT_READY, {
@@ -177,6 +204,7 @@ def run_once() -> dict:
                                 "tickers": row["tickers"], "event_type": row["event_type"],
                                 "reasoning": row["reasoning"],
                                 "forwards_count": row["forwards_count"],
+                                "thread_key": row["thread_key"], "created_at": row["created_at"],
                                 "anomaly_id": match["id"],
                                 "asset_id": match["asset_id"], "asset_name": match["asset_name"],
                                 "anomaly_type": match["type"], "direction": match["direction"],
