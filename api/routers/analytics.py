@@ -612,8 +612,18 @@ async def list_users(
                   WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
                 (SELECT COUNT(*) FROM analytics_events ae
                   WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS events_count,
-                (SELECT MAX(ae.server_ts) FROM analytics_events ae
-                  WHERE ae.user_id = u.id) AS last_active_ts
+                -- Не только события: у отказавших в cookie-consent (и адблоков)
+                -- analytics_events пуст навсегда, но входы и ротация
+                -- refresh-токенов (каждые ~15 мин активной вкладки) видны.
+                -- server_ts naive-UTC → приводим к timestamptz, чтобы фронт
+                -- получил ISO с таймзоной. GREATEST в PG игнорирует NULL.
+                GREATEST(
+                    (SELECT MAX(ae.server_ts) AT TIME ZONE 'UTC' FROM analytics_events ae
+                      WHERE ae.user_id = u.id),
+                    (SELECT MAX(rt.created_at) FROM refresh_tokens rt
+                      WHERE rt.user_id = u.id),
+                    u.last_login_at
+                ) AS last_active_ts
             FROM users u
             LEFT JOIN LATERAL (
                 SELECT s.tier, s.expires_at
@@ -800,6 +810,18 @@ async def user_detail(
             ORDER BY sessions DESC
         """), {"id": user_id, "cutoff": cutoff}).fetchall()
 
+        # «Был(а) в сети» без событий: у consent-отказников analytics_events
+        # пуст, но входы и ротация refresh-токенов есть (см. список юзеров).
+        last_seen = conn.execute(text("""
+            SELECT GREATEST(
+                (SELECT MAX(ae.server_ts) AT TIME ZONE 'UTC' FROM analytics_events ae
+                  WHERE ae.user_id = :id),
+                (SELECT MAX(rt.created_at) FROM refresh_tokens rt
+                  WHERE rt.user_id = :id),
+                (SELECT us.last_login_at FROM users us WHERE us.id = :id)
+            )
+        """), {"id": user_id}).scalar()
+
     return {
         "user": {
             "id": int(prof[0]),
@@ -816,6 +838,7 @@ async def user_detail(
             "oauth_provider": prof[11],
             "oauth_id": prof[12],
             "avatar_url": prof[13],
+            "last_seen_at": last_seen.isoformat() if last_seen else None,
         },
         "subscriptions": [
             {

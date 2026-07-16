@@ -1039,6 +1039,7 @@ export interface UserDetailResponse {
     last_login_ip?: string | null;
     oauth_id?: string | null;
     updated_at?: string | null;
+    last_seen_at?: string | null;
   };
   subscriptions: UserSubscription[];
   summary: {
