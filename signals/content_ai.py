@@ -76,6 +76,13 @@ FIRE_URL_TMPL = _API_ROOT + "/v1/claude_code/routines/{trigger_id}/fire"
 
 TRIGGER_ID_STEP_A = "trig_01CTyFze4rXBRGwPKVFtSooj"   # frame-content-step-a
 TRIGGER_ID_STEP_C = "trig_01KPtMNbEYNfqewKvwhdo4rj"   # frame-content-step-c
+# Шаг Н (найдено 2026-07-16, запрос Вадима) — НЕЗАВИСИМЫЙ от Шага А фильтр для
+# уведомления коллеги: "это реальная новость или шутка/мусор?", БЕЗ привязки к
+# тикеру/компании (в отличие от Шага А, чей `relevant` калиброван под "можно ли
+# написать пост" — конфликтует с целью "коллеге интересно любое хайповое
+# событие"). env, не хардкод — из .env читает ТОЛЬКО tg_hype_scan.py (host-side),
+# деплоить код заново не нужно, когда Вадим создаст Routine в UI.
+TRIGGER_ID_HYPE_FILTER = os.environ.get("TRIGGER_ID_HYPE_FILTER", "")
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -175,6 +182,18 @@ def _step_a_payload(row, internal_token: str, known_tickers: str) -> str:
         f"headline: {row['headline']}\n"
         f"raw_text: {row['raw_text'] or row['headline']}\n"
         f"known_tickers (ТОЛЬКО из этого списка, больше ниоткуда): {known_tickers}\n"
+        f"internal_token: {internal_token}\n"
+        f"api_host: {INTERNAL_API_HOST}"
+    )
+
+
+def _hype_filter_payload(candidate_id: int, source: str, raw_text: str, internal_token: str) -> str:
+    """Шаг Н — независимый от Шага А промпт: только «шутка/мусор или реальная
+    новость?», без тикеров/компаний/значимости для завода постов."""
+    return (
+        f"candidate_id: {candidate_id}\n"
+        f"source: {source}\n"
+        f"raw_text: {raw_text}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
     )
