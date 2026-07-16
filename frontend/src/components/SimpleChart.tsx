@@ -1754,13 +1754,27 @@ export default function SimpleChart({
             const dotGap = fluid.sp1(vw);
             const rowGap = fluid.sp2(vw);
             const paddingX = fluid.sp2(vw) * 2;
+            // В editorial-темах карточка рендерится НЕ Inter'ом: контейнер имеет
+            // класс tabular-nums, который CSS-override переводит на var(--font-mono)
+            // (JetBrains Mono заметно шире Inter, особенно кириллица), .font-semibold
+            // бампается 600 → 700, а border-theme.border = 2px с каждой стороны.
+            // Мерить нужно тем же шрифтом/весом, иначе cardWidth занижен и label
+            // наезжает на value.
+            const isEditorial = typeof document !== 'undefined' &&
+              (document.documentElement.getAttribute('data-theme') || '').startsWith('editorial');
+            const tooltipFontFamily = isEditorial
+              ? (getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim()
+                 || '"JetBrains Mono", "IBM Plex Mono", monospace')
+              : undefined;
+            const valueWeight = isEditorial ? 700 : 600;
+            const borderX = isEditorial ? 4 : 2; // box-sizing: border-box — рамка ест ширину
             const contentWidth = lines.reduce((max, line) => {
-              const labelW = measureText(line.label, tooltipFontSize, 400);
-              const valueW = measureText(line.value, tooltipFontSize, 600);
+              const labelW = measureText(line.label, tooltipFontSize, 400, tooltipFontFamily);
+              const valueW = measureText(line.value, tooltipFontSize, valueWeight, tooltipFontFamily);
               return Math.max(max, dotW + dotGap + labelW + rowGap + valueW);
             }, 0);
             const cardWidth = Math.min(
-              Math.max(tokens.tooltipCardWidth, Math.ceil(contentWidth + paddingX)),
+              Math.max(tokens.tooltipCardWidth, Math.ceil(contentWidth + paddingX + borderX)),
               chartWidth - 8,
             );
 
@@ -1791,7 +1805,9 @@ export default function SimpleChart({
                       <div key={i} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                         <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
                           <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: line.color }} />
-                          <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{line.label}</span>
+                          {/* truncate — страховка: при клампе cardWidth по ширине графика
+                              label обрезается троеточием, а не наезжает на value */}
+                          <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{line.label}</span>
                         </div>
                         <span className={`${TOOLTIP.valueClass} text-theme-primary whitespace-nowrap`} style={TOOLTIP.valueStyle}>{line.value}</span>
                       </div>
