@@ -1,4 +1,4 @@
-// CombinedPortfolioView — блок «Обзор портфеля» на вкладке «Общий портфель».
+// CombinedPortfolioView — блок «Состав портфеля» на вкладке «Общий портфель».
 //
 // Редизайн (июль 2026, макет Claude Design): на десктопе слева таблица бумаг
 // «логотип · имя · полоса · вес · объём · фондов» (полосы нейтральные,
@@ -10,7 +10,7 @@
 // Наведение на блок карты подсвечивает строку таблицы и наоборот.
 //
 // variant='embedded' — без собственной карточки: блок живёт внутри общей
-// карточки вкладки (единая рамка на «Покупки фондов» + «Обзор портфеля»).
+// карточки вкладки (единая рамка на «Покупки фондов» + «Состав портфеля»).
 // Мобилка — прежний стек: метрики → пончик → список, строки двухэтажные.
 //
 // Веса приходят с бэкенда в двух режимах (weight_rub — по деньгам, weight_avg —
@@ -373,7 +373,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         return (
             <div style={wrapStyle}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 13, borderBottom: '1.5px solid var(--text-primary)' }}>
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Обзор портфеля</span>
+                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Состав портфеля</span>
                     <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{portfolio.num_funds} ф. · {portfolio.num_assets} бум.</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -474,7 +474,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 иначе центрирование топило их ниже относительно общей рамки. */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div>
-                    <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Обзор портфеля</div>
+                    <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Состав портфеля</div>
                     <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
                         {portfolio.num_funds} {plural(portfolio.num_funds, 'фонд', 'фонда', 'фондов')} · {portfolio.num_assets} {plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}
                     </div>

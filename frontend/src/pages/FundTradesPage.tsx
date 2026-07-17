@@ -285,7 +285,7 @@ export default function FundTradesPage() {
     const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
     const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
-    // Месяц-срез портфеля (month-picker в шапке «Обзор портфеля»); undefined = последний.
+    // Месяц-срез портфеля (month-picker в шапке «Состав портфеля»); undefined = последний.
     const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(undefined);
     // Блок «Покупки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
@@ -827,7 +827,7 @@ export default function FundTradesPage() {
                 <>
                     {/* Единая карточка (макет Claude Design): тулбар с фильтром фондов
                         сверху влияет на оба блока; внутри «Покупки фондов» (уже, слева)
-                        и «Обзор портфеля» (шире, справа) за вертикальным разделителем.
+                        и «Состав портфеля» (шире, справа) за вертикальным разделителем.
                         Тумблеры режима и периода живут в шапках самих блоков. */}
                     {/* overflow НЕ hidden: поповер подсказки «?» и Dropdown месяца
                         должны свободно выходить за пределы карточки, не обрезаясь. */}
