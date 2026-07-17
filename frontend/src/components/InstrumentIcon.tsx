@@ -122,10 +122,11 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   IMOEX: 'MOEX_IDX',
   RTSI: 'RTS_IDX',
   MCFTR: 'MOEX_IDX',  // Индекс полной доходности MOEX
-  // Облигации (ОФЗ) → герб Минфина из стикерпака (raw_152)
-  RGBI: 'raw_152',
-  RGBITR: 'raw_152',
-  RB: 'raw_152',  // Фьючерс на индекс RGBI
+  // Облигации (ОФЗ) → золотой двуглавый орёл на зелёном (OFZ_GERB.png,
+  // прислан владельцем 2026-07-17; раньше был серый орёл ЦБ raw_152)
+  RGBI: 'OFZ_GERB',
+  RGBITR: 'OFZ_GERB',
+  RB: 'OFZ_GERB',  // Фьючерс на индекс RGBI
   // Дополнительные валюты (сгенерированные иконки в том же стиле)
   AE: 'AED',
   AU: 'AUD',
