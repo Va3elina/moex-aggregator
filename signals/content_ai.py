@@ -305,6 +305,14 @@ def _hype_filter_payload(candidate_id: int, source: str, raw_text: str, internal
     )
 
 
+def _ru(x) -> str:
+    """Точка → запятая в отформатированном числе: питоновский float/Decimal даёт
+    точку по умолчанию (4.69, -34.4), русская типографика — запятую (4,69, -34,4).
+    Найдено 2026-07-17 — модель Шага В честно копирует цифры брифа как есть,
+    включая точку, поэтому чинить нужно на входе, а не надеяться на промпт."""
+    return str(x).replace(".", ",")
+
+
 def _oi_context_line(asset_id: str, clgroup: str | None) -> str:
     """История позиции физлиц по инструменту — рамка «где мы относительно
     исторического макс/мин», ту же самую подсвечивает скринер сигналов. Без
@@ -323,8 +331,8 @@ def _oi_context_line(asset_id: str, clgroup: str | None) -> str:
     hist_max, hist_min = max(pcts), min(pcts)
     trend_30 = pcts[-30]
     trend = "растёт" if today_pct > trend_30 else "снижается" if today_pct < trend_30 else "без изменений"
-    return (f"текущий перекос физлиц (net/gross): {today_pct:.1f}%; "
-            f"диапазон за 2 года: [{hist_min:.1f}%; {hist_max:.1f}%]; "
+    return (f"текущий перекос физлиц (net/gross): {_ru(f'{today_pct:.1f}')}%; "
+            f"диапазон за 2 года: [{_ru(f'{hist_min:.1f}')}%; {_ru(f'{hist_max:.1f}')}%]; "
             f"тенденция за 30 дней: {trend}")
 
 
@@ -368,7 +376,7 @@ def _recent_signals_line(db, exclude_anomaly_id: int) -> str:
     parts = []
     for name, direction, severity, sig_date in rows:
         word = "лонг" if direction == "up" else "шорт"
-        parts.append(f"{name}: ×{severity:g} {word} ({sig_date})")
+        parts.append(f"{name}: ×{_ru(f'{severity:g}')} {word} ({sig_date})")
     return "; ".join(parts)
 
 
@@ -413,7 +421,7 @@ def _step_c_payload(db, row, internal_token: str) -> str:
         f"  asset: {row['asset_id']} ({row['asset_name'] or ''})\n"
         f"  type: {row['anomaly_type']}\n"
         f"  direction: {row['direction']}\n"
-        f"  multiplier: x{row['severity_value']}\n"
+        f"  multiplier: x{_ru(row['severity_value'])}\n"
         f"  signal_date: {row['signal_date']}\n"
         f"  headline: {row['anomaly_headline']}\n"
         f"oi_context: {oi_context}\n"
