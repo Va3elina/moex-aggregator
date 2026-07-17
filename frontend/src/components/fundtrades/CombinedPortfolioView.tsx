@@ -16,7 +16,7 @@
 // Веса приходят с бэкенда в двух режимах (weight_rub — по деньгам, weight_avg —
 // средняя доля по фондам); выбранный режим персистится снаружи (`mode`).
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { Fragment, useMemo, useState, type CSSProperties } from 'react';
 import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundTicker } from '../../config/fundConfig';
 import Donut from '../funds/Donut';
 import InstrumentIcon from '../InstrumentIcon';
@@ -24,14 +24,9 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import { formatReturnPct } from '../funds/FundDetailModal';
-import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
+import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
-const PERIOD_LABEL: Record<PeriodKey, string> = { m1: '1 мес', m3: '3 мес', m6: '6 мес', y1: '1 год' };
-// Доходность: показываем выбранный период, а если данных нет (молодой фонд) —
-// самый длинный доступный (год → 6м → 3м → 1м), чтобы не было «—».
-const RET_ORDER: PeriodKey[] = ['y1', 'm6', 'm3', 'm1'];
 
 // Карта «Структура» (slice-and-dice треемап): топ-11 бумаг раскладываются рядами
 // 2·3·3·3, «Прочие» — отдельной полосой снизу. ПЛОЩАДЬ плитки пропорциональна её
@@ -63,7 +58,7 @@ interface Props {
     portfolio: FundPortfolio | null;
     loading: boolean;
     mode: 'rub' | 'share';        // rub = вес по деньгам, share = средняя доля по фондам
-    period: PeriodKey;            // предпочтительный период для строки доходности
+    period?: PeriodKey;           // не используется: доходность показывается блоком по периодам
     variant?: 'desktop' | 'mobile' | 'embedded';
     // Задан — тумблер «По капиталу / По доле» рендерится в шапке блока
     // (десктоп-макет). Мобилка управляет режимом своими чипами в ⚙️-sheet.
@@ -112,6 +107,49 @@ function monthYearCap(iso: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Доходность по периодам (макет 2a «Колонки»): 1 мес · 6 мес · 1 год в ряд,
+// разделённые тонкими линиями. Палитра нейтральная — направление несёт только
+// знак-стрелка (▲/▼), размер и толщина цифр одинаковы для всех периодов
+// (не выделяем годовую крупнее месячной). Нет данных за период → «—».
+const RET_COLS: { key: PeriodKey; label: string }[] = [
+    { key: 'm1', label: '1 мес' },
+    { key: 'm6', label: '6 мес' },
+    { key: 'y1', label: '1 год' },
+];
+
+// "2.3" → "2,3" — запятичный десятичный разделитель, абсолютное значение
+// (знак направления показывает стрелка). null/undefined → «—».
+function fmtRetAbs(v: number | null | undefined): string {
+    if (v === null || v === undefined) return '—';
+    return `${Math.abs(v).toFixed(1).replace('.', ',')}%`;
+}
+
+function ReturnsByPeriod({ returns, compact }: { returns: FundReturns; compact?: boolean }) {
+    return (
+        <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: compact ? '11px 14px' : '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
+            <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10 }}>Доходность по периодам</div>
+            <div style={{ display: 'flex', gap: compact ? 12 : 14 }}>
+                {RET_COLS.map(({ key, label }, i) => {
+                    const v = returns[key];
+                    const arrow = v == null || v === 0 ? '' : v > 0 ? '▲' : '▼';
+                    return (
+                        <Fragment key={key}>
+                            {i > 0 && <div style={{ width: 1, background: 'color-mix(in srgb, var(--text-primary) 10%, transparent)', flexShrink: 0 }} />}
+                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{label}</div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                    {arrow && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{arrow}</span>}
+                                    <span style={{ fontSize: 'var(--fs-lg, 18px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>{fmtRetAbs(v)}</span>
+                                </div>
+                            </div>
+                        </Fragment>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 function StatTile({ label, value, color }: { label: string; value: string; color?: string }) {
     return (
         <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '8px 11px', minWidth: 0 }}>
@@ -157,7 +195,7 @@ function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; 
     );
 }
 
-export default function CombinedPortfolioView({ portfolio, loading, mode, period, variant = 'desktop', onModeChange, onAssetClick, availableMonths, asOf, onAsOfChange, monthLocked, onMonthLockedClick }: Props) {
+export default function CombinedPortfolioView({ portfolio, loading, mode, variant = 'desktop', onModeChange, onAssetClick, availableMonths, asOf, onAsOfChange, monthLocked, onMonthLockedClick }: Props) {
     const [modalOpen, setModalOpen] = useState(false);
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const isMobile = variant === 'mobile';
@@ -212,11 +250,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         );
     }
 
-    // Доходность: предпочтительный период, иначе самый длинный доступный.
+    // Доходность портфеля показываем по периодам (1 мес · 6 мес · 1 год) блоком
+    // ReturnsByPeriod — единый источник для десктопа и мобилки.
     const rr = portfolio.returns;
-    let retK: PeriodKey = period;
-    if (rr[period] == null) retK = RET_ORDER.find((k) => rr[k] != null) ?? period;
-    const ret = rr[retK];
 
     const maxW = Math.max(...sorted.map(wOf), 0.0001);
     const rest = sorted.slice(LIST_PREVIEW);
@@ -224,13 +260,6 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     // Свежесть данных: месяц самого свежего снапшота среди выбранных фондов.
     const freshISO = portfolio.funds.reduce<string | null>(
         (acc, f) => (f.snapshot_date && (!acc || f.snapshot_date > acc) ? f.snapshot_date : acc), null);
-
-    const kpis = (
-        <>
-            <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
-            <StatTile label={`Доходность · ${PERIOD_LABEL[retK]}`} value={formatReturnPct(ret ?? undefined)} color="color-mix(in srgb, var(--text-primary) 32%, transparent)" />
-        </>
-    );
 
     const deskRow = (h: FundPortfolioHolding, idx: number, last: boolean, interactive: boolean) => {
         const w = wOf(h);
@@ -341,7 +370,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                     <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Обзор портфеля</span>
                     <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{portfolio.num_funds} ф. · {portfolio.num_assets} бум.</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>{kpis}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
+                    <ReturnsByPeriod returns={rr} compact />
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
                     <Donut holdings={donutHoldings} colors={donutColors} size={200} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
                 </div>
@@ -505,10 +537,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                     </div>
                     {treemap}
                     <div style={{ marginTop: 16 }}>
-                        <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
-                            <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность · {PERIOD_LABEL[retK]}</div>
-                            <div style={{ fontSize: 'var(--fs-xl, 22px)', fontWeight: 800, marginTop: 4, fontVariantNumeric: 'tabular-nums', color: 'color-mix(in srgb, var(--text-primary) 32%, transparent)' }}>{formatReturnPct(ret ?? undefined)}</div>
-                        </div>
+                        <ReturnsByPeriod returns={rr} />
                     </div>
                 </div>
             </div>
