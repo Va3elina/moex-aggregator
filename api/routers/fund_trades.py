@@ -148,6 +148,19 @@ CF_MIN_GROSS_FLOW_3Y_RUB = 30_000_000  # 30 млн ₽ оборота за 3 г�
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Порог полноты снапшота: Σ weight (% СЧА) ≥ 80 → отчёт считаем полным.
+#
+# Частичные импорты SCHA (парсер терял часть строк: EQMX 2023-12..2024-12 и
+# 2025-04..08, TMOS 2023-2024 — Σ весов 35-65% вместо ~98) НЕ считаются
+# свидетельством отсутствия бумаги: дифф против них рисует фантомные сделки на
+# весь размер позиции («индексный фонд продал весь Сбер на 943 млн»). Полные
+# отчёты живых фондов дают Σ 90-100 (Алёнка 98.5, ГЕРОИ 100.0); ниже 80 — только
+# дырявые импорты и AKME 2021-24 (кэш ~30% — исключение консервативно: месяц
+# мостится, фантомов нет). Распределение по 473 снапшотам: 393 ≥ 90, 46 < 80.
+FT_COMPLETE_WSUM_MIN = 80
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Задержка данных для Free/гостя (пилот delayed-data freemium).
 #
 # Free/гость видят fund-trades на 1 снапшот позади: свежая месячная выборка «что
@@ -808,6 +821,7 @@ def top_movers(
         "tickers": list(WHITELIST_TICKERS),
         "sources": list(MONTHLY_SOURCES),
         "as_of": as_of,
+        "wmin": FT_COMPLETE_WSUM_MIN,
     }
     if fund_tickers:
         params["fund_tickers"] = fund_tickers
@@ -818,7 +832,16 @@ def top_movers(
     # Diff weight per (fund, asset) → агрегируем по asset.
     # Это complex CTE но даёт точную картину.
     rows = db.execute(text(f"""
-        WITH anchor AS (
+        WITH snap_ok AS (
+            -- Только ПОЛНЫЕ снапшоты (Σ weight не ниже FT_COMPLETE_WSUM_MIN):
+            -- дифф против частичного импорта SCHA рисует фантомные сделки.
+            SELECT fund_id, snapshot_date
+            FROM fund_holdings_history
+            WHERE source = ANY(:sources)
+            GROUP BY fund_id, snapshot_date
+            HAVING COALESCE(SUM(weight), 0) >= :wmin
+        ),
+        anchor AS (
             -- Якорь = выбранный месяц (as_of) ТОЧНО, иначе — самый свежий месяц набора.
             -- Если юзер выбрал май, а у фондов набора майского снапшота нет — target=май,
             -- ни один фонд не пройдёт HAVING → пустой консенсус (фронт скажет «нет данных
@@ -831,12 +854,14 @@ def top_movers(
                    ) AS target_month
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            JOIN snap_ok so ON so.fund_id = h.fund_id AND so.snapshot_date = h.snapshot_date
             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
               AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
         ),
         fund_dates AS (
             -- curr = снапшот target-месяца (нет → фонд выпадает из консенсуса);
             -- prev = снапшот, выровненный по МЕСЯЦУ на N месяцев назад от target.
+            -- Оба только из snap_ok (полные).
             SELECT
                 f.fund_id,
                 f.ticker,
@@ -845,14 +870,14 @@ def top_movers(
                     WHERE date_trunc('month', h.snapshot_date) = a.target_month
                 ) AS curr_date,
                 (
-                    SELECT MAX(h2.snapshot_date)
-                    FROM fund_holdings_history h2
-                    WHERE h2.fund_id = f.fund_id
-                      AND h2.source = ANY(:sources)
-                      AND h2.snapshot_date < a.target_month - make_interval(months => CAST(:months AS integer) - 1)
+                    SELECT MAX(so2.snapshot_date)
+                    FROM snap_ok so2
+                    WHERE so2.fund_id = f.fund_id
+                      AND so2.snapshot_date < a.target_month - make_interval(months => CAST(:months AS integer) - 1)
                 ) AS prev_date
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            JOIN snap_ok so ON so.fund_id = h.fund_id AND so.snapshot_date = h.snapshot_date
             CROSS JOIN anchor a
             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
               AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
@@ -861,30 +886,44 @@ def top_movers(
                 WHERE date_trunc('month', h.snapshot_date) = a.target_month
             ) IS NOT NULL
         ),
-        per_fund_diff AS (
-            -- Дельта weight per (fund, asset) между curr и prev snapshot.
-            -- Матч curr↔prev по ISIN (akey), fallback на имя — устойчиво к разнице имён.
-            SELECT
-                fd.fund_id,
-                fd.ticker,
-                fd.fund_name,
-                COALESCE(NULLIF(curr.isin, ''), NULLIF(prev.isin, ''),
-                         curr.asset_name, prev.asset_name) AS akey,
-                COALESCE(curr.asset_name, prev.asset_name) AS asset_name,
-                COALESCE(curr.weight, 0) - COALESCE(prev.weight, 0) AS delta_weight,
-                COALESCE(curr.amount_rub, 0) - COALESCE(prev.amount_rub, 0) AS delta_amount
+        curr_h AS (
+            -- Холдинги curr-снапшота каждого фонда. Ключ akey = ISIN, fallback имя.
+            SELECT fd.fund_id,
+                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   h.asset_name, h.weight, h.amount_rub
             FROM fund_dates fd
-            LEFT JOIN fund_holdings_history curr
-                ON curr.fund_id = fd.fund_id AND curr.snapshot_date = fd.curr_date
-                AND curr.source = ANY(:sources)
-            FULL OUTER JOIN fund_holdings_history prev
-                ON prev.fund_id = fd.fund_id AND prev.snapshot_date = fd.prev_date
-                AND prev.source = ANY(:sources)
-                AND (COALESCE(NULLIF(curr.isin, ''), curr.asset_name)
-                     = COALESCE(NULLIF(prev.isin, ''), prev.asset_name)
-                     OR curr.asset_name IS NULL)
+            JOIN fund_holdings_history h
+              ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.curr_date
+             AND h.source = ANY(:sources)
             WHERE fd.prev_date IS NOT NULL
-              AND COALESCE(curr.asset_name, prev.asset_name) IS NOT NULL
+        ),
+        prev_h AS (
+            SELECT fd.fund_id,
+                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   h.asset_name, h.weight, h.amount_rub
+            FROM fund_dates fd
+            JOIN fund_holdings_history h
+              ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.prev_date
+             AND h.source = ANY(:sources)
+            WHERE fd.prev_date IS NOT NULL
+        ),
+        per_fund_diff AS (
+            -- Дельта per (fund, asset): FULL OUTER JOIN по (fund_id, akey), обе
+            -- стороны сохраняются — new (только curr) И sold_out (только prev).
+            -- Старая форма (fund_dates LEFT JOIN curr + FULL OUTER JOIN prev с
+            -- WHERE fd.prev_date IS NOT NULL) теряла sold_out целиком: непарные
+            -- prev-строки NULL-расширялись по fd и вырезались WHERE — полные
+            -- ликвидации позиций не попадали в «Чистые продажи» (кейс: Алёнка
+            -- слила АФК Система −112 млн ₽ за июнь-2026, топ-продажа невидима).
+            SELECT
+                COALESCE(c.fund_id, p.fund_id) AS fund_id,
+                COALESCE(c.akey, p.akey) AS akey,
+                COALESCE(c.asset_name, p.asset_name) AS asset_name,
+                COALESCE(c.weight, 0) - COALESCE(p.weight, 0) AS delta_weight,
+                COALESCE(c.amount_rub, 0) - COALESCE(p.amount_rub, 0) AS delta_amount
+            FROM curr_h c
+            FULL OUTER JOIN prev_h p
+                ON p.fund_id = c.fund_id AND p.akey = c.akey
         ),
         aggregated AS (
             -- Суммарная дельта per asset (across всех фондов), агрегируем по ISIN-ключу.
@@ -954,13 +993,22 @@ def top_movers(
     # этого месяца. Фронт по funds_in_month==0 показывает «нет данных за месяц для выбранных
     # фондов» вместо «нет движений» (когда выбран месяц, которого у фондов ещё нет).
     meta_row = db.execute(text(f"""
-        WITH anchor AS (
+        WITH snap_ok AS (
+            -- Полные снапшоты (см. FT_COMPLETE_WSUM_MIN) — консистентно с rows.
+            SELECT fund_id, snapshot_date
+            FROM fund_holdings_history
+            WHERE source = ANY(:sources)
+            GROUP BY fund_id, snapshot_date
+            HAVING COALESCE(SUM(weight), 0) >= :wmin
+        ),
+        anchor AS (
             SELECT COALESCE(
                        date_trunc('month', CAST(:as_of AS date)),
                        date_trunc('month', MAX(h.snapshot_date))
                    ) AS target_month
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            JOIN snap_ok so ON so.fund_id = h.fund_id AND so.snapshot_date = h.snapshot_date
             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
               AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
         )
@@ -969,6 +1017,7 @@ def top_movers(
             (SELECT COUNT(DISTINCT f.fund_id)
              FROM funds f
              JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+             JOIN snap_ok so ON so.fund_id = h.fund_id AND so.snapshot_date = h.snapshot_date
              WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
                AND date_trunc('month', h.snapshot_date) = a.target_month
             ) AS funds_in_month
@@ -1948,8 +1997,13 @@ def company_flows(
 
     Поток за месяц = Δ к ПРЕДЫДУЩЕМУ снапшоту ЭТОГО фонда:
       - metric='amount' → delta_amount_rub (₽); metric='weight' → delta_weight (доля).
-      - Самый ПЕРВЫЙ снапшот фонда в истории бумаги → null (нет базы → не спайк).
-      - Появление новой позиции в более позднем снапшоте → Δ = текущее значение (приток).
+      - Бумага есть в самом ПЕРВОМ отчёте фонда → null (нет базы → не спайк).
+      - Появление бумаги, когда фонд уже отчитывался без неё (новая покупка или
+        повторный вход после разрыва) → приток ПОЛНОЙ стоимости позиции.
+      - Исчезновение бумаги из отчёта (полная распродажа) → отток всей позиции
+        в первый месяц отсутствия; база после разрыва сбрасывается — иначе
+        ре-вход считался бы микро-дельтой к протухшему снапшоту многолетней
+        давности, а сама распродажа не рисовалась вовсе (кейс Алёнка×АФК Система).
     Дельта split-adjusted по той же логике что snapshot_review/asset-history (для
     metric='amount' приводим prev-positions к пост-сплит масштабу; amount_rub/weight
     непрерывны через сплит, поэтому коррекция для них фактически нейтральна).
@@ -2019,10 +2073,29 @@ def company_flows(
         per_fund_rows[fid].append(r)
         fund_meta[fid] = {"ticker": r["ticker"], "fund_name": r["fund_name"], "uk_id": r["uk_id"]}
 
+    # Месяцы ПОЛНЫХ снапшотов каждого фонда (не только где бумага есть) — чтобы
+    # видеть исчезновение позиции: фонд отчитался, а бумаги в отчёте нет.
+    # Частичные импорты SCHA (Σ weight < FT_COMPLETE_WSUM_MIN, парсер терял
+    # строки) отсутствием бумаги НЕ считаются — иначе фантомный отток+ре-вход
+    # на весь размер позиции (EQMX «продавал» весь Сбер на 943 млн в дек-2023).
+    fund_snap_rows = db.execute(text("""
+        SELECT fund_id, snapshot_date
+        FROM fund_holdings_history
+        WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
+          AND snapshot_date <= :cutoff
+        GROUP BY fund_id, snapshot_date
+        HAVING COALESCE(SUM(weight), 0) >= :wmin
+    """), {"fids": list(per_fund_rows.keys()), "sources": list(MONTHLY_SOURCES),
+           "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN}).fetchall()
+    fund_months_all = defaultdict(set)
+    for _fid, _d in fund_snap_rows:
+        fund_months_all[_fid].add(_d.strftime("%Y-%m"))
+
     all_months = set()
     # fund_id -> { "YYYY-MM": value|None }
     fund_month_val = {}
     for fid, frows in per_fund_rows.items():
+        fund_months = sorted(fund_months_all.get(fid, ()))
         # Дельты считаем ОТДЕЛЬНО по каждому ISIN (линии инструмента). Старый ISIN
         # расписки (ГДР) и новый ISIN акции склеены в один фонд через canonical_isin,
         # чтобы показать их потоки на одном графике — но вычитать один из другого
@@ -2039,6 +2112,7 @@ def company_flows(
             prev_pos = None
             prev_amt = None
             prev_weight = None
+            prev_month = None  # месяц последнего отчёта, где бумага была
             for r in irows:
                 month = r["snapshot_date"].strftime("%Y-%m")
                 all_months.add(month)
@@ -2047,9 +2121,33 @@ def company_flows(
                 curr_weight = float(r["weight"]) if r["weight"] is not None else None
                 curr_price = (curr_amt / curr_pos) if (curr_amt and curr_pos and curr_pos > 0) else None
 
+                # Разрыв владения: между прошлым и текущим появлением бумаги фонд
+                # отчитывался БЕЗ неё → позицию полностью закрывали. Рисуем отток
+                # всей позиции в первый «пустой» месяц и сбрасываем базу — текущее
+                # появление пойдёт как новая покупка, а не как микро-дельта к
+                # протухшему снапшоту (Алёнка×АФК: май-26 против июля-23 давал
+                # +0.06 п.п. вместо входа на ~10% фонда).
+                if prev_month is not None:
+                    gap = [m for m in fund_months if prev_month < m < month]
+                    if gap:
+                        out_val = prev_amt if metric == "amount" else prev_weight
+                        if out_val is not None:
+                            gm = gap[0]
+                            all_months.add(gm)
+                            month_val[gm] = (month_val.get(gm) or 0.0) - out_val
+                        prev_pos = None
+                        prev_amt = None
+                        prev_weight = None
+
                 if prev_pos is None and prev_amt is None and prev_weight is None:
-                    # Первый снапшот этого ISIN в истории → null (нет базы → не спайк).
-                    value = None
+                    if prev_month is None and (not fund_months or month <= fund_months[0]):
+                        # Бумага в самом первом отчёте фонда → null: не знаем,
+                        # куплена она тогда или древнее нашей истории (не спайк).
+                        value = None
+                    else:
+                        # Фонд уже отчитывался без бумаги → появление = покупка
+                        # всей позиции (новая или ре-вход после разрыва).
+                        value = curr_amt if metric == "amount" else curr_weight
                 else:
                     if metric == "amount":
                         # Split-adjust prev_pos (та же логика, что snapshot_review):
@@ -2095,6 +2193,17 @@ def company_flows(
                     prev_pos = curr_pos
                     prev_amt = curr_amt
                     prev_weight = curr_weight
+                prev_month = month
+
+            # Полная распродажа в конце истории: после последнего появления бумаги
+            # у фонда есть более свежие отчёты → отток всей позиции в первый из них.
+            if prev_month is not None:
+                tail = [m for m in fund_months if m > prev_month]
+                out_val = prev_amt if metric == "amount" else prev_weight
+                if tail and out_val is not None:
+                    tm = tail[0]
+                    all_months.add(tm)
+                    month_val[tm] = (month_val.get(tm) or 0.0) - out_val
         fund_month_val[fid] = month_val
 
     # Ось месяцев — НЕПРЕРЫВНЫЙ ряд от первого месяца бумаги до горизонта данных
