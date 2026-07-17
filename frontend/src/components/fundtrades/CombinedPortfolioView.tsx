@@ -293,9 +293,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', color: 'color-mix(in srgb, var(--text-secondary) 70%, var(--text-primary))' }}>{w.toFixed(2)}%</span>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', color: 'color-mix(in srgb, var(--text-secondary) 70%, var(--text-primary))' }}>{fmtVolBln(h.value_rub)}</span>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', color: 'color-mix(in srgb, var(--text-secondary) 70%, var(--text-primary))' }}>{h.funds_holding}</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>{w.toFixed(2)}%</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>{fmtVolBln(h.value_rub)}</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>{h.funds_holding}</span>
             </div>
         );
     };
