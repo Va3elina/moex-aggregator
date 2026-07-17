@@ -468,8 +468,11 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
 
     return (
         <div style={wrapStyle}>
-            {/* Шапка: заголовок+счётчики слева; пилюля актуальности + режим справа. */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
+            {/* Шапка: заголовок+счётчики слева; пилюля актуальности + режим справа.
+                alignItems:flex-start — верхние контролы (month-picker + режим) прижаты
+                к верху, вровень с такими же кнопками периода в «Покупках фондов» слева;
+                иначе центрирование топило их ниже относительно общей рамки. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div>
                     <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Обзор портфеля</div>
                     <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
