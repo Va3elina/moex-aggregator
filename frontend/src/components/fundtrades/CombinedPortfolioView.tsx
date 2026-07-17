@@ -45,7 +45,7 @@ const DONUT_TOP = 10;
 const LIST_PREVIEW = 10;
 
 // Сетка строки списка (десктоп): логотип · имя (фикс) · полоса · вес · объём · фнд.
-const D_GRID = '30px 104px minmax(48px, 1fr) 60px 76px 38px';
+const D_GRID = '30px 104px minmax(48px, 1fr) 54px 50px 30px';
 
 // Длинное имя обрезаем плавным затуханием справа (fade-out), не многоточием.
 const FADE_MASK = 'linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%)';
@@ -285,7 +285,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 tabIndex={click ? 0 : undefined}
                 onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
                 title={click ? `По бумаге: ${fundAssetName(h.asset_name, h.isin)}` : undefined}
-                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 12, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <AssetLogo h={h} size={30} color={color} />
                 <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>{fundAssetName(h.asset_name, h.isin)}</span>
@@ -328,7 +328,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
     };
 
     const listHeader = (
-        <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 12, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
             <span /><span>Бумага</span><span /><span style={{ textAlign: 'right' }}>Вес</span><span style={{ textAlign: 'right' }}>млрд ₽</span><span style={{ textAlign: 'right' }}>Фнд</span>
         </div>
     );
