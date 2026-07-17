@@ -135,9 +135,9 @@ function ReturnsByPeriod({ returns, compact }: { returns: FundReturns; compact?:
                     return (
                         <Fragment key={key}>
                             {i > 0 && <div style={{ width: 1, background: 'color-mix(in srgb, var(--text-primary) 10%, transparent)', flexShrink: 0 }} />}
-                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                                <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{label}</div>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+                                <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', textAlign: 'center' }}>{label}</div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 4 }}>
                                     {arrow && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{arrow}</span>}
                                     <span style={{ fontSize: 'var(--fs-lg, 18px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>{fmtRetAbs(v)}</span>
                                 </div>
