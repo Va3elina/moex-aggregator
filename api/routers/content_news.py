@@ -393,12 +393,19 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     # с ConnectionError "Network is unreachable" при прямом обращении.
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     media_path = os.path.join(_MEDIA_DIR, media_filename) if media_filename else None
+    # ⚠️ Найдено 2026-07-17 (Вадим: несколько новостей с hype_filter_result='t'
+    # не дошли, хотя Шаг Н отработал успешно) — ни один из этих requests.post()
+    # не проверял response.status_code: Telegram/релей мог вернуть 400/403
+    # (например HTML не распарсился, chat заблокировал бота) и это проходило
+    # мимо except целиком — apply_hype_filter всё равно отвечал 200 вызывающей
+    # Routine. raise_for_status() переводит такие ответы в исключение, которое
+    # уже ловится и логируется ниже.
     for chat_id in chat_ids:
         try:
             if media_path and os.path.isfile(media_path):
                 # caption лимит Telegram — 1024 символа (не 4096, как у text у sendMessage).
                 with open(media_path, "rb") as photo_file:
-                    requests.post(
+                    resp = requests.post(
                         f"{api_root}/bot{token}/sendPhoto",
                         data={
                             "chat_id": chat_id, "caption": text_msg[:1024], "parse_mode": "HTML",
@@ -408,7 +415,7 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
                         timeout=20,
                     )
             else:
-                requests.post(
+                resp = requests.post(
                     f"{api_root}/bot{token}/sendMessage",
                     json={
                         "chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML",
@@ -416,8 +423,12 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
                     },
                     timeout=10,
                 )
+            resp.raise_for_status()
         except Exception as e:
-            print(f"[content_news] hype-notify failed for chat_id={chat_id}: {type(e).__name__}: {e}")
+            body = getattr(e, "response", None)
+            body_text = body.text[:300] if body is not None else ""
+            print(f"[content_news] hype-notify failed for chat_id={chat_id}: "
+                  f"{type(e).__name__}: {e} {body_text}")
 
 
 class HypeFilterResult(BaseModel):
