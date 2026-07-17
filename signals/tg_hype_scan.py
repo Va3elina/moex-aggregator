@@ -346,8 +346,15 @@ def main():
     s = run_once()
     dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] tg_hype_scan: {s}")
+    # Найдено 2026-07-17: step_a_fire_errors/hype_filter_fire_errors ловятся
+    # ВНУТРЕННИМИ try/except (см. _scan_channel) и не пробрасываются в errors —
+    # раньше сбой fire-вызова (напр. 401 на Anthropic) вообще не отражался на
+    # статусе, ok молча оставался ok. Складываем со errors для решения по статусу.
+    fire_errors = s["step_a_fire_errors"] + s["hype_filter_fire_errors"]
+    ok = s["errors"] == 0 and fire_errors == 0
+    fired_any = s["step_a_fired"] + s["hype_filter_fired"] > 0
     pipeline_heartbeat.record_pipeline_run(
-        "content_tg_hype_scan", s["errors"] == 0, str(s), dur
+        "content_tg_hype_scan", ok, str(s), dur, degraded=(not ok and fired_any)
     )
 
 

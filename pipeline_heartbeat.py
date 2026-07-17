@@ -60,12 +60,23 @@ def _get_engine():
     return _engine
 
 
-def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_sec: float = None) -> None:
+def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_sec: float = None,
+                         degraded: bool = False) -> None:
     """
     Записать факт прогона скрипта. Идемпотентно (одна строка на pipeline).
 
     last_success_at сохраняется через COALESCE: при падении остаётся время
     последнего успеха — видно «успешно отработал тогда-то, но последний прогон упал».
+
+    degraded (найдено 2026-07-17, инцидент с 401 на Anthropic fire-эндпоинте):
+    success=False раньше красил статус в "fail" ОДИНАКОВО что при единичной
+    ошибке среди дюжины успехов, что при полном отказе — не различить с
+    первого взгляда на /api/health/data, не залезая в last_note. Пайплайны с
+    батчем независимых операций (напр. content_ai_backstop — N кандидатов за
+    прогон) могут передать degraded=True, когда success=False, но часть
+    работы всё же прошла — статус "degraded", а не "fail". Игнорируется при
+    success=True. Остальные вызывающие (без параметра) ведут себя как раньше
+    — строго ok/fail.
 
     Любая ошибка проглатывается: heartbeat не должен влиять на ингест.
     """
@@ -73,6 +84,7 @@ def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_s
     try:
         now = datetime.utcnow()
         eng = _get_engine()
+        status = "ok" if success else ("degraded" if degraded else "fail")
         with eng.begin() as conn:
             if not _table_ready:
                 conn.execute(text(_DDL))
@@ -81,7 +93,7 @@ def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_s
                 "p": pipeline,
                 "now": now,
                 "succ_at": now if success else None,
-                "status": "ok" if success else "fail",
+                "status": status,
                 "note": (note or "")[:500],
                 "dur": duration_sec,
             })

@@ -249,8 +249,15 @@ def main():
     s = run_once()
     dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] content_match: {s}")
+    # Найдено 2026-07-17: step_c_fire_errors ловится ВНУТРЕННИМ try/except
+    # (см. run_once) и не пробрасывается в errors — раньше сбой fire-вызова
+    # (напр. 401 на Anthropic) вообще не отражался на статусе, ok молча
+    # оставался ok. Складываем оба счётчика для решения по статусу.
+    total_errors = s["errors"] + s["step_c_fire_errors"]
+    ok = total_errors == 0
+    fired_any = s["checked"] > 0 or s["step_c_fired"] > 0
     pipeline_heartbeat.record_pipeline_run(
-        "content_match", s["errors"] == 0, str(s), dur
+        "content_match", ok, str(s), dur, degraded=(not ok and fired_any)
     )
 
 
