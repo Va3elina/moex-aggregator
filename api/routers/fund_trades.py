@@ -887,25 +887,40 @@ def top_movers(
             ) IS NOT NULL
         ),
         curr_h AS (
-            -- Холдинги curr-снапшота каждого фонда. Ключ akey = ISIN, fallback имя.
+            -- Холдинги curr-снапшота каждого фонда. Ключ akey = КАНОНИЧЕСКИЙ
+            -- ISIN (securities_ref.canonical_isin), fallback сырой ISIN, fallback
+            -- имя — как в /assets и /company-flows. Без канонизации редомициль-
+            -- пара (АДР US69269L1044 → акция RU000A10CW95, Озон окт-2025) на
+            -- годовом окне давала ДВЕ строки «Озон»: −5.8 млрд в продажах (АДР
+            -- sold_out) и +6.4 млрд в покупках (акция new) вместо нетто +0.6.
+            -- GROUP BY: АДР и акция могут сосуществовать в одном снапшоте на
+            -- стыке конвертации — суммируем, иначе FULL JOIN размножит строки.
             SELECT fd.fund_id,
-                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
-                   h.asset_name, h.weight, h.amount_rub
+                   COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   MIN(h.asset_name) AS asset_name,
+                   SUM(h.weight) AS weight,
+                   SUM(h.amount_rub) AS amount_rub
             FROM fund_dates fd
             JOIN fund_holdings_history h
               ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.curr_date
              AND h.source = ANY(:sources)
+            LEFT JOIN securities_ref sr ON sr.isin = h.isin
             WHERE fd.prev_date IS NOT NULL
+            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name)
         ),
         prev_h AS (
             SELECT fd.fund_id,
-                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
-                   h.asset_name, h.weight, h.amount_rub
+                   COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   MIN(h.asset_name) AS asset_name,
+                   SUM(h.weight) AS weight,
+                   SUM(h.amount_rub) AS amount_rub
             FROM fund_dates fd
             JOIN fund_holdings_history h
               ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.prev_date
              AND h.source = ANY(:sources)
+            LEFT JOIN securities_ref sr ON sr.isin = h.isin
             WHERE fd.prev_date IS NOT NULL
+            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name)
         ),
         per_fund_diff AS (
             -- Дельта per (fund, asset): FULL OUTER JOIN по (fund_id, akey), обе
