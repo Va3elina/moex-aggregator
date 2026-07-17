@@ -365,10 +365,15 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     # 5 мин → кэшируем отдельно с длинным TTL (30 мин), чтобы 5-минутный пересчёт
     # скринера (ради свежести интрадея) НЕ гонял скан истории. Интрадей-рекорды
     # всё равно ловятся: compute_screener подмешивает свежий дневной close в ex ниже.
-    from api.cache import get_or_compute
-    extremes = get_or_compute(
-        f"oi_extremes:v2:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
-    )
+    # Host-side скрипты (content_ai.py::_market_rank_line) не ставят redis в venv —
+    # тот же graceful-degradation паттерн, что у low_activity() выше в этом файле.
+    try:
+        from api.cache import get_or_compute
+        extremes = get_or_compute(
+            f"oi_extremes:v2:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
+        )
+    except ImportError:
+        extremes = _prior_extremes(db, clgroup)
     intraday_set = _intraday_assets(db)
     intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
     min_part = _min_part(clgroup)             # порог ликвидности группы (физ 50 / юр 15)

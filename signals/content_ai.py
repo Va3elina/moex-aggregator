@@ -312,6 +312,35 @@ def _oi_context_line(asset_id: str, clgroup: str | None) -> str:
             f"тенденция за 30 дней: {trend}")
 
 
+def _market_rank_line(db, asset_id: str, clgroup: str | None) -> str:
+    """Место инструмента по резкости СЕГОДНЯШНЕГО движения среди ВСЕХ
+    отслеживаемых активов — тот же скринер, что /api/oi/screener и вкладка
+    «Скринер сигналов» на /oi (api/services/oi_screener.py::compute_screener).
+    Честная фактура для «самое аномальное движение на рынке» (найдено
+    вручную 2026-07-17 на посте VK) — без неё Шаг В либо не сможет
+    утверждать масштаб, либо, хуже, придумает его сам.
+
+    Best-effort: compute_screener изнутри тянет api.cache (redis), которого
+    нет в host venv (signals/.venv) — при сбое возвращаем честную заглушку,
+    падение здесь НЕ должно ронять весь _step_c_payload."""
+    try:
+        from api.services import oi_screener
+        clg = clgroup or "FIZ"
+        data = oi_screener.compute_screener(db, clg)
+        ranked = sorted(
+            (r for r in data["rows"] if r["ratio"] is not None),
+            key=lambda r: r["ratio"], reverse=True,
+        )
+        total = len(ranked)
+        for i, r in enumerate(ranked, start=1):
+            if r["sectype"] == asset_id:
+                return f"№{i} по резкости движения из {total} отслеживаемых активов рынка"
+        return "(инструмент не найден в скринере)"
+    except Exception as e:
+        print(f"[content_ai] market_rank compute failed: {type(e).__name__}: {e}")
+        return "(сравнение с рынком недоступно)"
+
+
 def _recent_signals_line(db, exclude_anomaly_id: int) -> str:
     """Сравнимые недавние публичные OI-сигналы по ДРУГИМ тикерам — фактура
     для «для масштаба: N был ×M», вместо выдуманного сравнения."""
@@ -352,6 +381,7 @@ def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
 def _step_c_payload(db, row, internal_token: str) -> str:
     oi_context = _oi_context_line(row["asset_id"], row["anomaly_clgroup"])
     recent_signals = _recent_signals_line(db, row["anomaly_id"])
+    market_rank = _market_rank_line(db, row["asset_id"], row["anomaly_clgroup"])
     created_at = row.get("created_at")
     reused_signal = bool(created_at and row["signal_date"] < created_at.date())
     prior_post = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
@@ -372,6 +402,7 @@ def _step_c_payload(db, row, internal_token: str) -> str:
         f"  headline: {row['anomaly_headline']}\n"
         f"oi_context: {oi_context}\n"
         f"recent_signals: {recent_signals}\n"
+        f"market_rank: {market_rank}\n"
         f"prior_post: {prior_post}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
