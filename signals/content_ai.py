@@ -156,11 +156,26 @@ _MARK_DISPATCHED = text("""
 # кончившаяся подписка и т.п., см. живой инцидент того же дня). source_url
 # IS NOT NULL — только tg_hype-кандидаты (markettwits/newssmartlab), у
 # moex_calendar Шаг Н не запускается вообще, им нечего ждать.
+# ⚠️ Найдено 2026-07-17 (жалоба Вадима — ВТБ/Аэрофлот не дошли до коллеги):
+# исходный `> 0` здесь предполагал, что ПЕРВЫЙ fire в tg_hype_scan.py всегда
+# успевает инкрементировать hype_filter_dispatch_attempts перед тем, как
+# может упасть. Но `_MARK_HYPE_FILTER_DISPATCHED` там вызывается ПОСЛЕ
+# `_fire()`, внутри того же try — если сам fire бросает исключение (сетевой
+# сбой/провижининг облачного контейнера, тот же класс проблем, что уже был
+# у Шага А/В), attempts так и остаётся 0 НАВСЕГДА: этот SELECT такую строку
+# не видит (`> 0`), И give-up/alert-запрос ниже тоже не видит (`>= max_attempts`
+# никогда не станет true от 0) — кандидат тихо теряется без единого уведомления,
+# даже без "Шаг Н сдался". Живой пример: id 772/773 — `step-a` PATCH в логах
+# есть, `hype-filter` PATCH — ни разу. Убрал `> 0`, добавил `created_at < :cutoff`
+# — та же граница, что и у "давно не проверялось", защищает от гонки с ЕЩЁ НЕ
+# случившейся первой попыткой tg_hype_scan.py (крон раз в 2 мин, cutoff здесь
+# 15 мин — с большим запасом).
 _SELECT_HYPE_FILTER_PENDING = text("""
     SELECT id, source, headline, raw_text, hype_filter_dispatch_attempts
     FROM content_candidates
     WHERE hype_filter_result IS NULL AND source_url IS NOT NULL
-      AND hype_filter_dispatch_attempts > 0 AND hype_filter_dispatch_attempts < :max_attempts
+      AND hype_filter_dispatch_attempts < :max_attempts
+      AND created_at < :cutoff
       AND (hype_filter_checked_at IS NULL OR hype_filter_checked_at < :cutoff)
     ORDER BY id
     LIMIT :batch_limit
