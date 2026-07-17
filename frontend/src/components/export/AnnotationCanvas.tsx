@@ -97,6 +97,17 @@ function contrastColor(alpha = 1): string {
     return light ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
 }
 
+/**
+ * DPR, с которым html2canvas снял фон (captureChart.ts: scale = devicePixelRatio) —
+ * background на ретине физически крупнее в пикселях при том же визуальном размере
+ * графика. Толщину штриха/размер шрифта аннотации (canvas-пиксельные константы)
+ * нужно домножать на него — иначе на высоком DPR штрих того же preset выглядит
+ * тоньше относительно картинки, чем на обычном экране. Тот же паттерн, что
+ * dpr-scaling шрифтов рамки в composeFramedCanvas.ts.
+ */
+function canvasDpr(): number {
+    return typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+}
 
 export interface AnnotationCanvasHandle {
     undo: () => void;
@@ -208,6 +219,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         useEffect(() => {
             if (!fabric || !canvasRef.current) return;
             if (fabricRef.current) return;
+            const dpr = canvasDpr();
 
             const fc = new fabric.Canvas(canvasRef.current, {
                 width: background.width,
@@ -222,7 +234,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
 
             // Init brush — sane defaults, потом обновляются через отдельный effect.
             const brush = new fabric.PencilBrush(fc);
-            brush.width = strokeWidth;
+            brush.width = strokeWidth * dpr;
             brush.color = resolveColor(color);
             fc.freeDrawingBrush = brush;
 
@@ -304,7 +316,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     const activeObj = fcLocal.getActiveObject();
                     if (activeObj && activeObj.type === 'i-text') return;
                     const p = fcLocal.getViewportPoint(opt.e);
-                    const fontSize = Math.max(14, strokeWidthRef.current * 6);
+                    const fontSize = Math.max(14, strokeWidthRef.current * 6) * dpr;
                     const c = resolveColor(colorRef.current);
                     // Текст без обводки: пользователь просил убрать чёрную
                     // окантовку глифов. Рисуем чистой заливкой выбранного цвета —
@@ -335,7 +347,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 const p = fcLocal.getViewportPoint(opt.e);
                 startPoint = { x: p.x, y: p.y };
                 const c = resolveColor(colorRef.current);
-                const w = strokeWidthRef.current;
+                const w = strokeWidthRef.current * dpr;
                 const common = {
                     stroke: c,
                     strokeWidth: w,
@@ -366,7 +378,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 } else if (toolRef.current === 'arrow') {
                     fcLocal.remove(activeShape);
                     const c = resolveColor(colorRef.current);
-                    const w = strokeWidthRef.current;
+                    const w = strokeWidthRef.current * dpr;
                     activeShape = new fabric.Path(arrowPath(startPoint.x, startPoint.y, p.x, p.y), {
                         stroke: c, strokeWidth: w, fill: 'transparent',
                         selectable: false, evented: false, strokeUniform: true,
@@ -515,6 +527,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         useEffect(() => {
             const fc = fabricRef.current;
             if (!fc) return;
+            const dpr = canvasDpr();
             // Pen использует PencilBrush (isDrawingMode). Shape tools используют
             // mouse:down/move/up handlers (через toolRef.current).
             fc.isDrawingMode = tool === 'pen';
@@ -537,7 +550,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             const brush = fc.freeDrawingBrush;
             if (brush && fabric) {
                 brush.color = resolveColor(color);
-                brush.width = strokeWidth;
+                brush.width = strokeWidth * dpr;
             }
 
             // UX-бонус: если есть выделенный объект — применить новый color/width
@@ -549,7 +562,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             if (active && fabric) {
                 const c = resolveColor(color);
                 if (active.type === 'i-text') {
-                    const fontSize = Math.max(14, strokeWidth * 6);
+                    const fontSize = Math.max(14, strokeWidth * 6) * dpr;
                     // Чистая заливка без обводки (см. создание текста выше).
                     // stroke:null очищает контур, если объект пришёл из старого снимка.
                     active.set({
@@ -559,7 +572,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         strokeWidth: 0,
                     });
                 } else {
-                    active.set({ stroke: c, strokeWidth });
+                    active.set({ stroke: c, strokeWidth: strokeWidth * dpr });
                 }
                 fc.requestRenderAll();
                 // Перекраска / смена толщины выделенного объекта — шаг истории.
