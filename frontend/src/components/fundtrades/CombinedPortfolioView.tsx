@@ -293,7 +293,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-primary)' }}>{w.toFixed(2)}%</span>
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{w.toFixed(2)}%</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{fmtVolBln(h.value_rub)}</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{h.funds_holding}</span>
             </div>
@@ -329,7 +329,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
 
     const listHeader = (
         <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            <span /><span>Бумага</span><span /><span style={{ textAlign: 'right' }}>Вес</span><span style={{ textAlign: 'right' }}>млрд ₽</span><span style={{ textAlign: 'right' }}>Фнд</span>
+            <span /><span>Бумага</span><span /><span style={{ textAlign: 'right' }}>Доля</span><span style={{ textAlign: 'right' }}>млрд ₽</span><span style={{ textAlign: 'right' }}>Фнд</span>
         </div>
     );
 
