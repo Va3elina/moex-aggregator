@@ -500,3 +500,14 @@ export function fundAssetColor(name?: string | null, isin?: string | null): stri
     const t = resolveFundTicker(name, isin);
     return (t && TICKER_TO_COLOR[t]) || assetColor(name);
 }
+
+/**
+ * ОФЗ-облигация (имя вида «ОФЗ 26238», «ОФЗ 29014») → показываем герб Минфина
+ * (тот же raw_152, что у индекса RGBI в InstrumentIcon) вместо безликой точки.
+ * У ОФЗ нет своего тикера-акции, поэтому resolveFundTicker вернёт undefined и
+ * без этой проверки строка получила бы цветной кружок. Корпоблигации («Газпром
+ * капитал» и пр.) под правило НЕ подпадают — только гособлигации ОФЗ.
+ */
+export function isOfzBond(name?: string | null): boolean {
+    return /^\s*ОФЗ\b/i.test(name || '');
+}

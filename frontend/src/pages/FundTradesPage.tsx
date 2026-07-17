@@ -53,7 +53,7 @@ import ChartTabs from '../components/ChartTabs';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import InstrumentIcon from '../components/InstrumentIcon';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
@@ -1678,10 +1678,11 @@ function SnapshotSection({
 
 // Лого бумаги в строке movers: ISIN → каноничный тикер → InstrumentIcon
 // (STOCK_LOGO_OVERRIDE → стикерпак → /logos/<тикер>.png). Как в CompanyFlowsTab.
-// Нет тикера (облигация/ОФЗ) → цветная точка.
+// ОФЗ → герб Минфина (raw_152); иначе (корпоблигация без тикера) → цветная точка.
 function MoverAssetMark({ name, isin, size = 22 }: { name: string; isin?: string | null; size?: number }) {
     const ticker = resolveFundTicker(name, isin);
     if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    if (isOfzBond(name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
     const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
     return (
         <span

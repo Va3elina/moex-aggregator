@@ -27,7 +27,7 @@ import {
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import ChartCaptureButton from '../export/ChartCaptureButton';
-import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
+import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -602,6 +602,8 @@ export default function FundDetailModal({
                                                                             const tk = resolveFundTicker(h.asset_name, h.isin);
                                                                             return tk ? (
                                                                                 <InstrumentIcon sectype={tk} size={20} rounded="full" />
+                                                                            ) : isOfzBond(h.asset_name) ? (
+                                                                                <InstrumentIcon sectype="RB" size={20} rounded="full" />
                                                                             ) : (
                                                                                 <span
                                                                                     style={{
@@ -736,8 +738,11 @@ export function AssetHistoryModal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         {(() => {
                             // Лого актива по резолвнутому тикеру (как в Сезонности/ОИ).
+                            // ОФЗ — герб Минфина (raw_152), иначе без лого.
                             const assetTk = resolveFundTicker(asset_name, isin);
-                            return assetTk ? <InstrumentIcon sectype={assetTk} size={isMobile ? 34 : 42} rounded="full" /> : null;
+                            if (assetTk) return <InstrumentIcon sectype={assetTk} size={isMobile ? 34 : 42} rounded="full" />;
+                            if (isOfzBond(asset_name)) return <InstrumentIcon sectype="RB" size={isMobile ? 34 : 42} rounded="full" />;
+                            return null;
                         })()}
                         <div style={{ minWidth: 0 }}>
                             <h3 style={{
