@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
-import { resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
+import { resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
@@ -226,10 +226,13 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         className="instrument-item flex items-center gap-3 px-3 py-1 rounded-lg transition-colors"
         style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
       >
-        {/* Лого: InstrumentIcon по резолвнутому тикеру (акция), иначе — цветная точка
-            по фирменному цвету бумаги (облигации/ОФЗ/денежный рынок без тикера). */}
+        {/* Лого: InstrumentIcon по резолвнутому тикеру (акция); ОФЗ — герб Минфина
+            (raw_152, как у индекса RGBI); иначе — цветная точка по фирменному
+            цвету бумаги (корпоблигации/денежный рынок без тикера). */}
         {ticker ? (
           <InstrumentIcon sectype={ticker} size={28} rounded="full" />
+        ) : isOfzBond(asset.asset_name) ? (
+          <InstrumentIcon sectype="RB" size={28} rounded="full" />
         ) : (
           <span
             className="flex-shrink-0 rounded-full"

@@ -12,7 +12,7 @@
 // вкладки). Клик по строке — «Потоки по компании».
 
 import { type CSSProperties } from 'react';
-import { fundAssetName, resolveFundTicker } from '../../config/fundConfig';
+import { fundAssetName, resolveFundTicker, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import Skeleton from '../Skeleton';
@@ -72,6 +72,7 @@ function MoverLogo({ m, size }: { m: FundTradesMover; size: number }) {
     const isin = isIsin(m.akey) ? m.akey : null;
     const ticker = resolveFundTicker(m.asset_name, isin);
     if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    if (isOfzBond(m.asset_name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
     return (
         <span style={{ width: size, height: size, borderRadius: '50%', background: 'var(--text-muted)', color: '#fff', fontSize: Math.round(size * 0.42), fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>
             {(fundAssetName(m.asset_name, isin).trim().charAt(0) || '?').toUpperCase()}

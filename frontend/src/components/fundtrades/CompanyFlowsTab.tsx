@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, TrendingUp } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
     getCompanyFlows,
@@ -50,10 +50,12 @@ const DEFAULT_FUND_COUNT = 3;
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
 // Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
-// /logos/<тикер>.png). Нет тикера (облигация/ОФЗ) → цветная точка.
+// /logos/<тикер>.png). ОФЗ → герб Минфина (raw_152). Иначе (корпоблигация/
+// денежный рынок без тикера) → цветная точка.
 function AssetMark({ name, isin, size = 22 }: { name: string; isin?: string | null; size?: number }) {
     const ticker = resolveFundTicker(name, isin);
     if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    if (isOfzBond(name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
     const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
     return (
         <span
