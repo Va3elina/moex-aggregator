@@ -206,7 +206,7 @@ _GIVE_UP_STEP_C = text("""
 """)
 
 
-def _notify_pipeline_stuck(step: str, candidate_id: int, reason: str) -> None:
+def _notify_pipeline_stuck(step: str, gave_up: list) -> None:
     """Найдено 2026-07-16 (Вадим): give-up после MAX_DISPATCH_ATTEMPTS менял
     статус кандидата МОЛЧА — узнавали о сломанной Routine (env-misconfig,
     кончившаяся подписка) только постфактум, через ручные 409 часы спустя.
@@ -214,15 +214,31 @@ def _notify_pipeline_stuck(step: str, candidate_id: int, reason: str) -> None:
     релей, что и у api/routers/content_news.py:_notify_hype_colleague, но
     вызывается ХОСТ-СКРИПТОМ (content_ai.py уже на host, не в api-контейнере
     — .env читает напрямую, дублировать docker-compose проброс не нужно).
-    Best-effort — сбой отправки не должен ронять сам бэкстоп."""
+    Best-effort — сбой отправки не должен ронять сам бэкстоп.
+
+    Найдено 2026-07-17 (после многочасового 401 на fire-эндпоинте, инцидент
+    Anthropic): раньше слали ОДНО сообщение НА КАЖДОГО сдавшегося кандидата —
+    при затяжном сбое (не разовый глюк, а Routine реально недоступна часами)
+    десятки кандидатов пересекают MAX_DISPATCH_ATTEMPTS в одном и том же
+    прогоне почти одновременно → флуд из N почти одинаковых сообщений подряд.
+    Теперь вызывающий копит give-up'ы шага за весь прогон в список и зовёт
+    сюда ОДИН раз — здесь одно сообщение на всех. gave_up — список
+    (candidate_id, reason); причина у всех кандидатов одного шага в одном
+    прогоне идентична (один и тот же MAX_DISPATCH_ATTEMPTS-текст), поэтому
+    печатаем её один раз, а не N раз."""
+    if not gave_up:
+        return
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
     chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
     if not token or not chat_id:
         return
+    n = len(gave_up)
+    ids_line = ", ".join(f"#{cid}" for cid, _ in gave_up)
+    reason = gave_up[0][1]
     text_msg = (
-        f"⚠️ Шаг {step} сдался по кандидату #{candidate_id} после "
-        f"{MAX_DISPATCH_ATTEMPTS} попыток бэкстопа — Routine не ответила.\n\n"
-        f"{reason}\n\n"
+        f"⚠️ Шаг {step} сдался по {n} {'кандидату' if n == 1 else 'кандидатам'} "
+        f"после {MAX_DISPATCH_ATTEMPTS} попыток бэкстопа — Routine не ответила.\n\n"
+        f"{ids_line}\n\n{reason}\n\n"
         f"Проверь окружение/подписку (см. скилл moex-content-routines: "
         f"environment_id/allowed_tools, лимиты аккаунта)."
     )
@@ -435,13 +451,14 @@ def run_once() -> dict:
             _SELECT_CANDIDATES, {"cutoff": cutoff, "batch_limit": BATCH_LIMIT}
         ).mappings().all()
         known_tickers = _known_tickers_line(db) if candidates else ""
+        step_a_gave_up = []
         for row in candidates:
             if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
                 give_up_reason = (f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
                                    f"попыток бэкстопа — сдаёмся (см. content_ai.py)")
                 db.execute(_GIVE_UP_STEP_A, {"id": row["id"], "reasoning": give_up_reason})
                 summary["step_a_gave_up"] += 1
-                _notify_pipeline_stuck("А", row["id"], give_up_reason)
+                step_a_gave_up.append((row["id"], give_up_reason))
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
@@ -454,17 +471,19 @@ def run_once() -> dict:
                 print(f"[content_ai] step-a fire failed for candidate {row['id']}: "
                       f"{type(e).__name__}: {e}")
         db.commit()
+        _notify_pipeline_stuck("А", step_a_gave_up)
 
         draft_ready = db.execute(
             _SELECT_DRAFT_READY, {"cutoff": cutoff, "batch_limit": BATCH_LIMIT}
         ).mappings().all()
+        step_c_gave_up = []
         for row in draft_ready:
             if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
                 give_up_reason = (f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
                                    f"попыток бэкстопа — откат в pending (см. content_ai.py)")
                 db.execute(_GIVE_UP_STEP_C, {"id": row["id"], "reason": give_up_reason})
                 summary["step_c_gave_up"] += 1
-                _notify_pipeline_stuck("В", row["id"], give_up_reason)
+                step_c_gave_up.append((row["id"], give_up_reason))
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token))
@@ -476,6 +495,7 @@ def run_once() -> dict:
                 print(f"[content_ai] step-c fire failed for candidate {row['id']}: "
                       f"{type(e).__name__}: {e}")
         db.commit()
+        _notify_pipeline_stuck("В", step_c_gave_up)
 
         # Бэкстоп Шага Н — намеренно МАЛЕНЬКИЙ BATCH_LIMIT_HYPE_FILTER (не
         # BATCH_LIMIT, как у А/В) + тот же FIRE_STAGGER_SEC между вызовами:
@@ -509,12 +529,15 @@ def run_once() -> dict:
                   AND hype_filter_dispatch_attempts >= :max_attempts
                   AND hype_filter_checked_at < :cutoff
             """), {"max_attempts": MAX_DISPATCH_ATTEMPTS, "cutoff": cutoff}).scalars().all()
+            hype_give_up_reason = (f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
+                                    f"попыток бэкстопа — сдаёмся (см. content_ai.py)")
+            hype_gave_up = []
             for cid in gave_up:
                 db.execute(_GIVE_UP_HYPE_FILTER, {"id": cid})
                 summary["hype_filter_gave_up"] += 1
-                _notify_pipeline_stuck("Н", cid, f"Routine не ответила за {MAX_DISPATCH_ATTEMPTS} "
-                                                   f"попыток бэкстопа — сдаёмся (см. content_ai.py)")
+                hype_gave_up.append((cid, hype_give_up_reason))
             db.commit()
+            _notify_pipeline_stuck("Н", hype_gave_up)
     except Exception as e:
         db.rollback()
         summary["errors"] += 1
@@ -529,8 +552,13 @@ def main():
     s = run_once()
     dur = (datetime.now(timezone.utc) - t0).total_seconds()
     print(f"[{datetime.now(timezone.utc)}] content_ai: {s}")
+    ok = s["errors"] == 0
+    # degraded: были ошибки, но что-то всё же прошло (напр. хайп-фильтр
+    # отстрелялся, пока Шаг А/В цеплял 401) — не топим статус в общий "fail"
+    # неотличимо от полного отказа, см. pipeline_heartbeat.record_pipeline_run.
+    fired_any = s["step_a_fired"] + s["step_c_fired"] + s["hype_filter_fired"] > 0
     pipeline_heartbeat.record_pipeline_run(
-        "content_ai_backstop", s["errors"] == 0, str(s), dur
+        "content_ai_backstop", ok, str(s), dur, degraded=(not ok and fired_any)
     )
 
 
