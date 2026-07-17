@@ -28,6 +28,7 @@ Workflow:
 """
 import io
 import logging
+import os
 import re
 import sys
 import time
@@ -49,6 +50,17 @@ from Funds.parsers.scha_docx_parser import parse_scha_docx
 
 SOURCE = "interfax_manual"
 SLEEP_BETWEEN_MOEX = 0.15  # сек между MOEX ISS запросами для резолва имён
+
+# --replace: перед вставкой удалить ВСЕ старые строки снапшота из monthly-источников.
+# Нужен для лечения частичных снапшотов (парсер до фикса b08ac0b терял страницы
+# многостраничных PDF): upsert по (fund,isin,asset_name,date,source) НЕ вычищает
+# старые строки с другим написанием имени/другим source (vim_sdr у EQMX) —
+# без delete получаются дубли по ISIN и задвоение Σвесов.
+REPLACE_SOURCES = ("interfax_manual", "vim_sdr")
+# Guard для --replace: не заменяем снапшот, если свежий парс покрывает < N% активов
+# (иначе битым парсом можно затереть данные лучше новых). Активные фонды с реальным
+# кэшем (AKME) заменять только после ручной проверки, подняв/сняв порог env-ом.
+REPLACE_MIN_COVERAGE = float(os.environ.get("SCHA_REPLACE_MIN_COV", "80"))
 
 # Порог сигнатуры «битой» строки: количество абсурдно велико И подразумеваемая
 # цена ниже 0.0001 ₽/шт. Так выглядят строки, где парсер взял ИНН/ОГРН эмитента
@@ -195,7 +207,8 @@ def find_fund_id(engine, isin_pif: str | None, ticker: str | None) -> tuple[int 
 
 
 def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
-                gross_assets: float | None = None, resolve_names: bool = True) -> int:
+                gross_assets: float | None = None, resolve_names: bool = True,
+                replace: bool = False) -> int:
     """Сохраняет позиции с резолвом имён через MOEX ISS.
 
     Знаменатель доли — `gross_assets` («Раздел 3. Подраздел 10. Общая стоимость
@@ -211,6 +224,32 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
     inserted = 0
     rejected = 0
     with engine.connect() as conn:
+        if replace:
+            # Guard: заменяем только когда свежий парс заведомо полный. Без gross
+            # покрытие не посчитать (Σ/Σ=100% всегда) → отказ, разбирать руками.
+            if not (gross_assets and gross_assets > 0):
+                raise ValueError("--replace: нет gross_assets в форме — покрытие "
+                                 "неопределимо, снапшот НЕ заменён")
+            coverage = sec_sum / gross_assets * 100
+            if coverage < REPLACE_MIN_COVERAGE:
+                raise ValueError(
+                    f"--replace: покрытие {coverage:.1f}% < {REPLACE_MIN_COVERAGE}% "
+                    f"— снапшот НЕ заменён (возможно реальный кэш? проверь руками)")
+            # Гранулярность — МЕСЯЦ: отчётная дата одного месяца пишется УК
+            # то последним торговым (29/30), то календарным (31) днём; точное
+            # совпадение дат оставляло бы старый частичный снапшот рядом с новым.
+            deleted = conn.execute(
+                text("""
+                    DELETE FROM fund_holdings_history
+                    WHERE fund_id = :fid
+                      AND date_trunc('month', snapshot_date) = date_trunc('month', CAST(:d AS date))
+                      AND source = ANY(:srcs)
+                """),
+                {"fid": fund_id, "d": snap_date, "srcs": list(REPLACE_SOURCES)},
+            ).rowcount
+            if deleted:
+                log.info(f"  🔄 --replace: удалено {deleted} старых строк "
+                         f"(fund={fund_id} date={snap_date})")
         for a in assets:
             name = a.get("asset_name") or "(unknown)"
             isin = a.get("isin")
@@ -323,7 +362,7 @@ def parse_any(pdf_path: Path) -> dict:
         return parse_scha(f.read())
 
 
-def process_pdf(engine, pdf_path: Path) -> dict:
+def process_pdf(engine, pdf_path: Path, replace: bool = False) -> dict:
     """Обрабатывает один SCHA-файл (PDF или XLS/XLSX). Возвращает summary dict."""
     summary = {
         "file": pdf_path.name,
@@ -379,19 +418,26 @@ def process_pdf(engine, pdf_path: Path) -> dict:
         return summary
 
     summary["gross_assets_rub"] = result.get("gross_assets_rub")
-    summary["inserted"] = save_assets(
-        engine, fund_id, snap_date, result["assets"],
-        gross_assets=result.get("gross_assets_rub"),
-    )
+    try:
+        summary["inserted"] = save_assets(
+            engine, fund_id, snap_date, result["assets"],
+            gross_assets=result.get("gross_assets_rub"),
+            replace=replace,
+        )
+    except ValueError as e:
+        summary["error"] = str(e)
     return summary
 
 
-def main(directory: str):
+def main(directory: str, replace: bool = False):
     setup_logging()
     path = Path(directory)
     if not path.is_dir():
         log.error(f"Папка {directory} не найдена")
         sys.exit(1)
+    if replace:
+        log.info(f"⚠️  Режим --replace: старые строки снапшотов из {REPLACE_SOURCES} "
+                 f"будут УДАЛЕНЫ перед вставкой (guard: покрытие ≥ {REPLACE_MIN_COVERAGE}%)")
 
     SCHA_EXTS = (".pdf", ".xls", ".xlsx", ".docx", ".zip")
     pdfs = sorted([p for p in path.iterdir() if p.suffix.lower() in SCHA_EXTS])
@@ -407,7 +453,7 @@ def main(directory: str):
     for pdf in pdfs:
         log.info(f"")
         log.info(f"=== {pdf.name} ===")
-        s = process_pdf(engine, pdf)
+        s = process_pdf(engine, pdf, replace=replace)
         if s["error"]:
             log.warning(f"  ❌ {s['error']}")
             failures.append((pdf.name, s["error"]))
@@ -442,8 +488,11 @@ def main(directory: str):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python manual_scha_backfill.py <path_to_pdf_directory>")
+    args = [a for a in sys.argv[1:] if a != "--replace"]
+    if not args:
+        print("Usage: python manual_scha_backfill.py <path_to_pdf_directory> [--replace]")
         print("Пример: python manual_scha_backfill.py ~/Downloads/scha_manual/")
+        print("  --replace: удалить старые строки снапшота (interfax_manual+vim_sdr)")
+        print("             перед вставкой — лечение частичных снапшотов")
         sys.exit(1)
-    main(sys.argv[1])
+    main(args[0], replace="--replace" in sys.argv[1:])

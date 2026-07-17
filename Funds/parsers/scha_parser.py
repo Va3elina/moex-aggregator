@@ -327,6 +327,13 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
                     nums.append(v)
             if len(nums) < 2:
                 continue
+            # Старый лейаут 2020-21 (Т-Капитал и др.): у КАЖДОЙ строки хвостовая
+            # колонка «доля от СЧА, %» (~0-100). Без отсечки rowwise принимал
+            # процент за стоимость (Σ«стоимости» портфеля ≈ 98 ₽) и проигрывал
+            # выбор стратегии. Отсекаем процент: последнее число ≤100.5 при
+            # предпоследнем ≥1000 (реальная стоимость позиции).
+            if len(nums) >= 3 and nums[-1] <= 100.5 and nums[-2] >= 1000:
+                nums = nums[:-1]
             # Стоимость = последнее число строки (инвариант обоих layout'ов:
             # биржа/«уровень 1»/код валюты — текстовые ячейки в хвосте).
             value_rub = nums[-1]
@@ -377,6 +384,20 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
     return assets
 
 
+def _dedup_by_isin(assets: list[dict]) -> list[dict]:
+    """Первое вхождение каждого ISIN; безisin-строки проходят как есть."""
+    seen: set = set()
+    uniq = []
+    for a in assets:
+        k = a.get("isin")
+        if k and k in seen:
+            continue
+        if k:
+            seen.add(k)
+        uniq.append(a)
+    return uniq
+
+
 def _find_gross_assets_text(full_text: str) -> Optional[float]:
     """
     «Раздел 3. Подраздел 10. Общая стоимость активов» → стоимость на ТЕКУЩУЮ
@@ -391,8 +412,15 @@ def _find_gross_assets_text(full_text: str) -> Optional[float]:
     От строки-маркера сканируем вперёд до ~6 строк (или до следующего «Раздел N»),
     берём первое «большое» (>1e6) число с запятой-копейками. None если секции нет.
     """
-    num_re = re.compile(r"\d[\d \xa0.]*,\d{2}")
+    # ,\d{1,2}: Т-Капитал в части месяцев (2023-05, 2024-01, 2024-09) печатает
+    # «Значение 5 186 477 250,8» с ОДНОЙ цифрой после запятой — требование ровно
+    # двух теряло gross → веса нормировались на Σбумаг и маскировали неполноту.
+    num_re = re.compile(r"\d[\d \xa0.]*,\d{1,2}")
     razdel_re = re.compile(r"раздел\s+(?:iv|v|iii|\d)\b", re.I)
+    # Архив 2021 (Т-Кап): (cid:12)-глиф вместо пробелов — без чистки маркер
+    # «Общая стоимость активов» не находится в тексте вообще.
+    full_text = re.sub(r"\(cid:\d+\)", " ", full_text)
+    percent_tok = re.compile(r"\d{1,3},\d{2}$")
     lines = full_text.splitlines()
     for idx, line in enumerate(lines):
         if "общая стоимость активов" not in line.lower():
@@ -400,13 +428,38 @@ def _find_gross_assets_text(full_text: str) -> Optional[float]:
         for j in range(idx, min(idx + 7, len(lines))):
             if j > idx and razdel_re.search(lines[j]):
                 break  # дошли до следующего раздела без значения
+            # Старый 2-колоночный лейаут (2020-21): «<значение без копеек>
+            # <доля,%≈100>» → «2 100 088 613 100,08» склеивается регексом в
+            # 2.1 трлн. Детект: после отсечки хвостовых процент-токенов (≤200)
+            # остаток — ЧИСТОЕ целое ≥1e8 → это и есть значение. Порог 1e8
+            # страхует от ложного среза копеечной группы у обычной строки
+            # («…136,76» ≤200): там остаток либо с запятой, либо <1e8 →
+            # ветка не срабатывает и строка парсится как обычно ниже.
+            toks = lines[j].split()
+            stripped = 0
+            while toks and percent_tok.fullmatch(toks[-1]) and \
+                    float(toks[-1].replace(",", ".")) <= 200:
+                toks.pop()
+                stripped += 1
+            remainder = " ".join(toks).strip()
+            if stripped and remainder and re.fullmatch(r"[\d \xa0]+", remainder):
+                try:
+                    n = float(remainder.replace("\xa0", "").replace(" ", ""))
+                except ValueError:
+                    n = 0
+                if 1e8 <= n <= 5e12:
+                    return n
+            # Обычный путь: первое «большое» число с запятой в ИСХОДНОЙ строке.
             for m in num_re.finditer(lines[j]):
                 s = m.group().replace("\xa0", "").replace(" ", "").replace(".", "").replace(",", ".")
                 try:
                     n = float(s)
                 except ValueError:
                     continue
-                if n > 1e6:
+                # >5e12 (5 трлн ₽) — заведомо склейка колонок «текущая+предыдущая
+                # дата» (2020-формат, 3 колонки), не значение. Лучше None, чем
+                # отравленный знаменатель весов.
+                if 1e6 < n <= 5e12:
                     return n
     return None
 
@@ -552,6 +605,12 @@ def parse_scha(pdf_bytes: bytes) -> dict:
                         "maturity": maturity or None,
                     })
 
+    # Дедуп header-based результата ДО выбора стратегии. У Т-Капитала встречаются
+    # PDF с задублированными таблицами (TMOS 2024-06-28: 27 стр = формa ×2) —
+    # без дедупа tables_count раздут вдвое (60 vs 30 реальных), и re-check ниже
+    # «len(rowwise) > tables_count» не срабатывал, оставляя частичный результат.
+    result["assets"] = _dedup_by_isin(result["assets"])
+
     # Fallback: если extract_tables()+шапка нашёл мало активов (< 20 — признак
     # либо БПИФ ВИМ с вертикальным шрифтом, либо многостраничного 35-стр layout
     # Первой/Атона где шапка и данные на разных страницах), пробуем ещё две
@@ -611,21 +670,10 @@ def parse_scha(pdf_bytes: bytes) -> dict:
                 result["assets"] = rowwise_assets
                 result["parser_strategy"] = "tables_rowwise(recovered dropped rows)"
 
-    # Глобальный дедуп по ISIN. rowwise/text+regex дедупят сами, но header-based
-    # `tables` — нет: если таблица повторяется на нескольких страницах, строка
-    # задваивается → total_nav в backfill удваивается → Σвесов уезжает (видели
-    # TBRU/TMOS 2024-06-28 = 50%). Страхуемся для всех стратегий.
-    if result["assets"]:
-        seen_isin: set = set()
-        uniq = []
-        for a in result["assets"]:
-            k = a.get("isin")
-            if k and k in seen_isin:
-                continue
-            if k:
-                seen_isin.add(k)
-            uniq.append(a)
-        result["assets"] = uniq
+    # Глобальный дедуп по ISIN — страховка для всех стратегий (header-based
+    # `tables` дедупится выше до выбора стратегии; rowwise/text+regex дедупят
+    # сами, но повторная прогонка дешёвая и идемпотентная).
+    result["assets"] = _dedup_by_isin(result["assets"])
 
     result["total_assets"] = len(result["assets"])
     result["gross_assets_rub"] = _find_gross_assets_text("\n".join(full_text_parts))
