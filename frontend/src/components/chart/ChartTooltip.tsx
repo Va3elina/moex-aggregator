@@ -9,7 +9,7 @@
  */
 import { useRef, useLayoutEffect, useState, useEffect } from 'react';
 import { TOOLTIP } from '../../config/chartTheme';
-import type { ReactNode } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 
 interface ChartTooltipProps {
   /** X-позиция в пикселях от левого края контейнера */
@@ -27,11 +27,23 @@ interface ChartTooltipProps {
       (--chart-pad-bottom). Карточка не опускается ниже нижней грид-линии
       и не перекрывает даты оси. */
   clampBottom?: number;
+  /** Полная замена TOOLTIP.containerClass для этого инстанса (напр. крупная
+   *  карточка Сезонности). Не мёрджится с дефолтным классом — Tailwind
+   *  utility-конфликты (rounded-lg vs rounded-2xl) непредсказуемы по source order. */
+  cardClassName?: string;
+  /** Мёрджится поверх TOOLTIP.containerStyle (spread, later keys win). */
+  cardStyle?: CSSProperties;
+  /** Точка на графике (тот же px-фрейм что x/y, обычно вершина бара/значение) —
+   *  если задана, рисуется маленький маркер + линия-коннектор до ближайшего
+   *  края карточки (кламп по вертикали в границы карточки). */
+  marker?: { x: number; y: number; color: string };
 }
 
 const GAP = 12; // отступ между курсором и тултипом
 
-export default function ChartTooltip({ x, y, children, flipAt, clampTop, clampBottom }: ChartTooltipProps) {
+export default function ChartTooltip({
+  x, y, children, flipAt, clampTop, clampBottom, cardClassName, cardStyle, marker,
+}: ChartTooltipProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [parentW, setParentW] = useState(800);
@@ -67,19 +79,58 @@ export default function ChartTooltip({ x, y, children, flipAt, clampTop, clampBo
   const minTop = (clampTop ?? 4) + GAP_Y;
   const maxTop = parentH - (clampBottom ?? 4) - cardH - GAP_Y;
 
-  return (
+  const cardLeft = isRight ? Math.max(4, x - cardW - GAP) : x + GAP;
+  const cardTop = Math.max(minTop, Math.min(y - 40, maxTop));
+
+  const card = (
     <div
       ref={wrapperRef}
       className="absolute pointer-events-none z-30"
-      style={{
-        left: isRight ? Math.max(4, x - cardW - GAP) : x + GAP,
-        top: Math.max(minTop, Math.min(y - 40, maxTop)),
-      }}
+      style={{ left: cardLeft, top: cardTop }}
     >
-      <div ref={cardRef} className={TOOLTIP.containerClass} style={TOOLTIP.containerStyle}>
+      <div ref={cardRef} className={cardClassName ?? TOOLTIP.containerClass} style={{ ...TOOLTIP.containerStyle, ...cardStyle }}>
         {children}
       </div>
     </div>
+  );
+
+  if (!marker) return card;
+
+  // Линия-коннектор — кратчайший путь от точки данных до ближайшего
+  // вертикального края карточки (кламп Y в границы карточки, как у
+  // Highcharts/аналогов: линия всегда упирается В край, а не улетает
+  // выше/ниже него).
+  const edgeX = isRight ? cardLeft + cardW : cardLeft;
+  const edgeY = Math.min(Math.max(marker.y, cardTop + 8), cardTop + Math.max(cardH - 8, 8));
+  const minX = Math.min(marker.x, edgeX);
+  const minY = Math.min(marker.y, edgeY);
+
+  return (
+    <>
+      <svg
+        className="absolute pointer-events-none z-30"
+        style={{ left: minX, top: minY, overflow: 'visible' }}
+        width={Math.max(1, Math.abs(edgeX - marker.x))}
+        height={Math.max(1, Math.abs(edgeY - marker.y))}
+      >
+        <line
+          x1={marker.x - minX} y1={marker.y - minY}
+          x2={edgeX - minX} y2={edgeY - minY}
+          stroke={marker.color} strokeWidth={1.5} strokeDasharray="3,3" opacity={0.7}
+        />
+      </svg>
+      <div
+        className="absolute pointer-events-none z-30 rounded-full"
+        style={{
+          left: marker.x, top: marker.y, width: 8, height: 8,
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: marker.color,
+          border: '2px solid var(--bg-primary)',
+          boxShadow: `0 0 0 1px ${marker.color}`,
+        }}
+      />
+      {card}
+    </>
   );
 }
 

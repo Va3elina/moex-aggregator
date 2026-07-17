@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION, cssVar } from '../../config/chartTheme';
-import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
+import { ChartGrid, ChartCrosshair, ChartTooltip } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -11,6 +11,9 @@ interface TooltipState {
   x: number;
   y: number;
   bar?: SeasonalityResponse['bars'][0];
+  /** Высота контейнера (px) на момент замера — нужна чтобы перевести
+   *  SVG-координату вершины бара в px для маркера/коннектора тултипа. */
+  containerHeight?: number;
 }
 
 interface SeriesMeta {
@@ -80,16 +83,21 @@ export default function SeasonalityHistogram({
     }
   }, [bars.length, grown]);
 
-  // Кэш горизонтального padding для onMouseMove — читаем CSS-токен один раз
-  // на маунт и при resize, а не на каждое движение мыши (getComputedStyle
-  // внутри hot-path триггерит style recalculation в браузере).
+  // Кэш padding (горизонтального + вертикального) — читаем CSS-токены один раз
+  // на маунт и при resize, а не на каждое движение мыши/рендер тултипа
+  // (getComputedStyle внутри hot-path триггерит style recalculation в браузере).
+  // Вертикальный нужен чтобы перевести SVG y вершины бара в px для маркера тултипа.
   const padXRef = useRef(70);
+  const padYRef = useRef({ top: 28, bottom: 24 });
   useLayoutEffect(() => {
     const read = () => {
-      const v = parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue('--seasonality-hist-pad-x')
-      );
-      if (!Number.isNaN(v) && v > 0) padXRef.current = v;
+      const cs = getComputedStyle(document.documentElement);
+      const x = parseFloat(cs.getPropertyValue('--seasonality-hist-pad-x'));
+      if (!Number.isNaN(x) && x > 0) padXRef.current = x;
+      const top = parseFloat(cs.getPropertyValue('--seasonality-hist-pad-top'));
+      if (!Number.isNaN(top) && top > 0) padYRef.current.top = top;
+      const bottom = parseFloat(cs.getPropertyValue('--seasonality-hist-pad-bottom'));
+      if (!Number.isNaN(bottom) && bottom > 0) padYRef.current.bottom = bottom;
     };
     read();
     window.addEventListener('resize', read);
@@ -150,7 +158,7 @@ export default function SeasonalityHistogram({
     const idx = Math.floor(xInBars / slotW_px);
     if (idx >= 0 && idx < bars.length) {
       const slotCenterPx = PAD + idx * slotW_px + slotW_px / 2;
-      setTooltip({ x: slotCenterPx, y: clientY - rect.top, bar: bars[idx] });
+      setTooltip({ x: slotCenterPx, y: clientY - rect.top, bar: bars[idx], containerHeight: rect.height });
     } else {
       setTooltip(null);
     }
@@ -321,51 +329,93 @@ export default function SeasonalityHistogram({
         <ChartWatermark left={5} bottom="calc(3% + 5px)" />
       </div>
 
-      {/* Tooltip — используем ChartTooltip (автоматический flip по центру) */}
-      {tooltip?.bar && (() => {
+      {/* Tooltip — используем ChartTooltip (автоматический flip по центру).
+          Multi-mode (сравнение лет) — старая компактная карточка без изменений.
+          Single-mode — крупная карточка с маркером на вершине бара + линией-
+          коннектором до карточки (референс: карточка-«callout» с bold-заголовком
+          и построчно dot+label слева / bold-значение справа). */}
+      {tooltip?.bar && isMulti && (() => {
         const idx = bars.indexOf(tooltip.bar!);
         if (idx === -1) return null;
         return (
           <ChartTooltip x={tooltip.x} y={tooltip.y} clampTop={cssVar('--seasonality-hist-pad-top', 28)} clampBottom={cssVar('--seasonality-hist-pad-bottom', 24)}>
-            {isMulti ? (
-              <>
-                {/* Label header — bigger/bolder для лучшей читаемости. Особенно
-                    важно в monthday/monthly modes где X-axis labels прорежены. */}
-                <div className="text-sm text-theme-primary mb-1 font-bold">{tooltip.bar!.label}</div>
-                {safeMeta.map((style, s) => {
-                  const seriesBar = safeSeries[s]?.bars?.[idx];
-                  if (!seriesBar) return null;
-                  const val = seriesBar.avg_change;
-                  const valColor = val >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-                  const valStr = `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
-                  // Точка = цвет серии, значение = зелёный/красный от знака
-                  return (
-                    <div key={style.key} className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: style.color }} />
-                        <span className={`${TOOLTIP.labelClass} truncate`}>{style.label}</span>
-                      </div>
-                      <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ color: valColor }}>
-                        {valStr}
-                      </span>
-                    </div>
-                  );
-                })}
-              </>
-            ) : (() => {
-              const bar = tooltip.bar!;
-              const color = bar.avg_change >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-              const valStr = `${bar.avg_change > 0 ? '+' : ''}${Math.abs(bar.avg_change) >= 0.01 ? bar.avg_change.toFixed(3) : bar.avg_change.toFixed(4)}%`;
+            {/* Label header — bigger/bolder для лучшей читаемости. Особенно
+                важно в monthday/monthly modes где X-axis labels прорежены. */}
+            <div className="text-sm text-theme-primary mb-1 font-bold">{tooltip.bar!.label}</div>
+            {safeMeta.map((style, s) => {
+              const seriesBar = safeSeries[s]?.bars?.[idx];
+              if (!seriesBar) return null;
+              const val = seriesBar.avg_change;
+              const valColor = val >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+              const valStr = `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
+              // Точка = цвет серии, значение = зелёный/красный от знака
               return (
-                <>
-                  {/* Label header (день/месяц/час) — prominent даже когда X-axis
-                      label прорежены adaptive thinning'ом. */}
-                  <div className="text-sm text-theme-primary mb-1 font-bold">{bar.label}</div>
-                  <TooltipRow color={color} label={bar.avg_change >= 0 ? 'Рост' : 'Падение'} value={valStr} />
-                  <div className="text-2xs text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
-                </>
+                <div key={style.key} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: style.color }} />
+                    <span className={`${TOOLTIP.labelClass} truncate`}>{style.label}</span>
+                  </div>
+                  <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ color: valColor }}>
+                    {valStr}
+                  </span>
+                </div>
               );
-            })()}
+            })}
+          </ChartTooltip>
+        );
+      })()}
+
+      {tooltip?.bar && !isMulti && (() => {
+        const bar = tooltip.bar!;
+        const color = bar.avg_change >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+        const valStr = `${bar.avg_change > 0 ? '+' : ''}${Math.abs(bar.avg_change) >= 0.01 ? bar.avg_change.toFixed(3) : bar.avg_change.toFixed(4)}%`;
+        const containerHeight = tooltip.containerHeight;
+
+        // Маркер — вершина бара в SVG-координатах (тот же расчёт что и сам
+        // rect в цикле рендера баров выше), переведённая в px через закэшированный
+        // вертикальный padding бар-area (см. padYRef).
+        const marker = containerHeight ? (() => {
+          const normalized = bar.avg_change / (effectiveMaxAbs || 0.01);
+          const hSvg = Math.max(Math.abs(normalized) * halfH, H * 0.005);
+          const edgeYSvg = bar.avg_change >= 0 ? midY - hSvg : midY + hSvg;
+          const barAreaHeightPx = containerHeight - padYRef.current.top - padYRef.current.bottom;
+          return { x: tooltip.x, y: padYRef.current.top + (edgeYSvg / H) * barAreaHeightPx, color };
+        })() : undefined;
+
+        return (
+          <ChartTooltip
+            x={tooltip.x} y={tooltip.y}
+            clampTop={cssVar('--seasonality-hist-pad-top', 28)} clampBottom={cssVar('--seasonality-hist-pad-bottom', 24)}
+            marker={marker}
+            cardClassName="rounded-2xl shadow-lg tabular-nums"
+            cardStyle={{
+              background: 'var(--bg-primary)',
+              padding: 'var(--sp-3) var(--sp-4)',
+              fontSize: 'var(--fs-sm)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {/* Label header (день/месяц/час) — prominent даже когда X-axis
+                label прорежены adaptive thinning'ом. */}
+            <div className="font-bold mb-1" style={{ fontSize: 'var(--fs-md)', color: 'var(--text-primary)' }}>
+              {bar.label}
+            </div>
+            <div className="flex items-center justify-between" style={{ gap: 'var(--sp-3)' }}>
+              <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-2)' }}>
+                <span className="rounded-full flex-shrink-0" style={{ width: 8, height: 8, backgroundColor: color }} />
+                <span className="text-theme-secondary truncate" style={{ fontSize: 'var(--fs-sm)' }}>
+                  {bar.avg_change >= 0 ? 'Средний рост' : 'Среднее падение'}
+                </span>
+              </div>
+              <span className="font-bold whitespace-nowrap" style={{ fontSize: 'var(--fs-sm)', color }}>{valStr}</span>
+            </div>
+            <div className="flex items-center justify-between mt-1" style={{ gap: 'var(--sp-3)' }}>
+              <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-2)' }}>
+                <span className="rounded-full flex-shrink-0" style={{ width: 8, height: 8, backgroundColor: 'var(--text-muted)' }} />
+                <span className="text-theme-secondary truncate" style={{ fontSize: 'var(--fs-sm)' }}>Наблюдений</span>
+              </div>
+              <span className="font-bold whitespace-nowrap" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{bar.count}</span>
+            </div>
           </ChartTooltip>
         );
       })()}
