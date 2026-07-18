@@ -1,20 +1,30 @@
 # ВИМ Инвестиции (uk_id=7) — SCHA reference
 
-**TL;DR:** own-site `wealthim.ru` (листинг curl'ится, но PDF — через браузер/аттач).
+**TL;DR:** own-site `wealthim.ru` — **ПОЛНЫЙ архив через Bitrix-пагинацию
+`?PAGEN_1=N`, и листинг, и PDF качаются чистым curl** (браузер НЕ нужен).
 ⚠️ **Баг ×1000 в `positions`** (см. ниже) — ВСЕГДА парсить `parse_scha` + прогонять детектор.
 
 ## Откуда данные
-- 🟡 **own-site `wealthim.ru`** — листинг `/reports/` отдаётся curl (имена файлов видно),
-  но **прямой GET PDF возвращает SPA-shell (~74 КБ HTML), НЕ PDF** → качать в браузере
-  или присылать аттачем. Хранит ~9 последних месяцев.
+- 🟢 **own-site `wealthim.ru` — полный архив, весь curl** (проверено 2026-07-18,
+  бэкфилл EQMX 2023-2025):
+  1. Листинг `/reports/` показывает 9 записей на страницу, но это ПАГИНАЦИЯ:
+     `...reports/?PAGEN_1=2`, `=3`, ... — уходит вглубь до 2022+.
+  2. Из HTML листинга взять `href="/upload/iblock/<hash>/<hash>/<file>.pdf"` —
+     пути хэшированные, НЕ угадываются, только из листинга (или Wayback-снапшота
+     листинга — старые /upload-файлы живут и после делистинга).
+  3. **Прямой curl `https://www.wealthim.ru/upload/iblock/...pdf` с Chrome UA
+     отдаёт настоящий PDF** (SPA-shell — миф, /upload это статика Bitrix).
   | ticker | reports URL |
   |---|---|
   | EQMX (Индекс МосБиржи, БПИФ) | `wealthim.ru/about/disclosure/pif/bpif/wimfimb/reports/` |
   | OPIF-1003 (Фонд Акций, ОПИФ) | `wealthim.ru/about/disclosure/pif/opif/wimfa/documents/reports/` |
   Имена PDF: `ГГ_ММ_ДД_SCHA_BPIF_IndeksMosBirzhi.pdf` / `..._SCHA_OPIF_Aktsii.pdf`.
   (slug `wimfa`=OPIF-1003 подтверждён сверкой; `wimfeqr` = ДРУГОЙ фонд «Рос. эмитенты»!)
-- 🔵 e-disclosure card `28433` (fallback). OPIF-9165 «Рантье» на карточке НЕТ
-  (мб «ВИМ Сбережения» card 34888).
+- 🔴 e-disclosure card `28433` — **на 2026-07 закрыт интерактивной капчей
+  (ServicePipe «разверните картинку»)** и с локального браузера, и curl'ом;
+  с прод-сервера (датацентр-IP) соединение просто RST-ится. Использовать
+  только если own-site не помог, и решать капчу должен человек.
+  OPIF-9165 «Рантье» на карточке НЕТ (мб «ВИМ Сбережения» card 34888).
 
 ## Формат
 - **PDF** (compact-формат, у БПИФ — вертикальный шрифт). Парсер `parse_scha` → `text+regex` либо `tables_rowwise`.
