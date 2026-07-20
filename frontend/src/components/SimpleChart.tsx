@@ -2143,12 +2143,31 @@ export default function SimpleChart({
               onMouseEnter={() => setHoveredAnnotationIdx(ann.origIdx)}
               onMouseLeave={() => setHoveredAnnotationIdx(null)}
             >
-              <div
-                className="rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
-                style={{ width: tokens.annSize, height: tokens.annSize, backgroundColor: 'var(--ann-bg, #3a3f4f)', color: 'var(--axis-color, #9CA3B8)', fontSize: tokens.annFont, fontWeight: 600 }}
+              {/* Метку рисуем inline-SVG, а не flex-центрированным <div>: html2canvas
+                  при экспорте по 📷 не воспроизводит вертикальное flex/line-height
+                  центрирование текста — тикер уезжал вниз почти к нижнему краю кружка.
+                  SVG <text> с dominant-baseline=central html2canvas центрирует верно
+                  (пиксель-в-пиксель с браузером); CSS-переменные темы внутри SVG
+                  резолвятся при растеризации. */}
+              <svg
+                width={tokens.annSize}
+                height={tokens.annSize}
+                viewBox={`0 0 ${tokens.annSize} ${tokens.annSize}`}
+                className="block cursor-pointer transition-opacity opacity-50 hover:opacity-100"
               >
-                {ann.label.slice(0, 2)}
-              </div>
+                <circle cx={tokens.annSize / 2} cy={tokens.annSize / 2} r={tokens.annSize / 2} fill="var(--ann-bg, #3a3f4f)" />
+                <text
+                  x={tokens.annSize / 2}
+                  y={tokens.annSize / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={tokens.annFont}
+                  fontWeight={600}
+                  fill="var(--axis-color, #9CA3B8)"
+                >
+                  {ann.label.slice(0, 2)}
+                </text>
+              </svg>
               {/* Тултип при hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
                 <div className="rounded-xl border border-theme shadow-md whitespace-nowrap" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-3) var(--sp-4)' }}>
