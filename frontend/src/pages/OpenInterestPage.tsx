@@ -27,7 +27,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 import { usePersistedState } from '../hooks/usePersistedState';
-import { useAspectHeight } from '../hooks/useAspectHeight';
+import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
@@ -178,10 +178,12 @@ export default function OpenInterestPage() {
   const headerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const chartAnchorRef = useRef<HTMLDivElement>(null);
-  // Вадим 2026-07-18: зафиксировано 16:9 на любом экране (было useFitToViewport —
-  // высота от остатка viewport, независимо от ширины, из-за чего пропорции
-  // «плавали» — почти квадрат на широких мониторах, вытянуто на узких).
-  const chartHeight = useAspectHeight(chartAnchorRef, { ratio: 16 / 9, min: 220 });
+  const chartHeight = useFitToViewport(chartAnchorRef, {
+    min: 360,
+    max: 720,
+    bottomBuffer: 64, // range slider в SimpleChart (~48) + минимальный нижний отступ страницы
+    watchRefs: [headerRef, controlsRef],
+  });
 
   // Инструмент
   // ВАЖНО: sec_id может прийти из URL-параметра (например `?instrument=IMOEXF`),
