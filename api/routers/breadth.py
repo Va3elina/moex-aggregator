@@ -543,10 +543,19 @@ async def get_breadth_history(
     # проверяем rub_weekday_gap: есть ли среди «лишних» рублёвых дат (позже
     # usd_last) хотя бы один будний день. Если есть — это торговый день, который
     # доллар ТОЖЕ обязан посчитать, значит USD просто отстаёт по таймингу → НЕ
-    # stale. Только для USD-режима.
+    # stale.
+    #
+    # И главный гейт — шильдик горит только когда СЕЙЧАС выходной (сб/вс по МСК).
+    # Кейс понедельника: предрасчёт ночной, весь день rub_last = суббота,
+    # usd_last = пятница, gap = только суббота — по данным «честный» выходной
+    # разрыв, но день-то торговый, доллар догонит следующим прогоном. Плашка
+    # «на выходных доллар не обновляется» в будний день только путает.
+    # МСК фиксированный UTC+3 (без DST с 2014). Только для USD-режима.
     dollar_stale = False
     data_date = data_out[-1]["date"] if data_out else None
-    if is_usd:
+    from datetime import datetime as _dt, timezone as _tz
+    is_weekend_now = _dt.now(_tz(timedelta(hours=3))).weekday() >= 5
+    if is_usd and is_weekend_now:
         try:
             rub_universe = universe[:-4]  # all_usd → all, imoex_usd → imoex
             with engine.connect() as conn:
