@@ -528,14 +528,22 @@ async def get_breadth_history(
         for p in history
     ]
 
-    # Долларовый ряд «устарел» ТОЛЬКО когда рублёвая широта ушла вперёд по дате:
-    # РТС и курс USDRUBF на выходных и в нерабочие для РТС дни не торгуются,
-    # поэтому за такой день долларовая широта не считается, а рублёвая — да.
-    # Сравниваем обе вселенные по ОДНОМУ источнику — таблице breadth_history
-    # (один предрасчёт, одинаковый тайминг). РАНЬШЕ сравнивали с сырыми свечами
-    # акций (candles): они обновляются intraday раньше, чем предрасчёт широты,
-    # из-за чего каждое утро в обычный торговый будний день флаг ложно зажигался,
-    # пока предрасчёт/кэш не догонят. Только для USD-режима.
+    # Долларовый ряд «устарел» ТОЛЬКО когда рублёвая широта ушла вперёд по дате
+    # ИСКЛЮЧИТЕЛЬНО за счёт ВЫХОДНЫХ (сб/вс): РТС и курс USDRUBF по выходным не
+    # торгуются, поэтому за такой день долларовая широта не считается, а рублёвая —
+    # да (доп. сессия MOEX / IMOEX2). Сравниваем обе вселенные по ОДНОМУ источнику —
+    # таблице breadth_history (один предрасчёт, одинаковый тайминг). РАНЬШЕ
+    # сравнивали с сырыми свечами акций (candles): они обновляются intraday раньше
+    # предрасчёта широты, из-за чего каждое утро флаг ложно зажигался.
+    #
+    # Но и голого rub_last > usd_last мало: рублёвая и долларовая строки пишутся
+    # предрасчётом НЕ атомарно (сначала all/imoex, потом *_usd), плюс утром USD за
+    # сегодня может отставать. Тогда rub уходит вперёд на БУДНИЙ день — торговый
+    # для доллара — и флаг ложно зажигался в обычные будни. Поэтому дополнительно
+    # проверяем rub_weekday_gap: есть ли среди «лишних» рублёвых дат (позже
+    # usd_last) хотя бы один будний день. Если есть — это торговый день, который
+    # доллар ТОЖЕ обязан посчитать, значит USD просто отстаёт по таймингу → НЕ
+    # stale. Только для USD-режима.
     dollar_stale = False
     data_date = data_out[-1]["date"] if data_out else None
     if is_usd:
@@ -547,11 +555,17 @@ async def get_breadth_history(
                       (SELECT max(trade_date) FROM breadth_history
                          WHERE ema_period = :ema AND universe = :usd) AS usd_last,
                       (SELECT max(trade_date) FROM breadth_history
-                         WHERE ema_period = :ema AND universe = :rub) AS rub_last
+                         WHERE ema_period = :ema AND universe = :rub) AS rub_last,
+                      (SELECT max(trade_date) FROM breadth_history
+                         WHERE ema_period = :ema AND universe = :rub
+                           AND trade_date > (SELECT max(trade_date) FROM breadth_history
+                                               WHERE ema_period = :ema AND universe = :usd)
+                           AND EXTRACT(DOW FROM trade_date) NOT IN (0, 6)) AS rub_weekday_gap
                 """), {"ema": ema_period, "usd": universe, "rub": rub_universe}).fetchone()
             usd_last = r[0] if r else None
             rub_last = r[1] if r else None
-            if usd_last and rub_last and rub_last > usd_last:
+            rub_weekday_gap = r[2] if r else None
+            if usd_last and rub_last and rub_last > usd_last and rub_weekday_gap is None:
                 dollar_stale = True
         except Exception as e:
             log.warning(f"breadth/history: dollar_stale check skipped: {e}")
