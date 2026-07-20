@@ -2138,7 +2138,7 @@ export default function SimpleChart({
               // (top = chartHeight - annSize), а не центрируем на ней
               // (было - annSize/2). Так кружок сидит над осью с зазором до
               // подписей дат, а не наезжает на них снизу.
-              className="absolute group z-30"
+              className="absolute group z-30 opacity-50 transition-opacity hover:opacity-100"
               style={{ left: ann.x - tokens.annSize / 2, top: padding.top + chartHeight - tokens.annSize }}
               onMouseEnter={() => setHoveredAnnotationIdx(ann.origIdx)}
               onMouseLeave={() => setHoveredAnnotationIdx(null)}
@@ -2148,12 +2148,18 @@ export default function SimpleChart({
                   центрирование текста — тикер уезжал вниз почти к нижнему краю кружка.
                   SVG <text> с dominant-baseline=central html2canvas центрирует верно
                   (пиксель-в-пиксель с браузером); CSS-переменные темы внутри SVG
-                  резолвятся при растеризации. */}
+                  резолвятся при растеризации.
+                  Полупрозрачность (opacity-50) держим на РОДИТЕЛЬСКОМ <div>, а не на
+                  <svg>: html2canvas растеризует inline-SVG в картинку и применяет
+                  CSS-opacity элемента дважды (запекает в SVG-картинку + globalAlpha)
+                  → в экспорте выходило ~0.25 вместо 0.5, метка бледнела и текст
+                  пропадал. На HTML-div opacity применяется один раз, экспорт совпадает
+                  с экраном. */}
               <svg
                 width={tokens.annSize}
                 height={tokens.annSize}
                 viewBox={`0 0 ${tokens.annSize} ${tokens.annSize}`}
-                className="block cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+                className="block cursor-pointer"
               >
                 <circle cx={tokens.annSize / 2} cy={tokens.annSize / 2} r={tokens.annSize / 2} fill="var(--ann-bg, #3a3f4f)" />
                 <text
