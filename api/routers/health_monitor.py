@@ -41,6 +41,12 @@ _COMMODITY_SECIDS = {
     "PALLADIUM", "PLATINUM", "WHEAT", "NATGAS_HH", "LIT", "TTF_GAS",
 }
 
+# Серии, которые MOEX публикует в ISS history только ночью T+1 (MCFTR — TR-индекс
+# считается после дивидендов; EUR — после остановки биржевых торгов остались
+# только поздние history-строки, candles пустые). Ингест добирает их утренним
+# прогоном 09:00, поэтому лаг 2 торговых дня для них — норма, не stale.
+_T_PLUS_1_SECIDS = {"MCFTR", "EUR_RUB__TOM"}
+
 # macro_data: только ЖИВЫЕ (используемые сайтом) индикаторы.
 # Мёртвые ZCYC/ОФЗ/IPO сознательно исключены.
 _MACRO = [
@@ -156,11 +162,17 @@ def health_data(
     md = db.execute(text("SELECT MAX(trade_date) FROM breadth_history")).scalar()
     sources.append(entry("breadth_history", "close", md))
 
-    # index_data — по каждому secid (close для MOEX, intraday для сырья)
+    # index_data — по каждому secid (close для MOEX, intraday для сырья,
+    # t_plus_1 для серий с ночной публикацией ISS)
     for row in db.execute(text(
         "SELECT secid, MAX(trade_date) AS md FROM index_data GROUP BY secid ORDER BY secid"
     )).all():
-        kind = "intraday" if row.secid in _COMMODITY_SECIDS else "close"
+        if row.secid in _COMMODITY_SECIDS:
+            kind = "intraday"
+        elif row.secid in _T_PLUS_1_SECIDS:
+            kind = "t_plus_1"
+        else:
+            kind = "close"
         sources.append(entry(f"index:{row.secid}", kind, row.md))
 
     # macro_data — только живые индикаторы
