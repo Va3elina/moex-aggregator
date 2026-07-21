@@ -68,7 +68,11 @@ def _status(kind, max_date, lag_td, today):
     if kind == "monthly":
         return "ok" if (today - max_date).days <= 40 else "stale"
     if kind == "quarterly":
-        return "ok" if (today - max_date).days <= 110 else "stale"
+        # Худший легитимный разрыв: квартал (92д) + лаг публикации Росстата
+        # (~78д: Q1 31.03 → 17.06). Перед выходом следующего квартала данным
+        # ~170 дней — это норма, не stale. 180 = запас + тревога ~через 2
+        # недели после реально пропущенной публикации.
+        return "ok" if (today - max_date).days <= 180 else "stale"
     # event / weekly / manual — информационно, без тревоги
     return "ok"
 
