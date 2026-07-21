@@ -94,6 +94,9 @@ INDICES = {
         "engine": "stock",
         "market": "index",
         "board": "SNDX",
+        # TR-индекс считается с учётом дивидендов и публикуется ночью T+1 —
+        # и в history, И в candles (проверено 21.07.2026), поэтому use_candles
+        # не спасает. Свежесть добирает утренний прогон 09:00 (main_orchestrator).
         "start_date": date(2005, 1, 1),  # MCFTR available from 2005
     },
     "RTSI": {
@@ -135,8 +138,10 @@ INDICES = {
     "MOEXEU":  {"name": "Сектор Электроэнергетика",  "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
     "MOEXCH":  {"name": "Сектор Химия и нефтехимия", "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
     "MOEXTN":  {"name": "Сектор Транспорт",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
-    "MOEXRE":  {"name": "Сектор Строители",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
-    "MOEXIT":  {"name": "Сектор IT",                 "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2020, 1, 1)},
+    # MOEXRE/MOEXIT: history публикуется T+1 (остальные сектора появляются к
+    # 19:10 того же дня) → candles, отдающий день T в тот же вечер (как RVI/RGBI).
+    "MOEXRE":  {"name": "Сектор Строители",          "engine": "stock", "market": "index", "board": "SNDX", "use_candles": True, "start_date": date(2008, 1, 1)},
+    "MOEXIT":  {"name": "Сектор IT",                 "engine": "stock", "market": "index", "board": "SNDX", "use_candles": True, "start_date": date(2020, 1, 1)},
     "MOEXINN": {"name": "Индекс инноваций",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2018, 1, 1)},
 
     "USD000UTSTOM": {
@@ -154,6 +159,9 @@ INDICES = {
         "market": "selt",
         "board": "CETS",
         "filter_board": True,
+        # candles на CETS по EUR пустые (после остановки биржевых торгов EUR
+        # остались только history-строки, публикуются T+1) → остаёмся на history,
+        # свежесть добирает утренний прогон 09:00 (main_orchestrator).
         "start_date": date(2013, 1, 1),
     },
     "CNYRUB_TOM": {

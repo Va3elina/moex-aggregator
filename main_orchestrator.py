@@ -187,6 +187,14 @@ DAILY_UPDATE_MINUTE = 10
 FUNDS_EARLY_UPDATE_HOUR = 14
 FUNDS_EARLY_UPDATE_MINUTE = 30
 
+# Ранний прогон indices — MOEX публикует history по MCFTR/EUR_RUB__TOM только
+# ночью (T+1), вечерний 19:10 их день T не видит (остальные серии успевают —
+# либо history к 19:10, либо use_candles). Утренний прогон добирает вчерашние
+# строки → лаг этих серий не превышает 1 торговый день.
+# UPSERT на (secid, trade_date) → безопасный повторный прогон.
+INDICES_EARLY_UPDATE_HOUR = 9
+INDICES_EARLY_UPDATE_MINUTE = 0
+
 # Commodity — Yahoo Finance daily close. US market закрыт в 23:00 EST = 07:00 МСК
 # (или 06:00 в DST). 08:00 МСК — гарантированно после закрытия, дневные close
 # уже окончательные. UPSERT на (secid, trade_date) → безопасно если запустим
@@ -483,6 +491,7 @@ class MainOrchestrator:
         self.last_hourly_aggregate = None
         self.last_daily_update = None
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
+        self.last_indices_early_update = None  # ранний indices-прогон в 09:00 (T+1-публикации ISS)
         self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
@@ -1412,6 +1421,17 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний funds update...")
                     await self.run_funds_update()
                     self.last_funds_early_update = slot_day
+
+                # === Ранний indices-прогон (09:00 МСК) ===
+                # MCFTR/EUR_RUB__TOM публикуются в ISS history ночью (T+1) —
+                # добираем утром, не дожидаясь вечернего 19:10. В выходные
+                # скрипт сам скипает прогон (--once + is_trading_day).
+                if (slot_day != self.last_indices_early_update and
+                        now.hour == INDICES_EARLY_UPDATE_HOUR and
+                        now.minute >= INDICES_EARLY_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний indices update...")
+                    await self.run_indices_update()
+                    self.last_indices_early_update = slot_day
 
                 # === Commodity (08:00 МСК) ===
                 # US market закрывается в 23:00 EST = 07:00 МСК. К 08:00 дневные
