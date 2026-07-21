@@ -146,7 +146,7 @@ export function TierFeaturesProvider({ children }: { children: ReactNode }) {
 // ───────────────────────────────────────────────────────────────
 const PERIOD_DAYS: Record<string, number> = {
     '1d': 1, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
-    '1y': 365, '2y': 730, '3y': 1095, '5y': 1825, 'all': 99999,
+    '1y': 365, '2y': 730, '3y': 1095, '5y': 1825, '10y': 3650, '20y': 7300, 'all': 99999,
 };
 
 // Нормализация tier'а (admin/guest mapping)

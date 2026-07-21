@@ -7,12 +7,14 @@ import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import DollarStaleHint from './DollarStaleHint';
 
-type Period = '1y' | '5y' | 'all';
+type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type EmaPeriod = 20 | 50 | 100 | 200;
 
 const PERIOD_LABELS: Record<Period, string> = {
     '1y': '1Г',
     '5y': '5Л',
+    '10y': '10Л',
+    '20y': '20Л',
     'all': 'Всё',
 };
 

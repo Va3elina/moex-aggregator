@@ -40,13 +40,15 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
-type Period = '1y' | '5y' | 'all';
+type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type ChartMode = 'line' | 'histogram';
 
 const PERIOD_DAYS: Record<Period, number> = {
     '1y': 365,
     '5y': 1825,
-    'all': 7000
+    '10y': 3650,
+    '20y': 7300,
+    'all': 9000
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
@@ -413,6 +415,8 @@ export default function StrengthPage() {
                                     presets: [
                                         { value: '1y', label: '1Г', days: 365 },
                                         { value: '5y', label: '5Л', days: 1825 },
+                                        { value: '10y', label: '10Л', days: 3650 },
+                                        { value: '20y', label: '20Л', days: 7300 },
                                         { value: 'all', label: 'Всё', days: 7000 },
                                     ],
                                 },
@@ -436,7 +440,9 @@ export default function StrengthPage() {
                             details: [
                                 `EMA${emaPeriod}`,
                                 period === '1y' ? '1 год' :
-                                period === '5y' ? '5 лет' : 'Всё',
+                                period === '5y' ? '5 лет' :
+                                period === '10y' ? '10 лет' :
+                                period === '20y' ? '20 лет' : 'Всё',
                                 currency === 'usd' ? 'USD' : 'RUB',
                                 chartMode === 'histogram' ? 'Гистограмма' : 'Линия',
                             ].filter(Boolean),

@@ -30,20 +30,24 @@ import DollarStaleHint from '../../components/strength/DollarStaleHint';
 
 const EMA_PERIODS = [20, 50, 100, 200] as const;
 
-type Period = '1y' | '5y' | 'all';
+type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type UniverseBase = 'all' | 'imoex';
 type Currency = 'rub' | 'usd';
 
 const PERIOD_LABELS: Record<Period, string> = {
   '1y': '1 год',
   '5y': '5 лет',
+  '10y': '10 лет',
+  '20y': '20 лет',
   'all': 'Вся история',
 };
 
 const PERIOD_DAYS: Record<Period, number> = {
   '1y': 365,
   '5y': 1825,
-  'all': 3650,
+  '10y': 3650,
+  '20y': 7300,
+  'all': 9000,
 };
 
 const CLASSIFICATION_LABELS: Record<string, { label: string; color: string }> = {
@@ -104,7 +108,7 @@ export default function MobileStrengthPage() {
         <>
           <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Время</strong> — глубина истории (1Г/5Л/Всё)
+            <strong>Время</strong> — глубина истории (1Г/5Л/10Л/20Л/Всё)
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Опции</strong> — EMA-период, вселенная (Все/IMOEX), валюта
@@ -127,7 +131,7 @@ export default function MobileStrengthPage() {
             Открыл для тебя кнопку <strong>«Время»</strong>:
           </p>
           <p>
-            <strong>1Г / 5Л / Всё</strong> — глубина истории. На
+            <strong>1Г / 5Л / 10Л / 20Л / Всё</strong> — глубина истории. На
             длинных периодах виден контекст (где был рынок раньше), на коротких —
             актуальная динамика.
           </p>

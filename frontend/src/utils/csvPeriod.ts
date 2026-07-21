@@ -17,6 +17,8 @@ const DEFAULT_DAYS_MAP: Record<string, number> = {
     '2y': 730,
     '3y': 1095,
     '5y': 1825,
+    '10y': 3650,
+    '20y': 7300,
     'all': 7000,
 };
 
