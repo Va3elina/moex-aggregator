@@ -83,6 +83,10 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 #   - graceful-timeout 30s: при SIGTERM ждём 30с in-flight requests
 #     (zero-downtime deploy через SIGHUP reload)
 #   - timeout 60s: kill worker если завис на одном запросе (защита от hang)
+#   - worker class = api.uvicorn_worker.GracefulSSEWorker (обёртка UvicornWorker
+#     с timeout_graceful_shutdown=20): вечные SSE-стримы (/api/events/stream)
+#     принудительно закрываются при recycle/деплое, иначе воркер зависал до
+#     --timeout и умирал по SIGABRT, роняя всех своих SSE-клиентов
 #   - max-requests 1000 + jitter 50: каждый worker recycle после ~1k
 #     запросов — защита от Python memory leaks в long-running процессах
 #   - forwarded-allow-ips=* : доверять X-Forwarded-* от nginx (через docker
@@ -93,7 +97,7 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 #     воркеры простаивают на await (сеть/БД), а не жгут CPU. При росте нагрузки можно 4-5.
 # Non-root запуск через docker-compose `user: 1000:1000` (api сервис).
 CMD ["gunicorn", "api.main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
+     "-k", "api.uvicorn_worker.GracefulSSEWorker", \
      "-w", "3", \
      "-b", "0.0.0.0:8000", \
      "--graceful-timeout", "30", \

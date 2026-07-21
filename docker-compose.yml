@@ -389,6 +389,10 @@ services:
     # Пин по digest (иммутабельно): тег + multi-arch manifest sha256. Защищает
     # даже от перезаписи самого тега v5.6.0 на Docker Hub (poisoned-push → silent pull).
     image: certbot/certbot:v5.6.0@sha256:0107d084c225631fc64a8313e19adb07275f7296fde338f7dfa93986c80b2e3e
+    # restart обязателен: без него ребут хоста оставляет certbot лежать
+    # (инцидент 07.2026 — контейнер Exited после ребута 12.07, продление
+    # стояло 9 дней, никто не заметил т.к. серт ещё был жив).
+    restart: unless-stopped
     volumes:
       - certbot_data:/var/www/certbot
       - certbot_certs:/etc/letsencrypt

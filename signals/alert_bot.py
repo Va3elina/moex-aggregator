@@ -811,11 +811,14 @@ def main() -> None:
     while True:
         try:
             # allowed_updates — JSON-массив (требование Telegram для GET-параметра).
-            params = {"timeout": 30,
+            # long-poll 20с (не 30): ходим через CF-worker relay, на 30с Telegram
+            # отдаёт ответ впритык к нашему requests-таймауту и edge-лимитам
+            # relay — ловили ~900 polling-ошибок/день (Read timed out + не-JSON).
+            params = {"timeout": 20,
                       "allowed_updates": json.dumps(["message", "callback_query"])}
             if offset:
                 params["offset"] = offset
-            resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=35)
+            resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=30)
             data = resp.json()
             if not data.get("ok"):
                 time.sleep(5)
