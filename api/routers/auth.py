@@ -294,6 +294,24 @@ async def register(
     )
 
 
+def purge_expired_refresh_tokens(db: Session, user_id: int) -> None:
+    """Удаляет истёкшие строки refresh_tokens пользователя (мусор ротации).
+
+    Ротация пишет новую строку на каждый /refresh (~15 мин активной сессии),
+    истёкшие никогда не удалялись — на 59 юзеров скопилось 5k+ строк (аудит
+    21.07.2026). Истёкшая строка не участвует ни в одной проверке: /refresh
+    отбрасывает просроченный JWT ДО запроса к БД (verify_token), так что
+    удаление безопасно и для отзыва. Грейс 1 день — от граничных расхождений
+    часов. Аналитика (MAX(created_at) как last_active) не страдает: у живой
+    сессии свежая строка всегда моложе 7 дней, для остальных есть fallback
+    на last_login_at/analytics_events. Вызывающий коммитит сам.
+    """
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user_id,
+        RefreshToken.expires_at < datetime.now(timezone.utc) - timedelta(days=1),
+    ).delete()
+
+
 def persist_refresh_token(
         db: Session,
         user_id: int,
@@ -307,6 +325,7 @@ def persist_refresh_token(
     все живые сессии пройдут ротацию (~7 дней с деплоя), /refresh должен начать
     ТРЕБОВАТЬ наличие строки (unknown → 401) — см. TODO в refresh_tokens.
     Вызывающий коммитит сам (login делает db.commit() ниже)."""
+    purge_expired_refresh_tokens(db, user_id)
     db.add(RefreshToken(
         user_id=user_id,
         token_hash=hashlib.sha256(refresh_token.encode()).hexdigest(),
@@ -488,7 +507,8 @@ async def refresh_tokens(
     # Создаём новую пару токенов
     tokens = create_token_pair(user.id, user.role)
 
-    # Сохраняем новый refresh токен в БД
+    # Сохраняем новый refresh токен в БД (+ попутно чистим истёкший мусор ротации)
+    purge_expired_refresh_tokens(db, user.id)
     new_token_hash = hashlib.sha256(tokens.refresh_token.encode()).hexdigest()
     db.add(RefreshToken(
         user_id=user.id,
