@@ -21,7 +21,7 @@ user/billing/auth таблицы: список источников захард
   • охват          — distinct сущностей vs всего;
   • каденс         — kind задаёт ожидание (intraday/close/t_plus_1/...).
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import text
@@ -53,8 +53,19 @@ _MACRO = [
     ("MARKET_CAP_TOTAL", "SMARTLAB", "close"),
     ("M2_MONTHLY", None, "monthly"),
     ("GDP_QUARTERLY", None, "quarterly"),
-    ("KEY_RATE", None, "event"),
+    # KEY_RATE — дневной ряд ЦБ (рабочие дни ≈ торговые), с 2026-07-21 ингестится
+    # ежедневно в macro_daily. Раньше kind=event (= всегда ok) прятал 40-дневный
+    # застой, включая пропущенное снижение ставки.
+    ("KEY_RATE", None, "t_plus_1"),
 ]
+
+# Пайплайн, переставший ЗАПУСКАТЬСЯ, вечно хранит последний last_status='ok'
+# (heartbeat пишет сам скрипт) — мёртвый cron выглядел зелёным. Реальный случай
+# 07.2026: distributions пропустил 3 понедельника после переезда имени
+# api-контейнера (frame-api-1 → frame-api-N), монитор молчал. Ловим по возрасту
+# last_run_at: дефолт 48ч, недельным — явный override.
+_PIPELINE_MAX_AGE_H = {"distributions": 9 * 24}  # пн-еженедельный + запас
+_PIPELINE_DEFAULT_MAX_AGE_H = 48
 
 
 def _status(kind, max_date, lag_td, today):
@@ -73,7 +84,10 @@ def _status(kind, max_date, lag_td, today):
         # ~170 дней — это норма, не stale. 180 = запас + тревога ~через 2
         # недели после реально пропущенной публикации.
         return "ok" if (today - max_date).days <= 180 else "stale"
-    # event / weekly / manual — информационно, без тревоги
+    if kind == "weekly":
+        # Каденс = пн-еженедельный cron; 12 = неделя + запас на праздники.
+        return "ok" if (today - max_date).days <= 12 else "stale"
+    # event / manual — информационно, без тревоги (ручной ингест по определению)
     return "ok"
 
 
@@ -205,35 +219,51 @@ def health_data(
     # Пишется оркестратором/демонами через pipeline_heartbeat.record_pipeline_run.
     # Таблицы может ещё не быть (до первого пульса) → пустой список, не падаем.
     pipelines = []
+    silent_pipelines = []
+    now_utc = datetime.now(timezone.utc)
     try:
         for r in db.execute(text(
             "SELECT pipeline, last_run_at, last_success_at, last_status, "
             "last_note, last_duration_sec FROM pipeline_runs ORDER BY pipeline"
         )).all():
+            run_at = r.last_run_at
+            if run_at is not None and run_at.tzinfo is None:
+                run_at = run_at.replace(tzinfo=timezone.utc)
+            age_h = ((now_utc - run_at).total_seconds() / 3600
+                     if run_at is not None else None)
+            silent = (age_h is not None and age_h > _PIPELINE_MAX_AGE_H.get(
+                r.pipeline, _PIPELINE_DEFAULT_MAX_AGE_H))
+            if silent:
+                silent_pipelines.append(r.pipeline)
             pipelines.append({
                 "pipeline": r.pipeline,
                 "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
                 "last_success_at": r.last_success_at.isoformat() if r.last_success_at else None,
-                "status": r.last_status,
+                "status": "silent" if silent else r.last_status,
                 "note": (r.last_note or "")[:200],
                 "duration_sec": (round(r.last_duration_sec, 1)
                                  if r.last_duration_sec is not None else None),
             })
     except Exception:
         pipelines = []  # таблица ещё не создана (до первого heartbeat)
+        silent_pipelines = []
 
     stale = [s["name"] for s in sources if s["status"] == "stale"]
-    failed_pipelines = [p["pipeline"] for p in pipelines if p["status"] != "ok"]
-    # overall: fail (пайплайн упал) > stale (данные протухли) > ok. Раньше падение
-    # пайплайна НЕ отражалось в overall (ключевал только по свежести данных) →
-    # упавший скрипт прятался до тех пор, пока его данные не протухнут (≈сутки).
-    overall = "fail" if failed_pipelines else ("stale" if stale else "ok")
+    failed_pipelines = [p["pipeline"] for p in pipelines
+                        if p["status"] not in ("ok", "silent")]
+    # overall: fail (пайплайн упал/замолчал) > stale (данные протухли) > ok.
+    # Раньше падение пайплайна НЕ отражалось в overall (ключевал только по
+    # свежести данных) → упавший скрипт прятался, пока его данные не протухнут.
+    # silent (см. _PIPELINE_MAX_AGE_H) — та же лига, что fail: скрипт не бегает.
+    overall = ("fail" if (failed_pipelines or silent_pipelines)
+               else ("stale" if stale else "ok"))
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "market_ref_date": market_ref.isoformat() if market_ref else None,
         "overall": overall,
         "stale_sources": stale,
         "failed_pipelines": failed_pipelines,
+        "silent_pipelines": silent_pipelines,
         "sources": sources,
         "pipelines": pipelines,
     }
