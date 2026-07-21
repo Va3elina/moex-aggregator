@@ -21,6 +21,7 @@
 import asyncio
 import argparse
 import logging
+import subprocess
 import sys
 import os
 import tempfile
@@ -1018,6 +1019,23 @@ async def update_macro(force: bool = False) -> dict:
     except Exception as e:
         log.error(f"GDP auto-fetch упал: {e}", exc_info=True)
         results['GDP'] = 0
+
+    # KEY_RATE — дневной ряд ставки ЦБ (Candles/fetch_key_rate.py). До 2026-07-21
+    # запускался только вручную и молча застревал (ряд простоял 40 дней и проспал
+    # снижение 14.50→14.25). Окно 30 дней, upsert идемпотентен. Failure не
+    # критичен: свежесть ловит /api/health/data (kind=t_plus_1).
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(PROJECT_DIR / 'Candles' / 'fetch_key_rate.py'),
+             '--from', (date.today() - timedelta(days=30)).isoformat()],
+            capture_output=True, text=True, timeout=120,
+        )
+        tail = (proc.stdout or proc.stderr or '').strip().splitlines()
+        log.info(f"KEY_RATE: rc={proc.returncode} — {tail[-1] if tail else 'нет вывода'}")
+        results['KEY_RATE'] = 1 if proc.returncode == 0 else 0
+    except Exception as e:
+        log.error(f"KEY_RATE fetch упал: {e}")
+        results['KEY_RATE'] = 0
 
     # Проверка целостности после обновления
     log.info("Проверка целостности данных после обновления...")
