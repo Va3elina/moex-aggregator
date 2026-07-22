@@ -825,6 +825,17 @@ export async function getSeasonality(
   return response.json();
 }
 
+/** Активы, для которых физически нет часовых данных (см. api/routers/seasonality.py
+ *  INDICES_WITH_INTRADAY) — используется, чтобы скрыть режим "Внутри дня" в пикере
+ *  вместо тихого 404 при выборе несовместимой комбинации. Публичный эндпоинт,
+ *  доступен без авторизации. */
+export async function getSeasonalityIntradayUnsupported(): Promise<string[]> {
+  const response = await apiFetch(`${API_BASE}/api/seasonality/intraday-unsupported`);
+  if (!response.ok) throw new Error('Failed to fetch intraday-unsupported assets');
+  const data: { secids: string[] } = await response.json();
+  return data.secids;
+}
+
 export interface PricePoint {
   date: string;
   close: number;
