@@ -23,6 +23,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import {
   getSeasonality,
   getSeasonalityYearly,
+  getSeasonalityIntradayUnsupported,
   type SeasonalityResponse,
   type SeasonalityMode,
   type YearlySeasonalityResponse,
@@ -70,21 +71,6 @@ const NON_DIVIDEND_TICKERS = new Set([
   'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
 ]);
 
-// Инструменты без интрадей-среза: живут в index_data (дневные точки Yahoo/MOEX),
-// а не в candles — «Внутри дня» для них физически невозможен (копия
-// INDEX_DATA_INSTRUMENTS из api/routers/seasonality.py, минус IMOEX — у него
-// есть часовые свечи, см. INDICES_WITH_INTRADAY). Раньше: юзер смотрел SBER на
-// «Внутри дня», переключался на GOLD/BRENT/RTSI и т.п. — persisted mode
-// оставался 'intraday', бэк отвечал 404 «Нет интрадей данных», а виджет просто
-// показывал общее «Ошибка загрузки» без объяснения (§ баг того же класса, что
-// и available_intervals у ОИ).
-const NO_INTRADAY_TICKERS = new Set([
-  'RTSI', 'GLDRUB_TOM', 'RGBITR', 'RGBI', 'RVI',
-  'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM', 'MCFTR', 'RUSFAR3M',
-  'BRENT', 'NATGAS_HH', 'GOLD', 'SILVER', 'PLATINUM', 'PALLADIUM',
-  'COPPER', 'ALUMINUM', 'WHEAT', 'LIT', 'TTF_GAS', 'NICKEL',
-]);
-
 // Полная история — как FULL_HISTORY_ITERS на странице.
 const FULL_HISTORY_ITERS = 9999;
 
@@ -111,17 +97,28 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
 
   const [stock, setStock] = useState<string>(() => initialInstrument || params.get('instrument') || rd('frame:embed:seasonality:stock', 'SBER'));
   const [chartType, setChartType] = useState<ChartType>(() => rd('frame:embed:seasonality:chartType', 'histogram') as ChartType);
-  // Клэмп на маунте: если persisted stock — тикер без интрадей (index_data,
-  // напр. GOLD/RTSI с прошлой сессии), а persisted mode — 'intraday', сразу
-  // берём 'weekday' — иначе первый же фетч 404-нется (см. NO_INTRADAY_TICKERS).
-  const [mode, setMode] = useState<SeasonalityMode>(() => {
-    const initStock = initialInstrument || params.get('instrument') || rd('frame:embed:seasonality:stock', 'SBER');
-    const persisted = rd('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode;
-    return persisted === 'intraday' && NO_INTRADAY_TICKERS.has(initStock) ? 'weekday' : persisted;
-  });
+  const [mode, setMode] = useState<SeasonalityMode>(() => rd('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
   const [excludeDividends, setExcludeDividends] = useState<boolean>(() => rdBool('frame:embed:seasonality:excludeDividends', false));
   const [showNoOutliers, setShowNoOutliers] = useState<boolean>(() => rdBool('frame:embed:seasonality:showNoOutliers', false));
   const [showCurrentYear, setShowCurrentYear] = useState<boolean>(() => rdBool('frame:embed:seasonality:showCurrentYear', true));
+
+  // Активы без физических часовых данных (см. api/routers/seasonality.py
+  // INDICES_WITH_INTRADAY) — грузим один раз с бэка, список маленький и
+  // меняется только с деплоем (раньше был захардкожен здесь же — уходил из
+  // синхронизации при каждом расширении бэкенда, см. git history).
+  const [intradayUnsupported, setIntradayUnsupported] = useState<string[]>([]);
+  useEffect(() => {
+    getSeasonalityIntradayUnsupported().then(setIntradayUnsupported).catch(() => {});
+  }, []);
+
+  // Клэмп: если текущий актив не поддерживает intraday (напр. persisted с
+  // прошлой сессии, или список только что подгрузился) — тихо переключаем на
+  // дефолт вместо доёма до 404 «Нет интрадей данных».
+  useEffect(() => {
+    if (mode === 'intraday' && intradayUnsupported.includes(stock)) {
+      setMode('weekday');
+    }
+  }, [mode, stock, intradayUnsupported]);
 
   // §6.11: панель песочницы принимает размер под текущий срез при каждой смене
   // типа графика/режима (не только при спавне) — 31 бар «внутри месяца» не
@@ -155,8 +152,8 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   const effExcludeDividends = hasDividends && excludeDividends;
 
   // Инструменты без интрадей (index_data) — «Внутри дня» не предлагаем в
-  // дропдауне (не даём выбрать заведомо нерабочий срез, см. NO_INTRADAY_TICKERS).
-  const supportsIntraday = !NO_INTRADAY_TICKERS.has(stock);
+  // дропдауне (не даём выбрать заведомо нерабочий срез).
+  const supportsIntraday = !intradayUnsupported.includes(stock);
   const modeOptions = supportsIntraday ? MODES : MODES.filter((m) => m.id !== 'intraday');
 
   // Фетч: база + (опционально) медиана параллельно. По chartType — гистограмма
@@ -342,7 +339,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
             setStock(secid);
             // Переключились на тикер без интрадей, пока стоял «Внутри дня» —
             // откатываем сразу в том же батче, до первого фетча (иначе 404).
-            if (mode === 'intraday' && NO_INTRADAY_TICKERS.has(secid)) setMode('weekday');
+            if (mode === 'intraday' && intradayUnsupported.includes(secid)) setMode('weekday');
           }}
         />
       }

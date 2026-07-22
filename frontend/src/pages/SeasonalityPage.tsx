@@ -7,7 +7,7 @@ import SegmentedControl from '../components/SegmentedControl';
 import HelpTooltip from '../components/HelpTooltip';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
-import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
+import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears, getSeasonalityIntradayUnsupported } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
@@ -77,6 +77,14 @@ export default function SeasonalityPage() {
   // Mode & params (персистятся в localStorage — не сбрасываются на новой сессии)
   const [mode, setMode] = usePersistedState<SeasonalityMode>('frame:seasonality:mode', 'weekday');
 
+  // Активы без физических часовых данных (MCFTR, RUSFAR3M, commodities и т.д. —
+  // см. api/routers/seasonality.py INDICES_WITH_INTRADAY) — грузим один раз,
+  // список маленький и меняется только с деплоем бэкенда.
+  const [intradayUnsupported, setIntradayUnsupported] = useState<string[]>([]);
+  useEffect(() => {
+    getSeasonalityIntradayUnsupported().then(setIntradayUnsupported).catch(() => {});
+  }, []);
+
   // Onboarding tour
   const tour = useOnboardingTour('seasonality');
   const [chartType, setChartType] = usePersistedState<ChartType>('frame:seasonality:chartType', 'histogram');
@@ -93,6 +101,15 @@ export default function SeasonalityPage() {
       setChartType('yearly');
     }
   }, [seasonAccess.isLoading, seasonAccess]);
+
+  // Clamp: если выбранный актив не поддерживает intraday (список пришёл ПОСЛЕ
+  // того как пользователь уже стоял на 'intraday' — напр. вернулся на страницу
+  // или сменил тикер) — тихо переключаем на дефолт вместо показа ошибки.
+  useEffect(() => {
+    if (mode === 'intraday' && intradayUnsupported.includes(selectedStock)) {
+      setMode('weekday');
+    }
+  }, [mode, selectedStock, intradayUnsupported, setMode]);
 
   // Analytics
   const { track } = useAnalytics();
@@ -245,6 +262,11 @@ export default function SeasonalityPage() {
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
       if (!handleTierError(e, `режим «Календарь»`)) {
+        // Чистим bars от предыдущего успешного mode/тикера — иначе они переживают
+        // ошибку (404 «нет интрадей данных» и т.п.) и рендерятся как валидные,
+        // маскируя error-текст (error && bars.length===0 не срабатывает).
+        setDataRaw(null);
+        setMonthlySeries(null);
         setError(e instanceof Error ? e.message : 'Ошибка загрузки');
       }
     } finally {
@@ -638,6 +660,9 @@ export default function SeasonalityPage() {
               label: MODE_LABELS[m],
               // intraday — Pro-only по матрице
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode(m),
+              // intraday для этого конкретного актива физически нет данных —
+              // прячем из списка совсем (не lock: это не тариф, апгрейд не поможет).
+              hidden: m === 'intraday' && intradayUnsupported.includes(selectedStock),
             }))}
             value={mode}
             onChange={handleModeChange}

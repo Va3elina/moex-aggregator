@@ -1160,6 +1160,21 @@ async def get_yearly_seasonality(
     return result
 
 
+@router.get("/intraday-unsupported")
+def get_intraday_unsupported_assets():
+    """
+    Активы из INDEX_DATA_INSTRUMENTS, для которых физически нет часовых данных
+    (не в INDICES_WITH_INTRADAY) — используется фронтом, чтобы скрыть режим
+    "Внутри дня" в пикере вместо тихого 404 при выборе несовместимой комбинации.
+    Всё, что НЕ в этом списке (обычные акции, вечные фьючерсы + сами
+    INDICES_WITH_INTRADAY), intraday поддерживает — см. _resolve_source.
+    Публичный эндпоинт (без tier-проверки) — это метаданные о возможностях,
+    не данные сезонности.
+    """
+    unsupported = sorted(INDEX_DATA_INSTRUMENTS - set(INDICES_WITH_INTRADAY.keys()))
+    return {"secids": unsupported}
+
+
 # MTD (Month-To-Date) endpoint и _compute_mtd удалены — режим "Зум на месяц"
 # убран из UI. История:
 # - Были в коммитах до 7dbd24c
