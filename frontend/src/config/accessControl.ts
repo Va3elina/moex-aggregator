@@ -9,7 +9,7 @@ export const GUEST_MAX_PERIOD = '1y';
 // Порядок периодов для сравнения
 const PERIOD_ORDER: Record<string, number> = {
   '1d': 1, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
-  '1y': 365, '2y': 730, '3y': 1095, '5y': 1825, 'all': 99999,
+  '1y': 365, '2y': 730, '3y': 1095, '5y': 1825, '10y': 3650, '20y': 7300, 'all': 99999,
 };
 
 export function isIntervalAllowed(interval: number, isAuthenticated: boolean): boolean {
