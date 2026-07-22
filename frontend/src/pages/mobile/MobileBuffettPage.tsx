@@ -47,6 +47,9 @@ export default function MobileBuffettPage() {
   // запускает несколько loadData; медленный ранний ответ не должен перезаписать
   // свежий. Объявляем на уровне компонента — переживает пересоздание loadData.
   const reqIdRef = useRef(0);
+  // true пока страница смонтирована — см. коммент у showUpgrade в catch loadData.
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
   const [timeframe, setTimeframe] = usePersistedState<'1d' | '1w' | '1m'>('frame:buffett:timeframe', '1m');
   const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
@@ -189,6 +192,12 @@ export default function MobileBuffettPage() {
         lastGoodPeriod.current = period;
       } catch (err) {
         if (isStale()) return;
+        // isMountedRef: ResponsiveRoute может размонтировать мобильную страницу
+        // (флип определения телефона на старте) ПОКА fetch ещё в полёте — без
+        // этой проверки showUpgrade всё равно всплывал бы поверх уже desktop-
+        // страницы (showUpgrade — контекст на уровне App, не гасится unmount'ом
+        // конкретной страницы; setState на unmounted — no-op, а showUpgrade нет).
+        if (!isMountedRef.current) return;
         console.error('Ошибка Buffett:', err);
         const msg = err instanceof Error ? err.message : String(err);
         // Ограничение глубины истории: «Вся история» (all) недоступна на
