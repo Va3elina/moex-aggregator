@@ -47,6 +47,7 @@ from api.routers import extension  # ← /api/extension/* (токены для �
 from api.routers import alerts  # ← /api/alerts/* (Telegram alert-bot: привязка + алерты)
 from api.routers import anomalies  # ← /api/anomalies/* (лента всплывающих аномалий: тосты+колокол)
 from api.routers import content_news  # ← /api/admin/content-candidates/* (Kanban «Новости»)
+from api.routers import mandate_scan  # ← /api/internal/mandate-scan/* (еженедельный Routine-скаут вынужденных потоков)
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -328,6 +329,7 @@ app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: пр
 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих аномалий)
 app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, shared secret)
+app.include_router(mandate_scan.internal_router)  # ← /api/internal/mandate-scan/* (Routine-скаут, shared secret)
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты

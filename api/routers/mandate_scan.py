@@ -1,0 +1,127 @@
+"""
+/api/internal/mandate-scan/* — callback для еженедельного Routine-скаута
+(frame-mandate-scan), который ищет новые мандаты/законы вынужденных потоков
+на рынке РФ (сетка участник×домен права, WebSearch) и классифицирует их по
+6 критериям отбора (запрос Вадима, 2026-07-22: источник / тип принуждения /
+статус сейчас / механический триггер / Pine-тестируемость / шум).
+
+Кандидаты, прошедшие фильтр, уведомляются в @frameadminbot (ADMIN_CHAT_ID) —
+итоговая торговая гипотеза строится вручную из этого потока, эндпоинт только
+хранит + уведомляет, ничего не решает сам.
+
+Server-to-server: НЕ require_admin (Routine не залогинен как пользователь) —
+проверка через shared secret в заголовке X-Internal-Token, как в content_news.py.
+
+Таблица — mandate_candidates (db/migrations/039_mandate_candidates.sql).
+Дедуп по source_ref: повторная находка того же акта в следующем еженедельном
+скане НЕ шлёт уведомление заново (ON CONFLICT DO NOTHING).
+"""
+import os
+from typing import Optional
+
+import requests
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from api.database import get_db
+
+internal_router = APIRouter(prefix="/api/internal/mandate-scan", tags=["internal-mandate-scan"])
+
+
+def _require_internal_token(x_internal_token: str = Header(default="")) -> None:
+    expected = os.environ.get("MANDATE_SCAN_INTERNAL_TOKEN", "")
+    if not expected or x_internal_token != expected:
+        raise HTTPException(status_code=403, detail="Неверный или отсутствующий internal token")
+
+
+class MandateCandidate(BaseModel):
+    source_ref: str                     # "Указание Банка России №6433-У от 01.06.2023"
+    source_url: Optional[str] = None
+    mandate_type: str                   # physical_necessity|government_decree|regulator_rule|index_methodology|corporate_policy
+    participant: str                    # exporters|banks|insurers|pension_funds|nonresidents|market_makers|state_entities|issuers|retail|exchange
+    sector: Optional[str] = None
+    asset: str                          # USDRUB, ОФЗ, конкретный тикер, IMOEX...
+    status_now: str = "active"          # active|suspended|zeroed|pending
+    mechanical_trigger: bool = False
+    trigger_description: Optional[str] = None
+    pine_testable: str = "low"          # high|medium|low
+    hypothesis: str
+    durability_note: Optional[str] = None
+
+
+def _notify_admin(candidate: MandateCandidate) -> bool:
+    """Пуш в @frameadminbot. Та же связка BOT_TOKEN/ADMIN_CHAT_ID, что у
+    tg_bot.py, + TELEGRAM_API_ROOT relay (api.telegram.org недоступен напрямую
+    с прод-сервера, РКН — см. _notify_hype_colleague в content_news.py, живой
+    инцидент 2026-07-15). Возвращает True/False — вызывающий код решает, ставить
+    ли notified_at; сбой не должен молча теряться (тот же урок, что и с
+    hype_filter_dispatch_attempts, db/migrations/035_*.sql)."""
+    token = os.environ.get("BOT_TOKEN", "")
+    chat_id = os.environ.get("ADMIN_CHAT_ID", "")
+    if not token or not chat_id:
+        return False
+    api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
+    trigger_line = f"\n⚙️ Триггер: {candidate.trigger_description}" if candidate.trigger_description else ""
+    text_msg = (
+        f"🏛 <b>Новый мандат-кандидат</b>\n"
+        f"{candidate.source_ref}\n\n"
+        f"Участник: {candidate.participant} · Сектор: {candidate.sector or '—'}\n"
+        f"Актив: <b>{candidate.asset}</b> · Статус: {candidate.status_now}\n"
+        f"Pine-тестируемость: <b>{candidate.pine_testable}</b>{trigger_line}\n\n"
+        f"{candidate.hypothesis}"
+    )
+    payload = {"chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML"}
+    if candidate.source_url:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[{"text": "Открыть источник", "url": candidate.source_url}]]
+        }
+    try:
+        resp = requests.post(f"{api_root}/bot{token}/sendMessage", json=payload, timeout=10)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        body = getattr(e, "response", None)
+        body_text = body.text[:300] if body is not None else ""
+        print(f"[mandate_scan] notify failed for source_ref={candidate.source_ref}: "
+              f"{type(e).__name__}: {e} {body_text}")
+        return False
+
+
+@internal_router.post("/candidate", dependencies=[Depends(_require_internal_token)])
+def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
+    """Приёмка одного кандидата от еженедельного Routine-скаута. Дедуп по
+    source_ref — ON CONFLICT DO NOTHING, повторная находка того же акта не
+    шлёт уведомление заново. Уведомляем только на свежей вставке."""
+    row = db.execute(text("""
+        INSERT INTO mandate_candidates (
+            source_ref, source_url, mandate_type, participant, sector, asset,
+            status_now, mechanical_trigger, trigger_description, pine_testable,
+            hypothesis, durability_note
+        ) VALUES (
+            :source_ref, :source_url, :mandate_type, :participant, :sector, :asset,
+            :status_now, :mechanical_trigger, :trigger_description, :pine_testable,
+            :hypothesis, :durability_note
+        )
+        ON CONFLICT (source_ref) DO NOTHING
+        RETURNING id
+    """), {
+        "source_ref": body.source_ref, "source_url": body.source_url,
+        "mandate_type": body.mandate_type, "participant": body.participant,
+        "sector": body.sector, "asset": body.asset, "status_now": body.status_now,
+        "mechanical_trigger": body.mechanical_trigger, "trigger_description": body.trigger_description,
+        "pine_testable": body.pine_testable, "hypothesis": body.hypothesis,
+        "durability_note": body.durability_note,
+    }).mappings().first()
+    db.commit()
+
+    if not row:
+        return {"status": "duplicate"}
+
+    notified = _notify_admin(body)
+    if notified:
+        db.execute(text("UPDATE mandate_candidates SET notified_at = now() WHERE id = :id"), {"id": row["id"]})
+        db.commit()
+
+    return {"status": "created", "id": row["id"], "notified": notified}
