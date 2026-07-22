@@ -93,7 +93,10 @@ export default function BuffettPage() {
     // unmount'ом конкретной страницы, поэтому без guard'а модалка всплыла бы
     // поверх уже другой (мобильной) страницы. См. тот же паттерн в MobileBuffettPage.
     const isMountedRef = useRef(true);
-    useEffect(() => () => { isMountedRef.current = false; }, []);
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => { isMountedRef.current = false; };
+    }, []);
 
     // Загрузка данных
     const loadData = useCallback(async () => {
