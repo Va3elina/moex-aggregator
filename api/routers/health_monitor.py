@@ -64,7 +64,10 @@ _MACRO = [
 # 07.2026: distributions пропустил 3 понедельника после переезда имени
 # api-контейнера (frame-api-1 → frame-api-N), монитор молчал. Ловим по возрасту
 # last_run_at: дефолт 48ч, недельным — явный override.
-_PIPELINE_MAX_AGE_H = {"distributions": 9 * 24}  # пн-еженедельный + запас
+_PIPELINE_MAX_AGE_H = {
+    "distributions": 9 * 24,   # пн-еженедельный + запас
+    "mandate_scan": 9 * 24,    # frame-mandate-scan — тоже пн-еженедельный Routine
+}
 _PIPELINE_DEFAULT_MAX_AGE_H = 48
 
 
