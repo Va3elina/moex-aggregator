@@ -319,12 +319,24 @@ export default function MobileSeasonalityPage() {
         }
       } catch (err) {
         console.error('Ошибка seasonality:', err);
-        handleTierError(err, {
+        const wasTierError = handleTierError(err, {
           showUpgrade,
           indicator: 'seasonality',
           featureName: mode === 'intraday' ? 'режим «Внутри дня»' :
             histogramLocked ? 'режим «Календарь»' : `актив ${selectedStock}`,
         });
+        if (!wasTierError) {
+          // Чистим все data-стейты — иначе старые bars/yearlyData от предыдущего
+          // успешного запроса переживают ошибку и рендерятся как валидные
+          // (bars.length>0 маскирует "Нет данных", см. тот же класс бага
+          // на десктопе — SeasonalityPage.tsx).
+          setData(null);
+          setYearlyData(null);
+          setCompareHistData([]);
+          setExactHistData([]);
+          setCompareYearlyData([]);
+          setExactYearlyData([]);
+        }
       } finally {
         setLoading(false);
       }
