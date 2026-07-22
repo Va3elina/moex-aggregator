@@ -119,8 +119,6 @@ argon2-cffi>=23.1     # Argon2 backend
 pydantic[email]>=2.0     # 0;840F8O email
 asyncpg>=0.29.0                   # Async PostgreSQL 4;O LISTEN/NOTIFY
 redis>=8.0.0
-yfinance>=1.3.0
-curl_cffi>=0.7
 
 # Signal-engine charts
 matplotlib>=3.8.0
