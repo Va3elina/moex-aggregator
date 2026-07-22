@@ -233,6 +233,15 @@ services:
       # _notify_hype_colleague падает с ConnectionError "Network is unreachable"
       # (живой инцидент 2026-07-15).
       - TELEGRAM_API_ROOT=${TELEGRAM_API_ROOT:-}
+      # Еженедельный Routine-скаут вынужденных потоков/мандатов (frame-mandate-scan,
+      # api/routers/mandate_scan.py): shared secret для server-to-server callback,
+      # отдельный от CONTENT_AI_INTERNAL_TOKEN (свой домен, свой blast radius).
+      - MANDATE_SCAN_INTERNAL_TOKEN=${MANDATE_SCAN_INTERNAL_TOKEN:-}
+      # Уведомление в @frameadminbot о кандидатах, прошедших отбор (mandate_scan.py:
+      # _notify_admin) — те же credentials, что у tg_bot-сервиса (BOT_TOKEN/ADMIN_CHAT_ID
+      # ниже по файлу), просто нужны ещё и здесь, в api-контейнере.
+      - BOT_TOKEN=${BOT_TOKEN:-}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
       # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).
