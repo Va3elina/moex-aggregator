@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Часовые свечи индексов MOEX (для intraday-сезонности).
+Часовые свечи индексов и валют MOEX (для intraday-сезонности).
 
-Источник: публичный ISS /candles.json (interval=60).
-По /candleborders.json часовые бары IMOEX доступны с 2011-11-17.
+Источник: публичный ISS /candles.json (interval=60) — проверено, совпадает
+байт-в-байт с платным Algopack (см. Candles/backfill_futures_intraday.py),
+платный источник не нужен. Глубина по /candleborders.json — per-тикер,
+см. inception_date в конфиге ниже (проверялось вручную на ISS).
 
-Пишем в таблицу candles с type='index'. Дневная история индексов
-остаётся в index_data — она длиннее (с 1997-09-22) и используется
-дневными режимами сезонности.
+Пишем в таблицу candles с type из конфига ('index' для индексов MOEX,
+'currency' для валютных пар TOM). Дневная история остаётся в index_data —
+она длиннее (индексы с 1997-09-22) и используется дневными режимами сезонности.
 
 Режимы:
   --once   — докачка от последнего begin_time в БД
@@ -48,20 +50,24 @@ except ImportError:
 # КОНФИГУРАЦИЯ
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Индексы, для которых тянем часовые бары.
-# inception_date — самая ранняя дата с interval=60 по данным
-# https://iss.moex.com/iss/engines/stock/markets/index/securities/{secid}/candleborders.json
+# Индексы и валюты MOEX, для которых тянем часовые бары.
+# inception_date — самая ранняя дата с interval=60, проверено вручную по
+# https://iss.moex.com/iss/engines/{engine}/markets/{market}/securities/{secid}/candleborders.json
+# EUR_RUB__TOM сознательно не добавлен — часовые данные обрываются 2024-06-11
+# (MOEX перестал публиковать евро после отключения клиринга), живых обновлений
+# не будет.
 INDICES = {
-    "IMOEX": {
-        "engine": "stock",
-        "market": "index",
-        "board": "SNDX",
-        "inception_date": date(2011, 11, 17),
-    },
+    "IMOEX":        {"engine": "stock",    "market": "index", "board": "SNDX", "type": "index",    "inception_date": date(2011, 11, 17)},
+    "RTSI":         {"engine": "stock",    "market": "index", "board": "RTSI", "type": "index",    "inception_date": date(2011, 12, 19)},
+    "RGBI":         {"engine": "stock",    "market": "index", "board": "SNDX", "type": "index",    "inception_date": date(2011, 11, 17)},
+    "RGBITR":       {"engine": "stock",    "market": "index", "board": "SNDX", "type": "index",    "inception_date": date(2011, 11, 17)},
+    "RVI":          {"engine": "stock",    "market": "index", "board": "RTSI", "type": "index",    "inception_date": date(2013, 12, 16)},
+    "USD000UTSTOM": {"engine": "currency", "market": "selt",  "board": "CETS", "type": "currency", "inception_date": date(2011, 11, 17)},
+    "CNYRUB_TOM":   {"engine": "currency", "market": "selt",  "board": "CETS", "type": "currency", "inception_date": date(2013, 4, 15)},
+    "GLDRUB_TOM":   {"engine": "currency", "market": "selt",  "board": "CETS", "type": "currency", "inception_date": date(2013, 10, 21)},
 }
 
 INTERVAL = 60  # 1 час
-TYPE_LABEL = "index"
 CHUNK_SIZE_DAYS = 90  # ~9 свечей/день * 90 ≈ 810 — две страницы по 500
 ISS_PAGE_SIZE = 500
 
@@ -216,17 +222,17 @@ def get_engine():
     return create_engine(DB_URL, connect_args={"ssl_context": False})
 
 
-def get_last_begin_time(engine, secid: str) -> Optional[datetime]:
+def get_last_begin_time(engine, secid: str, type_label: str) -> Optional[datetime]:
     with engine.connect() as conn:
         row = conn.execute(text("""
             SELECT MAX(begin_time)
             FROM candles
             WHERE secid = :secid AND interval = :interval AND type = :type
-        """), {"secid": secid, "interval": INTERVAL, "type": TYPE_LABEL}).fetchone()
+        """), {"secid": secid, "interval": INTERVAL, "type": type_label}).fetchone()
     return row[0] if row and row[0] else None
 
 
-def save_candles(engine, secid: str, records: list[dict]) -> int:
+def save_candles(engine, secid: str, records: list[dict], type_label: str) -> int:
     if not records:
         return 0
 
@@ -271,7 +277,7 @@ def save_candles(engine, secid: str, records: list[dict]) -> int:
                     "begin_time": begin_time,
                     "end_time": end_time,
                     "interval": INTERVAL,
-                    "type": TYPE_LABEL,
+                    "type": type_label,
                 })
                 inserted += 1
             except Exception as e:
@@ -287,11 +293,12 @@ def save_candles(engine, secid: str, records: list[dict]) -> int:
 
 async def update_one(session: aiohttp.ClientSession, engine, secid: str, info: dict, force: bool) -> int:
     today = date.today()
+    type_label = info["type"]
     if force:
         start = info["inception_date"]
         log.info(f"📈 {secid}: полный бэкфилл с {start}")
     else:
-        last = get_last_begin_time(engine, secid)
+        last = get_last_begin_time(engine, secid, type_label)
         if last is None:
             start = info["inception_date"]
             log.info(f"📈 {secid}: пустая БД, бэкфилл с {start}")
@@ -302,7 +309,7 @@ async def update_one(session: aiohttp.ClientSession, engine, secid: str, info: d
 
     records = await fetch_full(session, secid, info, start, today)
     log.info(f"  получено: {len(records)} свечей")
-    saved = save_candles(engine, secid, records)
+    saved = save_candles(engine, secid, records, type_label)
     log.info(f"  ✅ сохранено/обновлено: {saved}")
     return saved
 
@@ -310,7 +317,7 @@ async def update_one(session: aiohttp.ClientSession, engine, secid: str, info: d
 async def update_all(force: bool = False) -> dict[str, int]:
     engine = get_engine()
     log.info("=" * 60)
-    log.info("📊 ЧАСОВЫЕ СВЕЧИ ИНДЕКСОВ MOEX")
+    log.info("📊 ЧАСОВЫЕ СВЕЧИ ИНДЕКСОВ И ВАЛЮТ MOEX")
     log.info("=" * 60)
 
     results: dict[str, int] = {}

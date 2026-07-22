@@ -23,7 +23,7 @@ from datetime import date, timedelta
 import time
 
 from api.database import get_engine
-from api.cache import get_or_set
+from api.cache import get_or_set, get_or_compute
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits, enforce_tier_limits
@@ -49,20 +49,26 @@ INDEX_DATA_INSTRUMENTS = {
 # Вечные фьючерсы (candles, type='futures')
 PERPETUAL_FUTURES = {"USDRUBF", "EURRUBF", "CNYRUBF", "IMOEXF"}
 
-# Индексы, для которых в candles лежат часовые свечи (type='index').
-# Дневная история по-прежнему берётся из index_data — там длиннее (с 1997).
-# Часовые бары IMOEX по ISS доступны только с 2011-11-17.
-INDICES_WITH_INTRADAY = {"IMOEX"}
+# Инструменты, для которых в candles лежат часовые свечи (interval=60),
+# качаются Funds/fetch_index_candles_hourly.py. Дневная история по-прежнему
+# берётся из index_data — там длиннее (индексы с 1997, часовые с 2011-2013,
+# см. inception_date в фетчере). Значение — type в candles (index/currency).
+# EUR_RUB__TOM, MCFTR, RUSFAR3M сознательно не входят — см. фетчер/comodity
+# докстринги почему (нет данных на ISS или мёртвая валюта).
+INDICES_WITH_INTRADAY = {
+    "IMOEX": "index", "RTSI": "index", "RGBI": "index", "RGBITR": "index", "RVI": "index",
+    "USD000UTSTOM": "currency", "CNYRUB_TOM": "currency", "GLDRUB_TOM": "currency",
+}
 
 
 def _resolve_source(secid: str, mode: str = "daily") -> tuple[str, str]:
     """Определяет источник данных: ('index_data'|'candles', type_filter).
 
-    Для mode='intraday' и индексов из INDICES_WITH_INTRADAY возвращаем
-    candles+'index' — дневная ветка по-прежнему ходит в index_data.
+    Для mode='intraday' и инструментов из INDICES_WITH_INTRADAY возвращаем
+    candles+тип (index/currency) — дневная ветка по-прежнему ходит в index_data.
     """
     if mode == "intraday" and secid in INDICES_WITH_INTRADAY:
-        return "candles", "index"
+        return "candles", INDICES_WITH_INTRADAY[secid]
     if secid in INDEX_DATA_INSTRUMENTS:
         return "index_data", ""
     if secid in PERPETUAL_FUTURES:
@@ -788,138 +794,142 @@ async def get_seasonality(
     enforce_tier_limits(user, "seasonality", asset=secid, mode=matrix_mode)
 
     cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
 
-    start_time = time.time()
-    log.info(f"REQUEST: /seasonality secid={secid} mode={mode} iter={iterations} excl_div={exclude_dividends}")
+    def _compute() -> dict:
+        # single-flight: под тяжёлые intraday-запросы на 10+ лет истории —
+        # без этого при истечении TTL все воркеры разом кидались бы пересчитывать
+        # один и тот же горячий тикер (см. api/cache.py:get_or_compute).
+        start_time = time.time()
+        log.info(f"REQUEST: /seasonality secid={secid} mode={mode} iter={iterations} excl_div={exclude_dividends}")
 
-    engine = get_engine()
+        engine = get_engine()
 
-    source, inst_type = _resolve_source(secid, mode)
+        source, inst_type = _resolve_source(secid, mode)
 
-    if mode == "intraday":
-        # Intraday: index_data не поддерживает (только дневные точки).
-        # Для индексов с часовыми свечами _resolve_source вернёт candles+'index'.
-        if source == "index_data":
-            raise HTTPException(status_code=404, detail=f"Нет интрадей данных для {secid}")
+        if mode == "intraday":
+            # Intraday: index_data не поддерживает (только дневные точки).
+            # Для индексов/валют с часовыми свечами _resolve_source вернёт candles+тип.
+            if source == "index_data":
+                raise HTTPException(status_code=404, detail=f"Нет интрадей данных для {secid}")
 
-        # Дивиденды для intraday: исключаем торговые дни, которые являются экс-дивидендными
-        # (в день экс-дивиденда утренний open уже сдвинут вниз → intraday return искажён).
-        # Отличается от дневных режимов где дивиденды корректируются мультипликативно.
-        _, src_type = _resolve_source(secid)
-        ex_dates_set: set[str] = set()
-        if exclude_dividends and src_type == "stock":
-            ex_dates_map = _get_ex_dates_from_db(engine, secid)
-            ex_dates_set = set(ex_dates_map.keys())  # ISO 'YYYY-MM-DD'
+            # Дивиденды для intraday: исключаем торговые дни, которые являются экс-дивидендными
+            # (в день экс-дивиденда утренний open уже сдвинут вниз → intraday return искажён).
+            # Отличается от дневных режимов где дивиденды корректируются мультипликативно.
+            _, src_type = _resolve_source(secid)
+            ex_dates_set: set[str] = set()
+            if exclude_dividends and src_type == "stock":
+                ex_dates_map = _get_ex_dates_from_db(engine, secid)
+                ex_dates_set = set(ex_dates_map.keys())  # ISO 'YYYY-MM-DD'
+                if ex_dates_set:
+                    log.info(f"  Intraday: excluding {len(ex_dates_set)} ex-dividend days for {secid}")
+
+            intra_type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+
+            # Строим динамические WHERE условия для recent_days и c (SQL):
+            # - since_year/exclude_years: фильтр по году trade_date
+            # - ex_dates_set: фильтр по конкретным датам
+            params: dict = {"secid": secid, "iterations": iterations}
+            recent_year_where = ""
+            candle_year_where = ""
+            if since_year is not None:
+                recent_year_where += " AND EXTRACT(YEAR FROM begin_time)::int >= :since_year"
+                candle_year_where += " AND EXTRACT(YEAR FROM c.begin_time)::int >= :since_year"
+                params["since_year"] = since_year
+            if excl_list:
+                # Inline int list — безопасно (int cast уже прошёл)
+                excl_csv = ",".join(str(int(y)) for y in excl_list)
+                recent_year_where += f" AND EXTRACT(YEAR FROM begin_time)::int NOT IN ({excl_csv})"
+                candle_year_where += f" AND EXTRACT(YEAR FROM c.begin_time)::int NOT IN ({excl_csv})"
+
+            ex_date_where = ""
             if ex_dates_set:
-                log.info(f"  Intraday: excluding {len(ex_dates_set)} ex-dividend days for {secid}")
+                # Параметр-массив через ARRAY::date[], безопасно
+                params["ex_dates_arr"] = list(ex_dates_set)
+                ex_date_where = " AND c.begin_time::date != ALL(:ex_dates_arr ::date[])"
+                # Также в recent_days — чтобы исключить эти дни из "последних N"
+                recent_year_where += " AND begin_time::date != ALL(:ex_dates_arr ::date[])"
 
-        intra_type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
-
-        # Строим динамические WHERE условия для recent_days и c (SQL):
-        # - since_year/exclude_years: фильтр по году trade_date
-        # - ex_dates_set: фильтр по конкретным датам
-        params: dict = {"secid": secid, "iterations": iterations}
-        recent_year_where = ""
-        candle_year_where = ""
-        if since_year is not None:
-            recent_year_where += " AND EXTRACT(YEAR FROM begin_time)::int >= :since_year"
-            candle_year_where += " AND EXTRACT(YEAR FROM c.begin_time)::int >= :since_year"
-            params["since_year"] = since_year
-        if excl_list:
-            # Inline int list — безопасно (int cast уже прошёл)
-            excl_csv = ",".join(str(int(y)) for y in excl_list)
-            recent_year_where += f" AND EXTRACT(YEAR FROM begin_time)::int NOT IN ({excl_csv})"
-            candle_year_where += f" AND EXTRACT(YEAR FROM c.begin_time)::int NOT IN ({excl_csv})"
-
-        ex_date_where = ""
-        if ex_dates_set:
-            # Параметр-массив через ARRAY::date[], безопасно
-            params["ex_dates_arr"] = list(ex_dates_set)
-            ex_date_where = " AND c.begin_time::date != ALL(:ex_dates_arr ::date[])"
-            # Также в recent_days — чтобы исключить эти дни из "последних N"
-            recent_year_where += " AND begin_time::date != ALL(:ex_dates_arr ::date[])"
-
-        # Intraday: open-to-close per hour.
-        # agg_type='median' → PERCENTILE_CONT(0.5) — robust к outlier-дням.
-        # agg_type='avg'    → AVG — стандартная средняя по дням в bucket.
-        # f-string безопасен: agg_type валидирован whitelist выше.
-        change_expr = "(c.close - c.open) / NULLIF(c.open, 0) * 100"
-        agg_func = (
-            f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {change_expr})"
-            if agg_type == "median"
-            else f"AVG({change_expr})"
-        )
-        query = text(f"""
-            WITH recent_days AS (
-                SELECT DISTINCT begin_time::date AS trade_date
-                FROM candles
-                WHERE secid = :secid AND interval = 60 AND {intra_type_filter} AND open > 0
-                {recent_year_where}
-                ORDER BY trade_date DESC
-                LIMIT :iterations
+            # Intraday: open-to-close per hour.
+            # agg_type='median' → PERCENTILE_CONT(0.5) — robust к outlier-дням.
+            # agg_type='avg'    → AVG — стандартная средняя по дням в bucket.
+            # f-string безопасен: agg_type валидирован whitelist выше.
+            change_expr = "(c.close - c.open) / NULLIF(c.open, 0) * 100"
+            agg_func = (
+                f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {change_expr})"
+                if agg_type == "median"
+                else f"AVG({change_expr})"
             )
-            SELECT
-                EXTRACT(HOUR FROM c.begin_time)::int as key,
-                {agg_func} as avg_change,
-                COUNT(*) as cnt
-            FROM candles c
-            INNER JOIN recent_days rd ON c.begin_time::date = rd.trade_date
-            WHERE c.secid = :secid
-              AND c.interval = 60
-              AND {intra_type_filter}
-              AND EXTRACT(HOUR FROM c.begin_time) BETWEEN 10 AND 18
-              AND c.open > 0
-              {candle_year_where}
-              {ex_date_where}
-            GROUP BY EXTRACT(HOUR FROM c.begin_time)
-            ORDER BY key
-        """)
-        with engine.connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            query = text(f"""
+                WITH recent_days AS (
+                    SELECT DISTINCT begin_time::date AS trade_date
+                    FROM candles
+                    WHERE secid = :secid AND interval = 60 AND {intra_type_filter} AND open > 0
+                    {recent_year_where}
+                    ORDER BY trade_date DESC
+                    LIMIT :iterations
+                )
+                SELECT
+                    EXTRACT(HOUR FROM c.begin_time)::int as key,
+                    {agg_func} as avg_change,
+                    COUNT(*) as cnt
+                FROM candles c
+                INNER JOIN recent_days rd ON c.begin_time::date = rd.trade_date
+                WHERE c.secid = :secid
+                  AND c.interval = 60
+                  AND {intra_type_filter}
+                  AND EXTRACT(HOUR FROM c.begin_time) BETWEEN 10 AND 18
+                  AND c.open > 0
+                  {candle_year_where}
+                  {ex_date_where}
+                GROUP BY EXTRACT(HOUR FROM c.begin_time)
+                ORDER BY key
+            """)
+            with engine.connect() as conn:
+                rows = conn.execute(query, params).fetchall()
 
-        bars = []
-        for row in rows:
-            bars.append({
-                "label": HOUR_LABELS.get(int(row[0]), str(int(row[0]))),
-                "key": int(row[0]),
-                "avg_change": round(float(row[1]), 4) if row[1] else 0,
-                "count": int(row[2]),
-            })
-    else:
-        # Дневные режимы: close-to-close returns с дивидендной корректировкой
-        # Дивиденды только для акций
-        _, src_type = _resolve_source(secid)
-        ex_dates: dict[str, float] = {}
-        if exclude_dividends and src_type == "stock":
-            ex_dates = _get_ex_dates_from_db(engine, secid)
-            if ex_dates:
-                log.info(f"  Found {len(ex_dates)} ex-dividend dates for {secid} from DB")
+            bars = []
+            for row in rows:
+                bars.append({
+                    "label": HOUR_LABELS.get(int(row[0]), str(int(row[0]))),
+                    "key": int(row[0]),
+                    "avg_change": round(float(row[1]), 4) if row[1] else 0,
+                    "count": int(row[2]),
+                })
+        else:
+            # Дневные режимы: close-to-close returns с дивидендной корректировкой
+            # Дивиденды только для акций
+            _, src_type = _resolve_source(secid)
+            ex_dates: dict[str, float] = {}
+            if exclude_dividends and src_type == "stock":
+                ex_dates = _get_ex_dates_from_db(engine, secid)
+                if ex_dates:
+                    log.info(f"  Found {len(ex_dates)} ex-dividend dates for {secid} from DB")
 
-        bars = _compute_seasonality_daily(
-            engine, secid, mode, iterations, ex_dates,
-            since_year=since_year, exclude_years=excl_list,
-            agg_type=agg_type,
-        )
+            bars = _compute_seasonality_daily(
+                engine, secid, mode, iterations, ex_dates,
+                since_year=since_year, exclude_years=excl_list,
+                agg_type=agg_type,
+            )
 
-    if not bars:
-        raise HTTPException(404, f"Нет данных для {secid} в режиме {mode}")
+        if not bars:
+            raise HTTPException(404, f"Нет данных для {secid} в режиме {mode}")
 
-    duration = time.time() - start_time
-    log.info(f"DONE: /seasonality {secid}/{mode} {len(bars)} bars, {duration:.2f}s")
+        duration = time.time() - start_time
+        log.info(f"DONE: /seasonality {secid}/{mode} {len(bars)} bars, {duration:.2f}s")
 
-    result = {
-        "secid": secid,
-        "mode": mode,
-        "iterations": iterations,
-        "exclude_dividends": exclude_dividends,
-        "ex_dates_count": len(ex_dates) if mode != "intraday" else 0,
-        "bars": bars,
-    }
-    get_or_set(cache_key, result, ttl=300)
-    return result
+        return {
+            "secid": secid,
+            "mode": mode,
+            "iterations": iterations,
+            "exclude_dividends": exclude_dividends,
+            "ex_dates_count": len(ex_dates) if mode != "intraday" else 0,
+            "bars": bars,
+        }
+
+    # ttl=3600 (было 300): данные обновляются не чаще раза в час (часовые свечи
+    # льются раз/час в торги, дневные — ночным бэкфиллом), пересчитывать тяжёлый
+    # intraday-запрос на 10+ лет истории каждые 5 минут избыточно.
+    return get_or_compute(cache_key, _compute, ttl=3600)
 
 
 @router.get("/price")
