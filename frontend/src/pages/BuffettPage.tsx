@@ -87,6 +87,13 @@ export default function BuffettPage() {
     // остаётся невалидным: каждый повтор падает 403, апсейл всплывает заново,
     // график остаётся пустым («Нет данных для отображения»).
     const lastGoodPeriod = useRef<BuffettPeriod>('1y');
+    // true пока страница смонтирована. ResponsiveRoute может размонтировать эту
+    // страницу в пользу мобильной (флип определения телефона на старте) ПОКА
+    // fetch ещё в полёте — showUpgrade живёт в App-level контексте и не гасится
+    // unmount'ом конкретной страницы, поэтому без guard'а модалка всплыла бы
+    // поверх уже другой (мобильной) страницы. См. тот же паттерн в MobileBuffettPage.
+    const isMountedRef = useRef(true);
+    useEffect(() => () => { isMountedRef.current = false; }, []);
 
     // Загрузка данных
     const loadData = useCallback(async () => {
@@ -107,6 +114,7 @@ export default function BuffettPage() {
             lastGoodPeriod.current = period;
         } catch (err: unknown) {
             if (isStale()) return;
+            if (!isMountedRef.current) return;
             const msg = err instanceof Error ? err.message : '';
             // При 403 (гость или протухший токен) — фолбэк на 1y
             if (msg.includes('авторизац') && period !== '1y') {
