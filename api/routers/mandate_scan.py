@@ -101,6 +101,52 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
         return False
 
 
+def _record_heartbeat(db: Session, success: bool, note: str) -> None:
+    """Пульс запуска в pipeline_runs — то же, что pipeline_heartbeat.py пишет
+    для скриптов ингеста, продублировано здесь через уже открытую Session
+    (pipeline_heartbeat.py не импортируется в api/ — та же причина, что и у
+    _HYPE_EMOJI_MAP в content_news.py: signals/root-модули не гарантированно
+    доступны из api-образа единообразно, объём кода мал). /api/health/data
+    подхватывает строку АВТОМАТИЧЕСКИ (чистый SELECT, без хардкода имён
+    пайплайнов) — недельный порог для mandate_scan уже добавлен в
+    _PIPELINE_MAX_AGE_H (health_monitor.py), по образцу distributions.
+    Best-effort: сбой пульса не должен ронять сам эндпоинт."""
+    try:
+        status = "ok" if success else "fail"
+        db.execute(text("""
+            INSERT INTO pipeline_runs (pipeline, last_run_at, last_success_at, last_status, last_note, updated_at)
+            VALUES ('mandate_scan', now(), CASE WHEN :success THEN now() ELSE NULL END, :status, :note, now())
+            ON CONFLICT (pipeline) DO UPDATE SET
+                last_run_at = EXCLUDED.last_run_at,
+                last_success_at = COALESCE(EXCLUDED.last_success_at, pipeline_runs.last_success_at),
+                last_status = EXCLUDED.last_status,
+                last_note = EXCLUDED.last_note,
+                updated_at = EXCLUDED.updated_at
+        """), {"success": success, "status": status, "note": (note or "")[:500]})
+        db.commit()
+    except Exception as e:
+        print(f"[mandate_scan] heartbeat write failed: {type(e).__name__}: {e}")
+
+
+class RunDone(BaseModel):
+    success: bool = True
+    candidates_found: int = 0
+    note: Optional[str] = None
+
+
+@internal_router.post("/done", dependencies=[Depends(_require_internal_token)])
+def mark_run_done(body: RunDone, db: Session = Depends(get_db)):
+    """Routine вызывает это ПОСЛЕДНИМ действием каждого прогона (нашёл он
+    что-то или нет) — без этого /api/health/data и, следом, ежедневный
+    frame-monitor не отличат «прогон был и честно ничего не нашёл» от
+    «Routine вообще не запустился» (тот же класс проблемы, что решали для
+    content-пайплайна через hype_filter_dispatch_attempts, db/migrations/035_*.sql,
+    только тут бэкстопом служит уже существующий frame-monitor, не отдельный)."""
+    note = body.note or f"{body.candidates_found} находок прошли отбор"
+    _record_heartbeat(db, body.success, note)
+    return {"status": "recorded"}
+
+
 @internal_router.get("/known", dependencies=[Depends(_require_internal_token)])
 def list_known(db: Session = Depends(get_db)):
     """Routine дёргает это ПЕРВЫМ шагом каждого еженедельного прогона — растущий
