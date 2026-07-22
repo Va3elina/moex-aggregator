@@ -320,10 +320,12 @@ def get_candles_continuous(
             best_vol[(day, sec_id)] = v
 
     out: List[CandlePoint] = []
+    prev = None
     for day in sorted(by_day):
-        chosen = resolve_day(windows, day, vol_by_day[day])
+        chosen = resolve_day(windows, day, vol_by_day[day], prev=prev)
         if chosen is None or chosen not in by_day[day]:
             continue
+        prev = chosen
         bt, cl = by_day[day][chosen]
         out.append(CandlePoint(begin_time=bt, close=cl))
     return out
