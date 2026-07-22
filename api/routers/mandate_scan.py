@@ -12,11 +12,16 @@
 Server-to-server: НЕ require_admin (Routine не залогинен как пользователь) —
 проверка через shared secret в заголовке X-Internal-Token, как в content_news.py.
 
-Таблица — mandate_candidates (db/migrations/039_mandate_candidates.sql).
-Дедуп по source_ref: повторная находка того же акта в следующем еженедельном
-скане НЕ шлёт уведомление заново (ON CONFLICT DO NOTHING).
+Таблица — mandate_candidates (db/migrations/039_..., 040_mandate_candidates_dedup_key.sql).
+Дедуп по dedup_key (НЕ source_ref — оказался хрупким к перефразировке одного и
+того же акта между разными еженедельными прогонами, см. 040_*.sql): source_key
+(короткий канонический номер акта, напр. "6433-У") нормализуется здесь (только
+буквы/цифры, верхний регистр) ДО сравнения — устойчиво к пробелам/регистру/дефисам.
+GET /known — Routine читает это ПЕРЕД поиском, чтобы не тратить эффект на уже
+известное (растущий список в БД, а не замороженный снимок в промпте триггера).
 """
 import os
+import re
 from typing import Optional
 
 import requests
@@ -26,6 +31,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
+
+_DEDUP_STRIP_RE = re.compile(r"[^0-9A-Za-zА-Яа-яЁё]")
+
+
+def _dedup_key(source_key: str) -> str:
+    return _DEDUP_STRIP_RE.sub("", source_key).upper()
 
 internal_router = APIRouter(prefix="/api/internal/mandate-scan", tags=["internal-mandate-scan"])
 
@@ -37,7 +48,8 @@ def _require_internal_token(x_internal_token: str = Header(default="")) -> None:
 
 
 class MandateCandidate(BaseModel):
-    source_ref: str                     # "Указание Банка России №6433-У от 01.06.2023"
+    source_ref: str                     # "Указание Банка России №6433-У от 01.06.2023" (полная цитата, для людей)
+    source_key: str                     # "6433-У" — короткий канонический номер акта, ключ дедупа
     source_url: Optional[str] = None
     mandate_type: str                   # physical_necessity|government_decree|regulator_rule|index_methodology|corporate_policy
     participant: str                    # exporters|banks|insurers|pension_funds|nonresidents|market_makers|state_entities|issuers|retail|exchange
@@ -89,25 +101,42 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
         return False
 
 
+@internal_router.get("/known", dependencies=[Depends(_require_internal_token)])
+def list_known(db: Session = Depends(get_db)):
+    """Routine дёргает это ПЕРВЫМ шагом каждого еженедельного прогона — растущий
+    в БД список уже найденного (не замороженный снимок в промпте триггера на
+    момент создания). Компактно: только то, что нужно, чтобы не искать/не
+    отправлять повторно то же самое другими словами."""
+    rows = db.execute(text("""
+        SELECT source_key, participant, asset, status_now
+        FROM mandate_candidates ORDER BY found_at DESC
+    """)).mappings().all()
+    return {"count": len(rows), "known": [dict(r) for r in rows]}
+
+
 @internal_router.post("/candidate", dependencies=[Depends(_require_internal_token)])
 def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
     """Приёмка одного кандидата от еженедельного Routine-скаута. Дедуп по
-    source_ref — ON CONFLICT DO NOTHING, повторная находка того же акта не
-    шлёт уведомление заново. Уведомляем только на свежей вставке."""
+    dedup_key (нормализованный source_key, НЕ source_ref — см. модуль docstring) —
+    ON CONFLICT DO NOTHING, повторная находка того же акта не шлёт уведомление
+    заново, даже если сформулирована другими словами. Уведомляем только на
+    свежей вставке."""
+    dedup_key = _dedup_key(body.source_key)
     row = db.execute(text("""
         INSERT INTO mandate_candidates (
-            source_ref, source_url, mandate_type, participant, sector, asset,
+            source_ref, source_key, dedup_key, source_url, mandate_type, participant, sector, asset,
             status_now, mechanical_trigger, trigger_description, pine_testable,
             hypothesis, durability_note
         ) VALUES (
-            :source_ref, :source_url, :mandate_type, :participant, :sector, :asset,
+            :source_ref, :source_key, :dedup_key, :source_url, :mandate_type, :participant, :sector, :asset,
             :status_now, :mechanical_trigger, :trigger_description, :pine_testable,
             :hypothesis, :durability_note
         )
-        ON CONFLICT (source_ref) DO NOTHING
+        ON CONFLICT (dedup_key) DO NOTHING
         RETURNING id
     """), {
-        "source_ref": body.source_ref, "source_url": body.source_url,
+        "source_ref": body.source_ref, "source_key": body.source_key, "dedup_key": dedup_key,
+        "source_url": body.source_url,
         "mandate_type": body.mandate_type, "participant": body.participant,
         "sector": body.sector, "asset": body.asset, "status_now": body.status_now,
         "mechanical_trigger": body.mechanical_trigger, "trigger_description": body.trigger_description,
