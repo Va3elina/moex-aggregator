@@ -18,7 +18,8 @@ description: Editorial-редизайн сайта Frame. Use when user says "р
 - Theme-aware colors (никаких hardcoded hex)
 - SW: `frame-v367`
 
-**Главное чтиво** (расположено в проектной памяти):
+**Главное чтиво** (⚠️ проектная память Claude Code — локальна для машины Вадима,
+на другой машине запросить экспорт у Вадима):
 - `~/.claude/projects/-Users-vadim-PyCharmMiscProject-MOEX/memory/design_system.md` — все tokens, helpers, anti-patterns
 - `~/.claude/projects/-Users-vadim-PyCharmMiscProject-MOEX/memory/recent_changes.md` — что сделано в последней сессии
 
@@ -48,7 +49,8 @@ description: Editorial-редизайн сайта Frame. Use when user says "р
 
 ## Где лежит референс
 
-`/Users/vadim/Downloads/design_handoff_frame_redesign/`:
+`/Users/vadim/Downloads/design_handoff_frame_redesign/` (⚠️ путь на Mac Вадима;
+папка не в git — на другой машине получить у Вадима архивом):
 
 | Файл | Что внутри |
 |---|---|

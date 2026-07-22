@@ -31,7 +31,7 @@ NB колонки дат: `fund_data.trade_date`, `candles.begin_time`, `open_in
 ## Шаг 2. Определить источник → узкий рунбук
 | Что встало | Источник | Куда |
 |---|---|---|
-| OI 5м/часовики, свечи, индексы, календарь — ВСЁ разом с одной даты | MOEX | `/moex-ip-ban` — почти всегда бан IP / сетевой блэкхол, транзиент на часы |
+| OI 5м/часовики, свечи, индексы, календарь — ВСЁ разом с одной даты | MOEX | `/moex-moex-ban` — почти всегда бан IP / сетевой блэкхол, транзиент на часы |
 | Только ВВП (квартал) или M2 (месяц) | Росстат/ЦБ | `/moex-macro-refresh` — обычно auto-discover Росстата сломался |
 | /cbr-flows (потоки участников) | ОРФР ЦБ | `/moex-cbr-flows` — РУЧНОЙ ингест, ждём файл от Вадима |
 | Фонды/СЧА (/funds, /fund-trades) | Cbonds / УК | funds gap-safe (доедет); СЧА-фонды — `/moex-fund-scha-backfill` |
@@ -48,7 +48,7 @@ NB колонки дат: `fund_data.trade_date`, `candles.begin_time`, `open_in
   `iss.moex.com/iss/history/engines/stock/markets/index/securities/<secid>.json?from=<дата>`.
 
 ## Шаг 4. Что НЕ делать
-- НЕ паниковать и НЕ менять IP при MOEX-зависании вслепую — сначала `/moex-ip-ban` (транзиент).
+- НЕ паниковать и НЕ менять IP при MOEX-зависании вслепую — сначала `/moex-moex-ban` (транзиент).
 - НЕ строить новый cron/автофетч — пайплайны уже ежедневные. УК-раскрытие = ручное
   by design ([[feedback_no_data_autofetch]]).
 - Логи оркестратора ЭФЕМЕРНЫ (per-day на writable-слое, теряются при recreate) → для

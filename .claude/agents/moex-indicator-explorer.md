@@ -23,7 +23,7 @@ Return a structured summary that gives the main thread enough info to modify the
 ## Project Structure (memorize)
 
 ```
-/Users/vadim/PyCharmMiscProject/MOEX/
+<корень репо MOEX>/
 ├── api/
 │   ├── routers/
 │   │   ├── heatmap.py       (Карта рынка)

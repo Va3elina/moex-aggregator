@@ -79,7 +79,7 @@ The project uses **editorial-light/dark** themes with strict rules:
 
 2. **Run pattern scans in parallel** (single Bash call with multiple greps using `;`):
    ```bash
-   cd /Users/vadim/PyCharmMiscProject/MOEX/frontend/src
+   cd frontend/src   # от корня репо
    grep -rn "backdrop-blur" <files> 2>/dev/null
    grep -rnE "#C8FF2E|#8b5cf6|#6366f1|#FF4D4D|#2EE59D|rgba\(56,98,251" <files>
    grep -rn "bg-theme-secondary" <files> | grep -iE "chart|simple|histogram|breadth|index"

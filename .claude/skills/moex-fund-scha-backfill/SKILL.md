@@ -92,7 +92,7 @@ from Funds.parsers.scha_parser import parse_scha           # PDF
 ```bash
 scp -rq -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
   /tmp/reimport_X root@103.88.243.232:/opt/frame/data/manual_scha/reimport_X
-ssh ... 'docker exec frame-api-1 python3 -m Funds.manual_scha_backfill /data/manual_scha/reimport_X/ 2>&1 | tail -8'
+ssh ... 'docker exec $(docker ps -q -f label=com.docker.compose.service=api) python3 -m Funds.manual_scha_backfill /data/manual_scha/reimport_X/ 2>&1 | tail -8'
 # api контейнер read-only rootfs → /data/manual_scha bind-mount единственный inbound-канал.
 # data/ в .gitignore → scp сюда переживает deploy (reset --hard) — это OK, НЕ черновик в tracked-зону.
 # Если меняешь Funds/*.py — сначала git push (CI пересоберёт api), дождись зелёного deploy-prod,
@@ -100,7 +100,7 @@ ssh ... 'docker exec frame-api-1 python3 -m Funds.manual_scha_backfill /data/man
 ssh ... 'rm -rf /opt/frame/data/manual_scha/reimport_X'  # cleanup после
 ```
 Verify: `SELECT ticker, COUNT(DISTINCT snapshot_date), AVG(assets) ... WHERE source='interfax_manual'`.
-Локальный архив: `~/Downloads/funds_organized/<УК>/<TICKER — Name>/<date>.<ext>` + INDEX.md.
+Локальный архив (per-оператор, путь — на Mac Вадима; на другой машине завести свой): `~/Downloads/funds_organized/<УК>/<TICKER — Name>/<date>.<ext>` + INDEX.md.
 
 ## Подводные камни (data-integrity — спот-чек при КАЖДОМ импорте)
 - **wrong-fund**: ZIP под именем фонда A может содержать фонд B (был «Арендный поток»

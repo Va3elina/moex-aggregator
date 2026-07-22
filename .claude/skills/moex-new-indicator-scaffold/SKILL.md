@@ -180,7 +180,7 @@ const NAV_ITEMS = [
 **Step 10: Type-check build**
 
 ```bash
-cd /Users/vadim/PyCharmMiscProject/MOEX/frontend && npm run build
+cd frontend && npm run build   # от корня репо
 ```
 
 Fix any TS errors BEFORE deploying.
@@ -196,7 +196,7 @@ git add <конкретные файлы>            # НЕ `git add -A` всл�
 git commit -m "feat(<scope>): <indicator>"
 git push -u origin feat/<indicator>
 gh pr create --base main --fill       # build-check прогонится на PR
-gh pr merge --squash --delete-branch  # зелёный → мёрж = деплой
+gh pr merge --auto --squash --delete-branch  # авто-мёрж когда build-check позеленеет = деплой
 ```
 build-check (`npm run build`) → если зелёный → **deploy-prod** сам по SSH:
 `git reset --hard origin/main` → `docker compose build api` (api **запекает** frontend dist
@@ -210,7 +210,7 @@ build-check (`npm run build`) → если зелёный → **deploy-prod** с
 
 ```bash
 # Check endpoint returns JSON
-ssh root@103.88.243.232 "docker exec frame-api-1 python3 -c '
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 root@103.88.243.232 "docker exec $(docker ps -q -f label=com.docker.compose.service=api) python3 -c '
 import urllib.request
 r = urllib.request.urlopen(\"http://localhost:8000/api/{name}/data?period=1y\")
 print(r.read()[:200])
@@ -247,7 +247,7 @@ conn.execute(text("DELETE FROM macro WHERE indicator = :i"), {"i": "XXX"})
 
 6. Grep the whole project for remaining references:
 ```bash
-grep -r "{Name}\|{name}" /Users/vadim/PyCharmMiscProject/MOEX \
+grep -r "{Name}\|{name}" . \   # от корня репо
   --include="*.py" --include="*.ts" --include="*.tsx"
 ```
 
