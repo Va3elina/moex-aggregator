@@ -10,13 +10,14 @@
     pytest tests/test_contract_calendar.py      # тоже работает
 """
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.services.contract_calendar import (  # noqa: E402
-    Contract, compute_windows, front_sec_id_for_day, resolve_day,
+    MAX_FRONT_WINDOW_DAYS, Contract, compute_windows, front_sec_id_for_day,
+    resolve_day, stable_runs,
 )
 
 
@@ -88,11 +89,89 @@ def test_perpetual_always_self():
         assert front_sec_id_for_day(w, d) == "USDRUBF"
 
 
-def test_first_contract_covers_early_days():
-    """Дни ДО первой экспирации → первый контракт (start=None)."""
+def test_first_window_capped_not_infinite():
+    """Окно первого контракта ограничено MAX_FRONT_WINDOW_DAYS, а НЕ -∞.
+
+    Календарь futures_contracts не покрывает историю до ~2019 (ISS не различает
+    контракты с шагом 10 лет). Без капа вся глубокая история липла к sec_id
+    первого известного контракта ('SRH' = март ЛЮБОГО года) → сотни ложных
+    смен контракта на графике ОИ (Сбербанк 2007-2019).
+    """
     w = compute_windows(BR)
-    assert front_sec_id_for_day(w, date(2026, 1, 1)) == "BRN"
-    assert front_sec_id_for_day(w, date(2020, 1, 1)) == "BRN"
+    # Внутри капа до первой экспирации (2026-07-01) → первый контракт
+    assert front_sec_id_for_day(w, date(2026, 5, 1)) == "BRN"
+    assert w[0].start == date(2026, 7, 1) - timedelta(days=MAX_FRONT_WINDOW_DAYS)
+    # Глубокая история — вне календаря → None (решается объёмом в resolve_day)
+    assert front_sec_id_for_day(w, date(2026, 1, 1)) is None
+    assert front_sec_id_for_day(w, date(2020, 1, 1)) is None
+
+
+def test_calendar_hole_days_not_claimed_by_next_contract():
+    """Дыра в календаре (пропущенные контракты) → дни дыры без календарного
+    фронта, а не приписаны следующему известному контракту."""
+    holey = [_c("SRH9", "2019-03-21"), _c("SRH6", "2026-03-19")]
+    w = compute_windows(holey)
+    assert front_sec_id_for_day(w, date(2022, 6, 1)) is None
+    # А у своей экспирации каждый — фронт
+    assert front_sec_id_for_day(w, date(2019, 3, 1)) == "SRH"
+    assert front_sec_id_for_day(w, date(2026, 3, 1)) == "SRH"
+    # День дыры решается объёмом
+    assert resolve_day(w, date(2022, 6, 1), {"SRM": 100.0, "SRU": 40.0}) == "SRM"
+
+
+def test_resolve_day_sticky_fallback():
+    """Гистерезис объёмного fallback: prev держится, пока конкурент не превысит
+    его объём в STICKY_VOLUME_RATIO раз; календарный выбор prev игнорирует."""
+    day = date(2020, 1, 15)  # вне окон BR-календаря 2026 → чистый fallback
+    w = compute_windows(BR)
+    # Конкурент лишь вдвое больше → остаёмся на prev
+    assert resolve_day(w, day, {"BRF": 200.0, "BRG": 100.0}, prev="BRG") == "BRG"
+    # Конкурент в ≥3 раза больше → переключаемся
+    assert resolve_day(w, day, {"BRF": 300.0, "BRG": 100.0}, prev="BRG") == "BRF"
+    # prev вне данных дня → argmax объёма
+    assert resolve_day(w, day, {"BRF": 200.0, "BRG": 100.0}, prev="BRX") == "BRF"
+    # Календарь главнее гистерезиса
+    cal_day = date(2026, 7, 15)  # окно BRQ
+    assert resolve_day(w, cal_day, {"BRQ": 1.0, "BRX": 999.0}, prev="BRX") == "BRQ"
+
+
+def _mk_days(n, start="2020-01-01"):
+    d0 = date.fromisoformat(start)
+    return [d0 + timedelta(days=i) for i in range(n)]
+
+
+def test_stable_runs_suppresses_flip_flop():
+    """Короткие вылазки (< min_run_days) не дают ложных меток экспирации."""
+    days = _mk_days(30)
+    choices = {d: "SRH" for d in days}
+    for d in days[10:12]:   # 2-дневный флип на SRM и обратно
+        choices[d] = "SRM"
+    runs = stable_runs(days, choices, min_run_days=5)
+    assert runs == [(days[0], "SRH")]
+
+
+def test_stable_runs_keeps_real_roll():
+    """Настоящий ролл (длинные раны) сохраняется, метка на первом дне рана."""
+    days = _mk_days(40)
+    choices = {d: ("SRH" if i < 20 else "SRM") for i, d in enumerate(days)}
+    runs = stable_runs(days, choices, min_run_days=5)
+    assert runs == [(days[0], "SRH"), (days[20], "SRM")]
+
+
+def test_stable_runs_short_head_merges_forward():
+    """Короткий ран в САМОМ начале вливается в следующий (метка — с первого дня)."""
+    days = _mk_days(20)
+    choices = {d: ("SRZ" if i < 2 else "SRH") for i, d in enumerate(days)}
+    runs = stable_runs(days, choices, min_run_days=5)
+    assert runs == [(days[0], "SRH")]
+
+
+def test_stable_runs_none_days_skipped():
+    days = _mk_days(10)
+    choices = {d: "SRH" for d in days}
+    choices[days[3]] = None
+    runs = stable_runs(days, choices, min_run_days=5)
+    assert runs == [(days[0], "SRH")]
 
 
 def test_resolve_day_prefers_calendar_when_available():

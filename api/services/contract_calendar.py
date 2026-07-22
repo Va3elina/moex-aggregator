@@ -59,13 +59,31 @@ class FrontWindow(NamedTuple):
 # Чистая логика (без БД) — покрыта юнит-тестами tests/test_contract_calendar.py
 # ---------------------------------------------------------------------------
 
+# Максимальная реалистичная длина фронт-окна. Квартальная серия ~91 день;
+# запас на форс-мажорный сдвиг экспирации (SRH2: остановка торгов 02.2022 →
+# окно 103 дня). Окно длиннее — признак ДЫРЫ в календаре: futures_contracts
+# не покрывает историю до ~2019 (ISS не различает контракты с шагом 10 лет:
+# SRH8 = март 2018 И март 2028), и без капа первое окно (start=None) утянуло
+# бы всю глубокую историю на sec_id первого известного контракта ('SRH' =
+# март ЛЮБОГО года) — сотни ложных смен контракта. Дни вне окон уходят в
+# объёмный fallback (resolve_day), как до появления календаря.
+MAX_FRONT_WINDOW_DAYS = 110
+
+# Гистерезис объёмного fallback: не переключаемся с текущего контракта, пока
+# конкурент не превысит его дневной объём в N раз. В зонах без календаря в БД
+# местами лежат ДВА дальних контракта с дуэльными объёмами (реального фронта
+# нет) — по-дневный argmax объёма флипал между ними почти ежедневно.
+STICKY_VOLUME_RATIO = 3.0
+
+
 def compute_windows(contracts: Iterable[Contract]) -> List[FrontWindow]:
     """Строит хронологический список фронт-окон для одного sectype.
 
     - Перпетуал (если есть среди контрактов) → единственное окно (None, None).
     - Иначе: контракты с валидной lsttrade сортируются по ней; окно контракта
-      C_i = (lsttrade(C_{i-1})+1д .. lsttrade(C_i)]. Первый контракт — фронт с
-      -∞ (start=None) до своей экспирации включительно.
+      C_i = (lsttrade(C_{i-1})+1д .. lsttrade(C_i)], но не длиннее
+      MAX_FRONT_WINDOW_DAYS — дни до покрытия календарём (и в его дырах)
+      остаются без календарного фронта и решаются объёмом в resolve_day.
 
     НЕ фильтруем по is_traded: истёкшие контракты были фронтом в прошлом и нужны
     для исторических окон (resolve_day всё равно откатится на объём, если их
@@ -89,7 +107,11 @@ def compute_windows(contracts: Iterable[Contract]) -> List[FrontWindow]:
         # подстрахует объёмом, если у него окажутся уникальные свечи дня).
         if prev_lst is not None and c.lsttrade <= prev_lst:
             continue
-        start = None if prev_lst is None else prev_lst + timedelta(days=1)
+        floor = c.lsttrade - timedelta(days=MAX_FRONT_WINDOW_DAYS)
+        if prev_lst is None:
+            start = floor
+        else:
+            start = max(prev_lst + timedelta(days=1), floor)
         windows.append(FrontWindow(start, c.lsttrade, c.secid, c.sec_id, False))
         prev_lst = c.lsttrade
     return windows
@@ -124,6 +146,7 @@ def resolve_day(
     windows: List[FrontWindow],
     day: date,
     available: Dict[str, float],
+    prev: Optional[str] = None,
 ) -> Optional[str]:
     """Какой sec_id показывать за день: КАЛЕНДАРНЫЙ фронт, если его свечи есть в
     данных за этот день; иначе fallback на контракт с макс. объёмом из имеющихся.
@@ -132,6 +155,12 @@ def resolve_day(
     Возвращает None, если данных за день нет вовсе. Замечание: календарный фронт
     предпочитается даже при объёме 0 — у дневной свечи фронта валиден close, а
     «без преждевременного ролла» важнее ликвидности соседа.
+
+    `prev` — вчерашний выбор (гистерезис объёмного fallback): остаёмся на prev,
+    пока конкурент не превысит его объём в STICKY_VOLUME_RATIO раз. Настоящий
+    ролловер это переживает (объём мигрирует на новый фронт решительно), а
+    ежедневный флип между двумя дальними контрактами с дуэльными объёмами —
+    нет. На календарный выбор prev не влияет.
 
     Зачем fallback: на исторических днях старый объёмный фетчер мог не сохранить
     календарный фронт → берём что есть (поведение как раньше, без регрессии).
@@ -144,7 +173,61 @@ def resolve_day(
         cal = front_sec_id_for_day(windows, day)
         if cal is not None and cal in available:
             return cal
-    return max(available, key=available.get)
+    best = max(available, key=available.get)
+    if prev is not None and prev != best and prev in available \
+            and available[best] < STICKY_VOLUME_RATIO * available[prev]:
+        return prev
+    return best
+
+
+def stable_runs(
+    days: List[date],
+    choices: Dict[date, Optional[str]],
+    min_run_days: int = 5,
+) -> List[tuple]:
+    """Сжимает по-дневные выборы контракта в устойчивые раны: [(первый_день, sec_id)].
+
+    Для МЕТОК смены контракта (contract_switches): в зонах без календаря
+    объёмный fallback может коротко переметнуться на другой контракт и
+    вернуться — каждый такой флип давал бы ложную метку экспирации. Раны короче
+    min_run_days торговых дней вливаются в предыдущий ран (их дни остаются за
+    прежним контрактом), смежные одноимённые раны склеиваются. Выбор свечей
+    это НЕ меняет — только список меток.
+
+    `days` — отсортированные торговые дни; `choices` — {день: sec_id | None}
+    (None-дни пропускаются). Настоящий ролл (ран длиной в квартал/месяц)
+    проходит без изменений — метка встаёт на первый день рана, как раньше.
+    """
+    runs: List[List] = []  # [sec_id, [дни]]
+    for d in days:
+        c = choices.get(d)
+        if c is None:
+            continue
+        if runs and runs[-1][0] == c:
+            runs[-1][1].append(d)
+        else:
+            runs.append([c, [d]])
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(runs)):
+            if len(runs[i][1]) < min_run_days and len(runs) > 1:
+                if i > 0:
+                    runs[i - 1][1].extend(runs[i][1])
+                else:
+                    runs[i + 1][1] = runs[i][1] + runs[i + 1][1]
+                runs = runs[:i] + runs[i + 1:]
+                changed = True
+                break
+
+    merged: List[List] = []
+    for c, ds in runs:
+        if merged and merged[-1][0] == c:
+            merged[-1][1].extend(ds)
+        else:
+            merged.append([c, ds])
+    return [(ds[0], c) for c, ds in merged]
 
 
 # ---------------------------------------------------------------------------

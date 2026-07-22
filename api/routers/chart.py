@@ -33,7 +33,7 @@ from api.schemas.validators import (
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points
-from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids
+from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids, stable_runs
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -364,18 +364,25 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     windows = front_windows(db, sectype)
     sorted_days = sorted(daily_volume.keys())
     best_contract_by_day = {}
-    contract_switches = []
     prev_contract = None
     for day in sorted_days:
-        chosen = resolve_day(windows, day, daily_volume[day])
+        chosen = resolve_day(windows, day, daily_volume[day], prev=prev_contract)
         best_contract_by_day[day] = chosen
-        if chosen is not None and chosen != prev_contract:
-            contract_switches.append({
-                "date": day.isoformat(),
-                "from": prev_contract,
-                "to": chosen,
-            })
+        if chosen is not None:
             prev_contract = chosen
+
+    # Метки смены контракта — по УСТОЙЧИВЫМ ранам, а не по-дневным выборам:
+    # в зонах без календаря fallback может на день-два переметнуться между
+    # контрактами, и каждый флип давал бы ложную метку экспирации на графике.
+    contract_switches = []
+    prev_run = None
+    for run_day, run_sec_id in stable_runs(sorted_days, best_contract_by_day):
+        contract_switches.append({
+            "date": run_day.isoformat(),
+            "from": prev_run,
+            "to": run_sec_id,
+        })
+        prev_run = run_sec_id
 
     # 6d. Фильтруем свечи: оставляем только лучший контракт каждого дня
     best_by_time = {}  # {begin_time: candle_row}
