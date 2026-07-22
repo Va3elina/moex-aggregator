@@ -49,7 +49,10 @@ export default function MobileBuffettPage() {
   const reqIdRef = useRef(0);
   // true пока страница смонтирована — см. коммент у showUpgrade в catch loadData.
   const isMountedRef = useRef(true);
-  useEffect(() => () => { isMountedRef.current = false; }, []);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
   const [timeframe, setTimeframe] = usePersistedState<'1d' | '1w' | '1m'>('frame:buffett:timeframe', '1m');
   const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);

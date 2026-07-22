@@ -27,6 +27,14 @@ export function isCoarsePointer(): boolean {
 function computeIsPhone(breakpoint: number): boolean {
   if (typeof window === 'undefined') return false;
   const { innerWidth: w, innerHeight: h } = window;
+  // На самом первом рендере innerWidth/innerHeight иногда ещё 0 (layout не
+  // готов) — реальный viewport НИКОГДА не бывает 0×0. Без этой проверки
+  // 0 < breakpoint даёт ложный isPhone=true → ResponsiveRoute на миг монтирует
+  // мобильную страницу поверх десктопного окна (напр. /buffett: мобильный
+  // loadData стартует со своим дефолтным period, падает 403 у guest/free,
+  // showUpgrade показывает мобильный текст модалки — та не гасится, когда
+  // компонент секунду спустя размонтируется обратно в desktop).
+  if (w === 0 && h === 0) return false;
   return isCoarsePointer() ? Math.min(w, h) < breakpoint : w < breakpoint;
 }
 
