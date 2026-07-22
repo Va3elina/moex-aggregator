@@ -81,6 +81,12 @@ export default function BuffettPage() {
     // мог перезаписать свежий. reqId фиксирует «последний» запрос — устаревший
     // не применяет setState (тот же паттерн, что в эталонном useIndicatorData).
     const reqIdRef = useRef(0);
+    // Последний период, по которому данные успешно загрузились — тот же паттерн,
+    // что в MobileBuffettPage.tsx (lastGoodPeriod). Персистентный дефолт '10y'
+    // невалиден для guest/free (max_history_days=5y) — без отката period навсегда
+    // остаётся невалидным: каждый повтор падает 403, апсейл всплывает заново,
+    // график остаётся пустым («Нет данных для отображения»).
+    const lastGoodPeriod = useRef<BuffettPeriod>('1y');
 
     // Загрузка данных
     const loadData = useCallback(async () => {
@@ -98,12 +104,25 @@ export default function BuffettPage() {
                 if (isStale()) return;
                 setCapM2Data(result);
             }
+            lastGoodPeriod.current = period;
         } catch (err: unknown) {
             if (isStale()) return;
             const msg = err instanceof Error ? err.message : '';
             // При 403 (гость или протухший токен) — фолбэк на 1y
             if (msg.includes('авторизац') && period !== '1y') {
                 setPeriod('1y');
+                return;
+            }
+            // Ограничение глубины истории (напр. персистентный '10y' невалиден
+            // для guest/free) — откатываемся на последний рабочий период, иначе
+            // график завис бы пустым, а период — «10Л»/«20Л»/«Всё» навсегда.
+            if (msg.includes('Период') && msg.includes('недоступ') && period !== lastGoodPeriod.current) {
+                setPeriod(lastGoodPeriod.current);
+                showUpgrade({
+                    tier: 'pro',
+                    featureName: `период «${PERIOD_LABELS[period] ?? period}»`,
+                    indicator: 'buffett',
+                });
                 return;
             }
             // Tier-related 403 → upgrade modal, не destructive error
