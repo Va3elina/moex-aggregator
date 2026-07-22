@@ -28,7 +28,7 @@ description: Publish/update the Фрейм browser extension in the Chrome Web S
    предыдущего). Патч-фикс → +0.0.1.
 2. Коммит + пуш + тег (имя тега = версия):
    ```bash
-   cd /Users/vadim/PyCharmMiscProject/MOEX
+   # (из корня репо)
    node --check extension/src/widget.js          # vanilla JS, tsc тут нет
    git add extension/ && git commit -m "ext: <что изменил>"
    git push origin main
@@ -76,7 +76,10 @@ curl -s "https://www.googleapis.com/chromewebstore/v1.1/items/klcmdbbfpnhmcegdab
 - Тексты листинга: `extension/store/LISTING.md`. Полный чек-лист: `extension/store/PUBLISH_CHECKLIST.md`.
 - Промо: `python3 scripts/gen-store-assets.py` → `extension/store/assets/` (tile 440×280, marquee 1400×560, hero).
 - Скриншоты под ровно 1280×800 (RGB, без альфы): `python3 scripts/fit-screenshots.py --desktop N`
-  (берёт N свежих кадров с Рабочего стола; снимать **Cmd+Shift+4** = файл, НЕ Cmd+Ctrl+Shift+4 = буфер).
+  (берёт N свежих кадров с Рабочего стола). Снимать В ФАЙЛ, не в буфер:
+  - macOS: **Cmd+Shift+4** (файл на Рабочий стол), НЕ Cmd+Ctrl+Shift+4 (буфер);
+  - Windows: **Win+Shift+S** кладёт только в буфер — сохранить из уведомления
+    («сохранить как») или вставить в редактор и сохранить .png на Рабочий стол.
   Fallback-отрисовка панелей: `scripts/gen-store-screenshots.py`.
 
 ## Связано
