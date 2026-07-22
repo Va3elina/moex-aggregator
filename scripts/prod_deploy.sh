@@ -88,7 +88,7 @@ deploy_api_rolling() {
 deploy_api_rolling
 
 # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код
-if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
+if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
   echo "=== Orchestrator code changed -> rebuild ==="
   docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
   docker compose build orchestrator
