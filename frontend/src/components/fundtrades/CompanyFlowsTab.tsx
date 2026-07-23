@@ -99,7 +99,7 @@ function computeTopFunds(
 // ─────────────────────────────────────────────────────────────────────────────
 // Главный компонент
 // ─────────────────────────────────────────────────────────────────────────────
-// ITEM 2 (cross-tab) — предвыбор бумаги из movers («Покупки фондов»).
+// ITEM 2 (cross-tab) — предвыбор бумаги из movers («Сделки фондов»).
 export interface CompanyFlowsTabProps {
     /** Если задан — выбрать эту бумагу (по isin || asset_name) в селекторе. */
     presetAsset?: { asset_name: string; isin: string | null } | null;

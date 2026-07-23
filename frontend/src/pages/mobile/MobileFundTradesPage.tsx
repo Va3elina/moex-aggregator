@@ -410,7 +410,7 @@ export default function MobileFundTradesPage() {
       .finally(() => { if (!isStale()) setLoadingPortfolio(false); });
   }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
 
-  // Покупки фондов для блока рядом с составом (чистая покупка за период).
+  // Сделки фондов для блока рядом с составом (чистая покупка за период).
   useEffect(() => {
     if (!common.fund_trades_access) return;
     if (tab !== 'portfolio') return;
@@ -578,7 +578,7 @@ export default function MobileFundTradesPage() {
   // - company:   ⚙️(режим); бумага/фонды — в теле CompanyFlowsTab
   const timeSummary = (() => {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
-    if (tab === 'portfolio') return `Покупки · ${({ '1m': '1 мес', '6m': 'полгода', '1y': 'год', '3y': '3 года' } as Record<MoversPeriod, string>)[portfolioMoversPeriod]}`;
+    if (tab === 'portfolio') return `Сделки · ${({ '1m': '1 мес', '6m': 'полгода', '1y': 'год', '3y': '3 года' } as Record<MoversPeriod, string>)[portfolioMoversPeriod]}`;
     if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.resolved_month ? formatMonthYear(movers.resolved_month) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц'));
     return undefined;
   })();

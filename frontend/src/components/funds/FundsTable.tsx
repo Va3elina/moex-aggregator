@@ -117,7 +117,7 @@ function CheckBox({ checked, indeterminate }: { checked: boolean; indeterminate?
 const COMING_SOON_SUBCATS = new Set<string>([]);
 
 // Лучшая доступная доходность: длиннейший период с данными (1г→6м→3м→1м).
-// Совпадает с «Покупки фондов» (bestReturn) — молодые фонды (<1 года) показывают
+// Совпадает с «Сделки фондов» (bestReturn) — молодые фонды (<1 года) показывают
 // 6м/3м/1м с подписью периода вместо «—». null = совсем нет истории / битые данные.
 function bestReturn(r?: FundInfo['returns']): { v: number; label: string } | null {
     if (!r) return null;

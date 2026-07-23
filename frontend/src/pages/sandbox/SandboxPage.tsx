@@ -65,7 +65,7 @@ const INDICATORS: IndicatorDef[] = [
   { type: 'buffett', label: 'Индикатор Баффетта', group: 'market', desc: 'Капитализация рынка к ВВП / M2' },
   { type: 'strength', label: 'Сила рынка', group: 'market', desc: 'Ширина рынка: % акций выше средней' },
   { type: 'funds-money', label: 'Деньги в фондах', group: 'market', desc: 'Притоки и оттоки биржевых фондов' },
-  // «Покупки фондов» (fund-movers) убран из выбора — это таб «Покупки» внутри
+  // «Сделки фондов» (fund-movers) убран из выбора — это таб «Сделки» внутри
   // «Сделки фондов» (case ниже оставлен ради уже сохранённых панелей).
   { type: 'fund-trades', label: 'Сделки фондов', group: 'market', desc: 'Что покупают и продают фонды' },
   { type: 'cbr-flows', label: 'Поток капитала', group: 'market', desc: 'Потоки по участникам биржи (ЦБ)' },

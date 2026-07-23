@@ -1,4 +1,4 @@
-// PortfolioMoversPanel — блок «Покупки фондов» рядом с обзором портфеля на вкладке
+// PortfolioMoversPanel — блок «Сделки фондов» рядом с обзором портфеля на вкладке
 // «Общий портфель». Показывает ЧИСТУЮ покупку/продажу бумаг за выбранный период
 // (месяц / полгода / год / 3 года) across выбранных фондов, консенсусом из /movers.
 //
@@ -118,7 +118,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
             {/* Заголовок + период стопкой, выровнены по верху — текст не провисает
                 относительно высокого сегмент-контрола справа. */}
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Покупки фондов</span>
+                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Сделки фондов</span>
                 <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</span>
             </div>
             {onPeriodChange && (
