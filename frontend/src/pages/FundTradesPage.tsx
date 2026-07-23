@@ -4,7 +4,7 @@
  * Архитектура:
  *   - Открыт для ВСЕХ тиров (флаг useCommonFeatures().fund_trades_access;
  *     LockedView-ветка оставлена на случай будущего ре-гейтинга).
- *   - Три таба: «Состав фондов» (карточки) + «Покупки фондов» (консенсус-
+ *   - Три таба: «Состав фондов» (карточки) + «Сделки фондов» (консенсус-
  *     гистограмма across фондов) + «Обзор снапшота» (per-fund помесячно).
  *   - При клике на фонд → детальный diff с current_holdings и изменениями.
  *
@@ -265,7 +265,7 @@ export default function FundTradesPage() {
     const [movers, setMovers] = useState<FundTradesMovers | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // Заход 2: управление табом «Покупки фондов».
+    // Заход 2: управление табом «Сделки фондов».
     const [asOf, setAsOf] = useState<string | undefined>(undefined);    // выбранный месяц (undefined = последний)
     // Мультиселект КОНКРЕТНЫХ фондов (пусто = все). Ключ = ticker; бэкенд /movers
     // принимает comma-separated тикеры в параметре `funds` (приоритет над manager).
@@ -287,7 +287,7 @@ export default function FundTradesPage() {
     const [portfolioLoading, setPortfolioLoading] = useState(false);
     // Месяц-срез портфеля (month-picker в шапке «Состав портфеля»); undefined = последний.
     const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(undefined);
-    // Блок «Покупки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
+    // Блок «Сделки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
     const [portfolioMovers, setPortfolioMovers] = useState<FundTradesMovers | null>(null);
     const [portfolioMoversLoading, setPortfolioMoversLoading] = useState(false);
@@ -309,7 +309,7 @@ export default function FundTradesPage() {
         [selectedMoverFunds],
     );
 
-    // Задержка на вкладке «Покупки фондов» (Free/гость): месяцы с датой > snapshot_cutoff
+    // Задержка на вкладке «Сделки фондов» (Free/гость): месяцы с датой > snapshot_cutoff
     // заблокированы (свежий консенсус по подписке). Дефолт-месяц = последний ДОСТУПНЫЙ
     // (не locked) — чтобы дропдаун сразу показывал актуальный срез, а не пустой «Выбрать».
     const isMoverMonthLocked = (m: string) => {
@@ -355,7 +355,7 @@ export default function FundTradesPage() {
             .finally(() => setPortfolioLoading(false));
     }, [tab, portfolioFundsParam, portfolioAsOf, funds.length, common.fund_trades_access]);
 
-    // Покупки фондов для блока рядом с составом: чистая покупка за выбранный период,
+    // Сделки фондов для блока рядом с составом: чистая покупка за выбранный период,
     // тот же набор УК (→ тикеры), ранжирование по рублям.
     useEffect(() => {
         if (!common.fund_trades_access) return;
@@ -392,7 +392,7 @@ export default function FundTradesPage() {
         });
     }, [funds]);
 
-    // Все whitelist-фонды для FundPicker (multi) на вкладке «Покупки фондов».
+    // Все whitelist-фонды для FundPicker (multi) на вкладке «Сделки фондов».
     // FundPicker сам группирует по УК; передаём минимум полей ({ticker, name, uk, uk_id}).
     const moverPickerFunds = useMemo<FundPickerFund[]>(
         () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
@@ -826,7 +826,7 @@ export default function FundTradesPage() {
             {tab === 'portfolio' && (
                 <>
                     {/* Единая карточка (макет Claude Design): тулбар с фильтром фондов
-                        сверху влияет на оба блока; внутри «Покупки фондов» (уже, слева)
+                        сверху влияет на оба блока; внутри «Сделки фондов» (уже, слева)
                         и «Состав портфеля» (шире, справа) за вертикальным разделителем.
                         Тумблеры режима и периода живут в шапках самих блоков. */}
                     {/* overflow НЕ hidden: поповер подсказки «?» и Dropdown месяца
@@ -1069,7 +1069,7 @@ function isIsin(s: string | null | undefined): s is string {
 // Стиль кнопки-фильтра «editorial»-пилюли: border 2px var(--text-primary),
 // radius 999, active = accent bg + text-inverse + 3px hard-shadow, inactive =
 // bg-secondary. Остался у переключателя метрики в «Обзоре снапшота»; основные
-// режимы («Состав фондов», «Покупки фондов») переведены на SegmentedControl.
+// режимы («Состав фондов», «Сделки фондов») переведены на SegmentedControl.
 function filterPillStyle(active: boolean): CSSProperties {
     return {
         padding: '8px 18px',
@@ -1366,7 +1366,7 @@ function SnapshotReviewBody({
     maxAbsAmount: number;
     onRowClick: (r: FundDiffRow) => void;
 }) {
-    // Переключатель метрики (как в «Покупки фондов»): сортировка/бары по объёму ₽ или по доле.
+    // Переключатель метрики (как в «Сделки фондов»): сортировка/бары по объёму ₽ или по доле.
     const [metric, setMetric] = usePersistedState<'amount' | 'weight'>('frame:fundtrades:snapMetric', 'amount');
     const isW = metric === 'weight';
     // value-getters: ₽ (delta/curr/prev amount) и вес (Δдоли / curr / prev).
@@ -1459,7 +1459,7 @@ function SnapshotReviewBody({
                 </div>
             )}
 
-            {/* Переключатель метрики (как в «Покупки фондов») */}
+            {/* Переключатель метрики (как в «Сделки фондов») */}
             {review.previous_snapshot_date && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: -16, marginBottom: -8 }}>
                     {([['amount', 'Объём, руб'], ['weight', '% веса']] as const).map(([key, lbl]) => {
