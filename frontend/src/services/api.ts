@@ -739,24 +739,6 @@ export interface OiIntlCandlesResponse {
   data: OiIntlCandlePoint[];
 }
 
-export interface OiIntlStrengthPoint {
-  date: string;
-  percent_above: number;
-  count_above: number;
-  count_total: number;
-}
-
-export interface OiIntlStrengthCurrentResponse extends OiIntlStrengthPoint {
-  exchange: string;
-  ema_period: number;
-}
-
-export interface OiIntlStrengthHistoryResponse {
-  exchange: string;
-  ema_period: number;
-  data: OiIntlStrengthPoint[];
-}
-
 export async function getOiIntlAssets(): Promise<{ assets: OiIntlAsset[] }> {
   const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/assets`);
   if (!response.ok) throw new Error('Failed to fetch international OI assets');
@@ -793,58 +775,37 @@ export async function getOiIntlCandles(
   return response.json();
 }
 
-export async function getOiIntlStrengthCurrent(
-  exchange: string = 'ALL',
-  emaPeriod: number = 200,
-): Promise<OiIntlStrengthCurrentResponse> {
-  const params = new URLSearchParams({ exchange, ema_period: emaPeriod.toString() });
-  const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/strength/current?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch international OI strength');
-  return response.json();
-}
-
-export async function getOiIntlStrengthHistory(
-  exchange: string = 'ALL',
-  emaPeriod: number = 200,
-  days: number = 730,
-): Promise<OiIntlStrengthHistoryResponse> {
-  const params = new URLSearchParams({ exchange, ema_period: emaPeriod.toString(), days: days.toString() });
-  const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/strength/history?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch international OI strength history');
-  return response.json();
-}
-
-/** «Сила рынка» по ЦЕНЕ (аналог RF Strength) для РФ/NSE/TAIFEX сразу — см. Candles/compute_price_breadth_intl.py */
-export interface PriceBreadthPoint {
+/** «Сила рынка» по цене для NSE/TAIFEX (аналог RF Strength) — бенчмарк выбирается сервером по exchange, не клиентом. */
+export interface OiIntlStrengthPoint {
   date: string;
   percent_above: number;
   count_above: number;
   count_total: number;
 }
 
-export interface PriceBreadthBenchmarkPoint {
+export interface OiIntlStrengthBenchmarkPoint {
   date: string;
   close: number;
 }
 
-export interface PriceBreadthResponse {
+export interface OiIntlStrengthResponse {
+  exchange: string;
+  universe: 'index' | 'all';
   ema_period: number;
   benchmark: string;
-  series: Record<string, PriceBreadthPoint[]>;
-  benchmark_data: PriceBreadthBenchmarkPoint[];
+  data: OiIntlStrengthPoint[];
+  benchmark_data: OiIntlStrengthBenchmarkPoint[];
 }
 
-export async function getOiIntlPriceBreadth(
-  markets: string[],
+export async function getOiIntlStrength(
+  exchange: 'NSE' | 'TAIFEX',
+  universe: 'index' | 'all' = 'index',
   emaPeriod: number = 50,
-  benchmark: string = 'IMOEX',
   days: number = 730,
-): Promise<PriceBreadthResponse> {
-  const params = new URLSearchParams({
-    markets: markets.join(','), ema_period: emaPeriod.toString(), benchmark, days: days.toString(),
-  });
-  const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/price-breadth?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch price breadth');
+): Promise<OiIntlStrengthResponse> {
+  const params = new URLSearchParams({ exchange, universe, ema_period: emaPeriod.toString(), days: days.toString() });
+  const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/strength?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch international strength');
   return response.json();
 }
 

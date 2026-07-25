@@ -1,9 +1,18 @@
 """
-Международный Open Interest (CFTC/NSE/Eurex/B3) + «Сила рынка по ОИ» —
-admin-only, см. .claude/plans (Вадим + Саша Тория).
+Международный Open Interest (CFTC/NSE/Eurex/B3) + «сила рынка» по цене
+(NSE/TAIFEX) — сырые данные для admin-only расширения реальных страниц
+OpenInterestPage/StrengthPage (Вадим + Саша Тория). НЕ отдельная страница —
+см. фронт: условный рендер под role=admin внутри тех же компонентов.
 
-Таблицы: open_interest_intl, oi_intl_strength_history
-(db/migrations/041_open_interest_intl.sql)
+Таблицы: open_interest_intl, candles_intl, price_breadth_intl_history
+(db/migrations/041, 043, 044)
+
+Примечание: OI-based «сила рынка» (oi_intl_strength_history,
+Candles/compute_oi_intl_strength.py) была признана методологически
+нежизнеспособной и удалена 2026-07-25 — смешивать в одну breadth-метрику
+компании и commodities/currencies/индексы бессмысленно (CFTC/Eurex).
+Заменена price-based версией, повторяющей методологию
+Candles/compute_breadth_history.py.
 """
 from datetime import date, timedelta
 
@@ -11,7 +20,6 @@ from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import text
 
 from api.database import get_engine
-from api.cache import get_or_set
 from api.routers.auth import require_admin
 
 router = APIRouter(prefix="/api/admin/oi-intl", tags=["oi-intl-admin"])
@@ -128,84 +136,60 @@ async def get_candles(
     }
 
 
-PRICE_BREADTH_MARKETS = {"RF", "NSE", "TAIFEX"}
-BENCHMARK_SOURCES = {
-    "IMOEX": ("index_data", "IMOEX"),
-    "NIFTY": ("candles_intl:NSE", "NSE_NIFTY"),
-    "TX": ("candles_intl:TAIFEX", "TAIFEX_TX"),
+# Бенчмарк — НЕ выбирается клиентом, привязан к бирже ровно как для RF он
+# привязан к валюте (не отдельный параметр). NSE→NIFTY, TAIFEX→TX.
+STRENGTH_BENCHMARK = {
+    "NSE": "NSE_NIFTY",
+    "TAIFEX": "TAIFEX_TX",
 }
+STRENGTH_BENCHMARK_LABEL = {"NSE": "NIFTY", "TAIFEX": "TX"}
 
 
-@router.get("/price-breadth")
-async def get_price_breadth(
-    markets: str = Query("RF,NSE,TAIFEX", description="Через запятую: RF,NSE,TAIFEX"),
+@router.get("/strength")
+async def get_intl_strength(
+    exchange: str = Query(..., description="NSE|TAIFEX"),
+    universe: str = Query("index", description="index|all — см. Candles/compute_price_breadth_intl.py"),
     ema_period: int = Query(50),
-    benchmark: str = Query("IMOEX", description="IMOEX|NIFTY|TX"),
     days: int = Query(730, ge=1, le=9000),
     user=Depends(require_admin),
 ):
     """
-    «Сила рынка» по ЦЕНЕ (аналог RF-индикатора Strength, см.
-    Candles/compute_breadth_history.py) сразу по нескольким рынкам — РФ
-    (готовое breadth_history, universe='imoex', читается напрямую, без
-    дублирования) + NSE/TAIFEX (price_breadth_intl_history, см.
-    Candles/compute_price_breadth_intl.py). Бенчмарк (индекс для наложения
-    на график) выбирается отдельно от набора рынков — IMOEX/NIFTY/TX сами
-    по себе не входят в свою же breadth, ровно как IMOEX исключён из
-    RF-версии.
+    «Сила рынка» по ЦЕНЕ для одной международной биржи — аналог RF-индикатора
+    Strength (Candles/compute_breadth_history.py), из price_breadth_intl_history
+    (Candles/compute_price_breadth_intl.py). РФ сюда не входит — фронт для
+    РФ продолжает использовать существующий /api/breadth/*, без изменений.
     """
-    requested = [m.strip().upper() for m in markets.split(",") if m.strip()]
-    invalid = [m for m in requested if m not in PRICE_BREADTH_MARKETS]
-    if invalid:
-        raise HTTPException(400, f"неизвестные рынки: {invalid}, доступны: {sorted(PRICE_BREADTH_MARKETS)}")
-    if benchmark not in BENCHMARK_SOURCES:
-        raise HTTPException(400, f"неизвестный бенчмарк: {benchmark}, доступны: {sorted(BENCHMARK_SOURCES)}")
+    if exchange not in STRENGTH_BENCHMARK:
+        raise HTTPException(400, f"неизвестная биржа: {exchange}, доступны: {sorted(STRENGTH_BENCHMARK)}")
+    if universe not in ("index", "all"):
+        raise HTTPException(400, f"неизвестная вселенная: {universe}, доступны: index, all")
 
     engine = get_engine()
     date_from = date.today() - timedelta(days=days)
-    series: dict[str, list[dict]] = {}
+    benchmark_code = STRENGTH_BENCHMARK[exchange]
 
     with engine.connect() as conn:
-        if "RF" in requested:
-            rows = conn.execute(text("""
-                SELECT trade_date, percent_above, count_above, count_total
-                FROM breadth_history WHERE universe = 'imoex' AND ema_period = :ema_period
-                  AND trade_date >= :date_from ORDER BY trade_date
-            """), {"ema_period": ema_period, "date_from": date_from}).fetchall()
-            series["RF"] = [
-                {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
-                for r in rows
-            ]
+        rows = conn.execute(text("""
+            SELECT trade_date, percent_above, count_above, count_total
+            FROM price_breadth_intl_history
+            WHERE exchange = :exchange AND universe = :universe AND ema_period = :ema_period
+              AND trade_date >= :date_from ORDER BY trade_date
+        """), {"exchange": exchange, "universe": universe, "ema_period": ema_period, "date_from": date_from}).fetchall()
+        data = [
+            {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
+            for r in rows
+        ]
 
-        for exch in ("NSE", "TAIFEX"):
-            if exch not in requested:
-                continue
-            rows = conn.execute(text("""
-                SELECT trade_date, percent_above, count_above, count_total
-                FROM price_breadth_intl_history WHERE exchange = :exchange AND ema_period = :ema_period
-                  AND trade_date >= :date_from ORDER BY trade_date
-            """), {"exchange": exch, "ema_period": ema_period, "date_from": date_from}).fetchall()
-            series[exch] = [
-                {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
-                for r in rows
-            ]
-
-        src, code = BENCHMARK_SOURCES[benchmark]
-        if src == "index_data":
-            rows = conn.execute(text("""
-                SELECT trade_date, close FROM index_data WHERE secid = :code AND trade_date >= :date_from ORDER BY trade_date
-            """), {"code": code, "date_from": date_from}).fetchall()
-        else:
-            exch = src.split(":")[1]
-            rows = conn.execute(text("""
-                SELECT trade_date, close FROM candles_intl
-                WHERE exchange = :exchange AND asset_code = :code AND trade_date >= :date_from ORDER BY trade_date
-            """), {"exchange": exch, "code": code, "date_from": date_from}).fetchall()
-        benchmark_data = [{"date": str(r[0]), "close": float(r[1])} for r in rows if r[1] is not None]
+        bench_rows = conn.execute(text("""
+            SELECT trade_date, close FROM candles_intl
+            WHERE exchange = :exchange AND asset_code = :code AND trade_date >= :date_from ORDER BY trade_date
+        """), {"exchange": exchange, "code": benchmark_code, "date_from": date_from}).fetchall()
+        benchmark_data = [{"date": str(r[0]), "close": float(r[1])} for r in bench_rows if r[1] is not None]
 
     return {
-        "ema_period": ema_period, "benchmark": benchmark,
-        "series": series, "benchmark_data": benchmark_data,
+        "exchange": exchange, "universe": universe, "ema_period": ema_period,
+        "benchmark": STRENGTH_BENCHMARK_LABEL[exchange],
+        "data": data, "benchmark_data": benchmark_data,
     }
 
 
@@ -223,61 +207,3 @@ async def list_categories(
             WHERE exchange = :exchange AND asset_code = :asset_code
         """), {"exchange": exchange, "asset_code": asset_code}).fetchall()
     return {"categories": sorted(r[0] for r in rows)}
-
-
-@router.get("/strength/current")
-async def get_strength_current(
-    exchange: str = Query("ALL"),
-    ema_period: int = Query(200),
-    user=Depends(require_admin),
-):
-    cache_key = f"oi_intl:strength:current:{exchange}:{ema_period}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
-
-    engine = get_engine()
-    with engine.connect() as conn:
-        row = conn.execute(text("""
-            SELECT trade_date, percent_above, count_above, count_total
-            FROM oi_intl_strength_history
-            WHERE exchange = :exchange AND ema_period = :ema_period
-            ORDER BY trade_date DESC
-            LIMIT 1
-        """), {"exchange": exchange, "ema_period": ema_period}).fetchone()
-
-    result = (
-        {
-            "exchange": exchange, "ema_period": ema_period, "date": str(row[0]),
-            "percent_above": float(row[1]), "count_above": int(row[2]), "count_total": int(row[3]),
-        }
-        if row else
-        {"exchange": exchange, "ema_period": ema_period, "date": None, "percent_above": 0, "count_above": 0, "count_total": 0}
-    )
-    get_or_set(cache_key, result, ttl=900)
-    return result
-
-
-@router.get("/strength/history")
-async def get_strength_history(
-    exchange: str = Query("ALL"),
-    ema_period: int = Query(200),
-    days: int = Query(730, ge=1, le=9000),
-    user=Depends(require_admin),
-):
-    engine = get_engine()
-    date_from = date.today() - timedelta(days=days)
-    with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT trade_date, percent_above, count_above, count_total
-            FROM oi_intl_strength_history
-            WHERE exchange = :exchange AND ema_period = :ema_period AND trade_date >= :date_from
-            ORDER BY trade_date
-        """), {"exchange": exchange, "ema_period": ema_period, "date_from": date_from}).fetchall()
-    return {
-        "exchange": exchange, "ema_period": ema_period,
-        "data": [
-            {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
-            for r in rows
-        ],
-    }

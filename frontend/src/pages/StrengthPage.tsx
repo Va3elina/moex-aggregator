@@ -39,6 +39,8 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import EditorialChip from '../components/editorial/EditorialChip';
+import IntlStrengthPanel, { type IntlCountry } from '../components/strength/IntlStrengthPanel';
 
 type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -65,7 +67,12 @@ const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
+    // Admin-only: страна для "силы рынка" по другим рынкам (см. IntlStrengthPanel).
+    // НЕ персистится — при перезагрузке всегда обратно на RF, чтобы не оставлять
+    // обычный рендер в неожиданном состоянии. Обычные пользователи это не видят
+    // и не могут установить (селектор ниже рендерится только под role=admin).
+    const [country, setCountry] = useState<IntlCountry>('RF');
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // EMA-период: 20 (очень краткосрок), 50 (краткосрок), 100 (среднесрок),
@@ -462,6 +469,22 @@ export default function StrengthPage() {
             />
             </div>{/* /strength-controls */}
 
+            {/* Admin-only: страна для международной "силы рынка" — не видно
+                и не влияет на обычных пользователей. */}
+            {user?.role === 'admin' && (
+                <div className="flex items-center mb-3" style={{ gap: 'var(--sp-2)' }}>
+                    {([
+                        { key: 'RF', label: '🇷🇺 Россия' },
+                        { key: 'NSE', label: '🇮🇳 Индия' },
+                        { key: 'TAIFEX', label: '🇹🇼 Тайвань' },
+                    ] as const).map((c) => (
+                        <EditorialChip key={c.key} active={country === c.key} onClick={() => setCountry(c.key)} size="sm">
+                            {c.label}
+                        </EditorialChip>
+                    ))}
+                </div>
+            )}
+
             {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
             <div
                 ref={containerRef}
@@ -483,13 +506,15 @@ export default function StrengthPage() {
                 onTouchMove={isAnimating ? undefined : handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
-                {dollarStale && (
+                {country === 'RF' && dollarStale && (
                     <DollarStaleHint
                         style={{ position: 'absolute', top: 12, left: 16, zIndex: 30 }}
                     />
                 )}
                 {/* Полный loading / error на месте графика */}
-                {loading && !current ? (
+                {country !== 'RF' ? (
+                    <IntlStrengthPanel country={country} />
+                ) : loading && !current ? (
                     <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 16 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 + 68 }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />

@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, BarChart3, ListFilter } from 'lucide-react';
+import { ChevronDown, BarChart3, ListFilter, Globe2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import ChartTabs from '../components/ChartTabs';
 import OiScreenerTable from '../components/oi/OiScreenerTable';
+import OiIntlPanel from '../components/oi/OiIntlPanel';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
@@ -156,7 +157,7 @@ const COLORS = {
 
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { theme: _theme } = useTheme();
   const navigate = useNavigate();
 
@@ -528,13 +529,14 @@ export default function OpenInterestPage() {
     setIsModalOpen(false);
   };
 
-  // ── Вкладки страницы: график ⇄ «Скринер сигналов» ──
-  // Состояние в URL (?tab=screener) — переживает перезагрузку и даёт диплинк.
-  const activeTab: 'chart' | 'screener' =
-    searchParams.get('tab') === 'screener' ? 'screener' : 'chart';
-  const setActiveTab = (tab: 'chart' | 'screener') => {
+  // ── Вкладки страницы: график ⇄ «Скринер сигналов» ⇄ «Intl» (admin-only) ──
+  // Состояние в URL (?tab=screener|intl) — переживает перезагрузку и даёт диплинк.
+  const activeTab: 'chart' | 'screener' | 'intl' =
+    searchParams.get('tab') === 'screener' ? 'screener' :
+    searchParams.get('tab') === 'intl' && user?.role === 'admin' ? 'intl' : 'chart';
+  const setActiveTab = (tab: 'chart' | 'screener' | 'intl') => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'screener') next.set('tab', 'screener');
+    if (tab === 'screener' || tab === 'intl') next.set('tab', tab);
     else next.delete('tab');
     setSearchParams(next);
   };
@@ -735,13 +737,16 @@ export default function OpenInterestPage() {
 
       {/* Вкладки: график ⇄ Скринер сигналов. Активная сливается с панелью
           ниже (has-tabs), без нижней линии. */}
-      <ChartTabs<'chart' | 'screener'>
+      <ChartTabs<'chart' | 'screener' | 'intl'>
         value={activeTab}
         onChange={setActiveTab}
         tourId="screener-tabs"
         items={[
           { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
           { key: 'screener', label: 'Скринер сигналов', badge: 'Beta', Icon: ListFilter },
+          ...(user?.role === 'admin'
+            ? [{ key: 'intl' as const, label: 'Международный ОИ', Icon: Globe2, title: 'Только для админов' }]
+            : []),
         ]}
       />
 
@@ -757,6 +762,8 @@ export default function OpenInterestPage() {
           onRequestAlert={ALERTS_ENABLED ? handleScreenerAlert : undefined}
         />
       )}
+
+      {activeTab === 'intl' && <OiIntlPanel />}
 
       {activeTab === 'chart' && (<>
 
