@@ -81,6 +81,14 @@ BLUE_CHIPS: dict[str, str] = {
 # опционам и не индексным фьючерсам) — старый формат / новый UDiFF формат.
 FUTURES_TYPES = {"FUTSTK", "STF"}
 
+# Бенчмарк для «силы рынка» (не входит в BLUE_CHIPS — это индекс, не компания,
+# исключается из breadth ровно как NSE_ALL). Индексные фьючерсы — отдельный
+# INSTRUMENT/FinInstrmTp, проверено вживую 2026-07-25 (старый формат 2020:
+# FUTIDX, новый UDiFF 2026: IDF), но тот же EXPIRY_DT/XpryDt и та же логика
+# календарного ролловера, что и у голубых фишек.
+BENCHMARKS: dict[str, str] = {"NIFTY": "Nifty 50 Index"}
+INDEX_FUTURES_TYPES = {"FUTIDX", "IDF"}
+
 NEW_FORMAT_URL_TMPL = "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip"
 OLD_FORMAT_URL_TMPL = "https://archives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mon}/fo{ddmonyyyy}bhav.csv.zip"
 
@@ -197,11 +205,21 @@ def build_price_rows(contract_rows: list[dict], d: date) -> list[dict]:
     больше" даёт скачок цены между двумя разными контрактами день-в-день,
     которого не было на самом рынке. Берём фьючерс с БЛИЖАЙШЕЙ ещё не
     истёкшей (строго > d) экспирацией.
+
+    Кроме голубых фишек, тем же способом тянем NIFTY (индексный фьючерс,
+    не акция) — бенчмарк для «силы рынка», см. BENCHMARKS.
     """
+    names = {**BLUE_CHIPS, **BENCHMARKS}
     candidates: dict[str, list[dict]] = {}
     for r in contract_rows:
         sym = r["symbol"]
-        if sym not in BLUE_CHIPS or r["instrument"] not in FUTURES_TYPES:
+        if sym in BLUE_CHIPS:
+            if r["instrument"] not in FUTURES_TYPES:
+                continue
+        elif sym in BENCHMARKS:
+            if r["instrument"] not in INDEX_FUTURES_TYPES:
+                continue
+        else:
             continue
         if r["expiry"] is None or r["expiry"] <= d:
             continue
@@ -214,7 +232,7 @@ def build_price_rows(contract_rows: list[dict], d: date) -> list[dict]:
         if all(v is None for v in (o, h, l, c, s)):
             continue
         rows.append({
-            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": BLUE_CHIPS[sym],
+            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": names[sym],
             "trade_date": d, "granularity": "daily",
             "open": o, "high": h, "low": l, "close": c, "settlement_price": s,
         })

@@ -94,6 +94,12 @@ BLUE_CHIPS: dict[str, str] = {
     "DXF": "Wistron",
 }
 
+# Бенчмарк для «силы рынка» (не входит в BLUE_CHIPS — это индекс, не компания).
+# Экспирация проверена вживую отдельно от голубых фишек 2026-07-25: TX
+# 202403 тоже обнуляет settlement_price ровно 2024-03-20 (3-я среда) — та же
+# _third_wednesday()/_taifex_front_month(), что и для отдельных акций.
+BENCHMARKS: dict[str, str] = {"TX": "TAIEX (Taiwan Weighted Index)"}
+
 
 def _parse_csv_rows(text: str) -> list[dict]:
     return list(csv.DictReader(text.splitlines()))
@@ -225,10 +231,11 @@ def build_price_rows(raw_rows: list[dict]) -> list[dict]:
     выбор "у кого OI больше" в этот переходный период даёт скачок цены между
     двумя разными контрактами день-в-день, которого не было на самом рынке.
     """
+    names = {**BLUE_CHIPS, **BENCHMARKS}
     by_key: dict[tuple[str, date], dict[str, dict]] = defaultdict(dict)
     for row in raw_rows:
         code = (row.get("contract") or "").strip()
-        if code not in BLUE_CHIPS:
+        if code not in names:
             continue
         date_raw = (row.get("date") or "").strip()
         if not date_raw or "/" not in date_raw:
@@ -258,7 +265,7 @@ def build_price_rows(raw_rows: list[dict]) -> list[dict]:
         if all(v is None for v in (o, h, l, c, s)):
             continue
         rows.append({
-            "exchange": "TAIFEX", "country": "TW", "asset_code": f"TAIFEX_{code}", "asset_name": BLUE_CHIPS[code],
+            "exchange": "TAIFEX", "country": "TW", "asset_code": f"TAIFEX_{code}", "asset_name": names[code],
             "trade_date": d, "granularity": "daily",
             "open": o, "high": h, "low": l, "close": c, "settlement_price": s,
         })
@@ -266,15 +273,21 @@ def build_price_rows(raw_rows: list[dict]) -> list[dict]:
 
 
 def fetch_current_year_partial(client: httpx.Client, from_date: date) -> list[dict]:
-    """Текущий год ещё не закрыт архивом — идём по каждому тикеру отдельно, месяц за месяцем."""
+    """
+    Текущий год ещё не закрыт архивом — идём по каждому тикеру отдельно,
+    месяц за месяцем. Включает TX (бенчмарк) — иначе current-year хвост
+    price_breadth-бенчмарка молчит (найдено вживую 2026-07-25: TX
+    останавливался на 31 декабря прошлого года, пока голубые фишки уже
+    доезжали до вчера).
+    """
     today = date.today()
     all_raw: list[dict] = []
-    for ticker in BLUE_CHIPS:
+    for ticker in {**BLUE_CHIPS, **BENCHMARKS}:
         for chunk_start, chunk_end in _month_chunks(from_date, today):
             rows = fetch_ticker_range(client, ticker, chunk_start, chunk_end)
             if rows:
                 all_raw.extend(rows)
-        log.info(f"  {ticker} ({BLUE_CHIPS[ticker]}): готово")
+        log.info(f"  {ticker}: готово")
     return all_raw
 
 

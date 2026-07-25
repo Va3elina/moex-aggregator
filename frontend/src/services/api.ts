@@ -814,6 +814,40 @@ export async function getOiIntlStrengthHistory(
   return response.json();
 }
 
+/** «Сила рынка» по ЦЕНЕ (аналог RF Strength) для РФ/NSE/TAIFEX сразу — см. Candles/compute_price_breadth_intl.py */
+export interface PriceBreadthPoint {
+  date: string;
+  percent_above: number;
+  count_above: number;
+  count_total: number;
+}
+
+export interface PriceBreadthBenchmarkPoint {
+  date: string;
+  close: number;
+}
+
+export interface PriceBreadthResponse {
+  ema_period: number;
+  benchmark: string;
+  series: Record<string, PriceBreadthPoint[]>;
+  benchmark_data: PriceBreadthBenchmarkPoint[];
+}
+
+export async function getOiIntlPriceBreadth(
+  markets: string[],
+  emaPeriod: number = 50,
+  benchmark: string = 'IMOEX',
+  days: number = 730,
+): Promise<PriceBreadthResponse> {
+  const params = new URLSearchParams({
+    markets: markets.join(','), ema_period: emaPeriod.toString(), benchmark, days: days.toString(),
+  });
+  const response = await apiFetch(`${API_BASE}/api/admin/oi-intl/price-breadth?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch price breadth');
+  return response.json();
+}
+
 // ==================== BUFFETT INDICATOR ====================
 
 export interface BuffettCapGdpPoint {

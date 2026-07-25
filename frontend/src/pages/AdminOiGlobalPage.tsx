@@ -14,6 +14,7 @@ import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
+import EditorialChip from '../components/editorial/EditorialChip';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getOiIntlAssets,
@@ -21,8 +22,11 @@ import {
   getOiIntlHistory,
   getOiIntlCandles,
   getOiIntlStrengthHistory,
+  getOiIntlPriceBreadth,
 } from '../services/api';
-import type { OiIntlAsset, OiIntlHistoryPoint, OiIntlCandlePoint, OiIntlStrengthPoint } from '../services/api';
+import type {
+  OiIntlAsset, OiIntlHistoryPoint, OiIntlCandlePoint, OiIntlStrengthPoint, PriceBreadthResponse,
+} from '../services/api';
 
 const EMA_OPTIONS = [
   { key: '50', label: 'EMA 50' },
@@ -50,6 +54,35 @@ const STRENGTH_EXCHANGE_OPTIONS = [
   { key: 'NSE', label: 'NSE — голубые фишки Индии' },
   { key: 'TAIFEX', label: 'TAIFEX — голубые фишки Тайваня' },
 ];
+
+// «Сила рынка» ПО ЦЕНЕ — точный аналог RF-индикатора Strength
+// (Candles/compute_breadth_history.py), просто на international-данных.
+// В отличие от секции выше (та — по ОИ) здесь EMA_PERIODS совпадают с RF
+// один в один (20/50/100/200) — см. Candles/compute_price_breadth_intl.py.
+const PRICE_BREADTH_MARKETS = [
+  { key: 'RF', label: '🇷🇺 Россия' },
+  { key: 'NSE', label: '🇮🇳 Индия' },
+  { key: 'TAIFEX', label: '🇹🇼 Тайвань' },
+] as const;
+
+const BENCHMARK_OPTIONS = [
+  { key: 'IMOEX', label: 'IMOEX' },
+  { key: 'NIFTY', label: 'Nifty 50' },
+  { key: 'TX', label: 'TAIEX' },
+];
+
+const EMA_OPTIONS_PRICE = [
+  { key: '20', label: 'EMA 20' },
+  { key: '50', label: 'EMA 50' },
+  { key: '100', label: 'EMA 100' },
+  { key: '200', label: 'EMA 200' },
+];
+
+const MARKET_COLORS: Record<string, string> = {
+  RF: 'var(--accent)',
+  NSE: 'var(--funds-flow-positive)',
+  TAIFEX: 'var(--funds-flow-negative)',
+};
 
 export default function AdminOiGlobalPage() {
   const { user, loading: authLoading } = useAuth();
@@ -96,6 +129,7 @@ export default function AdminOiGlobalPage() {
 
       <AssetHistorySection />
       <StrengthSection />
+      <PriceBreadthSection />
     </div>
   );
 }
@@ -334,6 +368,126 @@ function StrengthSection() {
           hideTime={true}
           height={280}
         />
+      )}
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — сила рынка ПО ЦЕНЕ, аналог RF Strength, РФ + Индия + Тайвань
+// ════════════════════════════════════════════════════════════════════════════
+
+function PriceBreadthSection() {
+  const [markets, setMarkets] = useState<string[]>(['RF', 'NSE', 'TAIFEX']);
+  const [benchmark, setBenchmark] = useState('IMOEX');
+  const [emaPeriod, setEmaPeriod] = useState(50);
+  const [resp, setResp] = useState<PriceBreadthResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const toggleMarket = (key: string) => {
+    setMarkets((prev) => (prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key]));
+  };
+
+  useEffect(() => {
+    if (markets.length === 0) {
+      setResp(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    getOiIntlPriceBreadth(markets, emaPeriod, benchmark)
+      .then(setResp)
+      .catch(() => setResp(null))
+      .finally(() => setLoading(false));
+  }, [markets, emaPeriod, benchmark]);
+
+  const benchmarkByDate = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of resp?.benchmark_data ?? []) m.set(p.date, p.close);
+    return m;
+  }, [resp]);
+  const hasBenchmark = benchmarkByDate.size > 0;
+  const benchmarkLabel = BENCHMARK_OPTIONS.find((b) => b.key === benchmark)?.label ?? benchmark;
+
+  return (
+    <Card padding="md" className="md:p-5 mt-6 md:mt-8">
+      <div className="flex flex-wrap items-center justify-between mb-4" style={{ gap: 'var(--sp-2)' }}>
+        <span
+          className="text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        >
+          Сила рынка по цене — аналог RF Strength
+        </span>
+        <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <Dropdown<string> options={BENCHMARK_OPTIONS} value={benchmark} onChange={setBenchmark} />
+          <Dropdown<string>
+            options={EMA_OPTIONS_PRICE}
+            value={String(emaPeriod)}
+            onChange={(v) => setEmaPeriod(Number(v))}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
+        {PRICE_BREADTH_MARKETS.map((m) => (
+          <EditorialChip key={m.key} active={markets.includes(m.key)} onClick={() => toggleMarket(m.key)} size="sm">
+            {m.label}
+          </EditorialChip>
+        ))}
+      </div>
+
+      {markets.length === 0 ? (
+        <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
+          Выберите хотя бы один рынок
+        </p>
+      ) : loading ? (
+        <Skeleton height={220 * markets.length} rounded="lg" />
+      ) : (
+        <div className="flex flex-col" style={{ gap: 'var(--sp-3)' }}>
+          {markets.map((key) => {
+            const series = resp?.series[key] ?? [];
+            const label = PRICE_BREADTH_MARKETS.find((m) => m.key === key)?.label ?? key;
+            if (series.length === 0) {
+              return (
+                <p key={key} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {label}: нет истории для EMA{emaPeriod} — запустите Candles/compute_price_breadth_intl.py
+                </p>
+              );
+            }
+            const latest = series[series.length - 1];
+            return (
+              <div key={key}>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{label}</span>
+                  <span className="text-sm" style={{ color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    {latest.percent_above}% ({latest.count_above}/{latest.count_total}, {latest.date})
+                  </span>
+                </div>
+                <SimpleChart
+                  data={series.map((d) => ({ time: d.date, value: d.percent_above }))}
+                  secondaryData={
+                    hasBenchmark
+                      ? series.filter((d) => benchmarkByDate.has(d.date)).map((d) => ({ time: d.date, value: benchmarkByDate.get(d.date)! }))
+                      : undefined
+                  }
+                  showSecondary={hasBenchmark}
+                  primaryColor={MARKET_COLORS[key] ?? 'var(--accent)'}
+                  secondaryColor="var(--text-muted)"
+                  primaryLabel={`% выше EMA${emaPeriod}`}
+                  secondaryLabel={benchmarkLabel}
+                  formatValue={(v) => `${v.toFixed(1)}%`}
+                  formatSecondaryAxis={(v) => v.toLocaleString('ru-RU')}
+                  showValueHeader={false}
+                  legendPosition="top"
+                  showDownloadButton={false}
+                  showNavigator={false}
+                  hideTime={true}
+                  height={220}
+                />
+              </div>
+            );
+          })}
+        </div>
       )}
     </Card>
   );
