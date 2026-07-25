@@ -179,17 +179,27 @@ def fetch_day(client: httpx.Client, d: date) -> list[dict] | None:
 
 
 def build_oi_rows(contract_rows: list[dict], d: date) -> list[dict]:
-    """Сумма OI по всем контрактам (фьючерсы+опционы, все страйки) на тикер."""
+    """
+    Сумма OI по всем контрактам (фьючерсы+опционы, все страйки) на тикер.
+
+    Тикер = любой символ с хотя бы одним FUTSTK/STF рядом в файле — это
+    отличает отдельные акции от индексных фьючерсов/опционов (NIFTY,
+    BANKNIFTY, ...), у которых FUTIDX/OPTIDX, не FUTSTK/STF. НЕ ограничено
+    BLUE_CHIPS: нужна полная "все активы" вселенная для price-breadth
+    (universe='all' в Candles/compute_price_breadth_intl.py) — вживую
+    2026-07-25 таких тикеров ~210, BLUE_CHIPS (20) — только "index"-режим.
+    """
+    stock_symbols = {r["symbol"] for r in contract_rows if r["instrument"] in FUTURES_TYPES}
     totals: dict[str, int] = {}
     for r in contract_rows:
         sym = r["symbol"]
-        if sym not in BLUE_CHIPS:
+        if sym not in stock_symbols:
             continue
         totals[sym] = totals.get(sym, 0) + r["oi"]
 
     return [
         {
-            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": BLUE_CHIPS[sym],
+            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": BLUE_CHIPS.get(sym, sym),
             "category": "TOTAL", "trade_date": d, "granularity": "daily", "oi_long": None, "oi_short": None, "oi_total": oi,
         }
         for sym, oi in totals.items()
@@ -206,19 +216,19 @@ def build_price_rows(contract_rows: list[dict], d: date) -> list[dict]:
     которого не было на самом рынке. Берём фьючерс с БЛИЖАЙШЕЙ ещё не
     истёкшей (строго > d) экспирацией.
 
-    Кроме голубых фишек, тем же способом тянем NIFTY (индексный фьючерс,
-    не акция) — бенчмарк для «силы рынка», см. BENCHMARKS.
+    Не только голубые фишки — любой тикер с FUTSTK/STF рядом (полная "все
+    активы" вселенная для price-breadth, см. build_oi_rows). Плюс NIFTY
+    (индексный фьючерс, не акция) — бенчмарк для «силы рынка», см.
+    BENCHMARKS, отдельная проверка instrument-type (FUTIDX/IDF).
     """
-    names = {**BLUE_CHIPS, **BENCHMARKS}
     candidates: dict[str, list[dict]] = {}
     for r in contract_rows:
         sym = r["symbol"]
-        if sym in BLUE_CHIPS:
-            if r["instrument"] not in FUTURES_TYPES:
-                continue
-        elif sym in BENCHMARKS:
+        if sym in BENCHMARKS:
             if r["instrument"] not in INDEX_FUTURES_TYPES:
                 continue
+        elif r["instrument"] in FUTURES_TYPES:
+            pass  # любая акция, не только blue-chip
         else:
             continue
         if r["expiry"] is None or r["expiry"] <= d:
@@ -232,7 +242,7 @@ def build_price_rows(contract_rows: list[dict], d: date) -> list[dict]:
         if all(v is None for v in (o, h, l, c, s)):
             continue
         rows.append({
-            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": names[sym],
+            "exchange": "NSE", "country": "IN", "asset_code": f"NSE_{sym}", "asset_name": BLUE_CHIPS.get(sym, BENCHMARKS.get(sym, sym)),
             "trade_date": d, "granularity": "daily",
             "open": o, "high": h, "low": l, "close": c, "settlement_price": s,
         })
@@ -285,7 +295,7 @@ def main():
             n_price = upsert_candle_intl_rows(engine, price_rows)
             total_price_rows += n_price
 
-            log.info(f"{d}: OI +{n_oi} ({len(oi_rows)}/{len(BLUE_CHIPS)}), свечи +{n_price} ({len(price_rows)}/{len(BLUE_CHIPS)})")
+            log.info(f"{d}: OI +{n_oi} ({len(oi_rows)} тикеров), свечи +{n_price} ({len(price_rows)} тикеров)")
 
     log.info(f"✓ Итого OI: {total_oi_rows} строк, свечи: {total_price_rows} строк")
 
