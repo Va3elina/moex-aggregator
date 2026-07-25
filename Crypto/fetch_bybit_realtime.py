@@ -123,10 +123,18 @@ def fetch_klines(symbol: str, interval_code: str, step_ms: int, start_ms: int) -
         }
 
         result = _get(f"{BYBIT_BASE}/kline", params)
-        if not result or not result.get("list"):
-            break
+        if result is None:
+            break  # ошибка запроса — не бесконечная дыра, а сетевой сбой
 
-        rows = result["list"]
+        rows = result.get("list") or []
+        if not rows:
+            # ПУСТО ≠ "данных больше нет": до запуска контракта окна тоже
+            # пустые (проверено вручную на BTCUSDT-perp, запуск ~2020-03-25) —
+            # нужно продолжать сканировать вперёд, а не останавливаться.
+            cursor = window_end + step_ms
+            time.sleep(0.1)
+            continue
+
         all_rows.extend(rows)
 
         newest_ts = int(rows[0][0])
@@ -172,10 +180,17 @@ def fetch_open_interest(symbol: str, interval_time: str, step_ms: int, start_ms:
         }
 
         result = _get(f"{BYBIT_BASE}/open-interest", params)
-        if not result or not result.get("list"):
-            break
+        if result is None:
+            break  # ошибка запроса — не бесконечная дыра, а сетевой сбой
 
-        rows = result["list"]
+        rows = result.get("list") or []
+        if not rows:
+            # см. коммент в fetch_klines — пусто не значит "конец", может
+            # означать "ещё рано" (до запуска контракта/эндпоинта).
+            cursor = window_end + step_ms
+            time.sleep(0.1)
+            continue
+
         all_rows.extend(rows)
 
         newest_ts = int(rows[0]["timestamp"])
