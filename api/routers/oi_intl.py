@@ -7,7 +7,7 @@ admin-only, см. .claude/plans (Вадим + Саша Тория).
 """
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import text
 
 from api.database import get_engine
@@ -125,6 +125,87 @@ async def get_candles(
             }
             for r in rows
         ],
+    }
+
+
+PRICE_BREADTH_MARKETS = {"RF", "NSE", "TAIFEX"}
+BENCHMARK_SOURCES = {
+    "IMOEX": ("index_data", "IMOEX"),
+    "NIFTY": ("candles_intl:NSE", "NSE_NIFTY"),
+    "TX": ("candles_intl:TAIFEX", "TAIFEX_TX"),
+}
+
+
+@router.get("/price-breadth")
+async def get_price_breadth(
+    markets: str = Query("RF,NSE,TAIFEX", description="Через запятую: RF,NSE,TAIFEX"),
+    ema_period: int = Query(50),
+    benchmark: str = Query("IMOEX", description="IMOEX|NIFTY|TX"),
+    days: int = Query(730, ge=1, le=9000),
+    user=Depends(require_admin),
+):
+    """
+    «Сила рынка» по ЦЕНЕ (аналог RF-индикатора Strength, см.
+    Candles/compute_breadth_history.py) сразу по нескольким рынкам — РФ
+    (готовое breadth_history, universe='imoex', читается напрямую, без
+    дублирования) + NSE/TAIFEX (price_breadth_intl_history, см.
+    Candles/compute_price_breadth_intl.py). Бенчмарк (индекс для наложения
+    на график) выбирается отдельно от набора рынков — IMOEX/NIFTY/TX сами
+    по себе не входят в свою же breadth, ровно как IMOEX исключён из
+    RF-версии.
+    """
+    requested = [m.strip().upper() for m in markets.split(",") if m.strip()]
+    invalid = [m for m in requested if m not in PRICE_BREADTH_MARKETS]
+    if invalid:
+        raise HTTPException(400, f"неизвестные рынки: {invalid}, доступны: {sorted(PRICE_BREADTH_MARKETS)}")
+    if benchmark not in BENCHMARK_SOURCES:
+        raise HTTPException(400, f"неизвестный бенчмарк: {benchmark}, доступны: {sorted(BENCHMARK_SOURCES)}")
+
+    engine = get_engine()
+    date_from = date.today() - timedelta(days=days)
+    series: dict[str, list[dict]] = {}
+
+    with engine.connect() as conn:
+        if "RF" in requested:
+            rows = conn.execute(text("""
+                SELECT trade_date, percent_above, count_above, count_total
+                FROM breadth_history WHERE universe = 'imoex' AND ema_period = :ema_period
+                  AND trade_date >= :date_from ORDER BY trade_date
+            """), {"ema_period": ema_period, "date_from": date_from}).fetchall()
+            series["RF"] = [
+                {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
+                for r in rows
+            ]
+
+        for exch in ("NSE", "TAIFEX"):
+            if exch not in requested:
+                continue
+            rows = conn.execute(text("""
+                SELECT trade_date, percent_above, count_above, count_total
+                FROM price_breadth_intl_history WHERE exchange = :exchange AND ema_period = :ema_period
+                  AND trade_date >= :date_from ORDER BY trade_date
+            """), {"exchange": exch, "ema_period": ema_period, "date_from": date_from}).fetchall()
+            series[exch] = [
+                {"date": str(r[0]), "percent_above": float(r[1]), "count_above": int(r[2]), "count_total": int(r[3])}
+                for r in rows
+            ]
+
+        src, code = BENCHMARK_SOURCES[benchmark]
+        if src == "index_data":
+            rows = conn.execute(text("""
+                SELECT trade_date, close FROM index_data WHERE secid = :code AND trade_date >= :date_from ORDER BY trade_date
+            """), {"code": code, "date_from": date_from}).fetchall()
+        else:
+            exch = src.split(":")[1]
+            rows = conn.execute(text("""
+                SELECT trade_date, close FROM candles_intl
+                WHERE exchange = :exchange AND asset_code = :code AND trade_date >= :date_from ORDER BY trade_date
+            """), {"exchange": exch, "code": code, "date_from": date_from}).fetchall()
+        benchmark_data = [{"date": str(r[0]), "close": float(r[1])} for r in rows if r[1] is not None]
+
+    return {
+        "ema_period": ema_period, "benchmark": benchmark,
+        "series": series, "benchmark_data": benchmark_data,
     }
 
 
