@@ -81,6 +81,7 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
 const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
 const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
+const AdminOiGlobalPage = lazy(() => import('./pages/AdminOiGlobalPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
 const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 
@@ -292,6 +293,7 @@ export default function App() {
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/content-news" element={<AdminContentNewsPage />} />
+            <Route path="/admin/oi-global" element={<AdminOiGlobalPage />} />
           </Route>
         </Routes>
         </Suspense>

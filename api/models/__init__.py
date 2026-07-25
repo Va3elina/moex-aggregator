@@ -4,6 +4,8 @@
 from api.models.instrument import Instrument
 from api.models.candle import Candle
 from api.models.open_interest import OpenInterest
+from api.models.open_interest_intl import OpenInterestIntl, OiIntlStrengthHistory
+from api.models.candle_intl import CandleIntl
 from api.models.user import User, RefreshToken, UserRole
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
@@ -17,6 +19,7 @@ from api.models.fund_holdings_history import FundHoldingsHistory
 
 __all__ = [
     "Instrument", "Candle", "OpenInterest",
+    "OpenInterestIntl", "OiIntlStrengthHistory", "CandleIntl",
     "User", "RefreshToken", "UserRole",
     "UserPaymentMethod",
     "Subscription",
