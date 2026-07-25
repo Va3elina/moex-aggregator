@@ -143,6 +143,11 @@ const PERIOD_LABELS: Record<Period, string> = {
 // `<InstrumentIcon sectype={...} />` из components/InstrumentIcon.tsx
 // (он сам разруливает фьючерсы → акции → лого, валюты → custom badge).
 
+// Международный ОИ поставлен на паузу (Вадим, 2026-07-25) — скрыт даже от
+// админов, пока проект не возобновят. Данные/бэкенд/компонент НЕ удалены —
+// поставь true, чтобы вернуть вкладку.
+const INTL_OI_ENABLED = false;
+
 // Цветовая палитра — все цвета через CSS-переменные чтобы автоматически
 // адаптироваться к теме (в editorial-light → muted blue/orange, в OKX dark
 // → яркие неоновые). См. --chart-line-1 / --oi-* в index.css.
@@ -533,7 +538,7 @@ export default function OpenInterestPage() {
   // Состояние в URL (?tab=screener|intl) — переживает перезагрузку и даёт диплинк.
   const activeTab: 'chart' | 'screener' | 'intl' =
     searchParams.get('tab') === 'screener' ? 'screener' :
-    searchParams.get('tab') === 'intl' && user?.role === 'admin' ? 'intl' : 'chart';
+    searchParams.get('tab') === 'intl' && INTL_OI_ENABLED && user?.role === 'admin' ? 'intl' : 'chart';
   const setActiveTab = (tab: 'chart' | 'screener' | 'intl') => {
     const next = new URLSearchParams(searchParams);
     if (tab === 'screener' || tab === 'intl') next.set('tab', tab);
@@ -744,7 +749,7 @@ export default function OpenInterestPage() {
         items={[
           { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
           { key: 'screener', label: 'Скринер сигналов', badge: 'Beta', Icon: ListFilter },
-          ...(user?.role === 'admin'
+          ...(INTL_OI_ENABLED && user?.role === 'admin'
             ? [{ key: 'intl' as const, label: 'Международный ОИ', Icon: Globe2, title: 'Только для админов' }]
             : []),
         ]}
