@@ -66,6 +66,11 @@ const EMA_PERIOD = 200; // Fixed EMA period
 const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30 };
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
+// Международная "сила рынка" поставлена на паузу (Вадим, 2026-07-25) —
+// скрыта даже от админов, пока проект не возобновят. Данные/бэкенд/
+// компонент НЕ удалены — поставь true, чтобы вернуть переключатель страны.
+const INTL_STRENGTH_ENABLED = false;
+
 export default function StrengthPage() {
     const { isAuthenticated, user } = useAuth();
     // Admin-only: страна для "силы рынка" по другим рынкам (см. IntlStrengthPanel).
@@ -470,8 +475,9 @@ export default function StrengthPage() {
             </div>{/* /strength-controls */}
 
             {/* Admin-only: страна для международной "силы рынка" — не видно
-                и не влияет на обычных пользователей. */}
-            {user?.role === 'admin' && (
+                и не влияет на обычных пользователей. Сейчас на паузе
+                (INTL_STRENGTH_ENABLED=false) — скрыто даже от админов. */}
+            {INTL_STRENGTH_ENABLED && user?.role === 'admin' && (
                 <div className="flex items-center mb-3" style={{ gap: 'var(--sp-2)' }}>
                     {([
                         { key: 'RF', label: '🇷🇺 Россия' },
