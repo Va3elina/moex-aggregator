@@ -36,6 +36,7 @@ from api.routers import (
     api_keys_router,
     public_api_router,
     fund_trades_router,
+    oi_intl_router,
 )
 from api.routers import stats
 from api.routers import health_monitor  # ← /api/health/data (барометр свежести, admin/X-API-Key)
@@ -319,6 +320,7 @@ if _API_CSV_ON:
     app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
     app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
 app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
+app.include_router(oi_intl_router)  # ← /api/admin/oi-intl/* (международный ОИ, admin-only)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
