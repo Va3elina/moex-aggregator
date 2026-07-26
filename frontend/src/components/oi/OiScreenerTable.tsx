@@ -306,7 +306,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const perekosCell = (r: OiScreenerRow) => {
     if (r.net_pct == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
     const long = r.net_pct >= 0;
-    const color = long ? 'var(--oi-green)' : 'var(--oi-red)';
+    const color = long ? 'var(--oi-green)' : 'var(--oi-short)';
     const dim = r.status !== 'sharp';
     return (
       <div

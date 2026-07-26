@@ -157,7 +157,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: OiScreenerRow) 
 function ScreenerRow({ r, onClick }: { r: OiScreenerRow; onClick?: () => void }) {
   const dim = r.status === 'illiquid' || r.status === 'nodata';
   const long = (r.net_pct ?? 0) >= 0;
-  const perekosColor = long ? 'var(--oi-green)' : 'var(--oi-red)';
+  const perekosColor = long ? 'var(--oi-green)' : 'var(--oi-short)';
   const sharp = r.status === 'sharp' && r.ratio != null;
   const strong = (r.ratio ?? 0) >= 5;
   const mid = (r.ratio ?? 0) >= 3;
