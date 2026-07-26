@@ -13,7 +13,6 @@ import CookieConsentBanner from './components/CookieConsentBanner';
 import FounderOfferBanner from './components/FounderOfferBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
-import OverviewPage from './pages/OverviewPage';
 import LandingPage from './pages/LandingPage';
 import OpenInterestPage from './pages/OpenInterestPage';
 import HeatmapPage from './pages/HeatmapPage';
@@ -84,8 +83,7 @@ const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
 const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 
-/** "/" conditional: auth → Overview, guest → Landing.
-    Loading state → Overview как fallback (быстрее, avoids flash). */
+/** "/" conditional: auth → карта рынка, guest → Landing. */
 function HomeRoute() {
   const { isAuthenticated, loading } = useAuth();
   // useIsPhone (не useIsMobile): телефон в ландшафте остаётся «мобилой» —
@@ -96,7 +94,10 @@ function HomeRoute() {
   // попадают на карту рынка. Heatmap доступен с free-уровня, так что
   // гость тоже увидит контент, а не маркетинговый лендинг.
   if (isMobile) return <Navigate to="/heatmap" replace />;
-  return isAuthenticated ? <OverviewPage /> : <LandingPage />;
+  // Авторизованные попадают сразу на карту рынка (дашборд-обзор скрыт),
+  // гостям остаётся лендинг с описанием индикаторов.
+  if (isAuthenticated) return <Navigate to="/heatmap" replace />;
+  return <LandingPage />;
 }
 
 /** ErrorBoundary с автосбросом на смене URL.
