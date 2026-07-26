@@ -48,7 +48,7 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, hideL
   }
 
   const netLong = netPct >= 0;
-  const legColor = netLong ? 'var(--oi-green)' : 'var(--oi-red)';
+  const legColor = netLong ? 'var(--oi-green)' : 'var(--oi-short)';
   const legWord = netLong ? 'лонг' : 'шорт';
   const dim = status !== 'sharp';
   const headOp = dim ? 0.6 : 1;
@@ -80,7 +80,7 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, hideL
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }} title={title}>
       <svg viewBox="0 0 250 48" style={{ width: '100%', maxWidth: 260, flexShrink: 1 }} aria-hidden="true">
         {/* зоны: слева шорт, справа лонг (тон для контекста ноги) */}
-        <rect x={AX_MIN} y={Y - 8} width={ZERO_X - AX_MIN} height={16} rx={4} fill="var(--oi-red)" opacity={0.14} />
+        <rect x={AX_MIN} y={Y - 8} width={ZERO_X - AX_MIN} height={16} rx={4} fill="var(--oi-short)" opacity={0.14} />
         <rect x={ZERO_X} y={Y - 8} width={AX_MAX - ZERO_X} height={16} rx={4} fill="var(--oi-green)" opacity={0.16} />
         {/* ось */}
         <line x1={AX_MIN} y1={Y} x2={AX_MAX} y2={Y} stroke="var(--text-secondary)" strokeWidth={1.4} opacity={0.55} />
