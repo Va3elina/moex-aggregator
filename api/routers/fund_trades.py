@@ -916,7 +916,10 @@ def top_movers(
         fund_dates AS (
             -- curr = снапшот target-месяца (нет → фонд выпадает из консенсуса);
             -- prev = снапшот, выровненный по МЕСЯЦУ на N месяцев назад от target,
-            -- либо (произвольный диапазон) снапшот месяца `from` через :prev_bound.
+            -- либо (произвольный диапазон) снапшот месяца from по границе prev_bound.
+            -- NB: имена бинд-параметров в комментариях писать БЕЗ двоеточия —
+            -- text() подставит %s и внутри комментария, а Postgres его не увидит:
+            -- «bind message supplies N parameters, but prepared statement requires N-1».
             -- Оба только из snap_ok (полные).
             SELECT
                 f.fund_id,
