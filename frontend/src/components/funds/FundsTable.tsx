@@ -43,8 +43,10 @@ function FadedName({ name, display }: { name: string; display: string }) {
         <span
             ref={ref}
             title={name}
-            className="font-normal"
+            className="font-bold"
             style={{
+                // Как имя актива в поиске ОИ (InstrumentSearchModal): bold, fs-sm.
+                fontSize: 'var(--fs-sm)',
                 flex: '0 1 auto',
                 minWidth: 0,
                 overflow: 'hidden',
