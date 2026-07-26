@@ -24,15 +24,11 @@ interface Props {
   hideLabel?: boolean;           // скрыть подпись «%+лонг/шорт» — вынесена в свой столбец «Перекос»
 }
 
-// ── геометрия (viewBox 200×44, ось y=22) — крупная, размер головы «говорит» ×N ──
-// Ось занимает 84% ширины viewBox: запас справа только под радиус головы (14px).
-// Раньше viewBox был 250 при оси до 176 — треть ширины уходила в пустоту (остаток
-// от версии с подписью «%+лонг/шорт» рядом; подпись давно в своём столбце).
-const ZERO_X = 100;
-const PER_PCT = 0.84;            // +100% на x=184, −100% на x=16
-const AX_MIN = 16, AX_MAX = 184;
-const Y = 22;
-const TICKS = [-100, -50, 50, 100];   // ориентиры шкалы — иначе полоса без масштаба
+// ── геометрия (viewBox 250×48, ось y=24) — крупная, размер головы «говорит» ×N ──
+const ZERO_X = 96;
+const PER_PCT = 0.80;            // +100% на x=176, −100% на x=16
+const AX_MIN = 16, AX_MAX = 176;
+const Y = 24;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const xOf = (p: number) => ZERO_X + clamp(p, -100, 100) * PER_PCT;
@@ -82,19 +78,14 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, hideL
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }} title={title}>
-      <svg viewBox="0 0 200 44" style={{ width: '100%', flexShrink: 1 }} aria-hidden="true">
+      <svg viewBox="0 0 250 48" style={{ width: '100%', maxWidth: 260, flexShrink: 1 }} aria-hidden="true">
         {/* зоны: слева шорт, справа лонг (тон для контекста ноги) */}
-        <rect x={AX_MIN} y={Y - 10} width={ZERO_X - AX_MIN} height={20} rx={5} fill="var(--oi-short)" opacity={0.14} />
-        <rect x={ZERO_X} y={Y - 10} width={AX_MAX - ZERO_X} height={20} rx={5} fill="var(--oi-green)" opacity={0.16} />
+        <rect x={AX_MIN} y={Y - 8} width={ZERO_X - AX_MIN} height={16} rx={4} fill="var(--oi-short)" opacity={0.14} />
+        <rect x={ZERO_X} y={Y - 8} width={AX_MAX - ZERO_X} height={16} rx={4} fill="var(--oi-green)" opacity={0.16} />
         {/* ось */}
         <line x1={AX_MIN} y1={Y} x2={AX_MAX} y2={Y} stroke="var(--text-secondary)" strokeWidth={1.4} opacity={0.55} />
-        {/* деления ±50 / ±100 — задают масштаб полосы */}
-        {TICKS.map((p) => (
-          <line key={p} x1={xOf(p)} y1={Y - 10} x2={xOf(p)} y2={Y + 10}
-                stroke="var(--text-secondary)" strokeWidth={1} opacity={0.3} />
-        ))}
         {/* ноль */}
-        <line x1={ZERO_X} y1={Y - 15} x2={ZERO_X} y2={Y + 15} stroke="var(--text-primary)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.6} />
+        <line x1={ZERO_X} y1={Y - 12} x2={ZERO_X} y2={Y + 12} stroke="var(--text-primary)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.6} />
         {/* хвост кометы */}
         {tail && <polygon points={tail.poly} fill={legColor} opacity={tailOp} />}
         {/* голова кометы */}
