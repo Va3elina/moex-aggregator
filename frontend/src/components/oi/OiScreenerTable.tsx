@@ -194,6 +194,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
     '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год',
   };
+  // Короткая форма для самого бейджа (полная остаётся в подсказке).
+  const PERIOD_SHORT: Record<string, string> = {
+    all: 'всё время', '5y': '5 лет', '4y': '4 года',
+    '3y': '3 года', '2y': '2 года', '1y': 'год',
+  };
   const recordBadge = (r: OiScreenerRow) => {
     if (!r.record) return null;
     const high = r.record.kind === 'high';
@@ -211,7 +216,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         }}
       >
         <Star size={10} fill="currentColor" strokeWidth={0} />
-        {high ? 'новый макс' : 'новый мин'} {PERIOD_WORD[r.record.period]}
+        {/* Слово «новый» избыточно — бейдж и появляется только на новом рекорде.
+            Колонка «Сигнал» сузилась, длинная надпись из неё вылезала. */}
+        {high ? 'макс' : 'мин'} · {PERIOD_SHORT[r.record.period]}
       </span>
     );
   };
@@ -233,7 +240,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         }}
       >
         <Star size={10} fill="currentColor" strokeWidth={0} />
-        {high ? 'ист. максимум позиции' : 'ист. минимум позиции'}
+        {high ? 'макс позиции' : 'мин позиции'}
       </span>
     );
   };
@@ -263,8 +270,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     );
   };
 
-  // Текст сигнала: число перекоса и направление показывает комета, ×N — своя
-  // колонка; здесь остаётся трактовка + дневной сдвиг в контрактах.
+  // Текст сигнала. Раньше здесь стояла фраза «резко нарастили длинную позицию —
+  // в 3,7× сильнее обычного», где всё, кроме глагола, дублировало соседние
+  // колонки (кратность = бейдж ×N, нога = ЛОНГ/ШОРТ в «Перекосе» и цвет кометы,
+  // «резко» = сам факт попадания в выборку). Оставляем глагол — единственное,
+  // чего нет больше нигде, — и добавляем дневную дельту перекоса в п.п.: её
+  // хвост кометы кодирует геометрией, но числом не показывал никто.
   const signalText = (r: OiScreenerRow) => {
     if (r.status === 'sharp' && r.ratio != null && r.direction) {
       // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «нарастили», уменьшился
@@ -275,12 +286,26 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
       const verb = grewExposure ? 'нарастили' : 'сократили';
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
+      // Дельта перекоса за день, в процентных пунктах. Знак — по оси перекоса
+      // (вчера → сегодня), поэтому у шорт-стороны он может расходиться с
+      // глаголом: рост net (знак +) там означает сокращение шорта.
+      const dPP = r.net_pct != null && r.net_pct_prev != null ? r.net_pct - r.net_pct_prev : null;
+      const dText = dPP != null
+        ? `${dPP >= 0 ? '+' : '−'}${Math.abs(dPP).toFixed(1).replace('.', ',')} п.п.`
+        : null;
+      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×).`
+        + (dPP != null ? ` Перекос за день: ${dText} (${Math.abs(r.net_pct_prev!).toFixed(1).replace('.', ',')}% → ${Math.abs(r.net_pct!).toFixed(1).replace('.', ',')}%).` : '')
+        + ` Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
         <div style={{ minWidth: 0 }} title={full}>
-          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            резко {verb} {legWord} — в {fmtRatio(r.ratio)} сильнее обычного
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            {grewExposure ? '↑' : '↓'} {verb}
           </div>
+          {dText && (
+            <div style={{ ...MONO, fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 1 }}>
+              {dText} за день
+            </div>
+          )}
         </div>
       );
     }
@@ -337,7 +362,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   };
 
   // Актив · Позиция (комета) · Перекос (%) · ×N · Сигнал · ★.
-  const gridCols = 'minmax(170px, 210px) minmax(150px, 240px) 88px 64px minmax(200px, 1fr) 44px';
+  // Комета забирает 1fr: она несёт три величины сразу, а колонка «Сигнал» после
+  // сокращения текста (глагол + дельта вместо фразы) укладывается в ~200px.
+  const gridCols = 'minmax(170px, 210px) minmax(230px, 1fr) 88px 64px minmax(160px, 200px) 44px';
 
   return (
     <div>
@@ -430,7 +457,18 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           {/* Заголовки */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)' }}>
             <span style={headCell}>Актив</span>
-            <span style={headCell} title={`Позиция ${groupWord}: комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где стоят сейчас, хвост = сдвиг за день, размер = сила ×N.`}>Позиция {groupWord}</span>
+            {/* Шкала кометы фиксирована −100…+100, но в строках она без подписей —
+                масштаб объясняем один раз здесь, второй строкой заголовка. */}
+            <span style={headCell} title={`Позиция ${groupWord}: комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где стоят сейчас, хвост = сдвиг за день, размер = сила ×N.`}>
+              Позиция {groupWord}
+              <span style={{
+                display: 'block', textTransform: 'none', letterSpacing: '0.02em',
+                fontSize: 'var(--fs-2xs)', fontWeight: 600, color: 'var(--text-secondary)',
+                marginTop: 2,
+              }}>
+                −100 шорт · 0 · лонг +100
+              </span>
+            </span>
             <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('pct')} title={`Перекос ${groupWord}: чистая позиция ÷ вся экспозиция. 0 = поровну, ±100% = вся в одну сторону. Это скос ПОЗИЦИИ, не доля участников. Сортировка — топ-лонг / топ-шорт`}>
               Перекос{sortArrow('pct')}
             </button>
