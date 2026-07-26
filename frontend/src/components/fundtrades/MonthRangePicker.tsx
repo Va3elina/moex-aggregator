@@ -6,9 +6,15 @@
 // «что изменилось между составом на конец марта и составом на конец мая» — поэтому
 // пресет 1М и диапазон апр→май дают одинаковый результат.
 //
-// Первый клик задаёт базу, второй — цель (клик по более раннему месяцу переносит
-// базу). Месяцев без снапшота в сетке нет (серые, не кликаются); месяцы под тарифной
-// задержкой (Free/гость) — с замочком, клик уходит в onLockedClick.
+// Первый клик — просто якорь, направление задаёт второй: кликнул позже якоря —
+// якорь стал базой, кликнул раньше — якорь стал целью. Месяцы без снапшота серые
+// и не кликаются; месяцы под тарифной задержкой (Free/гость) — с замочком, клик
+// уходит в onLockedClick.
+//
+// Порядок в сетке ПЕРЕВЁРНУТ (год свежее — выше, внутри года дек → янв): так время
+// монотонно растёт вверх, декабрь встаёт под январём следующего года, и диапазон
+// через границу года подсвечивается сплошной полосой, а не двумя кусками в разных
+// концах блоков.
 //
 // variant='inline' — без кнопки и поповера (сетка прямо в мобильном sheet'е).
 
@@ -20,6 +26,11 @@ export interface MonthRange { from: string; to: string }
 
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
     'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+// Порядок ячеек в сетке — дек…янв: годы идут свежими сверху, поэтому и месяцы
+// внутри года должны убывать. Тогда порядок чтения (слева направо, сверху вниз)
+// монотонен по времени и диапазон всегда сплошной, без разрыва на стыке годов.
+const MONTH_ORDER = Array.from({ length: 12 }, (_, i) => 11 - i);
 
 // Год/месяц берём из строки, а не через new Date(): ISO-дата парсится как UTC и в
 // западных таймзонах month-end съезжает на месяц назад.
@@ -92,23 +103,28 @@ export default function MonthRangePicker({
         if (monthLocked?.(iso)) { onLockedClick?.(iso); return; }
         if (!pending) { setPending(iso); return; }
         if (iso === pending) { setPending(null); return; }
-        // Клик раньше базы = пользователь начинает диапазон заново с этого месяца.
-        if (iso < pending) { setPending(iso); return; }
-        onChange({ from: pending, to: iso });
+        // Первый клик — якорь без роли: второй клик решает, вперёд диапазон или назад.
+        onChange(iso < pending ? { from: iso, to: pending } : { from: pending, to: iso });
         setPending(null);
         setOpen(false);
     };
 
     // Подсветка: концы диапазона залиты, промежуточные месяцы — лёгкий тинт.
-    // При незакрытом выборе показываем превью до месяца под курсором.
-    const edgeA = pending ?? value?.from ?? null;
-    const edgeB = pending ? (hover && hover > pending ? hover : null) : (value?.to ?? null);
+    // При незакрытом выборе показываем превью до месяца под курсором — в обе
+    // стороны от якоря, ведь направление ещё не выбрано.
+    const preview = pending && hover && hover !== pending ? hover : null;
+    const edgeA = pending
+        ? (preview && preview < pending ? preview : pending)
+        : (value?.from ?? null);
+    const edgeB = pending
+        ? (preview ? (preview < pending ? pending : preview) : null)
+        : (value?.to ?? null);
     const isEdge = (iso: string) => iso === edgeA || (!!edgeB && iso === edgeB);
     const inRange = (iso: string) => !!edgeA && !!edgeB && iso > edgeA && iso < edgeB;
 
     const hint = pending
-        ? `С ${MONTHS_SHORT[isoMonth(pending)]} ${isoYear(pending)} по …`
-        : 'Выберите базовый месяц, затем конечный';
+        ? `${MONTHS_SHORT[isoMonth(pending)]} ${isoYear(pending)} → выберите вторую границу`
+        : 'Выберите два месяца — с какого по какой';
 
     const grid = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -122,7 +138,8 @@ export default function MonthRangePicker({
                             {year}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-                            {cells.map((iso, m) => {
+                            {MONTH_ORDER.map((m) => {
+                                const iso = cells[m];
                                 const locked = !!iso && !!monthLocked?.(iso);
                                 const disabled = !iso;
                                 const edge = !!iso && isEdge(iso);
