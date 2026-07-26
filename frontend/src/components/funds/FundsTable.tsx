@@ -59,13 +59,14 @@ function FadedName({ name, display }: { name: string; display: string }) {
     );
 }
 
-// Стиль чисел в столбцах СЧА/Доходность (bare) — как тикеры в поиске ОИ:
-// обычный вес, fs-xs, приглушённо-серый цвет, обычный шрифт (не mono).
-// Табличные цифры оставляем для выравнивания по правому краю. Заголовки колонок
-// этим не трогаем. Цвет доходности переопределяется семантически в самой ячейке.
+// Стиль чисел в столбцах Тикер/СЧА/Доходность — как числа в поиске «Покупок
+// фондов» (AssetPickerModal): вес 600, fs-sm, приглушённо-серый цвет, обычный
+// шрифт (не mono). Табличные цифры оставляем для выравнивания по правому краю.
+// Заголовки колонок этим не трогаем. Цвет доходности переопределяется
+// семантически в самой ячейке.
 const OI_NUM_STYLE: React.CSSProperties = {
-    fontWeight: 400,
-    fontSize: 'var(--fs-xs)',
+    fontWeight: 600,
+    fontSize: 'var(--fs-sm)',
     color: 'var(--text-secondary)',
     fontVariantNumeric: 'tabular-nums',
 };
@@ -616,23 +617,23 @@ export default function FundsTable({
                                                         </div>
                                                     </td>
                                                     <td
-                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4 font-mono'} py-1 text-theme-secondary cursor-pointer`}
-                                                        style={bare ? { fontSize: 'var(--fs-xs)' } : undefined}
+                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4'} py-1 text-theme-secondary cursor-pointer`}
+                                                        style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         {fund.ticker}
                                                     </td>
-                                                    <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right`} style={bare ? OI_NUM_SCHA_STYLE : undefined}>
+                                                    <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right`} style={OI_NUM_SCHA_STYLE}>
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
                                                     {(() => {
                                                         const br = isLocked ? null : bestReturn(fund.returns);
                                                         return (
-                                                            <td className={`${bare ? 'px-2' : 'px-4 font-mono'} py-1 text-right whitespace-nowrap`} style={{
+                                                            <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right whitespace-nowrap`} style={{
                                                                 // OI_NUM_STYLE даёт вес/размер/tabular (и серый по умолчанию для «—»),
                                                                 // а семантический цвет доходности перекрывает его — иначе значения
                                                                 // становились серыми вместо зелёного/красного.
-                                                                ...(bare ? OI_NUM_STYLE : {}),
+                                                                ...OI_NUM_STYLE,
                                                                 ...(br ? { color: br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' } : {}),
                                                             }}>
                                                                 {isLocked || !br ? '—' : (
