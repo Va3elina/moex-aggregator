@@ -274,6 +274,28 @@ def _parse_period_months(period: str) -> int:
     return PERIOD_MONTHS[period]
 
 
+def _month_start(value: str, field: str) -> date:
+    """'YYYY-MM' | 'YYYY-MM-DD' → первое число месяца.
+
+    Границы произвольного диапазона выравниваем по МЕСЯЦУ (данные месячные, день
+    конца месяца у разных УК свой), поэтому день во входной дате игнорируется.
+    """
+    raw = (value or "").strip()
+    try:
+        if len(raw) == 7:
+            return date(int(raw[:4]), int(raw[5:7]), 1)
+        return date.fromisoformat(raw).replace(day=1)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} must be YYYY-MM or YYYY-MM-DD, got '{value}'",
+        )
+
+
+def _next_month(d: date) -> date:
+    return date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+
+
 def _calc_return(last, prev):
     """Период-доходность % по nav_per_share (pay). NULL если истории не хватает."""
     if last is not None and prev is not None and float(prev) > 0:
@@ -751,6 +773,14 @@ def top_movers(
     period: str = Query("1m", description="1m | 3m | 6m | 1y"),
     category: str | None = Query(None, description="stocks | bonds | money_market | gold"),
     as_of: str | None = Query(None, description="YYYY-MM-DD — целевой месяц-снапшот (default=последний)"),
+    range_from: str | None = Query(
+        None, alias="from",
+        description="YYYY-MM(-DD) — БАЗОВЫЙ месяц произвольного диапазона; задаётся вместе с `to` и отменяет period/as_of",
+    ),
+    range_to: str | None = Query(
+        None, alias="to",
+        description="YYYY-MM(-DD) — ЦЕЛЕВОЙ месяц произвольного диапазона (сравнение from → to)",
+    ),
     manager: str | None = Query(None, description="фильтр по УК: comma-separated uk_id (напр. '34,5,3597'); один id тоже ок; пусто=все"),
     funds: str | None = Query(None, description="фильтр по конкретным фондам: comma-separated тикеры (напр. 'TMOS,SBMX'); приоритет над manager; пусто=все"),
     sort: str = Query("weight", description="weight | amount — метрика ранжирования и знака"),
@@ -768,6 +798,29 @@ def top_movers(
     (TMOS +1.2, SBMX +0.9, ...)".
     """
     months = _parse_period_months(period)
+
+    # Произвольный диапазон (from → to) вместо пресета «N месяцев назад от свежего».
+    # Семантика та же, что у пресетов: сравниваем снапшот месяца `from` (база) со
+    # снапшотом месяца `to` (цель) — ровно то, что показывает подпись «апр – май».
+    # prev_bound = начало месяца, следующего за `from`: последний полный снапшот
+    # СТРОГО раньше него = снапшот месяца `from` (или ближайший более ранний, если
+    # у фонда снапшота этого месяца нет — как и в пресетах).
+    prev_bound: date | None = None
+    range_from_norm: str | None = None
+    range_to_norm: str | None = None
+    if bool(range_from) != bool(range_to):
+        raise HTTPException(status_code=400, detail="from и to задаются только вместе")
+    if range_from and range_to:
+        _f = _month_start(range_from, "from")
+        _t = _month_start(range_to, "to")
+        if _f >= _t:
+            raise HTTPException(status_code=400, detail="from must be an earlier month than to")
+        prev_bound = _next_month(_f)
+        # as_of = КОНЕЦ целевого месяца: якорь режет снапшоты по `<= as_of`, с первым
+        # числом месяца целевой month-end снапшот отсекся бы и консенсус вышел пустым.
+        as_of = (_next_month(_t) - timedelta(days=1)).isoformat()
+        range_from_norm, range_to_norm = _f.isoformat(), _t.isoformat()
+
     # Free/гость — задержка: целевой месяц-снапшот ограничиваем до cutoff (свежий
     # срез «что купили» — по подписке). ISO-даты сравниваются как строки = хронологически.
     _cut = _snapshot_cutoff(db, user)
@@ -822,6 +875,8 @@ def top_movers(
         "sources": list(MONTHLY_SOURCES),
         "as_of": as_of,
         "wmin": FT_COMPLETE_WSUM_MIN,
+        # NULL для пресетов → prev считается арифметикой месяцев (COALESCE в SQL).
+        "prev_bound": prev_bound.isoformat() if prev_bound else None,
     }
     if fund_tickers:
         params["fund_tickers"] = fund_tickers
@@ -860,7 +915,8 @@ def top_movers(
         ),
         fund_dates AS (
             -- curr = снапшот target-месяца (нет → фонд выпадает из консенсуса);
-            -- prev = снапшот, выровненный по МЕСЯЦУ на N месяцев назад от target.
+            -- prev = снапшот, выровненный по МЕСЯЦУ на N месяцев назад от target,
+            -- либо (произвольный диапазон) снапшот месяца `from` через :prev_bound.
             -- Оба только из snap_ok (полные).
             SELECT
                 f.fund_id,
@@ -873,7 +929,9 @@ def top_movers(
                     SELECT MAX(so2.snapshot_date)
                     FROM snap_ok so2
                     WHERE so2.fund_id = f.fund_id
-                      AND so2.snapshot_date < a.target_month - make_interval(months => CAST(:months AS integer) - 1)
+                      AND so2.snapshot_date < COALESCE(
+                              CAST(:prev_bound AS date),
+                              a.target_month - make_interval(months => CAST(:months AS integer) - 1))
                 ) AS prev_date
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
@@ -1047,6 +1105,10 @@ def top_movers(
         "period": period,
         "category": category,
         "as_of": as_of,
+        # Границы произвольного диапазона (нормализованные к первому числу месяца);
+        # null = период задан пресетом.
+        "range_from": range_from_norm,
+        "range_to": range_to_norm,
         "resolved_month": resolved_month,
         "funds_in_month": funds_in_month,
         "manager": manager,

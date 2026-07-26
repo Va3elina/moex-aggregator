@@ -10,12 +10,17 @@
 //
 // variant='embedded' — без собственной карточки (блок внутри общей карточки
 // вкладки). Клик по строке — «Потоки по компании».
+//
+// Справа от пресетов — кнопка-календарь (MonthRangePicker): произвольный диапазон
+// месяцев вместо «N месяцев назад от свежего». Пока диапазон активен, ни один
+// пресет не подсвечен, а кнопка залита accent'ом.
 
 import { type CSSProperties } from 'react';
 import { fundAssetName, resolveFundTicker, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import Skeleton from '../Skeleton';
+import MonthRangePicker, { monthRangeLabel as customRangeLabel, type MonthRange } from './MonthRangePicker';
 import type { FundTradesMovers, FundTradesMover } from '../../services/api';
 
 export type MoversPeriod = '1m' | '6m' | '1y' | '3y';
@@ -31,6 +36,15 @@ interface Props {
     // Задан — сегменты 1М/6М/1Г/3Г рендерятся в шапке блока (десктоп-макет).
     // Мобилка управляет периодом своими чипами в ⚙️-sheet.
     onPeriodChange?: (p: MoversPeriod) => void;
+    // Произвольный диапазон месяцев (кнопка-календарь справа от сегментов).
+    // range задан → пресет игнорируется. onRangeChange(null) = вернуться к пресету.
+    // Кнопка рендерится только когда заданы onRangeChange И availableMonths.
+    range?: MonthRange | null;
+    onRangeChange?: (r: MonthRange | null) => void;
+    availableMonths?: string[];
+    /** Месяц закрыт тарифной задержкой (Free/гость) — в календаре с замочком. */
+    monthLocked?: (m: string) => boolean;
+    onMonthLockedClick?: (m: string) => void;
 }
 
 const isIsin = (s?: string | null): s is string => !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
@@ -91,7 +105,10 @@ const blockStyle: CSSProperties = {
     minWidth: 0,
 };
 
-export default function PortfolioMoversPanel({ movers, loading, period, variant = 'desktop', onAssetClick, onPeriodChange }: Props) {
+export default function PortfolioMoversPanel({
+    movers, loading, period, variant = 'desktop', onAssetClick, onPeriodChange,
+    range = null, onRangeChange, availableMonths, monthLocked, onMonthLockedClick,
+}: Props) {
     const isMobile = variant === 'mobile';
     const embedded = variant === 'embedded';
     // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
@@ -109,9 +126,13 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
 
     // Подзаголовок — только диапазон месяцев консенсуса («апр – май 2026»).
     // Единица (млрд/млн ₽) живёт рядом с легендами секций, не здесь.
-    const sub = movers?.resolved_month
-        ? monthRangeLabel(movers.resolved_month, period)
-        : PERIOD_SUB[period];
+    // При своём диапазоне подпись строим по выбранным границам (база → цель), а не
+    // по длине пресета.
+    const sub = range
+        ? customRangeLabel(range.from, range.to)
+        : movers?.resolved_month
+            ? monthRangeLabel(movers.resolved_month, period)
+            : PERIOD_SUB[period];
 
     const head = (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
@@ -122,16 +143,31 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</span>
             </div>
             {onPeriodChange && (
-                <SegmentedControl<MoversPeriod>
-                    options={[
-                        { key: '1m', label: '1М' },
-                        { key: '6m', label: '6М' },
-                        { key: '1y', label: '1Г' },
-                        { key: '3y', label: '3Г' },
-                    ]}
-                    value={period}
-                    onChange={onPeriodChange}
-                />
+                // align-items: stretch — кнопка-календарь тянется в высоту сегментов.
+                <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+                    <SegmentedControl<string>
+                        options={[
+                            { key: '1m', label: '1М' },
+                            { key: '6m', label: '6М' },
+                            { key: '1y', label: '1Г' },
+                            { key: '3y', label: '3Г' },
+                        ]}
+                        // Свой диапазон — ключа нет ни у одного сегмента, активной
+                        // пилюли не остаётся (период показывает кнопка-календарь).
+                        value={range ? 'custom' : period}
+                        onChange={(k) => { onRangeChange?.(null); onPeriodChange(k as MoversPeriod); }}
+                    />
+                    {onRangeChange && availableMonths && availableMonths.length > 1 && (
+                        <MonthRangePicker
+                            availableMonths={availableMonths}
+                            value={range}
+                            onChange={(r) => onRangeChange(r)}
+                            onReset={() => onRangeChange(null)}
+                            monthLocked={monthLocked}
+                            onLockedClick={onMonthLockedClick}
+                        />
+                    )}
+                </div>
             )}
         </div>
     );

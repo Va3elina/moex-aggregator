@@ -1472,6 +1472,9 @@ export interface FundTradesMovers {
     funds_in_month: number;
     manager: string | null;
     sort: 'weight' | 'amount';
+    /** Границы произвольного диапазона (первое число месяца) — null, если период задан пресетом. */
+    range_from?: string | null;
+    range_to?: string | null;
     available_months: string[];
     /** Дата-отсечка свежести (Free/гость): месяцы с датой > cutoff заблокированы. null = без задержки. */
     snapshot_cutoff?: string | null;
@@ -1570,11 +1573,16 @@ export async function getFundTradesMovers(
     //   Приоритет над manager на бэкенде. Пусто = все фонды.
     // `managers` — comma-separated uk_id (мультиселект УК), напр. "34,5,3597".
     // `manager` оставлен для обратной совместимости (single uk_id / имя). Пусто = все УК.
-    opts: { asOf?: string; funds?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
+    // `from`/`to` — произвольный диапазон месяцев (база → цель). Задаются ТОЛЬКО парой
+    //   и отменяют period/asOf: бэкенд сравнивает снапшот месяца from со снапшотом to.
+    opts: { asOf?: string; from?: string; to?: string; funds?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
 ): Promise<FundTradesMovers> {
-    const { asOf, funds, manager, managers, sort = 'weight', limit = 20 } = opts;
+    const { asOf, from, to, funds, manager, managers, sort = 'weight', limit = 20 } = opts;
     const params = new URLSearchParams({ period, sort, limit: String(limit) });
-    if (asOf) params.set('as_of', asOf);
+    if (from && to) {
+        params.set('from', from);
+        params.set('to', to);
+    } else if (asOf) params.set('as_of', asOf);
     // Бэкенд: `funds` (тикеры фондов) имеет приоритет над `manager` (comma-sep uk_id).
     if (funds) params.set('funds', funds);
     const managerParam = managers ?? manager;
