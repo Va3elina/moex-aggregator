@@ -63,6 +63,7 @@ import FundPicker, { type FundPickerFund } from '../../components/fundtrades/Fun
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
+import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
@@ -349,6 +350,9 @@ export default function MobileFundTradesPage() {
   // Период плашки «Общего портфеля» — штатные периоды (без 5л). Всегда 'y1'.
   const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
   const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
+  // Свой диапазон месяцев (чип «Свой период» в 🕐-sheet) — задан, отменяет пресет.
+  // Ключ общий с десктопом: период переживает переход мобилка ↔ десктоп.
+  const [portfolioMoversRange, setPortfolioMoversRange] = usePersistedState<MonthRange | null>('frame:fundtrades:portfolioMoversRange', null);
   const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
   const [loadingPortfolio, setLoadingPortfolio] = useState(false);
   const portfolioReqRef = useRef(0);
@@ -359,7 +363,15 @@ export default function MobileFundTradesPage() {
   // ── Sheets ──
   const [assetSheetOpen, setAssetSheetOpen] = useState(false);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  // Календарь своего периода внутри 🕐-sheet (раскрывается по чипу «Свой период»).
+  const [moversRangeOpen, setMoversRangeOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+
+  // Месяцы свежее тир-отсечки (Free/гость) в календаре — с замочком, не выбираются.
+  const isMoversRangeMonthLocked = (m: string) => {
+    const c = portfolioMovers?.snapshot_cutoff ?? null;
+    return c != null && m > c;
+  };
 
   // ── Load funds list (один раз, при Pro-доступе) ──
   useEffect(() => {
@@ -418,11 +430,17 @@ export default function MobileFundTradesPage() {
     const reqId = ++portfolioMoversReqRef.current;
     const isStale = () => reqId !== portfolioMoversReqRef.current;
     setLoadingPortfolioMovers(true);
-    getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' })
+    getFundTradesMovers(portfolioMoversPeriod, {
+      funds: portfolioFundsParam || undefined,
+      sort: 'amount',
+      // Свой диапазон приоритетнее пресета (бэкенд игнорирует period при from+to).
+      from: portfolioMoversRange?.from,
+      to: portfolioMoversRange?.to,
+    })
       .then((m) => { if (isStale()) return; setPortfolioMovers(m); })
       .catch((e: Error) => { if (isStale()) return; setError(e.message); })
       .finally(() => { if (!isStale()) setLoadingPortfolioMovers(false); });
-  }, [tab, portfolioFundsParam, portfolioMoversPeriod, funds.length, common.fund_trades_access]);
+  }, [tab, portfolioFundsParam, portfolioMoversPeriod, portfolioMoversRange?.from, portfolioMoversRange?.to, funds.length, common.fund_trades_access]);
 
   // Уникальные УК для UkMultiSelect (Состав фондов).
   const ukOptions = useMemo<UkOption[]>(() => {
@@ -699,6 +717,7 @@ export default function MobileFundTradesPage() {
             movers={portfolioMovers}
             loading={loadingPortfolioMovers}
             period={portfolioMoversPeriod}
+            range={portfolioMoversRange}
             variant="mobile"
             onAssetClick={openCompanyFlows}
           />
@@ -744,14 +763,39 @@ export default function MobileFundTradesPage() {
                 {([['1m', '1 мес'], ['6m', 'Полгода'], ['1y', 'Год'], ['3y', '3 года']] as [MoversPeriod, string][]).map(([k, lbl]) => (
                   <button
                     key={k}
-                    className={`fm-chip ${portfolioMoversPeriod === k ? 'active' : ''}`}
-                    onClick={() => { setPortfolioMoversPeriod(k); setTimeSheetOpen(false); }}
+                    // При своём диапазоне ни один пресет не активен — период показывает
+                    // чип «Свой период» ниже.
+                    className={`fm-chip ${!portfolioMoversRange && portfolioMoversPeriod === k ? 'active' : ''}`}
+                    onClick={() => { setPortfolioMoversRange(null); setPortfolioMoversPeriod(k); setTimeSheetOpen(false); }}
                     style={{ flex: 1, justifyContent: 'center', minWidth: 'calc(50% - 4px)' }}
                   >
                     {lbl}
                   </button>
                 ))}
               </div>
+              {/* Свой период — тот же календарь, что на десктопе, но раскрывается
+                  прямо в sheet'е (поповер в шторке обрезается). */}
+              <button
+                className={`fm-chip ${portfolioMoversRange ? 'active' : ''}`}
+                onClick={() => setMoversRangeOpen((o) => !o)}
+                style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+              >
+                {portfolioMoversRange
+                  ? monthRangeLabel(portfolioMoversRange.from, portfolioMoversRange.to)
+                  : 'Свой период'}
+              </button>
+              {moversRangeOpen && (portfolioMovers?.available_months?.length ?? 0) > 1 && (
+                <div style={{ marginTop: 8 }}>
+                  <MonthRangePicker
+                    variant="inline"
+                    availableMonths={portfolioMovers?.available_months ?? []}
+                    value={portfolioMoversRange}
+                    onChange={(r) => { setPortfolioMoversRange(r); setMoversRangeOpen(false); setTimeSheetOpen(false); }}
+                    onReset={() => { setPortfolioMoversRange(null); setMoversRangeOpen(false); }}
+                    monthLocked={isMoversRangeMonthLocked}
+                  />
+                </div>
+              )}
               <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
                 Чистая покупка/продажа бумаг за период. На состав портфеля не влияет.
               </p>

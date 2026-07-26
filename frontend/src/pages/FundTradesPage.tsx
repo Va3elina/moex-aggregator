@@ -63,6 +63,7 @@ import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSe
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../components/fundtrades/PortfolioMoversPanel';
+import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
@@ -289,6 +290,9 @@ export default function FundTradesPage() {
     const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(undefined);
     // Блок «Сделки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
+    // Свой диапазон месяцев (кнопка-календарь) — задан, отменяет пресет. Персистится
+    // вместе с ним: вернулся на страницу — тот же период, что и оставил.
+    const [portfolioMoversRange, setPortfolioMoversRange] = usePersistedState<MonthRange | null>('frame:fundtrades:portfolioMoversRange', null);
     const [portfolioMovers, setPortfolioMovers] = useState<FundTradesMovers | null>(null);
     const [portfolioMoversLoading, setPortfolioMoversLoading] = useState(false);
 
@@ -341,6 +345,13 @@ export default function FundTradesPage() {
         return c != null && m > c;
     };
 
+    // Календарь своего периода в «Сделках фондов»: отсечка своя (из /movers), не из
+    // /portfolio — гейтится именно свежий консенсус сделок.
+    const isMoversRangeMonthLocked = (m: string) => {
+        const c = portfolioMovers?.snapshot_cutoff ?? null;
+        return c != null && m > c;
+    };
+
     // Load общий портфель (tab=portfolio; смена набора УК или выбранного месяца).
     // Ждём загрузки списка фондов — без него не резолвить УК→тикеры (иначе пустой
     // набор ошибочно = «все»).
@@ -362,11 +373,17 @@ export default function FundTradesPage() {
         if (tab !== 'portfolio') return;
         if (funds.length === 0) return;
         setPortfolioMoversLoading(true);
-        getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' })
+        getFundTradesMovers(portfolioMoversPeriod, {
+            funds: portfolioFundsParam || undefined,
+            sort: 'amount',
+            // Свой диапазон приоритетнее пресета (бэкенд игнорирует period при from+to).
+            from: portfolioMoversRange?.from,
+            to: portfolioMoversRange?.to,
+        })
             .then(setPortfolioMovers)
             .catch((e: Error) => setError(e.message))
             .finally(() => setPortfolioMoversLoading(false));
-    }, [tab, portfolioFundsParam, portfolioMoversPeriod, funds.length, common.fund_trades_access]);
+    }, [tab, portfolioFundsParam, portfolioMoversPeriod, portfolioMoversRange?.from, portfolioMoversRange?.to, funds.length, common.fund_trades_access]);
 
     // Уникальные УК из загруженных фондов — список для UkMultiSelect на вкладке
     // «Состав фондов». Ключ — uk_id (стабильнее имени), name — uk-имя из
@@ -852,6 +869,11 @@ export default function FundTradesPage() {
                                     loading={portfolioMoversLoading}
                                     period={portfolioMoversPeriod}
                                     onPeriodChange={setPortfolioMoversPeriod}
+                                    range={portfolioMoversRange}
+                                    onRangeChange={setPortfolioMoversRange}
+                                    availableMonths={portfolioMovers?.available_months}
+                                    monthLocked={isMoversRangeMonthLocked}
+                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: 'свежий срез фондов', indicator: 'fund_trades' })}
                                     variant="embedded"
                                     onAssetClick={openCompanyFlows}
                                 />
