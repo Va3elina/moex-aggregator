@@ -310,21 +310,19 @@ export default function FundsTable({
             <div className="overflow-x-auto">
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)', ...(bare ? { tableLayout: 'fixed' as const } : {}) }}>
                     {/* Bare (модалка): фиксированная раскладка колонок — Название
-                        тянется и обрезается многоточием, а Тикер/СЧА/Доходность
+                        тянется и обрезается многоточием, а СЧА/Доходность
                         прижаты к правому краю компактным блоком.
+                        Отдельной колонки Тикер нет: тикер стоит вплотную к имени
+                        внутри колонки «Название» — как в поиске ОИ
+                        (InstrumentSearchModal), мелким приглушённым шрифтом.
                         Ширины подобраны по замерам: активный заголовок сортировки
-                        (текст + стрелка) занимает ~100px, самый длинный тикер —
-                        ISIN авторских/облигационных фондов (RU000A109SR1, 12 знаков).
-                        После перехода чисел на fs-sm/600 ISIN стал ~103px текста
-                        (+20px паддингов px-2), поэтому колонка Тикер 124px, а не 88 —
-                        иначе ISIN наезжал на СЧА.
+                        (текст + стрелка) занимает ~100px.
                         Колонка чекбокса 40px даёт симметричные отступы слева и
                         до логотипа (по 15px). */}
                     {bare && (
                         <colgroup>
                             <col style={{ width: 40 }} />
                             <col />
-                            <col style={{ width: 124 }} />
                             {/* Ширины под uppercase-заголовки-кнопки с шевроном + значения.
                                 «СЧА» короткая → колонку держит значение (до «1705.43»),
                                 на fs-sm/600 это ~56px текста + 20px паддингов → 84px.
@@ -340,7 +338,7 @@ export default function FundsTable({
                                 (uppercase, 800, fs-xs, letter-spacing). Название и
                                 Тикер не сортируются — просто текст text-secondary. */}
                             <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Название</th>
-                            <th className={`${bare ? 'px-2 text-right' : 'px-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Тикер</th>
+                            {!bare && <th className="px-4 font-medium py-2">Тикер</th>}
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
                                 {renderSortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
                             </th>
@@ -371,7 +369,7 @@ export default function FundsTable({
                                         )}
                                     </div>
                                 </td>
-                                <td colSpan={bare ? 2 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
+                                <td colSpan={bare ? 1 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
                                     <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
                                 </td>
                                 {bare && (
@@ -469,7 +467,7 @@ export default function FundsTable({
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td colSpan={bare ? 2 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
+                                                <td colSpan={bare ? 1 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
@@ -592,6 +590,14 @@ export default function FundsTable({
                                                             {bare ? (
                                                                 <>
                                                                     <FadedName name={fund.name} display={stripUkName(fund.name, fund.uk_id)} />
+                                                                    {/* Тикер вплотную к имени — как в поиске ОИ:
+                                                                        fs-xs, обычный вес, приглушённый цвет. */}
+                                                                    <span
+                                                                        className="flex-shrink-0"
+                                                                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
+                                                                    >
+                                                                        {fund.ticker}
+                                                                    </span>
                                                                     {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                         <span
                                                                             className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
@@ -618,13 +624,15 @@ export default function FundsTable({
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td
-                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4'} py-1 text-theme-secondary cursor-pointer`}
-                                                        style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}
-                                                        onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
-                                                    >
-                                                        {fund.ticker}
-                                                    </td>
+                                                    {!bare && (
+                                                        <td
+                                                            className="px-4 py-1 text-theme-secondary cursor-pointer"
+                                                            style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}
+                                                            onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
+                                                        >
+                                                            {fund.ticker}
+                                                        </td>
+                                                    )}
                                                     <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right`} style={OI_NUM_SCHA_STYLE}>
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
