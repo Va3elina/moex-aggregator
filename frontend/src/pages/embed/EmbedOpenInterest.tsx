@@ -14,12 +14,13 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
   MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
   Ruler, Layers, X as XIcon, GripVertical, Repeat,
+  Clock, User, Building2, BarChart3, Users, Activity, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash, type LwMagnet } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -58,14 +59,28 @@ type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number }[];
 
 // Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
-const CLGROUP_OPTS: { id: ClGroup; label: string }[] = [
-  { id: 'FIZ', label: 'Физлица' },
-  { id: 'YUR', label: 'Юрлица' },
+const CLGROUP_OPTS: { id: ClGroup; label: string; icon: ReactNode }[] = [
+  { id: 'FIZ', label: 'Физлица', icon: <User size={14} /> },
+  { id: 'YUR', label: 'Юрлица', icon: <Building2 size={14} /> },
 ];
 const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'positions', label: 'Объём позиций' },
   { id: 'participants', label: 'Число трейдеров' },
 ];
+// Иконки для Dropdown (Режим/Показатель ОИ) зависят от выбранного значения —
+// передаются как функция value→icon, а не статичный узел (options самого
+// Dropdown иконок не несёт, в отличие от PillGroup).
+const MODE_ICONS: Record<DisplayMode, ReactNode> = {
+  positions: <BarChart3 size={14} />,
+  participants: <Users size={14} />,
+};
+const VARIANT_ICONS: Record<OIVariant, ReactNode> = {
+  oi: <Activity size={14} />,
+  long: <TrendingUp size={14} />,
+  short: <TrendingDown size={14} />,
+  both: <ArrowUpDown size={14} />,
+  net: <Equal size={14} />,
+};
 
 // Инструменты рисования (модель TradingView) — левая панель. rot — поворот иконки (vline).
 const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; rot?: number }[] = [
@@ -221,6 +236,28 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [oiVariant, setOiVariant] = useState<OIVariant>(() => rd('frame:embed:oi:oiVariant', 'net') as OIVariant);
   const [showPrice, setShowPrice] = useState<boolean>(() => rd('frame:embed:oi:showPrice', 'true') === 'true');
   const [showExpirations, setShowExpirations] = useState<boolean>(() => rd('frame:embed:oi:showExpirations', 'false') === 'true');
+
+  // Compact-режим тулбара: узкая панель — лейблы «1 день»/«Объём позиций»/…
+  // не помещаются рядом с ассет-кнопкой → контролы схлопываются в иконки, вместо
+  // горизонтального скролла (тот выглядел как отдельный «блок» под ассет-кнопкой).
+  // toolbarWrapRef — реальный видимый контейнер (его clientWidth = сколько места
+  // реально дал flex:1 родитель в EmbedFrame); toolbarMeasureRef — невидимый
+  // клон с полными лейблами (always full, position:absolute), его scrollWidth —
+  // сколько места НУЖНО в полном виде. Сравнение стабильно (без осцилляции
+  // full↔compact), т.к. измеритель никогда не меняет форму.
+  const toolbarWrapRef = useRef<HTMLDivElement>(null);
+  const toolbarMeasureRef = useRef<HTMLDivElement>(null);
+  const [toolbarCompact, setToolbarCompact] = useState(false);
+  useLayoutEffect(() => {
+    const wrap = toolbarWrapRef.current;
+    const measure = toolbarMeasureRef.current;
+    if (!wrap || !measure) return;
+    const check = () => setToolbarCompact(measure.scrollWidth > wrap.clientWidth);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
 
   const [data, setData] = useState<ChartData | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
@@ -626,6 +663,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
 
   return (
     <EmbedFrame
+      toolbarUnified
       lead={
         <AssetButton
           ticker={frontContract || displayTicker(instrument)}
@@ -636,18 +674,40 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         />
       }
       toolbar={
-        <>
+        // position:relative — якорь для невидимого измерителя (position:absolute
+        // внутри). flex:1/minWidth:0 — сам берёт себе всё оставшееся место в
+        // едином ряду EmbedFrame (toolbarUnified — без вложенного скролл-див'а),
+        // иначе clientWidth = ширине контента (сжатого до compact), а не реально
+        // доступному месту, и compact никогда не откатится обратно при расширении.
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+          {/* Невидимый измеритель — ВСЕГДА полные лейблы (compact=false), не зависит
+              от текущего toolbarCompact. Если сравнивать видимый ряд сам с собой,
+              после схлопывания в иконки он сам себя же и «не переполняет» → compact
+              откатывается обратно, полные лейблы уже переполняют → снова compact —
+              бесконечное мерцание. Отдельный стабильный эталон убирает эту гонку. */}
+          <div
+            ref={toolbarMeasureRef}
+            aria-hidden
+            style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+          >
+            <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} />
+            <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
+            <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICONS[displayMode]} />
+            <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" icon={VARIANT_ICONS[oiVariant]} />
+          </div>
           {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
               горизонтальные пилюли (2 пункта). Вид графика убран из тулбара → настраивается
               per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике).
               Список фильтруется по tfOptions — неликвидные EOD-only фьючерсы (напр.
               PXU6 «Полюс мини») не отдают интрадей-ОИ вообще, так что 5м/1ч для них
-              просто не предлагаем, а не молча гасим линию после выбора. */}
-          <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" />
-          <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
-          <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" />
-          <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
-        </>
+              просто не предлагаем, а не молча гасим линию после выбора.
+              icon на каждом контроле — узкая панель схлопывает лейбл в иконку
+              (toolbarCompact, см. измеритель выше); title сохраняет текст в тултипе. */}
+          <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={toolbarCompact} />
+          <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
+          <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICONS[displayMode]} compact={toolbarCompact} />
+          <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" icon={VARIANT_ICONS[oiVariant]} compact={toolbarCompact} />
+        </div>
       }
       actions={
         status === 'ok' && data && lwSeries.length > 0 ? (
