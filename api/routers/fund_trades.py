@@ -1285,6 +1285,7 @@ def combined_portfolio(
             fd_last.nav AS nav_rub,
             fd_last.pay AS last_pay,
             fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m, fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
+            fd_3y.pay AS pay_3y,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
              WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '1 month'   AND d.record_date <= fd_last.td) AS dist_1m,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
@@ -1292,7 +1293,9 @@ def combined_portfolio(
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
              WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '6 months'  AND d.record_date <= fd_last.td) AS dist_6m,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
-             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '12 months' AND d.record_date <= fd_last.td) AS dist_1y
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '12 months' AND d.record_date <= fd_last.td) AS dist_1y,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '36 months' AND d.record_date <= fd_last.td) AS dist_3y
         FROM funds f
         LEFT JOIN LATERAL (
             SELECT nav, pay, trade_date AS td FROM fund_data WHERE fund_id = f.fund_id AND nav IS NOT NULL
@@ -1314,6 +1317,11 @@ def combined_portfolio(
             SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
             AND trade_date <= fd_last.td - INTERVAL '12 months' ORDER BY trade_date DESC LIMIT 1
         ) fd_1y ON true
+        -- 3 года: фонды моложе трёх лет вернут NULL и в средневзвешенную не попадут.
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '36 months' ORDER BY trade_date DESC LIMIT 1
+        ) fd_3y ON true
         WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources)
@@ -1351,6 +1359,7 @@ def combined_portfolio(
             "m3": _calc_total_return(last_pay, r["pay_3m"], r["dist_3m"]),
             "m6": _calc_total_return(last_pay, r["pay_6m"], r["dist_6m"]),
             "y1": _calc_total_return(last_pay, r["pay_1y"], r["dist_1y"]),
+            "y3": _calc_total_return(last_pay, r["pay_3y"], r["dist_3y"]),
         })
         included_funds.append({
             "ticker": r["ticker"], "name": r["name"], "uk": r["uk"], "uk_id": r["uk_id"],
@@ -1373,7 +1382,9 @@ def combined_portfolio(
                 den += nav
         return round(num / den, 2) if den > 0 else None
 
-    portfolio_returns = {k: _wavg(k) for k in ("m1", "m3", "m6", "y1")}
+    # y3 — накопленная (не годовая) доходность за 3 года; фонды моложе трёх лет
+    # в неё не входят, поэтому она считается по подмножеству набора.
+    portfolio_returns = {k: _wavg(k) for k in ("m1", "m3", "m6", "y1", "y3")}
 
     # ── Агрегированные холдинги: суммируем рублёвую стоимость per бумага (ISIN-ключ) ──
     # target_month = None (снапшотов нет вовсе) → HAVING по NULL не пропустит ни один
