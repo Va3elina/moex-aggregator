@@ -167,62 +167,40 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         : `по данным за ${_fmtD(signalDate)}`)
     : null;
 
-  // Рекорд перекоса → компактная оранжевая метка периода у сигнала: «↑3мес» =
-  // пробили максимум за 3 месяца. Редкость кодируется ДЛИНОЙ периода в метке.
-  // Окна короче полугода не считаем на бэке — рекорд за месяц не редкость.
-  const PERIOD_WORD: Record<string, string> = {
-    all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
-    '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год', '6m': 'за полгода',
-  };
-  const PERIOD_CHIP: Record<string, string> = {
-    all: 'всё время', '5y': '5лет', '4y': '4года', '3y': '3года', '2y': '2года',
-    '1y': '1год', '6m': '6мес',
-  };
-  // net_record (истор. экстремум сырой позиции, контракты) сильнее рекорда
-  // перекоса и покрывает его → показываем одну метку.
-  //
-  // Заливка = обновлён ИСТОРИЧЕСКИЙ экстремум, и подпись у неё своя: «ист макс»
-  // / «ист мин» без стрелки. Стрелка тут была бы шумом — направление уже сказано
-  // словом, а «↑всё» читалось как обрубок, а не как «за всё время».
-  const recordChip = (r: OiScreenerRow) => {
-    const rec = r.net_record
-      ? { high: r.net_record.kind === 'high', period: 'all', solid: true,
-          title: `Чистая позиция (в контрактах) — исторический ${r.net_record.kind === 'high' ? 'максимум' : 'минимум'} за всё время наблюдений.` }
-      : r.record
-        ? { high: r.record.kind === 'high', period: r.record.period, solid: r.record.period === 'all',
-            title: `Перекос пробил ${r.record.kind === 'high' ? 'максимум (рекордный лонг)' : 'минимум (рекордный шорт)'} ${PERIOD_WORD[r.record.period]}.` }
-        : null;
-    if (!rec) return null;
-    return (
-      <span
-        title={rec.title}
-        style={{
-          ...MONO, display: 'inline-flex', alignItems: 'baseline', gap: 3,
-          flexShrink: 0, fontSize: 'var(--fs-xs)', fontWeight: 700,
-          whiteSpace: 'nowrap', cursor: 'help',
-          ...(rec.solid
-            // Исторический экстремум — сильнейший сигнал: залитая пилюля.
-            ? { background: 'var(--accent)', color: 'var(--text-inverse)',
-                padding: '1px 7px', borderRadius: 999 }
-            // Периодный рекорд — тихая метка: accent-текст с пунктиром.
-            : { color: 'var(--accent)', paddingBottom: 1,
-                borderBottom: '1px dashed color-mix(in srgb, var(--accent) 55%, transparent)' }),
-        }}
-      >
-        {rec.solid
-          ? <span>{rec.high ? 'ист макс' : 'ист мин'}</span>
-          : <>
-              <span>{rec.high ? '↑' : '↓'}</span>
-              <span>{PERIOD_CHIP[rec.period]}</span>
-            </>}
-      </span>
-    );
-  };
-
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
   // Родительный для заголовка колонки: «Позиция физлиц», не «физлица».
   const groupGen = clgroup === 'FIZ' ? 'физлиц' : 'юрлиц';
+
+  // Рекорд перекоса. Окна короче полугода на бэке не считаем — рекорд за месяц
+  // не редкость и метку обесценивает.
+  const PERIOD_WORD: Record<string, string> = {
+    all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
+    '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год', '6m': 'за полгода',
+  };
+  // Рекорд ВМЕСТО обычного сигнала, а не рядом с ним. Раньше метка висела
+  // справа от текста, и строка читалась противоречиво: «обычный день · ист
+  // макс». Рекорд важнее дневной кратности (позиция может ползти неделями и
+  // поставить экстремум без единого резкого дня), поэтому он и занимает место
+  // сигнала. net_record (истор. экстремум сырой позиции в контрактах) сильнее
+  // рекорда перекоса и перекрывает его.
+  const recordSignal = (r: OiScreenerRow) => {
+    if (r.net_record) {
+      const high = r.net_record.kind === 'high';
+      return {
+        text: high ? 'Ист. максимум' : 'Ист. минимум',
+        title: `Чистая позиция ${groupGen} (в контрактах) — исторический ${high ? 'максимум' : 'минимум'} за всё время наблюдений. Это сильнее дневной кратности: позиция могла прийти сюда без единого резкого дня.`,
+      };
+    }
+    if (r.record) {
+      const high = r.record.kind === 'high';
+      return {
+        text: `${high ? 'Максимум' : 'Минимум'} ${PERIOD_WORD[r.record.period]}`,
+        title: `Перекос ${groupGen} пробил ${high ? 'максимум (рекордный лонг)' : 'минимум (рекордный шорт)'} ${PERIOD_WORD[r.record.period]}.`,
+      };
+    }
+    return null;
+  };
 
   // ── Сила: крупное mono-число «×4,3», цвет — градиент «теплоты» по размаху
   // дня (слабейший видимый sharp → приглушённый, сильнейший → чистый accent).
@@ -230,8 +208,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const ratioCell = (r: OiScreenerRow) => {
     if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
     if (r.status !== 'sharp') {
+      // Тот же кегль и вес, что у сигнальных строк — тише только цвет:
+      // колонка чисел должна читаться как одна колонка, а не прыгать.
       return (
-        <span style={{ ...MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)' }}>
+        <span
+          title={`Дневное изменение позиции ${groupGen} в ${fmtRatio(r.ratio)} от их обычного дневного изменения за 14 дней — ниже порога «резко» (2×)`}
+          style={{
+            ...MONO, fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.02em',
+            whiteSpace: 'nowrap', color: 'var(--text-muted)',
+          }}
+        >
           {'×' + r.ratio.toFixed(1).replace('.', ',')}
         </span>
       );
@@ -253,9 +239,23 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     );
   };
 
-  // Текст сигнала: только глагол + нога («Набрали лонг»). Кратность — колонка
-  // ×N, точные проценты — подсказка кометы; здесь полная трактовка в title.
+  // Текст сигнала. Приоритет: рекорд → глагол резкого движения → служебная
+  // пометка. Кратность живёт в колонке «Сила», точные проценты — в подсказке
+  // кометы; здесь полная трактовка в title.
   const signalText = (r: OiScreenerRow) => {
+    // Рекорд перебивает всё: «обычный день» рядом с историческим минимумом
+    // читался как противоречие, хотя по важности выигрывает второе.
+    const rec = recordSignal(r);
+    if (rec) {
+      return (
+        <span
+          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap', cursor: 'help' }}
+          title={rec.title}
+        >
+          {rec.text}
+        </span>
+      );
+    }
     if (r.status === 'sharp' && r.ratio != null && r.direction) {
       // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «набрали/нарастили»,
       // уменьшился → «сократили» (у шорт-стороны рост net = сокращение шорта).
@@ -312,11 +312,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // ≤ 52px («×12,4»). Раньше колонки были 92 и 244 при контенте 42 и 112 —
   // между объектами зияло 16 / 66 / 155px, отступы читались как случайные.
   //
-  // «Сигнал» — 196px: самый длинный глагол (112px) + метка «ист макс» (74px).
+  // «Сигнал» — 168px: самый длинный текст это «Максимум за всё время».
   // Только фиксированное число: шапка и строки — РАЗНЫЕ grid-контейнеры, и
   // max-content посчитал бы их независимо (заголовок «СИГНАЛ» узкий, строки
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 196px 40px';
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 168px 40px';
 
   return (
     <div>
@@ -521,11 +521,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 {/* Сила — крупное число ×4,3, яркость по размаху дня */}
                 <div style={{ justifySelf: 'center' }}>{ratioCell(r)}</div>
 
-                {/* Сигнал: глагол + метка рекорда («↑3мес») */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-                  {signalText(r)}
-                  {recordChip(r)}
-                </div>
+                {/* Сигнал: рекорд, глагол резкого движения или пометка */}
+                <div style={{ minWidth: 0 }}>{signalText(r)}</div>
 
                 {/* ⭐ */}
                 <button
