@@ -92,6 +92,7 @@ export function EmbedFrame({
   actions,
   more,
   moreLabel = 'Ещё',
+  toolbarUnified,
   children,
 }: {
   lead?: ReactNode;
@@ -100,6 +101,14 @@ export function EmbedFrame({
   actions?: ReactNode;
   more?: ReactNode;
   moreLabel?: string;
+  /** true — lead (ассет-кнопка) и toolbar рендерятся в ОДНОМ флекс-ряду, без
+   *  вложенного overflow-x:auto скролл-контейнера (тот давал видимый второй
+   *  «блок» со своим скроллбаром при недостатке места). Включать только когда
+   *  caller сам гарантирует, что toolbar влезает — напр. свой compact-icon
+   *  режим по измерению ширины (см. EmbedOpenInterest) — иначе на совсем узкой
+   *  панели контент молча обрежется (frameStyle.overflow:hidden), а не
+   *  проскроллится. Дефолт false — остальные embed'ы не затронуты. */
+  toolbarUnified?: boolean;
   children: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
@@ -117,16 +126,22 @@ export function EmbedFrame({
           </div>
         )}
         {lead}
-        {/* Узкая панель (§4.1): контролов больше, чем влезает в строку. Раньше
-            overflow:hidden молча обрезал контейнер, а единственный shrink-able
-            элемент (PillGroup, напр. Физ/Юр) хватал на себя весь дефицит места
-            и визуально «сплющивался» кнопкой справа — выглядело как баг, а не
-            как осознанный скролл. Теперь скроллится ЦЕЛИКОМ вся полоса
-            контролов как одно целое (все контролы — flexShrink:0, полный
-            размер), без выборочного сжатия одного виджета. */}
-        <div className="styled-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
-          {toolbar}
-        </div>
+        {toolbarUnified ? (
+          // Один ряд с lead, БЕЗ вложенного скролл-контейнера — caller (см.
+          // toolbarUnified doc выше) сам отвечает за то, что toolbar влезает.
+          toolbar
+        ) : (
+          // Узкая панель (§4.1): контролов больше, чем влезает в строку. Раньше
+          // overflow:hidden молча обрезал контейнер, а единственный shrink-able
+          // элемент (PillGroup, напр. Физ/Юр) хватал на себя весь дефицит места
+          // и визуально «сплющивался» кнопкой справа — выглядело как баг, а не
+          // как осознанный скролл. Теперь скроллится ЦЕЛИКОМ вся полоса
+          // контролов как одно целое (все контролы — flexShrink:0, полный
+          // размер), без выборочного сжатия одного виджета.
+          <div className="styled-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
+            {toolbar}
+          </div>
+        )}
         {(actions || more) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
             {actions}
@@ -369,10 +384,13 @@ export function PillGroup<T extends string | number>({
   value,
   options,
   onChange,
+  compact,
 }: {
   value: T;
-  options: { id: T; label: string; title?: string }[];
+  options: { id: T; label: string; title?: string; icon?: ReactNode }[];
   onChange: (v: T) => void;
+  /** Узкая панель: текст лейблов не помещается — показываем только icon (label уходит в title). */
+  compact?: boolean;
 }) {
   return (
     // flexShrink:0 — группа держит полный размер и не сплющивается сама по себе;
@@ -391,17 +409,19 @@ export function PillGroup<T extends string | number>({
     >
       {options.map((o, i) => {
         const active = o.id === value;
+        const iconOnly = compact && o.icon;
         return (
           <button
             key={String(o.id)}
             type="button"
-            title={o.title}
+            title={o.title ?? (iconOnly ? o.label : undefined)}
+            aria-label={iconOnly ? o.label : undefined}
             aria-pressed={active}
             onClick={() => onChange(o.id)}
             style={{
               fontSize: CTL_FS,
               fontWeight: CTL_FW,
-              padding: 'var(--emb-pill-pad, 4px 9px)',
+              padding: iconOnly ? 'var(--emb-pill-pad-icon, 4px 7px)' : 'var(--emb-pill-pad, 4px 9px)',
               border: 'none',
               borderLeft: i > 0 ? '1.5px solid var(--border-color, rgba(128,128,128,0.3))' : 'none',
               background: active ? 'var(--accent)' : 'transparent',
@@ -410,10 +430,12 @@ export function PillGroup<T extends string | number>({
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
               transition: 'background 0.12s, border-color 0.12s',
             }}
           >
-            {o.label}
+            {iconOnly ? o.icon : o.label}
           </button>
         );
       })}
@@ -445,11 +467,18 @@ export function Dropdown<T extends string | number>({
   options,
   onChange,
   title,
+  icon,
+  compact,
 }: {
   value: T;
   options: { id: T; label: string }[];
   onChange: (v: T) => void;
   title?: string;
+  /** Иконка контрола — статичная или зависящая от текущего значения. Нужна для
+   *  compact-режима (узкая панель прячет текст, остаётся только иконка). */
+  icon?: ReactNode | ((value: T) => ReactNode);
+  /** Узкая панель: лейбл не помещается — показываем только иконку (label уходит в title). */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [btnW, setBtnW] = useState<number>();   // ширина кнопки → ширина списка (Вадим)
@@ -459,6 +488,8 @@ export function Dropdown<T extends string | number>({
   // нечего: убираем стрелочку (не обещаем список, которого нет) и не открываем
   // попап по клику.
   const single = options.length <= 1;
+  const resolvedIcon = typeof icon === 'function' ? icon(value) : icon;
+  const iconOnly = compact && resolvedIcon;
   return (
     // display:inline-flex — без него это блочный контейнер с одним inline-block
     // ребёнком (кнопкой): браузер резервирует ~3px «фантомного» подстрочного
@@ -470,11 +501,17 @@ export function Dropdown<T extends string | number>({
       <button
         ref={btnRef}
         type="button"
-        title={title}
-        style={{ ...ddBtnStyle(open), cursor: single ? 'default' : 'pointer' }}
+        title={iconOnly ? [title, cur?.label].filter(Boolean).join(': ') : title}
+        aria-label={iconOnly ? [title, cur?.label].filter(Boolean).join(': ') : undefined}
+        style={{
+          ...ddBtnStyle(open),
+          cursor: single ? 'default' : 'pointer',
+          ...(iconOnly ? { padding: 'var(--emb-dd-pad-icon, 4px 8px)' } : {}),
+        }}
         onClick={() => { if (single) return; if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
+        {resolvedIcon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{resolvedIcon}</span>}
+        {!iconOnly && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>}
         {!single && <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />}
       </button>
       {open && !single && (
