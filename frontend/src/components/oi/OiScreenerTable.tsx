@@ -20,7 +20,7 @@
  * сырой позиции (контракты) — залитая метка «всё» (сильнейший сигнал).
  * Тон текстов — «резкое движение/аномалия», НЕ «где заработать».
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 import { Star } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
@@ -63,6 +63,41 @@ const MONO: CSSProperties = {
   fontFamily: 'var(--font-mono, ui-monospace, monospace)',
   fontVariantNumeric: 'tabular-nums',
 };
+
+// Fade-out длинных имён вместо троеточия — тот же приём, что в таблице фондов
+// (FundsTable.FadedName): текст плавно растворяется у правого края, полное имя
+// в подсказке. Маску вешаем ТОЛЬКО когда текст реально обрезан, иначе она
+// замазывает хвост и коротких имён (маска считается от бокса, а бокс сжат до
+// содержимого). Обрезанность меряем по факту и пересчитываем на ресайз.
+const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 26px), transparent 100%)';
+
+function FadedAssetName({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [name]);
+  return (
+    <span
+      ref={ref}
+      title={name}
+      style={{
+        flex: '0 1 auto', minWidth: 0,
+        fontWeight: 700, fontSize: 'var(--fs-base)',
+        whiteSpace: 'nowrap', overflow: 'hidden',
+        ...(clipped ? { maskImage: NAME_FADE, WebkitMaskImage: NAME_FADE } : {}),
+      }}
+    >
+      {name}
+    </span>
+  );
+}
 
 interface Props {
   /** Клик по строке — открыть график этого актива с настройками скринера
@@ -492,9 +527,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   <InstrumentIcon sectype={r.sectype} size={32} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-base)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {r.name}
-                      </span>
+                      <FadedAssetName name={r.name} />
                       {/* «!» на EOD-only активах (как в пикере): данные только на
                           конец дня, внутридневных (5м/1ч) нет → сигнал T+1. */}
                       {!r.has_intraday && (
