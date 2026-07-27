@@ -685,7 +685,18 @@ export default function PortfolioFundPicker({ funds, selected, onChange }: Portf
     const [open, setOpen] = useState(false);
     const allActive = selected.size === 0;
     const active = !allActive;
-    const label = allActive ? 'Все фонды акций' : `${selected.size} из ${funds.length} фондов`;
+    // Подпись таблетки читает тумблер «Без индексных фондов» тем же способом, что и
+    // сама модалка (индексные сняты ⇔ тумблер прожат). Иначе знаменатель считал все
+    // 19 фондов и выбор «всё, кроме индексных» выглядел как «16 из 19 фондов»,
+    // будто три фонда пользователь снял вручную.
+    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
+    const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
+    const pool = funds.length - (indexOff ? idxTickers.length : 0);
+    const label = allActive
+        ? 'Все фонды акций'
+        : indexOff && selected.size === pool
+            ? 'Без индексных фондов'
+            : `${selected.size} из ${pool} фондов`;
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
