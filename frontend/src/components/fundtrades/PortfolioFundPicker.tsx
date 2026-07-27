@@ -356,13 +356,19 @@ function PickerModal({
                                 const tickers = g.funds.map((f) => f.ticker);
                                 const gAll = tickers.every((t) => draft.has(t));
                                 const gAny = tickers.some((t) => draft.has(t));
-                                const isCollapsed = collapsed.has(g.key);
+                                // УК с 1-2 фондами не получают строку-заголовок: она была бы
+                                // пустой обёрткой (нулевая СЧА при снятых галках + мёртвый
+                                // шеврон над одной строкой). Такие фонды рисуем плоско, с
+                                // ПОЛНЫМ именем (с УК внутри) — иначе теряется принадлежность.
+                                const flat = g.funds.length <= 2;
+                                const isCollapsed = !flat && collapsed.has(g.key);
                                 return (
                                     <React.Fragment key={g.key}>
                                         {/* Заголовок УК: групповой чекбокс + шеврон-коллапс +
                                             «УК <имя>» + СЧА группы (аналог
                                             строки подкатегории в FundsTable). Имя — тем же
                                             fs-sm, что имена фондов ниже. */}
+                                        {!flat && (
                                         <tr style={{ borderTop: SOFT_BORDER }}>
                                             <td className="pl-2 pr-0 py-1">
                                                 <div
@@ -409,6 +415,7 @@ function PickerModal({
                                             </td>
                                             <td />
                                         </tr>
+                                        )}
                                         {!isCollapsed && sortFunds(g.funds).map((fund) => {
                                             const on = draft.has(fund.ticker);
                                             const uk = resolveFundLogo(fund.ticker, fund.uk_id);
@@ -441,7 +448,10 @@ function PickerModal({
                                                                         : uk.letter}
                                                                 </div>
                                                             )}
-                                                            <FadedName name={fund.name} display={stripUkName(fund.name, fund.uk_id)} />
+                                                            <FadedName
+                                                                name={fund.name}
+                                                                display={flat ? fund.name : stripUkName(fund.name, fund.uk_id)}
+                                                            />
                                                             <span
                                                                 className="flex-shrink-0"
                                                                 style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
