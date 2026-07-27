@@ -537,9 +537,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               );
             }
             return (
-              <button
+              <div
                 key={sh.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 draggable
                 onDragStart={(e) => { e.dataTransfer.setData('text/frame-sheet', sh.id); e.dataTransfer.effectAllowed = 'move'; }}
                 onDragOver={(e) => { if (e.dataTransfer.types.includes('text/frame-sheet')) e.preventDefault(); }}
@@ -547,12 +548,27 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
                 onClick={() => pickSheet(sh.id)}
                 onDoubleClick={() => setRenaming({ id: sh.id, value: sh.name })}
                 onContextMenu={(e) => { e.preventDefault(); pickSheet(sh.id); setSheetMenu({ id: sh.id, x: e.clientX, y: e.clientY }); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickSheet(sh.id); } }}
                 title="Двойной клик — переименовать · правый клик — меню · тянуть — поменять порядок"
-                style={sheetTabStyle(on)}
+                style={{ ...sheetTabStyle(on), display: 'inline-flex', alignItems: 'center', gap: 4 }}
               >
                 {sh.name}
                 {on && <span style={sheetUnderline} />}
-              </button>
+                {/* Крестик закрытия — только когда листов больше одного (последний
+                    лист нельзя удалить, см. deleteSheet). Быстрее правого клика → меню. */}
+                {st.sheets.length > 1 && (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    className="sb-winbtn-close"
+                    onClick={(e) => { e.stopPropagation(); deleteSheet(sh.id); }}
+                    title="Закрыть лист"
+                    style={sheetCloseStyle}
+                  >
+                    <XIcon size={11} />
+                  </span>
+                )}
+              </div>
             );
           })}
           <button type="button" onClick={addSheet} title="Новый лист" style={newSheetBtn}><Plus size={15} /></button>
@@ -873,6 +889,10 @@ function sheetTabStyle(on: boolean): CSSProperties {
   };
 }
 const sheetUnderline: CSSProperties = { position: 'absolute', bottom: -6, left: 12, right: 12, height: 2, background: 'var(--accent)', borderRadius: 2 };
+const sheetCloseStyle: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  width: 16, height: 16, borderRadius: 4, color: 'var(--muted)', cursor: 'pointer', flexShrink: 0,
+};
 const sheetInputStyle: CSSProperties = {
   padding: '5px 8px', borderRadius: 7, border: '1.5px solid var(--accent)', background: 'var(--bg2)',
   color: 'var(--text)', fontSize: 12.5, fontWeight: 700, width: 130, outline: 'none', flex: '0 0 auto',
