@@ -439,6 +439,9 @@ def list_funds_with_history(
             f.uk_id,
             f.category,
             f.subcategory,
+            -- Порядок подкатегорий — та же колонка, по которой их сортируют
+            -- «Деньги в фондах» (Индекс Мосбиржи → Управляемые → Авторские).
+            f.subcategory_order,
             (SELECT MAX(snapshot_date) FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
                AND h.snapshot_date <= :cutoff) AS last_snapshot_date,
@@ -555,6 +558,7 @@ def list_funds_with_history(
             "uk_id": r["uk_id"],
             "category": r["category"],
             "subcategory": r["subcategory"],
+            "subcategory_order": r["subcategory_order"],
             "last_snapshot_date": r["last_snapshot_date"].isoformat()
             if r["last_snapshot_date"] else None,
             "snapshot_count": r["snapshot_count"],

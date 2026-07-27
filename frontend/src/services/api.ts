@@ -1385,6 +1385,8 @@ export interface FundWithHistory {
     uk: string | null;
     category: string;
     subcategory: string | null;
+    /** Порядок подкатегории из БД — тот же, по которому группы идут в «Деньгах в фондах». */
+    subcategory_order?: number | null;
     last_snapshot_date: string | null;
     snapshot_count: number;
     holdings_count: number;
