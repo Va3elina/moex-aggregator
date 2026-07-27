@@ -1523,6 +1523,9 @@ export interface FundPortfolio {
     total_nav_rub: number;
     /** nav-взвешенная доходность набора по периодам. */
     returns: FundReturns;
+    /** Дата последней цены пая самого отстающего из фондов портфеля (ISO) —
+     *  на неё честна взвешенная доходность. */
+    returns_as_of?: string | null;
     /** Выбранный месяц-срез (echo параметра as_of), null = последний. */
     as_of?: string | null;
     /** Фактический месяц среза набора (max snapshot выбранных фондов <= bound). */

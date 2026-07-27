@@ -1284,6 +1284,7 @@ def combined_portfolio(
                AND h.snapshot_date <= :cutoff) AS snap_date,
             fd_last.nav AS nav_rub,
             fd_last.pay AS last_pay,
+            fd_last.td AS last_pay_date,
             fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m, fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
             fd_3y.pay AS pay_3y,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
@@ -1366,6 +1367,7 @@ def combined_portfolio(
             "nav_rub": nav,
             "snapshot_date": r["snap_date"].isoformat() if r["snap_date"] else None,
             "_returns": rets,
+            "_last_pay_date": r["last_pay_date"],
         })
 
     num_funds = len(included_funds)
@@ -1385,6 +1387,15 @@ def combined_portfolio(
     # y3 — накопленная (не годовая) доходность за 3 года; фонды моложе трёх лет
     # в неё не входят, поэтому она считается по подмножеству набора.
     portfolio_returns = {k: _wavg(k) for k in ("m1", "m3", "m6", "y1", "y3")}
+
+    # Дата, на которую актуальна доходность портфеля: САМАЯ СТАРАЯ из последних
+    # дат цены пая (fund_data) среди фондов, вошедших в портфель. Не самая свежая —
+    # именно отстающий фонд ограничивает, на какую дату взвешенная доходность
+    # честна для всего набора (после этой даты не все фонды учтены равно).
+    _pay_dates = [f["_last_pay_date"] for f in included_funds if f["_last_pay_date"]]
+    returns_as_of = min(_pay_dates).isoformat() if _pay_dates else None
+    for fnd in included_funds:
+        fnd.pop("_last_pay_date", None)
 
     # ── Агрегированные холдинги: суммируем рублёвую стоимость per бумага (ISIN-ключ) ──
     # target_month = None (снапшотов нет вовсе) → HAVING по NULL не пропустит ни один
@@ -1491,6 +1502,9 @@ def combined_portfolio(
         "total_value_rub": total_value,
         "total_nav_rub": total_nav,
         "returns": portfolio_returns,
+        # Самая старая из дат последней цены пая среди фондов портфеля — на неё
+        # реально честна взвешенная доходность (см. комментарий у returns_as_of выше).
+        "returns_as_of": returns_as_of,
         "as_of": as_of,
         "resolved_month": resolved_month,
         # Фонды, не опубликовавшие состав за месяц среза (в портфель НЕ включены).
