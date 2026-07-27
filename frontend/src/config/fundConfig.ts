@@ -2,27 +2,15 @@
 
 // `img` (опц.) — путь к фирменному лого УК (рендерится круглым вместо буквы).
 // letter/bg/color остаются как fallback, если картинка не загрузится.
-// `abbr` (опц.) — короткое разговорное имя УК («альфа», «первая», «вим») для
-// подписей рядом с полным названием: играет ту же роль, что тикер рядом с именем
-// фонда. Не задаём там, где имя и так короткое (ВИМ, Первая, АТОН, ГЕРОИ) —
-// подпись «ВИМ вим» была бы дублем.
-export const UK_LOGOS: Record<string, { letter: string; bg: string; color: string; name: string; img?: string; abbr?: string }> = {
-    '3597': { letter: 'Т', bg: '#FFDD2D', color: '#000000', name: 'Т-Капитал',     img: '/uk-logos/tcap.png',     abbr: 'т-капитал' },
-    '5':    { letter: 'А', bg: '#EF3124', color: '#FFFFFF', name: 'Альфа-Капитал', img: '/uk-logos/alfa.png',     abbr: 'альфа' },
-    '34':   { letter: 'П', bg: '#21A038', color: '#FFFFFF', name: 'Первая',        img: '/uk-logos/pervaya.png',  abbr: 'первая' },
-    '7':    { letter: 'В', bg: '#009FDF', color: '#FFFFFF', name: 'ВИМ',           img: '/uk-logos/vim.png',      abbr: 'вим' },
-    'aton': { letter: 'A', bg: '#1A3C6E', color: '#FFFFFF', name: 'АТОН',          img: '/uk-logos/aton.png',     abbr: 'атон' },
-    'record': { letter: 'А', bg: '#294C96', color: '#FFFFFF', name: 'Рекорд Капитал', img: '/uk-logos/alenka.svg', abbr: 'рекорд' },
-    'geroi':  { letter: 'Г', bg: '#6B3FA0', color: '#FFFFFF', name: 'ГЕРОИ', img: '/uk-logos/geroi.png',           abbr: 'герои' },
+export const UK_LOGOS: Record<string, { letter: string; bg: string; color: string; name: string; img?: string }> = {
+    '3597': { letter: 'Т', bg: '#FFDD2D', color: '#000000', name: 'Т-Капитал',     img: '/uk-logos/tcap.png' },
+    '5':    { letter: 'А', bg: '#EF3124', color: '#FFFFFF', name: 'Альфа-Капитал', img: '/uk-logos/alfa.png' },
+    '34':   { letter: 'П', bg: '#21A038', color: '#FFFFFF', name: 'Первая',        img: '/uk-logos/pervaya.png' },
+    '7':    { letter: 'В', bg: '#009FDF', color: '#FFFFFF', name: 'ВИМ',           img: '/uk-logos/vim.png' },
+    'aton': { letter: 'A', bg: '#1A3C6E', color: '#FFFFFF', name: 'АТОН',          img: '/uk-logos/aton.png' },
+    'record': { letter: 'А', bg: '#294C96', color: '#FFFFFF', name: 'Рекорд Капитал', img: '/uk-logos/alenka.svg' },
+    'geroi':  { letter: 'Г', bg: '#6B3FA0', color: '#FFFFFF', name: 'ГЕРОИ', img: '/uk-logos/geroi.png' },
 };
-
-/** Аббревиатура УК для подписи рядом с полным именем; пусто, если она дублирует имя. */
-export function ukAbbr(ukKey?: string | number | null, ukName?: string | null): string | null {
-    const abbr = ukKey != null ? UK_LOGOS[String(ukKey)]?.abbr : undefined;
-    if (!abbr) return null;
-    const name = (UK_LOGOS[String(ukKey)]?.name ?? ukName ?? '').trim().toLowerCase();
-    return abbr === name ? null : abbr;
-}
 
 // Авторские фонды — ФОТО основателя вместо УК-лого (ключ = тикер/ISIN фонда).
 // Аватары взяты с finuslugi.ru (карточки фондов), лежат в public/authors/
