@@ -357,11 +357,10 @@ function PickerModal({
                                 const gAll = tickers.every((t) => draft.has(t));
                                 const gAny = tickers.some((t) => draft.has(t));
                                 const isCollapsed = collapsed.has(g.key);
-                                const logo = (g.ukId != null ? UK_LOGOS[String(g.ukId)] : undefined) ?? UK_LOGOS[g.name];
                                 return (
                                     <React.Fragment key={g.key}>
                                         {/* Заголовок УК: групповой чекбокс + шеврон-коллапс +
-                                            аватар + имя + аббревиатура + СЧА группы (аналог
+                                            «УК <имя>» + СЧА группы (аналог
                                             строки подкатегории в FundsTable). Имя — тем же
                                             fs-sm, что имена фондов ниже. */}
                                         <tr style={{ borderTop: SOFT_BORDER }}>
@@ -391,24 +390,10 @@ function PickerModal({
                                                         className="flex-shrink-0 transition-transform duration-200"
                                                         style={{ color: 'var(--text-secondary)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
                                                     />
-                                                    <span
-                                                        style={{
-                                                            width: 20, height: 20, borderRadius: '50%',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            flexShrink: 0, overflow: 'hidden',
-                                                            fontWeight: 900, fontSize: 10, lineHeight: 1,
-                                                            backgroundColor: logo ? (logo.img ? undefined : logo.bg) : 'var(--bg-primary)',
-                                                            color: logo?.color ?? 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        {logo
-                                                            ? (logo.img
-                                                                ? <img src={logo.img} alt={logo.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                                : logo.letter)
-                                                            : (g.name.trim().charAt(0).toUpperCase() || '?')}
-                                                    </span>
                                                     {/* Заголовок группы — «УК <имя>» одним текстом, тем же
-                                                        весом и размером, что имена фондов ниже. */}
+                                                        весом и размером, что имена фондов ниже. Кружок-лого
+                                                        УК тут не рисуем: логотипы стоят у самих фондов, в
+                                                        заголовке они читались как эмодзи. */}
                                                     <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
                                                         УК {g.name}
                                                     </span>
