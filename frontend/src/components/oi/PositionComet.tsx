@@ -14,9 +14,9 @@
  * сегодня/вчера, дневная дельта и сила — в title-подсказке.
  *
  * HTML/CSS вместо SVG: дорожка 6px (тона ног), хвост = clip-path-клин с
- * градиентом «прозрачный → плотный к голове», голова = круг с ободком цвета
- * фона (отделяет её от хвоста и дорожки). Цвет = нога (зелёный лонг /
- * красный шорт); не-sharp ряды приглушены.
+ * градиентом «прозрачный → плотный к голове» и высотой по диаметру головы,
+ * голова = круг с ободком цвета фона (отделяет её от хвоста и дорожки).
+ * Цвет = нога (зелёный лонг / красный шорт); не-sharp ряды приглушены.
  */
 import type { CSSProperties } from 'react';
 
@@ -68,7 +68,15 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, ratio
 
   // Хвост: клин от «вчера» к голове, длина по |Δ п.п.| относительно самого
   // подвижного видимого ряда (10…36px — минимум, чтобы микро-сдвиг читался).
+  //
+  // Высота хвоста ПРИВЯЗАНА к диаметру головы (была фиксированные 12px): у
+  // слабого сигнала голова 6px, и клин в 12px торчал из неё вдвое толще
+  // кружка. Теперь основание клина = диаметр головы, кончик = 35% от него,
+  // поэтому комета выглядит одинаково при любом размере.
   const delta = netPctPrev != null ? netPct - netPctPrev : null;
+  const tailH = headR * 2;
+  const TIP = 0.35;                        // доля высоты, до которой сходит клин
+  const tipEdge = (100 - TIP * 100) / 2;   // 32.5% / 67.5%
   let tail: { px: number; ml: number; clip: string; bg: string } | null = null;
   if (delta != null && delta !== 0) {
     const maxD = maxAbsDelta || Math.abs(delta);
@@ -78,8 +86,8 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, ratio
       px,
       ml: toRight ? -px : 0,
       clip: toRight
-        ? 'polygon(0 44%, 100% 0, 100% 100%, 0 56%)'
-        : 'polygon(0 0, 100% 44%, 100% 56%, 0 100%)',
+        ? `polygon(0 ${tipEdge}%, 100% 0, 100% 100%, 0 ${100 - tipEdge}%)`
+        : `polygon(0 0, 100% ${tipEdge}%, 100% ${100 - tipEdge}%, 0 100%)`,
       bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, color-mix(in srgb, ${leg} 12%, transparent), color-mix(in srgb, ${leg} 70%, transparent))`,
     };
   }
@@ -115,7 +123,7 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, ratio
       <div style={{ position: 'absolute', left: '50%', top: CY - 11, height: 22, width: 1, background: 'var(--text-secondary)', opacity: 0.55 }} />
       {/* хвост */}
       {tail && (
-        <div style={{ position: 'absolute', top: CY - 6, height: 12, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
+        <div style={{ position: 'absolute', top: CY - headR, height: tailH, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
       )}
       {/* голова */}
       <div style={headStyle} />
