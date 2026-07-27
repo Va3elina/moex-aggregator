@@ -98,6 +98,14 @@ export const SUBCATEGORY_HELP: Record<string, string> = {
     'Авторские': 'Фонды публичных личностей и блогеров (авторов стратегий), а не классических управляющих компаний.',
 };
 
+/**
+ * Индексная подкатегория («Индекс МосБиржи») — фонды, механически повторяющие
+ * индекс. Матч по префиксу, а не по точной строке: в данных встречается разное
+ * написание второго слова (МосБиржи / Мосбиржи).
+ */
+export const isIndexSubcategory = (subcat?: string | null): boolean =>
+    !!subcat && subcat.trim().toLowerCase().startsWith('индекс');
+
 // Editorial-friendly палитра — deep desaturated tones, не неон.
 // Подходит к paper bg на editorial-light + dark. Mirror FUND_PALETTE из
 // chartTheme.ts (там тот же набор для chart-series). Раньше тут был неоновый

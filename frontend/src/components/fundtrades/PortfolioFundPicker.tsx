@@ -15,7 +15,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
-import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import type { FundWithHistory } from '../../services/api';
 
@@ -127,9 +127,12 @@ const subcatLabel = (subcat: string | null): string => {
     return subcat === 'Управляемые фонды акций' ? 'Управляемые фонды' : subcat;
 };
 
-// Группировка по ПОДКАТЕГОРИЯМ (Индекс Мосбиржи / Управляемые фонды / Авторские) —
+// Группировка по ПОДКАТЕГОРИЯМ (Индекс МосБиржи / Управляемые фонды / Авторские) —
 // один в один с «Деньгами в фондах». Порядок групп — subcategory_order из БД (той
 // же колонки, по которой сортирует /api/funds); фолбэк — порядок появления.
+// Исключение: индексная группа всегда уходит В КОНЕЦ — три индексных фонда почти
+// идентичны, их сделки это ребалансировка вслед за индексом, а не решения
+// управляющих, ради которых смотрят портфель.
 function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
     const map = new Map<string, SubcatGroup>();
     let seen = 0;
@@ -148,8 +151,26 @@ function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
         }
         g.funds.push(f);
     }
-    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+    return Array.from(map.values()).sort((a, b) => {
+        const ai = isIndexSubcategory(a.subcat) ? 1 : 0;
+        const bi = isIndexSubcategory(b.subcat) ? 1 : 0;
+        return ai !== bi ? ai - bi : a.order - b.order;
+    });
 }
+
+/** Тикеры индексных фондов набора — их снимает тумблер «Без индексных фондов». */
+export const indexFundTickers = (funds: FundWithHistory[]): string[] =>
+    funds.filter((f) => isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
+
+/** Дефолтный набор портфеля: всё, кроме индексных фондов. */
+export const defaultPortfolioTickers = (funds: FundWithHistory[]): string[] =>
+    funds.filter((f) => !isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
+
+export const INDEX_FUNDS_HELP =
+    'Индексные фонды механически повторяют индекс Мосбиржи: составы у них практически '
+    + 'одинаковые, а сделки — техническая ребалансировка вслед за индексом, а не решения '
+    + 'управляющих. Поэтому по умолчанию они не входят в общий портфель. Выключите тумблер, '
+    + 'если хотите видеть весь рынок фондов акций, включая индексные.';
 
 // ── Модалка (шелл — fundPickerOpen из FundsMoneyPage) ────────────────────────
 function PickerModal({
@@ -280,6 +301,20 @@ function PickerModal({
         });
     };
 
+    // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
+    // включён ⇔ ни один индексный фонд не отмечен. Поэтому ручная галка на
+    // индексном фонде сама его выключает, без рассинхрона.
+    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
+    const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !draft.has(t));
+    const toggleIndexOff = () => {
+        setDraft((prev) => {
+            const next = new Set(prev);
+            if (indexOff) idxTickers.forEach((t) => next.add(t));
+            else idxTickers.forEach((t) => next.delete(t));
+            return next;
+        });
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
             <div
@@ -318,6 +353,32 @@ function PickerModal({
                         <X size={22} />
                     </button>
                 </div>
+
+                {/* Тумблер «Без индексных фондов» — над списком, включён по умолчанию.
+                    Рядом «?» с объяснением, почему индексные вынесены из портфеля. */}
+                {idxTickers.length > 0 && (
+                    <div
+                        className="flex items-center flex-shrink-0"
+                        style={{ padding: 'var(--sp-3) var(--sp-5)', gap: 8, borderBottom: SOFT_BORDER }}
+                    >
+                        <button
+                            type="button"
+                            onClick={toggleIndexOff}
+                            className="flex items-center"
+                            style={{ gap: 8, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}
+                            aria-pressed={indexOff}
+                        >
+                            <CheckBox checked={indexOff} />
+                            <span className="font-bold" style={{ fontSize: 'var(--fs-sm)' }}>
+                                Без индексных фондов
+                            </span>
+                        </button>
+                        <HelpTooltip content={INDEX_FUNDS_HELP} size={18} />
+                        <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            {idxTickers.length} фонда
+                        </span>
+                    </div>
+                )}
 
                 {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
                     вертикальный скроллбар не съедает правый отступ). */}
