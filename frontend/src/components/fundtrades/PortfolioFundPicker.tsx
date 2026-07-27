@@ -203,8 +203,12 @@ function PickerModal({
     // Применение при любом закрытии: полный набор (или пустой черновик, который
     // для API неотличим от «все») схлопываем в пусто = «все фонды».
     const applyAndClose = () => {
-        const covered = draft.size === 0 || allTickers.every((t) => draft.has(t));
-        onApply(covered ? new Set() : new Set(draft));
+        // Пустой черновик для API неотличим от «все фонды», поэтому сводим его к
+        // пулу доступных: пока таблетка прожата, индексные не должны вернуться
+        // «через ноль» (снял все → вернулись все 19, включая индексные).
+        const effective = draft.size === 0 ? new Set(pool) : draft;
+        const covered = effective.size === 0 || allTickers.every((t) => effective.has(t));
+        onApply(covered ? new Set() : new Set(effective));
         onClose();
     };
 
@@ -284,10 +288,37 @@ function PickerModal({
     // активной колонкой (СЧА / доходность), как в «Деньгах в фондах».
     const groups = useMemo(() => groupBySubcat(funds), [funds]);
 
-    const allSelected = allTickers.length > 0 && allTickers.every((t) => draft.has(t));
-    const anySelected = allTickers.some((t) => draft.has(t));
+    // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
+    // включён ⇔ ни один индексный фонд не отмечен. Поэтому ручная галка на
+    // индексном фонде сама его выключает, без рассинхрона.
+    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
+    const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !draft.has(t));
+    const toggleIndexOff = () => {
+        setDraft((prev) => {
+            const next = new Set(prev);
+            if (indexOff) idxTickers.forEach((t) => next.add(t));
+            else idxTickers.forEach((t) => next.delete(t));
+            return next;
+        });
+    };
+
+    // «Выбрать все» подчиняется таблетке: пока индексные выключены, пул выбора —
+    // только доступные фонды, и мастер-чекбокс их не воскрешает.
+    const pool = useMemo(() => {
+        if (!indexOff) return allTickers;
+        const idx = new Set(idxTickers);
+        return allTickers.filter((t) => !idx.has(t));
+    }, [indexOff, allTickers, idxTickers]);
+
+    const allSelected = pool.length > 0 && pool.every((t) => draft.has(t));
+    const anySelected = pool.some((t) => draft.has(t));
     const toggleAll = () => {
-        setDraft(allSelected ? new Set() : new Set(allTickers));
+        setDraft((prev) => {
+            const next = new Set(prev);
+            if (allSelected) pool.forEach((t) => next.delete(t));
+            else pool.forEach((t) => next.add(t));
+            return next;
+        });
     };
     const toggleFund = (ticker: string) => {
         setDraft((prev) => {
@@ -304,20 +335,6 @@ function PickerModal({
             const next = new Set(prev);
             if (allOn) tickers.forEach((t) => next.delete(t));
             else tickers.forEach((t) => next.add(t));
-            return next;
-        });
-    };
-
-    // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
-    // включён ⇔ ни один индексный фонд не отмечен. Поэтому ручная галка на
-    // индексном фонде сама его выключает, без рассинхрона.
-    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
-    const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !draft.has(t));
-    const toggleIndexOff = () => {
-        setDraft((prev) => {
-            const next = new Set(prev);
-            if (indexOff) idxTickers.forEach((t) => next.add(t));
-            else idxTickers.forEach((t) => next.delete(t));
             return next;
         });
     };
