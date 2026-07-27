@@ -13,7 +13,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
-import { resolveFundLogo, stripUkName, UK_LOGOS } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, ukAbbr, UK_LOGOS } from '../../config/fundConfig';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -344,7 +344,7 @@ function PickerModal({
                                     </div>
                                 </td>
                                 <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
-                                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Выбрать все</span>
+                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>Выбрать все</span>
                                 </td>
                                 <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
                                     {navSumBln(funds).toFixed(2)}
@@ -360,9 +360,10 @@ function PickerModal({
                                 const logo = (g.ukId != null ? UK_LOGOS[String(g.ukId)] : undefined) ?? UK_LOGOS[g.name];
                                 return (
                                     <React.Fragment key={g.key}>
-                                        {/* Заголовок УК: групповой чекбокс + ▼-коллапс +
-                                            аватар + имя + СЧА группы (аналог строки
-                                            подкатегории в FundsTable). */}
+                                        {/* Заголовок УК: групповой чекбокс + шеврон-коллапс +
+                                            аватар + имя + аббревиатура + СЧА группы (аналог
+                                            строки подкатегории в FundsTable). Имя — тем же
+                                            fs-sm, что имена фондов ниже. */}
                                         <tr style={{ borderTop: SOFT_BORDER }}>
                                             <td className="pl-2 pr-0 py-1">
                                                 <div
@@ -381,12 +382,15 @@ function PickerModal({
                                                 })}
                                             >
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <span
-                                                        className="text-[10px] transition-transform duration-200"
+                                                    {/* Индикатор сворачивания — SVG-шеврон (как у сортировки
+                                                        колонок), а не текстовый ▼: тот в Windows подхватывался
+                                                        эмодзи-шрифтом и выглядел инородно. */}
+                                                    <ChevronDown
+                                                        size={13}
+                                                        strokeWidth={2.5}
+                                                        className="flex-shrink-0 transition-transform duration-200"
                                                         style={{ color: 'var(--text-secondary)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
-                                                    >
-                                                        ▼
-                                                    </span>
+                                                    />
                                                     <span
                                                         style={{
                                                             width: 20, height: 20, borderRadius: '50%',
@@ -403,7 +407,17 @@ function PickerModal({
                                                                 : logo.letter)
                                                             : (g.name.trim().charAt(0).toUpperCase() || '?')}
                                                     </span>
-                                                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.name}</span>
+                                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{g.name}</span>
+                                                    {/* Аббревиатура УК — та же роль и стиль, что тикер
+                                                        рядом с именем фонда в строках ниже. */}
+                                                    {ukAbbr(g.ukId, g.name) && (
+                                                        <span
+                                                            className="flex-shrink-0"
+                                                            style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
+                                                        >
+                                                            {ukAbbr(g.ukId, g.name)}
+                                                        </span>
+                                                    )}
                                                     {gAny && !gAll && (
                                                         <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
                                                             {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
