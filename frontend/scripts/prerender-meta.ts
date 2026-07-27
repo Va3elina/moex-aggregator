@@ -206,16 +206,18 @@ function renderRoute(path: string, meta: SeoMeta): string {
     if (!meta.noindex) {
         const h1 = escapeText(meta.title.split(' | ')[0]);
         const intro = escapeText(meta.intro || meta.description || '');
-        // Блок ВИДИМЫЙ и стилизован под тёмную editorial-тему (до React страница
-        // всегда тёмная — background-color:#0B0D12 в инлайне <html>). Прятать его
-        // sr-only-клипом нельзя: YandexMobileBot почти не исполняет JS, и скрытый
-        // блок оставлял ему ПУСТУЮ страницу — Вебмастер выдал NOT_MOBILE_FRIENDLY
-        // (нет видимого контента → нечего признать адаптивным). Видимый блок с
-        // fluid-типографикой (clamp, без фиксированных ширин, шрифт ≥16px)
-        // проходит критерии мобилопригодности, а для пользователя выглядит как
-        // мгновенный first paint в цветах темы — React заменяет #root при монтировании.
+        // Блок стилизован под тёмную editorial-тему (до React страница всегда
+        // тёмная — background-color:#0B0D12 в инлайне <html>). CSS-скрытие
+        // (sr-only/clip) не годится: YandexMobileBot почти не исполняет JS, но
+        // ЛЮБОЙ рендерер применяет CSS без JS — clip-хак оставлял боту ПУСТУЮ
+        // страницу, Вебмастер выдал NOT_MOBILE_FRIENDLY (PR #666). Вместо этого
+        // прячем синхронным inline <script> сразу после блока: он выполняется
+        // (и скрывает блок) только в JS-способных клиентах — то есть у реальных
+        // пользователей, почти мгновенно, до того как человек успевает увидеть
+        // текст. YandexMobileBot, который скрипт не исполняет, по-прежнему видит
+        // видимый блок → критерий мобилопригодности выполнен без FOUC для людей.
         const block =
-            '<div class="seo-prerender" style="max-width:720px;margin:0 auto;' +
+            '<div id="seo-prerender" style="max-width:720px;margin:0 auto;' +
             'padding:clamp(28px,7vw,72px) 20px;color:#F5F1E8;' +
             'font-family:Inter,system-ui,-apple-system,sans-serif">' +
             '<h1 style="font-family:Archivo,Inter,system-ui,sans-serif;' +
@@ -226,7 +228,8 @@ function renderRoute(path: string, meta: SeoMeta): string {
                   `line-height:1.65;color:#9A9A9A;margin:0">${intro}</p>`
                 : '') +
             NAV_BLOCK +
-            '</div>';
+            '</div>' +
+            '<script>document.getElementById("seo-prerender").style.display="none"</script>';
         html = html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
     }
 
