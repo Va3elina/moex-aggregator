@@ -13,7 +13,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
-import { resolveFundLogo, stripUkName, ukAbbr, UK_LOGOS } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, UK_LOGOS } from '../../config/fundConfig';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -407,17 +407,11 @@ function PickerModal({
                                                                 : logo.letter)
                                                             : (g.name.trim().charAt(0).toUpperCase() || '?')}
                                                     </span>
-                                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{g.name}</span>
-                                                    {/* Аббревиатура УК — та же роль и стиль, что тикер
-                                                        рядом с именем фонда в строках ниже. */}
-                                                    {ukAbbr(g.ukId, g.name) && (
-                                                        <span
-                                                            className="flex-shrink-0"
-                                                            style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
-                                                        >
-                                                            {ukAbbr(g.ukId, g.name)}
-                                                        </span>
-                                                    )}
+                                                    {/* Заголовок группы — «УК <имя>» одним текстом, тем же
+                                                        весом и размером, что имена фондов ниже. */}
+                                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
+                                                        УК {g.name}
+                                                    </span>
                                                     {gAny && !gAll && (
                                                         <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
                                                             {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
