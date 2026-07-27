@@ -32,6 +32,19 @@ const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн'
 // монотонен по времени и диапазон всегда сплошной, без разрыва на стыке годов.
 const MONTH_ORDER = Array.from({ length: 12 }, (_, i) => 11 - i);
 
+// Ячейки года по строкам сетки (4 в ряд), пустые строки выброшены: год, у которого
+// данные начинаются с середины (или у выбранных УК их часть отсутствует), не должен
+// занимать ряды пустых клеток. Внутри оставшихся строк дырки остаются пустыми
+// местами — иначе месяцы разъедутся по колонкам между годами.
+function rowsOf(cells: (string | null)[]): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < MONTH_ORDER.length; i += 4) {
+        const row = MONTH_ORDER.slice(i, i + 4);
+        if (row.some((m) => cells[m])) out.push(...row);
+    }
+    return out;
+}
+
 // Год/месяц берём из строки, а не через new Date(): ISO-дата парсится как UTC и в
 // западных таймзонах month-end съезжает на месяц назад.
 const isoYear = (iso: string) => Number(iso.slice(0, 4));
@@ -138,20 +151,21 @@ export default function MonthRangePicker({
                             {year}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-                            {MONTH_ORDER.map((m) => {
+                            {rowsOf(cells).map((m) => {
                                 const iso = cells[m];
-                                const locked = !!iso && !!monthLocked?.(iso);
-                                const disabled = !iso;
-                                const edge = !!iso && isEdge(iso);
-                                const mid = !!iso && inRange(iso);
+                                // Месяца нет у выбранных УК — держим место в сетке
+                                // (иначе колонки годов разъедутся), но не рисуем.
+                                if (!iso) return <span key={m} aria-hidden="true" />;
+                                const locked = !!monthLocked?.(iso);
+                                const edge = isEdge(iso);
+                                const mid = inRange(iso);
                                 return (
                                     <button
                                         key={m}
                                         type="button"
-                                        disabled={disabled}
-                                        title={disabled ? 'Нет снапшота за этот месяц' : locked ? 'Свежий срез — по подписке' : undefined}
-                                        onClick={() => iso && pick(iso)}
-                                        onMouseEnter={() => iso && setHover(iso)}
+                                        title={locked ? 'Свежий срез — по подписке' : undefined}
+                                        onClick={() => pick(iso)}
+                                        onMouseEnter={() => setHover(iso)}
                                         onMouseLeave={() => setHover((h) => (h === iso ? null : h))}
                                         style={{
                                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3,
@@ -163,11 +177,11 @@ export default function MonthRangePicker({
                                                 : mid
                                                     ? 'color-mix(in srgb, var(--accent) 22%, transparent)'
                                                     : 'transparent',
-                                            color: disabled || locked
+                                            color: locked
                                                 ? 'var(--text-muted)'
                                                 : edge ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                            opacity: disabled || locked ? 0.45 : 1,
-                                            cursor: disabled ? 'default' : locked ? 'not-allowed' : 'pointer',
+                                            opacity: locked ? 0.45 : 1,
+                                            cursor: locked ? 'not-allowed' : 'pointer',
                                             transition: 'background-color 0.12s ease, color 0.12s ease',
                                         }}
                                     >
