@@ -1,15 +1,20 @@
 /**
- * OiScreenerTable — вкладка «Скринер сигналов» на /oi (десктоп, v1).
+ * OiScreenerTable — вкладка «Скринер сигналов» на /oi (десктоп, v2 по макету
+ * Вадима 2026-07, «Скринер сигналов standalone»).
  *
- * Лента сигналов по открытому интересу «как Telegram-алерты»: чистая позиция
- * группы (контракты + % перекоса) и ATR14-кратность дневного движения
- * («в N× резче обычного»). Данные дневные (T+1).
+ * Лента сигналов по открытому интересу «как Telegram-алерты»: комета позиции
+ * группы на оси −100…+100 и ATR14-кратность дневного движения. Данные дневные
+ * (T+1). Числа перекоса из строк убраны — точные значения в подсказке кометы;
+ * ×N — крупное число с градиентом «теплоты» по размаху дня (не бейдж).
  *
- * Контролы — ТЕ ЖЕ компоненты, что на вкладке графика (SegmentedControl:
- * editorial-пилюли, 2px рамки, accent-актив, hover-поднажим) — паритет
- * размеров/жирности/анимаций с «Открытыми позициями» по построению.
- * Тумблер Физлица/Юрлица: кратность ×N у групп зеркально идентична, но
- * знаки, проценты и ликвидность (npart) — свои, бэк считает честно.
+ * Тулбар: Физлица/Юрлица (SegmentedControl — паритет с вкладкой графика),
+ * Категории и Сортировка — Dropdown'ы (вместо двух рядов пилюль), ★ Избранные
+ * со счётчиком, справа — свежесть данных. Порога ≥2×/3×/5× больше нет:
+ * сортировка «сила ×N» держит резкие сверху, тихие ряды приглушены.
+ *
+ * Рекорды перекоса — оранжевая метка периода у сигнала («↑3мес»: пробили
+ * максимум за 3 месяца) + акцентная левая грань строки. Исторический экстремум
+ * сырой позиции (контракты) — залитая метка «всё» (сильнейший сигнал).
  * Тон текстов — «резкое движение/аномалия», НЕ «где заработать».
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -17,28 +22,26 @@ import type { CSSProperties, MouseEvent } from 'react';
 import { Star } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
-import PositionComet from './PositionComet';
+import Dropdown from '../Dropdown';
+import PositionComet, { ratioHeat } from './PositionComet';
 import { getOiScreener, type OiScreenerRow } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Clgroup = 'FIZ' | 'YUR';
-type ThresholdKey = '0' | '2' | '3' | '5';
-
-const THRESHOLD_OPTIONS: Array<{ key: ThresholdKey; label: string; title: string }> = [
-  { key: '0', label: 'Все', title: 'Все активы, включая без сигнала' },
-  { key: '2', label: '≥2×', title: 'Движения минимум в 2 раза резче обычного' },
-  { key: '3', label: '≥3×', title: 'Движения минимум в 3 раза резче обычного' },
-  { key: '5', label: '≥5×', title: 'Движения минимум в 5 раз резче обычного' },
-];
 
 // Реальные значения instruments.group (как в пикере активов).
 const GROUP_OPTIONS = [
-  { key: 'all', label: 'Все' },
+  { key: 'all', label: 'Все категории' },
   { key: 'Индексы', label: 'Индексы' },
   { key: 'Валюта', label: 'Валюта' },
   { key: 'Сырьё', label: 'Сырьё' },
   { key: 'Акции', label: 'Акции' },
   { key: 'Крипто', label: 'Крипто' },
+] as const;
+
+const SORT_OPTIONS = [
+  { key: 'ratio', label: 'Сила ×N' },
+  { key: 'pct', label: 'Перекос' },
 ] as const;
 
 const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пикером активов
@@ -81,7 +84,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
   // же виде, что оставил юзер (группа, порог, тип актива, избранные, сортировка).
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
-  const [threshold, setThreshold] = usePersistedState<ThresholdKey>('frame:oi-screener:threshold', '2');
   const [group, setGroup] = usePersistedState<string>('frame:oi-screener:group', 'all');
   const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
   // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
@@ -124,12 +126,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
 
   const visible = useMemo(() => {
     if (!rows) return [];
-    const thr = Number(threshold);
     const favSet = new Set(favorites);
     let out = rows.filter((r) =>
       (group === 'all' || r.group === group) &&
-      (!onlyFav || favSet.has(r.sectype)) &&
-      (thr === 0 || (r.status === 'sharp' && (r.ratio ?? 0) >= thr)),
+      (!onlyFav || favSet.has(r.sectype)),
     );
     // sortDir = −1 → по убыванию (дефолт: сильные сверху), 1 → по возрастанию.
     if (sortKey === 'pct') {
@@ -154,30 +154,28 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       });
     }
     return out;
-  }, [rows, favorites, group, threshold, sortKey, sortDir, onlyFav]);
+  }, [rows, favorites, group, sortKey, sortDir, onlyFav]);
 
   const clickSort = (key: 'ratio' | 'pct') => {
     if (sortKey === key) setSortDir((d) => (d === -1 ? 1 : -1));
     else { setSortKey(key); setSortDir(-1); }
   };
 
-  // «Ближайшие к порогу» — топ движений, не попавших в текущую выборку (для
-  // пустого состояния тихого дня: лента не голая, видно кто был ближе всех). Любой
-  // статус с посчитанной кратностью, КРОМЕ уже видимых (sharp ≥ порога), по
-  // убыванию; учитываем фильтры группы/избранного. Так при пороге ≥5× сюда
-  // попадают и sharp-2× активы, которые просто не дотянули до 5×.
-  const nearMisses = useMemo(() => {
-    if (!rows) return [];
-    const thr = Number(threshold);
-    const favSet = new Set(favorites);
-    return rows
-      .filter((r) => (group === 'all' || r.group === group)
-        && (!onlyFav || favSet.has(r.sectype))
-        && r.ratio != null
-        && !(r.status === 'sharp' && (r.ratio ?? 0) >= thr))
-      .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0))
-      .slice(0, 5);
-  }, [rows, group, onlyFav, favorites, threshold]);
+  // Калибровка визуальных кодировок «по дню»: размах ×N sharp-строк (размер
+  // головы кометы + градиент цвета числа) и максимум |Δ п.п.| (длина хвоста).
+  // Считается по ВИДИМОЙ выборке — фильтр категории меняет и калибровку,
+  // строки сравниваются с соседями по экрану.
+  const stats = useMemo(() => {
+    const sharpRatios = visible.filter((r) => r.status === 'sharp' && r.ratio != null).map((r) => r.ratio!);
+    const deltas = visible
+      .filter((r) => r.net_pct != null && r.net_pct_prev != null)
+      .map((r) => Math.abs(r.net_pct! - r.net_pct_prev!));
+    return {
+      ratioLo: sharpRatios.length ? Math.min(...sharpRatios) : null,
+      ratioHi: sharpRatios.length ? Math.max(...sharpRatios) : null,
+      maxAbsDelta: deltas.length ? Math.max(...deltas) : null,
+    };
+  }, [visible]);
 
   const _fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   // Честная свежесть: дневные данные T+1 (signal_date) + свежий интрадей-бар
@@ -189,51 +187,46 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         : `по данным за ${_fmtD(signalDate)}`)
     : null;
 
-  // Бейдж «новый рекорд перекоса»: сильнее период — ярче (всё время = accent).
+  // Рекорд перекоса → компактная оранжевая метка периода у сигнала: «↑3мес» =
+  // пробили максимум за 3 месяца. Редкость кодируется ДЛИНОЙ периода в метке.
   const PERIOD_WORD: Record<string, string> = {
     all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
     '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год',
+    '6m': 'за полгода', '3m': 'за 3 месяца', '1m': 'за месяц',
   };
-  const recordBadge = (r: OiScreenerRow) => {
-    if (!r.record) return null;
-    const high = r.record.kind === 'high';
-    const strong = r.record.period === 'all';
+  const PERIOD_CHIP: Record<string, string> = {
+    all: 'всё', '5y': '5лет', '4y': '4года', '3y': '3года', '2y': '2года',
+    '1y': '1год', '6m': '6мес', '3m': '3мес', '1m': '1мес',
+  };
+  // net_record (истор. экстремум сырой позиции, контракты) сильнее рекорда
+  // перекоса и покрывает его → показываем одну метку. Заливка = all-time.
+  const recordChip = (r: OiScreenerRow) => {
+    const rec = r.net_record
+      ? { high: r.net_record.kind === 'high', period: 'all', solid: true,
+          title: `Чистая позиция (в контрактах) — исторический ${r.net_record.kind === 'high' ? 'максимум' : 'минимум'} за всё время наблюдений.` }
+      : r.record
+        ? { high: r.record.kind === 'high', period: r.record.period, solid: r.record.period === 'all',
+            title: `Перекос пробил ${r.record.kind === 'high' ? 'максимум (рекордный лонг)' : 'минимум (рекордный шорт)'} ${PERIOD_WORD[r.record.period]}.` }
+        : null;
+    if (!rec) return null;
     return (
       <span
-        title={`Чистая позиция ${high ? 'достигла нового максимума (рекордный лонг)' : 'достигла нового минимума (рекордный шорт)'} перекоса ${PERIOD_WORD[r.record.period]}.`}
+        title={rec.title}
         style={{
-          ...MONO, display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '1px 8px', borderRadius: 999, fontSize: 'var(--fs-2xs)', fontWeight: 800,
-          letterSpacing: '0.02em', whiteSpace: 'nowrap', marginBottom: 4,
-          border: `1.5px solid ${strong ? 'var(--accent)' : (high ? 'var(--oi-green)' : 'var(--oi-red)')}`,
-          background: strong ? 'var(--accent)' : 'transparent',
-          color: strong ? 'var(--text-inverse)' : (high ? 'var(--oi-green)' : 'var(--oi-red)'),
+          ...MONO, display: 'inline-flex', alignItems: 'baseline', gap: 3,
+          flexShrink: 0, fontSize: 'var(--fs-xs)', fontWeight: 700,
+          whiteSpace: 'nowrap', cursor: 'help',
+          ...(rec.solid
+            // Исторический экстремум — сильнейший сигнал: залитая пилюля.
+            ? { background: 'var(--accent)', color: 'var(--text-inverse)',
+                padding: '1px 7px', borderRadius: 999 }
+            // Периодный рекорд — тихая метка: accent-текст с пунктиром.
+            : { color: 'var(--accent)', paddingBottom: 1,
+                borderBottom: '1px dashed color-mix(in srgb, var(--accent) 55%, transparent)' }),
         }}
       >
-        <Star size={10} fill="currentColor" strokeWidth={0} />
-        {high ? 'новый макс' : 'новый мин'} {PERIOD_WORD[r.record.period]}
-      </span>
-    );
-  };
-
-  // Бейдж «исторический экстремум ЧИСТОЙ ПОЗИЦИИ» (сырые контракты, за всё время,
-  // включая интрадей). Это самый сильный сигнал — всегда accent (заливка).
-  const netRecordBadge = (r: OiScreenerRow) => {
-    if (!r.net_record) return null;
-    const high = r.net_record.kind === 'high';
-    return (
-      <span
-        title={`Чистая позиция (в контрактах) достигла ${high ? 'исторического МАКСИМУМА' : 'исторического МИНИМУМА'} за всё время наблюдений.`}
-        style={{
-          ...MONO, display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '1px 8px', borderRadius: 999, fontSize: 'var(--fs-2xs)', fontWeight: 800,
-          letterSpacing: '0.02em', whiteSpace: 'nowrap', marginBottom: 4,
-          border: '1.5px solid var(--accent)', background: 'var(--accent)',
-          color: 'var(--text-inverse)',
-        }}
-      >
-        <Star size={10} fill="currentColor" strokeWidth={0} />
-        {high ? 'ист. максимум позиции' : 'ист. минимум позиции'}
+        <span>{rec.high ? '↑' : '↓'}</span>
+        <span>{PERIOD_CHIP[rec.period]}</span>
       </span>
     );
   };
@@ -241,52 +234,58 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
 
-  // ── ×N бейдж: сила по градации 2×/3×/5× ──
-  const ratioBadge = (r: OiScreenerRow) => {
-    if (r.status !== 'sharp' || r.ratio == null) return null;
-    const strong = r.ratio >= 5;
-    const mid = r.ratio >= 3;
+  // ── ×N: крупное mono-число, цвет — градиент «теплоты» по размаху дня
+  // (слабейший видимый sharp → приглушённый, сильнейший → чистый accent).
+  // Абсолютные пороги 3×/5× не различали реальный разброс дня 2,9…4,3.
+  const ratioCell = (r: OiScreenerRow) => {
+    if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+    if (r.status !== 'sharp') {
+      return (
+        <span style={{ ...MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)' }}>
+          {'×' + r.ratio.toFixed(1).replace('.', ',')}
+        </span>
+      );
+    }
+    const heat = stats.ratioLo != null && stats.ratioHi != null
+      ? ratioHeat(r.ratio, stats.ratioLo, stats.ratioHi)
+      : 1;
     return (
-      <span style={{
-        ...MONO,
-        padding: '3px 10px',
-        borderRadius: 999,
-        fontSize: 'var(--fs-base)',
-        fontWeight: 800,
-        flexShrink: 0,
-        border: `2px solid ${strong || mid ? 'var(--accent)' : 'var(--text-primary)'}`,
-        background: strong ? 'var(--accent)' : 'transparent',
-        color: strong ? 'var(--text-inverse)' : mid ? 'var(--accent)' : 'var(--text-primary)',
-      }}>
-        {fmtRatio(r.ratio)}
+      <span
+        title="Во сколько раз дневной сдвиг чистой позиции сильнее обычного (ATR-14)"
+        style={{
+          ...MONO, fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.02em',
+          whiteSpace: 'nowrap',
+          color: `color-mix(in oklab, var(--accent) ${Math.round(30 + heat * 70)}%, var(--text-secondary))`,
+        }}
+      >
+        {'×' + r.ratio.toFixed(1).replace('.', ',')}
       </span>
     );
   };
 
-  // Текст сигнала: число перекоса и направление показывает комета, ×N — своя
-  // колонка; здесь остаётся трактовка + дневной сдвиг в контрактах.
+  // Текст сигнала: только глагол + нога («Набрали лонг»). Кратность — колонка
+  // ×N, точные проценты — подсказка кометы; здесь полная трактовка в title.
   const signalText = (r: OiScreenerRow) => {
     if (r.status === 'sharp' && r.ratio != null && r.direction) {
-      // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «нарастили», уменьшился
-      // → «сократили» (у шорт-стороны рост net = сокращение шорта). Нога — по
-      // знаку net. Так физики и юрики на CNYRUBF оба «сократили» свою ногу.
+      // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «набрали/нарастили»,
+      // уменьшился → «сократили» (у шорт-стороны рост net = сокращение шорта).
+      // Нога — по знаку net. Так физики и юрики на CNYRUBF оба «сократили».
       const netLong = r.net >= 0;
       const grewExposure = netLong === (r.direction === 'up');
-      const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
-      const verb = grewExposure ? 'нарастили' : 'сократили';
+      const verb = netLong
+        ? (grewExposure ? 'Набрали лонг' : 'Сократили лонг')
+        : (grewExposure ? 'Нарастили шорт' : 'Сократили шорт');
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
+      const full = `${cap(groupWord)} резко ${grewExposure ? 'нарастили' : 'сократили'} ${netLong ? 'длинную' : 'короткую'} позицию по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
-        <div style={{ minWidth: 0 }} title={full}>
-          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            резко {verb} {legWord} — в {fmtRatio(r.ratio)} сильнее обычного
-          </div>
-        </div>
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
+          {verb}
+        </span>
       );
     }
     const note =
       r.status === 'normal'
-        ? `в пределах обычного${r.ratio != null ? ` (${fmtRatio(r.ratio)})` : ''}`
+        ? 'в пределах обычного'
         : r.status === 'illiquid'
           ? `низкая ликвидность (${r.npart})`
           : 'недостаточно данных';
@@ -298,27 +297,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           : 'Дневной сдвиг чистой позиции в пределах обычного (ниже порога «резко» 2×).';
     return (
       <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
-    );
-  };
-
-  // Перекос — свой столбец: |net_pct|% + ЛОНГ/ШОРТ, цвет по ноге. Это скос
-  // ПОЗИЦИИ (net ÷ вся экспозиция), не доля участников — поясняем в подсказке.
-  const perekosCell = (r: OiScreenerRow) => {
-    if (r.net_pct == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
-    const long = r.net_pct >= 0;
-    const color = long ? 'var(--oi-green)' : 'var(--oi-short)';
-    const dim = r.status !== 'sharp';
-    return (
-      <div
-        style={{ ...MONO, fontWeight: 800, whiteSpace: 'nowrap', lineHeight: 1.1, color, opacity: dim ? 0.62 : 1 }}
-        title={`Перекос ${groupWord}: чистая позиция ÷ вся экспозиция группы. 0 = поровну, ±100% = вся в одну сторону. Это скос ПОЗИЦИИ, не доля участников.`}
-      >
-        {Math.abs(r.net_pct).toFixed(1).replace('.', ',')}%
-        <br />
-        <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          {long ? 'лонг' : 'шорт'}
-        </span>
-      </div>
     );
   };
 
@@ -336,8 +314,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     textAlign: 'left', whiteSpace: 'nowrap',
   };
 
-  // Актив · Позиция (комета) · Перекос (%) · ×N · Сигнал · ★.
-  const gridCols = 'minmax(170px, 210px) minmax(150px, 240px) 88px 64px minmax(200px, 1fr) 44px';
+  // Актив · Позиция (комета, забирает свободное место) · ×N · Сигнал · ★.
+  // Колонки «Перекос» больше нет — число в подсказке кометы (макет 2026-07).
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 92px minmax(190px, 244px) 44px';
+
+  // Подпись размаха дня под заголовком ×N: «2,9…4,3×».
+  const xnRange = stats.ratioLo != null && stats.ratioHi != null
+    ? `${stats.ratioLo.toFixed(1).replace('.', ',')}…${stats.ratioHi.toFixed(1).replace('.', ',')}×`
+    : null;
 
   return (
     <div>
@@ -381,7 +365,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </div>
       )}
 
-      {/* Тулбар — те же SegmentedControl, что контролы графика ОИ */}
+      {/* Тулбар по макету: группа · Категории ▾ · Сортировка ▾ · ★ Избранные,
+          справа — свежесть данных (перенесена из футера: это первое, что нужно
+          знать про ленту). Порога ≥N× больше нет. */}
       <div data-tour="screener-toolbar" className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
         <SegmentedControl<Clgroup>
           options={[
@@ -391,17 +377,17 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           value={clgroup}
           onChange={setClgroup}
         />
-        <SegmentedControl<ThresholdKey>
-          options={THRESHOLD_OPTIONS}
-          value={threshold}
-          onChange={setThreshold}
-        />
-        <SegmentedControl<string>
+        <Dropdown<string>
           options={GROUP_OPTIONS.map((g) => ({ key: g.key, label: g.label }))}
           value={group}
           onChange={setGroup}
         />
-        {/* Фильтр по избранным активам */}
+        <Dropdown<'ratio' | 'pct'>
+          options={SORT_OPTIONS.map((s) => ({ key: s.key, label: s.label }))}
+          value={sortKey}
+          onChange={(k) => { setSortKey(k); setSortDir(-1); }}
+        />
+        {/* Фильтр по избранным активам (+ счётчик) */}
         <button
           type="button"
           data-tour="screener-favorites"
@@ -421,22 +407,52 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         >
           <Star size={15} fill={onlyFav ? 'var(--text-inverse)' : 'none'} strokeWidth={2.2} />
           Избранные
+          {favorites.length > 0 && (
+            <span style={{ ...MONO, fontSize: 'var(--fs-xs)', fontWeight: 700, opacity: 0.75 }}>
+              {favorites.length}
+            </span>
+          )}
         </button>
+        {/* Свежесть данных — честная метка (дневные T+1 + интрадей, если новее) */}
+        {dateLabel && (
+          <span className="ml-auto inline-flex items-center" style={{ gap: 7, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--oi-green)', flexShrink: 0 }} />
+            {dateLabel}
+          </span>
+        )}
       </div>
 
       {/* Таблица */}
       <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 960 }}>
-          {/* Заголовки */}
-          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)' }}>
+        <div style={{ minWidth: 1000 }}>
+          {/* Заголовки: у кометы вторая строка = подписи оси (−100 шорт · 0 ·
+              лонг +100, выровнены с дорожкой по построению — обе на всю ширину
+              колонки); у ×N вторая строка = фактический размах дня. */}
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px 8px', borderBottom: '2px solid var(--text-primary)', alignItems: 'end' }}>
             <span style={headCell}>Актив</span>
-            <span style={headCell} title={`Позиция ${groupWord}: комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где стоят сейчас, хвост = сдвиг за день, размер = сила ×N.`}>Позиция {groupWord}</span>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('pct')} title={`Перекос ${groupWord}: чистая позиция ÷ вся экспозиция. 0 = поровну, ±100% = вся в одну сторону. Это скос ПОЗИЦИИ, не доля участников. Сортировка — топ-лонг / топ-шорт`}>
-              Перекос{sortArrow('pct')}
-            </button>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'center', justifySelf: 'center' }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг сильнее обычного (ATR-14)">
-              ×N{sortArrow('ratio')}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={headCell} title={`Комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где ${groupWord} стоят сейчас, хвост = сдвиг за день, размер головы = сила ×N. Точные проценты — при наведении на строку.`}>
+                  Позиция {groupWord}
+                </span>
+                <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontWeight: 700, color: 'var(--text-secondary)' }} onClick={() => clickSort('pct')} title={`Сортировать по перекосу ${groupWord} (топ-лонг / топ-шорт)`}>
+                  перекос{sortArrow('pct')}
+                </button>
+              </span>
+              <span style={{ ...MONO, display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', letterSpacing: '0.02em' }}>
+                <span>−100 шорт</span><span>0</span><span>лонг +100</span>
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг сильнее обычного (ATR-14)">
+                ×N{sortArrow('ratio')}
+              </button>
+              {xnRange && (
+                <span style={{ ...MONO, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }} title="Размах силы сигналов видимой выборки — размер головы кометы и яркость числа откалиброваны по нему">
+                  размах дня {xnRange}
+                </span>
+              )}
+            </div>
             <span style={headCell}>Сигнал</span>
             <span />
           </div>
@@ -453,77 +469,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           {!error && rows !== null && visible.length === 0 && (
             <div style={{ padding: '40px 18px', textAlign: 'center' }}>
               <div style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-lg)', fontWeight: 700 }}>
-                {onlyFav ? 'Среди избранных резких движений нет'
-                  : threshold !== '0' ? 'Тихий день — резких движений нет'
-                    : 'Нет активов по фильтру'}
+                {onlyFav ? 'Среди избранных активов пусто' : 'Нет активов по фильтру'}
               </div>
               <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                {threshold !== '0'
-                  ? `Ни один актив не двинулся ≥ ${threshold}× от обычного дня`
-                  : 'Попробуйте снять фильтры'}
-                {dateLabel ? ` · ${dateLabel}` : ''}
+                Попробуйте снять фильтры{dateLabel ? ` · ${dateLabel}` : ''}
               </div>
-
-              {nearMisses.length > 0 && (
-                <div style={{ marginTop: 22, textAlign: 'left', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
-                  <div style={{
-                    ...MONO, fontSize: 'var(--fs-xs)', textTransform: 'uppercase',
-                    letterSpacing: '0.06em', color: 'var(--text-secondary)', marginBottom: 8,
-                  }}>
-                    Ближайшие к порогу — до «резко» не дотянули
-                  </div>
-                  {nearMisses.map((r) => (
-                    <div
-                      key={r.sectype}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => onSelect(r.sectype, clgroup)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') onSelect(r.sectype, clgroup); }}
-                      className="oi-screener-row"
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
-                        padding: '9px 12px', borderRadius: 12,
-                        borderBottom: '0.5px solid var(--border-color, rgba(128,128,128,0.25))',
-                      }}
-                    >
-                      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 'var(--fs-sm)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.name}
-                      </span>
-                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                        {/* Глагол — как в signalText: по МОДУЛЮ позиции (grewExposure). */}
-                        {(r.net >= 0) === (r.direction === 'up') ? '↑ нарастили' : '↓ сократили'}
-                      </span>
-                      <span style={{
-                        ...MONO, padding: '2px 9px', borderRadius: 999, fontSize: 'var(--fs-sm)',
-                        fontWeight: 700, flexShrink: 0, border: '2px solid var(--text-secondary)',
-                        color: 'var(--text-secondary)',
-                      }}>
-                        {fmtRatio(r.ratio!)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {threshold !== '0' && (
-                <button
-                  type="button"
-                  className="editorial-press rounded-full font-semibold"
-                  style={{
-                    marginTop: 22,
-                    fontSize: 'var(--fs-sm)',
-                    padding: 'var(--sp-2) var(--sp-4)',
-                    background: 'var(--bg-secondary)',
-                    border: '2px solid var(--text-primary)',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => setThreshold('0')}
-                >
-                  Показать все активы
-                </button>
-              )}
             </div>
           )}
 
@@ -540,8 +490,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 className="oi-screener-row"
                 style={{
                   display: 'grid', gridTemplateColumns: gridCols, gap: 16,
-                  alignItems: 'center', padding: '12px 18px',
+                  alignItems: 'center', padding: '12px 18px 12px 15px',
                   borderBottom: '0.5px solid var(--border-color, rgba(128,128,128,0.25))',
+                  // Акцентная левая грань = в строке рекорд (перекоса или позиции).
+                  borderLeft: `3px solid ${r.record || r.net_record ? 'var(--accent)' : 'transparent'}`,
                   cursor: 'pointer',
                   opacity: r.status === 'illiquid' || r.status === 'nodata' ? 0.55 : 1,
                 }}
@@ -576,29 +528,24 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   </div>
                 </div>
 
-                {/* Позиция — «след кометы» (подпись % вынесена в столбец «Перекос») */}
+                {/* Позиция — комета (точные проценты в её подсказке) */}
                 <PositionComet
                   netPct={r.net_pct}
                   netPctPrev={r.net_pct_prev}
                   ratio={r.ratio}
                   status={r.status}
-                  hideLabel
+                  ratioLo={stats.ratioLo}
+                  ratioHi={stats.ratioHi}
+                  maxAbsDelta={stats.maxAbsDelta}
                 />
 
-                {/* Перекос — % скоса позиции + лонг/шорт (свой столбец) */}
-                <div>{perekosCell(r)}</div>
+                {/* ×N — крупное число, яркость по размаху дня */}
+                <div>{ratioCell(r)}</div>
 
-                {/* ×N */}
-                <div style={{ justifySelf: 'center' }}>{ratioBadge(r)}</div>
-
-                {/* Сигнал (+ бейдж рекорда перекоса, если есть) */}
-                <div style={{ minWidth: 0 }}>
-                  {/* net_record (истор. экстремум позиции, all-time) сильнее и
-                      покрывает %-рекорд → при его наличии %-бейдж не дублируем. */}
-                  {r.net_record
-                    ? <div>{netRecordBadge(r)}</div>
-                    : r.record && <div>{recordBadge(r)}</div>}
+                {/* Сигнал: глагол + метка рекорда («↑3мес») */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
                   {signalText(r)}
+                  {recordChip(r)}
                 </div>
 
                 {/* ⭐ */}
@@ -619,13 +566,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </div>
       </div>
 
-      {/* Футер */}
+      {/* Футер: как читать ×N и где точные числа (дата уехала в тулбар) */}
       {!error && rows !== null && (
-        <div className="flex items-center justify-between flex-wrap" style={{ ...MONO, gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-          <span>{pluralAssets(visible.length)} · {groupWord}</span>
+        <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
-            {dateLabel && <em>{dateLabel}</em>}
+            ×N — во сколько раз дневное изменение позиции сильнее обычного (ATR-14).
+            Точные значения перекоса и дневная дельта — в подсказке кометы.
           </span>
+          <span style={MONO}>{pluralAssets(visible.length)} · {groupWord}</span>
         </div>
       )}
     </div>

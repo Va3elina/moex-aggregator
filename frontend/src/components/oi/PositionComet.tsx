@@ -1,18 +1,22 @@
 /**
- * PositionComet — «след кометы» для строки скринера сигналов ОИ.
+ * PositionComet — «комета позиции» строки скринера сигналов ОИ.
  *
  * Ось перекоса ФИКСИРОВАНА −100…+100 (ноль по центру, слева шорт, справа
  * лонг) — строки сравнимы глазами. Три величины закодированы:
- *   • X головы   = ГДЕ стоит толпа сейчас (у края = «полный лонг/шорт»);
- *   • длина хвоста = НА СКОЛЬКО сдвинулись за день (было → сегодня);
- *   • РАЗМЕР головы = сила ×N (2× — маленькая, 5× — крупная): видно
- *     «размах» движения не только цифрой, но и глазом.
+ *   • X головы     = ГДЕ стоит толпа сейчас (у края = «полный лонг/шорт»);
+ *   • длина хвоста = НА СКОЛЬКО сдвинулись за день (нормирована на максимум
+ *     |Δ п.п.| видимой выборки — maxAbsDelta);
+ *   • размер головы = сила ×N, нормированная на фактический размах дня
+ *     (ratioLo…ratioHi). Абсолютная шкала «2×…7×» не различала реальный
+ *     разброс дня 2,9…4,3× — радиусы выходили почти одинаковыми.
  *
- * Число справа = ПЕРЕКОС: |net_pct|% + слово ЛОНГ/ШОРТ (0 = поровну,
- * 100% = все в одну сторону).
+ * Чисел в строке нет совсем (макет Вадима, 2026-07): точный перекос
+ * сегодня/вчера, дневная дельта и сила — в title-подсказке.
  *
- * Крошечный сдвиг не теряется: хвост по сжатой √-шкале с минимумом.
- * Цвет = нога (зелёный лонг / красный шорт); приглушён для не-sharp рядов.
+ * HTML/CSS вместо SVG: дорожка 6px (тона ног), хвост = clip-path-клин с
+ * градиентом «прозрачный → плотный к голове», голова = круг с ободком цвета
+ * фона (отделяет её от хвоста и дорожки). Цвет = нога (зелёный лонг /
+ * красный шорт); не-sharp ряды приглушены.
  */
 import type { CSSProperties } from 'react';
 
@@ -21,81 +25,100 @@ interface Props {
   netPctPrev: number | null;     // перекос вчера (для хвоста)
   ratio: number | null;          // сила сигнала ×N (размер головы)
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
-  hideLabel?: boolean;           // скрыть подпись «%+лонг/шорт» — вынесена в свой столбец «Перекос»
+  /** Мин/макс ×N среди видимых sharp-строк — калибровка головы «по дню». */
+  ratioLo?: number | null;
+  ratioHi?: number | null;
+  /** Максимум |Δ п.п.| среди видимых строк — калибровка длины хвоста. */
+  maxAbsDelta?: number | null;
 }
 
-// ── геометрия (viewBox 250×48, ось y=24) — крупная, размер головы «говорит» ×N ──
-const ZERO_X = 96;
-const PER_PCT = 0.80;            // +100% на x=176, −100% на x=16
-const AX_MIN = 16, AX_MAX = 176;
-const Y = 24;
+const H = 32;    // высота контейнера, px
+const CY = 16;   // вертикальный центр оси
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const xOf = (p: number) => ZERO_X + clamp(p, -100, 100) * PER_PCT;
-
-const MONO: CSSProperties = {
-  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-  fontVariantNumeric: 'tabular-nums',
-};
 
 function fmtPct(p: number): string {
   return Math.abs(p).toFixed(1).replace('.', ',') + '%';
 }
+function fmtSigned(p: number): string {
+  return (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1).replace('.', ',');
+}
 
-export default function PositionComet({ netPct, netPctPrev, ratio, status, hideLabel }: Props) {
+/** «Теплота» ×N в размахе дня 0…1 — радиус головы 3…9px; вырожденный размах
+ *  (<0.5×) → середина шкалы, чтобы не раздувать шумовую разницу. Экспорт —
+ *  таблица красит этим же значением число ×N. */
+export function ratioHeat(ratio: number, lo: number, hi: number): number {
+  const span = hi - lo;
+  return span < 0.5 ? 0.5 : clamp((ratio - lo) / span, 0, 1);
+}
+
+export default function PositionComet({ netPct, netPctPrev, ratio, status, ratioLo, ratioHi, maxAbsDelta }: Props) {
   if (netPct == null) {
     return <span style={{ color: 'var(--text-muted)' }}>—</span>;
   }
 
-  const netLong = netPct >= 0;
-  const legColor = netLong ? 'var(--oi-green)' : 'var(--oi-short)';
-  const legWord = netLong ? 'лонг' : 'шорт';
+  const long = netPct >= 0;
+  const leg = long ? 'var(--oi-green)' : 'var(--oi-short)';
   const dim = status !== 'sharp';
-  const headOp = dim ? 0.6 : 1;
-  const tailOp = dim ? 0.45 : 0.78;
+  const dotPct = (clamp(netPct, -100, 100) + 100) / 2;
 
-  const todayX = xOf(netPct);
-  // Голова: радиус ЯВНО растёт с ×N (4…14). 2× ≈ 4px, 5× ≈ 9px, ≥7× → 14px —
-  // размах виден глазом, не только цифрой. Без ratio (не-sharp) — минимум.
-  const headR = ratio != null ? clamp(4 + (ratio - 2) * 1.7, 4, 14) : 4;
+  const headR = ratio != null && ratioLo != null && ratioHi != null
+    ? Math.round(3 + ratioHeat(ratio, ratioLo, ratioHi) * 6)
+    : 3;
 
-  // Хвост: длина по √-шкале с минимумом 9px — крупные и микро-сдвиги читаются.
-  let tail: { poly: string } | null = null;
-  if (netPctPrev != null) {
-    const yestX = xOf(netPctPrev);
-    const dpp = Math.abs(netPct - netPctPrev);
-    const mv = Math.sign(todayX - yestX) || 1;         // направление движения
-    const tailLen = clamp(8 + 4.5 * Math.sqrt(dpp), 9, 52);
-    const tailX = clamp(todayX - mv * tailLen, AX_MIN, AX_MAX);
-    // Комета: широкая (±headR) у головы, сходит на нет (±1.6) у хвоста.
+  // Хвост: клин от «вчера» к голове, длина по |Δ п.п.| относительно самого
+  // подвижного видимого ряда (10…36px — минимум, чтобы микро-сдвиг читался).
+  const delta = netPctPrev != null ? netPct - netPctPrev : null;
+  let tail: { px: number; ml: number; clip: string; bg: string } | null = null;
+  if (delta != null && delta !== 0) {
+    const maxD = maxAbsDelta || Math.abs(delta);
+    const px = Math.round(10 + 26 * clamp(Math.abs(delta) / maxD, 0, 1));
+    const toRight = delta >= 0;   // двигались вправо → хвост тянется слева
     tail = {
-      poly: `${todayX},${Y - headR} ${tailX},${Y - 1.6} ${tailX},${Y + 1.6} ${todayX},${Y + headR}`,
+      px,
+      ml: toRight ? -px : 0,
+      clip: toRight
+        ? 'polygon(0 44%, 100% 0, 100% 100%, 0 56%)'
+        : 'polygon(0 0, 100% 44%, 100% 56%, 0 100%)',
+      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, color-mix(in srgb, ${leg} 12%, transparent), color-mix(in srgb, ${leg} 70%, transparent))`,
     };
   }
 
-  const title = `Перекос: ${fmtPct(netPct)} в ${legWord} (0 = поровну, 100% = все в одну сторону).`
-    + (netPctPrev != null ? ` Вчера ${fmtPct(netPctPrev)} → сегодня ${fmtPct(netPct)}; хвост кометы = сдвиг за день, размер головы = сила ×N.` : '');
+  const title = `Перекос сегодня ${fmtPct(netPct)} ${long ? 'лонг' : 'шорт'}`
+    + (netPctPrev != null ? ` · вчера ${fmtPct(netPctPrev)} ${netPctPrev >= 0 ? 'лонг' : 'шорт'}` : '')
+    + (delta != null ? ` · за день ${fmtSigned(delta)} п.п.` : '')
+    + (ratio != null ? ` · сила ×${ratio.toFixed(1).replace('.', ',')}` : '');
+
+  // border-box (глобальный preflight): ширина включает ободок 2px → +4 к
+  // диаметру, чтобы ВИДИМЫЙ цветной радиус остался headR.
+  const headBox = headR * 2 + 4;
+  const headStyle: CSSProperties = {
+    position: 'absolute',
+    left: `${dotPct}%`,
+    top: CY - headR - 2,
+    width: headBox,
+    height: headBox,
+    marginLeft: -(headR + 2),
+    borderRadius: '50%',
+    border: '2px solid var(--bg-secondary)',
+    background: leg,
+  };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }} title={title}>
-      <svg viewBox="0 0 250 48" style={{ width: '100%', maxWidth: 260, flexShrink: 1 }} aria-hidden="true">
-        {/* зоны: слева шорт, справа лонг (тон для контекста ноги) */}
-        <rect x={AX_MIN} y={Y - 8} width={ZERO_X - AX_MIN} height={16} rx={4} fill="var(--oi-short)" opacity={0.14} />
-        <rect x={ZERO_X} y={Y - 8} width={AX_MAX - ZERO_X} height={16} rx={4} fill="var(--oi-green)" opacity={0.16} />
-        {/* ось */}
-        <line x1={AX_MIN} y1={Y} x2={AX_MAX} y2={Y} stroke="var(--text-secondary)" strokeWidth={1.4} opacity={0.55} />
-        {/* ноль */}
-        <line x1={ZERO_X} y1={Y - 12} x2={ZERO_X} y2={Y + 12} stroke="var(--text-primary)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.6} />
-        {/* хвост кометы */}
-        {tail && <polygon points={tail.poly} fill={legColor} opacity={tailOp} />}
-        {/* голова кометы */}
-        <circle cx={todayX} cy={Y} r={headR} fill={legColor} opacity={headOp} />
-      </svg>
-      {!hideLabel && (
-        <span style={{ ...MONO, fontSize: 'var(--fs-base)', fontWeight: 800, color: legColor, opacity: headOp, whiteSpace: 'nowrap', lineHeight: 1.1 }}>
-          {fmtPct(netPct)}<br /><span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{legWord}</span>
-        </span>
+    <div title={title} style={{ position: 'relative', height: H, cursor: 'help', opacity: dim ? 0.6 : 1 }}>
+      {/* дорожка: слева тон шорта, справа тон лонга */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: CY - 3, height: 6, borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+        <div style={{ flex: 1, background: 'var(--oi-short)', opacity: 0.1 }} />
+        <div style={{ flex: 1, background: 'var(--oi-green)', opacity: 0.12 }} />
+      </div>
+      {/* ноль */}
+      <div style={{ position: 'absolute', left: '50%', top: CY - 11, height: 22, width: 1, background: 'var(--text-secondary)', opacity: 0.55 }} />
+      {/* хвост */}
+      {tail && (
+        <div style={{ position: 'absolute', top: CY - 6, height: 12, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
       )}
+      {/* голова */}
+      <div style={headStyle} />
     </div>
   );
 }
