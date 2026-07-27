@@ -60,6 +60,7 @@ import FundDetailModal, {
   formatShares,
 } from '../../components/funds/FundDetailModal';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
+import PortfolioFundPicker from '../../components/fundtrades/PortfolioFundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
@@ -1006,17 +1007,15 @@ export default function MobileFundTradesPage() {
                   ))}
                 </div>
               </div>
-              {moverPickerFunds.length > 1 && (
+              {funds.length > 1 && (
                 <div>
                   <div style={SHEET_SECTION_LABEL}>Фонды</div>
-                  {/* Выбор КОНКРЕТНЫХ фондов (модалка с поиском и группами по УК —
-                      как виджет фондов в «Деньгах в фондах»), не только УК целиком. */}
-                  <FundPicker
-                    funds={moverPickerFunds}
-                    mode="multi"
+                  {/* Выбор КОНКРЕТНЫХ фондов — таблица с СЧА/доходностью и группами
+                      по УК, дизайн-код виджета фондов из «Денег в фондах». */}
+                  <PortfolioFundPicker
+                    funds={funds}
                     selected={portfolioFunds}
                     onChange={setPortfolioFunds}
-                    buttonLabel={(n, total) => (n === 0 ? 'Все фонды акций' : `${n} из ${total} фондов`)}
                   />
                 </div>
               )}

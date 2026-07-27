@@ -61,6 +61,7 @@ import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
+import PortfolioFundPicker from '../components/fundtrades/PortfolioFundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../components/fundtrades/PortfolioMoversPanel';
 import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
@@ -871,17 +872,15 @@ export default function FundTradesPage() {
                     {/* Панель папки: padding:0 — тулбар и сетка идут от края до края
                         со своими отступами (как было у прежней карточки портфеля). */}
                     <div className="editorial-frame has-tabs" style={{ padding: 0 }}>
-                        {moverPickerFunds.length > 1 && (
+                        {funds.length > 1 && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
-                                {/* Выбор КОНКРЕТНЫХ фондов (модалка с поиском и группами
-                                    по УК — тот же макет, что виджет фондов в «Деньгах в
-                                    фондах»). Чекбокс на заголовке УК выбирает всю УК. */}
-                                <FundPicker
-                                    funds={moverPickerFunds}
-                                    mode="multi"
+                                {/* Выбор КОНКРЕТНЫХ фондов — таблица с СЧА/доходностью и
+                                    группами по УК, дизайн-код виджета фондов из «Денег в
+                                    фондах». Чекбокс на заголовке УК выбирает всю УК. */}
+                                <PortfolioFundPicker
+                                    funds={funds}
                                     selected={portfolioFunds}
                                     onChange={setPortfolioFunds}
-                                    buttonLabel={(n, total) => (n === 0 ? 'Все фонды акций' : `${n} из ${total} фондов`)}
                                 />
                             </div>
                         )}
