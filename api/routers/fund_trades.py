@@ -1073,18 +1073,33 @@ def top_movers(
         else:
             top_reduced.append(item)
 
-    # Доступные месяцы для month-picker: один пункт на КАЛЕНДАРНЫЙ месяц.
-    # У разных УК разные дни конца месяца (27/28/30/31) → схлопываем по месяцу
-    # и берём MAX-дату месяца как as_of (каждый фонд внутри возьмёт свой <= неё).
-    available_month_dates = db.execute(text("""
+    # Доступные месяцы для month-picker и календаря периода: один пункт на
+    # КАЛЕНДАРНЫЙ месяц. У разных УК разные дни конца месяца (27/28/30/31) →
+    # схлопываем по месяцу и берём MAX-дату месяца как as_of (каждый фонд внутри
+    # возьмёт свой <= неё).
+    #
+    # Список считаем по ВЫБРАННОМУ набору (те же category/whitelist/manager
+    # фильтры, что и у консенсуса) и только по ПОЛНЫМ снапшотам: иначе календарь
+    # предлагал месяцы, которых у выбранных УК нет, — клик по такому месяцу давал
+    # пустой результат («нет данных за месяц»).
+    available_month_dates = db.execute(text(f"""
+        WITH snap_ok AS (
+            -- Полные снапшоты не раньше границы — тот же набор, что у консенсуса.
+            SELECT fund_id, snapshot_date
+            FROM fund_holdings_history
+            WHERE source = ANY(:sources)
+              AND snapshot_date >= :floor
+            GROUP BY fund_id, snapshot_date
+            HAVING COALESCE(SUM(weight), 0) >= :wmin
+        )
         SELECT MAX(h.snapshot_date) AS d
-        FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
-        WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
-          AND h.snapshot_date >= :floor
+        FROM fund_holdings_history h
+        JOIN funds f ON f.fund_id = h.fund_id
+        JOIN snap_ok so ON so.fund_id = h.fund_id AND so.snapshot_date = h.snapshot_date
+        WHERE h.source = ANY(:sources) {category_filter} {whitelist_filter} {manager_filter}
         GROUP BY date_trunc('month', h.snapshot_date)
         ORDER BY d DESC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
-           "floor": FT_HISTORY_FLOOR}).scalars().all()
+    """), params).scalars().all()
 
     # resolved_month = фактический target-месяц консенсуса (выбранный as_of, иначе последний
     # доступный для набора); funds_in_month = сколько фондов набора РЕАЛЬНО имеют снапшот
@@ -1378,17 +1393,17 @@ def combined_portfolio(
 
     # Доступные месяцы для month-picker: один пункт на КАЛЕНДАРНЫЙ месяц (у разных
     # УК разные дни конца месяца → схлопываем и берём MAX-дату месяца как as_of).
-    # Список — по всему whitelist акций (как в /movers), не по выбранному подмножеству:
-    # любой месяц из союза даёт портфель (каждый фонд резолвит свой снапшот <= него).
-    available_month_dates = db.execute(text("""
+    # Список — по ВЫБРАННОМУ набору УК/фондов (как в /movers): месяцы, которых у
+    # выбранных УК нет, в пикере не показываем — раньше союз по всему whitelist
+    # предлагал месяцы, где набор пуст.
+    available_month_dates = db.execute(text(f"""
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
         WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
-          AND h.snapshot_date >= :floor
+          AND h.snapshot_date >= :floor {manager_filter}
         GROUP BY date_trunc('month', h.snapshot_date)
         ORDER BY d DESC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
-           "floor": FT_HISTORY_FLOOR}).scalars().all()
+    """), {**params, "floor": FT_HISTORY_FLOOR}).scalars().all()
 
     # resolved_month — фактический месяц среза набора: самый свежий снапшот выбранных
     # фондов, не позже bound. Именно его показывает пилюля актуальности данных.
