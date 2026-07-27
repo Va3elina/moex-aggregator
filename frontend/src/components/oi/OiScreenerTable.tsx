@@ -513,7 +513,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   netPct={r.net_pct}
                   netPctPrev={r.net_pct_prev}
                   ratio={r.ratio}
-                  status={r.status}
                   ratioLo={stats.ratioLo}
                   ratioHi={stats.ratioHi}
                   maxAbsDelta={stats.maxAbsDelta}
