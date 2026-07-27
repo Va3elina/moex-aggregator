@@ -25,6 +25,10 @@ import type { FundWithHistory } from '../../services/api';
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 const NAME_FADE = 'linear-gradient(to right, #000 calc(100% - 30px), transparent 100%)';
 
+// Высота строки фонда: фиксированные 41px + 1px SOFT_BORDER сверху. По ней
+// считается высота оверлея над выключенной группой (плашка «Выключены · вернуть»).
+const ROW_H = 42;
+
 // Числа СЧА/доходности — как в bare-FundsTable (OI_NUM_STYLE): 600, fs-sm,
 // приглушённый серый, табличные цифры. Цвет доходности перекрывается семантикой.
 const NUM_STYLE: React.CSSProperties = {
@@ -345,13 +349,11 @@ function PickerModal({
                         Фонды акций
                     </span>
                     {/* Знаменатель — доступные к выбору фонды: с прожатой таблеткой
-                        индексные из пула выпадают (19 → 16), рядом видно, сколько
-                        именно выключено. */}
+                        индексные из пула выпадают (19 → 16). Сколько именно выключено,
+                        тут не пишем: об этом говорят сама прожатая таблетка и плашка
+                        поверх размытой группы. */}
                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
                         выбрано {draft.size} из {allTickers.length - (indexOff ? idxTickers.length : 0)}
-                        {indexOff && (
-                            <span style={{ color: 'var(--text-muted)' }}> (−{idxTickers.length})</span>
-                        )}
                     </span>
                     {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
                         счётчиком: прожата — три индексных фонда сняты (счётчик сразу
@@ -489,25 +491,6 @@ function PickerModal({
                                                             <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} />
                                                         </span>
                                                     )}
-                                                    {/* Индексная группа при прожатой таблетке — сама
-                                                        строка-заголовок остаётся чёткой и несёт метку
-                                                        «почему размыто ниже» + подсказку, как вернуть. */}
-                                                    {indexOff && isIndexSubcategory(g.subcat) && (
-                                                        <span
-                                                            title="Индексные фонды выключены таблеткой в шапке. Нажмите её или отметьте фонд, чтобы вернуть их в портфель."
-                                                            style={{
-                                                                fontSize: 'var(--fs-2xs)',
-                                                                fontWeight: 700,
-                                                                color: 'var(--text-muted)',
-                                                                border: '1.5px solid color-mix(in srgb, var(--text-primary) 25%, transparent)',
-                                                                borderRadius: 999,
-                                                                padding: '1px 8px',
-                                                                whiteSpace: 'nowrap',
-                                                            }}
-                                                        >
-                                                            не в портфеле
-                                                        </span>
-                                                    )}
                                                     {gAny && !gAll && (
                                                         <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
                                                             {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
@@ -594,6 +577,49 @@ function PickerModal({
                                                 </tr>
                                             );
                                         })}
+                                        {/* Плашка «выключено» лежит ПОВЕРХ всей размытой группы,
+                                            а не рядом с её названием: так метка относится ко всем
+                                            строкам сразу и не читается как свойство подкатегории.
+                                            Технически — нулевой высоты строка сразу за группой;
+                                            оверлей внутри её ячейки растягивается вверх на высоту
+                                            группы (строки фиксированные, ROW_H), поэтому плашка
+                                            встаёт ровно по центру блока. Клик возвращает фонды. */}
+                                        {!isCollapsed && indexOff && isIndexSubcategory(g.subcat) && (
+                                            <tr style={{ height: 0 }}>
+                                                <td colSpan={4} style={{ padding: 0, border: 0, height: 0, position: 'relative' }}>
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute', left: 0, right: 0, bottom: 0,
+                                                            height: g.funds.length * ROW_H,
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            pointerEvents: 'none',
+                                                        }}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={toggleIndexOff}
+                                                            className="editorial-press"
+                                                            title="Индексные фонды выключены таблеткой в шапке. Нажмите, чтобы вернуть их в портфель."
+                                                            style={{
+                                                                pointerEvents: 'auto',
+                                                                padding: '5px 16px',
+                                                                borderRadius: 999,
+                                                                border: '2px solid var(--text-primary)',
+                                                                background: 'var(--bg-secondary)',
+                                                                color: 'var(--text-primary)',
+                                                                fontSize: 'var(--fs-xs)',
+                                                                fontWeight: 700,
+                                                                whiteSpace: 'nowrap',
+                                                                cursor: 'pointer',
+                                                                boxShadow: '3px 3px 0 var(--text-primary)',
+                                                            }}
+                                                        >
+                                                            Выключены · вернуть
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
                                     </React.Fragment>
                                 );
                             })}
