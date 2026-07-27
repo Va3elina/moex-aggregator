@@ -24,7 +24,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import type { FundPortfolio, FundPortfolioFund, FundPortfolioHolding, FundReturns } from '../../services/api';
+import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
 
@@ -107,36 +107,39 @@ function monthYearCap(iso: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Отставшие фонды. Портфель собирается по ПОСЛЕДНЕМУ снапшоту каждого фонда
-// (backend: MAX(snapshot_date) <= cutoff), поэтому УК, не опубликовавшая состав
-// за отчётный месяц, молча попадает в срез прошлым составом. Отчёты приходят
-// неравномерно (обычно к 20-м числам, но бывает и позже), так что «неполный
-// месяц» — нормальное рабочее состояние, а не ошибка: помечаем, не прячем.
-// Отставший = месяц его снапшота раньше месяца среза (сравнение по "YYYY-MM").
+// Отставшие фонды. Отчёты УК приходят неравномерно (обычно к 20-м числам, но
+// бывает и позже), поэтому «неполный месяц» — нормальное рабочее состояние.
+// Фонд без состава за месяц среза в портфель НЕ включается (бэк отдаёт его в
+// excluded_funds), иначе портфель месяца наполовину состоял бы из прошлых
+// данных. Показываем, скольких не хватает, чтобы неполнота не читалась как
+// «фонд исчез из набора».
 interface LagInfo {
     total: number;
     onTime: number;
-    lagging: { name: string; month: string }[];
+    lagging: { name: string; month: string | null }[];
 }
 
-function lagInfo(funds: FundPortfolioFund[], targetISO: string | null): LagInfo | null {
-    if (!targetISO || funds.length === 0) return null;
-    const target = targetISO.slice(0, 7);
-    const lagging = funds
-        .filter((f) => f.snapshot_date && f.snapshot_date.slice(0, 7) < target)
-        .map((f) => ({ name: f.name, month: monthYearLower(f.snapshot_date as string) }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    if (lagging.length === 0) return null;
-    return { total: funds.length, onTime: funds.length - lagging.length, lagging };
+function lagInfo(portfolio: FundPortfolio): LagInfo | null {
+    const excluded = portfolio.excluded_funds ?? [];
+    if (excluded.length === 0) return null;
+    const total = portfolio.funds_total ?? (portfolio.num_funds + excluded.length);
+    return {
+        total,
+        onTime: portfolio.num_funds,
+        lagging: excluded
+            .map((f) => ({ name: f.name, month: f.snapshot_date ? monthYearLower(f.snapshot_date) : null }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    };
 }
 
-// Текст подсказки: сколько фондов уже отчиталось и кто именно тянет старый состав.
+// Текст подсказки: сколько фондов отчиталось и кого в портфеле нет (с месяцем
+// их последнего известного состава).
 const LAG_LIST_MAX = 8;
 function lagTitle(lag: LagInfo, targetISO: string): string {
     const head = `Состав за ${monthYearLower(targetISO)} опубликовали ${lag.onTime} из ${lag.total} фондов.`
-        + '\nОстальные учтены прошлым составом:';
+        + '\nОстальные в портфель не включены, их последний состав:';
     const shown = lag.lagging.slice(0, LAG_LIST_MAX)
-        .map((f) => `• ${f.name} · ${f.month}`).join('\n');
+        .map((f) => `• ${f.name}${f.month ? ` · ${f.month}` : ''}`).join('\n');
     const rest = lag.lagging.length > LAG_LIST_MAX
         ? `\n• и ещё ${lag.lagging.length - LAG_LIST_MAX}` : '';
     return `${head}\n${shown}${rest}`;
@@ -302,9 +305,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
     // Свежесть данных: месяц самого свежего снапшота среди выбранных фондов.
     const freshISO = portfolio.funds.reduce<string | null>(
         (acc, f) => (f.snapshot_date && (!acc || f.snapshot_date > acc) ? f.snapshot_date : acc), null);
-    // Полнота среза: часть УК публикует состав с лагом, их данные в портфеле от
-    // прошлого месяца. Null — отстающих нет (срез полный).
-    const lag = lagInfo(portfolio.funds, freshISO);
+    // Полнота среза: часть УК публикует состав с лагом и в портфель месяца не
+    // попадает. Null — не хватает никого (срез полный).
+    const lag = lagInfo(portfolio);
     const lagHint = lag && freshISO ? lagTitle(lag, freshISO) : '';
 
     const deskRow = (h: FundPortfolioHolding, idx: number, last: boolean, interactive: boolean) => {

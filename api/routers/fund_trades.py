@@ -1292,9 +1292,27 @@ def combined_portfolio(
         ORDER BY fd_last.nav DESC NULLS LAST
     """), params).mappings().all()
 
+    # Месяц среза = месяц самого свежего снапшота набора (не позже bound). Фонд,
+    # не опубликовавший состав за этот месяц, в портфель НЕ включается: подстановка
+    # его прошлого состава давала бы «июньский» портфель, наполовину собранный из
+    # майских данных, под свежей подписью месяца. Так же устроен консенсус /movers
+    # (там фонд без снапшота target-месяца выпадает из дельт). Такие фонды
+    # возвращаем отдельным списком excluded_funds — фронт показывает «11 из 19».
+    _snaps = [r["snap_date"] for r in fund_rows if r["snap_date"]]
+    target_month = max(_snaps).replace(day=1) if _snaps else None
+
     included_funds = []
+    excluded_funds = []
     total_nav = 0.0
     for r in fund_rows:
+        snap = r["snap_date"]
+        if target_month is None or snap is None or snap.replace(day=1) != target_month:
+            excluded_funds.append({
+                "ticker": r["ticker"], "name": r["name"], "uk": r["uk"], "uk_id": r["uk_id"],
+                "nav_rub": float(r["nav_rub"]) if r["nav_rub"] is not None else None,
+                "snapshot_date": snap.isoformat() if snap else None,
+            })
+            continue
         nav = float(r["nav_rub"]) if r["nav_rub"] is not None else None
         if nav:
             total_nav += nav
@@ -1329,16 +1347,24 @@ def combined_portfolio(
     portfolio_returns = {k: _wavg(k) for k in ("m1", "m3", "m6", "y1")}
 
     # ── Агрегированные холдинги: суммируем рублёвую стоимость per бумага (ISIN-ключ) ──
+    # target_month = None (снапшотов нет вовсе) → HAVING по NULL не пропустит ни один
+    # фонд, holdings придут пустыми — как и included_funds.
+    params["target_month"] = target_month
     hold_rows = db.execute(text(f"""
         WITH sel AS (
             SELECT f.fund_id FROM funds f
             WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
         ),
         last_snap AS (
+            -- HAVING: фонд участвует, только если его последний снапшот (<= cutoff)
+            -- принадлежит месяцу среза. Отставшие УК выпадают целиком, а не тянут
+            -- в портфель прошлый состав (см. target_month выше).
             SELECT h.fund_id, MAX(h.snapshot_date) AS d
             FROM fund_holdings_history h JOIN sel ON sel.fund_id = h.fund_id
             WHERE h.source = ANY(:sources) AND h.snapshot_date <= :cutoff
             GROUP BY h.fund_id
+            HAVING date_trunc('month', MAX(h.snapshot_date))
+                   = date_trunc('month', CAST(:target_month AS date))
         ),
         fund_nav AS (
             SELECT sel.fund_id, fd.nav
@@ -1418,12 +1444,17 @@ def combined_portfolio(
 
     return {
         "num_funds": num_funds,
+        # Сколько фондов набора вообще имеют снапшот <= bound (включая отставшие).
+        # num_funds < funds_total → срез неполный, фронт помечает «11 из 19».
+        "funds_total": num_funds + len(excluded_funds),
         "num_assets": len(holdings),
         "total_value_rub": total_value,
         "total_nav_rub": total_nav,
         "returns": portfolio_returns,
         "as_of": as_of,
         "resolved_month": resolved_month,
+        # Фонды, не опубликовавшие состав за месяц среза (в портфель НЕ включены).
+        "excluded_funds": excluded_funds,
         "available_months": [m.isoformat() for m in available_month_dates],
         # Free/гость — дата-отсечка гейтинга (НЕ as_of): месяцы > неё заблокированы.
         "snapshot_cutoff": (None if gate_cutoff == _FAR_FUTURE else gate_cutoff.isoformat()),
