@@ -731,20 +731,17 @@ export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
 }: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
-    const allActive = selected.size === 0;
-    const active = !allActive;
     // Подпись таблетки читает тумблер «Без индексных фондов» тем же способом, что и
-    // сама модалка (индексные сняты ⇔ тумблер прожат). Иначе знаменатель считал все
-    // 19 фондов и выбор «всё, кроме индексных» выглядел как «16 из 19 фондов»,
-    // будто три фонда пользователь снял вручную.
+    // сама модалка (индексные сняты ⇔ тумблер прожат): пул выбора — только доступные
+    // фонды. Взят весь пул целиком (в том числе дефолт «всё, кроме индексных») — это
+    // «Все фонды акций», ручной отбор внутри пула — «15 из 16 фондов». Знаменатель
+    // по всему набору (19) писал бы «16 из 19», будто три фонда сняты вручную.
     const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
     const pool = funds.length - (indexOff ? idxTickers.length : 0);
-    const label = allActive
-        ? 'Все фонды акций'
-        : indexOff && selected.size === pool
-            ? 'Без индексных фондов'
-            : `${selected.size} из ${pool} фондов`;
+    const allActive = selected.size === 0 || selected.size === pool;
+    const active = !allActive;
+    const label = allActive ? 'Все фонды акций' : `${selected.size} из ${pool} фондов`;
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
