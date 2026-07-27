@@ -26,7 +26,7 @@ import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
 import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
-type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
+type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y3';
 
 // Карта «Структура» (slice-and-dice треемап): топ-11 бумаг раскладываются рядами
 // 2·3·3·3, «Прочие» — отдельной полосой снизу. ПЛОЩАДЬ плитки пропорциональна её
@@ -151,8 +151,8 @@ function lagTitle(lag: LagInfo, targetISO: string): string {
 // (не выделяем годовую крупнее месячной). Нет данных за период → «—».
 const RET_COLS: { key: PeriodKey; label: string }[] = [
     { key: 'm1', label: '1 мес' },
-    { key: 'm6', label: '6 мес' },
     { key: 'y1', label: '1 год' },
+    { key: 'y3', label: '3 года' },
 ];
 
 // "2.3" → "2,3" — запятичный десятичный разделитель, абсолютное значение
