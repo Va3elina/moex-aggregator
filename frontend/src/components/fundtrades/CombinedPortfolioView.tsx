@@ -24,7 +24,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
+import type { FundPortfolio, FundPortfolioFund, FundPortfolioHolding, FundReturns } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
 
@@ -105,6 +105,41 @@ function monthYearLower(iso: string): string {
 function monthYearCap(iso: string): string {
     const s = monthYearLower(iso);
     return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Отставшие фонды. Портфель собирается по ПОСЛЕДНЕМУ снапшоту каждого фонда
+// (backend: MAX(snapshot_date) <= cutoff), поэтому УК, не опубликовавшая состав
+// за отчётный месяц, молча попадает в срез прошлым составом. Отчёты приходят
+// неравномерно (обычно к 20-м числам, но бывает и позже), так что «неполный
+// месяц» — нормальное рабочее состояние, а не ошибка: помечаем, не прячем.
+// Отставший = месяц его снапшота раньше месяца среза (сравнение по "YYYY-MM").
+interface LagInfo {
+    total: number;
+    onTime: number;
+    lagging: { name: string; month: string }[];
+}
+
+function lagInfo(funds: FundPortfolioFund[], targetISO: string | null): LagInfo | null {
+    if (!targetISO || funds.length === 0) return null;
+    const target = targetISO.slice(0, 7);
+    const lagging = funds
+        .filter((f) => f.snapshot_date && f.snapshot_date.slice(0, 7) < target)
+        .map((f) => ({ name: f.name, month: monthYearLower(f.snapshot_date as string) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    if (lagging.length === 0) return null;
+    return { total: funds.length, onTime: funds.length - lagging.length, lagging };
+}
+
+// Текст подсказки: сколько фондов уже отчиталось и кто именно тянет старый состав.
+const LAG_LIST_MAX = 8;
+function lagTitle(lag: LagInfo, targetISO: string): string {
+    const head = `Состав за ${monthYearLower(targetISO)} опубликовали ${lag.onTime} из ${lag.total} фондов.`
+        + '\nОстальные учтены прошлым составом:';
+    const shown = lag.lagging.slice(0, LAG_LIST_MAX)
+        .map((f) => `• ${f.name} · ${f.month}`).join('\n');
+    const rest = lag.lagging.length > LAG_LIST_MAX
+        ? `\n• и ещё ${lag.lagging.length - LAG_LIST_MAX}` : '';
+    return `${head}\n${shown}${rest}`;
 }
 
 // Доходность по периодам (макет 2a «Колонки»): 1 мес · 6 мес · 1 год в ряд,
@@ -267,6 +302,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
     // Свежесть данных: месяц самого свежего снапшота среди выбранных фондов.
     const freshISO = portfolio.funds.reduce<string | null>(
         (acc, f) => (f.snapshot_date && (!acc || f.snapshot_date > acc) ? f.snapshot_date : acc), null);
+    // Полнота среза: часть УК публикует состав с лагом, их данные в портфеле от
+    // прошлого месяца. Null — отстающих нет (срез полный).
+    const lag = lagInfo(portfolio.funds, freshISO);
+    const lagHint = lag && freshISO ? lagTitle(lag, freshISO) : '';
 
     const deskRow = (h: FundPortfolioHolding, idx: number, last: boolean, interactive: boolean) => {
         const w = wOf(h);
@@ -375,7 +414,18 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
             <div style={wrapStyle}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 13, borderBottom: '1.5px solid var(--text-primary)' }}>
                     <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Состав портфеля</span>
-                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{portfolio.num_funds} ф. · {portfolio.num_assets} бум.</span>
+                    {/* Мобилка: месяц-пикер живёт в ⚙️-sheet, пилюли тут нет — неполноту
+                        среза вешаем на счётчик фондов (янтарный кружок + «17 из 19»). */}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {lag && (
+                            <span title={lagHint} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warning, #E0A020)', flexShrink: 0 }} />
+                                <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{lag.onTime} из {lag.total}</span>
+                                <span aria-hidden>·</span>
+                            </span>
+                        )}
+                        {portfolio.num_funds} ф. · {portfolio.num_assets} бум.
+                    </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
@@ -486,11 +536,23 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                         // рендерим ТОЛЬКО когда выбран самый свежий срез; hover по нему
                         // поясняет, что это последний доступный снапшот.
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            {/* Кружок: зелёный — срез полный, янтарный — часть УК ещё не
+                                опубликовала состав и учтена прошлым. Рядом с янтарным
+                                показываем счётчик «сколько из скольких» — иначе неполнота
+                                видна только при наведении. */}
                             {isFreshest && (
                                 <span
-                                    title="Актуальные данные — показан самый свежий доступный срез портфеля"
-                                    style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0, cursor: 'help' }}
+                                    title={lag ? lagHint : 'Актуальные данные — показан самый свежий доступный срез портфеля'}
+                                    style={{ width: 10, height: 10, borderRadius: '50%', background: lag ? 'var(--warning, #E0A020)' : 'var(--mood-green, #4a9959)', flexShrink: 0, cursor: 'help' }}
                                 />
+                            )}
+                            {isFreshest && lag && (
+                                <span
+                                    title={lagHint}
+                                    style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', cursor: 'help' }}
+                                >
+                                    {lag.onTime} из {lag.total}
+                                </span>
                             )}
                             <Dropdown<string>
                                 options={availableMonths.map((m) => ({ key: m, label: monthYearCap(m), locked: monthLocked?.(m) }))}
@@ -501,9 +563,12 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                             />
                         </div>
                     ) : freshISO && (
-                        <div title="Месяц самого свежего снапшота выбранных фондов" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
-                            Актуальные данные <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>· {monthYearLower(freshISO)}</span>
+                        <div title={lag ? lagHint : 'Месяц самого свежего снапшота выбранных фондов'} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: lag ? 'help' : undefined }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: lag ? 'var(--warning, #E0A020)' : 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
+                            {lag ? 'Данные частично' : 'Актуальные данные'}
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
+                                · {monthYearLower(freshISO)}{lag ? ` · ${lag.onTime} из ${lag.total}` : ''}
+                            </span>
                         </div>
                     )}
                     {onModeChange && (
