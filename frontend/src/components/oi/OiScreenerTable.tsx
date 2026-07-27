@@ -296,7 +296,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   };
 
   // Актив · Позиция (комета, забирает свободное место) · Сила · Сигнал · ★.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 92px minmax(190px, 244px) 44px';
+  //
+  // Ширины подогнаны под ФАКТИЧЕСКИЙ контент (замеры на проде): число силы
+  // ≤ 52px («×12,4»), самый длинный сигнал 204px («в пределах обычного» +
+  // метка рекорда). Раньше колонки были 92 и 244 при контенте 42 и 112 —
+  // между объектами зияло 16 / 66 / 155px, отступы читались как случайные.
+  // Освободившееся место уходит комете (1fr), а не в пустоту.
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px minmax(150px, 208px) 40px';
 
   return (
     <div>
@@ -401,9 +407,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг за день, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
               Позиция {groupGen}
             </span>
+            {/* Сила — числовая колонка: заголовок и число по центру, чтобы
+                отступы слева (комета) и справа (сигнал) были симметричны. */}
             <button
               type="button"
-              style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+              style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'center' }}
               onClick={() => setSortDir((d) => (d === -1 ? 1 : -1))}
               title="Во сколько раз дневное изменение позиции сильнее обычного для этого актива (ATR-14). Клик — перевернуть порядок."
             >
@@ -447,7 +455,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 style={{
                   display: 'grid', gridTemplateColumns: gridCols, gap: 16,
                   alignItems: 'center', padding: '12px 18px 12px 15px',
-                  borderBottom: '0.5px solid var(--border-color, rgba(128,128,128,0.25))',
+                  // 1px, а не 0.5: на дисплеях с DPR=1 полупиксельная линия
+                  // рендерилась рвано — часть строк выглядела без разделителя.
+                  borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.18))',
                   // Акцентная левая грань = в строке рекорд (перекоса или позиции).
                   borderLeft: `3px solid ${r.record || r.net_record ? 'var(--accent)' : 'transparent'}`,
                   cursor: 'pointer',
@@ -496,7 +506,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 />
 
                 {/* Сила — крупное число ×4,3, яркость по размаху дня */}
-                <div>{ratioCell(r)}</div>
+                <div style={{ justifySelf: 'center' }}>{ratioCell(r)}</div>
 
                 {/* Сигнал: глагол + метка рекорда («↑3мес») */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
