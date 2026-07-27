@@ -513,11 +513,21 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         </div>
     );
 
-    // Свежесть среза: freshestMonth — самый свежий ДОСТУПНЫЙ месяц (не locked),
-    // он же дефолт month-picker'а. Зелёный кружок «актуальные данные» показываем
-    // ТОЛЬКО когда выбран он; на историческом месяце кружка нет.
+    // Свежесть среза: freshestMonth — самый свежий ДОСТУПНЫЙ месяц (не locked).
+    // Зелёный кружок «актуальные данные» показываем ТОЛЬКО когда открыт он; на
+    // историческом месяце кружка нет.
+    //
+    // Без явного выбора (asOf) бэкенд открывает не последний месяц, а САМЫЙ
+    // ПОЛНЫЙ по числу опубликованных составов, поэтому в пикере подсвечиваем
+    // фактический месяц среза (resolved_month), сматченный по YYYY-MM с пунктами
+    // списка: их даты — конец месяца по набору и с resolved_month посимвольно
+    // не совпадают.
     const freshestMonth = availableMonths?.find((m) => !(monthLocked?.(m))) ?? availableMonths?.[0];
-    const currentMonth = asOf ?? freshestMonth;
+    const resolvedISO = portfolio.resolved_month ?? null;
+    const resolvedMonth = resolvedISO
+        ? availableMonths?.find((m) => m.slice(0, 7) === resolvedISO.slice(0, 7))
+        : undefined;
+    const currentMonth = asOf ?? resolvedMonth ?? freshestMonth;
     const isFreshest = !!freshestMonth && currentMonth === freshestMonth;
 
     return (
