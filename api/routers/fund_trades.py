@@ -161,6 +161,17 @@ FT_COMPLETE_WSUM_MIN = 80
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Историческая нижняя граница фичи: снапшоты РАНЬШЕ этой даты не показываем ни
+# в одном эндпоинте — ни в списках месяцев/снапшотов, ни как базу для диффов.
+# У AKME/TMOS реально есть отчёты с марта 2021 (проверено на проде: 45 и 88
+# снапшотов старше границы), но старые SCHA за 2021-2022 — самые дырявые (см.
+# FT_COMPLETE_WSUM_MIN выше) и не проходят порог качества методологии.
+# Фонды, у которых собственная история короче границы, ничего не теряют —
+# UI и так не показывает месяцы, которых нет.
+FT_HISTORY_FLOOR = date(2021, 9, 1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Задержка данных для Free/гостя (пилот delayed-data freemium).
 #
 # Free/гость видят fund-trades на 1 снапшот позади: свежая месячная выборка «что
@@ -432,7 +443,8 @@ def list_funds_with_history(
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
                AND h.snapshot_date <= :cutoff) AS last_snapshot_date,
             (SELECT COUNT(DISTINCT snapshot_date) FROM fund_holdings_history h
-             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)) AS snapshot_count,
+             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
+               AND h.snapshot_date >= :floor) AS snapshot_count,
             (SELECT COUNT(DISTINCT COALESCE(NULLIF(h.isin, ''), h.asset_name))
              FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
@@ -487,7 +499,8 @@ def list_funds_with_history(
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
         ORDER BY f.uk NULLS LAST, f.category, f.ticker
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff,
+           "floor": FT_HISTORY_FLOOR}).mappings().all()
 
     fund_ids = [r["fund_id"] for r in rows]
 
@@ -634,10 +647,11 @@ def fund_trades_detail(
         WHERE fund_id = :fid AND source = ANY(:sources)
           AND snapshot_date < date_trunc('month', CAST(:curr AS date))
                               - make_interval(months => CAST(:months AS integer) - 1)
+          AND snapshot_date >= :floor
         ORDER BY snapshot_date DESC
         LIMIT 1
     """), {"fid": fund_id, "curr": current_date, "months": months,
-           "sources": list(MONTHLY_SOURCES)}).first()
+           "sources": list(MONTHLY_SOURCES), "floor": FT_HISTORY_FLOOR}).first()
 
     previous_date = prev_row[0] if prev_row else None
 
@@ -815,6 +829,8 @@ def top_movers(
         _t = _month_start(range_to, "to")
         if _f >= _t:
             raise HTTPException(status_code=400, detail="from must be an earlier month than to")
+        if _f < FT_HISTORY_FLOOR:
+            raise HTTPException(status_code=400, detail=f"from earlier than {FT_HISTORY_FLOOR.isoformat()} is not available")
         prev_bound = _next_month(_f)
         # as_of = КОНЕЦ целевого месяца: якорь режет снапшоты по `<= as_of`, с первым
         # числом месяца целевой month-end снапшот отсекся бы и консенсус вышел пустым.
@@ -875,6 +891,7 @@ def top_movers(
         "sources": list(MONTHLY_SOURCES),
         "as_of": as_of,
         "wmin": FT_COMPLETE_WSUM_MIN,
+        "floor": FT_HISTORY_FLOOR,
         # NULL для пресетов → prev считается арифметикой месяцев (COALESCE в SQL).
         "prev_bound": prev_bound.isoformat() if prev_bound else None,
     }
@@ -888,11 +905,14 @@ def top_movers(
     # Это complex CTE но даёт точную картину.
     rows = db.execute(text(f"""
         WITH snap_ok AS (
-            -- Только ПОЛНЫЕ снапшоты (Σ weight не ниже FT_COMPLETE_WSUM_MIN):
-            -- дифф против частичного импорта SCHA рисует фантомные сделки.
+            -- Только ПОЛНЫЕ снапшоты (Σ weight не ниже FT_COMPLETE_WSUM_MIN) НЕ РАНЬШЕ
+            -- исторической границы (FT_HISTORY_FLOOR): дифф против частичного импорта
+            -- SCHA рисует фантомные сделки, а самые старые отчёты (2021-2022) — самые
+            -- дырявые. Диффы против снапшотов старше границы не строим вовсе.
             SELECT fund_id, snapshot_date
             FROM fund_holdings_history
             WHERE source = ANY(:sources)
+              AND snapshot_date >= :floor
             GROUP BY fund_id, snapshot_date
             HAVING COALESCE(SUM(weight), 0) >= :wmin
         ),
@@ -1060,9 +1080,11 @@ def top_movers(
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
         WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
+          AND h.snapshot_date >= :floor
         GROUP BY date_trunc('month', h.snapshot_date)
         ORDER BY d DESC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).scalars().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
+           "floor": FT_HISTORY_FLOOR}).scalars().all()
 
     # resolved_month = фактический target-месяц консенсуса (выбранный as_of, иначе последний
     # доступный для набора); funds_in_month = сколько фондов набора РЕАЛЬНО имеют снапшот
@@ -1070,10 +1092,12 @@ def top_movers(
     # фондов» вместо «нет движений» (когда выбран месяц, которого у фондов ещё нет).
     meta_row = db.execute(text(f"""
         WITH snap_ok AS (
-            -- Полные снапшоты (см. FT_COMPLETE_WSUM_MIN) — консистентно с rows.
+            -- Полные снапшоты не раньше границы (см. FT_COMPLETE_WSUM_MIN / FT_HISTORY_FLOOR)
+            -- — консистентно с rows.
             SELECT fund_id, snapshot_date
             FROM fund_holdings_history
             WHERE source = ANY(:sources)
+              AND snapshot_date >= :floor
             GROUP BY fund_id, snapshot_date
             HAVING COALESCE(SUM(weight), 0) >= :wmin
         ),
@@ -1360,9 +1384,11 @@ def combined_portfolio(
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
         WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
+          AND h.snapshot_date >= :floor
         GROUP BY date_trunc('month', h.snapshot_date)
         ORDER BY d DESC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).scalars().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
+           "floor": FT_HISTORY_FLOOR}).scalars().all()
 
     # resolved_month — фактический месяц среза набора: самый свежий снапшот выбранных
     # фондов, не позже bound. Именно его показывает пилюля актуальности данных.
@@ -1536,9 +1562,10 @@ def list_snapshots(
         SELECT snapshot_date, COUNT(*) AS asset_count
         FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources)
+          AND snapshot_date >= :floor
         GROUP BY snapshot_date
         ORDER BY snapshot_date DESC
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).mappings().all()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "floor": FT_HISTORY_FLOOR}).mappings().all()
 
     return {
         "ticker": fund_row[1],
@@ -1606,6 +1633,10 @@ def snapshot_review(
             current_date = _date.fromisoformat(date)
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="date must be ISO format")
+        # ?date= — прямой параметр API, а не выбор из (уже отфильтрованного) навигатора
+        # /snapshots — старые снапшоты могут реально существовать в БД (см. FT_HISTORY_FLOOR).
+        if current_date < FT_HISTORY_FLOOR:
+            raise HTTPException(status_code=404, detail=f"No snapshots before {FT_HISTORY_FLOOR.isoformat()}")
     elif latest_all > cutoff:
         current_date = db.execute(text("""
             SELECT MAX(snapshot_date) FROM fund_holdings_history
@@ -1632,10 +1663,12 @@ def snapshot_review(
     # Резолвим previous date = ближайший snapshot до current_date.
     prev_row = db.execute(text("""
         SELECT snapshot_date FROM fund_holdings_history
-        WHERE fund_id = :fid AND source = ANY(:sources) AND snapshot_date < :curr
+        WHERE fund_id = :fid AND source = ANY(:sources)
+          AND snapshot_date < :curr AND snapshot_date >= :floor
         ORDER BY snapshot_date DESC
         LIMIT 1
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "curr": current_date}).first()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "curr": current_date,
+           "floor": FT_HISTORY_FLOOR}).first()
     previous_date = prev_row[0] if prev_row else None
 
     # FULL OUTER JOIN current vs previous → 4 группы.
@@ -1871,9 +1904,10 @@ def asset_position_history(
         SELECT snapshot_date, asset_name, isin, positions, amount_rub, weight
         FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources) {filter_sql}
-          AND snapshot_date <= :cutoff
+          AND snapshot_date <= :cutoff AND snapshot_date >= :floor
         ORDER BY snapshot_date ASC
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff, **filter_params}).mappings().all()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff,
+           "floor": FT_HISTORY_FLOOR, **filter_params}).mappings().all()
 
     if not rows:
         raise HTTPException(
@@ -2130,10 +2164,11 @@ def company_flows(
         LEFT JOIN names n ON n.isin = h.isin
         WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
           AND h.source = ANY(:sources)
-          AND h.snapshot_date <= :cutoff
+          AND h.snapshot_date <= :cutoff AND h.snapshot_date >= :floor
           AND {match_sql}
         ORDER BY f.fund_id, h.snapshot_date ASC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff, **match_params}).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff,
+           "floor": FT_HISTORY_FLOOR, **match_params}).mappings().all()
 
     if not rows:
         raise HTTPException(status_code=404, detail="Asset not found in any whitelist fund")
@@ -2162,11 +2197,11 @@ def company_flows(
         SELECT fund_id, snapshot_date
         FROM fund_holdings_history
         WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
-          AND snapshot_date <= :cutoff
+          AND snapshot_date <= :cutoff AND snapshot_date >= :floor
         GROUP BY fund_id, snapshot_date
         HAVING COALESCE(SUM(weight), 0) >= :wmin
     """), {"fids": list(per_fund_rows.keys()), "sources": list(MONTHLY_SOURCES),
-           "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN}).fetchall()
+           "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN, "floor": FT_HISTORY_FLOOR}).fetchall()
     fund_months_all = defaultdict(set)
     for _fid, _d in fund_snap_rows:
         fund_months_all[_fid].add(_d.strftime("%Y-%m"))
