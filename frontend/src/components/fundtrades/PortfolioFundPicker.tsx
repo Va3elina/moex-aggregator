@@ -17,7 +17,7 @@
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
 
 import React, { useMemo, useState } from 'react';
-import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import type { FundWithHistory } from '../../services/api';
@@ -165,6 +165,15 @@ function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
     });
 }
 
+const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+// «2026-07-31» → «июль 2026». Месяц берём из строки, а не через Date: ISO-дата
+// парсится как UTC и в западных таймзонах month-end съезжает на месяц назад.
+const monthYearLower = (iso: string): string =>
+    `${MONTHS_LOWER[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+const monthKey = (iso: string): string => iso.slice(0, 7);
+
 /** Тикеры индексных фондов набора — их снимает тумблер «Без индексных фондов». */
 export const indexFundTickers = (funds: FundWithHistory[]): string[] =>
     funds.filter((f) => isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
@@ -183,11 +192,15 @@ export const INDEX_FUNDS_HELP =
 function PickerModal({
     funds,
     selected,
+    targetMonth,
+    excludedTickers,
     onApply,
     onClose,
 }: {
     funds: FundWithHistory[];
     selected: Set<string>;
+    targetMonth?: string | null;
+    excludedTickers?: Set<string>;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
 }) {
@@ -309,6 +322,21 @@ function PickerModal({
         const idx = new Set(idxTickers);
         return allTickers.filter((t) => !idx.has(t));
     }, [indexOff, allTickers, idxTickers]);
+
+    // Отставший фонд: его состав за месяц среза ещё не опубликован. Источник
+    // истины — excluded_funds из /portfolio (там учтены и дырки в середине), а
+    // для фондов вне текущего набора падаем на сравнение последнего снапшота с
+    // месяцем среза. Знак «!» — тот же приём, что в списке «Денег в фондах».
+    const staleInfo = (f: FundWithHistory): string | null => {
+        if (!targetMonth) return null;
+        const behind = !!f.last_snapshot_date
+            && monthKey(f.last_snapshot_date) < monthKey(targetMonth);
+        if (!behind && !excludedTickers?.has(f.ticker)) return null;
+        const last = f.last_snapshot_date
+            ? `Последний доступный состав — ${monthYearLower(f.last_snapshot_date)}.`
+            : 'Опубликованных составов пока нет.';
+        return `Состав за ${monthYearLower(targetMonth)} ещё не опубликован. ${last}`;
+    };
 
     const allSelected = pool.length > 0 && pool.every((t) => draft.has(t));
     const anySelected = pool.some((t) => draft.has(t));
@@ -528,6 +556,7 @@ function PickerModal({
                                             // размыты — видно, что они выведены из портфеля,
                                             // но строка остаётся кликабельной.
                                             const blurred = indexOff && isIndexSubcategory(fund.subcategory);
+                                            const stale = staleInfo(fund);
                                             return (
                                                 <tr
                                                     key={fund.ticker}
@@ -570,6 +599,19 @@ function PickerModal({
                                                             >
                                                                 {fund.ticker}
                                                             </span>
+                                                            {/* Фонд не отчитался за месяц среза — «!» с месяцем
+                                                                его последнего состава (как в списке фондов
+                                                                «Денег в фондах»). */}
+                                                            {stale && (
+                                                                <span
+                                                                    className="cursor-help inline-flex flex-shrink-0"
+                                                                    style={{ opacity: 0.6, color: 'var(--text-secondary)' }}
+                                                                    title={stale}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <AlertCircle size={17} strokeWidth={2.2} />
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-2 py-1 text-right" style={NUM_STYLE}>
@@ -679,9 +721,15 @@ export interface PortfolioFundPickerProps {
     /** Выбранные тикеры; пусто = все фонды. */
     selected: Set<string>;
     onChange: (next: Set<string>) => void;
+    /** Месяц среза портфеля (ISO): по нему помечаем отставшие фонды знаком «!». */
+    targetMonth?: string | null;
+    /** Тикеры, не опубликовавшие состав за месяц среза (excluded_funds из /portfolio). */
+    excludedTickers?: Set<string>;
 }
 
-export default function PortfolioFundPicker({ funds, selected, onChange }: PortfolioFundPickerProps) {
+export default function PortfolioFundPicker({
+    funds, selected, onChange, targetMonth, excludedTickers,
+}: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
     const allActive = selected.size === 0;
     const active = !allActive;
@@ -718,6 +766,8 @@ export default function PortfolioFundPicker({ funds, selected, onChange }: Portf
                 <PickerModal
                     funds={funds}
                     selected={selected}
+                    targetMonth={targetMonth}
+                    excludedTickers={excludedTickers}
                     onApply={onChange}
                     onClose={() => setOpen(false)}
                 />
