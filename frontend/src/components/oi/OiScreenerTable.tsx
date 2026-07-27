@@ -188,14 +188,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (r.net_record) {
       const high = r.net_record.kind === 'high';
       return {
-        text: high ? 'Ист. максимум' : 'Ист. минимум',
+        text: high ? 'Ист. макс' : 'Ист. мин',
         title: `Чистая позиция ${groupGen} (в контрактах) — исторический ${high ? 'максимум' : 'минимум'} за всё время наблюдений. Это сильнее дневной кратности: позиция могла прийти сюда без единого резкого дня.`,
       };
     }
     if (r.record) {
       const high = r.record.kind === 'high';
       return {
-        text: `${high ? 'Максимум' : 'Минимум'} ${PERIOD_WORD[r.record.period]}`,
+        text: `${high ? 'Макс' : 'Мин'} ${PERIOD_WORD[r.record.period]}`,
         title: `Перекос ${groupGen} пробил ${high ? 'максимум (рекордный лонг)' : 'минимум (рекордный шорт)'} ${PERIOD_WORD[r.record.period]}.`,
       };
     }
@@ -312,11 +312,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // ≤ 52px («×12,4»). Раньше колонки были 92 и 244 при контенте 42 и 112 —
   // между объектами зияло 16 / 66 / 155px, отступы читались как случайные.
   //
-  // «Сигнал» — 168px: самый длинный текст это «Максимум за всё время».
+  // «Сигнал» — 150px: самый длинный текст это «Макс за всё время». Колонка
+  // центрированная, поэтому запас распределяется по обе стороны текста.
   // Только фиксированное число: шапка и строки — РАЗНЫЕ grid-контейнеры, и
   // max-content посчитал бы их независимо (заголовок «СИГНАЛ» узкий, строки
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 168px 40px';
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 150px 40px';
 
   return (
     <div>
@@ -431,7 +432,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             >
               Сила{sortDir === -1 ? ' ▼' : ' ▲'}
             </button>
-            <span style={headCell}>Сигнал</span>
+            <span style={{ ...headCell, justifySelf: 'center' }}>Сигнал</span>
             <span />
           </div>
 
@@ -522,7 +523,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 <div style={{ justifySelf: 'center' }}>{ratioCell(r)}</div>
 
                 {/* Сигнал: рекорд, глагол резкого движения или пометка */}
-                <div style={{ minWidth: 0 }}>{signalText(r)}</div>
+                <div style={{ minWidth: 0, justifySelf: 'center' }}>{signalText(r)}</div>
 
                 {/* ⭐ */}
                 <button
