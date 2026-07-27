@@ -313,12 +313,19 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // ≤ 52px («×12,4»). Раньше колонки были 92 и 244 при контенте 42 и 112 —
   // между объектами зияло 16 / 66 / 155px, отступы читались как случайные.
   //
-  // «Сигнал» — 150px: самый длинный текст это «Макс за всё время». Колонка
-  // центрированная, поэтому запас распределяется по обе стороны текста.
+  // «Сигнал» — 140px: самый длинный текст это «Макс за всё время». Колонка
+  // центрированная, поэтому запас распределяется по обе стороны текста, и чем
+  // она уже, тем меньше это поле «подмешивается» в зазор у соседней «Силы».
   // Только фиксированное число: шапка и строки — РАЗНЫЕ grid-контейнеры, и
   // max-content посчитал бы их независимо (заголовок «СИГНАЛ» узкий, строки
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 150px 40px';
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 140px 40px';
+
+  // Оптическая компенсация для «Силы»: слева от числа стоит дорожка кометы
+  // впритык (зазор = gap), а справа к gap прибавляется половина свободного
+  // поля центрированного «Сигнала» (~20px). Из-за этого число выглядело
+  // прижатым к комете. Отступ дорожки справа уравнивает зазоры на глаз.
+  const COMET_RIGHT_INSET = 12;
 
   return (
     <div>
@@ -511,14 +518,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 </div>
 
                 {/* Позиция — комета (точные проценты в её подсказке) */}
-                <PositionComet
-                  netPct={r.net_pct}
-                  netPctPrev={r.net_pct_prev}
-                  ratio={r.ratio}
-                  ratioLo={stats.ratioLo}
-                  ratioHi={stats.ratioHi}
-                  maxAbsDelta={stats.maxAbsDelta}
-                />
+                <div style={{ marginRight: COMET_RIGHT_INSET, minWidth: 0 }}>
+                  <PositionComet
+                    netPct={r.net_pct}
+                    netPctPrev={r.net_pct_prev}
+                    ratio={r.ratio}
+                    ratioLo={stats.ratioLo}
+                    ratioHi={stats.ratioHi}
+                    maxAbsDelta={stats.maxAbsDelta}
+                  />
+                </div>
 
                 {/* Сила — крупное число ×4,3, яркость по размаху дня */}
                 <div style={{ justifySelf: 'center' }}>{ratioCell(r)}</div>
