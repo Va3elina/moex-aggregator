@@ -183,8 +183,8 @@ function ReturnsByPeriod({ returns, asOf, compact }: { returns: FundReturns; asO
                 {asOf && (
                     <HelpTooltip
                         size={13}
-                        title="На какую дату посчитана доходность"
-                        content={`Цена пая обновляется у фондов не в один день. Показана доходность на ${dayMonthYear(asOf)} — дату последнего обновления у самого отстающего фонда портфеля.`}
+                        title="Дата расчёта"
+                        content={`На ${dayMonthYear(asOf)} — когда обновился самый отстающий фонд.`}
                     />
                 )}
             </div>
