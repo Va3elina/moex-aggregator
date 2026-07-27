@@ -42,7 +42,11 @@ export default function MobileBuffettPage() {
   const [period, setPeriod] = usePersistedState<BuffettPeriod>('frame:buffett:mobilePeriod', '10y');
   // Последний период, по которому данные успешно загрузились. «Вся история»
   // (all) недоступна Free/Гостю → backend отдаёт 403 → откатываемся сюда.
-  const lastGoodPeriod = useRef<BuffettPeriod>('10y');
+  // Дефолт '5y' (не '10y'!) — '10y' САМ невалиден для guest/free
+  // (max_history_days=5y): если начальный дефолт совпадает с невалидным
+  // period, setPeriod(lastGoodPeriod.current) на первом же 403 — no-op
+  // (то же значение), график зависает с «Нет данных» навсегда.
+  const lastGoodPeriod = useRef<BuffettPeriod>('5y');
   // Reqid-guard против out-of-order-race: быстрый перебор period/viewMode/timeframe
   // запускает несколько loadData; медленный ранний ответ не должен перезаписать
   // свежий. Объявляем на уровне компонента — переживает пересоздание loadData.
@@ -207,7 +211,7 @@ export default function MobileBuffettPage() {
         // Free/Гостю — backend шлёт «Период all недоступен на тарифе …».
         // Откатываем период на последний рабочий, иначе график завис бы с
         // пустыми данными, а кнопка «Время» показывала бы «Вся история».
-        if (msg.includes('Период') && msg.includes('недоступ')) {
+        if (msg.includes('Период') && msg.includes('недоступ') && period !== lastGoodPeriod.current) {
           setPeriod(lastGoodPeriod.current);
           showUpgrade({
             tier: 'pro',
