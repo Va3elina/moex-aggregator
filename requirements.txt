@@ -124,5 +124,5 @@ redis>=8.0.0
 matplotlib>=3.8.0
 
 # SCHA PDF parsing для fund-trades (форма ЦБ № 0420502)
-pdfplumber>=0.11.0
+pdfplumber>=0.11.10
 xlrd==2.0.1
