@@ -344,8 +344,14 @@ function PickerModal({
                     <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
                         Фонды акций
                     </span>
+                    {/* Знаменатель — доступные к выбору фонды: с прожатой таблеткой
+                        индексные из пула выпадают (19 → 16), рядом видно, сколько
+                        именно выключено. */}
                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                        выбрано {draft.size} из {allTickers.length}
+                        выбрано {draft.size} из {allTickers.length - (indexOff ? idxTickers.length : 0)}
+                        {indexOff && (
+                            <span style={{ color: 'var(--text-muted)' }}> (−{idxTickers.length})</span>
+                        )}
                     </span>
                     {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
                         счётчиком: прожата — три индексных фонда сняты (счётчик сразу
@@ -481,6 +487,25 @@ function PickerModal({
                                                     {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
                                                         <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
                                                             <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} />
+                                                        </span>
+                                                    )}
+                                                    {/* Индексная группа при прожатой таблетке — сама
+                                                        строка-заголовок остаётся чёткой и несёт метку
+                                                        «почему размыто ниже» + подсказку, как вернуть. */}
+                                                    {indexOff && isIndexSubcategory(g.subcat) && (
+                                                        <span
+                                                            title="Индексные фонды выключены таблеткой в шапке. Нажмите её или отметьте фонд, чтобы вернуть их в портфель."
+                                                            style={{
+                                                                fontSize: 'var(--fs-2xs)',
+                                                                fontWeight: 700,
+                                                                color: 'var(--text-muted)',
+                                                                border: '1.5px solid color-mix(in srgb, var(--text-primary) 25%, transparent)',
+                                                                borderRadius: 999,
+                                                                padding: '1px 8px',
+                                                                whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            не в портфеле
                                                         </span>
                                                     )}
                                                     {gAny && !gAll && (
