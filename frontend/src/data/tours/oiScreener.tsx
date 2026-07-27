@@ -45,7 +45,7 @@ function CometLegend() {
       <text x="148" y="32" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">вчера</text>
       <line x1="214" y1="35" x2="214" y2="50" stroke={G} strokeWidth="1" opacity="0.7" />
       <text x="214" y="29" textAnchor="middle" fontSize="10" fontWeight="700" fill={G}>сегодня</text>
-      <text x="252" y="128" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">размер = сила ×N</text>
+      <text x="252" y="128" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">размер = сила движения</text>
       <text x="80" y="128" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">длина хвоста = сдвиг за день</text>
     </svg>
   );
@@ -87,9 +87,9 @@ export const oiScreenerTourSteps: TourStep[] = [
         <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
           <li><strong>Физлица / Юрлица</strong> — чью позицию смотрим.</li>
           <li><strong>Категории</strong> и <strong>★ Избранные</strong> — сузить список.</li>
-          <li><strong>Сортировка</strong> — сила ×N (резкие сверху) или перекос
-            (топ-лонг / топ-шорт).</li>
         </ul>
+        <p style={{ marginTop: 8 }}>Лента всегда отсортирована по силе — самые
+          резкие движения сверху.</p>
         <p style={{ marginTop: 8 }}>Справа — за какую дату данные в ленте.</p>
       </>
     ),
@@ -109,7 +109,7 @@ export const oiScreenerTourSteps: TourStep[] = [
           <li><strong>Где голова</strong> — где толпа стоит сейчас (у края = «полный
             лонг/шорт»).</li>
           <li><strong>Хвост</strong> — откуда пришли за день (его длина = размер сдвига).</li>
-          <li><strong>Размер головы</strong> — сила сигнала ×N относительно остальных
+          <li><strong>Размер головы</strong> — сила движения относительно остальных
             строк дня: сильнейшая — крупная.</li>
         </ul>
         <p>
@@ -147,9 +147,10 @@ export const oiScreenerTourSteps: TourStep[] = [
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          В каждой строке — <strong>×N</strong> (во сколько раз движение сильнее обычного,
-          ярче — сильнее на фоне дня) и <strong>трактовка</strong>: «Набрали лонг»,
-          «Сократили шорт» и т.п.
+          В каждой строке — <strong>Сила</strong> и <strong>трактовка</strong>:
+          «Набрали лонг», «Сократили шорт» и т.п. Сила ×4,3 значит, что за день
+          позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно
+          (среднее за 14 дней); ярче число — сильнее движение на фоне дня.
         </p>
         <p>
           <strong>Клик по строке</strong> открывает график этого актива с теми же

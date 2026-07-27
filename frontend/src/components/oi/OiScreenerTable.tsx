@@ -5,12 +5,15 @@
  * Лента сигналов по открытому интересу «как Telegram-алерты»: комета позиции
  * группы на оси −100…+100 и ATR14-кратность дневного движения. Данные дневные
  * (T+1). Числа перекоса из строк убраны — точные значения в подсказке кометы;
- * ×N — крупное число с градиентом «теплоты» по размаху дня (не бейдж).
+ * «Сила» (ATR-кратность) — крупное число ×4,3 с градиентом «теплоты» по
+ * размаху дня. Заголовок «×N» заменён на «Сила»: аббревиатура ничего не
+ * сообщала, а само число уже читается как кратность.
  *
  * Тулбар: Физлица/Юрлица (SegmentedControl — паритет с вкладкой графика),
- * Категории и Сортировка — Dropdown'ы (вместо двух рядов пилюль), ★ Избранные
- * со счётчиком, справа — свежесть данных. Порога ≥2×/3×/5× больше нет:
- * сортировка «сила ×N» держит резкие сверху, тихие ряды приглушены.
+ * Категории — Dropdown, ★ Избранные со счётчиком, справа — свежесть данных.
+ * Порога ≥2×/3×/5× нет: лента всегда отсортирована по силе (резкие сверху,
+ * тихие приглушены). Сортировки по перекосу тоже нет — «где стоят» это не
+ * повод для ранжирования ленты СОБЫТИЙ, для этого есть вкладка графика.
  *
  * Рекорды перекоса — оранжевая метка периода у сигнала («↑3мес»: пробили
  * максимум за 3 месяца) + акцентная левая грань строки. Исторический экстремум
@@ -37,11 +40,6 @@ const GROUP_OPTIONS = [
   { key: 'Сырьё', label: 'Сырьё' },
   { key: 'Акции', label: 'Акции' },
   { key: 'Крипто', label: 'Крипто' },
-] as const;
-
-const SORT_OPTIONS = [
-  { key: 'ratio', label: 'Сила ×N' },
-  { key: 'pct', label: 'Перекос' },
 ] as const;
 
 const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пикером активов
@@ -82,13 +80,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
-  // же виде, что оставил юзер (группа, порог, тип актива, избранные, сортировка).
+  // же виде, что оставил юзер (группа, категория, избранные, направление).
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
   const [group, setGroup] = usePersistedState<string>('frame:oi-screener:group', 'all');
   const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
   // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
   const [alertPrompt, setAlertPrompt] = useState<{ sectype: string; name: string } | null>(null);
-  const [sortKey, setSortKey] = usePersistedState<'ratio' | 'pct'>('frame:oi-screener:sortkey', 'ratio');
+  // Единственная сортировка — по силе; тумблер меняет лишь направление.
   const [sortDir, setSortDir] = usePersistedState<1 | -1>('frame:oi-screener:sortdir', -1);
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -131,35 +129,17 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       (group === 'all' || r.group === group) &&
       (!onlyFav || favSet.has(r.sectype)),
     );
-    // sortDir = −1 → по убыванию (дефолт: сильные сверху), 1 → по возрастанию.
-    if (sortKey === 'pct') {
-      // Плоская сортировка по перекосу (−100…+100): desc = самые длинные
-      // сверху, asc = самые короткие. Даёт «топ-лонг / топ-шорт». null — в конец.
-      out = [...out].sort((a, b) => {
-        const av = a.net_pct, bv = b.net_pct;
-        if (av == null && bv == null) return 0;
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        return sortDir * (av - bv);
-      });
-    } else {
-      // Дефолт: полосы по статусу (sharp → normal → illiquid → nodata),
-      // избранные наверх внутри полосы, внутри — по кратности.
-      out = [...out].sort((a, b) => {
-        const sr = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-        if (sr !== 0) return sr;
-        const fav = Number(favSet.has(b.sectype)) - Number(favSet.has(a.sectype));
-        if (fav !== 0) return fav;
-        return sortDir * ((a.ratio ?? -1) - (b.ratio ?? -1));
-      });
-    }
+    // Полосы по статусу (sharp → normal → illiquid → nodata), избранные наверх
+    // внутри полосы, внутри — по силе. sortDir = −1 → сильные сверху (дефолт).
+    out = [...out].sort((a, b) => {
+      const sr = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (sr !== 0) return sr;
+      const fav = Number(favSet.has(b.sectype)) - Number(favSet.has(a.sectype));
+      if (fav !== 0) return fav;
+      return sortDir * ((a.ratio ?? -1) - (b.ratio ?? -1));
+    });
     return out;
-  }, [rows, favorites, group, sortKey, sortDir, onlyFav]);
-
-  const clickSort = (key: 'ratio' | 'pct') => {
-    if (sortKey === key) setSortDir((d) => (d === -1 ? 1 : -1));
-    else { setSortKey(key); setSortDir(-1); }
-  };
+  }, [rows, favorites, group, sortDir, onlyFav]);
 
   // Калибровка визуальных кодировок «по дню»: размах ×N sharp-строк (размер
   // головы кометы + градиент цвета числа) и максимум |Δ п.п.| (длина хвоста).
@@ -233,9 +213,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
 
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
+  // Родительный для заголовка колонки: «Позиция физлиц», не «физлица».
+  const groupGen = clgroup === 'FIZ' ? 'физлиц' : 'юрлиц';
 
-  // ── ×N: крупное mono-число, цвет — градиент «теплоты» по размаху дня
-  // (слабейший видимый sharp → приглушённый, сильнейший → чистый accent).
+  // ── Сила: крупное mono-число «×4,3», цвет — градиент «теплоты» по размаху
+  // дня (слабейший видимый sharp → приглушённый, сильнейший → чистый accent).
   // Абсолютные пороги 3×/5× не различали реальный разброс дня 2,9…4,3.
   const ratioCell = (r: OiScreenerRow) => {
     if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
@@ -251,7 +233,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       : 1;
     return (
       <span
-        title="Во сколько раз дневной сдвиг чистой позиции сильнее обычного (ATR-14)"
+        title={`Дневное изменение позиции ${groupGen} в ${fmtRatio(r.ratio)} сильнее их обычного дневного изменения за последние 14 дней (ATR-14)`}
         style={{
           ...MONO, fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.02em',
           whiteSpace: 'nowrap',
@@ -300,13 +282,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     );
   };
 
-  const sortArrow = (key: 'ratio' | 'pct') =>
-    sortKey === key
-      ? (sortDir === -1 ? ' ▼' : ' ▲')
-      : ' ⇅';
-
-  // Заголовки таблицы — как в прототипе: mono uppercase, ЖИРНЫЕ, цвет primary
-  // (не блеклые), сортируемые подсвечены на hover через cursor.
+  // Заголовки таблицы — mono uppercase, ЖИРНЫЕ, цвет primary (не блеклые).
+  // Строго ОДНА строка на колонку: вторые строки-приписки («−100 шорт · 0 ·
+  // лонг +100» под кометой, «размах дня 2,0…3,1×» под ×N) убраны — они
+  // не влезали в свои колонки и налезали на соседей, а объясняли то, что
+  // и так видно (красная зона слева, зелёная справа) или вовсе служебное
+  // (диапазон нормировки). Смысл шкалы остался в подсказках и в туре.
   const headCell: CSSProperties = {
     ...MONO,
     fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.06em',
@@ -314,14 +295,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     textAlign: 'left', whiteSpace: 'nowrap',
   };
 
-  // Актив · Позиция (комета, забирает свободное место) · ×N · Сигнал · ★.
-  // Колонки «Перекос» больше нет — число в подсказке кометы (макет 2026-07).
+  // Актив · Позиция (комета, забирает свободное место) · Сила · Сигнал · ★.
   const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 92px minmax(190px, 244px) 44px';
-
-  // Подпись размаха дня под заголовком ×N: «2,9…4,3×».
-  const xnRange = stats.ratioLo != null && stats.ratioHi != null
-    ? `${stats.ratioLo.toFixed(1).replace('.', ',')}…${stats.ratioHi.toFixed(1).replace('.', ',')}×`
-    : null;
 
   return (
     <div>
@@ -365,9 +340,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </div>
       )}
 
-      {/* Тулбар по макету: группа · Категории ▾ · Сортировка ▾ · ★ Избранные,
-          справа — свежесть данных (перенесена из футера: это первое, что нужно
-          знать про ленту). Порога ≥N× больше нет. */}
+      {/* Тулбар: группа · Категории ▾ · ★ Избранные, справа — свежесть данных
+          (перенесена из футера: это первое, что нужно знать про ленту).
+          Порога ≥N× и выбора сортировки нет — лента всегда по силе. */}
       <div data-tour="screener-toolbar" className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
         <SegmentedControl<Clgroup>
           options={[
@@ -381,11 +356,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           options={GROUP_OPTIONS.map((g) => ({ key: g.key, label: g.label }))}
           value={group}
           onChange={setGroup}
-        />
-        <Dropdown<'ratio' | 'pct'>
-          options={SORT_OPTIONS.map((s) => ({ key: s.key, label: s.label }))}
-          value={sortKey}
-          onChange={(k) => { setSortKey(k); setSortDir(-1); }}
         />
         {/* Фильтр по избранным активам (+ счётчик) */}
         <button
@@ -425,34 +395,20 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       {/* Таблица */}
       <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: 1000 }}>
-          {/* Заголовки: у кометы вторая строка = подписи оси (−100 шорт · 0 ·
-              лонг +100, выровнены с дорожкой по построению — обе на всю ширину
-              колонки); у ×N вторая строка = фактический размах дня. */}
-          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px 8px', borderBottom: '2px solid var(--text-primary)', alignItems: 'end' }}>
+          {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
             <span style={headCell}>Актив</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={headCell} title={`Комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где ${groupWord} стоят сейчас, хвост = сдвиг за день, размер головы = сила ×N. Точные проценты — при наведении на строку.`}>
-                  Позиция {groupWord}
-                </span>
-                <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontWeight: 700, color: 'var(--text-secondary)' }} onClick={() => clickSort('pct')} title={`Сортировать по перекосу ${groupWord} (топ-лонг / топ-шорт)`}>
-                  перекос{sortArrow('pct')}
-                </button>
-              </span>
-              <span style={{ ...MONO, display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', letterSpacing: '0.02em' }}>
-                <span>−100 шорт</span><span>0</span><span>лонг +100</span>
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг сильнее обычного (ATR-14)">
-                ×N{sortArrow('ratio')}
-              </button>
-              {xnRange && (
-                <span style={{ ...MONO, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }} title="Размах силы сигналов видимой выборки — размер головы кометы и яркость числа откалиброваны по нему">
-                  размах дня {xnRange}
-                </span>
-              )}
-            </div>
+            <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг за день, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
+              Позиция {groupGen}
+            </span>
+            <button
+              type="button"
+              style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+              onClick={() => setSortDir((d) => (d === -1 ? 1 : -1))}
+              title="Во сколько раз дневное изменение позиции сильнее обычного для этого актива (ATR-14). Клик — перевернуть порядок."
+            >
+              Сила{sortDir === -1 ? ' ▼' : ' ▲'}
+            </button>
             <span style={headCell}>Сигнал</span>
             <span />
           </div>
@@ -539,7 +495,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   maxAbsDelta={stats.maxAbsDelta}
                 />
 
-                {/* ×N — крупное число, яркость по размаху дня */}
+                {/* Сила — крупное число ×4,3, яркость по размаху дня */}
                 <div>{ratioCell(r)}</div>
 
                 {/* Сигнал: глагол + метка рекорда («↑3мес») */}
@@ -566,12 +522,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </div>
       </div>
 
-      {/* Футер: как читать ×N и где точные числа (дата уехала в тулбар) */}
+      {/* Футер: как читать силу и где точные числа (дата уехала в тулбар) */}
       {!error && rows !== null && (
         <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
-            ×N — во сколько раз дневное изменение позиции сильнее обычного (ATR-14).
-            Точные значения перекоса и дневная дельта — в подсказке кометы.
+            Сила ×4,3 значит: за день позиция сдвинулась в 4,3 раза сильнее, чем
+            этот актив двигается обычно (среднее за 14 дней). Точный перекос и
+            дневная дельта — при наведении на комету.
           </span>
           <span style={MONO}>{pluralAssets(visible.length)} · {groupWord}</span>
         </div>
