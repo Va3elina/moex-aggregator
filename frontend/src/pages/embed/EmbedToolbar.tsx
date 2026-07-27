@@ -362,23 +362,9 @@ export function AssetButton({
 const CTL_FS = 'var(--emb-ctl-fs, 11.5px)';
 const CTL_FW = 'var(--emb-ctl-fw, 700)' as unknown as CSSProperties['fontWeight'];
 
-function pillStyle(active: boolean): CSSProperties {
-  return {
-    fontSize: CTL_FS,
-    fontWeight: CTL_FW,
-    padding: 'var(--emb-pill-pad, 4px 9px)',
-    borderRadius: 6,
-    cursor: 'pointer',
-    border: active ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.3))',
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#fff' : 'var(--emb-pill-off, var(--text-primary))',
-    lineHeight: 1.2,
-    whiteSpace: 'nowrap',
-    transition: 'background 0.12s, border-color 0.12s',
-  };
-}
-
-/** Компактная группа пилюль для тулбара (мало коротких опций — таймфрейм, режим). */
+/** Компактная группа пилюль для тулбара (мало коротких опций — таймфрейм, режим).
+ *  Один слитный pill (рамка+фон на группе, разделитель между сегментами), а не
+ *  отдельная кнопка на опцию — тот же паттерн, что у SegmentedControl на сайте. */
 export function PillGroup<T extends string | number>({
   value,
   options,
@@ -393,12 +379,44 @@ export function PillGroup<T extends string | number>({
     // на узкой панели теперь скроллится ЦЕЛИКОМ вся строка тулбара (родитель
     // в EmbedFrame, §4.1), а не отдельные виджеты вперемешку с рядом стоящими
     // жёсткими Dropdown (было видно как «Физ/Юр ужимаются кнопкой справа»).
-    <div style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
-      {options.map((o) => (
-        <button key={String(o.id)} type="button" title={o.title} style={{ ...pillStyle(o.id === value), flexShrink: 0 }} onClick={() => onChange(o.id)}>
-          {o.label}
-        </button>
-      ))}
+    <div
+      role="group"
+      style={{
+        display: 'inline-flex',
+        flexShrink: 0,
+        borderRadius: 6,
+        overflow: 'hidden',
+        border: '1.5px solid var(--border-color, rgba(128,128,128,0.3))',
+      }}
+    >
+      {options.map((o, i) => {
+        const active = o.id === value;
+        return (
+          <button
+            key={String(o.id)}
+            type="button"
+            title={o.title}
+            aria-pressed={active}
+            onClick={() => onChange(o.id)}
+            style={{
+              fontSize: CTL_FS,
+              fontWeight: CTL_FW,
+              padding: 'var(--emb-pill-pad, 4px 9px)',
+              border: 'none',
+              borderLeft: i > 0 ? '1.5px solid var(--border-color, rgba(128,128,128,0.3))' : 'none',
+              background: active ? 'var(--accent)' : 'transparent',
+              color: active ? '#fff' : 'var(--emb-pill-off, var(--text-primary))',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'background 0.12s, border-color 0.12s',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -601,7 +601,7 @@ export default function StackedBidirectionalHistogram({
         return (
           <div
             data-export-ignore="true"
-            className={`${TOOLTIP.containerClass} absolute z-20`}
+            className={`${TOOLTIP.containerClass} absolute z-20 chart-tooltip-root`}
             style={{
               ...TOOLTIP.containerStyle,
               left: `${left}px`,

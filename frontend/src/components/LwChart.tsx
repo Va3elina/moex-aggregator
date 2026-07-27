@@ -287,6 +287,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     // Тултип — строим безопасно через DOM (textContent), без innerHTML. Цвета —
     // CSS-var темы, чтобы адаптировался к светлой/тёмной внутри iframe.
     const tip = document.createElement('div');
+    tip.className = 'chart-tooltip-root';
     tip.style.cssText = [
       'position:absolute', 'pointer-events:none', 'z-index:6', 'display:none',
       'background:var(--bg-secondary,#17161A)', 'border:1px solid var(--border-color,rgba(245,241,232,0.18))',
@@ -478,11 +479,21 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const chip = document.createElement('div');
       chip.style.cssText = 'position:absolute;display:none;align-items:center;gap:3px;'
         + 'transform:translateY(-50%);z-index:7;white-space:nowrap;pointer-events:none';
+      // Крест — двумя полосами абсолютным позиционированием, а не textContent='+':
+      // глиф плюса в шрифте не гарантированно центрирован по своей высоте/ширине
+      // (метрики зависят от начертания), из-за чего «+» «плыл» внутри кружка.
+      // Геометрический крест центруется всегда одинаково, независимо от шрифта.
       const circle = document.createElement('div');
-      circle.style.cssText = 'width:15px;height:15px;border-radius:50%;display:flex;align-items:center;'
-        + 'justify-content:center;font-size:13px;font-weight:700;line-height:1;color:#fff;flex:0 0 auto;'
+      circle.style.cssText = 'position:relative;width:15px;height:15px;border-radius:50%;flex:0 0 auto;'
         + 'pointer-events:auto;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.35)';
-      circle.textContent = '+';
+      const crossH = document.createElement('div');
+      crossH.style.cssText = 'position:absolute;left:50%;top:50%;width:7px;height:1.6px;background:#fff;'
+        + 'transform:translate(-50%,-50%);border-radius:1px;pointer-events:none';
+      const crossV = document.createElement('div');
+      crossV.style.cssText = 'position:absolute;left:50%;top:50%;width:1.6px;height:7px;background:#fff;'
+        + 'transform:translate(-50%,-50%);border-radius:1px;pointer-events:none';
+      circle.appendChild(crossH);
+      circle.appendChild(crossV);
       circle.title = 'Поставить алерт на этом уровне';
       circle.addEventListener('click', (e) => {
         e.stopPropagation();

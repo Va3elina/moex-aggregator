@@ -85,7 +85,7 @@ export default function ChartTooltip({
   const card = (
     <div
       ref={wrapperRef}
-      className="absolute pointer-events-none z-30"
+      className="absolute pointer-events-none z-30 chart-tooltip-root"
       style={{ left: cardLeft, top: cardTop }}
     >
       <div ref={cardRef} className={cardClassName ?? TOOLTIP.containerClass} style={{ ...TOOLTIP.containerStyle, ...cardStyle }}>
@@ -108,7 +108,7 @@ export default function ChartTooltip({
   return (
     <>
       <svg
-        className="absolute pointer-events-none z-30"
+        className="absolute pointer-events-none z-30 chart-tooltip-root"
         style={{ left: minX, top: minY, overflow: 'visible' }}
         width={Math.max(1, Math.abs(edgeX - marker.x))}
         height={Math.max(1, Math.abs(edgeY - marker.y))}
@@ -120,7 +120,7 @@ export default function ChartTooltip({
         />
       </svg>
       <div
-        className="absolute pointer-events-none z-30 rounded-full"
+        className="absolute pointer-events-none z-30 rounded-full chart-tooltip-root"
         style={{
           left: marker.x, top: marker.y, width: 8, height: 8,
           transform: 'translate(-50%, -50%)',
