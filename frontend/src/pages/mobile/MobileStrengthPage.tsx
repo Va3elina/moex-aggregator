@@ -68,6 +68,20 @@ export default function MobileStrengthPage() {
   const [currency, setCurrency] = usePersistedState<Currency>('frame:strength:currency', 'rub');
   const strengthAccess = useTierAccess('strength');
   const { showUpgrade } = useUpgradePrompt();
+
+  // Tier-коррекция периода: персистентный period (общий ключ с desktop) мог
+  // остаться от прошлой авторизованной/Pro-сессии и стать невалидным для
+  // текущего тарифа (гость/free/логаут). loadData сам НЕ откатывает period при
+  // tier-403 (только показывает upgrade-модалку через handleTierError) — без
+  // этой коррекции график завис бы с ошибкой навсегда. Тот же паттерн, что в
+  // MobileOpenInterestPage.tsx; баг без него — см. BuffettPage.tsx история #718/#810.
+  useEffect(() => {
+    if (strengthAccess.isLoading) return;
+    if (strengthAccess.canUsePeriod(period)) return;
+    const allowed = (['1y', '5y', '10y', '20y', 'all'] as Period[]).filter(p => strengthAccess.canUsePeriod(p));
+    if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strengthAccess.isLoading, period]);
   const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
   const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);

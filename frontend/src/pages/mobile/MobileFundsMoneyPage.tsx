@@ -85,6 +85,21 @@ export default function MobileFundsMoneyPage() {
   const [flowTimeframe, setFlowTimeframe] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1w');
   const fundsAccess = useTierAccess('funds_money');
   const { showUpgrade } = useUpgradePrompt();
+
+  // Tier-коррекция периода (только AUM — во flows вся фича целиком гейтится
+  // тарифом, там нет валидного "отката", см. handleTierError в loadData ниже):
+  // персистентный period мог остаться от прошлой авторизованной/Pro-сессии и
+  // стать невалидным для текущего тарифа (гость/free/логаут). loadData сам НЕ
+  // откатывает period при tier-403 — без этой коррекции график завис бы с
+  // ошибкой навсегда. Тот же паттерн, что в FundsMoneyPage.tsx (desktop, AUM).
+  const AUM_PERIODS: FundPeriod[] = ['1m', '1y', '3y', 'all'];
+  useEffect(() => {
+    if (fundsAccess.isLoading || viewMode !== 'aum') return;
+    if (fundsAccess.canUsePeriod(period)) return;
+    const allowed = AUM_PERIODS.filter(p => fundsAccess.canUsePeriod(p));
+    if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fundsAccess.isLoading, viewMode, period]);
   // Алерты в мессенджере — квота по тарифу (0=Free/гость → апселл, как у OI-колокола).
   const alertsQuota = useCommonFeatures().telegram_alerts_quota;
   const alertsLocked = alertsQuota === 0;
