@@ -175,7 +175,7 @@ function fmtRetAbs(v: number | null | undefined): string {
 function ReturnsByPeriod({ returns, asOf, compact }: { returns: FundReturns; asOf?: string | null; compact?: boolean }) {
     return (
         <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: compact ? '11px 14px' : '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 10 }}>
                 <span style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность по периодам</span>
                 {/* Доходность взвешена по фондам портфеля, а те обновляются не в один
                     день — «на дату» показывает САМЫЙ СТАРЫЙ последний день цены пая
