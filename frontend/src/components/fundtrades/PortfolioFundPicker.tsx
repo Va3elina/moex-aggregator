@@ -9,6 +9,9 @@
 // Отличия от «Денег в фондах»: семантика «выбрано» (не «скрыто») и выбор,
 // который применяется по закрытию окна.
 //
+// Индексная группа всегда последняя, а в шапке — таблетка «Без индексных фондов»
+// (прожата по умолчанию): снимает эти три фонда и размывает их строки.
+//
 // Черновик выбора живёт внутри модалки и применяется на «Готово»/X/overlay —
 // промежуточное состояние «сняты все» не улетает в API (пусто = все фонды).
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
@@ -344,6 +347,38 @@ function PickerModal({
                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
                         выбрано {draft.size} из {allTickers.length}
                     </span>
+                    {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
+                        счётчиком: прожата — три индексных фонда сняты (счётчик сразу
+                        меньше на 3), рядом «?» с объяснением почему. */}
+                    {idxTickers.length > 0 && (
+                        <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6 }}>
+                            <button
+                                type="button"
+                                onClick={toggleIndexOff}
+                                className="editorial-press"
+                                aria-pressed={indexOff}
+                                title={indexOff
+                                    ? `Индексные фонды выключены (${idxTickers.length})`
+                                    : `Выключить индексные фонды (${idxTickers.length})`}
+                                style={{
+                                    padding: '4px 14px',
+                                    borderRadius: 999,
+                                    border: '2px solid var(--text-primary)',
+                                    background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
+                                    color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                    fontSize: 'var(--fs-xs)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
+                                    transition: 'background-color 0.12s ease, color 0.12s ease',
+                                }}
+                            >
+                                Без индексных фондов
+                            </button>
+                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} />
+                        </span>
+                    )}
                     <button
                         onClick={applyAndClose}
                         className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
@@ -353,32 +388,6 @@ function PickerModal({
                         <X size={22} />
                     </button>
                 </div>
-
-                {/* Тумблер «Без индексных фондов» — над списком, включён по умолчанию.
-                    Рядом «?» с объяснением, почему индексные вынесены из портфеля. */}
-                {idxTickers.length > 0 && (
-                    <div
-                        className="flex items-center flex-shrink-0"
-                        style={{ padding: 'var(--sp-3) var(--sp-5)', gap: 8, borderBottom: SOFT_BORDER }}
-                    >
-                        <button
-                            type="button"
-                            onClick={toggleIndexOff}
-                            className="flex items-center"
-                            style={{ gap: 8, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}
-                            aria-pressed={indexOff}
-                        >
-                            <CheckBox checked={indexOff} />
-                            <span className="font-bold" style={{ fontSize: 'var(--fs-sm)' }}>
-                                Без индексных фондов
-                            </span>
-                        </button>
-                        <HelpTooltip content={INDEX_FUNDS_HELP} size={18} />
-                        <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            {idxTickers.length} фонда
-                        </span>
-                    </div>
-                )}
 
                 {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
                     вертикальный скроллбар не съедает правый отступ). */}
@@ -490,11 +499,19 @@ function PickerModal({
                                             const on = draft.has(fund.ticker);
                                             const uk = resolveFundLogo(fund.ticker, fund.uk_id);
                                             const br = bestReturn(fund.returns);
+                                            // Пока таблетка прожата, индексные фонды слегка
+                                            // размыты — видно, что они выведены из портфеля,
+                                            // но строка остаётся кликабельной.
+                                            const blurred = indexOff && isIndexSubcategory(fund.subcategory);
                                             return (
                                                 <tr
                                                     key={fund.ticker}
                                                     className={`transition-colors cursor-pointer ${on ? 'hover:bg-white/5' : 'opacity-50 grayscale hover:bg-white/5'}`}
-                                                    style={{ height: 41, borderTop: SOFT_BORDER }}
+                                                    style={{
+                                                        height: 41,
+                                                        borderTop: SOFT_BORDER,
+                                                        ...(blurred ? { filter: 'blur(1.1px)' } : null),
+                                                    }}
                                                     onClick={() => toggleFund(fund.ticker)}
                                                 >
                                                     <td className="pl-2 pr-0 py-1">
