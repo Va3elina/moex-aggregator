@@ -340,6 +340,15 @@ export default function FundsMoneyPage() {
         [accessibleFunds, hiddenFunds],
     );
 
+    // Счётчик для кнопки «Готово» в модалке выбора: сколько фондов отмечено.
+    // Считаем по всем строкам списка (включая locked — они тоже с чекбоксом),
+    // чтобы цифра совпадала с тем, что видно в окне.
+    const pickerSelectedCount = useMemo(
+        () => (data?.funds ?? []).filter(f => !hiddenFunds.has(f.fund_id)).length,
+        [data?.funds, hiddenFunds],
+    );
+    const pickerAllSelected = pickerSelectedCount === (data?.funds.length ?? 0);
+
     // Все доступные фонды выключены — нужен empty-state вместо ошибки.
     const noFundsSelected = data != null
         && accessibleFunds.length > 0
@@ -1134,6 +1143,33 @@ export default function FundsMoneyPage() {
                                 onSetNavSortDir={setNavSortDir}
                                 onOpenFundCard={openFundCard}
                             />
+                        </div>
+                        {/* «Готово» — как в пикере фондов «Сделок фондов»: выбор
+                            применяется сразу по клику, кнопка лишь закрывает окно,
+                            но даёт очевидный выход и счётчик выбранных. */}
+                        <div
+                            className="px-6 py-4 flex-shrink-0"
+                            style={{ borderTop: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setFundPickerOpen(false)}
+                                className="editorial-press"
+                                style={{
+                                    width: '100%',
+                                    padding: '12px 18px',
+                                    background: 'var(--accent)',
+                                    color: 'var(--text-inverse)',
+                                    border: '2px solid var(--text-primary)',
+                                    borderRadius: 12,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '3px 3px 0 var(--text-primary)',
+                                }}
+                            >
+                                Готово{pickerAllSelected ? '' : ` · ${pickerSelectedCount}`}
+                            </button>
                         </div>
                     </div>
                 </div>
