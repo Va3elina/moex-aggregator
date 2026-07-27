@@ -441,6 +441,12 @@ export default function MobileFundTradesPage() {
     () => Array.from(portfolioFunds).join(','),
     [portfolioFunds],
   );
+
+  // Фонды без состава за месяц среза — пикер помечает их знаком «!» (зеркало десктопа).
+  const portfolioExcludedTickers = useMemo(
+    () => new Set((portfolio?.excluded_funds ?? []).map((f) => f.ticker)),
+    [portfolio],
+  );
   useEffect(() => {
     if (!common.fund_trades_access) return;
     if (tab !== 'portfolio') return;
@@ -1030,6 +1036,8 @@ export default function MobileFundTradesPage() {
                     funds={funds}
                     selected={portfolioFunds}
                     onChange={setPortfolioFunds}
+                    targetMonth={portfolio?.resolved_month ?? null}
+                    excludedTickers={portfolioExcludedTickers}
                   />
                 </div>
               )}

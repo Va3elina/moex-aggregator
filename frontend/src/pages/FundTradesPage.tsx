@@ -374,6 +374,13 @@ export default function FundTradesPage() {
         [portfolioFunds],
     );
 
+    // Фонды, не отчитавшиеся за месяц среза (бэк не включает их в портфель) —
+    // пикер помечает их знаком «!».
+    const portfolioExcludedTickers = useMemo(
+        () => new Set((portfolio?.excluded_funds ?? []).map((f) => f.ticker)),
+        [portfolio],
+    );
+
     // Месяц-срез портфеля: месяцы > snapshot_cutoff заблокированы (Free/гость —
     // свежий срез по подписке), дефолт = последний ДОСТУПНЫЙ, как в «Покупках фондов».
     const isPortfolioMonthLocked = (m: string) => {
@@ -897,6 +904,8 @@ export default function FundTradesPage() {
                                     funds={funds}
                                     selected={portfolioFunds}
                                     onChange={setPortfolioFunds}
+                                    targetMonth={portfolio?.resolved_month ?? portfolioAsOf ?? null}
+                                    excludedTickers={portfolioExcludedTickers}
                                 />
                             </div>
                         )}
