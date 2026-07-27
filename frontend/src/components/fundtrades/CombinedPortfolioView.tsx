@@ -94,11 +94,21 @@ function plural(n: number, one: string, few: string, many: string): string {
 
 const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
     'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const MONTHS_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 // "2026-07-31" → "июль 2026" — для пилюли актуальности данных.
 function monthYearLower(iso: string): string {
     const d = new Date(iso);
     return `${MONTHS_LOWER[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// "2026-07-23" → "23 июля 2026" — для подсказки «доходность на дату». Месяц/день
+// читаем из строки, а не через Date().getMonth(): парсинг ISO-даты как UTC-полночи
+// в западных таймзонах сдвигает день/месяц назад (тот же приём, что и в PortfolioFundPicker).
+function dayMonthYear(iso: string): string {
+    const [y, m, d] = iso.slice(0, 10).split('-');
+    return `${Number(d)} ${MONTHS_GENITIVE[Number(m) - 1]} ${y}`;
 }
 
 // "2026-07-31" → "Июль 2026" — для пунктов month-picker (с заглавной).
@@ -162,10 +172,22 @@ function fmtRetAbs(v: number | null | undefined): string {
     return `${Math.abs(v).toFixed(1).replace('.', ',')}%`;
 }
 
-function ReturnsByPeriod({ returns, compact }: { returns: FundReturns; compact?: boolean }) {
+function ReturnsByPeriod({ returns, asOf, compact }: { returns: FundReturns; asOf?: string | null; compact?: boolean }) {
     return (
         <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: compact ? '11px 14px' : '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
-            <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10 }}>Доходность по периодам</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
+                <span style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность по периодам</span>
+                {/* Доходность взвешена по фондам портфеля, а те обновляются не в один
+                    день — «на дату» показывает САМЫЙ СТАРЫЙ последний день цены пая
+                    среди них: после него не все фонды учтены поровну. */}
+                {asOf && (
+                    <HelpTooltip
+                        size={13}
+                        title="На какую дату посчитана доходность"
+                        content={`Цена пая обновляется у фондов не в один день. Показана доходность на ${dayMonthYear(asOf)} — дату последнего обновления у самого отстающего фонда портфеля.`}
+                    />
+                )}
+            </div>
             <div style={{ display: 'flex', gap: compact ? 12 : 14 }}>
                 {RET_COLS.map(({ key, label }, i) => {
                     const v = returns[key];
@@ -432,7 +454,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
-                    <ReturnsByPeriod returns={rr} compact />
+                    <ReturnsByPeriod returns={rr} asOf={portfolio.returns_as_of} compact />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
                     <Donut holdings={donutHoldings} colors={donutColors} size={200} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
@@ -625,7 +647,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                     </div>
                     {treemap}
                     <div style={{ marginTop: 16 }}>
-                        <ReturnsByPeriod returns={rr} />
+                        <ReturnsByPeriod returns={rr} asOf={portfolio.returns_as_of} />
                     </div>
                 </div>
             </div>
