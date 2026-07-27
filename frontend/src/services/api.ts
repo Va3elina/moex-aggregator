@@ -1510,7 +1510,10 @@ export interface FundPortfolioFund {
 }
 
 export interface FundPortfolio {
+    /** Фонды в срезе: только те, чей состав опубликован за месяц среза. */
     num_funds: number;
+    /** Сколько фондов набора вообще имеют данные (включая не отчитавшихся за месяц). */
+    funds_total?: number;
     num_assets: number;
     /** Суммарная стоимость акций в портфеле (Σ рублёвых позиций). */
     total_value_rub: number;
@@ -1527,6 +1530,8 @@ export interface FundPortfolio {
     /** Дата-отсечка свежести (Free/гость): null = без задержки. */
     snapshot_cutoff?: string | null;
     funds: FundPortfolioFund[];
+    /** Фонды, не опубликовавшие состав за месяц среза — в портфель не включены. */
+    excluded_funds?: FundPortfolioFund[];
     holdings: FundPortfolioHolding[];
 }
 
