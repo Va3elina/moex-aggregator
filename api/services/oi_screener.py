@@ -251,11 +251,16 @@ def _row_signal(pts: List[tuple], min_part: int) -> Dict[str, Any]:
 
 
 def _record_windows() -> Dict[str, str]:
-    """Окна рекордов → ISO-дата начала окна. Горизонты: 1..5 лет + всё время
-    (короткие мес/полугода намеренно убраны — охотимся за редкими рекордами).
+    """Окна рекордов → ISO-дата начала окна. Горизонты: месяц / 3 мес / полгода
+    + 1..5 лет + всё время. Короткие окна вернули под оранжевую метку периода
+    в скринере («↑3мес», просьба Вадима): редкость рекорда теперь кодируется
+    ДЛИНОЙ периода в метке, а не фактом её наличия.
     Данные позиций у основных тикеров с 2019 → 5-летние окна реальны; у новых
     перпетуалов истории меньше, но _record_for честно вернёт им «всё время»."""
     return {
+        "d1m": (date.today() - timedelta(days=30)).isoformat(),
+        "d3m": (date.today() - timedelta(days=91)).isoformat(),
+        "d6m": (date.today() - timedelta(days=182)).isoformat(),
         "d1y": (date.today() - timedelta(days=365)).isoformat(),
         "d2y": (date.today() - timedelta(days=730)).isoformat(),
         "d3y": (date.today() - timedelta(days=1095)).isoformat(),
@@ -264,15 +269,26 @@ def _record_windows() -> Dict[str, str]:
     }
 
 
+# Периоды окон (короткий ключ ↔ бинд-параметр даты) в порядке колонок SQL.
+_WINDOW_PERIODS = ("1m", "3m", "6m", "1y", "2y", "3y", "4y", "5y")
+
+
 def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
-    """Per-sectype ПРЕДЫДУЩИЕ экстремумы перекоса net_pct по окнам (для бейджа
-    «новый рекорд»). Горизонты: 1 / 2 / 3 / 4 / 5 лет / всё время. Исключаем
+    """Per-sectype ПРЕДЫДУЩИЕ экстремумы перекоса net_pct по окнам (для метки
+    «новый рекорд»). Горизонты: 1/3/6 мес, 1..5 лет, всё время. Исключаем
     последний день каждого актива (tradedate < его последней даты) — сравниваем
     сегодняшний перекос с рекордом ДО сегодня. Один агрегатный проход; net_pct =
     last-bar-of-day (pos_long+pos_short)/(pos_long−pos_short)×100."""
     w = _record_windows()
+    # Пара MAX/MIN на каждое окно — колонки генерим из _WINDOW_PERIODS, чтобы
+    # список окон существовал в одном месте (бинд-имена фиксированы, не ввод).
+    win_cols = ",\n          ".join(
+        f"MAX(net_pct) FILTER (WHERE d.tradedate >= :d{p} AND d.tradedate < l.ld) AS pmax_{p},\n"
+        f"          MIN(net_pct) FILTER (WHERE d.tradedate >= :d{p} AND d.tradedate < l.ld) AS pmin_{p}"
+        for p in _WINDOW_PERIODS
+    )
     rows = db.execute(text(
-        """
+        f"""
         WITH daily AS (
             SELECT DISTINCT ON (sectype, tradedate) sectype, tradedate,
                    (pos_long + pos_short)::float
@@ -285,16 +301,7 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         ),
         last AS (SELECT sectype, MAX(tradedate) AS ld FROM daily GROUP BY sectype)
         SELECT d.sectype,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d1y  AND d.tradedate < l.ld) AS pmax_1y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d1y  AND d.tradedate < l.ld) AS pmin_1y,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d2y  AND d.tradedate < l.ld) AS pmax_2y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d2y  AND d.tradedate < l.ld) AS pmin_2y,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d3y  AND d.tradedate < l.ld) AS pmax_3y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d3y  AND d.tradedate < l.ld) AS pmin_3y,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d4y  AND d.tradedate < l.ld) AS pmax_4y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d4y  AND d.tradedate < l.ld) AS pmin_4y,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmax_5y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmin_5y,
+          {win_cols},
           MAX(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmax_all,
           MIN(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmin_all,
           MAX(net) FILTER (WHERE d.tradedate < l.ld) AS net_max_all,
@@ -305,13 +312,14 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         """
     ), {"clg": clgroup, **w}).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
+    n = len(_WINDOW_PERIODS)
     for r in rows:
-        out[r[0]] = {
-            "max_1y": r[1], "min_1y": r[2], "max_2y": r[3], "min_2y": r[4],
-            "max_3y": r[5], "min_3y": r[6], "max_4y": r[7], "min_4y": r[8],
-            "max_5y": r[9], "min_5y": r[10], "max_all": r[11], "min_all": r[12],
-            "net_max_all": r[13], "net_min_all": r[14],
-        }
+        ex: Dict[str, Any] = {}
+        for i, p in enumerate(_WINDOW_PERIODS):
+            ex[f"max_{p}"], ex[f"min_{p}"] = r[1 + i * 2], r[2 + i * 2]
+        ex["max_all"], ex["min_all"] = r[1 + n * 2], r[2 + n * 2]
+        ex["net_max_all"], ex["net_min_all"] = r[3 + n * 2], r[4 + n * 2]
+        out[r[0]] = ex
     return out
 
 
@@ -319,12 +327,13 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
 # появится только если max_5y < max_all (есть данные СТАРШЕ 5 лет с бОльшим
 # экстремумом) — т.е. пробили 5-летний пик, но не исторический. Для активов с
 # короткой историей year-окна == all → всегда вернётся «всё время», не соврём.
-_RECORD_PERIODS = ("all", "5y", "4y", "3y", "2y", "1y")
+_RECORD_PERIODS = ("all", "5y", "4y", "3y", "2y", "1y", "6m", "3m", "1m")
 
 
 def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
-    """Сильнейший пробитый рекорд перекоса сегодня (всё время > 5 л > … > год),
-    строго больше/меньше предыдущего экстремума. None если рекорда нет."""
+    """Сильнейший пробитый рекорд перекоса сегодня (всё время > 5 л > … > год >
+    полгода > 3 мес > месяц), строго больше/меньше предыдущего экстремума.
+    None если рекорда нет."""
     if net_pct is None or not ex:
         return None
     for period in _RECORD_PERIODS:
