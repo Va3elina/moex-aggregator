@@ -16,7 +16,9 @@
  * HTML/CSS вместо SVG: дорожка 6px (тона ног), хвост = clip-path-клин с
  * градиентом «прозрачный → плотный к голове» и высотой по диаметру головы,
  * голова = круг с ободком цвета фона (отделяет её от хвоста и дорожки).
- * Цвет = нога (зелёный лонг / красный шорт); не-sharp ряды приглушены.
+ * Цвет = нога (зелёный лонг / красный шорт). Приглушения по силе сигнала нет:
+ * полоса одинаково яркая и у тихих рядов (о слабости движения говорят число
+ * силы и текст сигнала, которые остаются тусклыми).
  */
 import type { CSSProperties } from 'react';
 
@@ -24,7 +26,6 @@ interface Props {
   netPct: number | null;         // перекос сегодня, −100…+100
   netPctPrev: number | null;     // перекос вчера (для хвоста)
   ratio: number | null;          // сила сигнала ×N (размер головы)
-  status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
   /** Мин/макс ×N среди видимых sharp-строк — калибровка головы «по дню». */
   ratioLo?: number | null;
   ratioHi?: number | null;
@@ -52,14 +53,13 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
   return span < 0.5 ? 0.5 : clamp((ratio - lo) / span, 0, 1);
 }
 
-export default function PositionComet({ netPct, netPctPrev, ratio, status, ratioLo, ratioHi, maxAbsDelta }: Props) {
+export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, ratioHi, maxAbsDelta }: Props) {
   if (netPct == null) {
     return <span style={{ color: 'var(--text-muted)' }}>—</span>;
   }
 
   const long = netPct >= 0;
   const leg = long ? 'var(--oi-green)' : 'var(--oi-short)';
-  const dim = status !== 'sharp';
   const dotPct = (clamp(netPct, -100, 100) + 100) / 2;
 
   const headR = ratio != null && ratioLo != null && ratioHi != null
@@ -112,8 +112,12 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status, ratio
     background: leg,
   };
 
+  // Комета НЕ приглушается у тихих рядов (ratio < 2): позиция и дневной сдвиг —
+  // факт, одинаково достоверный при любой силе движения, и полосу нужно читать
+  // во всех строках. Тише остаются только число силы и текст сигнала — они и
+  // говорят «события нет».
   return (
-    <div title={title} style={{ position: 'relative', height: H, cursor: 'help', opacity: dim ? 0.6 : 1 }}>
+    <div title={title} style={{ position: 'relative', height: H, cursor: 'help' }}>
       {/* дорожка: слева тон шорта, справа тон лонга */}
       <div style={{ position: 'absolute', left: 0, right: 0, top: CY - 3, height: 6, borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
         <div style={{ flex: 1, background: 'var(--oi-short)', opacity: 0.1 }} />
