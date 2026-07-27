@@ -15,7 +15,7 @@ import {
 import AlertBellButton from '../components/alerts/AlertBellButton';
 import CreateAlertModal, { type AlertMetricOption } from '../components/alerts/CreateAlertModal';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
-import { useCommonFeatures } from '../contexts/TierFeaturesContext';
+import { useCommonFeatures, useTierAccess } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getDefaultPeriod } from '../config/accessControl';
 import { useIndicatorData } from '../hooks/useIndicatorData';
@@ -96,6 +96,23 @@ export default function StrengthPage() {
         : universeBase;
 
     const { showUpgrade } = useUpgradePrompt();
+    const strengthAccess = useTierAccess('strength');
+
+    // Tier-коррекция периода: персистентный period мог остаться от прошлой
+    // авторизованной/Pro-сессии (напр. '20y', добавлен вместе с '10y' 2026-07-22)
+    // и стать невалидным для текущего тарифа (гость/free/логаут). useIndicatorData
+    // сам НЕ откатывает period при tier-403 (только показывает upgrade-модалку
+    // через handleTierError) — без этой коррекции график завис бы с ошибкой
+    // навсегда. Тот же паттерн, что уже есть в OpenInterestPage.tsx и
+    // FundsMoneyPage.tsx (AUM); баг без него — см. BuffettPage.tsx история #718/#810.
+    const PERIOD_ORDER: Period[] = ['1y', '5y', '10y', '20y', 'all'];
+    useEffect(() => {
+        if (strengthAccess.isLoading) return;
+        if (strengthAccess.canUsePeriod(period)) return;
+        const allowed = PERIOD_ORDER.filter(p => strengthAccess.canUsePeriod(p));
+        if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [strengthAccess.isLoading, period]);
 
     // Данные через useIndicatorData: 2 параллельных fetch → единый объект
     // {current, history}; ниже разворачиваем в прежние имена (consumers не трогаем).
