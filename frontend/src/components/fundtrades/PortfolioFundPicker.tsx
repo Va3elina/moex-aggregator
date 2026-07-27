@@ -323,19 +323,39 @@ function PickerModal({
         return allTickers.filter((t) => !idx.has(t));
     }, [indexOff, allTickers, idxTickers]);
 
-    // Отставший фонд: его состав за месяц среза ещё не опубликован. Источник
-    // истины — excluded_funds из /portfolio (там учтены и дырки в середине), а
-    // для фондов вне текущего набора падаем на сравнение последнего снапшота с
-    // месяцем среза. Знак «!» — тот же приём, что в списке «Денег в фондах».
+    // Самый свежий месяц, за который вообще есть составы в наборе. Знак «!» висит
+    // относительно НЕГО, а не относительно выбранного месяца: «у фонда ещё не
+    // вышли последние данные» — свойство фонда, оно не должно мигать при листании
+    // истории. Тир-задержка уже учтена: last_snapshot_date приходит с бэка
+    // обрезанным по cutoff тарифа.
+    const freshestMonth = useMemo(() => {
+        let m: string | null = null;
+        for (const f of funds) {
+            const d = f.last_snapshot_date;
+            if (d && (!m || d > m)) m = d;
+        }
+        return m;
+    }, [funds]);
+
+    // Знак «!» — тот же приём, что в списке фондов «Денег в фондах»:
+    //  • фонд отстал от свежего месяца (последние данные ещё не вышли), либо
+    //  • фонд не отчитался за ВЫБРАННЫЙ месяц и потому не вошёл в портфель
+    //    (excluded_funds из /portfolio — ловит и дырки в середине истории).
     const staleInfo = (f: FundWithHistory): string | null => {
-        if (!targetMonth) return null;
-        const behind = !!f.last_snapshot_date
-            && monthKey(f.last_snapshot_date) < monthKey(targetMonth);
-        if (!behind && !excludedTickers?.has(f.ticker)) return null;
-        const last = f.last_snapshot_date
-            ? `Последний доступный состав — ${monthYearLower(f.last_snapshot_date)}.`
-            : 'Опубликованных составов пока нет.';
-        return `Состав за ${monthYearLower(targetMonth)} ещё не опубликован. ${last}`;
+        const last = f.last_snapshot_date;
+        const behind = !!freshestMonth
+            && (!last || monthKey(last) < monthKey(freshestMonth));
+        if (behind) {
+            const tail = last
+                ? `Последний доступный состав — ${monthYearLower(last)}.`
+                : 'Опубликованных составов пока нет.';
+            return `Состав за ${monthYearLower(freshestMonth!)} ещё не опубликован. ${tail}`;
+        }
+        if (targetMonth && excludedTickers?.has(f.ticker)) {
+            return `Состава за ${monthYearLower(targetMonth)} у фонда нет,`
+                + ' поэтому в портфель этого месяца он не включён.';
+        }
+        return null;
     };
 
     const allSelected = pool.length > 0 && pool.every((t) => draft.has(t));
