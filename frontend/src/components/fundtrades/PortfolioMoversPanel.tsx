@@ -2,7 +2,7 @@
 // «Общий портфель». Показывает ЧИСТУЮ покупку/продажу бумаг за выбранный период
 // (месяц / полгода / год / 3 года) across выбранных фондов, консенсусом из /movers.
 //
-// Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г/3Г
+// Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г
 // живёт в шапке блока (prop onPeriodChange), под заголовком — фактический
 // диапазон месяцев консенсуса («январь – июль 2026»). Полосы
 // нейтральные, величины тёмные: направление читается секциями «Чистые покупки ↑» /
@@ -23,9 +23,11 @@ import Skeleton from '../Skeleton';
 import MonthRangePicker, { monthRangeLabel as customRangeLabel, type MonthRange } from './MonthRangePicker';
 import type { FundTradesMovers, FundTradesMover } from '../../services/api';
 
-export type MoversPeriod = '1m' | '6m' | '1y' | '3y';
-const PERIOD_SUB: Record<MoversPeriod, string> = { '1m': 'за 1 месяц', '6m': 'за полгода', '1y': 'за год', '3y': 'за 3 года' };
-const PERIOD_MONTHS: Record<MoversPeriod, number> = { '1m': 1, '6m': 6, '1y': 12, '3y': 36 };
+// '3y' убран из пресетов (2026-07): произвольный диапазон через календарь
+// покрывает и более длинные периоды, отдельная пилюля стала избыточной.
+export type MoversPeriod = '1m' | '6m' | '1y';
+const PERIOD_SUB: Record<MoversPeriod, string> = { '1m': 'за 1 месяц', '6m': 'за полгода', '1y': 'за год' };
+const PERIOD_MONTHS: Record<MoversPeriod, number> = { '1m': 1, '6m': 6, '1y': 12 };
 
 interface Props {
     movers: FundTradesMovers | null;
@@ -33,7 +35,7 @@ interface Props {
     period: MoversPeriod;
     variant?: 'desktop' | 'mobile' | 'embedded';
     onAssetClick?: (m: FundTradesMover) => void;
-    // Задан — сегменты 1М/6М/1Г/3Г рендерятся в шапке блока (десктоп-макет).
+    // Задан — сегменты 1М/6М/1Г рендерятся в шапке блока (десктоп-макет).
     // Мобилка управляет периодом своими чипами в ⚙️-sheet.
     onPeriodChange?: (p: MoversPeriod) => void;
     // Произвольный диапазон месяцев (кнопка-календарь справа от сегментов).
@@ -150,7 +152,6 @@ export default function PortfolioMoversPanel({
                             { key: '1m', label: '1М' },
                             { key: '6m', label: '6М' },
                             { key: '1y', label: '1Г' },
-                            { key: '3y', label: '3Г' },
                         ]}
                         // Свой диапазон — ключа нет ни у одного сегмента, активной
                         // пилюли не остаётся (период показывает кнопка-календарь).

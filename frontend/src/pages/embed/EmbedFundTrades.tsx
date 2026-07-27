@@ -5,7 +5,7 @@
  *               («Чистые покупки/продажи»), что и на сайте во вкладке «Общий
  *               портфель» (июль 2026 редизайн, #493/#571) — раньше тут была своя
  *               параллельная вёрстка, разъехавшаяся с сайтом после переноса
- *               «Покупок фондов» внутрь «Сделок фондов». Период 1М/6М/1Г/3Г —
+ *               «Покупок фондов» внутрь «Сделок фондов». Период 1М/6М/1Г —
  *               в шапке самой панели (её проп), фильтр фондов — в ⚙.
  *   - snapshots «Снапшот» — per-fund помесячный diff (докупил/продал/новые/вышел).
  *   - funds    «Состав» — карточки фондов (УК + тикер + донат + топ-холдинги + доходность).
@@ -250,7 +250,11 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   }, []);
 
   // ── movers state (= сайтовый PortfolioMoversPanel, вкладка «Общий портфель») ──
-  const [moversPeriod, setMoversPeriod] = useState<MoversPeriod>(() => rd('frame:embed:fundtrades:period', '1m') as MoversPeriod);
+  // '3y' убран из пресетов (2026-07) — у кого он был персистнут в embed, откатываем на 1Г.
+  const [moversPeriod, setMoversPeriod] = useState<MoversPeriod>(() => {
+    const saved = rd('frame:embed:fundtrades:period', '1m') as string;
+    return saved === '3y' ? '1y' : (saved as MoversPeriod);
+  });
   const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
   const [moversData, setMoversData] = useState<FundTradesMovers | null>(null);
   const [moversStatus, setMoversStatus] = useState<LoadStatus>('idle');
@@ -313,7 +317,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
     return [...filtered].sort(cmp);
   }, [funds, fundSort, selectedUks]);
 
-  // ── «ещё» (⚙) для movers: период 1М/6М/1Г/3Г теперь в шапке самой панели
+  // ── «ещё» (⚙) для movers: период 1М/6М/1Г теперь в шапке самой панели
   // (её onPeriodChange) — как на сайте; в ⚙ остаётся только фильтр фондов. ──
   const moversMore: ReactNode = moverPickerFunds.length > 1 ? (
     <DrawerSection label="Фонды">
@@ -347,7 +351,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
         </div>
       );
 
-  // Тулбар: заперт на movers → пусто (заголовок и период 1М/6М/1Г/3Г уже в
+  // Тулбар: заперт на movers → пусто (заголовок и период 1М/6М/1Г уже в
   // шапке самой PortfolioMoversPanel, дублировать их в тулбаре не нужно).
   const toolbar: ReactNode = lockTab === 'movers' ? undefined : (
     <TabBar tab={tab} onChange={setTab} />
