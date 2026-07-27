@@ -254,6 +254,9 @@ export default function FundTradesPage() {
     useEffect(() => {
         if (returnPeriod !== 'm1' && returnPeriod !== 'y1' && returnPeriod !== 'y5') setReturnPeriod('y1');
         if ((fundSort as string) === 'name') setFundSort('return');
+        // '3y' убран из пресетов «Сделок фондов» (2026-07) — у кого он был
+        // персистнут, откатываем на 1Г (дольше — теперь через свой диапазон).
+        if ((portfolioMoversPeriod as string) === '3y') setPortfolioMoversPeriod('1y');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
