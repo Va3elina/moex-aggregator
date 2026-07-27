@@ -1246,6 +1246,35 @@ def combined_portfolio(
     elif manager_ids:
         params["managers"] = manager_ids
 
+    # ── Дефолтный месяц среза: САМЫЙ ПОЛНЫЙ, а не просто последний ──────────────
+    # Отчёты УК приходят вразнобой (обычно к 20-м числам, часть — позже), поэтому
+    # у свежего месяца нередко 2-3 состава из 19: портфель на нём почти пустой.
+    # Без явного as_of открываем месяц, где состав опубликовало больше всего фондов
+    # НАБОРА; при равенстве берём свежий. Окно поиска — последние 12 месяцев с
+    # данными, иначе набор мог бы уехать в старый год, где фондов было больше.
+    if not as_of:
+        best_month = db.execute(text(f"""
+            WITH cov AS (
+                SELECT date_trunc('month', h.snapshot_date)::date AS m,
+                       COUNT(DISTINCT h.fund_id) AS n
+                FROM fund_holdings_history h
+                JOIN funds f ON f.fund_id = h.fund_id
+                WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+                  AND h.source = ANY(:sources)
+                  AND h.snapshot_date >= :floor
+                  AND h.snapshot_date <= :cutoff
+                GROUP BY 1
+            )
+            SELECT m FROM cov
+            WHERE m >= (SELECT MAX(m) FROM cov) - INTERVAL '11 months'
+            ORDER BY n DESC, m DESC
+            LIMIT 1
+        """), {**params, "floor": FT_HISTORY_FLOOR}).scalar()
+        if best_month:
+            bound = min(bound, _next_month(best_month) - timedelta(days=1))
+            cutoff = bound
+            params["cutoff"] = cutoff
+
     # ── Выбранные фонды: nav (полная СЧА) + доходность пая + дата снапшота ──
     fund_rows = db.execute(text(f"""
         SELECT
