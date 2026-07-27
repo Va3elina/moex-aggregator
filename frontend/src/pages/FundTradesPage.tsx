@@ -280,8 +280,10 @@ export default function FundTradesPage() {
     const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
     // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
-    // Выбор УК персистится (usePersistedSet, пусто = все); режим веса и период — тоже.
+    // Выбор КОНКРЕТНЫХ фондов (ключ = ticker, пусто = все) персистится; прежний
+    // выбор УК (portfolioUks) один раз мигрируется в тикеры этих УК ниже.
     const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
+    const [portfolioFunds, setPortfolioFunds] = usePersistedSet<string>('frame:fundtrades:portfolioFunds');
     const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
     // Доходность в плашке — на 1 год (с фолбэком на длиннейший доступный внутри вью).
     // Период плашки доходности «Общего портфеля» — только штатные периоды
@@ -335,11 +337,25 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
-    // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
-    const portfolioFundsParam = useMemo(() => {
-        if (portfolioUks.size === 0) return '';
-        return funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',');
-    }, [funds, portfolioUks]);
+    // Миграция старого фильтра «по УК» (frame:fundtrades:portfolioUks) в выбор
+    // конкретных фондов: один раз при загрузке списка разворачиваем УК в их тикеры.
+    // Выполняется только если новый набор ещё пуст — ручной выбор не перетираем.
+    useEffect(() => {
+        if (funds.length === 0 || portfolioUks.size === 0) return;
+        if (portfolioFunds.size === 0) {
+            setPortfolioFunds(new Set(
+                funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker),
+            ));
+        }
+        setPortfolioUks(new Set());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [funds.length]);
+
+    // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
+    const portfolioFundsParam = useMemo(
+        () => Array.from(portfolioFunds).join(','),
+        [portfolioFunds],
+    );
 
     // Месяц-срез портфеля: месяцы > snapshot_cutoff заблокированы (Free/гость —
     // свежий срез по подписке), дефолт = последний ДОСТУПНЫЙ, как в «Покупках фондов».
@@ -412,8 +428,9 @@ export default function FundTradesPage() {
         });
     }, [funds]);
 
-    // Все whitelist-фонды для FundPicker (multi) на вкладке «Сделки фондов».
-    // FundPicker сам группирует по УК; передаём минимум полей ({ticker, name, uk, uk_id}).
+    // Все whitelist-фонды для FundPicker (multi) — вкладки «Сделки фондов» и
+    // «Общий портфель». FundPicker сам группирует по УК; передаём минимум полей
+    // ({ticker, name, uk, uk_id}).
     const moverPickerFunds = useMemo<FundPickerFund[]>(
         () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
         [funds],
@@ -854,14 +871,17 @@ export default function FundTradesPage() {
                     {/* Панель папки: padding:0 — тулбар и сетка идут от края до края
                         со своими отступами (как было у прежней карточки портфеля). */}
                     <div className="editorial-frame has-tabs" style={{ padding: 0 }}>
-                        {ukOptions.length > 1 && (
+                        {moverPickerFunds.length > 1 && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
-                                <UkMultiSelect
-                                    options={ukOptions}
-                                    selected={portfolioUks}
-                                    onChange={setPortfolioUks}
-                                    allLabel="Все фонды акций"
-                                    size="md"
+                                {/* Выбор КОНКРЕТНЫХ фондов (модалка с поиском и группами
+                                    по УК — тот же макет, что виджет фондов в «Деньгах в
+                                    фондах»). Чекбокс на заголовке УК выбирает всю УК. */}
+                                <FundPicker
+                                    funds={moverPickerFunds}
+                                    mode="multi"
+                                    selected={portfolioFunds}
+                                    onChange={setPortfolioFunds}
+                                    buttonLabel={(n, total) => (n === 0 ? 'Все фонды акций' : `${n} из ${total} фондов`)}
                                 />
                             </div>
                         )}

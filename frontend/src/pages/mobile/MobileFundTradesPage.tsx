@@ -348,7 +348,10 @@ export default function MobileFundTradesPage() {
   const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
   // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
+  // Выбор КОНКРЕТНЫХ фондов (ticker, пусто = все), ключ общий с десктопом; прежний
+  // выбор УК (portfolioUks) один раз мигрируется в тикеры этих УК ниже.
   const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
+  const [portfolioFunds, setPortfolioFunds] = usePersistedSet<string>('frame:fundtrades:portfolioFunds');
   const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
   // Период плашки «Общего портфеля» — штатные периоды (без 5л). Всегда 'y1'.
   const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
@@ -405,12 +408,23 @@ export default function MobileFundTradesPage() {
       .finally(() => { if (!isStale()) setLoadingMovers(false); });
   }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
-  // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
+  // Миграция старого фильтра «по УК» в выбор конкретных фондов (зеркало десктопа):
+  // один раз разворачиваем УК в тикеры, ручной выбор фондов не перетираем.
+  useEffect(() => {
+    if (funds.length === 0 || portfolioUks.size === 0) return;
+    if (portfolioFunds.size === 0) {
+      setPortfolioFunds(new Set(
+        funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker),
+      ));
+    }
+    setPortfolioUks(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funds.length]);
+
+  // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
   const portfolioFundsParam = useMemo(
-    () => (portfolioUks.size === 0
-      ? ''
-      : funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',')),
-    [funds, portfolioUks],
+    () => Array.from(portfolioFunds).join(','),
+    [portfolioFunds],
   );
   useEffect(() => {
     if (!common.fund_trades_access) return;
@@ -992,14 +1006,17 @@ export default function MobileFundTradesPage() {
                   ))}
                 </div>
               </div>
-              {ukOptions.length > 1 && (
+              {moverPickerFunds.length > 1 && (
                 <div>
-                  <div style={SHEET_SECTION_LABEL}>Управляющая компания</div>
-                  <UkMultiSelect
-                    options={ukOptions}
-                    selected={portfolioUks}
-                    onChange={setPortfolioUks}
-                    size="md"
+                  <div style={SHEET_SECTION_LABEL}>Фонды</div>
+                  {/* Выбор КОНКРЕТНЫХ фондов (модалка с поиском и группами по УК —
+                      как виджет фондов в «Деньгах в фондах»), не только УК целиком. */}
+                  <FundPicker
+                    funds={moverPickerFunds}
+                    mode="multi"
+                    selected={portfolioFunds}
+                    onChange={setPortfolioFunds}
+                    buttonLabel={(n, total) => (n === 0 ? 'Все фонды акций' : `${n} из ${total} фондов`)}
                   />
                 </div>
               )}
