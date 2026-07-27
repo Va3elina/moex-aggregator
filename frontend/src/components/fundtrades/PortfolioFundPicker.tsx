@@ -4,8 +4,10 @@
 // maxWidth 816 с editorial-рамкой и hard-shadow, внутри таблица с фиксированной
 // раскладкой колонок — чекбокс · Название (лого УК + имя + тикер) · СЧА ·
 // Доходность, сортировка по СЧА/доходности, строка «Выбрать все» и групповые
-// чекбоксы. Отличия от «Денег в фондах»: группировка по УК (не подкатегориям),
-// семантика «выбрано» (не «скрыто»), и выбор применяется по закрытию окна.
+// чекбоксы. Группы — те же подкатегории, что в «Деньгах в фондах» (Индекс
+// Мосбиржи → Управляемые фонды → Авторские), в порядке subcategory_order из БД.
+// Отличия от «Денег в фондах»: семантика «выбрано» (не «скрыто») и выбор,
+// который применяется по закрытию окна.
 //
 // Черновик выбора живёт внутри модалки и применяется на «Готово»/X/overlay —
 // промежуточное состояние «сняты все» не улетает в API (пусто = все фонды).
@@ -13,7 +15,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
-import { resolveFundLogo, stripUkName, UK_LOGOS } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
+import HelpTooltip from '../HelpTooltip';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -107,29 +110,45 @@ function bestReturn(r?: FundWithHistory['returns']): { v: number; label: string 
     return null;
 }
 
-interface UkGroup {
+interface SubcatGroup {
     key: string;
-    ukId?: number | string | null;
-    name: string;
+    /** Подпись группы (с тем же переименованием, что в «Деньгах в фондах»). */
+    label: string;
+    /** Ключ справки SUBCATEGORY_HELP — исходное имя подкатегории. */
+    subcat: string | null;
+    order: number;
     funds: FundWithHistory[];
 }
 
-// Группировка по УК: ключ — uk_id (приоритет), иначе имя; имя — канон из UK_LOGOS.
-function groupByUk(funds: FundWithHistory[]): UkGroup[] {
-    const order: string[] = [];
-    const map = new Map<string, UkGroup>();
+// Подпись подкатегории — как в FundsTable: «Управляемые фонды акций» в списке
+// фондов акций сокращается до «Управляемые фонды» (категория и так про акции).
+const subcatLabel = (subcat: string | null): string => {
+    if (!subcat) return 'Прочие';
+    return subcat === 'Управляемые фонды акций' ? 'Управляемые фонды' : subcat;
+};
+
+// Группировка по ПОДКАТЕГОРИЯМ (Индекс Мосбиржи / Управляемые фонды / Авторские) —
+// один в один с «Деньгами в фондах». Порядок групп — subcategory_order из БД (той
+// же колонки, по которой сортирует /api/funds); фолбэк — порядок появления.
+function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
+    const map = new Map<string, SubcatGroup>();
+    let seen = 0;
     for (const f of funds) {
-        const key = f.uk_id != null && f.uk_id !== '' ? `id:${f.uk_id}` : `nm:${(f.uk ?? '').trim() || '—'}`;
+        const key = f.subcategory ?? '__none__';
         let g = map.get(key);
         if (!g) {
-            const logo = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : undefined;
-            g = { key, ukId: f.uk_id, name: logo?.name ?? (f.uk ?? '').trim() ?? 'Прочие', funds: [] };
+            g = {
+                key,
+                label: subcatLabel(f.subcategory),
+                subcat: f.subcategory,
+                order: f.subcategory_order ?? 1000 + seen++,
+                funds: [],
+            };
             map.set(key, g);
-            order.push(key);
         }
         g.funds.push(f);
     }
-    return order.map((k) => map.get(k)!);
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
 }
 
 // ── Модалка (шелл — fundPickerOpen из FundsMoneyPage) ────────────────────────
@@ -233,14 +252,9 @@ function PickerModal({
             return sortDir === 'desc' ? nb - na : na - nb;
         });
 
-    // Группы УК сортируем по суммарной СЧА группы (крупные УК сверху) — стабильно
-    // и не зависит от выбора; внутри группы — активная колонка сортировки.
-    const groups = useMemo(() => {
-        const gs = groupByUk(funds);
-        const navOf = (g: UkGroup) => g.funds.reduce((s, f) => s + (f.nav_rub ?? 0), 0);
-        return gs.sort((a, b) => navOf(b) - navOf(a));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [funds]);
+    // Группы — подкатегории в порядке из БД; внутри группы фонды сортируются
+    // активной колонкой (СЧА / доходность), как в «Деньгах в фондах».
+    const groups = useMemo(() => groupBySubcat(funds), [funds]);
 
     const allSelected = allTickers.length > 0 && allTickers.every((t) => draft.has(t));
     const anySelected = allTickers.some((t) => draft.has(t));
@@ -255,7 +269,7 @@ function PickerModal({
             return next;
         });
     };
-    const toggleGroup = (g: UkGroup) => {
+    const toggleGroup = (g: SubcatGroup) => {
         const tickers = g.funds.map((f) => f.ticker);
         const allOn = tickers.every((t) => draft.has(t));
         setDraft((prev) => {
@@ -356,19 +370,12 @@ function PickerModal({
                                 const tickers = g.funds.map((f) => f.ticker);
                                 const gAll = tickers.every((t) => draft.has(t));
                                 const gAny = tickers.some((t) => draft.has(t));
-                                // УК с 1-2 фондами не получают строку-заголовок: она была бы
-                                // пустой обёрткой (нулевая СЧА при снятых галках + мёртвый
-                                // шеврон над одной строкой). Такие фонды рисуем плоско, с
-                                // ПОЛНЫМ именем (с УК внутри) — иначе теряется принадлежность.
-                                const flat = g.funds.length <= 2;
-                                const isCollapsed = !flat && collapsed.has(g.key);
+                                const isCollapsed = collapsed.has(g.key);
                                 return (
                                     <React.Fragment key={g.key}>
-                                        {/* Заголовок УК: групповой чекбокс + шеврон-коллапс +
-                                            «УК <имя>» + СЧА группы (аналог
-                                            строки подкатегории в FundsTable). Имя — тем же
-                                            fs-sm, что имена фондов ниже. */}
-                                        {!flat && (
+                                        {/* Заголовок подкатегории — один в один со строкой
+                                            подкатегории в FundsTable: чекбокс группы, шеврон
+                                            сворачивания, название, «?»-справка и СЧА группы. */}
                                         <tr style={{ borderTop: SOFT_BORDER }}>
                                             <td className="pl-2 pr-0 py-1">
                                                 <div
@@ -396,13 +403,16 @@ function PickerModal({
                                                         className="flex-shrink-0 transition-transform duration-200"
                                                         style={{ color: 'var(--text-secondary)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
                                                     />
-                                                    {/* Заголовок группы — «УК <имя>» одним текстом, тем же
-                                                        весом и размером, что имена фондов ниже. Кружок-лого
-                                                        УК тут не рисуем: логотипы стоят у самих фондов, в
-                                                        заголовке они читались как эмодзи. */}
                                                     <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
-                                                        УК {g.name}
+                                                        {g.label}
                                                     </span>
+                                                    {/* Справка по подкатегории — та же, что в «Деньгах в
+                                                        фондах»; клик по «?» не сворачивает группу. */}
+                                                    {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
+                                                        <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                                                            <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} />
+                                                        </span>
+                                                    )}
                                                     {gAny && !gAll && (
                                                         <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
                                                             {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
@@ -415,7 +425,6 @@ function PickerModal({
                                             </td>
                                             <td />
                                         </tr>
-                                        )}
                                         {!isCollapsed && sortFunds(g.funds).map((fund) => {
                                             const on = draft.has(fund.ticker);
                                             const uk = resolveFundLogo(fund.ticker, fund.uk_id);
@@ -450,7 +459,7 @@ function PickerModal({
                                                             )}
                                                             <FadedName
                                                                 name={fund.name}
-                                                                display={flat ? fund.name : stripUkName(fund.name, fund.uk_id)}
+                                                                display={stripUkName(fund.name, fund.uk_id)}
                                                             />
                                                             <span
                                                                 className="flex-shrink-0"
