@@ -60,7 +60,7 @@ import FundDetailModal, {
   formatShares,
 } from '../../components/funds/FundDetailModal';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
-import PortfolioFundPicker from '../../components/fundtrades/PortfolioFundPicker';
+import PortfolioFundPicker, { defaultPortfolioTickers } from '../../components/fundtrades/PortfolioFundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
@@ -353,6 +353,8 @@ export default function MobileFundTradesPage() {
   // выбор УК (portfolioUks) один раз мигрируется в тикеры этих УК ниже.
   const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
   const [portfolioFunds, setPortfolioFunds] = usePersistedSet<string>('frame:fundtrades:portfolioFunds');
+  // Дефолт «без индексных фондов» применяется один раз; дальше набор — за юзером.
+  const [portfolioDefaultApplied, setPortfolioDefaultApplied] = usePersistedState<boolean>('frame:fundtrades:portfolioDefaultApplied', false);
   const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
   // Период плашки «Общего портфеля» — штатные периоды (без 5л). Всегда 'y1'.
   const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
@@ -419,8 +421,20 @@ export default function MobileFundTradesPage() {
       ));
     }
     setPortfolioUks(new Set());
+    setPortfolioDefaultApplied(true);   // мигрированный выбор дефолтом не перетираем
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [funds.length]);
+
+  // Дефолт набора (один раз на браузер): всё, кроме индексных фондов — зеркало
+  // десктопа, ключ персиста общий. Тумблер в пикере возвращает их обратно.
+  useEffect(() => {
+    if (funds.length === 0 || portfolioDefaultApplied) return;
+    if (portfolioFunds.size === 0) {
+      setPortfolioFunds(new Set(defaultPortfolioTickers(funds)));
+    }
+    setPortfolioDefaultApplied(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funds.length, portfolioDefaultApplied]);
 
   // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
   const portfolioFundsParam = useMemo(

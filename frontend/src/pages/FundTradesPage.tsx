@@ -61,7 +61,7 @@ import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
-import PortfolioFundPicker from '../components/fundtrades/PortfolioFundPicker';
+import PortfolioFundPicker, { defaultPortfolioTickers } from '../components/fundtrades/PortfolioFundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../components/fundtrades/PortfolioMoversPanel';
 import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
@@ -285,6 +285,8 @@ export default function FundTradesPage() {
     // выбор УК (portfolioUks) один раз мигрируется в тикеры этих УК ниже.
     const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
     const [portfolioFunds, setPortfolioFunds] = usePersistedSet<string>('frame:fundtrades:portfolioFunds');
+    // Дефолт «без индексных фондов» применяется один раз; дальше набор — за юзером.
+    const [portfolioDefaultApplied, setPortfolioDefaultApplied] = usePersistedState<boolean>('frame:fundtrades:portfolioDefaultApplied', false);
     const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
     // Доходность в плашке — на 1 год (с фолбэком на длиннейший доступный внутри вью).
     // Период плашки доходности «Общего портфеля» — только штатные периоды
@@ -349,8 +351,22 @@ export default function FundTradesPage() {
             ));
         }
         setPortfolioUks(new Set());
+        setPortfolioDefaultApplied(true);   // мигрированный выбор дефолтом не перетираем
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [funds.length]);
+
+    // Дефолт набора (один раз на браузер): всё, кроме индексных фондов. Три
+    // индексных фонда почти идентичны, их сделки — ребалансировка вслед за
+    // индексом, и в консенсусе они забивают решения управляющих. Тумблер в
+    // пикере возвращает их обратно.
+    useEffect(() => {
+        if (funds.length === 0 || portfolioDefaultApplied) return;
+        if (portfolioFunds.size === 0) {
+            setPortfolioFunds(new Set(defaultPortfolioTickers(funds)));
+        }
+        setPortfolioDefaultApplied(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [funds.length, portfolioDefaultApplied]);
 
     // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
     const portfolioFundsParam = useMemo(
