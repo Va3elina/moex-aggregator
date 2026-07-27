@@ -336,7 +336,11 @@ def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
     if net_pct is None or not ex:
         return None
     for period in _RECORD_PERIODS:
-        mx, mn = ex[f"max_{period}"], ex[f"min_{period}"]
+        # .get, а НЕ [...]: словарь экстремумов лежит в отдельном кэше
+        # (oi_extremes, TTL 30 мин), и после добавления окна там ещё какое-то
+        # время живут записи со старым набором ключей. Жёсткий доступ ронял
+        # ручку в 500 на все 30 минут (кейс окна «1m», 2026-07-27).
+        mx, mn = ex.get(f"max_{period}"), ex.get(f"min_{period}")
         if mx is not None and net_pct > mx:
             return {"kind": "high", "period": period}
         if mn is not None and net_pct < mn:
@@ -375,10 +379,14 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     # всё равно ловятся: compute_screener подмешивает свежий дневной close в ex ниже.
     # Host-side скрипты (content_ai.py::_market_rank_line) не ставят redis в venv —
     # тот же graceful-degradation паттерн, что у low_activity() выше в этом файле.
+    # ⚠️ Версию в ключе поднимать ВСЯКИЙ РАЗ при изменении набора окон
+    # (_WINDOW_PERIODS): в кэше лежит словарь с фиксированным набором ключей
+    # max_*/min_*, и записи со старым набором живут ещё до 30 минут после
+    # деплоя. v3 = + окно «1m».
     try:
         from api.cache import get_or_compute
         extremes = get_or_compute(
-            f"oi_extremes:v2:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
+            f"oi_extremes:v3:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
         )
     except ImportError:
         extremes = _prior_extremes(db, clgroup)
