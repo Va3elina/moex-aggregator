@@ -251,13 +251,14 @@ def _row_signal(pts: List[tuple], min_part: int) -> Dict[str, Any]:
 
 
 def _record_windows() -> Dict[str, str]:
-    """Окна рекордов → ISO-дата начала окна. Горизонты: месяц + полгода +
-    1..5 лет + всё время. 3 месяца намеренно пропущены — шкала и так частая,
-    а месячное окно вернули как самый короткий сигнал «позиция пошла в край».
+    """Окна рекордов → ISO-дата начала окна. Горизонты: квартал + полгода +
+    1..5 лет + всё время. Месячное окно убрано (решение Вадима): рекорд за
+    месяц слишком част, чтобы считаться аномалией; самый короткий горизонт —
+    квартал.
     Данные позиций у основных тикеров с 2019 → 5-летние окна реальны; у новых
     перпетуалов истории меньше, но _record_for честно вернёт им «всё время»."""
     return {
-        "d1m": (date.today() - timedelta(days=30)).isoformat(),
+        "d3m": (date.today() - timedelta(days=91)).isoformat(),
         "d6m": (date.today() - timedelta(days=182)).isoformat(),
         "d1y": (date.today() - timedelta(days=365)).isoformat(),
         "d2y": (date.today() - timedelta(days=730)).isoformat(),
@@ -268,7 +269,7 @@ def _record_windows() -> Dict[str, str]:
 
 
 # Периоды окон (короткий ключ ↔ бинд-параметр даты) в порядке колонок SQL.
-_WINDOW_PERIODS = ("1m", "6m", "1y", "2y", "3y", "4y", "5y")
+_WINDOW_PERIODS = ("3m", "6m", "1y", "2y", "3y", "4y", "5y")
 
 
 def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
@@ -325,13 +326,13 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
 # появится только если max_5y < max_all (есть данные СТАРШЕ 5 лет с бОльшим
 # экстремумом) — т.е. пробили 5-летний пик, но не исторический. Для активов с
 # короткой историей year-окна == all → всегда вернётся «всё время», не соврём.
-_RECORD_PERIODS = ("all", "5y", "4y", "3y", "2y", "1y", "6m", "1m")
+_RECORD_PERIODS = ("all", "5y", "4y", "3y", "2y", "1y", "6m", "3m")
 
 
 def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
     """Сильнейший пробитый рекорд перекоса сегодня (всё время > 5 л > … > год >
-    полгода > месяц), строго больше/меньше предыдущего экстремума. Приоритет
-    длинного окна: месячная метка достаётся только тем, кто не пробил ничего
+    полгода > квартал), строго больше/меньше предыдущего экстремума. Приоритет
+    длинного окна: квартальная метка достаётся только тем, кто не пробил ничего
     крупнее. None если рекорда нет."""
     if net_pct is None or not ex:
         return None
@@ -382,11 +383,11 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     # ⚠️ Версию в ключе поднимать ВСЯКИЙ РАЗ при изменении набора окон
     # (_WINDOW_PERIODS): в кэше лежит словарь с фиксированным набором ключей
     # max_*/min_*, и записи со старым набором живут ещё до 30 минут после
-    # деплоя. v3 = + окно «1m».
+    # деплоя. v4 = «1m» → «3m» (квартал вместо месяца).
     try:
         from api.cache import get_or_compute
         extremes = get_or_compute(
-            f"oi_extremes:v3:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
+            f"oi_extremes:v4:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
         )
     except ImportError:
         extremes = _prior_extremes(db, clgroup)
