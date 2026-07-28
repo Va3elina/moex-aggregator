@@ -28,6 +28,7 @@ import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectiona
 import ChartNavigator from '../components/ChartNavigator';
 import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCategoryInfo';
+import { getDefaultHiddenCategories } from '../components/cbr/cbrDefaultVisibility';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
@@ -81,7 +82,12 @@ export default function CbrFlowsPage() {
   // с ключом по типу актива (frame:cbr:hidden:<type>) — выбор не сбрасывается на
   // новой сессии и хранится отдельно для stocks/ofz/fx (категории разные). Смена
   // type перечитывает набор под новый ключ — это заменяет прежний reset в пустой Set.
-  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(`frame:cbr:hidden:${type}`);
+  // Первый визит (нет записи в localStorage) — дефолт сужен до базовых категорий,
+  // иначе до 7 участников (stocks/ofz) захламляют мобилку; см. cbrDefaultVisibility.
+  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(
+    `frame:cbr:hidden:${type}`,
+    getDefaultHiddenCategories(type),
+  );
 
   // Период: 1г / 3г / Всё (default 1г) — персистится в localStorage
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');

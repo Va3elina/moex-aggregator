@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../../components/cbr/cbrCategoryInfo';
+import { getDefaultHiddenCategories } from '../../components/cbr/cbrDefaultVisibility';
 import { getCbrFlows } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
@@ -45,8 +46,10 @@ export default function EmbedCbrFlows() {
   const [period, setPeriod] = useState<PeriodFilter>(
     () => (params.get('period') || rd('frame:embed:cbr:period', '1y')) as PeriodFilter,
   );
-  // Скрытые категории. При смене типа — сбрасываем (категории различаются для stocks/ofz/fx).
-  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  // Скрытые категории. При смене типа — сбрасываем на дефолт (категории различаются
+  // для stocks/ofz/fx); дефолт сужен до базовых категорий — до 7 участников
+  // (stocks/ofz) не помещаются на узкой embed-ширине, см. cbrDefaultVisibility.
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => getDefaultHiddenCategories(type));
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
@@ -69,8 +72,8 @@ export default function EmbedCbrFlows() {
     return () => { cancelled = true; };
   }, [type]);
 
-  // Сброс скрытых категорий при смене типа актива.
-  useEffect(() => { setHiddenCategories(new Set()); }, [type]);
+  // Сброс скрытых категорий на дефолт при смене типа актива.
+  useEffect(() => { setHiddenCategories(getDefaultHiddenCategories(type)); }, [type]);
 
   // Видимые категории (для передачи в график).
   const visibleCategories = useMemo(
