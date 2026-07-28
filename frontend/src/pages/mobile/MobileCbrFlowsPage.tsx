@@ -15,6 +15,7 @@ import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { axisFontSize } from '../../components/chart/chartTypography';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
+import { getDefaultHiddenCategories } from '../../components/cbr/cbrDefaultVisibility';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getCbrFlows,
@@ -60,8 +61,13 @@ export default function MobileCbrFlowsPage() {
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   // Hidden categories — Set, исключаются из стека (как на десктопе). Персистим
   // по типу актива (frame:cbr:hidden:<type>, общий ключ с десктопом) — выбор не
-  // сбрасывается на новой сессии и хранится отдельно для stocks/ofz/fx.
-  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(`frame:cbr:hidden:${type}`);
+  // сбрасывается на новой сессии и хранится отдельно для stocks/ofz/fx. Первый
+  // визит — дефолт сужен до базовых категорий (см. cbrDefaultVisibility): до 7
+  // участников (stocks/ofz) занимают слишком много места на мобильном экране.
+  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(
+    `frame:cbr:hidden:${type}`,
+    getDefaultHiddenCategories(type),
+  );
 
   // Tier-gating периодов: free = до 365 дней (matrix cbr_flows), «Всё»
   // (безлимит) под замком. canUsePeriod читает ту же матрицу что и backend;
