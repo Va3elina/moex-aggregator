@@ -6,8 +6,9 @@
  *   • aum   → суммарная СЧА (area, правая ось) + индекс (line, левая ось).
  * Категория / период / таймфрейм / тоглы — в тулбаре и ⚙.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -23,23 +24,27 @@ import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type FundsResp = Awaited<ReturnType<typeof getFundsChartData>>;
 
-const CATS: { id: Category; label: string }[] = [
-  { id: 'money_market', label: 'Денежный' },
-  { id: 'stocks', label: 'Акции' },
-  { id: 'bonds', label: 'Облигации' },
-  { id: 'gold', label: 'Золото' },
-  { id: 'yuan', label: 'Юань' },
+const CATS: { id: Category; label: string; icon: ReactNode }[] = [
+  { id: 'money_market', label: 'Денежный', icon: <Wallet size={14} /> },
+  { id: 'stocks', label: 'Акции', icon: <TrendingUp size={14} /> },
+  { id: 'bonds', label: 'Облигации', icon: <Landmark size={14} /> },
+  { id: 'gold', label: 'Золото', icon: <Coins size={14} /> },
+  { id: 'yuan', label: 'Юань', icon: <Banknote size={14} /> },
 ];
-const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
-  { id: '1d', label: 'День' },
-  { id: '1w', label: 'Неделя' },
-  { id: '1m', label: 'Месяц' },
+// Категория рендерится через Dropdown (не PillGroup) — иконка там одна, по
+// текущему значению (см. CAT_ICONS), а не per-option как в PillGroup.
+const CAT_ICONS: Record<Category, ReactNode> = Object.fromEntries(CATS.map((c) => [c.id, c.icon])) as Record<Category, ReactNode>;
+const FLOW_TFS: { id: FlowTimeframe; label: string; icon: ReactNode }[] = [
+  { id: '1d', label: 'День', icon: <Clock size={14} /> },
+  { id: '1w', label: 'Неделя', icon: <CalendarDays size={14} /> },
+  { id: '1m', label: 'Месяц', icon: <CalendarRange size={14} /> },
 ];
 
 // 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart (даты дневные/агрегированные).
@@ -137,6 +142,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return () => { cancelled = true; };
   }, [viewMode, category, flowTimeframe, period]);
 
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+
   // Резиновая высота графика (как в Баффетте).
   const chartBoxRef = useRef<HTMLDivElement>(null);
   const [chartH, setChartH] = useState(280);
@@ -196,18 +204,30 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   return (
     <EmbedFrame
+      toolbarUnified
       toolbar={
-        <>
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup<ViewMode>
+              value={viewMode}
+              options={[{ id: 'flows', label: 'Потоки', icon: <ArrowLeftRight size={14} /> }, { id: 'aum', label: 'СЧА', icon: <Wallet size={14} /> }]}
+              onChange={(v) => setViewMode(v)}
+            />
+            <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} />
+            <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
+          </div>
           <PillGroup<ViewMode>
             value={viewMode}
-            options={[{ id: 'flows', label: 'Потоки' }, { id: 'aum', label: 'СЧА' }]}
+            options={[{ id: 'flows', label: 'Потоки', icon: <ArrowLeftRight size={14} /> }, { id: 'aum', label: 'СЧА', icon: <Wallet size={14} /> }]}
             onChange={(v) => setViewMode(v)}
+            compact={toolbarCompact}
           />
-          <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" />
+          <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} compact={toolbarCompact} />
           {viewMode === 'flows' && (
-            <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
+            <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} compact={toolbarCompact} />
           )}
-        </>
+        </div>
       }
       more={viewMode === 'aum' ? (
         <>

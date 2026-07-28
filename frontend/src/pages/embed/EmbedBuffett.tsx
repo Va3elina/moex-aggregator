@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Scale } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -19,6 +20,7 @@ import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat, type ChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 type Timeframe = '1d' | '1w' | '1m';
@@ -120,6 +122,9 @@ export default function EmbedBuffett() {
     return () => { cancelled = true; };
   }, [viewMode, timeframe]);
 
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
   const [chartH, setChartH] = useState(280);
@@ -215,16 +220,30 @@ export default function EmbedBuffett() {
 
   return (
     <EmbedFrame
+      toolbarUnified
       toolbar={
-        <>
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Dropdown
+              value={viewMode}
+              options={[{ id: 'cap-gdp', label: 'Кап / ВВП' }, { id: 'cap-m2', label: 'Кап / M2' }]}
+              onChange={(v) => setViewMode(v)}
+              title="База сравнения"
+              icon={<Scale size={14} />}
+            />
+            <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
+          </div>
           <Dropdown
             value={viewMode}
             options={[{ id: 'cap-gdp', label: 'Кап / ВВП' }, { id: 'cap-m2', label: 'Кап / M2' }]}
             onChange={(v) => setViewMode(v)}
             title="База сравнения"
+            icon={<Scale size={14} />}
+            compact={toolbarCompact}
           />
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
-        </>
+        </div>
       }
       more={
         <>

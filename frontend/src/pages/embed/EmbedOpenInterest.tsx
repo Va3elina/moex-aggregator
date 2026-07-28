@@ -14,7 +14,7 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
@@ -33,6 +33,7 @@ import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
 import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 // Экспорт графика (скрин → превью → рисование → скачать/копировать) — переиспользуем
@@ -237,27 +238,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [showPrice, setShowPrice] = useState<boolean>(() => rd('frame:embed:oi:showPrice', 'true') === 'true');
   const [showExpirations, setShowExpirations] = useState<boolean>(() => rd('frame:embed:oi:showExpirations', 'false') === 'true');
 
-  // Compact-режим тулбара: узкая панель — лейблы «1 день»/«Объём позиций»/…
-  // не помещаются рядом с ассет-кнопкой → контролы схлопываются в иконки, вместо
-  // горизонтального скролла (тот выглядел как отдельный «блок» под ассет-кнопкой).
-  // toolbarWrapRef — реальный видимый контейнер (его clientWidth = сколько места
-  // реально дал flex:1 родитель в EmbedFrame); toolbarMeasureRef — невидимый
-  // клон с полными лейблами (always full, position:absolute), его scrollWidth —
-  // сколько места НУЖНО в полном виде. Сравнение стабильно (без осцилляции
-  // full↔compact), т.к. измеритель никогда не меняет форму.
-  const toolbarWrapRef = useRef<HTMLDivElement>(null);
-  const toolbarMeasureRef = useRef<HTMLDivElement>(null);
-  const [toolbarCompact, setToolbarCompact] = useState(false);
-  useLayoutEffect(() => {
-    const wrap = toolbarWrapRef.current;
-    const measure = toolbarMeasureRef.current;
-    if (!wrap || !measure) return;
-    const check = () => setToolbarCompact(measure.scrollWidth > wrap.clientWidth);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, []);
+  // Compact-режим тулбара — см. useToolbarCompact.ts (лейблы «1 день»/«Объём
+  // позиций»/… не помещаются рядом с ассет-кнопкой → схлопываются в иконки).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
   const [data, setData] = useState<ChartData | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
@@ -864,6 +847,20 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               maxHeight: 'calc(100% - 16px)', overflowY: 'auto',
             }}
           >
+            {/* Выход из режима рисования — тот же переключатель, что кнопка-карандаш
+                в тулбаре сверху, но доступен прямо из самой панели инструментов
+                (не нужно тянуться к тулбару, чтобы выйти). Первым, отдельно от
+                инструментов — это не инструмент, а закрытие панели. */}
+            <button
+              type="button"
+              title="Выйти из режима рисования"
+              aria-label="Выйти из режима рисования"
+              onClick={() => { setDrawMode(false); setSelectedDrawId(null); }}
+              style={drawToolBtn(false)}
+            >
+              <XIcon size={16} />
+            </button>
+            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
             {DRAW_TOOLS.map((t) => (
               <button
                 key={t.id}

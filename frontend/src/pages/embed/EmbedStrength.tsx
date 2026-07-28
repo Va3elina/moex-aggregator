@@ -10,7 +10,8 @@
  * (кнопок периода нет — как в TradingView/макете). EMA и показ индекса — в ⚙.
  * Виджет целиком под PRO-токеном, поэтому тир-гейтинга нет.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { LineChart, BarChart3, Landmark, Grid3x3 } from 'lucide-react';
 import LwChartPanes, { type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
@@ -18,6 +19,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: number; breadth: number; imoex: number }[];
@@ -32,10 +34,14 @@ const EMAS: { id: Ema; label: string }[] = [
   { id: 100, label: 'EMA 100' },
   { id: 200, label: 'EMA 200' },
 ];
-const CHART_MODES: { id: ChartMode; label: string }[] = [
-  { id: 'line', label: 'Линия' },
-  { id: 'histogram', label: 'Гистограмма' },
+const CHART_MODES: { id: ChartMode; label: string; icon: ReactNode }[] = [
+  { id: 'line', label: 'Линия', icon: <LineChart size={14} /> },
+  { id: 'histogram', label: 'Гистограмма', icon: <BarChart3 size={14} /> },
 ];
+const UNIVERSE_ICONS: Record<UniverseBase, ReactNode> = {
+  imoex: <Landmark size={14} />,
+  all: <Grid3x3 size={14} />,
+};
 
 // Вся история сразу (время — перетаскиванием оси, как в макете); дефолт-окно ≈ год.
 const ALL_DAYS = 7000;
@@ -51,6 +57,8 @@ export default function EmbedStrength() {
   const { rd, wr } = useEmbedPersist();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
   const [ema, setEma] = useState<Ema>(() => (Number(rd('frame:embed:strength:ema', '200')) || 200) as Ema);
   const [chartMode, setChartMode] = useState<ChartMode>(() => rd('frame:embed:strength:chartMode', 'histogram') as ChartMode);
@@ -143,9 +151,25 @@ export default function EmbedStrength() {
 
   return (
     <EmbedFrame
+      toolbarUnified
       toolbar={
-        <>
-          <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
+            <Dropdown<UniverseBase>
+              value={universeBase}
+              options={[
+                { id: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
+                { id: 'all', label: '100 акций' },
+              ]}
+              onChange={setUniverseBase}
+              title="Вселенная"
+              icon={UNIVERSE_ICONS[universeBase]}
+            />
+            <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
+          </div>
+          <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} compact={toolbarCompact} />
           <Dropdown<UniverseBase>
             value={universeBase}
             options={[
@@ -154,9 +178,11 @@ export default function EmbedStrength() {
             ]}
             onChange={setUniverseBase}
             title="Вселенная"
+            icon={UNIVERSE_ICONS[universeBase]}
+            compact={toolbarCompact}
           />
           <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
-        </>
+        </div>
       }
       more={
         <>

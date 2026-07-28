@@ -171,7 +171,17 @@ const MINW = 300, MINH = 200;
 // ассет-кнопки и полный набор иконок (рисование/экспорт не рендерятся без
 // данных — недомерил при первом замере). Пересчитано по исходникам всех
 // компонентов тулбара с запасом.
-const MINW_BY_TYPE: Partial<Record<IndKind, number>> = { oi: 540 };
+// seasonality/funds-money/strength получили тот же toolbarUnified+compact-icon
+// паттерн, что и ОИ (см. useToolbarCompact.ts) — те же 300px глобальных не
+// хватает, когда все контролы тулбара одновременно на месте. buffett — самый
+// лёгкий тулбар (1 Dropdown + 1 короткий PillGroup без иконок) — укладывается
+// в 300 с запасом, отдельная запись не нужна.
+const MINW_BY_TYPE: Partial<Record<IndKind, number>> = {
+  oi: 540,
+  seasonality: 380,
+  'funds-money': 380,
+  strength: 340,
+};
 const GUIDE_Z = 99990;       // направляющие — над панелями, под оверлеями
 const OVERLAY_Z = 100000;    // меню/поповеры/дровер (§7: панели при захвате уходят на высокий z)
 
