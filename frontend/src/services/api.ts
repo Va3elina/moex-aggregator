@@ -280,7 +280,7 @@ export interface OiScreenerRow {
   direction: 'up' | 'down' | null;
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
   // Новый рекорд перекоса сегодня (сильнейший период), null если нет.
-  record: { kind: 'high' | 'low'; period: 'all' | '5y' | '4y' | '3y' | '2y' | '1y' | '6m' | '1m' } | null;
+  record: { kind: 'high' | 'low'; period: 'all' | '5y' | '4y' | '3y' | '2y' | '1y' | '6m' | '3m' } | null;
   // Истор. экстремум СЫРОЙ чистой позиции (контракты, за всё время + интрадей), null если нет.
   net_record: { kind: 'high' | 'low' } | null;
   signal_date: string;            // дата последних данных (T+1)
