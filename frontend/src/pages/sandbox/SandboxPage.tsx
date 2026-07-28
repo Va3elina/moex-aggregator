@@ -162,6 +162,12 @@ const LS_KEY = 'frame:sandbox:v2';
 const TOPBAR_H = 56;
 const DRAG_STRIP = 44;       // «шапка-хват» — верхняя полоса панели (= тулбар embed'а)
 const MINW = 300, MINH = 200;
+// Пер-индикаторный пол ширины — для ОИ глобальных 300px не хватает: тулбар
+// (грип + ассет + 4 compact-иконки контролов + рисование + экспорт + ⚙ + ⤢ + ◐ + ×)
+// уже не скроллится горизонтально (toolbarUnified в EmbedFrame, PR #805) —
+// при недостатке места контент молча обрежется overflow:hidden, а не уедет
+// в скролл. Число измерено эмпирически (сжатая панель, все иконки видны) + запас.
+const MINW_BY_TYPE: Partial<Record<IndKind, number>> = { oi: 340 };
 const GUIDE_Z = 99990;       // направляющие — над панелями, под оверлеями
 const OVERLAY_Z = 100000;    // меню/поповеры/дровер (§7: панели при захвате уходят на высокий z)
 
@@ -204,10 +210,17 @@ function loadState(): Persisted {
 }
 
 /* ───────────────────────── ресайз-хваты (§4.2) ─────────────────────────
-   Стороны + нижние углы. Верхний край занят шапкой-хватом (тулбар embed'а) —
-   ресайз оттуда конфликтует с кнопками, поэтому n/nw/ne опущены (top-resize
-   = следующий кусок с прокидкой z в EmbedFrame). z:2 — выше графика, ниже
-   тулбара (z:3 в EmbedFrame): хваты ловят край над графиком, кнопки кликаются. */
+   Стороны + нижние углы, z:2 — выше графика, ниже тулбара embed'а (z:20 в
+   EmbedFrame): хваты ловят край над графиком, кнопки кликаются.
+   Верхний хват (n) — ОСОБЫЙ: полоса тулбара занята кнопками (z:20), поэтому
+   n-хват держим z:21 (ВЫШЕ тулбара) — иначе клики на него не долетают
+   вообще, весь прямоугольник тулбара их перехватывает первым. Чтобы при
+   этом не перекрыть сами кнопки, полоса тонкая (6px) и лежит строго в
+   верхнем padding тулбара (padding-top:5px + доп. отступ до глифов кнопок,
+   ~12px запаса) — реальные иконки ниже этой полосы, клики по ним не задеты.
+   Верхние углы (nw/ne) НЕ добавлены: там 14×14 неизбежно наехал бы на грип-
+   хват/ассет-кнопку (nw) или кнопки окна ⤢◐× (ne) — тот же конфликт, но
+   уже не решаемый утончением полосы. */
 const HANDLES: { dir: string; style: CSSProperties }[] = [
   { dir: 'e', style: { top: 14, bottom: 14, right: 0, width: 6, cursor: 'ew-resize' } },
   { dir: 'w', style: { top: 14, bottom: 14, left: 0, width: 6, cursor: 'ew-resize' } },
@@ -215,6 +228,9 @@ const HANDLES: { dir: string; style: CSSProperties }[] = [
   { dir: 'se', style: { right: 0, bottom: 0, width: 14, height: 14, cursor: 'nwse-resize' } },
   { dir: 'sw', style: { left: 0, bottom: 0, width: 14, height: 14, cursor: 'nesw-resize' } },
 ];
+const N_HANDLE: { dir: string; style: CSSProperties } = {
+  dir: 'n', style: { left: 14, right: 14, top: 0, height: 6, cursor: 'ns-resize', zIndex: 21 },
+};
 
 export default function SandboxPage() {
   const { user } = useAuth();   // реальный юзер для аватара шапки
@@ -227,12 +243,15 @@ export default function SandboxPage() {
   // Операции с листом: контекст-меню и инлайн-переименование (§3.3).
   const [sheetMenu, setSheetMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  // ⤢ Развернуть — id панели, раскрытой на весь sb-root (не «окно покрупнее»,
+  // а полная замена шапки+холста тулбаром индикатора). null — обычный режим.
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const zTop = useRef(10);
-  const restoreRef = useRef<Record<string, { x: number; y: number; w: number; h: number }>>({});
   const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
   const panels = st.bySheet[st.activeSheet] || [];
+  const maximizedPanel = maximizedId ? panels.find((p) => p.id === maximizedId) ?? null : null;
   const prefs = st.prefs ?? DEF_PREFS;
   const setPrefs = useCallback((patch: Partial<SbPrefs>) => {
     setSt((s) => ({ ...s, prefs: { ...DEF_PREFS, ...(s.prefs ?? {}), ...patch } }));
@@ -316,7 +335,10 @@ export default function SandboxPage() {
     setSignalsOpen(false);
   }, [spawn]);
 
-  const close = useCallback((id: string) => setActivePanels((ps) => ps.filter((p) => p.id !== id)), [setActivePanels]);
+  const close = useCallback((id: string) => {
+    setActivePanels((ps) => ps.filter((p) => p.id !== id));
+    setMaximizedId((cur) => (cur === id ? null : cur));
+  }, [setActivePanels]);
 
   // Индикатор просит новый размер под свой контент (напр. Сезонность — под срез/
   // режим, §6.11). Позиция (x,y) не трогаем — только w/h, клампим к MINW/MINH и
@@ -326,26 +348,20 @@ export default function SandboxPage() {
     const cw = rc?.width ?? window.innerWidth, ch = rc?.height ?? (window.innerHeight - TOPBAR_H);
     setActivePanels((ps) => ps.map((p) => {
       if (p.id !== id) return p;
-      const w = Math.max(MINW, Math.min(reqW, cw - p.x - 8));
+      const minW = MINW_BY_TYPE[p.type] ?? MINW;
+      const w = Math.max(minW, Math.min(reqW, cw - p.x - 8));
       const h = Math.max(MINH, Math.min(reqH, ch - p.y - 8));
       return { ...p, w, h };
     }));
   }, [setActivePanels]);
 
-  // ⤢ развернуть / восстановить (§4.3). Прежние габариты — в ref (транзиентно).
-  const expand = useCallback((id: string) => {
-    const rc = canvasRef.current?.getBoundingClientRect();
-    const cw = rc?.width ?? window.innerWidth, ch = rc?.height ?? (window.innerHeight - TOPBAR_H);
-    zTop.current += 1; const z = zTop.current;
-    setActivePanels((ps) => ps.map((p) => {
-      if (p.id !== id) return p;
-      const saved = restoreRef.current[id];
-      if (saved) { delete restoreRef.current[id]; return { ...p, ...saved, z }; }
-      restoreRef.current[id] = { x: p.x, y: p.y, w: p.w, h: p.h };
-      const w = Math.min(880, cw - 24), h = Math.min(600, ch - 24);
-      return { ...p, x: Math.max(12, Math.round((cw - w) / 2)), y: 12, w, h, z };
-    }));
-  }, [setActivePanels]);
+  // ⤢ Развернуть / ⤡ Свернуть (§4.3, переработано) — тоггл полноэкранного
+  // оверлея (см. maximizedPanel в JSX), а не ресайз панели до 880×600.
+  // Геометрия панели (x/y/w/h) не трогается вообще — просто временно не
+  // рендерим обычный холст, рендерим эту одну панель на весь sb-root.
+  const toggleMaximize = useCallback((id: string) => {
+    setMaximizedId((cur) => (cur === id ? null : id));
+  }, []);
 
   // «Выстроить» §4.4: 1–2 → ряд, 3–6 → 2 колонки, 7+ → 3; отступ 28, зазор 20.
   const arrange = useCallback(() => {
@@ -406,6 +422,7 @@ export default function SandboxPage() {
     const sx = e.clientX, sy = e.clientY; const o = { x: start.x, y: start.y, w: start.w, h: start.h };
     const el = e.currentTarget as HTMLElement;
     try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    const minW = MINW_BY_TYPE[start.type] ?? MINW;
         const resizeTh = prefs.snap ? Math.max(6, prefs.snapTh - 2) : 0;
 const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     const edgesY = others.flatMap((q) => [q.y, q.y + q.h]);
@@ -416,11 +433,11 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       if (dir.includes('s')) { h = o.h + dy; const B = y + h; for (const c of [cr.height, ...edgesY]) { if (Math.abs(B - c) < resizeTh) { h = c - y; gs.push({ axis: 'h', pos: c }); break; } } }
       if (dir.includes('w')) { const R = o.x + o.w; let nx = o.x + dx; for (const c of [0, ...edgesX]) { if (Math.abs(nx - c) < resizeTh) { nx = c; gs.push({ axis: 'v', pos: c }); break; } } x = nx; w = R - nx; }
       if (dir.includes('n')) { const B = o.y + o.h; let ny = o.y + dy; for (const c of [0, ...edgesY]) { if (Math.abs(ny - c) < resizeTh) { ny = c; gs.push({ axis: 'h', pos: c }); break; } } y = ny; h = B - ny; }
-      if (w < MINW) { if (dir.includes('w')) x = o.x + o.w - MINW; w = MINW; }
+      if (w < minW) { if (dir.includes('w')) x = o.x + o.w - minW; w = minW; }
       if (h < MINH) { if (dir.includes('n')) y = o.y + o.h - MINH; h = MINH; }
       if (x < 0) { w += x; x = 0; } if (y < 0) { h += y; y = 0; }
       if (x + w > cr.width) w = cr.width - x; if (y + h > cr.height) h = cr.height - y;
-      w = Math.max(MINW, w); h = Math.max(MINH, h);
+      w = Math.max(minW, w); h = Math.max(MINH, h);
       setGuides(gs);
       setActivePanels((ps) => ps.map((p) => (p.id === id ? { ...p, x, y, w, h } : p)));
     };
@@ -450,7 +467,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     const id = uid('s');
     return { ...s, sheets: [...s.sheets, { id, name: 'Лист ' + (s.sheets.length + 1) }], bySheet: { ...s.bySheet, [id]: [] }, activeSheet: id };
   }), []);
-  const pickSheet = useCallback((id: string) => { setGuides([]); setMenuOpen(false); setSt((s) => ({ ...s, activeSheet: id })); }, []);
+  const pickSheet = useCallback((id: string) => { setGuides([]); setMenuOpen(false); setMaximizedId(null); setSt((s) => ({ ...s, activeSheet: id })); }, []);
 
   // ── Операции с листами (§3.3) ──
   const renameSheet = useCallback((id: string, name: string) => {
@@ -504,6 +521,30 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
   return (
     <ChartPrefsCtx.Provider value={chartPrefsValue}>
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
+      {maximizedPanel ? (
+        // ⤢ Развернуть — полный оверлей на весь sb-root (не «окно покрупнее»):
+        // шапка песочницы и остальные панели не рендерятся вообще, вместо шапки —
+        // собственный тулбар индикатора (ассет/таймфрейм/… + кнопка «Свернуть» на
+        // месте «Развернуть», см. SandboxWindowCtx.maximized в EmbedToolbar).
+        <div style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}>
+          <SandboxWindowCtx.Provider
+            value={{
+              onExpand: () => toggleMaximize(maximizedPanel.id),
+              maximized: true,
+              onClose: () => close(maximizedPanel.id),
+              onToggleTheme: () => setPanelTheme(maximizedPanel.id),
+              onResize: (w, h) => resizePanel(maximizedPanel.id, w, h),
+            }}
+          >
+            <EmbedPidCtx.Provider value={maximizedPanel.id}>
+              <SandboxThemeScope eff={maximizedPanel.themeOverride || st.sbTheme}>
+                {renderIndicator(maximizedPanel.type, maximizedPanel.cfg, onSignal)}
+              </SandboxThemeScope>
+            </EmbedPidCtx.Provider>
+          </SandboxWindowCtx.Provider>
+        </div>
+      ) : (
+      <>
       {/* ── Топбар 56px (§3.1) ── */}
       <div style={topbarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -645,7 +686,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
                 {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
                     две панели одного индикатора живут независимо (§2 мокапа). */}
                 <EmbedPidCtx.Provider value={p.id}>
@@ -658,6 +699,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             {HANDLES.map((hd) => (
               <div key={hd.dir} onPointerDown={(e) => onResizeStart(e, p.id, hd.dir)} style={{ position: 'absolute', zIndex: 2, ...hd.style }} />
             ))}
+            <div key={N_HANDLE.dir} onPointerDown={(e) => onResizeStart(e, p.id, N_HANDLE.dir)} style={{ position: 'absolute', ...N_HANDLE.style }} />
           </div>
           );
         })}
@@ -669,6 +711,8 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             : { position: 'absolute', top: g.pos, left: 0, right: 0, height: 1, background: 'var(--accent)', opacity: 0.7, pointerEvents: 'none', zIndex: GUIDE_Z }} />
         ))}
       </div>
+      </>
+      )}
 
       {/* ── Контекст-меню листа (§3.3) ── */}
       {sheetMenu && (

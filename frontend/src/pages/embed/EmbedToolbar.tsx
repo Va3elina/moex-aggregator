@@ -21,7 +21,7 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon, GripVertical } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, Minimize2, X as XIcon, GripVertical } from 'lucide-react';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -31,6 +31,10 @@ import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon, Gri
  */
 export interface SandboxWindowControls {
   onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void;
+  /** true — эта панель СЕЙЧАС развёрнута на весь sb-root (SandboxPage рендерит
+   *  ТОЛЬКО её вместо шапки+холста). Переключает иконку/подпись кнопки ⤢ на
+   *  обратную (⤡ «Свернуть»), onExpand у обеих — один и тот же toggle. */
+  maximized?: boolean;
   /** Индикатор просит панель принять размер w×h (напр. Сезонность — под срез/режим).
    *  SandboxPage сам клампит к границам холста и MINW/MINH; на сайте/расширении
    *  контекста нет → вызов недоступен, embed просто не резайзит. */
@@ -170,8 +174,15 @@ export function EmbedFrame({
         {win && (
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
             {win.onExpand && (
-              <button type="button" onClick={win.onExpand} title="Развернуть" aria-label="Развернуть" className="sb-winbtn" style={sbWinBtn}>
-                <Maximize2 size={13} />
+              <button
+                type="button"
+                onClick={win.onExpand}
+                title={win.maximized ? 'Свернуть' : 'Развернуть'}
+                aria-label={win.maximized ? 'Свернуть' : 'Развернуть'}
+                className="sb-winbtn"
+                style={sbWinBtn}
+              >
+                {win.maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
             )}
             {win.onToggleTheme && (
