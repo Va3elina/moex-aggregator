@@ -679,7 +679,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         // едином ряду EmbedFrame (toolbarUnified — без вложенного скролл-див'а),
         // иначе clientWidth = ширине контента (сжатого до compact), а не реально
         // доступному месту, и compact никогда не откатится обратно при расширении.
-        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+        // overflow:hidden — БЕЗ него, если flex сжал этот div ниже natural-ширины
+        // видимых (уже compact) иконок быстрее, чем сработал ResizeObserver, их
+        // контент вылезает ЗА рамки div'а и визуально наезжает на соседний блок
+        // (⚙⤢◐× справа) — тот красится поверх (позже в DOM), выглядит как «кнопки
+        // залезли друг на друга». MINW_BY_TYPE в SandboxPage — первая линия
+        // защиты (не даёт панели сжаться настолько), это — вторая (даже если
+        // всё равно сожмут более узкого MINW, обрежется, а не наедет).
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {/* Невидимый измеритель — ВСЕГДА полные лейблы (compact=false), не зависит
               от текущего toolbarCompact. Если сравнивать видимый ряд сам с собой,
               после схлопывания в иконки он сам себя же и «не переполняет» → compact
