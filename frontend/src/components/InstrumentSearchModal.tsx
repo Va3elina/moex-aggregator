@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
-import { getIntradayAssets, getLowActivityAssets } from '../services/api';
+import { getIntradayAssets, getLowActivityInfo } from '../services/api';
 import { useAnalytics } from '../contexts/AnalyticsContext';
-import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useTierAccess, useCurrentTier } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useInstrumentFilter } from '../hooks/useInstrumentFilter';
@@ -159,14 +159,26 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // hideLowActivity (страница ОИ). Прячем их из дефолтного списка через хук;
   // при ошибке/до загрузки набор пуст → ничего не прячем (безопасный фолбэк).
   const [lowActivitySet, setLowActivitySet] = useState<Set<string>>(new Set());
+  const [lowActivityThreshold, setLowActivityThreshold] = useState<number | null>(null);
   useEffect(() => {
     if (!hideLowActivity) return;
     let cancelled = false;
-    getLowActivityAssets()
-      .then((list) => { if (!cancelled) setLowActivitySet(new Set(list)); })
+    getLowActivityInfo()
+      .then((info) => {
+        if (cancelled) return;
+        setLowActivitySet(new Set(info.sectypes));
+        setLowActivityThreshold(info.threshold);
+      })
       .catch(() => { /* пустой набор — ничего не прячем */ });
     return () => { cancelled = true; };
   }, [hideLowActivity]);
+
+  // Админам малоактивные активы НЕ прячем: список у них полный, а скрытые
+  // помечены бейджем «скрыт». Иначе залипший фетчер (медиана физлиц падает
+  // из-за бага в данных, а не по рынку) молча выносил бы актив из пикера и
+  // заметить это было бы неоткуда.
+  const isAdmin = useCurrentTier() === 'admin';
+  const hiddenSectypes = isAdmin ? undefined : lowActivitySet;
 
   // Фильтрация / дедуп / сортировка / группировка — общий хук
   // useInstrumentFilter (тот же, что в MobileAssetSearch). Поведенческие
@@ -217,7 +229,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       extraFilter,
       dedup,
       sort,
-      hiddenSectypes: lowActivitySet,
+      hiddenSectypes,
       keepVisibleSectypes: selectedSet,
     });
 
@@ -404,6 +416,28 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           {/* Тикер: для фьючерсов — актуальный фронт-контракт ('BRN6'), а не
               обрезанный sectype 'BR' (такого тикера не существует). Спот → sectype. */}
           <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || inst.sectype}</span>
+          {/* Админ-бейдж: актив скрыт от обычных пользователей по релевантности
+              (мало физлиц-трейдеров). Виден только админам — у них список
+              полный, и без пометки нельзя отличить скрытый актив от обычного. */}
+          {isAdmin && lowActivitySet.has(inst.sectype) && (
+            <span
+              className="flex-shrink-0"
+              title={`Скрыт от пользователей: мало физлиц-трейдеров${lowActivityThreshold ? ` (порог ${lowActivityThreshold})` : ''}. Если активность упала неожиданно — проверь, обновляются ли данные по активу.`}
+              style={{
+                alignSelf: 'center',
+                padding: '1px 6px',
+                borderRadius: 999,
+                border: '1px solid var(--text-muted)',
+                color: 'var(--text-secondary)',
+                fontSize: 'var(--fs-xs)',
+                lineHeight: 1.4,
+                cursor: 'help',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              скрыт
+            </span>
+          )}
           {showIntradayBadge && intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"

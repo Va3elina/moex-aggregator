@@ -16,12 +16,12 @@ import { useEffect, useState, useCallback } from 'react';
 import { Search, Star, Lock } from 'lucide-react';
 import MobileSheet from './MobileSheet';
 import InstrumentIcon from '../InstrumentIcon';
-import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useTierAccess, useCurrentTier } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
-import { getLowActivityAssets } from '../../services/api';
+import { getLowActivityInfo } from '../../services/api';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -142,14 +142,24 @@ export default function MobileAssetSearch({
   // sheet и включён hideLowActivity (ОИ). Прячем из дефолтного списка через хук;
   // при ошибке/до загрузки набор пуст → ничего не прячем (безопасный фолбэк).
   const [lowActivitySet, setLowActivitySet] = useState<Set<string>>(new Set());
+  const [lowActivityThreshold, setLowActivityThreshold] = useState<number | null>(null);
   useEffect(() => {
     if (!open || !hideLowActivity) return;
     let cancelled = false;
-    getLowActivityAssets()
-      .then((list) => { if (!cancelled) setLowActivitySet(new Set(list)); })
+    getLowActivityInfo()
+      .then((info) => {
+        if (cancelled) return;
+        setLowActivitySet(new Set(info.sectypes));
+        setLowActivityThreshold(info.threshold);
+      })
       .catch(() => { /* пустой набор — ничего не прячем */ });
     return () => { cancelled = true; };
   }, [open, hideLowActivity]);
+
+  // Админам малоактивные активы НЕ прячем (как в десктопном пикере): список
+  // полный, скрытые помечены бейджем «скрыт» — иначе залипший фетчер молча
+  // выносил бы актив из пикера.
+  const isAdmin = useCurrentTier() === 'admin';
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -180,7 +190,7 @@ export default function MobileAssetSearch({
     excludeType,
     matchType: true,
     extraFilter,
-    hiddenSectypes: lowActivitySet,
+    hiddenSectypes: isAdmin ? undefined : lowActivitySet,
   });
 
   // Render одного элемента списка
@@ -249,6 +259,13 @@ export default function MobileAssetSearch({
             >
               {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот → sectype. */}
               {inst.front_secid || inst.sectype}
+              {/* Админ-пометка: актив скрыт от пользователей по релевантности.
+                  На мобиле места под бейдж нет — дописываем к тикеру. */}
+              {isAdmin && lowActivitySet.has(inst.sectype) && (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {` · скрыт${lowActivityThreshold ? ` (< ${lowActivityThreshold})` : ''}`}
+                </span>
+              )}
             </div>
           </div>
         </div>
