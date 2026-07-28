@@ -19,8 +19,13 @@
  * Цвет = нога (зелёный лонг / красный шорт). Приглушения по силе сигнала нет:
  * полоса одинаково яркая и у тихих рядов (о слабости движения говорят число
  * силы и текст сигнала, которые остаются тусклыми).
+ *
+ * Все размеры МАСШТАБИРУЮТСЯ по ширине viewport (cometScale): макет собирался
+ * на ноутбуке, и на большом мониторе комета оставалась теми же 3…9px — то есть
+ * вдвое мельче относительно строки. ≤768px = базовый размер, ≥1600px = ×1,5.
  */
 import type { CSSProperties } from 'react';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 interface Props {
   netPct: number | null;         // перекос сегодня, −100…+100
@@ -33,10 +38,21 @@ interface Props {
   maxAbsDelta?: number | null;
 }
 
-const H = 32;    // высота контейнера, px
-const CY = 16;   // вертикальный центр оси
-
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/**
+ * Масштаб кометы по ширине viewport. Все размеры внутри считаются в JS (радиус
+ * головы и длина хвоста — производные ОТ ДАННЫХ), поэтому CSS-clamp тут не
+ * работает: множитель применяется ко всем константам разом, пропорции
+ * (основание хвоста = диаметр головы, ободок) сохраняются.
+ *
+ * ≤768px — базовый размер (макет делался на ноутбуке), 1440px → ×1,4,
+ * ≥1600px → ×1,5. Верхняя граница выбрана так, чтобы высота контейнера (32→48)
+ * не переросла высоту строки, которую и так держит иконка актива 32px + падинги.
+ */
+function cometScale(vw: number): number {
+  return clamp(1 + ((vw - 768) / (1600 - 768)) * 0.5, 1, 1.5);
+}
 
 function fmtPct(p: number): string {
   return Math.abs(p).toFixed(1).replace('.', ',') + '%';
@@ -45,7 +61,7 @@ function fmtSigned(p: number): string {
   return (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1).replace('.', ',');
 }
 
-/** «Теплота» ×N в размахе дня 0…1 — радиус головы 3…9px; вырожденный размах
+/** «Теплота» ×N в размахе дня 0…1 — радиус головы 4…10px до масштаба; вырожденный размах
  *  (<0.5×) → середина шкалы, чтобы не раздувать шумовую разницу. Экспорт —
  *  таблица красит этим же значением число ×N. */
 export function ratioHeat(ratio: number, lo: number, hi: number): number {
@@ -54,6 +70,10 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
 }
 
 export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, ratioHi, maxAbsDelta }: Props) {
+  const s = cometScale(useViewportWidth());
+  const H = Math.round(32 * s);   // высота контейнера, px
+  const CY = Math.round(H / 2);   // вертикальный центр оси
+
   if (netPct == null) {
     return <span style={{ color: 'var(--text-muted)' }}>—</span>;
   }
@@ -62,9 +82,13 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   const leg = long ? 'var(--oi-green)' : 'var(--oi-short)';
   const dotPct = (clamp(netPct, -100, 100) + 100) / 2;
 
+  // База 4…10px вместо 3…9: у тихих рядов (сила <2×, heat≈0) голова 3px читалась
+  // как пылинка даже на ноутбуке. Ободок 2px съедает контраст тем сильнее, чем
+  // меньше кружок, поэтому поднят именно ПОЛ диапазона, а не только потолок.
   const headR = ratio != null && ratioLo != null && ratioHi != null
-    ? Math.round(3 + ratioHeat(ratio, ratioLo, ratioHi) * 6)
-    : 3;
+    ? Math.round((4 + ratioHeat(ratio, ratioLo, ratioHi) * 6) * s)
+    : Math.round(4 * s);
+  const ring = s >= 1.3 ? 3 : 2;   // ободок «от фона» — растёт вместе с головой
 
   // Хвост: клин от «вчера» к голове, длина по |Δ п.п.| относительно самого
   // подвижного видимого ряда (10…36px — минимум, чтобы микро-сдвиг читался).
@@ -80,7 +104,7 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   let tail: { px: number; ml: number; clip: string; bg: string } | null = null;
   if (delta != null && delta !== 0) {
     const maxD = maxAbsDelta || Math.abs(delta);
-    const px = Math.round(10 + 26 * clamp(Math.abs(delta) / maxD, 0, 1));
+    const px = Math.round((10 + 26 * clamp(Math.abs(delta) / maxD, 0, 1)) * s);
     const toRight = delta >= 0;   // двигались вправо → хвост тянется слева
     tail = {
       px,
@@ -99,18 +123,21 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
 
   // border-box (глобальный preflight): ширина включает ободок 2px → +4 к
   // диаметру, чтобы ВИДИМЫЙ цветной радиус остался headR.
-  const headBox = headR * 2 + 4;
+  const headBox = headR * 2 + ring * 2;
   const headStyle: CSSProperties = {
     position: 'absolute',
     left: `${dotPct}%`,
-    top: CY - headR - 2,
+    top: CY - headR - ring,
     width: headBox,
     height: headBox,
-    marginLeft: -(headR + 2),
+    marginLeft: -(headR + ring),
     borderRadius: '50%',
-    border: '2px solid var(--bg-secondary)',
+    border: `${ring}px solid var(--bg-secondary)`,
     background: leg,
   };
+
+  const trackH = Math.round(6 * s);
+  const zeroH = Math.round(22 * s);
 
   // Комета НЕ приглушается у тихих рядов (ratio < 2): позиция и дневной сдвиг —
   // факт, одинаково достоверный при любой силе движения, и полосу нужно читать
@@ -119,12 +146,12 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   return (
     <div title={title} style={{ position: 'relative', height: H, cursor: 'help' }}>
       {/* дорожка: слева тон шорта, справа тон лонга */}
-      <div style={{ position: 'absolute', left: 0, right: 0, top: CY - 3, height: 6, borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: CY - trackH / 2, height: trackH, borderRadius: trackH / 2, overflow: 'hidden', display: 'flex' }}>
         <div style={{ flex: 1, background: 'var(--oi-short)', opacity: 0.1 }} />
         <div style={{ flex: 1, background: 'var(--oi-green)', opacity: 0.12 }} />
       </div>
       {/* ноль */}
-      <div style={{ position: 'absolute', left: '50%', top: CY - 11, height: 22, width: 1, background: 'var(--text-secondary)', opacity: 0.55 }} />
+      <div style={{ position: 'absolute', left: '50%', top: CY - zeroH / 2, height: zeroH, width: s >= 1.3 ? 2 : 1, background: 'var(--text-secondary)', opacity: 0.55 }} />
       {/* хвост */}
       {tail && (
         <div style={{ position: 'absolute', top: CY - headR, height: tailH, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
