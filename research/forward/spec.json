@@ -1,0 +1,31 @@
+{
+  "_": "ЗАМОРОЖЕННАЯ СПЕЦИФИКАЦИЯ. Менять после freeze_date нельзя — это уничтожит смысл форварда. Любая правка = новый эксперимент с новой freeze_date и новым baseline.",
+  "version": 1,
+  "freeze_date": "2026-07-28",
+  "forward_starts": "2026-07-29",
+  "baseline_since": "2023-07-01",
+
+  "instruments": ["SG", "SS", "AK", "MN", "PI", "CC", "SP", "MC", "CR"],
+
+  "signal_threshold": 0.001,
+  "max_gap_days": 5,
+  "min_slot_coverage": 0.6,
+  "slot_minutes": 30,
+  "price_at": "slot_end",
+
+  "primary_cost": 0.0005,
+  "cost_ladder": [0.0, 0.0005, 0.0008, 0.001, 0.002],
+
+  "named_config": {
+    "sectype": "SG",
+    "A": "19:30:00",
+    "B": "20:30:00",
+    "C": "15:00:00",
+    "dir": "rev",
+    "_": "Конфигурация, выбранная перебором на истории. Проверяется наравне со всеми, без привилегий."
+  },
+
+  "min_forward_days": 150,
+  "primary_metric": "spearman_rank_corr_baseline_sr_vs_forward_sr",
+  "primary_alpha": 0.05
+}
