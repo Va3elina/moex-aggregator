@@ -2106,18 +2106,27 @@ export async function getIntradayAssets(): Promise<string[]> {
     }
 }
 
-// Список sectype фьючерсов с низкой активностью физлиц (медиана числа
-// трейдеров за 5 торговых дней ниже порога релевантности). Пикер ОИ прячет их
-// из дефолтного списка, но раскрывает поиском/избранным; при росте активности
-// актив возвращается сам. При любой ошибке — пустой список (ничего не прячем).
-export async function getLowActivityAssets(): Promise<string[]> {
+// Активы с низкой активностью физлиц (медиана числа трейдеров за 5 торговых
+// дней ниже порога релевантности) + сам порог. Пикер ОИ прячет их из
+// дефолтного списка, но раскрывает поиском/избранным; при росте активности
+// актив возвращается сам. Админам список показывается целиком с бейджем
+// «скрыт» — чтобы залипший фетчер (активность обвалилась из-за бага, а не по
+// рынку) было видно, а не молча терялось из списка.
+// При любой ошибке — пустой список (ничего не прячем).
+export interface LowActivityInfo {
+    sectypes: string[];
+    /** Порог релевантности (число физлиц-трейдеров) — для тултипа бейджа. */
+    threshold: number | null;
+}
+
+export async function getLowActivityInfo(): Promise<LowActivityInfo> {
     try {
         const resp = await fetch(`${API_BASE}/api/oi/low-activity-assets`);
-        if (!resp.ok) return [];
+        if (!resp.ok) return { sectypes: [], threshold: null };
         const data = await resp.json();
-        return data.sectypes ?? [];
+        return { sectypes: data.sectypes ?? [], threshold: data.threshold ?? null };
     } catch {
-        return [];
+        return { sectypes: [], threshold: null };
     }
 }
 
