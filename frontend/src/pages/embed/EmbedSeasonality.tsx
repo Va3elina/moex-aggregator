@@ -16,8 +16,9 @@
  * Контролы: тип графика + разрез в тулбаре; дивиденды/медиана/текущий год — в ⚙.
  * Виджет целиком под PRO-токеном → тир-гейтинга/онбординга/экспорта нет.
  */
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { CalendarDays, TrendingUp, Clock, Calendar, CalendarRange } from 'lucide-react';
 import LwChart, { type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -33,6 +34,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown, SandboxWindowCtx } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -50,9 +52,9 @@ const SIZE_BY_VIEW: Record<string, { w: number; h: number }> = {
   yearly: { w: 640, h: 420 },
 };
 
-const CHART_TYPES: { id: ChartType; label: string }[] = [
-  { id: 'histogram', label: 'Календарь' },
-  { id: 'yearly', label: 'Годовая' },
+const CHART_TYPES: { id: ChartType; label: string; icon: ReactNode }[] = [
+  { id: 'histogram', label: 'Календарь', icon: <CalendarDays size={14} /> },
+  { id: 'yearly', label: 'Годовая', icon: <TrendingUp size={14} /> },
 ];
 
 // Точные строки MODE_LABELS со страницы Сезонности (SeasonalityPage.tsx).
@@ -62,6 +64,13 @@ const MODES: { id: SeasonalityMode; label: string }[] = [
   { id: 'monthday', label: 'Внутри месяца' },
   { id: 'monthly', label: 'По месяцам' },
 ];
+// Иконка «Разрез» зависит от выбранного значения (см. Dropdown icon как функция).
+const MODE_ICONS: Record<SeasonalityMode, ReactNode> = {
+  intraday: <Clock size={14} />,
+  weekday: <CalendarDays size={14} />,
+  monthday: <Calendar size={14} />,
+  monthly: <CalendarRange size={14} />,
+};
 
 // Инструменты без дивидендов: индексы, валюты, сырьё, вечные фьючерсы.
 // Тоггл «Без дивидендных гэпов» для них бесполезен → прячем (копия со страницы).
@@ -202,6 +211,9 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     return () => { cancelled = true; };
   }, [stock, chartType, mode, effExcludeDividends, showNoOutliers]);
 
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+
   // Резиновая высота графика.
   const boxRef = useRef<HTMLDivElement>(null);
   const [boxH, setBoxH] = useState(360);
@@ -329,6 +341,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
 
   return (
     <EmbedFrame
+      toolbarUnified
       lead={
         <AssetButton
           ticker={displayTicker(stock)}
@@ -344,10 +357,15 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
         />
       }
       toolbar={
-        <>
-          <PillGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} />
-          {isHist && <Dropdown<SeasonalityMode> value={mode} options={modeOptions} onChange={setMode} title="Разрез" />}
-        </>
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} />
+            <Dropdown<SeasonalityMode> value={mode} options={modeOptions} onChange={setMode} title="Разрез" icon={MODE_ICONS[mode]} />
+          </div>
+          <PillGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} compact={toolbarCompact} />
+          {isHist && <Dropdown<SeasonalityMode> value={mode} options={modeOptions} onChange={setMode} title="Разрез" icon={MODE_ICONS[mode]} compact={toolbarCompact} />}
+        </div>
       }
       more={
         <>
