@@ -294,8 +294,12 @@ export default function FundTradesPage() {
     const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
     const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
-    // Месяц-срез портфеля (month-picker в шапке «Состав портфеля»); undefined = последний.
-    const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(undefined);
+    // Месяц-срез портфеля (month-picker в шапке «Состав портфеля»). Персистится:
+    // '' = дефолт бэкенда (самый ПОЛНЫЙ месяц набора) — так открывается только
+    // первый визит; выбранный вручную месяц переживает перезагрузку страницы,
+    // даже если состав за него опубликовали не все фонды.
+    const [portfolioAsOfSaved, setPortfolioAsOf] = usePersistedState<string>('frame:fundtrades:portfolioAsOf', '');
+    const portfolioAsOf = portfolioAsOfSaved || undefined;
     // Блок «Сделки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
     // Свой диапазон месяцев (кнопка-календарь) — задан, отменяет пресет. Персистится
@@ -387,6 +391,19 @@ export default function FundTradesPage() {
         const c = portfolio?.snapshot_cutoff ?? null;
         return c != null && m > c;
     };
+
+    // Санитайз восстановленного месяца: сохранённый срез мог пропасть из набора
+    // (сменились выбранные фонды) или уйти под гейт (тариф понизился) — тогда
+    // возвращаемся к дефолту бэкенда, иначе пикер показывал бы месяц, которого нет.
+    useEffect(() => {
+        if (!portfolioAsOfSaved || !portfolio) return;
+        const months = portfolio.available_months ?? [];
+        if (months.length === 0) return;
+        if (!months.includes(portfolioAsOfSaved) || isPortfolioMonthLocked(portfolioAsOfSaved)) {
+            setPortfolioAsOf('');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [portfolio, portfolioAsOfSaved]);
 
     // Календарь своего периода в «Сделках фондов»: отсечка своя (из /movers), не из
     // /portfolio — гейтится именно свежий консенсус сделок.
