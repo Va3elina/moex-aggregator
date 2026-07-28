@@ -102,6 +102,11 @@ def slot_prices(df: pd.DataFrame, min_coverage: float = 0.6,
     g["date"] = pd.to_datetime(g["ts"].dt.date)
     g["slot"] = g["ts"].dt.floor("30min").dt.time
     px = g.groupby(["date", "slot"])["c"].last().unstack().sort_index()
+    # ⚠️ MOEX торгует и по ВЫХОДНЫМ (с 27.04.2024). Оборот там 15% от буднего,
+    #    TradingView эти сессии не показывает, и «следующий торговый день»
+    #    после пятницы превращался в субботу. Выбрасываем — см. ловушку 9.
+    if SPEC.get("weekdays_only", True):
+        px = px[px.index.dayofweek < 5]
     if slots is not None:
         want = [datetime.time.fromisoformat(s) for s in sorted(slots)]
         return px.reindex(columns=want)
