@@ -57,7 +57,7 @@ const INDICATORS: {
   { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
   { path: '/cbr-flows', title: 'Поток капитала', desc: 'Кто покупает и продаёт по типам активов', icon: Building2 },
-  { path: '/fund-trades', title: 'Сделки фондов', desc: 'Что фонды акций накапливают и распродают (по СЧА)', icon: TrendingUp },
+  { path: '/fund-trades', title: 'Сделки', desc: 'Что фонды акций накапливают и распродают (по СЧА)', icon: TrendingUp },
 ];
 
 /** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */

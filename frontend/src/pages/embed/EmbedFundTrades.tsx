@@ -1,5 +1,5 @@
 /**
- * EmbedFundTrades — виджет «Сделки фондов / Что покупают фонды» для терминала
+ * EmbedFundTrades — виджет «Сделки / Что покупают фонды» для терминала
  * Т-Инвестиций. Компактный 4-таб экран (полностью PRO — embed под PRO-токеном):
  *   - movers   «Сделки» — консенсус-движения, тот же `PortfolioMoversPanel`
  *               («Чистые покупки/продажи»), что и на сайте во вкладке «Общий
@@ -230,7 +230,7 @@ function EmbedSection({
 
 export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}) {
   const { rd, wr } = useEmbedPersist();
-  // lockTab — отдельный индикатор «Сделки фондов»: фиксируем вкладку movers,
+  // lockTab — отдельный индикатор «Сделки»: фиксируем вкладку movers,
   // таб-бар прячем, а название и первичные контролы (период/метрика) — в тулбар.
   const [tab, setTab] = useState<EmbedTab>(() => {
     if (lockTab) return lockTab;

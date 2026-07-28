@@ -1,5 +1,5 @@
 /**
- * FundsCatalogMethodologyPage — методология «Сделки фондов» (/fund-trades).
+ * FundsCatalogMethodologyPage — методология «Сделки» (/fund-trades).
  *
  * Принципы (как во всех методологиях):
  *   - Объясняем СМЫСЛ каждой кнопки и каждой цифры, без формул и внутренней математики.
@@ -50,11 +50,11 @@ function TwoSnapshotsFigure() {
 
 /**
  * Консенсус across фондов: одну бумагу покупают одни и продают другие.
- * Две встречные стопки (покупают / продают) для вкладки «Сделки фондов».
+ * Две встречные стопки (покупают / продают) для вкладки «Сделки».
  */
 function ConsensusFigure() {
     return (
-        <Figure caption={<>Вкладка «Сделки фондов» складывает движение по <b>всем фондам сразу</b>. Слева — сколько фондов бумагу докупили, справа — сколько сократили. Видно, куда движется рынок фондов в целом.</>}>
+        <Figure caption={<>Вкладка «Сделки» складывает движение по <b>всем фондам сразу</b>. Слева — сколько фондов бумагу докупили, справа — сколько сократили. Видно, куда движется рынок фондов в целом.</>}>
             <svg viewBox="0 0 320 134" style={{ width: '100%', display: 'block' }} role="img" aria-label="Консенсус фондов по одной бумаге">
                 {/* центральная ось */}
                 <line x1="160" y1="14" x2="160" y2="104" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.5" />
@@ -122,7 +122,7 @@ function CompanyFlowFigure() {
 
 export default function FundsCatalogMethodologyPage() {
     return (
-        <MethodologyWrapper icon={LayoutGrid} title="Сделки фондов" backTo="/fund-trades">
+        <MethodologyWrapper icon={LayoutGrid} title="Сделки" backTo="/fund-trades">
             <Section title="Что это">
                 <p>
                     Раздел показывает, во что вложены крупные биржевые фонды акций и как их
@@ -156,7 +156,7 @@ export default function FundsCatalogMethodologyPage() {
                         desc="Сетка карточек: каждый фонд с круговой диаграммой состава, топ-5 бумаг, доходностью и размером активов. Это «фотография» портфелей на сегодня."
                     />
                     <ModeBlock
-                        title="Сделки фондов"
+                        title="Сделки"
                         desc="Свод по всем фондам сразу: какие бумаги фонды в этом месяце дружно докупали (топ-аккумуляция), а какие сокращали (топ-распродажа). Показывает консенсус рынка фондов."
                     />
                     <ModeBlock
@@ -235,7 +235,7 @@ export default function FundsCatalogMethodologyPage() {
                 <TwoSnapshotsFigure />
             </Section>
 
-            <Section title="Вкладка «Сделки фондов» — элементы управления">
+            <Section title="Вкладка «Сделки» — элементы управления">
                 <p className="mb-4">
                     Здесь свод движений сразу по всем фондам. Три контрола сверху:
                 </p>
@@ -261,7 +261,7 @@ export default function FundsCatalogMethodologyPage() {
                 <ConsensusFigure />
             </Section>
 
-            <Section title="Вкладка «Сделки фондов» — что показывают цифры">
+            <Section title="Вкладка «Сделки» — что показывают цифры">
                 <p className="mb-4">
                     Две колонки — <strong style={{ color: GREEN }}>Топ-аккумуляция</strong> (что
                     фонды докупали) и <strong style={{ color: RED }}>Топ-распродажа</strong> (что

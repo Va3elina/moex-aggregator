@@ -99,7 +99,7 @@ function computeTopFunds(
 // ─────────────────────────────────────────────────────────────────────────────
 // Главный компонент
 // ─────────────────────────────────────────────────────────────────────────────
-// ITEM 2 (cross-tab) — предвыбор бумаги из movers («Сделки фондов»).
+// ITEM 2 (cross-tab) — предвыбор бумаги из movers («Сделки»).
 export interface CompanyFlowsTabProps {
     /** Если задан — выбрать эту бумагу (по isin || asset_name) в селекторе. */
     presetAsset?: { asset_name: string; isin: string | null } | null;
@@ -433,7 +433,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                             getTargetElement={() => chartAnchorRef.current}
                             filename={`frame-company-flows-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
                             metadata={{
-                                title: 'Сделки фондов',
+                                title: 'Сделки',
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
                                 ticker: selectedTicker,
                                 details: [
