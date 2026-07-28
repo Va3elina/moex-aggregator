@@ -1,5 +1,5 @@
 /**
- * MobileFundTradesPage — мобильная версия «Сделки фондов» (desktop
+ * MobileFundTradesPage — мобильная версия «Сделки» (desktop
  * FundTradesPage). Реплицирует ВСЕ 4 режима десктопа 1:1, но контролы вынесены
  * не в табы наверху, а в action-rail ПОД контентом (MobileLayout):
  *
@@ -203,7 +203,7 @@ function LockedView() {
               letterSpacing: '-0.01em',
             }}
           >
-            Сделки фондов
+            Сделки
           </h1>
           <p
             style={{
@@ -250,7 +250,7 @@ function LockedView() {
               onClick={() =>
                 showUpgrade({
                   tier: 'pro',
-                  featureName: 'Сделки фондов',
+                  featureName: 'Сделки',
                   indicator: 'fund_trades',
                 })
               }
@@ -460,7 +460,7 @@ export default function MobileFundTradesPage() {
       .finally(() => { if (!isStale()) setLoadingPortfolio(false); });
   }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
 
-  // Сделки фондов для блока рядом с составом (чистая покупка за период).
+  // Сделки для блока рядом с составом (чистая покупка за период).
   useEffect(() => {
     if (!common.fund_trades_access) return;
     if (tab !== 'portfolio') return;
@@ -551,7 +551,7 @@ export default function MobileFundTradesPage() {
   const tourSteps: TourStep[] = [
     {
       selector: null,
-      title: 'Сделки фондов',
+      title: 'Сделки',
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
@@ -683,7 +683,7 @@ export default function MobileFundTradesPage() {
     >
       <MobilePageHeader
         Icon={Wallet}
-        title="Сделки фондов"
+        title="Сделки"
         helpLink="/methodology/funds-catalog"
         sourceNote="Справки о СЧА (форма ЦБ № 0420502) · УК Первая, Т-Капитал, ВИМ, Альфа"
       />
