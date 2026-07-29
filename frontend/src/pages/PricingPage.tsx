@@ -505,7 +505,11 @@ export default function PricingPage() {
                 <p className="text-sm text-theme-secondary mt-1">{tier.description}</p>
               </div>
 
-              {/* Цена */}
+              {/* Цена.
+                  Годовой тариф показываем в пересчёте на месяц (крупно), а полную
+                  сумму списания и экономию — строками ниже. Так цены месяца и года
+                  сравнимы «в лоб»; полная сумма всё равно раскрыта до оплаты
+                  (тут, в consent-модалке и на форме T-Bank). */}
               <div className="mb-5">
                 {variant ? (
                   <>
@@ -520,15 +524,23 @@ export default function PricingPage() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {variant.amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
+                        {(period === 'yearly'
+                          ? Math.round(variant.amount / 12)
+                          : variant.amount
+                        ).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
                       </span>
                       <span className="text-sm text-theme-secondary leading-none">
-                        /{period === 'yearly' ? 'год' : 'мес'}
+                        /мес
                       </span>
                     </div>
-                    {period === 'yearly' && tier.monthly && (
+                    {period === 'yearly' && (
                       <div className="text-xs text-theme-muted mt-1">
-                        ≈ {Math.round(variant.amount / 12).toLocaleString('ru-RU')} ₽/мес
+                        Оплата раз в год, {variant.amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
+                      </div>
+                    )}
+                    {period === 'yearly' && tier.monthly && tier.monthly.amount * 12 > variant.amount && (
+                      <div className="text-xs mt-0.5" style={{ color: meta.color, fontWeight: 600 }}>
+                        Вы экономите {(tier.monthly.amount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽ в год
                       </div>
                     )}
                   </>
