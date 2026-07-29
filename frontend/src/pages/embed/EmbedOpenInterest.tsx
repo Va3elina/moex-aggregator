@@ -22,7 +22,7 @@ import {
   Ruler, Layers, X as XIcon, GripVertical, Repeat,
   Clock, User, Building2, BarChart3, Users, Activity, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash, type LwMagnet } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash, type LwMagnet, type LwChartHandle } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -114,7 +114,7 @@ function drawToolBtn(active: boolean): CSSProperties {
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
-const loadPeriodFor = (interval: number): string => (interval === 24 ? 'all' : '1m');
+const loadPeriodFor = (interval: number): string => (interval === 24 ? '1y' : '1m');
 // Время → UNIX-секунды для LwChart. Дневной ТФ: UTC-полночь по дате (чтобы не было
 // сдвига даты из-за таймзоны); интрадей — полный timestamp.
 const toSec = (t: string, intraday: boolean): number => {
@@ -371,6 +371,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
   const [chartH, setChartH] = useState(280);
+  // Хэндл LwChart — форс-синк перед экспортом (см. LwChartHandle doc), т.к.
+  // chartBoxRef меняет размер сразу, а внутренний бокс LwChart — с лагом
+  // через chartH state.
+  const lwChartRef = useRef<LwChartHandle>(null);
   useEffect(() => {
     const el = chartBoxRef.current;
     if (!el) return;
@@ -764,6 +768,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChart
+            ref={lwChartRef}
             series={lwSeries}
             expirations={expirations}
             height={chartH}
@@ -958,6 +963,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               targetElement={chartBoxRef.current}
               filename={`frame-oi-${instrument}-${interval}`}
               metadata={exportMeta}
+              beforeCapture={() => {
+                const r = chartBoxRef.current?.getBoundingClientRect();
+                if (r) lwChartRef.current?.syncBeforeCapture(r.width, r.height);
+              }}
               onClose={() => setExportOpen(false)}
             />
           </Suspense>

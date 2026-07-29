@@ -44,10 +44,17 @@ interface Props {
      *  Используется для transient layout adjustments (e.g. --chart-pad-left override
      *  чтобы chart expanded в empty space только в exported PNG, без affecting live). */
     exportStyles?: Record<string, string>;
+    /** Синхронный форс-хук перед captureChart — напр. LwChart.syncBeforeCapture(w,h):
+     *  движки (lightweight-charts) держат внутренний размер через ResizeObserver →
+     *  React state → рендер, асинхронно в несколько шагов; если html2canvas снимет
+     *  скриншот внутри этого окна рассинхрона, контент (особенно рисунки поверх
+     *  графика) окажется смещён/обрезан/пропадёт. Вызывается ПОСЛЕ exportStyles,
+     *  тоже с ожиданием rAF перед captureChart. */
+    beforeCapture?: () => void;
     onClose: () => void;
 }
 
-export default function ExportModal({ targetElement, filename, metadata, exportStyles, onClose }: Props) {
+export default function ExportModal({ targetElement, filename, metadata, exportStyles, beforeCapture, onClose }: Props) {
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
@@ -88,6 +95,15 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     oldStyles.set(prop, targetElement.style.getPropertyValue(prop));
                     targetElement.style.setProperty(prop, val);
                 }
+                await new Promise<void>(r => requestAnimationFrame(() => r()));
+            }
+
+            // Форс-синк движка/рисунков под РЕАЛЬНЫЙ текущий размер targetElement —
+            // убирает асинхронный лаг ResizeObserver→state→рендер (см. beforeCapture
+            // doc выше). rAF-ожидание — чтобы прямая DOM-мутация внутри успела
+            // отрисоваться до захвата.
+            if (beforeCapture) {
+                beforeCapture();
                 await new Promise<void>(r => requestAnimationFrame(() => r()));
             }
 
