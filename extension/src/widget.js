@@ -23,7 +23,7 @@
     { id: 'buffett', label: 'Индикатор Баффетта', group: 'market' },
     { id: 'strength', label: 'Сила рынка', group: 'market' },
     { id: 'funds-money', label: 'Фонды', group: 'market' },
-    { id: 'fund-trades', label: 'Сделки', group: 'market' },
+    { id: 'fund-trades', label: 'Сделки фондов', group: 'market' },
     { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' }
   ];
 
