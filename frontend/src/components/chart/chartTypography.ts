@@ -40,6 +40,23 @@ export const axisFontSize = (vw: number): number => chartFontScale(vw).axis;
 export const legendFontSize = (vw: number): number => chartFontScale(vw).legend;
 export const legendDotSize = (vw: number): number => chartFontScale(vw).legendDot;
 
+export interface ChartAxisPadding { left: number; right: number }
+
+/**
+ * Отступы под Y-ось (--chart-pad-left/--chart-pad-right-single), но по
+ * КОНТЕЙНЕРУ, а не viewport. CSS-переменные в index.css завязаны на media
+ * queries по window width — в узкой embed-панели песочницы (containerW << vw
+ * реального окна браузера) они не ужимаются, и широкий gutter под цифры оси
+ * съедает большую часть узкой панели / цифры наезжают на bars. Таблица
+ * зеркалит те же breakpoints (768/1024), что и index.css.
+ */
+export function axisPadding(containerWidth: number): ChartAxisPadding {
+    if (containerWidth < 480) return { left: 40, right: 48 };
+    if (containerWidth < 768) return { left: 46, right: 56 };
+    if (containerWidth < 1024) return { left: 95, right: 90 };
+    return { left: 100, right: 95 };
+}
+
 /**
  * Сколько X-axis date ticks влезает в chartWidth без overlap.
  *

@@ -22,10 +22,9 @@ import { getCategoryColor } from './cbrPalette';
 import { getCategoryShortLabel } from './cbrCategoryInfo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { chartFontScale } from '../chart/chartTypography';
+import { chartFontScale, axisPadding } from '../chart/chartTypography';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartDatePill from '../chart/ChartDatePill';
-import ChartWatermark from '../ChartWatermark';
 import { TOOLTIP } from '../../config/chartTheme';
 
 interface Props {
@@ -112,6 +111,13 @@ export default function StackedBidirectionalHistogram({
     return () => ro.disconnect();
   }, []);
   const fontScale = chartFontScale(containerW || vw);
+  // Отступы под Y-ось по КОНТЕЙНЕРУ (не viewport) — см. axisPadding: в узкой
+  // embed-панели песочницы containerW << vw реального окна, а --chart-pad-*
+  // CSS-переменные завязаны на media queries по viewport и не ужимаются →
+  // широкий gutter/крупный шрифт наезжают на бары. pad/font ниже подменяют
+  // CSS-var значения на всех местах их использования в этом компоненте.
+  const pad = axisPadding(containerW || vw);
+  const axisFontPx = fontScale.axis;
 
   // Entrance animation: grow-from-zero wave.
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
@@ -215,15 +221,12 @@ export default function StackedBidirectionalHistogram({
   const handleMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const rect = target.getBoundingClientRect();
-    const cs = getComputedStyle(document.documentElement);
-    const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
-    const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
-    const chartAreaWidth = rect.width - padLeft - padRight;
+    const chartAreaWidth = rect.width - pad.left - pad.right;
     if (chartAreaWidth <= 0 || !periods.length) {
       setHover(null);
       return;
     }
-    const xWithinChart = e.clientX - rect.left - padLeft;
+    const xWithinChart = e.clientX - rect.left - pad.left;
     const xRatio = xWithinChart / chartAreaWidth;
     if (xRatio < 0 || xRatio > 1) {
       setHover(null);
@@ -240,7 +243,7 @@ export default function StackedBidirectionalHistogram({
       mouseX: e.clientX - outerRect.left,
       mouseY: e.clientY - outerRect.top,
     });
-  }, [periods.length]);
+  }, [periods.length, pad.left, pad.right]);
 
   const handleLeave = useCallback(() => setHover(null), []);
 
@@ -307,7 +310,7 @@ export default function StackedBidirectionalHistogram({
             top: 'var(--chart-pad-top, 19px)',
             bottom: 'var(--chart-pad-bottom, 50px)',
             right: 0,
-            width: 'var(--chart-pad-right-single, 95px)',
+            width: `${pad.right}px`,
             pointerEvents: 'none',
           }}
         >
@@ -322,7 +325,7 @@ export default function StackedBidirectionalHistogram({
                   left: 'var(--sp-2)',
                   right: 0,
                   transform: 'translateY(-50%)',
-                  fontSize: 'var(--chart-font-y, 17px)',
+                  fontSize: `${axisFontPx}px`,
                   color: 'var(--axis-color, var(--text-primary))',
                   fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap',
@@ -346,8 +349,8 @@ export default function StackedBidirectionalHistogram({
           style={{
             top: 'var(--chart-pad-top, 19px)',
             bottom: 'var(--chart-pad-bottom, 50px)',
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
+            left: `${pad.left}px`,
+            right: `${pad.right}px`,
           }}
         >
           <svg
@@ -460,10 +463,10 @@ export default function StackedBidirectionalHistogram({
         <div
           className="absolute flex justify-between font-semibold px-2"
           style={{
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
+            left: `${pad.left}px`,
+            right: `${pad.right}px`,
             bottom: 'var(--chart-xlabel-bottom, 20px)',
-            fontSize: 'var(--chart-font-x, 14px)',
+            fontSize: `${axisFontPx}px`,
             color: 'var(--axis-color, #9CA3B8)',
             fontVariantNumeric: 'tabular-nums',
             pointerEvents: 'none',
@@ -503,38 +506,26 @@ export default function StackedBidirectionalHistogram({
         </div>
 
 
-        {/* === Watermark — на нижней горизонтальной линии grid (bottom chart-area).
-            После убирания year labels chart-area bottom = pad-bottom.
-            Watermark sits с base прямо на bottom grid line + 4px gap. */}
-        <div
-          style={{
-            position: 'absolute',
-            left: 'calc(var(--chart-pad-left, 100px) + 4px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) + 4px)',
-            pointerEvents: 'none',
-          }}
-        >
-          <ChartWatermark />
-        </div>
+        {/* Вотермарк намеренно убран (Вадим) — на плотном stacked-графике с
+            категориями у нулевой линии он перекрывал данные; на остальных
+            графиках сайта ChartWatermark остаётся штатно. */}
 
         {/* Плавающая дата над графиком — единый стиль/позиция со всеми чартами
             (ChartDatePill: прозрачный текст, низ прижат к верхней грид-линии,
             кламп в границах chart-area чтобы не наезжать на Y-шкалу). */}
         {hover && periods[hover.periodIdx] && (() => {
           const cs = getComputedStyle(document.documentElement);
-          const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
-          const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
           const padTop = parseFloat(cs.getPropertyValue('--chart-pad-top')) || 14;
           const w = containerRef.current?.clientWidth ?? 800;
-          const slotW = (w - padLeft - padRight) / periods.length;
+          const slotW = (w - pad.left - pad.right) / periods.length;
           const p = periods[hover.periodIdx];
           return (
             <ChartDatePill
               date={`${p.label} ${p.year}`}
-              x={padLeft + (hover.periodIdx + 0.5) * slotW}
+              x={pad.left + (hover.periodIdx + 0.5) * slotW}
               topLineY={padTop}
-              minX={padLeft}
-              maxX={w - padRight}
+              minX={pad.left}
+              maxX={w - pad.right}
             />
           );
         })()}

@@ -179,8 +179,11 @@ const MINW = 300, MINH = 200;
 const MINW_BY_TYPE: Partial<Record<IndKind, number>> = {
   oi: 540,
   seasonality: 380,
-  'funds-money': 380,
-  strength: 340,
+  'funds-money': 420,
+  strength: 380,
+  screener: 520,
+  heatmap: 320,
+  buffett: 380,
 };
 const GUIDE_Z = 99990;       // направляющие — над панелями, под оверлеями
 const OVERLAY_Z = 100000;    // меню/поповеры/дровер (§7: панели при захвате уходят на высокий z)

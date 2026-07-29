@@ -5,25 +5,42 @@
  *     с guard-флагом от рекурсии);
  *   - общий кроссхэйр: setCrosshairPosition на соседях с _suppress-гейтом
  *     ПЕРВОЙ строкой обработчика (иначе бесконечный цикл вешает вкладку);
- *   - ЕДИНЫЙ тултип: под курсором на любой панели показывает значения ВСЕХ
- *     панелей на этой дате (лукап по time-индексированным Map'ам);
  *   - ось дат видна ТОЛЬКО на нижней панели.
  *
  * Сознательно отдельный компонент, а не ветка внутри LwChart: единственный
  * потребитель — Сила рынка, а боевой одиночный LwChart (ОИ/Баффетт/Фонды/
  * Сезонность) не трогаем вообще. Общие типы (LwSeries) импортируются оттуда.
+ *
+ * Рисование (drawPaneIndex): та же модель TradingView, что у LwChart (SVG-
+ * оверлей в координатах {logical,price}), но привязана к ОДНОЙ конкретной
+ * панели — рисовать сразу на двух синхронных чартах не нужно, и хит-тест/
+ * магнит по OHLC не имеет смысла между панелями с разными шкалами. Логика
+ * порт-скопирована из LwChart.tsx (renderOne/hitTest/pointer-обработчики
+ * идентичны); отличие — координатные хелперы бьются на `charts[drawPaneIndex]`
+ * вместо единственного chartRef, и paneLeftW=0 всегда (левая шкала здесь
+ * везде скрыта, в отличие от LwChart, где бывает видимой).
  */
-import { useContext, useEffect, useRef } from 'react';
+import { forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
+  type Logical, type Coordinate,
 } from 'lightweight-charts';
-import { ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries } from './LwChart';
+import {
+  ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries,
+  type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
+} from './LwChart';
 
 export interface LwPane {
   series: LwSeries[];
   /** Доля высоты (flex-grow). Дефолт 1. Сила рынка в макете ≈ 1.1 / 0.9. */
   flex?: number;
+}
+
+export interface LwChartPanesHandle {
+  /** Форс-синк размера + перерисовка фигур ПЕРЕД снятием скриншота — см.
+   *  LwChartHandle.syncBeforeCapture в LwChart.tsx (тот же паттерн). */
+  syncBeforeCapture: (width: number, height: number) => void;
 }
 
 interface LwChartPanesProps {
@@ -33,6 +50,28 @@ interface LwChartPanesProps {
   initialBars?: number;
   /** Формат оси времени нижней панели. Дефолт — §5.2 (только месяцы+годы). */
   tickFmt?: (time: number, type: number) => string;
+  /** Курсорный тултип со значениями всех панелей. Дефолт true; Сила рынка
+   *  отключает — легенда сверху панелей уже даёт статичные значения, курсорный
+   *  тултип поверх узкого графика избыточен (Вадим). */
+  showTooltip?: boolean;
+  /** Индекс панели, на которой доступно рисование (модель TradingView). Без
+   *  этого пропа рисование не создаётся вообще — нулевой оверхед для панелей,
+   *  которым оно не нужно. */
+  drawPaneIndex?: number;
+  drawActive?: boolean;
+  drawTool?: LwDrawTool;
+  drawings?: LwDrawing[];
+  onDrawingsChange?: (d: LwDrawing[]) => void;
+  drawColor?: string;
+  drawWidth?: number;
+  selectedDrawId?: string | null;
+  onSelectDraw?: (id: string | null) => void;
+  drawMagnet?: LwMagnet;
+  drawHidden?: boolean;
+  drawLocked?: boolean;
+  drawDash?: LwDash;
+  drawOpacity?: number;
+  onToolReset?: () => void;
 }
 
 function themeColors(dark: boolean) {
@@ -62,7 +101,15 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
 
 type AnySeries = ISeriesApi<'Line' | 'Area' | 'Histogram'>;
 
-export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, tickFmt }: LwChartPanesProps) {
+const SVGNS = 'http://www.w3.org/2000/svg';
+const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
+const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
+
+const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
+  panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
+  drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
+  selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
+}: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
@@ -72,8 +119,46 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
   const legendsRef = useRef<HTMLDivElement[]>([]);
   const lastFitRef = useRef<string | undefined>(undefined);
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
+  const showTooltipRef = useRef(showTooltip); showTooltipRef.current = showTooltip;
   const paneCount = panes.length;
   const chartPrefs = useContext(ChartPrefsCtx);
+
+  // ── рисование: рефы состояния (та же идиома, что в LwChart.tsx) ──
+  const drawActiveRef = useRef(drawActive); drawActiveRef.current = drawActive;
+  const drawToolRef = useRef(drawTool); drawToolRef.current = drawTool;
+  const drawingsRef = useRef(drawings); drawingsRef.current = drawings;
+  const onDrawingsChangeRef = useRef(onDrawingsChange); onDrawingsChangeRef.current = onDrawingsChange;
+  const drawColorRef = useRef(drawColor); drawColorRef.current = drawColor;
+  const drawWidthRef = useRef(drawWidth); drawWidthRef.current = drawWidth;
+  const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
+  const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
+  const drawMagnetRef = useRef(drawMagnet); drawMagnetRef.current = drawMagnet;
+  const drawHiddenRef = useRef(drawHidden); drawHiddenRef.current = drawHidden;
+  const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
+  const drawDashRef = useRef(drawDash); drawDashRef.current = drawDash;
+  const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
+  const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
+  const drawShapesRef = useRef<(() => void) | null>(null);
+  const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
+
+  useImperativeHandle(forwardedRef, () => ({
+    syncBeforeCapture: (_w, _h) => {
+      const pi = drawPaneIndexRef.current;
+      if (pi != null) {
+        const root = rootRef.current;
+        const box = root ? (Array.from(root.children) as HTMLElement[])[pi] : null;
+        const chart = chartsRef.current[pi];
+        if (box && chart) {
+          // panes делят h пропорционально flex — сам drawPaneIndex-бокс мог не
+          // получить обновлённый размер синхронно; берём его РЕАЛЬНЫЙ текущий
+          // clientWidth/Height (уже актуальный к моменту вызова), а не входные w/h
+          // (те — размер ВСЕГО стека панелей, не одной панели).
+          chart.resize(box.clientWidth, box.clientHeight);
+        }
+      }
+      drawShapesRef.current?.();
+    },
+  }), []);
 
   // ── создание N чартов + связка (пересоздаётся при смене числа панелей) ──
   useEffect(() => {
@@ -167,27 +252,31 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
           finally { suppress = false; }
           return;
         }
-        // Строки ВСЕХ панелей на этой дате (лукап по time-Map'ам).
+        // Строки ВСЕХ панелей на этой дате (лукап по time-Map'ам). showTooltip=false
+        // (Сила рынка) — курсорный тултип не строим вообще, но кроссхэйр-синк ниже
+        // (setCrosshairPosition на соседей) остаётся активным.
         while (tip.firstChild) tip.removeChild(tip.firstChild);
         let any = false;
-        panesRef.current.forEach((pane, pi) => {
-          pane.series.forEach((def, si) => {
-            const v = mapsRef.current[pi]?.[si]?.get(t);
-            if (v == null) return;
-            any = true;
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:7px;' + (tip.childNodes.length > 0 ? 'margin-top:4px;' : '');
-            const dot = document.createElement('span');
-            dot.style.cssText = 'width:7px;height:7px;border-radius:2px;display:inline-block;flex:0 0 auto;background:' + (def.color || '#888');
-            const lbl = document.createElement('span');
-            lbl.textContent = def.label || '';
-            const val = document.createElement('span');
-            val.style.cssText = "margin-left:auto;font-weight:700;font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;padding-left:14px;color:" + (def.color || 'inherit');
-            val.textContent = def.tipFmt ? def.tipFmt(v) : String(Math.round(v));
-            row.appendChild(dot); row.appendChild(lbl); row.appendChild(val);
-            tip.appendChild(row);
+        if (showTooltipRef.current) {
+          panesRef.current.forEach((pane, pi) => {
+            pane.series.forEach((def, si) => {
+              const v = mapsRef.current[pi]?.[si]?.get(t);
+              if (v == null) return;
+              any = true;
+              const row = document.createElement('div');
+              row.style.cssText = 'display:flex;align-items:center;gap:7px;' + (tip.childNodes.length > 0 ? 'margin-top:4px;' : '');
+              const dot = document.createElement('span');
+              dot.style.cssText = 'width:7px;height:7px;border-radius:2px;display:inline-block;flex:0 0 auto;background:' + (def.color || '#888');
+              const lbl = document.createElement('span');
+              lbl.textContent = def.label || '';
+              const val = document.createElement('span');
+              val.style.cssText = "margin-left:auto;font-weight:700;font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;padding-left:14px;color:" + (def.color || 'inherit');
+              val.textContent = def.tipFmt ? def.tipFmt(v) : String(Math.round(v));
+              row.appendChild(dot); row.appendChild(lbl); row.appendChild(val);
+              tip.appendChild(row);
+            });
           });
-        });
+        }
         // Скрыть тултипы неактивных панелей, кроссхэйр — на соседей.
         tips.forEach((tp, j) => { if (j !== i) tp.style.display = 'none'; });
         if (!any) { tip.style.display = 'none'; return; }
@@ -220,8 +309,324 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
     legendsRef.current = legends;
     lastFitRef.current = undefined; // свежие чарты — форсим fit при первом заливе серий
 
+    // ── рисование (модель TradingView), только на panes[drawPaneIndex] ──
+    // Порт-копия слоя из LwChart.tsx, привязанная к charts[drawPaneIndex]/
+    // apisRef.current[drawPaneIndex] вместо единственного chartRef/seriesApiRef.
+    // paneLeftW=0 всегда: левая шкала здесь везде visible:false (в отличие от
+    // LwChart, где она бывает включена под вторую ось).
+    let cleanupDraw: (() => void) | null = null;
+    const dpi = drawPaneIndexRef.current;
+    if (dpi != null && boxes[dpi]) {
+      const box = boxes[dpi];
+      const chart = () => chartsRef.current[dpi];
+      const drawSvg = document.createElementNS(SVGNS, 'svg');
+      drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:visible;pointer-events:none;touch-action:none';
+      box.appendChild(drawSvg);
+      const drawHit = document.createElement('div');
+      drawHit.style.cssText = 'position:absolute;inset:0;z-index:8;pointer-events:none;touch-action:none';
+      box.appendChild(drawHit);
+
+      const drawSeries = () => apisRef.current[dpi]?.[0] ?? null;
+      const primaryDef = () => panesRef.current[dpi]?.series[0];
+      const lp2xy = (p: LwDrawPoint): { x: number; y: number } | null => {
+        const ch = chart(); if (!ch) return null;
+        const xc = ch.timeScale().logicalToCoordinate(p.logical as Logical);
+        const s = drawSeries(); const yc = s ? s.priceToCoordinate(p.price) : null;
+        if (xc == null || yc == null) return null;
+        return { x: xc as number, y: yc as number };
+      };
+      const xy2lp = (bx: number, by: number): LwDrawPoint | null => {
+        const ch = chart(); if (!ch) return null;
+        const logical = ch.timeScale().coordinateToLogical(bx as Coordinate);
+        const s = drawSeries(); const price = s ? s.coordinateToPrice(by as Coordinate) : null;
+        if (logical == null || price == null) return null;
+        return { logical: logical as number, price: price as number };
+      };
+      const plotBox = () => {
+        const ch = chart();
+        const w = ch ? (ch.timeScale().width() || box.clientWidth) : box.clientWidth;
+        const axisH = ch ? (ch.timeScale().height() || 0) : 0;
+        return { left: 0, width: w, height: Math.max(0, box.clientHeight - axisH) };
+      };
+      const svgEl = (tag: string, attrs: Record<string, string | number>) => {
+        const e = document.createElementNS(SVGNS, tag);
+        for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+        return e;
+      };
+      const priceY = (price: number): number | null => { const s = drawSeries(); const y = s ? s.priceToCoordinate(price) : null; return y == null ? null : (y as number); };
+      const snap = (lp: LwDrawPoint | null, allow = true): LwDrawPoint | null => {
+        const mode = drawMagnetRef.current;
+        if (!lp || !allow || !mode || mode === 'off') return lp;
+        const L = Math.round(lp.logical); const data = primaryDef()?.data;
+        if (!data || L < 0 || L >= data.length) return { ...lp, logical: L };
+        const pt = data[L];
+        const cands = [pt.open, pt.high, pt.low, pt.close, pt.value].filter((v): v is number => v != null);
+        if (!cands.length) return { ...lp, logical: L };
+        let best = cands[0], bd = Infinity;
+        for (const v of cands) { const dd = Math.abs(v - lp.price); if (dd < bd) { bd = dd; best = v; } }
+        if (mode === 'weak') {
+          const yb = priceY(best), yc = priceY(lp.price);
+          if (yb == null || yc == null || Math.abs(yb - yc) > 12) return lp;
+        }
+        return { logical: L, price: best };
+      };
+      const rayEnd = (a: { x: number; y: number }, b: { x: number; y: number }, pb: { left: number; width: number; height: number }) => {
+        const dx = b.x - a.x, dy = b.y - a.y; if (!dx && !dy) return b;
+        let t = Infinity;
+        if (dx > 0) t = Math.min(t, (pb.left + pb.width - a.x) / dx);
+        if (dx < 0) t = Math.min(t, (pb.left - a.x) / dx);
+        if (dy > 0) t = Math.min(t, (pb.height - a.y) / dy);
+        if (dy < 0) t = Math.min(t, (0 - a.y) / dy);
+        if (!isFinite(t) || t < 1) t = 1;
+        return { x: a.x + dx * t, y: a.y + dy * t };
+      };
+      const dashArr = (dash: LwDash | undefined, w: number): string => {
+        if (dash === 'dashed') return `${Math.max(w * 3, 4)} ${Math.max(w * 2.5, 3)}`;
+        if (dash === 'dotted') return `0.1 ${Math.max(w * 2.4, 4)}`;
+        return 'none';
+      };
+      const renderOne = (d: LwDrawing, sel: boolean, preview = false) => {
+        const col = d.color, w = d.width, pb = plotBox();
+        const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
+        const da = dashArr(d.dash, w);
+        const lc = d.dash === 'dotted' ? 'round' : 'butt';
+        const S = { stroke: col, 'stroke-width': w, opacity: op, 'stroke-dasharray': da };
+        const dot = (x: number, y: number) => drawSvg.appendChild(svgEl('circle', { cx: x, cy: y, r: 4, fill: col }));
+        if (d.tool === 'hline') {
+          const xy = lp2xy(d.pts[0]); if (!xy) return;
+          drawSvg.appendChild(svgEl('line', { x1: pb.left, y1: xy.y, x2: pb.left + pb.width, y2: xy.y, ...S, 'stroke-linecap': lc }));
+          if (sel) dot(pb.left + pb.width / 2, xy.y);
+        } else if (d.tool === 'vline') {
+          const xy = lp2xy(d.pts[0]); if (!xy) return;
+          drawSvg.appendChild(svgEl('line', { x1: xy.x, y1: 0, x2: xy.x, y2: pb.height, ...S, 'stroke-linecap': lc }));
+          if (sel) dot(xy.x, pb.height / 2);
+        } else if (d.tool === 'trend' || d.tool === 'ray' || d.tool === 'arrow') {
+          const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (!a || !b0) return;
+          const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
+          drawSvg.appendChild(svgEl('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...S, 'stroke-linecap': d.dash === 'dotted' ? 'round' : 'round' }));
+          if (d.tool === 'arrow') {
+            const ang = Math.atan2(b0.y - a.y, b0.x - a.x), ah = 9 + w * 2;
+            for (const s of [-0.42, 0.42]) drawSvg.appendChild(svgEl('line', { x1: b0.x, y1: b0.y, x2: b0.x - ah * Math.cos(ang - s), y2: b0.y - ah * Math.sin(ang - s), stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
+          }
+          if (sel) { dot(a.x, a.y); dot(b0.x, b0.y); }
+        } else if (d.tool === 'rect' || d.tool === 'ellipse') {
+          const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
+          const fo = String(0.13 * (d.opacity == null ? 1 : d.opacity));
+          if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: col, 'fill-opacity': fo, ...S }));
+          else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill: col, 'fill-opacity': fo, ...S }));
+          if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+        } else if (d.tool === 'fib') {
+          const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+          const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x), p0 = d.pts[0].price, p1 = d.pts[1].price;
+          const fpF = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(4));
+          for (const lv of FIB) {
+            const price = p0 + (p1 - p0) * lv;
+            const yy = priceY(price); if (yy == null) continue;
+            drawSvg.appendChild(svgEl('line', { x1: xL, y1: yy, x2: xR, y2: yy, stroke: col, 'stroke-width': 1, opacity: String((d.opacity == null ? 0.85 : d.opacity * 0.85) * (preview ? 0.7 : 1)), 'stroke-dasharray': lv === 0 || lv === 1 ? '0' : '3 3' }));
+            const t = svgEl('text', { x: xL + 3, y: yy - 2, fill: col, 'font-size': 9.5, 'font-family': 'Inter,sans-serif', opacity: op }); t.textContent = `${lv.toFixed(3)} (${fpF(price)})`;
+            drawSvg.appendChild(t);
+          }
+          if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+        } else if (d.tool === 'brush') {
+          if (d.pts.length < 2) { const xy = lp2xy(d.pts[0]); if (xy) dot(xy.x, xy.y); return; }
+          const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[];
+          drawSvg.appendChild(svgEl('polyline', { points: pnts.map((p) => `${p.x},${p.y}`).join(' '), fill: 'none', ...S, 'stroke-linejoin': 'round', 'stroke-linecap': d.dash === 'dotted' ? 'round' : 'round' }));
+        } else if (d.tool === 'ruler') {
+          const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
+          const up = d.pts[1].price >= d.pts[0].price;
+          const mc = resolveColor(box, up ? 'var(--oi-green)' : 'var(--oi-red)');
+          drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: mc, 'fill-opacity': String(0.12 * (d.opacity == null ? 1 : d.opacity)), stroke: mc, 'stroke-width': 1, opacity: op }));
+          drawSvg.appendChild(svgEl('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: mc, 'stroke-width': 1, opacity: op, 'stroke-dasharray': '3 3' }));
+          const dP = d.pts[1].price - d.pts[0].price;
+          const dPct = d.pts[0].price !== 0 ? (dP / Math.abs(d.pts[0].price)) * 100 : 0;
+          const dBars = Math.round(Math.abs(d.pts[1].logical - d.pts[0].logical));
+          const fmtN = (n: number) => (Math.abs(n) >= 100 ? n.toFixed(0) : Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(4));
+          const timeAt = (logical: number): number | null => { const dt = primaryDef()?.data; if (!dt || !dt.length) return null; const L = Math.max(0, Math.min(dt.length - 1, Math.round(logical))); return dt[L].time; };
+          const fmtDur = (secs: number): string => { const s = Math.abs(secs), dd = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); return dd >= 1 ? (hh > 0 ? `${dd}д ${hh}ч` : `${dd}д`) : hh >= 1 ? (mm > 0 ? `${hh}ч ${mm}м` : `${hh}ч`) : `${mm}м`; };
+          const t0 = timeAt(d.pts[0].logical), t1 = timeAt(d.pts[1].logical);
+          const span = t0 != null && t1 != null ? ` · ${fmtDur(t1 - t0)}` : '';
+          const label = `${dP >= 0 ? '+' : ''}${fmtN(dP)} (${dPct >= 0 ? '+' : ''}${dPct.toFixed(2)}%) · ${dBars} бар${span}`;
+          const cx = x + rw / 2, lbW = label.length * 5.6 + 12, top = y - 4;
+          drawSvg.appendChild(svgEl('rect', { x: cx - lbW / 2, y: top - 16, width: lbW, height: 16, rx: 4, fill: mc, opacity: op }));
+          const t = svgEl('text', { x: cx, y: top - 4.5, fill: '#fff', 'font-size': 10.5, 'font-family': 'Inter,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op }); t.textContent = label;
+          drawSvg.appendChild(t);
+          if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+        } else if (d.tool === 'text') {
+          const xy = lp2xy(d.pts[0]); if (!xy) return;
+          const t = svgEl('text', { x: xy.x, y: xy.y, fill: col, 'font-size': 13 + w * 2, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, opacity: op });
+          t.textContent = d.text || 'Текст';
+          drawSvg.appendChild(t);
+          if (sel) dot(xy.x - 4, xy.y - 5);
+        }
+      };
+      let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number } } = null;
+      const HANDLE_R = 8;
+      const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+      const drawShapes = () => {
+        if (!chart()) return;
+        // html2canvas трактует <svg> как replaced-элемент и меряет его через
+        // getBoundingClientRect самой svg — без явных width/height это дефолтные
+        // 300×150, и экспорт обрезает фигуры (см. LwChart.tsx drawShapes).
+        drawSvg.setAttribute('width', String(box.clientWidth));
+        drawSvg.setAttribute('height', String(box.clientHeight));
+        while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
+        if (drawHiddenRef.current) return;
+        const selId = selectedDrawIdRef.current;
+        for (const d of (drawingsRef.current ?? [])) { if (d.hidden) continue; renderOne(d, d.id === selId); }
+        if (dragState) renderOne(dragState.d, false, true);
+      };
+      const syncDrawInteractivity = () => {
+        const on = !!drawActiveRef.current;
+        drawHit.style.pointerEvents = on ? 'auto' : 'none';
+        drawHit.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
+      };
+      drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
+
+      const distToSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+        const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+        let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0; t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+      };
+      const hitTest = (bx: number, by: number): LwDrawing | null => {
+        const list = drawingsRef.current ?? [], pb = plotBox();
+        for (let i = list.length - 1; i >= 0; i--) {
+          const d = list[i];
+          if (d.hidden) continue;
+          if (d.tool === 'hline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(by - xy.y) < 6) return d; }
+          else if (d.tool === 'vline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 6) return d; }
+          else if (d.tool === 'trend' || d.tool === 'arrow') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b && distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; }
+          else if (d.tool === 'ray') { const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (a && b0) { const b = rayEnd(a, b0, pb); if (distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; } }
+          else if (d.tool === 'rect' || d.tool === 'ellipse' || d.tool === 'ruler') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
+          else if (d.tool === 'fib') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x); if (bx >= xL - 5 && bx <= xR + 5) { const p0 = d.pts[0].price, p1 = d.pts[1].price; for (const lv of FIB) { const yy = priceY(p0 + (p1 - p0) * lv); if (yy != null && Math.abs(by - yy) < 6) return d; } } } }
+          else if (d.tool === 'brush') { const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[]; for (let j = 1; j < pnts.length; j++) if (distToSeg(bx, by, pnts[j - 1].x, pnts[j - 1].y, pnts[j].x, pnts[j].y) < 6) return d; }
+          else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 44 && Math.abs(by - (xy.y - 6)) < 14) return d; }
+        }
+        return null;
+      };
+      const relXY = (e: PointerEvent) => { const r = box.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      const commit = (next: LwDrawing[]) => { drawingsRef.current = next; onDrawingsChangeRef.current?.(next); drawShapes(); };
+      const onDrawDown = (e: PointerEvent) => {
+        if (!drawActiveRef.current) return;
+        const tool = drawToolRef.current ?? 'select';
+        const { x, y } = relXY(e);
+        if (tool === 'select') {
+          if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }
+          const hit = hitTest(x, y);
+          selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
+          if (hit) {
+            let vi = -1;
+            if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
+            dragState = vi >= 0
+              ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, vi, startXY: { x, y } }
+              : { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
+            try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+          }
+          drawShapes(); return;
+        }
+        const lp = snap(xy2lp(x, y), tool !== 'brush'); if (!lp) return;
+        const color = drawColorRef.current || '#FF5C2B', width = drawWidthRef.current || 2;
+        const dash = drawDashRef.current, opacity = drawOpacityRef.current;
+        if (tool === 'text') {
+          const id = uid();
+          commit([...(drawingsRef.current ?? []), { id, tool: 'text', pts: [lp], color, width, dash, opacity, text: 'Текст' }]);
+          selectedDrawIdRef.current = id; onSelectDrawRef.current?.(id); onToolResetRef.current?.();
+          return;
+        }
+        const base = { color, width, dash, opacity };
+        const d: LwDrawing = ONE_PT.has(tool) ? { id: uid(), tool, pts: [lp], ...base } : { id: uid(), tool, pts: [lp, lp], ...base };
+        dragState = { mode: 'create', d, startXY: { x, y } };
+        try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+        drawShapes();
+      };
+      const onDrawMove = (e: PointerEvent) => {
+        if (!dragState) return;
+        const { x, y } = relXY(e);
+        if (dragState.mode === 'create') {
+          const t = dragState.d.tool;
+          if (t === 'brush') {
+            const lp = xy2lp(x, y); if (!lp) return;
+            const lastXY = lp2xy(dragState.d.pts[dragState.d.pts.length - 1]);
+            if (!lastXY || Math.hypot(x - lastXY.x, y - lastXY.y) >= 2.5) dragState.d.pts = [...dragState.d.pts, lp];
+          } else {
+            let px = x, py = y;
+            if (e.shiftKey && !ONE_PT.has(t)) {
+              const aXY = lp2xy(dragState.d.pts[0]);
+              if (aXY) {
+                const dx = x - aXY.x, dy = y - aXY.y;
+                if (t === 'trend' || t === 'ray' || t === 'arrow') {
+                  const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), dist = Math.hypot(dx, dy);
+                  px = aXY.x + dist * Math.cos(ang); py = aXY.y + dist * Math.sin(ang);
+                } else if (t === 'rect' || t === 'ellipse') {
+                  const sz = Math.max(Math.abs(dx), Math.abs(dy));
+                  px = aXY.x + (dx < 0 ? -sz : sz); py = aXY.y + (dy < 0 ? -sz : sz);
+                }
+              }
+            }
+            const lp = snap(xy2lp(px, py)); if (!lp) return;
+            dragState.d.pts = ONE_PT.has(t) ? [lp] : [dragState.d.pts[0], lp];
+          }
+        } else if (dragState.mode === 'vertex') {
+          const lp = snap(xy2lp(x, y)); if (!lp) return;
+          const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
+        } else {
+          const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
+          dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
+        }
+        drawShapes();
+      };
+      const onDrawUp = (e: PointerEvent) => {
+        if (!dragState) return;
+        try { drawHit.releasePointerCapture(e.pointerId); } catch { /* уже */ }
+        const ds = dragState; dragState = null;
+        if (ds.mode === 'create') {
+          if (ds.d.tool === 'brush') { if (ds.d.pts.length < 2) { drawShapes(); return; } }
+          else if (!ONE_PT.has(ds.d.tool)) { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
+          commit([...(drawingsRef.current ?? []), ds.d]);
+          selectedDrawIdRef.current = ds.d.id; onSelectDrawRef.current?.(ds.d.id);
+          onToolResetRef.current?.();
+        } else {
+          commit((drawingsRef.current ?? []).map((x) => (x.id === ds.d.id ? ds.d : x)));
+        }
+      };
+      const onDrawDbl = (e: MouseEvent) => {
+        if (!drawActiveRef.current) return;
+        const { x, y } = relXY(e as unknown as PointerEvent);
+        const hit = hitTest(x, y);
+        if (hit && hit.tool === 'text') {
+          const txt = window.prompt('Текст:', hit.text || '');
+          if (txt != null) commit((drawingsRef.current ?? []).map((d) => (d.id === hit.id ? { ...d, text: txt } : d)));
+        }
+      };
+      drawHit.addEventListener('pointerdown', onDrawDown);
+      drawHit.addEventListener('pointermove', onDrawMove);
+      drawHit.addEventListener('pointerup', onDrawUp);
+      drawHit.addEventListener('dblclick', onDrawDbl);
+      syncDrawInteractivity();
+
+      // Перепроецировать фигуры на пан/зум/ресайз этой панели (как экспирации LwChart).
+      const onRange = () => drawShapes();
+      chart()?.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+      const drawRo = new ResizeObserver(() => drawShapes());
+      drawRo.observe(box);
+
+      cleanupDraw = () => {
+        drawHit.removeEventListener('pointerdown', onDrawDown);
+        drawHit.removeEventListener('pointermove', onDrawMove);
+        drawHit.removeEventListener('pointerup', onDrawUp);
+        drawHit.removeEventListener('dblclick', onDrawDbl);
+        try { chart()?.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* chart removed */ }
+        drawRo.disconnect();
+        drawSvg.parentNode?.removeChild(drawSvg);
+        drawHit.parentNode?.removeChild(drawHit);
+        drawShapesRef.current = null;
+      };
+    }
+
     return () => {
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
+      cleanupDraw?.();
       charts.forEach((ch) => ch.remove());
       tips.forEach((tp) => tp.parentNode?.removeChild(tp));
       legends.forEach((lg) => lg.parentNode?.removeChild(lg));
@@ -344,7 +749,13 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
     } else if (savedRange) {
       lead.timeScale().setVisibleLogicalRange(savedRange);
     }
+    drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs]);
+
+  // ── реагировать на изменение пропов рисования (как в LwChart.tsx) ──
+  useEffect(() => {
+    drawShapesRef.current?.();
+  }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity]);
 
   return (
     <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
@@ -353,4 +764,6 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
       ))}
     </div>
   );
-}
+});
+
+export default LwChartPanes;

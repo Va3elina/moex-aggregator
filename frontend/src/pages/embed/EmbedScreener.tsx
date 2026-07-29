@@ -11,13 +11,15 @@
  * пояснение — за ⚙. Периода нет → Shift+колесо не действует; обычное колесо
  * растит высоту (больше строк видно сразу).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { User, Building2 } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import { getOiScreener, type OiScreenerRow } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 type Clgroup = 'FIZ' | 'YUR';
 type ThresholdKey = '0' | '2' | '3' | '5';
@@ -28,6 +30,11 @@ const THRESHOLD_OPTS: { id: ThresholdKey; label: string; title: string }[] = [
   { id: '2', label: '≥2×', title: 'Движения минимум в 2× резче обычного' },
   { id: '3', label: '≥3×', title: 'Движения минимум в 3× резче обычного' },
   { id: '5', label: '≥5×', title: 'Движения минимум в 5× резче обычного' },
+];
+
+const CLGROUP_OPTS: { id: Clgroup; label: string; icon: ReactNode }[] = [
+  { id: 'FIZ', label: 'Физ', icon: <User size={14} /> },
+  { id: 'YUR', label: 'Юр', icon: <Building2 size={14} /> },
 ];
 
 const GROUP_OPTS: { id: string; label: string }[] = [
@@ -57,6 +64,9 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: OiScreenerRow) 
   const [clgroup, setClgroup] = useState<Clgroup>(() => rd('frame:embed:screener:clgroup', 'FIZ') as Clgroup);
   const [threshold, setThreshold] = useState<ThresholdKey>(() => rd('frame:embed:screener:threshold', '2') as ThresholdKey);
   const [group, setGroup] = useState<string>(() => rd('frame:embed:screener:group', 'all'));
+
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
@@ -112,15 +122,17 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: OiScreenerRow) 
           Скринер сигналов
         </span>
       }
+      toolbarUnified
       toolbar={
-        <>
-          <PillGroup<Clgroup>
-            value={clgroup}
-            options={[{ id: 'FIZ', label: 'Физ' }, { id: 'YUR', label: 'Юр' }]}
-            onChange={setClgroup}
-          />
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup<Clgroup> value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
+            <PillGroup<ThresholdKey> value={threshold} options={THRESHOLD_OPTS} onChange={setThreshold} />
+          </div>
+          <PillGroup<Clgroup> value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
           <PillGroup<ThresholdKey> value={threshold} options={THRESHOLD_OPTS} onChange={setThreshold} />
-        </>
+        </div>
       }
       more={
         <>
