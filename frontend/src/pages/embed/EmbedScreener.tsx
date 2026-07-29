@@ -46,7 +46,9 @@ const GROUP_OPTS: { id: string; label: string }[] = [
   { id: 'Крипто', label: 'Крипто' },
 ];
 
-const STATUS_RANK: Record<OiScreenerRow['status'], number> = { sharp: 0, normal: 1, illiquid: 2, nodata: 3 };
+// Сила строки для порядка и фильтра. Строки без силы (мало участников / мало
+// истории) — в конец: значения нет, ставить их в общий ряд не по чему.
+const strengthOf = (r: OiScreenerRow): number => r.ratio ?? -1;
 
 function fmtRatio(r: number): string {
   return r.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
@@ -97,15 +99,16 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: OiScreenerRow) 
     if (!rows) return [];
     const thr = Number(threshold);
     return rows
+      // Фильтр силы — ПО САМОЙ СИЛЕ, а не по статусу. Раньше он требовал ещё и
+      // status === 'sharp', и строка с силой 3,4×, не прошедшая гард
+      // материальности, пропадала из выборки «≥2×» — фильтр выглядел сломанным.
       .filter((r) =>
         (group === 'all' || r.group === group) &&
-        (thr === 0 || (r.status === 'sharp' && (r.ratio ?? 0) >= thr)),
+        (thr === 0 || strengthOf(r) >= thr),
       )
-      .sort((a, b) => {
-        const sr = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-        if (sr !== 0) return sr;
-        return (b.ratio ?? -1) - (a.ratio ?? -1);
-      });
+      // Порядок сквозной по силе, без полос по статусу: полосы ставили тихую
+      // sharp-строку выше громкой обычной, и лента противоречила колонке «Сила».
+      .sort((a, b) => strengthOf(b) - strengthOf(a));
   }, [rows, group, threshold]);
 
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';

@@ -74,9 +74,6 @@ function pluralAssets(n: number): string {
   return `${n} активов`;
 }
 
-const STATUS_RANK: Record<OiScreenerRow['status'], number> = {
-  sharp: 0, normal: 1, illiquid: 2, nodata: 3,
-};
 
 const MONO: CSSProperties = {
   fontFamily: 'var(--font-mono, ui-monospace, monospace)',
@@ -184,14 +181,23 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       (group === 'all' || r.group === group) &&
       (!onlyFav || favSet.has(r.sectype)),
     );
-    // Полосы по статусу (sharp → normal → illiquid → nodata), избранные наверх
-    // внутри полосы, внутри — по силе. sortDir = −1 → сильные сверху (дефолт).
+    // Порядок СКВОЗНОЙ по силе. Ни полос по статусу, ни подъёма избранных:
+    //  - полосы (sharp → normal → …) ставили тихую sharp-строку выше громкой
+    //    обычной, и лента противоречила колонке «Сила»; переворот порядка не
+    //    выносил наверх слабейшие — сверху оставалась та же полоса, из-за чего
+    //    сортировка по силе читалась как сломанная;
+    //  - избранные наверху разрывали ряд по силе в произвольных местах. Для
+    //    «только избранные» есть отдельный фильтр ★, он и решает эту задачу.
+    // sortDir = −1 → сильные сверху (дефолт).
     out = [...out].sort((a, b) => {
-      const sr = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (sr !== 0) return sr;
-      const fav = Number(favSet.has(b.sectype)) - Number(favSet.has(a.sectype));
-      if (fav !== 0) return fav;
-      return sortDir * ((a.ratio ?? -1) - (b.ratio ?? -1));
+      // Строки без силы держим в конце ОБЕИХ сортировок вручную: через общий
+      // ключ (ratio ?? −1) по возрастанию они всплыли бы наверх и первая
+      // страница состояла бы из «мало участников».
+      if (a.ratio == null || b.ratio == null) {
+        if (a.ratio == null && b.ratio == null) return 0;
+        return a.ratio == null ? 1 : -1;
+      }
+      return sortDir * (a.ratio - b.ratio);
     });
     return out;
   }, [rows, favorites, group, sortDir, onlyFav]);
