@@ -17,6 +17,9 @@ import {
   type Logical, type Coordinate,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
+import { captureFontScale } from './chart/chartTypography';
+
+const BASE_FONT_SIZE = 11;
 
 // value ВСЕГДА = close (для OHLC-серий тоже) — чтобы пилс последнего значения,
 // сигнатура reveal-анимации и alert-«+» (все читают def.data[].value) работали
@@ -145,8 +148,19 @@ export interface LwChartHandle {
    * (растянутые вроде brush — их точки чаще вылетают за старые, ещё не
    * обновлённые границы). syncBeforeCapture форсирует оба шага синхронно,
    * без ожидания.
+   *
+   * Дополнительно временно увеличивает layout.fontSize движка (ось/легенда/
+   * тултип) пропорционально ширине контейнера — см. captureFontScale. Обычная
+   * панель (⩽ REFERENCE_W) не меняется; полноэкранный экспорт получает
+   * увеличенный шрифт, иначе он выглядит игрушечно мелким на большом снимке.
+   * ОБЯЗАТЕЛЬНО парная вызову restoreAfterCapture — иначе live-график на
+   * странице останется с раздутым шрифтом после закрытия экспорта.
    */
   syncBeforeCapture: (width: number, height: number) => void;
+  /** Возвращает layout.fontSize к базовому значению после снятия скриншота
+   *  (см. syncBeforeCapture) — вызывается ExportModal'ом сразу после
+   *  captureChart, независимо от успеха/ошибки. */
+  restoreAfterCapture: () => void;
 }
 
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
@@ -267,7 +281,11 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       // единственный способ убрать асинхронный лаг перед html2canvas.
       if (wrapper) wrapper.style.height = `${h}px`;
       chartRef.current?.resize(w, h);
+      chartRef.current?.applyOptions({ layout: { fontSize: Math.round(BASE_FONT_SIZE * captureFontScale(w)) } });
       drawShapesRef.current?.();
+    },
+    restoreAfterCapture: () => {
+      chartRef.current?.applyOptions({ layout: { fontSize: BASE_FONT_SIZE } });
     },
   }), []);
   // §OI-3 axis-алерты: пропы через ref (смена не пересоздаёт чарт); axisInfoRef —
@@ -294,7 +312,7 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     const c = themeColors(dark);
     const chart = createChart(box, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: 11 },
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: BASE_FONT_SIZE },
       localization: {
         locale: 'ru-RU',
         // Снапшот на монтаже: категориальные графики (Сезонность) передают проп

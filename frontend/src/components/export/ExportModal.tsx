@@ -51,10 +51,15 @@ interface Props {
      *  графика) окажется смещён/обрезан/пропадёт. Вызывается ПОСЛЕ exportStyles,
      *  тоже с ожиданием rAF перед captureChart. */
     beforeCapture?: () => void;
+    /** Парный откат beforeCapture — напр. LwChart.restoreAfterCapture(): возврат
+     *  временно увеличенного под captureFontScale font-size движка обратно к
+     *  базовому. Вызывается СРАЗУ после captureChart (успех или ошибка) — live
+     *  график на странице не должен остаться с раздутым шрифтом. */
+    afterCapture?: () => void;
     onClose: () => void;
 }
 
-export default function ExportModal({ targetElement, filename, metadata, exportStyles, beforeCapture, onClose }: Props) {
+export default function ExportModal({ targetElement, filename, metadata, exportStyles, beforeCapture, afterCapture, onClose }: Props) {
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
@@ -108,7 +113,15 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
             }
 
             try {
-                const raw = await captureChart(targetElement, ac.signal);
+                let raw: HTMLCanvasElement;
+                try {
+                    raw = await captureChart(targetElement, ac.signal);
+                } finally {
+                    // Откат ДО любых await ниже — живой график не должен ждать
+                    // весь остаток pipeline с раздутым (под captureFontScale)
+                    // шрифтом дольше, чем нужно самому captureChart.
+                    afterCapture?.();
+                }
 
                 // Restore exportStyles immediately после capture (live page back to normal)
                 if (exportStyles) {
