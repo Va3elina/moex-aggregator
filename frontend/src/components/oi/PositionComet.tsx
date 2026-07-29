@@ -128,9 +128,10 @@ export default function PositionComet({
       clip: toRight
         ? `polygon(0 ${tipEdge}%, 100% 0, 100% 100%, 0 ${100 - tipEdge}%)`
         : `polygon(0 0, 100% ${tipEdge}%, 100% ${100 - tipEdge}%, 0 100%)`,
-      // От прозрачного к плотному 88% у головы: контраст держит ближняя часть
-      // следа, а дальний конец растворяется, а не обрывается.
-      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, transparent 0%, color-mix(in srgb, ${leg} 45%, transparent) 30%, color-mix(in srgb, ${leg} 88%, transparent) 100%)`,
+      // Приглушённый след: 70% у головы, как было до подкрутки контраста —
+      // плотный хвост перетягивал внимание с самой головы. Дальний конец
+      // выходит из полной прозрачности, чтобы не читался обрезом.
+      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, transparent 0%, color-mix(in srgb, ${leg} 20%, transparent) 30%, color-mix(in srgb, ${leg} 70%, transparent) 100%)`,
     };
   }
 
