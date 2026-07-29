@@ -382,7 +382,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Только фиксированное число: шапка и строки — РАЗНЫЕ grid-контейнеры, и
   // max-content посчитал бы их независимо (заголовок «СИГНАЛ» узкий, строки
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 140px 48px';
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 64px 140px 72px';
 
   // Оптическая компенсация для «Силы»: слева от числа стоит дорожка кометы
   // впритык (зазор = gap), а справа к gap прибавляется половина свободного
@@ -496,7 +496,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: 1000 }}>
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
-          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 8px 12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
             <span style={headCell}>Актив</span>
             <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг ${W.over}, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
               Позиция {groupGen}
@@ -548,7 +548,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 className="oi-screener-row"
                 style={{
                   display: 'grid', gridTemplateColumns: gridCols, gap: 16,
-                  alignItems: 'center', padding: '12px 18px 12px 15px',
+                  // Правый падинг 8, а не 18: мишень звезды доходит почти до
+                  // края карточки, промахнуться «мимо вправо» уже некуда.
+                  alignItems: 'center', padding: '12px 8px 12px 15px',
                   // 1px, а не 0.5: на дисплеях с DPR=1 полупиксельная линия
                   // рендерилась рвано — часть строк выглядела без разделителя.
                   borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.18))',
@@ -616,13 +618,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                     // 18px с падингом 6 была слишком мелкой мишенью — промах
                     // попадал по строке и открывал график вместо избранного.
                     background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                    alignSelf: 'stretch', width: '100%', minHeight: 44,
+                    alignSelf: 'stretch', width: '100%', minHeight: 48,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: 8,
                     color: isFav ? 'var(--accent)' : 'var(--text-secondary)', lineHeight: 0,
                   }}
                 >
-                  <Star size={20} fill={isFav ? 'var(--accent)' : 'none'} strokeWidth={2} />
+                  <Star size={26} fill={isFav ? 'var(--accent)' : 'none'} strokeWidth={2} />
                 </button>
               </div>
             );
