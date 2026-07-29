@@ -171,8 +171,10 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # 5. Индикатор Баффетта (/buffett)
     # ───────────────────────────────────────────────────────────────
     "buffett": {
-        "free":  {"modes": ["cap-gdp"],            "max_history_days": 365 * 5,  "custom_ranges": False},
-        "basic": {"modes": ["cap-gdp", "cap-m2"], "max_history_days": 365 * 10, "custom_ranges": False},
+        # NB: с 2026-07 индикатор полностью бесплатен — оба режима, вся история,
+        # кастомные диапазоны на всех тирах (гость мапится на free).
+        "free":  {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
+        "basic": {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
         "pro":   {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
     },
 
