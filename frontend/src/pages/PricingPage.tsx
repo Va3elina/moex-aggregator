@@ -493,7 +493,10 @@ export default function PricingPage() {
                 </div>
               )}
 
-              {/* Иконка + заголовок */}
+              {/* Иконка + заголовок.
+                  tier.description с бэка не рендерим: «Базовый доступ к сайту» /
+                  «Расширенный доступ на уровне Basic» ничего не добавляют к названию,
+                  содержание тарифа раскрывает список фич ниже. */}
               <div className="mb-4">
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
@@ -502,7 +505,6 @@ export default function PricingPage() {
                   {meta.icon}
                 </div>
                 <h3 className="text-xl font-bold text-theme-primary">{tier.title}</h3>
-                <p className="text-sm text-theme-secondary mt-1">{tier.description}</p>
               </div>
 
               {/* Цена.
