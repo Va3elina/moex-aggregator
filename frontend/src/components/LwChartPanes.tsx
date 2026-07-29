@@ -142,7 +142,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
 
   useImperativeHandle(forwardedRef, () => ({
-    syncBeforeCapture: (_w, _h) => {
+    syncBeforeCapture: () => {
       const pi = drawPaneIndexRef.current;
       if (pi != null) {
         const root = rootRef.current;
@@ -702,17 +702,30 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         apisRef.current[i].push(s);
         mapsRef.current[i].push(new Map(def.data.map((p) => [p.time, p.value])));
       }
-      // Легенда панели.
+      // Легенда панели. flex align-items:center текст съезжает вниз в PNG-экспорте
+      // (html2canvas не воспроизводит flex-центрирование текста, см. LwChart.tsx
+      // тот же фикс + #704/#196ce935) — сегмент+подпись инлайн-SVG с
+      // dominant-baseline="central" вместо flex div+span.
       const legend = legendsRef.current[i];
       if (legend) {
         while (legend.firstChild) legend.removeChild(legend.firstChild);
+        const FS = 11, GAP = 5, SEG_W = 12, SEG_H = 2.5;
+        const legTotalH = Math.ceil(FS * 1.35);
         for (const def of pane.series) {
-          const item = document.createElement('div');
-          item.style.cssText = 'display:flex;align-items:center;gap:5px';
-          const seg = document.createElement('span');
-          seg.style.cssText = 'width:12px;height:2.5px;border-radius:2px;flex:0 0 auto;background:' + rc(def.color);
-          const lbl = document.createElement('span');
-          lbl.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-primary,#F5F1E8);white-space:nowrap';
+          const w = SEG_W + GAP + Math.ceil((def.label || '').length * FS * 0.62) + 4;
+          const item = document.createElementNS(SVGNS, 'svg');
+          item.setAttribute('width', String(w));
+          item.setAttribute('height', String(legTotalH));
+          item.style.cssText = 'display:block;overflow:visible';
+          const seg = document.createElementNS(SVGNS, 'rect');
+          seg.setAttribute('x', '0'); seg.setAttribute('y', String((legTotalH - SEG_H) / 2));
+          seg.setAttribute('width', String(SEG_W)); seg.setAttribute('height', String(SEG_H));
+          seg.setAttribute('rx', '1.25'); seg.setAttribute('fill', rc(def.color));
+          const lbl = document.createElementNS(SVGNS, 'text');
+          lbl.setAttribute('x', String(SEG_W + GAP)); lbl.setAttribute('y', String(legTotalH / 2));
+          lbl.setAttribute('dominant-baseline', 'central');
+          lbl.setAttribute('font-size', String(FS)); lbl.setAttribute('font-weight', '600');
+          lbl.setAttribute('fill', 'var(--text-primary,#F5F1E8)');
           lbl.textContent = def.label || '';
           item.appendChild(seg);
           item.appendChild(lbl);
