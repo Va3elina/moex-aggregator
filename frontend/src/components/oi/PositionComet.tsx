@@ -13,7 +13,8 @@
  * Чисел в строке нет совсем (макет Вадима, 2026-07): точный перекос
  * сегодня/вчера, дневная дельта и сила — в title-подсказке.
  *
- * HTML/CSS вместо SVG: дорожка 12px (тона ног), хвост = clip-path-клин с
+ * HTML/CSS вместо SVG: дорожка 12px (тона ног) со сплошной осью по центру и
+ * штриховой вертикалью нуля, хвост = clip-path-клин с
  * градиентом «прозрачный → плотный к голове» и высотой по диаметру головы,
  * голова = круг с ободком цвета фона (отделяет её от хвоста и дорожки).
  * Цвет = нога (зелёный лонг / красный шорт). Приглушения по силе сигнала нет:
@@ -140,6 +141,7 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   // и «поле», по которому она ходит, читалось хуже самой точки.
   const trackH = Math.round(12 * s);
   const zeroH = Math.round(22 * s);
+  const lineW = s >= 1.3 ? 2 : 1;   // толщина осевых линий
 
   // Комета НЕ приглушается у тихих рядов (ratio < 2): позиция и дневной сдвиг —
   // факт, одинаково достоверный при любой силе движения, и полосу нужно читать
@@ -152,8 +154,10 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
         <div style={{ flex: 1, background: 'var(--oi-short)', opacity: 0.1 }} />
         <div style={{ flex: 1, background: 'var(--oi-green)', opacity: 0.12 }} />
       </div>
-      {/* ноль */}
-      <div style={{ position: 'absolute', left: '50%', top: CY - zeroH / 2, height: zeroH, width: s >= 1.3 ? 2 : 1, background: 'var(--text-secondary)', opacity: 0.55 }} />
+      {/* ось: сплошная линия по центру дорожки — по ней «ходит» комета */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: CY - lineW / 2, height: lineW, background: 'var(--text-secondary)', opacity: 0.5 }} />
+      {/* ноль: штриховая вертикаль */}
+      <div style={{ position: 'absolute', left: '50%', top: CY - zeroH / 2, height: zeroH, width: 0, marginLeft: -lineW / 2, borderLeft: `${lineW}px dashed var(--text-primary)`, opacity: 0.55 }} />
       {/* хвост */}
       {tail && (
         <div style={{ position: 'absolute', top: CY - headR, height: tailH, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
