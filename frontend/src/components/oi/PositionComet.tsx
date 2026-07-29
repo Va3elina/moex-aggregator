@@ -83,11 +83,11 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   const leg = long ? 'var(--oi-green)' : 'var(--oi-short)';
   const dotPct = (clamp(netPct, -100, 100) + 100) / 2;
 
-  // База 4…10px вместо 3…9: у тихих рядов (сила <2×, heat≈0) голова 3px читалась
-  // как пылинка даже на ноутбуке. Ободок 2px съедает контраст тем сильнее, чем
-  // меньше кружок, поэтому поднят именно ПОЛ диапазона, а не только потолок.
+  // База 4…7px: пол диапазона держит тихие ряды читаемыми (голова 3px читалась
+  // как пылинка, а ободок 2px съедает контраст тем сильнее, чем меньше кружок),
+  // потолок опущен с 10 до 7 — самые крупные головы забивали строку.
   const headR = ratio != null && ratioLo != null && ratioHi != null
-    ? Math.round((4 + ratioHeat(ratio, ratioLo, ratioHi) * 6) * s)
+    ? Math.round((4 + ratioHeat(ratio, ratioLo, ratioHi) * 3) * s)
     : Math.round(4 * s);
   const ring = s >= 1.3 ? 3 : 2;   // ободок «от фона» — растёт вместе с головой
 
@@ -113,7 +113,9 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
       clip: toRight
         ? `polygon(0 ${tipEdge}%, 100% 0, 100% 100%, 0 ${100 - tipEdge}%)`
         : `polygon(0 0, 100% ${tipEdge}%, 100% ${100 - tipEdge}%, 0 100%)`,
-      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, color-mix(in srgb, ${leg} 12%, transparent), color-mix(in srgb, ${leg} 70%, transparent))`,
+      // Плотнее прежних 12→70%: на своей же зелёной/красной дорожке хвост
+      // сливался с фоном, особенно у головы.
+      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, color-mix(in srgb, ${leg} 22%, transparent), color-mix(in srgb, ${leg} 88%, transparent))`,
     };
   }
 
