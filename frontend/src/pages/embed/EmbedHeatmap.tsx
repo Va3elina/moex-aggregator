@@ -12,12 +12,16 @@
  * вселенная IMOEX (/api/heatmap/imoex) или все акции (/api/heatmap/data).
  * Метрика меняет ВТОРУЮ строку в плитке (изм.% / оборот); цвет всегда по change_1d.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, type ReactNode } from 'react';
+import { Camera, Landmark, Grid3x3, Percent, BarChart3 } from 'lucide-react';
 import { getHeatmapData, getHeatmapImoex, type HeatmapResponse, type HeatmapStock } from '../../services/api';
 import { squarify, type SquarifyRect } from '../../utils/squarify';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
+
+const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
 type Universe = 'imoex' | 'all';
 type Metric = 'change' | 'vol';
@@ -27,9 +31,13 @@ const UNIVERSES: { id: Universe; label: string }[] = [
   { id: 'imoex', label: 'Индекс IMOEX' },
   { id: 'all', label: 'Все акции' },
 ];
-const METRICS: { id: Metric; label: string; title: string }[] = [
-  { id: 'change', label: 'Изм. %', title: 'Дневное изменение' },
-  { id: 'vol', label: 'Объём', title: 'Оборот за день' },
+const UNIVERSE_ICONS: Record<Universe, ReactNode> = {
+  imoex: <Landmark size={14} />,
+  all: <Grid3x3 size={14} />,
+};
+const METRICS: { id: Metric; label: string; title: string; icon: ReactNode }[] = [
+  { id: 'change', label: 'Изм. %', title: 'Дневное изменение', icon: <Percent size={14} /> },
+  { id: 'vol', label: 'Объём', title: 'Оборот за день', icon: <BarChart3 size={14} /> },
 ];
 
 // Цвет плитки — 1:1 порт getColor с десктопной HeatmapPage (earth-tone: тёмный
@@ -78,6 +86,10 @@ export default function EmbedHeatmap() {
   const [metric, setMetric] = useState<Metric>(() => rd('frame:embed:heatmap:metric', 'change') as Metric);
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
+  const [exportOpen, setExportOpen] = useState(false);
+
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
   useEffect(() => { wr('frame:embed:heatmap:universe', universe); }, [universe]);
   useEffect(() => { wr('frame:embed:heatmap:metric', metric); }, [metric]);
@@ -153,11 +165,34 @@ export default function EmbedHeatmap() {
 
   return (
     <EmbedFrame
+      toolbarUnified
       toolbar={
-        <>
-          <Dropdown<Universe> value={universe} options={UNIVERSES} onChange={setUniverse} title="Вселенная" />
-          <PillGroup<Metric> value={metric} options={METRICS} onChange={setMetric} />
-        </>
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Dropdown<Universe> value={universe} options={UNIVERSES} onChange={setUniverse} title="Вселенная" icon={UNIVERSE_ICONS[universe]} />
+            <PillGroup<Metric> value={metric} options={METRICS} onChange={setMetric} />
+          </div>
+          <Dropdown<Universe> value={universe} options={UNIVERSES} onChange={setUniverse} title="Вселенная" icon={UNIVERSE_ICONS[universe]} compact={toolbarCompact} />
+          <PillGroup<Metric> value={metric} options={METRICS} onChange={setMetric} compact={toolbarCompact} />
+        </div>
+      }
+      actions={
+        status === 'ok' && layout ? (
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            title="Экспорт графика"
+            aria-label="Экспорт графика"
+            style={{
+              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
+              cursor: 'pointer', flexShrink: 0, padding: 0,
+            }}
+          >
+            <Camera size={15} />
+          </button>
+        ) : undefined
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
@@ -214,6 +249,19 @@ export default function EmbedHeatmap() {
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        {exportOpen && boxRef.current && (
+          <Suspense fallback={null}>
+            <ExportModal
+              targetElement={boxRef.current}
+              filename={`frame-heatmap-${universe}`}
+              metadata={{
+                title: 'Карта рынка',
+                details: [universe === 'imoex' ? 'Индекс IMOEX' : 'Все акции', METRICS.find((m) => m.id === metric)?.label].filter((x): x is string => !!x),
+              }}
+              onClose={() => setExportOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
     </EmbedFrame>
   );

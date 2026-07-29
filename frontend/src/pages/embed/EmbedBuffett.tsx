@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Scale } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getBuffettCapGdp,
@@ -21,6 +21,7 @@ import { FormatSection, applyFormat, useChartFormat, type ChartFormat } from './
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 type Timeframe = '1d' | '1w' | '1m';
@@ -124,6 +125,10 @@ export default function EmbedBuffett() {
 
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+  // Рисование + экспорт графика (см. useDrawTools.tsx) — рыночный индикатор без
+  // инструмента → статичный ключ персиста (не per-instrument, как у ОИ).
+  const draw = useDrawTools('frame:embed:buffett:draw');
+  const lwChartRef = useRef<LwChartHandle>(null);
 
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
@@ -245,6 +250,7 @@ export default function EmbedBuffett() {
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
         </div>
       }
+      actions={<DrawExportActions draw={draw} visible={status === 'ok' && lwSeries.length > 0} />}
       more={
         <>
           {viewMode === 'cap-gdp' && (
@@ -266,16 +272,42 @@ export default function EmbedBuffett() {
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && lwSeries.length > 0 && (
           <LwChart
+            ref={lwChartRef}
             series={lwSeries}
             height={chartH}
             dark={dark}
             fitKey={`${viewMode}|${timeframe}|${forecastTarget ?? 'off'}`}
             tickFmt={monthsYearsTickFmt}
+            drawActive={draw.drawMode}
+            drawTool={draw.drawTool}
+            drawings={draw.drawings}
+            onDrawingsChange={draw.setDrawings}
+            drawColor={draw.drawColor}
+            drawWidth={draw.drawWidth}
+            drawDash={draw.drawDash}
+            drawOpacity={draw.drawOpacity}
+            selectedDrawId={draw.selectedDrawId}
+            onSelectDraw={draw.setSelectedDrawId}
+            onToolReset={draw.onToolReset}
+            drawMagnet={draw.drawMagnet}
+            drawHidden={draw.drawHidden}
+            drawLocked={draw.drawLocked}
           />
         )}
+        <DrawToolsOverlay draw={draw} visible={status === 'ok' && lwSeries.length > 0} />
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        <ChartExportModal
+          draw={draw}
+          targetElement={chartBoxRef.current}
+          lwChartRef={lwChartRef}
+          filename={`frame-buffett-${viewMode}`}
+          metadata={{
+            title: 'Индикатор Баффетта',
+            details: [viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2', TIMEFRAMES.find((t) => t.id === timeframe)?.label].filter((x): x is string => !!x),
+          }}
+        />
       </div>
     </EmbedFrame>
   );

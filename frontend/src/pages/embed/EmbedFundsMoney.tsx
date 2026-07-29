@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
@@ -25,6 +25,7 @@ import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -144,6 +145,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+  // Рисование + экспорт графика (см. useDrawTools.tsx) — персист per-категория
+  // (данные категорий несопоставимы, как per-инструмент у ОИ).
+  const draw = useDrawTools(`frame:embed:funds:draw:${category}`);
+  const lwChartRef = useRef<LwChartHandle>(null);
 
   // Резиновая высота графика (как в Баффетте).
   const chartBoxRef = useRef<HTMLDivElement>(null);
@@ -229,6 +234,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           )}
         </div>
       }
+      actions={<DrawExportActions draw={draw} visible={st === 'ok' && lwSeries.length > 0} />}
       more={viewMode === 'aum' ? (
         <>
           <DrawerSection label="Отображение">
@@ -241,6 +247,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {st === 'ok' && lwSeries.length > 0 && (
           <LwChart
+            ref={lwChartRef}
             series={lwSeries}
             height={chartH}
             dark={dark}
@@ -249,11 +256,36 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             legendItems={viewMode === 'flows'
               ? [{ label: 'Приток', color: 'var(--oi-green)' }, { label: 'Отток', color: 'var(--oi-red)' }]
               : undefined}
+            drawActive={draw.drawMode}
+            drawTool={draw.drawTool}
+            drawings={draw.drawings}
+            onDrawingsChange={draw.setDrawings}
+            drawColor={draw.drawColor}
+            drawWidth={draw.drawWidth}
+            drawDash={draw.drawDash}
+            drawOpacity={draw.drawOpacity}
+            selectedDrawId={draw.selectedDrawId}
+            onSelectDraw={draw.setSelectedDrawId}
+            onToolReset={draw.onToolReset}
+            drawMagnet={draw.drawMagnet}
+            drawHidden={draw.drawHidden}
+            drawLocked={draw.drawLocked}
           />
         )}
+        <DrawToolsOverlay draw={draw} visible={st === 'ok' && lwSeries.length > 0} />
         {st === 'loading' && <EmbedMsg text="Загрузка…" />}
         {st === 'empty' && <EmbedMsg text="Нет данных" />}
         {st === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        <ChartExportModal
+          draw={draw}
+          targetElement={chartBoxRef.current}
+          lwChartRef={lwChartRef}
+          filename={`frame-funds-${category}-${viewMode}`}
+          metadata={{
+            title: 'Деньги в фондах',
+            details: [CATS.find((c) => c.id === category)?.label, viewMode === 'flows' ? 'Потоки' : 'СЧА'].filter((x): x is string => !!x),
+          }}
+        />
       </div>
     </EmbedFrame>
   );

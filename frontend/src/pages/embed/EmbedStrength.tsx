@@ -3,16 +3,17 @@
  * ДВА связанных Lightweight-графика как один индикатор — сверху индекс
  * (IMOEX ₽ / RTSI $), снизу breadth (% акций выше EMA) линией-областью или
  * бинарной гистограммой (зел ≥50% / крас <50%). Между панелями: общая ось
- * времени (пан/зум синхронны), общий кроссхэйр, ЕДИНЫЙ тултип с обоими
- * значениями; ось дат только на нижней.
+ * времени (пан/зум синхронны), общий кроссхэйр; курсорный тултип отключён
+ * (showTooltip=false — легенда сверху панелей уже даёт значения, Вадим);
+ * ось дат только на нижней.
  *
  * Вся история грузится сразу; период меняется перетаскиванием/зумом оси
  * (кнопок периода нет — как в TradingView/макете). EMA и показ индекса — в ⚙.
  * Виджет целиком под PRO-токеном, поэтому тир-гейтинга нет.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LineChart, BarChart3, Landmark, Grid3x3 } from 'lucide-react';
-import LwChartPanes, { type LwPane } from '../../components/LwChartPanes';
+import LwChartPanes, { type LwPane, type LwChartPanesHandle } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
@@ -20,6 +21,7 @@ import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: number; breadth: number; imoex: number }[];
@@ -59,6 +61,12 @@ export default function EmbedStrength() {
   const dark = theme !== 'editorial-light';
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+  const chartBoxRef = useRef<HTMLDivElement>(null);
+  // Рисование + экспорт (см. useDrawTools.tsx) — статичный ключ, рыночный
+  // индикатор без инструмента. Рисуем всегда на ПЕРВОЙ панели (drawPaneIndex=0):
+  // индекс, если showPrice включён, иначе breadth — см. LwChartPanes.
+  const draw = useDrawTools('frame:embed:strength:draw');
+  const lwChartRef = useRef<LwChartPanesHandle>(null);
 
   const [ema, setEma] = useState<Ema>(() => (Number(rd('frame:embed:strength:ema', '200')) || 200) as Ema);
   const [chartMode, setChartMode] = useState<ChartMode>(() => rd('frame:embed:strength:chartMode', 'histogram') as ChartMode);
@@ -184,6 +192,7 @@ export default function EmbedStrength() {
           <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
         </div>
       }
+      actions={<DrawExportActions draw={draw} visible={status === 'ok' && panes.length > 0} />}
       more={
         <>
           <DrawerSection label="Скользящая (EMA)">
@@ -199,18 +208,46 @@ export default function EmbedStrength() {
         </>
       }
     >
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+      <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {status === 'ok' && panes.length > 0 && (
           <LwChartPanes
+            ref={lwChartRef}
             panes={panes}
             dark={dark}
             fitKey={`${universe}|${ema}|${showPrice}`}
             initialBars={INITIAL_BARS}
+            showTooltip={false}
+            drawPaneIndex={0}
+            drawActive={draw.drawMode}
+            drawTool={draw.drawTool}
+            drawings={draw.drawings}
+            onDrawingsChange={draw.setDrawings}
+            drawColor={draw.drawColor}
+            drawWidth={draw.drawWidth}
+            drawDash={draw.drawDash}
+            drawOpacity={draw.drawOpacity}
+            selectedDrawId={draw.selectedDrawId}
+            onSelectDraw={draw.setSelectedDrawId}
+            onToolReset={draw.onToolReset}
+            drawMagnet={draw.drawMagnet}
+            drawHidden={draw.drawHidden}
+            drawLocked={draw.drawLocked}
           />
         )}
+        <DrawToolsOverlay draw={draw} visible={status === 'ok' && panes.length > 0} />
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        <ChartExportModal
+          draw={draw}
+          targetElement={chartBoxRef.current}
+          lwChartRef={lwChartRef}
+          filename={`frame-strength-${universe}`}
+          metadata={{
+            title: 'Сила рынка',
+            details: [currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX', `EMA ${ema}`].filter((x): x is string => !!x),
+          }}
+        />
       </div>
     </EmbedFrame>
   );

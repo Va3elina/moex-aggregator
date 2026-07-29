@@ -7,8 +7,9 @@
  * getCbrFlows(type) — единственный fetch-триггер. Период и категории — клиентская
  * нарезка (slice / filter), без обращения к API.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Camera } from 'lucide-react';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../../components/cbr/cbrCategoryInfo';
@@ -19,6 +20,8 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, Checklist } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+
+const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
 type PeriodFilter = '1y' | '3y' | 'all';
@@ -52,6 +55,7 @@ export default function EmbedCbrFlows() {
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => getDefaultHiddenCategories(type));
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => { wr('frame:embed:cbr:period', period); }, [period]);
 
@@ -123,6 +127,23 @@ export default function EmbedCbrFlows() {
           <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
+      actions={
+        status === 'ok' && data ? (
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            title="Экспорт графика"
+            aria-label="Экспорт графика"
+            style={{
+              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
+              cursor: 'pointer', flexShrink: 0, padding: 0,
+            }}
+          >
+            <Camera size={15} />
+          </button>
+        ) : undefined
+      }
       more={
         <>
           {data && data.categories.length > 0 && (
@@ -162,6 +183,19 @@ export default function EmbedCbrFlows() {
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        {exportOpen && boxRef.current && (
+          <Suspense fallback={null}>
+            <ExportModal
+              targetElement={boxRef.current}
+              filename={`frame-cbr-flows-${type}-${period}`}
+              metadata={{
+                title: 'Поток капитала',
+                details: [TYPES.find((t) => t.id === type)?.label, PERIODS.find((p) => p.id === period)?.label].filter((x): x is string => !!x),
+              }}
+              onClose={() => setExportOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
     </EmbedFrame>
   );
