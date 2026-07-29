@@ -105,11 +105,15 @@ export default function PositionComet({
   //
   // Высота хвоста ПРИВЯЗАНА к диаметру головы (была фиксированные 12px): у
   // слабого сигнала голова 6px, и клин в 12px торчал из неё вдвое толще
-  // кружка. Теперь основание клина = диаметр головы, кончик = 35% от него,
-  // поэтому комета выглядит одинаково при любом размере.
+  // кружка. Теперь основание клина = диаметр головы, кончик почти острый (12%
+  // высоты), поэтому комета выглядит одинаково при любом размере.
+  //
+  // Кончик 35% высоты + непрозрачность 22% на самом конце читались как ОБРЕЗ:
+  // хвост обрывался тупым торцом. Клин сведён почти в точку, а градиент выходит
+  // из полной прозрачности — след сходит на нет, как у настоящей кометы.
   const delta = netPctPrev != null ? netPct - netPctPrev : null;
   const tailH = headR * 2;
-  const TIP = 0.35;                        // доля высоты, до которой сходит клин
+  const TIP = 0.12;                        // доля высоты, до которой сходит клин
   const tipEdge = (100 - TIP * 100) / 2;   // 32.5% / 67.5%
   let tail: { w: string; ml: string | number; clip: string; bg: string } | null = null;
   if (delta != null && netPctPrev != null && delta !== 0) {
@@ -124,9 +128,9 @@ export default function PositionComet({
       clip: toRight
         ? `polygon(0 ${tipEdge}%, 100% 0, 100% 100%, 0 ${100 - tipEdge}%)`
         : `polygon(0 0, 100% ${tipEdge}%, 100% ${100 - tipEdge}%, 0 100%)`,
-      // Плотнее прежних 12→70%: на своей же зелёной/красной дорожке хвост
-      // сливался с фоном, особенно у головы.
-      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, color-mix(in srgb, ${leg} 22%, transparent), color-mix(in srgb, ${leg} 88%, transparent))`,
+      // От прозрачного к плотному 88% у головы: контраст держит ближняя часть
+      // следа, а дальний конец растворяется, а не обрывается.
+      bg: `linear-gradient(to ${toRight ? 'right' : 'left'}, transparent 0%, color-mix(in srgb, ${leg} 45%, transparent) 30%, color-mix(in srgb, ${leg} 88%, transparent) 100%)`,
     };
   }
 
