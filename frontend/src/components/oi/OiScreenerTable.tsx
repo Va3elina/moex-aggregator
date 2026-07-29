@@ -191,18 +191,15 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   }, [rows, favorites, group, sortDir, onlyFav]);
 
   // Калибровка визуальных кодировок «по дню»: размах ×N sharp-строк (размер
-  // головы кометы + градиент цвета числа) и максимум |Δ п.п.| (длина хвоста).
+  // головы кометы + градиент цвета числа). Длина хвоста не нормируется — она
+  // геометрическая, расстояние по шкале от «вчера» к сегодня.
   // Считается по ВИДИМОЙ выборке — фильтр категории меняет и калибровку,
   // строки сравниваются с соседями по экрану.
   const stats = useMemo(() => {
     const sharpRatios = visible.filter((r) => r.status === 'sharp' && r.ratio != null).map((r) => r.ratio!);
-    const deltas = visible
-      .filter((r) => r.net_pct != null && r.net_pct_prev != null)
-      .map((r) => Math.abs(r.net_pct! - r.net_pct_prev!));
     return {
       ratioLo: sharpRatios.length ? Math.min(...sharpRatios) : null,
       ratioHi: sharpRatios.length ? Math.max(...sharpRatios) : null,
-      maxAbsDelta: deltas.length ? Math.max(...deltas) : null,
     };
   }, [visible]);
 
@@ -597,7 +594,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                     ratio={r.ratio}
                     ratioLo={stats.ratioLo}
                     ratioHi={stats.ratioHi}
-                    maxAbsDelta={stats.maxAbsDelta}
                     prevLabel={W.prev}
                     deltaLabel={W.over}
                   />
