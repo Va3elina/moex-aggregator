@@ -1337,6 +1337,10 @@
 .oi-screener-row:hover {
   background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
+/* Звезда избранного: мишень на всю высоту строки, под курсором видно её границы */
+.oi-screener-fav:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
 
 /* === OI variant palette ===
    Шесть вариантов в нижнем ряду OI-кнопок имели hardcoded неон (#FFB020,
