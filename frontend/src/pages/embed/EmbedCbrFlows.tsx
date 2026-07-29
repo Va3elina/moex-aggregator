@@ -10,7 +10,9 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Camera } from 'lucide-react';
-import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import StackedBidirectionalHistogram, {
+  type StackedBidirectionalHistogramHandle,
+} from '../../components/cbr/StackedBidirectionalHistogram';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../../components/cbr/cbrCategoryInfo';
 import { getDefaultHiddenCategories } from '../../components/cbr/cbrDefaultVisibility';
@@ -107,6 +109,12 @@ export default function EmbedCbrFlows() {
   };
 
   const boxRef = useRef<HTMLDivElement>(null);
+  // Ref на гистограмму — для settleForCapture() перед PNG-экспортом (см.
+  // StackedBidirectionalHistogramHandle): без него export сразу после
+  // «Развернуть»/смены периода мог захватить кадр с недоигранной
+  // reveal-анимацией (пустые бары) и/или устаревшей шириной контейнера
+  // (слипшиеся X-подписи дат).
+  const histogramRef = useRef<StackedBidirectionalHistogramHandle>(null);
   const [chartH, setChartH] = useState(300);
   useEffect(() => {
     const el = boxRef.current;
@@ -172,6 +180,7 @@ export default function EmbedCbrFlows() {
       <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && data && (
           <StackedBidirectionalHistogram
+            ref={histogramRef}
             periods={visiblePeriods}
             categories={visibleCategories}
             allPeriods={data.periods}
@@ -192,6 +201,7 @@ export default function EmbedCbrFlows() {
                 title: 'Поток капитала',
                 details: [TYPES.find((t) => t.id === type)?.label, PERIODS.find((p) => p.id === period)?.label].filter((x): x is string => !!x),
               }}
+              beforeCapture={() => histogramRef.current?.settleForCapture()}
               onClose={() => setExportOpen(false)}
             />
           </Suspense>

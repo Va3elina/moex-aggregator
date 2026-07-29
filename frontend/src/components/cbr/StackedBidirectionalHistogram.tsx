@@ -16,7 +16,7 @@
  * с aspect ratio viewBox vs container, которое раньше центрировало content.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
 import { getCategoryShortLabel } from './cbrCategoryInfo';
@@ -50,6 +50,19 @@ interface Props {
   allPeriods?: CbrFlowsPeriod[];
 }
 
+/**
+ * Императивный handle — по образцу LwChartHandle.syncBeforeCapture: PNG-экспорт
+ * (html2canvas) может снять скриншот ДО того, как reveal-анимация (animProgress)
+ * и/или ResizeObserver-замер контейнера (containerW) устаканились — напр. если
+ * export кликнули сразу после «Развернуть» в fullscreen. В файл попадают бары
+ * высотой ~0% и/или X-подписи дат, посчитанные под старую (узкую) ширину панели
+ * и потому налезающие друг на друга в НОВОЙ (широкой) fullscreen-области.
+ * ExportModal вызывает settleForCapture() в beforeCapture ПЕРЕД captureChart.
+ */
+export interface StackedBidirectionalHistogramHandle {
+  settleForCapture: () => void;
+}
+
 interface HoverState {
   periodIdx: number;
   mouseX: number;
@@ -77,14 +90,14 @@ function periodVolume(p: CbrFlowsPeriod, categories: string[]): number {
   return Math.max(pos, neg);
 }
 
-export default function StackedBidirectionalHistogram({
+const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHandle, Props>(function StackedBidirectionalHistogram({
   periods,
   categories,
   height,
   loading,
   animTrigger,
   allPeriods,
-}: Props) {
+}, ref) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   // Chart-контейнер (зона ПОД легендой) — для клампа тултипа в plot-коридоре.
@@ -157,6 +170,10 @@ export default function StackedBidirectionalHistogram({
     setAnimatedKey(animKey);
     setAnimProgress(new Array(periods.length).fill(0));
   }
+  // rafRef хранит ID текущего кадра СНАРУЖИ эффекта — нужен settleForCapture
+  // (imperative handle ниже), чтобы отменить цикл и не дать следующему tick()
+  // перезаписать принудительно выставленный progress=1 значением помельче.
+  const rafRef = useRef(0);
   useEffect(() => {
     if (periods.length === 0) return;
     setAnimProgress(new Array(periods.length).fill(0));
@@ -165,11 +182,11 @@ export default function StackedBidirectionalHistogram({
     const totalStagger = Math.min(800, periods.length * 70);
     const perBarDuration = 900;
     const totalDuration = totalStagger + perBarDuration;
-    let raf = 0;
     const tick = (now: number) => {
       const elapsed = now - start;
       if (elapsed >= totalDuration) {
         setAnimProgress(new Array(periods.length).fill(1));
+        rafRef.current = 0;
         return;
       }
       setAnimProgress(
@@ -180,12 +197,29 @@ export default function StackedBidirectionalHistogram({
           return 1 - Math.pow(1 - t, 4);
         }),
       );
-      raf = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey]);
+
+  // Экспорт-хук: обрывает reveal-wave и досрочно доводит все бары до progress=1,
+  // а заодно пере-читает РЕАЛЬНУЮ ширину контейнера в обход ResizeObserver —
+  // после fullscreen-ресайза колбэк ResizeObserver может не успеть отработать
+  // до html2canvas, и pad/шрифт/число X-меток посчитаются под старую (узкую)
+  // ширину, а бары ещё не докрашены. Мгновенный jump не виден пользователю —
+  // ExportModal вызывает это ДО показа canvas, живой экран не подглядывает.
+  useImperativeHandle(ref, () => ({
+    settleForCapture: () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      setAnimProgress(new Array(periods.length).fill(1));
+      const el = containerRef.current;
+      const w = el?.getBoundingClientRect().width;
+      if (w && w > 0) setContainerW(Math.round(w));
+    },
+  }), [periods.length]);
   // Y-axis симметричный max
   const yMax = useMemo(() => {
     if (!periods.length) return 10;
@@ -654,4 +688,6 @@ export default function StackedBidirectionalHistogram({
       })()}
     </div>
   );
-}
+});
+
+export default StackedBidirectionalHistogram;
