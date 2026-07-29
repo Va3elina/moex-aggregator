@@ -36,6 +36,21 @@ import AnnotationCanvas, {
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 
+/** Ждать N кадров подряд (не N независимых rAF-промисов запущенных разом —
+ *  каждый следующий rAF планируется ТОЛЬКО после того, как разрешился предыдущий).
+ *  Один кадр гарантирует лишь то, что колбэк выполнится ДО следующей отрисовки —
+ *  сам РЕЗУЛЬТАТ синхронной DOM/canvas-мутации может докраситься только к кадру
+ *  ПОСЛЕ этого. См. использование в mount-эффекте ниже. */
+function waitFrames(n: number): Promise<void> {
+    return new Promise((resolve) => {
+        const step = (left: number) => {
+            if (left <= 0) { resolve(); return; }
+            requestAnimationFrame(() => step(left - 1));
+        };
+        step(n);
+    });
+}
+
 interface Props {
     targetElement: HTMLElement;
     filename: string;
@@ -100,16 +115,22 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     oldStyles.set(prop, targetElement.style.getPropertyValue(prop));
                     targetElement.style.setProperty(prop, val);
                 }
-                await new Promise<void>(r => requestAnimationFrame(() => r()));
+                await waitFrames(2);
             }
 
             // Форс-синк движка/рисунков под РЕАЛЬНЫЙ текущий размер targetElement —
             // убирает асинхронный лаг ResizeObserver→state→рендер (см. beforeCapture
-            // doc выше). rAF-ожидание — чтобы прямая DOM-мутация внутри успела
-            // отрисоваться до захвата.
+            // doc выше). ДВА rAF, не один: syncBeforeCapture в LwChart/LwChartPanes
+            // теперь ещё и applyOptions({layout:{fontSize}}) (captureFontScale) —
+            // lightweight-charts красит canvas асинхронно через свой внутренний
+            // rAF-scheduler, и один кадр иногда не успевал долиться до html2canvas:
+            // осевая панель уже получала новую ширину под больший шрифт, а сам
+            // plot-canvas — ещё старую, экспорт получался с разъехавшимися
+            // осью/сеткой (осевые цифры "сползали" в нижнюю половину кадра).
+            // Поймано вживую с частотой ~1 из 3 попыток на реальных данных.
             if (beforeCapture) {
                 beforeCapture();
-                await new Promise<void>(r => requestAnimationFrame(() => r()));
+                await waitFrames(2);
             }
 
             try {
