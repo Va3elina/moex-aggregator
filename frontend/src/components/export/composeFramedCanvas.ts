@@ -17,7 +17,8 @@ import type { FrameOptions } from './types';
 const DEFAULT_PADDING = 18;
 const SITE_URL = 'таймфрейм.рф';
 
-// Layout constants — все в LOGICAL pixels (умножаются на DPR в конце).
+// Layout constants — БАЗОВЫЕ значения в LOGICAL pixels при chartW=REFERENCE_W
+// (умножаются на DPR и на layoutScale в конце, см. computeLayoutScale ниже).
 // Single-column header hierarchy: primary (asset/title) → subtitle (context).
 // HEADER_HEIGHT = primary(28) + gap(6) + subtitle(15) ≈ 49 → 50 (минимум air).
 // Поля/хедер/футер ужаты, чтобы сам график занимал больше площади кадра.
@@ -30,6 +31,18 @@ const PRIMARY_FONT_SIZE = 28;
 const SUBTITLE_FONT_SIZE = 15;
 const TICKER_FONT_SIZE = 14;
 const FOOTER_FONT_SIZE = 14;
+
+// Ширина, при которой все константы выше выглядят «как задумано» (обычная
+// панель песочницы/карточка на сайте). Полноэкранный экспорт (Развернуть →
+// весь экран песочницы) снимает элемент в разы шире — без масштабирования
+// header/footer текст оставался фиксированных 28/15/14px и выглядел игрушечно
+// мелким на большом изображении (Вадим, скрин «текст очень мелкий на фото»).
+// Масштаб растёт линейно с шириной графика; вниз не клампим (< REFERENCE_W
+// уже выглядит корректно на всех текущих SIZE_BY_TYPE панелях — не трогаем).
+const REFERENCE_W = 900;
+function computeLayoutScale(chartW: number, dpr: number): number {
+    return Math.max(1, chartW / (REFERENCE_W * dpr));
+}
 
 const FONT_FAMILY = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
 
@@ -48,11 +61,17 @@ export function composeFramedCanvas(
     const chartW = chartCanvas.width;
     const chartH = chartCanvas.height;
 
-    const sp = padding * dpr;
-    const headerH = meta ? HEADER_HEIGHT * dpr : 0;
-    const headerGap = meta ? HEADER_GAP * dpr : 0;
-    const footerH = FOOTER_HEIGHT * dpr;
-    const footerGap = FOOTER_GAP * dpr;
+    // layoutScale растёт для широких снимков (полноэкранный экспорт) — см.
+    // computeLayoutScale. sc заменяет dpr как множитель везде ниже, где раньше
+    // был просто dpr: header/footer/padding остаются пропорциональны РЕАЛЬНОМУ
+    // размеру снимка, а не только retina-плотности экрана.
+    const sc = dpr * computeLayoutScale(chartW, dpr);
+
+    const sp = padding * sc;
+    const headerH = meta ? HEADER_HEIGHT * sc : 0;
+    const headerGap = meta ? HEADER_GAP * sc : 0;
+    const footerH = FOOTER_HEIGHT * sc;
+    const footerGap = FOOTER_GAP * sc;
 
     // Total frame: padding + header + gap + chart + gap + footer + padding
     const totalW = chartW + sp * 2;
@@ -71,7 +90,7 @@ export function composeFramedCanvas(
 
     // Render header (если есть metadata)
     if (meta) {
-        drawHeader(ctx, meta, sp, sp, totalW - sp * 2, headerH, dpr, textColor, textSecondary, accent);
+        drawHeader(ctx, meta, sp, sp, totalW - sp * 2, headerH, sc, textColor, textSecondary, accent);
     }
 
     // Center chart horizontally, position vertically after header
@@ -81,11 +100,11 @@ export function composeFramedCanvas(
 
     // Watermark (Free tier) — большая полупрозрачная надпись поверх chart area
     if (options.watermark) {
-        drawWatermark(ctx, chartX, chartY, chartW, chartH, dpr);
+        drawWatermark(ctx, chartX, chartY, chartW, chartH, sc);
     }
 
     // Render footer (всегда — site url + date)
-    drawFooter(ctx, sp, totalH - sp - footerH, totalW - sp * 2, footerH, dpr, textSecondary);
+    drawFooter(ctx, sp, totalH - sp - footerH, totalW - sp * 2, footerH, sc, textSecondary);
 
     return out;
 }

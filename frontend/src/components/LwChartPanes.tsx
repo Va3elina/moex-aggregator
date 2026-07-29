@@ -254,7 +254,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Строки ВСЕХ панелей на этой дате (лукап по time-Map'ам). showTooltip=false
         // (Сила рынка) — курсорный тултип не строим вообще, но кроссхэйр-синк ниже
-        // (setCrosshairPosition на соседей) остаётся активным.
+        // (setCrosshairPosition на соседей) должен остаться активным независимо
+        // от тултипа — раньше ранний return по `!any` (всегда true при выключенном
+        // тултипе) обрывал функцию ДО синка, и соседняя панель не получала кроссхэйр.
         while (tip.firstChild) tip.removeChild(tip.firstChild);
         let any = false;
         if (showTooltipRef.current) {
@@ -279,16 +281,19 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Скрыть тултипы неактивных панелей, кроссхэйр — на соседей.
         tips.forEach((tp, j) => { if (j !== i) tp.style.display = 'none'; });
-        if (!any) { tip.style.display = 'none'; return; }
-        tip.style.display = 'block';
-        const box = boxes[i];
-        const w = box.clientWidth, tw = tip.offsetWidth;
-        // §R2-25: флип по середине ПОЛЯ (без правой оси). Левая ось скрыта →
-        // координаты param.point совпадают с боксом, перевод не нужен.
-        const paneW = chart.timeScale().width() || w;
-        const rawLeft = param.point.x > paneW / 2 ? param.point.x - tw - 16 : param.point.x + 16;
-        tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
-        tip.style.top = Math.max(6, param.point.y - 8) + 'px';
+        if (!any) {
+          tip.style.display = 'none';
+        } else {
+          tip.style.display = 'block';
+          const box = boxes[i];
+          const w = box.clientWidth, tw = tip.offsetWidth;
+          // §R2-25: флип по середине ПОЛЯ (без правой оси). Левая ось скрыта →
+          // координаты param.point совпадают с боксом, перевод не нужен.
+          const paneW = chart.timeScale().width() || w;
+          const rawLeft = param.point.x > paneW / 2 ? param.point.x - tw - 16 : param.point.x + 16;
+          tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
+          tip.style.top = Math.max(6, param.point.y - 8) + 'px';
+        }
         suppress = true;
         try {
           charts.forEach((other, j) => {

@@ -198,18 +198,38 @@ export default function EmbedHeatmap() {
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {status === 'ok' && layout && (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            {layout.labels.map((l) => (
-              <div
-                key={l.name}
-                style={{
-                  position: 'absolute', left: l.x + 4, top: l.y + 2, width: Math.max(0, l.w - 8),
-                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
-                  color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}
-              >
-                {l.name}
-              </div>
-            ))}
+            {layout.labels.map((l) => {
+              const w = Math.max(0, l.w - 8);
+              return (
+                // Подпись сектора обрезалась СНИЗУ в PNG-экспорте (live браузер —
+                // нет), причём не для всех секторов сразу (Финансы ок, Нефть и
+                // газ/Металлы — нет) при абсолютно идентичной геометрии/стилях
+                // соседних label-div — похоже на content-зависимый глюк меры
+                // текста html2canvas, а не на реальный overflow/line-height (тот
+                // фикс не помог). Как и с легендой/метками экспираций в
+                // LwChart.tsx — уходим от HTML div+line-height на инлайн-SVG
+                // <text dominant-baseline>: геометрическая инструкция, браузер
+                // и html2canvas кладут её идентично независимо от контента.
+                <svg
+                  key={l.name}
+                  style={{ position: 'absolute', left: l.x + 4, top: l.y + 2, overflow: 'visible' }}
+                  width={w}
+                  height={13}
+                >
+                  <text
+                    x={0}
+                    y={6.5}
+                    dominantBaseline="central"
+                    fontSize={10}
+                    fontWeight={600}
+                    style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                    fill="var(--text-secondary)"
+                  >
+                    {l.name}
+                  </text>
+                </svg>
+              );
+            })}
             {layout.tiles.map((t) => {
               const st = t.data;
               const ch = st.change_1d ?? 0;
