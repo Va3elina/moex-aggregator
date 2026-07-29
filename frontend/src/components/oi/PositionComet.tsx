@@ -4,8 +4,8 @@
  * Ось перекоса ФИКСИРОВАНА −100…+100 (ноль по центру, слева шорт, справа
  * лонг) — строки сравнимы глазами. Три величины закодированы:
  *   • X головы     = ГДЕ стоит толпа сейчас (у края = «полный лонг/шорт»);
- *   • длина хвоста = НА СКОЛЬКО сдвинулись за день (нормирована на максимум
- *     |Δ п.п.| видимой выборки — maxAbsDelta);
+ *   • длина хвоста = НА СКОЛЬКО сдвинулись за день: клин тянется от точки
+ *     «вчера» к голове ПО САМОЙ ШКАЛЕ, поэтому резкий сдвиг виден резким;
  *   • размер головы = сила ×N, нормированная на фактический размах дня
  *     (ratioLo…ratioHi). Абсолютная шкала «2×…7×» не различала реальный
  *     разброс дня 2,9…4,3× — радиусы выходили почти одинаковыми.
@@ -35,8 +35,6 @@ interface Props {
   /** Мин/макс ×N среди видимых sharp-строк — калибровка головы «по дню». */
   ratioLo?: number | null;
   ratioHi?: number | null;
-  /** Максимум |Δ п.п.| среди видимых строк — калибровка длины хвоста. */
-  maxAbsDelta?: number | null;
   /** Подписи окна в подсказке: у среднесрочной ленты хвост тянется не от
    *  «вчера», а от точки 14 торговых дней назад — врать в тексте нельзя. */
   prevLabel?: string;            // 'вчера' | '2 недели назад'
@@ -75,7 +73,7 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
 }
 
 export default function PositionComet({
-  netPct, netPctPrev, ratio, ratioLo, ratioHi, maxAbsDelta,
+  netPct, netPctPrev, ratio, ratioLo, ratioHi,
   prevLabel = 'вчера', deltaLabel = 'за день',
 }: Props) {
   const s = cometScale(useViewportWidth());
@@ -98,8 +96,12 @@ export default function PositionComet({
     : Math.round(4 * s);
   const ring = s >= 1.3 ? 3 : 2;   // ободок «от фона» — растёт вместе с головой
 
-  // Хвост: клин от «вчера» к голове, длина по |Δ п.п.| относительно самого
-  // подвижного видимого ряда (10…36px — минимум, чтобы микро-сдвиг читался).
+  // Хвост: клин ОТ ТОЧКИ «вчера» К голове — длина = фактическое расстояние по
+  // самой шкале, а не нормированная величина. Прежняя нормировка на максимум
+  // |Δ| выборки зажимала хвост в 10…36px: сдвиг 77,7 → 42,7 (17% ширины
+  // дорожки, ~170px) выглядел таким же коротким огрызком, как сдвиг на 2 п.п.,
+  // и «резкое движение» в тексте не подтверждалось картинкой. Минимум 10px
+  // сохранён, чтобы микро-сдвиг не пропадал совсем.
   //
   // Высота хвоста ПРИВЯЗАНА к диаметру головы (была фиксированные 12px): у
   // слабого сигнала голова 6px, и клин в 12px торчал из неё вдвое толще
@@ -109,14 +111,16 @@ export default function PositionComet({
   const tailH = headR * 2;
   const TIP = 0.35;                        // доля высоты, до которой сходит клин
   const tipEdge = (100 - TIP * 100) / 2;   // 32.5% / 67.5%
-  let tail: { px: number; ml: number; clip: string; bg: string } | null = null;
-  if (delta != null && delta !== 0) {
-    const maxD = maxAbsDelta || Math.abs(delta);
-    const px = Math.round((10 + 26 * clamp(Math.abs(delta) / maxD, 0, 1)) * s);
+  let tail: { w: string; ml: string | number; clip: string; bg: string } | null = null;
+  if (delta != null && netPctPrev != null && delta !== 0) {
+    const prevDotPct = (clamp(netPctPrev, -100, 100) + 100) / 2;
+    const spanPct = Math.abs(dotPct - prevDotPct);        // доля ширины дорожки
+    const minPx = Math.round(10 * s);
+    const w = `max(${spanPct.toFixed(2)}%, ${minPx}px)`;
     const toRight = delta >= 0;   // двигались вправо → хвост тянется слева
     tail = {
-      px,
-      ml: toRight ? -px : 0,
+      w,
+      ml: toRight ? `calc(-1 * ${w})` : 0,
       clip: toRight
         ? `polygon(0 ${tipEdge}%, 100% 0, 100% 100%, 0 ${100 - tipEdge}%)`
         : `polygon(0 0, 100% ${tipEdge}%, 100% ${100 - tipEdge}%, 0 100%)`,
@@ -169,7 +173,7 @@ export default function PositionComet({
       <div style={{ position: 'absolute', left: '50%', top: CY - zeroH / 2, height: zeroH, width: 0, marginLeft: -lineW / 2, borderLeft: `${lineW}px dashed var(--text-primary)`, opacity: 0.55 }} />
       {/* хвост */}
       {tail && (
-        <div style={{ position: 'absolute', top: CY - headR, height: tailH, left: `${dotPct}%`, width: tail.px, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
+        <div style={{ position: 'absolute', top: CY - headR, height: tailH, left: `${dotPct}%`, width: tail.w, marginLeft: tail.ml, clipPath: tail.clip, background: tail.bg }} />
       )}
       {/* голова */}
       <div style={headStyle} />
