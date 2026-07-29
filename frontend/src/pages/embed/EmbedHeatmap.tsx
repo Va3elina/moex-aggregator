@@ -62,6 +62,26 @@ function heatColor(ch: number): string {
   return '#2a2a2a';
 }
 
+// html2canvas при экспорте резолвит fill="var(--text-secondary)" на SVG <text>
+// корректно ТОЛЬКО для первого инстанса на странице — у остальных секторов
+// подпись просто не рисуется (не обрезка, а полное отсутствие; в живом браузере
+// getComputedStyle резолвит var() одинаково для всех — баг именно в парсере
+// html2canvas). Та же идиома, что resolveColor в LwChart.tsx/LwChartPanes.tsx:
+// заранее резолвим var() в литеральный rgb() через probe-элемент, чтобы
+// html2canvas никогда не видел сырую строку "var(...)".
+function resolveColor(box: HTMLElement, color: string): string {
+  try {
+    const probe = document.createElement('span');
+    probe.style.color = color;
+    probe.style.position = 'absolute';
+    probe.style.pointerEvents = 'none';
+    box.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    box.removeChild(probe);
+    return rgb || color;
+  } catch { return color; }
+}
+
 const fmtPct = (v: number): string => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(1).replace('.', ',') + '%';
 function fmtVol(v: number): string {
   const a = Math.abs(v);
@@ -196,40 +216,37 @@ export default function EmbedHeatmap() {
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        {status === 'ok' && layout && (
+        {status === 'ok' && layout && (() => {
+          // Резолвим var(--text-secondary) ОДИН раз на рендер — см. resolveColor
+          // выше: html2canvas при экспорте рисует ТОЛЬКО первый <svg> из
+          // нескольких СОСЕДНИХ корневых <svg> (по одному на сектор) — остальные
+          // молча пропадают (не обрезаются — их просто нет в снимке), даже с уже
+          // резолвленным literal-цветом. Один общий <svg> с N дочерних <text> —
+          // тот же приём, что и per-item svg, но БЕЗ множественных sibling-корней,
+          // на которых html2canvas и спотыкается.
+          const labelFill = boxRef.current ? resolveColor(boxRef.current, 'var(--text-secondary)') : '#9A958C';
+          return (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            {layout.labels.map((l) => {
-              const w = Math.max(0, l.w - 8);
-              return (
-                // Подпись сектора обрезалась СНИЗУ в PNG-экспорте (live браузер —
-                // нет), причём не для всех секторов сразу (Финансы ок, Нефть и
-                // газ/Металлы — нет) при абсолютно идентичной геометрии/стилях
-                // соседних label-div — похоже на content-зависимый глюк меры
-                // текста html2canvas, а не на реальный overflow/line-height (тот
-                // фикс не помог). Как и с легендой/метками экспираций в
-                // LwChart.tsx — уходим от HTML div+line-height на инлайн-SVG
-                // <text dominant-baseline>: геометрическая инструкция, браузер
-                // и html2canvas кладут её идентично независимо от контента.
-                <svg
+            <svg
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+              width={size.w}
+              height={size.h}
+            >
+              {layout.labels.map((l) => (
+                <text
                   key={l.name}
-                  style={{ position: 'absolute', left: l.x + 4, top: l.y + 2, overflow: 'visible' }}
-                  width={w}
-                  height={13}
+                  x={l.x + 4}
+                  y={l.y + 2 + 6.5}
+                  dominantBaseline="central"
+                  fontSize={10}
+                  fontWeight={600}
+                  style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                  fill={labelFill}
                 >
-                  <text
-                    x={0}
-                    y={6.5}
-                    dominantBaseline="central"
-                    fontSize={10}
-                    fontWeight={600}
-                    style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-                    fill="var(--text-secondary)"
-                  >
-                    {l.name}
-                  </text>
-                </svg>
-              );
-            })}
+                  {l.name}
+                </text>
+              ))}
+            </svg>
             {layout.tiles.map((t) => {
               const st = t.data;
               const ch = st.change_1d ?? 0;
@@ -265,7 +282,8 @@ export default function EmbedHeatmap() {
               );
             })}
           </div>
-        )}
+          );
+        })()}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}

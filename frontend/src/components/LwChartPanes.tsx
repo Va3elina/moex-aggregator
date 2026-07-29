@@ -30,6 +30,9 @@ import {
   ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
 } from './LwChart';
+import { captureFontScale } from './chart/chartTypography';
+
+const BASE_FONT_SIZE = 11;
 
 export interface LwPane {
   series: LwSeries[];
@@ -39,8 +42,11 @@ export interface LwPane {
 
 export interface LwChartPanesHandle {
   /** Форс-синк размера + перерисовка фигур ПЕРЕД снятием скриншота — см.
-   *  LwChartHandle.syncBeforeCapture в LwChart.tsx (тот же паттерн). */
+   *  LwChartHandle.syncBeforeCapture в LwChart.tsx (тот же паттерн, включая
+   *  временное увеличение layout.fontSize ВСЕХ панелей под captureFontScale). */
   syncBeforeCapture: (width: number, height: number) => void;
+  /** Возвращает layout.fontSize всех панелей к базовому — см. LwChartHandle. */
+  restoreAfterCapture: () => void;
 }
 
 interface LwChartPanesProps {
@@ -156,7 +162,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           chart.resize(box.clientWidth, box.clientHeight);
         }
       }
+      // Шрифт масштабируем по ширине ВСЕГО стека панелей (общая для всех) —
+      // см. LwChartHandle.syncBeforeCapture в LwChart.tsx.
+      const stackW = rootRef.current?.clientWidth;
+      if (stackW) {
+        const fs = Math.round(BASE_FONT_SIZE * captureFontScale(stackW));
+        chartsRef.current.forEach((chart) => chart.applyOptions({ layout: { fontSize: fs } }));
+      }
       drawShapesRef.current?.();
+    },
+    restoreAfterCapture: () => {
+      chartsRef.current.forEach((chart) => chart.applyOptions({ layout: { fontSize: BASE_FONT_SIZE } }));
     },
   }), []);
 
@@ -180,7 +196,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const isLast = i === paneCount - 1;
       const chart = createChart(box, {
         autoSize: true,
-        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: 11 },
+        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: BASE_FONT_SIZE },
         localization: { locale: 'ru-RU' },
         grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
         leftPriceScale: { visible: false, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },

@@ -378,8 +378,13 @@ export function ChartExportModal({
   draw: DrawTools;
   targetElement: HTMLElement | null;
   /** Любой чарт-хэндл с syncBeforeCapture (LwChartHandle или LwChartPanesHandle —
-   *  структурно совместимы, конкретный тип не важен). */
-  lwChartRef: React.RefObject<{ syncBeforeCapture: (w: number, h: number) => void } | null>;
+   *  структурно совместимы, конкретный тип не важен). restoreAfterCapture —
+   *  парный откат временного увеличения font-size (см. syncBeforeCapture в
+   *  LwChart.tsx) после снятия скриншота. */
+  lwChartRef: React.RefObject<{
+    syncBeforeCapture: (w: number, h: number) => void;
+    restoreAfterCapture?: () => void;
+  } | null>;
   filename: string;
   metadata?: ExportMetadata;
 }): ReactNode {
@@ -394,6 +399,7 @@ export function ChartExportModal({
           const r = targetElement.getBoundingClientRect();
           lwChartRef.current?.syncBeforeCapture(r.width, r.height);
         }}
+        afterCapture={() => lwChartRef.current?.restoreAfterCapture?.()}
         onClose={() => draw.setExportOpen(false)}
       />
     </Suspense>

@@ -78,3 +78,19 @@ export function xAxisTickCount(
     const labelMinW = charW * charsPerLabel;
     return Math.max(3, Math.min(7, Math.floor(chartWidth / labelMinW)));
 }
+
+/**
+ * Множитель font-size ДВИЖКА lightweight-charts (layout.fontSize) перед
+ * захватом в PNG-экспорт — см. composeFramedCanvas.computeLayoutScale (тот же
+ * REFERENCE_W и та же мотивация). LwChart/LwChartPanes держат fontSize:11
+ * ФИКСИРОВАННЫМ независимо от размера контейнера (обычная панель ⩽ REFERENCE_W
+ * — выглядит как задумано). Полноэкранный экспорт снимает контейнер в разы
+ * шире — без масштабирования ось/легенда/тултип графика остаются тем же
+ * 11px и выглядят игрушечно мелкими на большом снимке (Вадим, скрин
+ * «текст и цифры очень мелкие», Сбербанк/ОИ в развёрнутой панели).
+ * Вниз не клампим — обычные panели (< REFERENCE_W) уже корректны, не трогаем.
+ */
+export const CAPTURE_FONT_REFERENCE_W = 900;
+export function captureFontScale(containerWidth: number): number {
+    return Math.max(1, containerWidth / CAPTURE_FONT_REFERENCE_W);
+}
