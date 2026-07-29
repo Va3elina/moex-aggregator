@@ -133,7 +133,7 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     },
 
     # ───────────────────────────────────────────────────────────────
-    # Сделки (/fund-trades) — пилот delayed-data freemium.
+    # Сделки фондов (/fund-trades) — пилот delayed-data freemium.
     # snapshot_delay = на сколько снапшотов свежести назад видит тир (0 = свежий
     # срез). Free/гость = 1 (свежая месячная выборка «что фонды купили» — по
     # подписке); любой платный тир (Basic/Pro) = realtime. Первый раздел, на
