@@ -24,10 +24,15 @@ oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
 @oi_router.get("/screener")
 def get_oi_screener(
         clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
+        horizon: str = Query("short", pattern="^(short|medium)$", description="Горизонт: short (день) или medium (14 дней)"),
         db: Session = Depends(get_db),
 ):
-    """Скринер сигналов ОИ: чистая позиция группы + ATR14-кратность дневного
-    движения по всем фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+    """Скринер сигналов ОИ: чистая позиция группы + кратность движения по всем
+    фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+
+    horizon short — движение за день против ATR(14) (как алерты); medium —
+    сдвиг за 14 торговых дней против нормы за 60 дней до окна. Это две разные
+    ленты, фронт переключает их тумблером; кэшируются раздельно.
 
     Данные дневные (T+1), меняются раз в сутки → single-flight кэш 30 мин.
     Открытый доступ (как публичная лента аномалий): дневная агрегированная
@@ -35,11 +40,16 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
+    # v13 = + горизонт short/medium (ключ раздельный, иначе ленты смешаются).
     # v12 = + intraday_date (честная подпись «дневные за X · интрадей за Y»).
     # v11 = + net_record (истор. экстремум сырой чистой позиции). v10 = скрытие
     # малоактивных активов. v9 = групповой порог ликвидности + npart/min_part.
     # v8 = окна рекордов. v7 = интрадей только за торг. дни. v6 = + интрадей.
-    return get_or_compute(f"oi_screener:v12:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
+    return get_or_compute(
+        f"oi_screener:v13:{clgroup}:{horizon}",
+        lambda: compute_screener(db, clgroup, horizon),
+        ttl=300,
+    )
 
 
 @oi_router.get("/intraday-assets")

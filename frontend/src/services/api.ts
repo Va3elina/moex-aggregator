@@ -270,13 +270,15 @@ export interface OiScreenerRow {
   front_secid: string | null;     // датированный фронт-контракт ('BRQ6')
   has_intraday: boolean;          // есть свежие 5-мин данные → сигнал считается интрадей
   oi: number;                     // валовый ОИ, контракты
-  oi_delta_pct: number | null;    // Δ ОИ за день, %
+  // Все «дельты» строки считаются за ОКНО ГОРИЗОНТА (день или 14 дней) — см.
+  // OiScreenerResponse.window_days. В среднесрочной ленте это сдвиг за 2 недели.
+  oi_delta_pct: number | null;    // Δ ОИ за окно, %
   net: number;                    // чистая позиция физлиц, контракты
   net_pct: number | null;         // net / (лонги+шорты), −100…+100
-  net_pct_prev: number | null;    // перекос вчера (для «следа кометы»)
-  delta_net: number | null;       // Δ чистой позиции за день, контракты
+  net_pct_prev: number | null;    // перекос на начало окна (для «следа кометы»)
+  delta_net: number | null;       // Δ чистой позиции за окно, контракты
   npart: number;                  // число участников группы (для подсказки illiquid)
-  ratio: number | null;           // ATR14-кратность |Δnet| («в N× резче обычного»)
+  ratio: number | null;           // кратность |Δnet| к норме окна («в N× резче обычного»)
   direction: 'up' | 'down' | null;
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
   // Новый рекорд перекоса сегодня (сильнейший период), null если нет.
@@ -286,16 +288,25 @@ export interface OiScreenerRow {
   signal_date: string;            // дата последних данных (T+1)
 }
 
+/** Горизонт ленты: short — движение за день, medium — сдвиг за 14 торговых дней. */
+export type OiScreenerHorizon = 'short' | 'medium';
+
 export interface OiScreenerResponse {
   signal_date: string | null;
   intraday_date: string | null;   // свежайший интрадей-бар (5-мин), если новее дневной; для честной подписи
   clgroup: 'FIZ' | 'YUR';
+  horizon: OiScreenerHorizon;
+  window_days: number;            // окно движения строки, торговых дней (1 или 14)
+  sharp_ratio: number;            // порог «резко» для этого горизонта (2× / 3×)
   min_part: number;               // порог ликвидности группы (физ 50 / юр 15)
   rows: OiScreenerRow[];
 }
 
-export async function getOiScreener(clgroup: 'FIZ' | 'YUR' = 'FIZ'): Promise<OiScreenerResponse> {
-  const response = await fetch(`${API_BASE}/api/oi/screener?clgroup=${clgroup}`);
+export async function getOiScreener(
+  clgroup: 'FIZ' | 'YUR' = 'FIZ',
+  horizon: OiScreenerHorizon = 'short',
+): Promise<OiScreenerResponse> {
+  const response = await fetch(`${API_BASE}/api/oi/screener?clgroup=${clgroup}&horizon=${horizon}`);
   if (!response.ok) throw new Error('Failed to fetch OI screener');
   return response.json();
 }
