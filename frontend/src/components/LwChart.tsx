@@ -10,7 +10,7 @@
  * Время — UNIX-секунды (UTCTimestamp): конвертирует вызывающий (embed), т.к. дневные
  * и интрадей-метки имеют разный формат.
  */
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time, type IPriceLine,
@@ -125,6 +125,30 @@ interface LwChartProps {
   onToolReset?: () => void;              // после создания фигуры → сбросить инструмент в «выбор» (один-за-раз)
 }
 
+/**
+ * Императивный хэндл для одноразовой форс-синхронизации ПЕРЕД скриншотом/
+ * экспортом (ExportModal/captureChart) — см. syncBeforeCapture ниже.
+ */
+export interface LwChartHandle {
+  /**
+   * Ресайзит движок графика и мгновенно (в обход React-рендера) перепроецирует
+   * рисунки под РЕАЛЬНЫЙ текущий размер контейнера (w/h — измеряет вызывающий,
+   * обычно через getBoundingClientRect() самого внешнего wrapper'а embed'а).
+   *
+   * Зачем: внешний wrapper (chartBoxRef у embed'ов) меняет размер сразу (чистый
+   * CSS), а внутренний бокс LwChart — только после ResizeObserver → setState
+   * (chartH) → рендер → reflow → autoSize библиотеки → наш собственный
+   * ResizeObserver рисунков — несколько асинхронных шагов. Если html2canvas
+   * снимает скриншот внутри этого окна рассинхрона, он видит контейнер уже
+   * новго размера, а рисунки — ещё пересчитанные под старый: результат либо
+   * съезжает/обрезается (компактные фигуры вроде rect), либо пропадает целиком
+   * (растянутые вроде brush — их точки чаще вылетают за старые, ещё не
+   * обновлённые границы). syncBeforeCapture форсирует оба шага синхронно,
+   * без ожидания.
+   */
+  syncBeforeCapture: (width: number, height: number) => void;
+}
+
 /** Глобальные дефолты внешнего вида графиков ПЕСОЧНИЦЫ (§9). Провайдит SandboxPage;
  *  вне песочницы контекст null → поведение движка прежнее. Применяется к LwChart и
  *  LwChartPanes. */
@@ -200,7 +224,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, crosshairTimeFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps) {
+const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, crosshairTimeFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps, forwardedRef) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -229,6 +253,21 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
   const drawShapesRef = useRef<(() => void) | null>(null);
+  // См. LwChartHandle — форс-синк перед экспортом/скриншотом. Методы читают
+  // рефы в момент ВЫЗОВА (не в момент этого useImperativeHandle), так что
+  // пустой `[]` в deps корректен — chartRef/boxRef успеют заполниться к тому
+  // моменту, когда caller реально дёрнет syncBeforeCapture (это происходит
+  // сильно позже маунта, по клику «экспорт»).
+  useImperativeHandle(forwardedRef, () => ({
+    syncBeforeCapture: (w, h) => {
+      const wrapper = boxRef.current?.parentElement as HTMLDivElement | null;
+      // Прямая мутация DOM в обход React-состояния (chartH ещё не долетел) —
+      // единственный способ убрать асинхронный лаг перед html2canvas.
+      if (wrapper) wrapper.style.height = `${h}px`;
+      chartRef.current?.resize(w, h);
+      drawShapesRef.current?.();
+    },
+  }), []);
   // §OI-3 axis-алерты: пропы через ref (смена не пересоздаёт чарт); axisInfoRef —
   // первая серия каждой оси + её форматтер + последнее значение (заполняется в
   // эффекте серий); layoutAlertRef — пересчёт геометрии полос у осей.
@@ -756,6 +795,12 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
     const drawShapes = () => {
       if (!chartRef.current) return;
+      // html2canvas трактует <svg> как replaced-элемент и меряет его через getBoundingClientRect
+      // САМОЙ svg, а не overflow:visible-контента — без явных width/height атрибутов это
+      // дефолтные 300×150 (см. LwChartHandle.syncBeforeCapture), и экспорт обрезает фигуры
+      // по этому дефолту вместо реального размера бокса.
+      drawSvg.setAttribute('width', String(box.clientWidth));
+      drawSvg.setAttribute('height', String(box.clientHeight));
       while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
       if (drawHiddenRef.current) return;   // «глаз»: временно скрыть все рисунки
       const selId = selectedDrawIdRef.current;
@@ -1216,4 +1261,5 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       )}
     </div>
   );
-}
+});
+export default LwChart;
