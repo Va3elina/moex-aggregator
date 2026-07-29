@@ -155,6 +155,8 @@ export interface LwChartHandle {
 export interface ChartPrefs { lineWidth?: 1 | 2 | 3; crosshair?: boolean; grid?: boolean; lastValue?: boolean; watermark?: boolean }
 export const ChartPrefsCtx = createContext<ChartPrefs | null>(null);
 
+const SVGNS = 'http://www.w3.org/2000/svg';
+
 function themeColors(dark: boolean) {
   return {
     text: dark ? '#9A958C' : '#6B6760',
@@ -383,16 +385,35 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
         const x = ts.timeToCoordinate(ex.time as UTCTimestamp);
         if (x == null || x < R || x > paneW - R) continue;
         const bx = paneL + x;
+        // §R2-27: текст в flex-центрированном div съезжал вниз в PNG-экспорте
+        // (html2canvas не воспроизводит flex/line-height вертикальное
+        // центрирование текста — см. фикс #704 на SimpleChart). Кружок+буквы
+        // рисуем инлайн-SVG с dominantBaseline="central" — геометрическая
+        // инструкция позиционирования, рендерится одинаково и в браузере, и
+        // в html2canvas. opacity — на ВНЕШНЕМ div, не на svg (см. #705: opacity
+        // на svg html2canvas применяет дважды — бейкает в растр + ещё раз поверх).
         const circle = document.createElement('div');
         circle.style.cssText = [
           'position:absolute', 'bottom:2px', 'left:' + bx + 'px', 'transform:translateX(-50%)',
-          'width:17px', 'height:17px', 'border-radius:50%', 'display:flex', 'align-items:center',
-          'justify-content:center', 'font-size:8.5px', 'font-weight:700', 'cursor:default',
+          'width:17px', 'height:17px', 'cursor:default',
           'pointer-events:auto', 'opacity:0.5', 'transition:opacity 0.12s', 'box-sizing:border-box',
-          'background:var(--bg-secondary,#26262B)', 'color:var(--text-secondary,#9A958C)',
-          'border:1px solid var(--border-color,rgba(245,241,232,0.18))',
         ].join(';');
-        circle.textContent = (ex.label || '').slice(0, 2);
+        const circleSvg = document.createElementNS(SVGNS, 'svg');
+        circleSvg.setAttribute('width', '17'); circleSvg.setAttribute('height', '17');
+        circleSvg.style.cssText = 'position:absolute;inset:0;display:block';
+        const ring = document.createElementNS(SVGNS, 'circle');
+        ring.setAttribute('cx', '8.5'); ring.setAttribute('cy', '8.5'); ring.setAttribute('r', '8');
+        ring.setAttribute('fill', 'var(--bg-secondary,#26262B)');
+        ring.setAttribute('stroke', 'var(--border-color,rgba(245,241,232,0.18))');
+        ring.setAttribute('stroke-width', '1');
+        const label = document.createElementNS(SVGNS, 'text');
+        label.setAttribute('x', '8.5'); label.setAttribute('y', '9');
+        label.setAttribute('text-anchor', 'middle'); label.setAttribute('dominant-baseline', 'central');
+        label.setAttribute('font-size', '8.5'); label.setAttribute('font-weight', '700');
+        label.setAttribute('fill', 'var(--text-secondary,#9A958C)');
+        label.textContent = (ex.label || '').slice(0, 2);
+        circleSvg.appendChild(ring); circleSvg.appendChild(label);
+        circle.appendChild(circleSvg);
         const tipEl = document.createElement('div');
         tipEl.style.cssText = [
           'position:absolute', 'bottom:calc(100% + 6px)', 'left:50%', 'transform:translateX(-50%)',
@@ -631,7 +652,6 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     // SVG-оверлей в координатах {logical, price} → перепроецируется на зум/пан/ресайз (как
     // экспирации). Точки хранятся в logical (дробный индекс бара) + price → фигуры «ездят»
     // с графиком. pointer-events включаются только в режиме карандаша (drawActive).
-    const SVGNS = 'http://www.w3.org/2000/svg';
     const drawSvg = document.createElementNS(SVGNS, 'svg');
     drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:visible;pointer-events:none;touch-action:none';
     box.appendChild(drawSvg);
@@ -1149,13 +1169,29 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     if (legend) {
       while (legend.firstChild) legend.removeChild(legend.firstChild);
       const legItems = hideLegendRef.current ? [] : (legendItemsRef.current ?? series.map((d) => ({ label: d.label, color: d.color })));
+      // §R2-27 / #704, #196ce935: flex align-items:center текст съезжает вниз в
+      // PNG-экспорте (html2canvas не воспроизводит flex-центрирование текста) —
+      // рисуем цветной сегмент + подпись инлайн-SVG с dominantBaseline="central"
+      // (геометрическая инструкция, рендерится одинаково в браузере и html2canvas).
+      // totalH = fontSize*1.35 — запас под нижние засечки кириллицы (у/р/ц),
+      // см. #196ce935 (ChartLegend.tsx).
+      const FS = 11, GAP = 5, SEG_W = 12, SEG_H = 2.5;
+      const legTotalH = Math.ceil(FS * 1.35);
       for (const it of legItems) {
-        const item = document.createElement('div');
-        item.style.cssText = 'display:flex;align-items:center;gap:5px';
-        const seg = document.createElement('span');
-        seg.style.cssText = 'width:12px;height:2.5px;border-radius:2px;flex:0 0 auto;background:' + rc(it.color);
-        const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-primary,#F5F1E8);white-space:nowrap';
+        const w = SEG_W + GAP + Math.ceil((it.label || '').length * FS * 0.62) + 4;
+        const item = document.createElementNS(SVGNS, 'svg');
+        item.setAttribute('width', String(w));
+        item.setAttribute('height', String(legTotalH));
+        item.style.cssText = 'display:block;overflow:visible';
+        const seg = document.createElementNS(SVGNS, 'rect');
+        seg.setAttribute('x', '0'); seg.setAttribute('y', String((legTotalH - SEG_H) / 2));
+        seg.setAttribute('width', String(SEG_W)); seg.setAttribute('height', String(SEG_H));
+        seg.setAttribute('rx', '1.25'); seg.setAttribute('fill', rc(it.color));
+        const lbl = document.createElementNS(SVGNS, 'text');
+        lbl.setAttribute('x', String(SEG_W + GAP)); lbl.setAttribute('y', String(legTotalH / 2));
+        lbl.setAttribute('dominant-baseline', 'central');
+        lbl.setAttribute('font-size', String(FS)); lbl.setAttribute('font-weight', '600');
+        lbl.setAttribute('fill', 'var(--text-primary,#F5F1E8)');
         lbl.textContent = it.label || '';
         item.appendChild(seg);
         item.appendChild(lbl);
