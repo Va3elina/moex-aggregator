@@ -3,8 +3,12 @@
  * Вадима 2026-07, «Скринер сигналов standalone»).
  *
  * Лента сигналов по открытому интересу «как Telegram-алерты»: комета позиции
- * группы на оси −100…+100 и ATR14-кратность дневного движения. Данные дневные
- * (T+1). Числа перекоса из строк убраны — точные значения в подсказке кометы;
+ * группы на оси −100…+100 и кратность движения к норме. Данные дневные (T+1).
+ *
+ * Горизонт (тумблер «День» / «2 недели») переключает ЛЕНТУ ЦЕЛИКОМ, а не
+ * добавляет колонку: на среднесроке и сила, и хвост кометы, и все дельты
+ * считаны за 14 торговых дней, поэтому тексты («за день» → «за 2 недели»,
+ * «вчера» → «2 недели назад») и порог «резко» (2× → 3×) едут вместе с ним. Числа перекоса из строк убраны — точные значения в подсказке кометы;
  * «Сила» (ATR-кратность) — крупное число ×4,3 с градиентом «теплоты» по
  * размаху дня. Заголовок «×N» заменён на «Сила»: аббревиатура ничего не
  * сообщала, а само число уже читается как кратность.
@@ -27,10 +31,19 @@ import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import Dropdown from '../Dropdown';
 import PositionComet, { ratioHeat } from './PositionComet';
-import { getOiScreener, type OiScreenerRow } from '../../services/api';
+import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Clgroup = 'FIZ' | 'YUR';
+
+// Горизонт ленты. Это ДВА РАЗНЫХ СПИСКА, а не две колонки одного: тумблер
+// переключает ленту целиком, вместе со всеми дельтами и хвостами комет.
+// Подписи конкретные («День» / «2 недели»), а не «кратко/средне»: юзеру важно
+// не как это называется, а за какой срок посчитано движение.
+const HORIZON_OPTIONS = [
+  { key: 'short' as const, label: 'День', title: 'Краткосрочные сигналы: движение позиции за один день против её обычного дневного размаха (ATR-14). Это те же сигналы, что уходят в Telegram-алерты.' },
+  { key: 'medium' as const, label: '2 недели', title: 'Среднесрочные сигналы: сдвиг позиции за 14 торговых дней против того, сколько актив обычно проходит за такой срок. Ловит то, что копилось неделями и в дневной ленте не видно.' },
+];
 
 // Реальные значения instruments.group (как в пикере активов).
 const GROUP_OPTIONS = [
@@ -117,6 +130,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
   // же виде, что оставил юзер (группа, категория, избранные, направление).
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
+  const [horizon, setHorizon] = usePersistedState<OiScreenerHorizon>('frame:oi-screener:horizon', 'short');
   const [group, setGroup] = usePersistedState<string>('frame:oi-screener:group', 'all');
   const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
   // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
@@ -134,11 +148,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     let cancelled = false;
     setRows(null);
     setError(false);
-    getOiScreener(clgroup)
+    getOiScreener(clgroup, horizon)
       .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setIntradayDate(r.intraday_date); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [clgroup]);
+  }, [clgroup, horizon]);
 
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
@@ -207,6 +221,21 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Родительный для заголовка колонки: «Позиция физлиц», не «физлица».
   const groupGen = clgroup === 'FIZ' ? 'физлиц' : 'юрлиц';
 
+  // Формулировки горизонта. Лента переключается целиком, поэтому тексты
+  // меняются вместе с ней: в среднесрочной нельзя говорить «за день» и
+  // «вчера» — там и сигнал, и хвост кометы, и дельты считаны за 2 недели.
+  // Порог «резко» тоже свой (3× против 2×, откалиброван по плотности сигналов
+  // на проде — см. MED_SHARP_RATIO в api/services/oi_screener.py).
+  const isMed = horizon === 'medium';
+  const W = {
+    over: isMed ? 'за 2 недели' : 'за день',
+    prev: isMed ? '2 недели назад' : 'вчера',
+    move: isMed ? 'Изменение позиции за 2 недели' : 'Дневное изменение позиции',
+    usual: isMed ? 'обычного движения этого актива за 2 недели' : 'обычного дневного движения этого актива',
+    thr: isMed ? '3×' : '2×',
+    note: isMed ? 'обычные 2 недели' : 'обычный день',
+  };
+
   // Рекорд перекоса. Окна: квартал, полгода, 1..5 лет, всё время (месячного
   // на бэке нет — слишком часто). Метка достаётся сильнейшему пробитому окну.
   const PERIOD_WORD: Record<string, string> = {
@@ -248,7 +277,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       // колонка чисел должна читаться как одна колонка, а не прыгать.
       return (
         <span
-          title={`Дневное изменение позиции ${groupGen} в ${fmtRatio(r.ratio)} от их обычного дневного изменения за 14 дней — ниже порога «резко» (2×)`}
+          title={`${W.move} ${groupGen} в ${fmtRatio(r.ratio)} от ${W.usual} — ниже порога «резко» (${W.thr})`}
           style={{
             ...MONO, fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.02em',
             whiteSpace: 'nowrap', color: 'var(--text-muted)',
@@ -263,7 +292,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       : 1;
     return (
       <span
-        title={`Дневное изменение позиции ${groupGen} в ${fmtRatio(r.ratio)} сильнее их обычного дневного изменения за последние 14 дней (ATR-14)`}
+        title={`${W.move} ${groupGen} в ${fmtRatio(r.ratio)} сильнее ${W.usual}`}
         style={{
           ...MONO, fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.02em',
           whiteSpace: 'nowrap',
@@ -302,7 +331,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         ? (grewExposure ? 'Набрали лонг' : 'Сократили лонг')
         : (grewExposure ? 'Нарастили шорт' : 'Сократили шорт');
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const full = `${cap(groupWord)} резко ${grewExposure ? 'нарастили' : 'сократили'} ${netLong ? 'длинную' : 'короткую'} позицию по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
+      const full = `${cap(groupWord)} резко ${grewExposure ? 'нарастили' : 'сократили'} ${netLong ? 'длинную' : 'короткую'} позицию по «${r.name}»: изменение чистой позиции ${W.over} в ${fmtRatio(r.ratio)} сильнее ${W.usual} («резко» — от ${W.thr}). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
         <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
           {verb}
@@ -314,7 +343,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     // Подробности — в подсказке, она у каждой пометки своя.
     const note =
       r.status === 'normal'
-        ? 'обычный день'
+        ? W.note
         : r.status === 'illiquid'
           ? 'мало участников'
           : 'мало истории';
@@ -322,8 +351,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       r.status === 'illiquid'
         ? `На стороне ${groupWord}: ${r.npart} участников — ниже порога ликвидности ${minPart}. Движение по такому контракту считаем шумом, а не сигналом (у юрлиц участников структурно меньше, поэтому порог свой).`
         : r.status === 'nodata'
-          ? 'Мало истории для расчёта ATR-14.'
-          : `Дневной сдвиг чистой позиции в пределах обычного${r.ratio != null ? ` (×${r.ratio.toFixed(1).replace('.', ',')})` : ''} — ниже порога «резко» (2×).`;
+          ? (isMed
+              ? 'Мало истории: для среднесрочного сигнала нужна норма минимум за 30 торговых дней до окна движения.'
+              : 'Мало истории для расчёта ATR-14.')
+          : `Сдвиг чистой позиции ${W.over} в пределах обычного${r.ratio != null ? ` (×${r.ratio.toFixed(1).replace('.', ',')})` : ''} — ниже порога «резко» (${W.thr}).`;
     return (
       <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
     );
@@ -416,6 +447,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           value={clgroup}
           onChange={setClgroup}
         />
+        {/* Горизонт: краткосрочная лента (день) / среднесрочная (2 недели).
+            Стоит сразу за группой — это второй «срез» тех же данных, а не
+            фильтр: он меняет сам расчёт, а не состав строк. */}
+        <SegmentedControl<OiScreenerHorizon>
+          options={HORIZON_OPTIONS}
+          value={horizon}
+          onChange={setHorizon}
+        />
         <Dropdown<string>
           options={GROUP_OPTIONS.map((g) => ({ key: g.key, label: g.label }))}
           value={group}
@@ -462,7 +501,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
             <span style={headCell}>Актив</span>
-            <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг за день, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
+            <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг ${W.over}, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
               Позиция {groupGen}
             </span>
             {/* Сила — числовая колонка: заголовок и число по центру, чтобы
@@ -471,7 +510,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               type="button"
               style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'center' }}
               onClick={() => setSortDir((d) => (d === -1 ? 1 : -1))}
-              title="Во сколько раз дневное изменение позиции сильнее обычного для этого актива (ATR-14). Клик — перевернуть порядок."
+              title={`Во сколько раз изменение позиции ${W.over} сильнее ${W.usual}. Клик — перевернуть порядок.`}
             >
               Сила{sortDir === -1 ? ' ▼' : ' ▲'}
             </button>
@@ -559,6 +598,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                     ratioLo={stats.ratioLo}
                     ratioHi={stats.ratioHi}
                     maxAbsDelta={stats.maxAbsDelta}
+                    prevLabel={W.prev}
+                    deltaLabel={W.over}
                   />
                 </div>
 
@@ -590,11 +631,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       {!error && rows !== null && (
         <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
-            Сила ×4,3 значит: за день позиция сдвинулась в 4,3 раза сильнее, чем
-            этот актив двигается обычно (среднее за 14 дней). Точный перекос и
-            дневная дельта — при наведении на комету.
+            {isMed
+              ? 'Сила ×4,3 значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Точный перекос и дельта — при наведении на комету.'
+              : 'Сила ×4,3 значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Точный перекос и дневная дельта — при наведении на комету.'}
           </span>
-          <span style={MONO}>{pluralAssets(visible.length)} · {groupWord}</span>
+          <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? '2 недели' : 'день'}</span>
         </div>
       )}
     </div>

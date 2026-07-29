@@ -10,6 +10,11 @@
 источником истины signals/detectors/oi.py, иначе скринер и алерты разойдутся
 в показаниях на одних данных.
 
+Горизонт short/medium (второй тумблер на фронте) — ДВЕ ОТДЕЛЬНЫЕ ЛЕНТЫ:
+  short  — движение за ДЕНЬ против ATR(14). Это ровно детектор алертов.
+  medium — сдвиг за 14 торговых дней против нормы за 60 дней ДО окна (×√14).
+           Скринер-only: алерта на среднесрок нет, синхронности не требует.
+
 Группа FIZ/YUR (тумблер на фронте): net(FIZ) ≡ −net(YUR) тождественно, поэтому
 кратность ×N у групп одинакова, НО знаки/проценты/ликвидность (npart!) — свои,
 поэтому считаем честно по выбранной группе, а не флипаем знак FIZ. Лента
@@ -18,6 +23,7 @@
 """
 from __future__ import annotations
 
+import math
 import statistics
 from datetime import date, timedelta
 from typing import Any, Dict, List
@@ -32,6 +38,35 @@ ATR_MIN_PART = 50        # ликвидность ФИЗ (розница): «т�
 ATR_MIN_PART_YUR = 15    # ЮР (институты): участников на 1-2 порядка меньше → свой порог
 ATR_MIN_REL = 0.02       # материальность: |Δ|/|net| ≥ 2%
 ATR_FLOOR_REL = 0.001    # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
+
+
+# --- Среднесрочный горизонт (horizon=medium) ---------------------------------
+# Только скринер: среднесрочного ДЕТЕКТОРА в signals/ нет, поэтому требование
+# «менять синхронно» на эту секцию НЕ распространяется (в отличие от дневных
+# констант выше — те копия детектора алертов).
+#
+# Смотрим сдвиг позиции за MED_WINDOW торговых дней и сравниваем с тем, сколько
+# актив обычно проходит за такой срок. Норму НЕЛЬЗЯ брать из ATR(14): окно
+# движения и окно нормы совпали бы (одни и те же дни в числителе и знаменателе),
+# и ratio выродился бы в почти-константу ≈√14 у всех активов. Поэтому норма —
+# дневной ATR по MED_BASE_WINDOW дням, лежащим ДО окна движения (окна НЕ
+# пересекаются), масштабированный на √MED_WINDOW: независимые дневные шаги
+# складываются как корень из их числа.
+#
+# ⚠️ √N — приближение, оно предполагает независимость дневных шагов. Позиции
+# трендовые (ползут в одну сторону неделями), поэтому реальный сдвиг за 14 дней
+# систематически БОЛЬШЕ √14·ATR: замер на проде (2026-07-29, 30 срезов назад по
+# всем релевантным активам) дал медиану ratio 1.12 против 0.74 у дневного.
+# Значит дневную двойку сюда переносить НЕЛЬЗЯ — на 2× сигналило бы 29% ленты.
+# Порог подобран по плотности сигналов: 3× даёт 16.1% (физ) / 13.0% (юр) строк
+# против 15.2% / 12.4% у дневного детектора — ленты сопоставимы по «шумности».
+# При смене MED_WINDOW/MED_BASE_WINDOW порог ПЕРЕСЧИТАТЬ (скрипт в PR).
+MED_WINDOW = 14          # окно движения, торговых дней (≈2 недели)
+MED_BASE_WINDOW = 60     # окно нормы (дневной ATR), лежит ДО окна движения
+MED_MIN_BASE = 30        # минимум дней нормы, иначе честнее сказать nodata
+MED_SCALE = math.sqrt(MED_WINDOW)       # пересчёт дневной нормы в оконную
+MED_MIN_REL = ATR_MIN_REL * MED_SCALE   # материальность за окно (≈7.5% |net|)
+MED_SHARP_RATIO = 3.0    # порог «резко» на среднесроке (дневной — 2×)
 
 
 # --- Порог релевантности активов ОИ (общий: пикер + скринер сигналов) --------
@@ -119,18 +154,34 @@ def _min_part(clgroup: str) -> int:
 # Дней истории в выборке: окно + запас на выходные/праздники (как в детекторе).
 _HISTORY_DAYS = ATR_WINDOW + 30
 
+# Среднесрок: нужно MED_WINDOW + MED_BASE_WINDOW ≈ 74 ТОРГОВЫХ дня ≈ 104
+# календарных; берём с запасом на праздники и длинные каникулы.
+_MED_HISTORY_DAYS = 150
+
 # Строк-точек минимум для расчёта (как в compute_position_atr).
 _MIN_POINTS = ATR_WINDOW + 3
 
+# Среднесрок: окно движения + минимальная норма + 1 (норма считается по
+# разностям, их на одну меньше числа точек).
+_MED_MIN_POINTS = MED_WINDOW + MED_MIN_BASE + 1
 
-def _bulk_series(db, clgroup: str) -> Dict[str, List[tuple]]:
+
+def _history_days(horizon: str) -> int:
+    """Глубина выборки под горизонт (среднесроку нужно кратно больше истории)."""
+    return _MED_HISTORY_DAYS if horizon == "medium" else _HISTORY_DAYS
+
+
+def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS) -> Dict[str, List[tuple]]:
     """Дневные ряды позиций группы (FIZ/YUR) по всем sectype одним запросом.
 
     Возвращает {sectype: [(tradedate, net, npart, oi), ...] по возрастанию даты}.
     Тот же смысл, что signals/db.get_position_series, но bulk: DISTINCT ON
     (sectype, tradedate) → последний бар дня, только будни.
+
+    history_days — глубина выборки: дневному горизонту хватает ~44 дней, а
+    среднесрочному нужна норма за 60 торговых дней ДО окна движения.
     """
-    cutoff = date.today() - timedelta(days=_HISTORY_DAYS)
+    cutoff = date.today() - timedelta(days=history_days)
     rows = db.execute(text(
         """
         SELECT sectype, tradedate,
@@ -208,8 +259,17 @@ def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
     }
 
 
-def _row_signal(pts: List[tuple], min_part: int) -> Dict[str, Any]:
-    """Сигнальные поля одной строки скринера по дневному ряду позиций.
+def _row_signal(pts: List[tuple], min_part: int, horizon: str = "short") -> Dict[str, Any]:
+    """Сигнальные поля одной строки скринера под выбранный горизонт."""
+    if horizon == "medium":
+        return _row_signal_medium(pts, min_part)
+    return _row_signal_short(pts, min_part)
+
+
+def _row_signal_short(pts: List[tuple], min_part: int) -> Dict[str, Any]:
+    """Краткосрочный сигнал: движение ЗА ДЕНЬ против ATR(14).
+
+    Математика — копия детектора алертов (см. шапку модуля), менять синхронно.
 
     min_part — порог ликвидности для ЭТОЙ группы (физ 50 / юр 15).
 
@@ -246,6 +306,45 @@ def _row_signal(pts: List[tuple], min_part: int) -> Dict[str, Any]:
     # скринер не должен кричать там, где алерт бы промолчал).
     material = abs(last_signed) / max(abs(net), 1) >= ATR_MIN_REL
     if ratio is not None and ratio >= 2 and material and not frozen:
+        return {"status": "sharp", "ratio": ratio, "direction": direction}
+    return {"status": "normal", "ratio": ratio, "direction": direction}
+
+
+def _row_signal_medium(pts: List[tuple], min_part: int) -> Dict[str, Any]:
+    """Среднесрочный сигнал: сдвиг за MED_WINDOW дней против оконной нормы.
+
+    Норма = дневной ATR по MED_BASE_WINDOW дням ДО окна движения × √MED_WINDOW.
+    Окна не пересекаются — иначе одни и те же дни стояли бы и в числителе, и в
+    знаменателе (см. комментарий у констант). Статусы те же, что у дневного,
+    но порог «резко» свой (MED_SHARP_RATIO) и материальность оконная.
+    """
+    if len(pts) < _MED_MIN_POINTS:
+        return {"status": "nodata", "ratio": None, "direction": None}
+
+    nets = [p[1] for p in pts]
+    npart_now = pts[-1][2]
+
+    # Сдвиг за окно: последняя точка против точки MED_WINDOW дней назад. Если
+    # вплетён интрадей-бар, он и есть «сегодня» — окно кончается на нём.
+    move = nets[-1] - nets[-1 - MED_WINDOW]
+    net = nets[-1]
+    direction = "up" if move > 0 else "down"
+
+    if npart_now < min_part:
+        return {"status": "illiquid", "ratio": None, "direction": None}
+
+    diffs = [abs(nets[i] - nets[i - 1]) for i in range(1, len(nets))]
+    # Норма — ДО окна движения: срез кончается на -MED_WINDOW.
+    base = diffs[-(MED_WINDOW + MED_BASE_WINDOW):-MED_WINDOW]
+    if len(base) < MED_MIN_BASE:
+        return {"status": "nodata", "ratio": None, "direction": None}
+
+    atr = statistics.fmean(base)
+    frozen = atr <= 0 or atr < ATR_FLOOR_REL * max(abs(net), 1)
+    ratio = None if frozen else round(abs(move) / (atr * MED_SCALE), 2)
+
+    material = abs(move) / max(abs(net), 1) >= MED_MIN_REL
+    if ratio is not None and ratio >= MED_SHARP_RATIO and material and not frozen:
         return {"status": "sharp", "ratio": ratio, "direction": direction}
     return {"status": "normal", "ratio": ratio, "direction": direction}
 
@@ -365,14 +464,22 @@ def _net_record_for(net, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
     return None
 
 
-def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
+def compute_screener(db, clgroup: str = "FIZ", horizon: str = "short") -> Dict[str, Any]:
     """Полный ответ скринера: строки по всем фьючерсам с данными ОИ.
 
     clgroup FIZ/YUR: кратность ×N у групп зеркально идентична (net(FIZ) ≡
     −net(YUR)), но знаки/проценты/ликвидность (npart!) — свои, поэтому
     считаем честно по выбранной группе, а не флипаем знак.
+
+    horizon short/medium — ДВЕ РАЗНЫЕ ЛЕНТЫ, а не две колонки одной: на фронте
+    тумблер переключает список целиком. Поэтому по горизонту меняется не только
+    ratio/status, но и окно всех «дельт» строки (delta_net, oi_delta_pct,
+    net_pct_prev → хвост кометы): в среднесрочной ленте «было → стало» это
+    MED_WINDOW дней назад → сейчас, иначе комета показывала бы вчерашний хвост
+    под двухнедельным сигналом. Рекорды перекоса/позиции от горизонта не
+    зависят (они всегда против всей истории).
     """
-    series = _bulk_series(db, clgroup)
+    series = _bulk_series(db, clgroup, _history_days(horizon))
     # Экстремумы перекоса (рекорды) — самый ДОРОГОЙ запрос: скан ВСЕЙ истории
     # позиций (с 2019) по всем фьючерсам. Но меняются раз в день (T+1), не каждые
     # 5 мин → кэшируем отдельно с длинным TTL (30 мин), чтобы 5-минутный пересчёт
@@ -394,6 +501,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     intraday_set = _intraday_assets(db)
     intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
     min_part = _min_part(clgroup)             # порог ликвидности группы (физ 50 / юр 15)
+    step = MED_WINDOW if horizon == "medium" else 1   # окно «было → стало» строки
     low_set = low_activity_set(db)            # малоактивные активы прячем из ленты (как в пикере)
 
     # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
@@ -443,7 +551,8 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
         gross = pos_long - pos_short
         net_pct = round(net / gross * 100, 1) if gross else None
 
-        prev = pts[-2] if len(pts) >= 2 else None
+        # Точка отсчёта строки = начало окна горизонта (день назад / 14 дней назад).
+        prev = pts[-1 - step] if len(pts) > step else None
         delta_net = (net - prev[1]) if prev else None
         oi_delta_pct = (
             round((oi - prev[3]) / prev[3] * 100, 1)
@@ -458,7 +567,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             if prev_gross:
                 net_pct_prev = round(prev[1] / prev_gross * 100, 1)
 
-        sig = _row_signal(pts, min_part)
+        sig = _row_signal(pts, min_part, horizon)
         # Рекорд: для интрадей-актива prior-экстремумы (они «до сегодня») надо
         # дополнить ПОСЛЕДНИМ дневным close — бегущий бар новее него, и он должен
         # соперничать со всей дневной историей включая вчера.
@@ -527,6 +636,9 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
         # нет. Фронт покажет честно: «дневные за X · интрадей за Y».
         "intraday_date": intraday_date.isoformat() if intraday_date else None,
         "clgroup": clgroup,
+        "horizon": horizon,                 # short (день) / medium (14 дней)
+        "window_days": step,                # окно движения строки, торговых дней
+        "sharp_ratio": MED_SHARP_RATIO if horizon == "medium" else 2.0,
         "min_part": min_part,               # порог ликвидности группы (для подсказки)
         "rows": rows,
     }

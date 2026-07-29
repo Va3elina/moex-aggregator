@@ -30,13 +30,17 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 interface Props {
   netPct: number | null;         // перекос сегодня, −100…+100
-  netPctPrev: number | null;     // перекос вчера (для хвоста)
+  netPctPrev: number | null;     // перекос на начало окна (для хвоста)
   ratio: number | null;          // сила сигнала ×N (размер головы)
   /** Мин/макс ×N среди видимых sharp-строк — калибровка головы «по дню». */
   ratioLo?: number | null;
   ratioHi?: number | null;
   /** Максимум |Δ п.п.| среди видимых строк — калибровка длины хвоста. */
   maxAbsDelta?: number | null;
+  /** Подписи окна в подсказке: у среднесрочной ленты хвост тянется не от
+   *  «вчера», а от точки 14 торговых дней назад — врать в тексте нельзя. */
+  prevLabel?: string;            // 'вчера' | '2 недели назад'
+  deltaLabel?: string;           // 'за день' | 'за 2 недели'
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -70,7 +74,10 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
   return span < 0.5 ? 0.5 : clamp((ratio - lo) / span, 0, 1);
 }
 
-export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, ratioHi, maxAbsDelta }: Props) {
+export default function PositionComet({
+  netPct, netPctPrev, ratio, ratioLo, ratioHi, maxAbsDelta,
+  prevLabel = 'вчера', deltaLabel = 'за день',
+}: Props) {
   const s = cometScale(useViewportWidth());
   const H = Math.round(32 * s);   // высота контейнера, px
   const CY = Math.round(H / 2);   // вертикальный центр оси
@@ -118,8 +125,8 @@ export default function PositionComet({ netPct, netPctPrev, ratio, ratioLo, rati
   }
 
   const title = `Перекос сегодня ${fmtPct(netPct)} ${long ? 'лонг' : 'шорт'}`
-    + (netPctPrev != null ? ` · вчера ${fmtPct(netPctPrev)} ${netPctPrev >= 0 ? 'лонг' : 'шорт'}` : '')
-    + (delta != null ? ` · за день ${fmtSigned(delta)} п.п.` : '')
+    + (netPctPrev != null ? ` · ${prevLabel} ${fmtPct(netPctPrev)} ${netPctPrev >= 0 ? 'лонг' : 'шорт'}` : '')
+    + (delta != null ? ` · ${deltaLabel} ${fmtSigned(delta)} п.п.` : '')
     + (ratio != null ? ` · сила ×${ratio.toFixed(1).replace('.', ',')}` : '');
 
   // border-box (глобальный preflight): ширина включает ободок 2px → +4 к
