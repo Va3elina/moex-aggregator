@@ -509,9 +509,9 @@ export default function PricingPage() {
 
               {/* Цена.
                   Годовой тариф показываем в пересчёте на месяц (крупно), а полную
-                  сумму списания и экономию — строками ниже. Так цены месяца и года
-                  сравнимы «в лоб»; полная сумма всё равно раскрыта до оплаты
-                  (тут, в consent-модалке и на форме T-Bank). */}
+                  периодичность списания и экономию — строками ниже. Так цены месяца
+                  и года сравнимы «в лоб»; полная сумма списания раскрывается до
+                  оплаты в consent-модалке и на форме T-Bank. */}
               <div className="mb-5">
                 {variant ? (
                   <>
@@ -537,7 +537,7 @@ export default function PricingPage() {
                     </div>
                     {period === 'yearly' && (
                       <div className="text-xs text-theme-muted mt-1">
-                        Оплата раз в год, {variant.amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
+                        Оплата раз в год
                       </div>
                     )}
                     {period === 'yearly' && tier.monthly && tier.monthly.amount * 12 > variant.amount && (
