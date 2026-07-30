@@ -14,6 +14,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LineChart, BarChart3, Landmark, Grid3x3 } from 'lucide-react';
 import LwChartPanes, { type LwPane, type LwChartPanesHandle } from '../../components/LwChartPanes';
+// Дефолт оси времени в LwChartPanes сменился на ruTickMark (нужен интрадею ОИ) —
+// «Сила рынка» живёт на дневках, поэтому свой формат задаём явно.
+import { monthsYearsTickFmt } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
@@ -236,6 +239,7 @@ export default function EmbedStrength() {
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {status === 'ok' && panes.length > 0 && (
           <LwChartPanes
+            tickFmt={monthsYearsTickFmt}
             ref={lwChartRef}
             panes={panes}
             dark={dark}

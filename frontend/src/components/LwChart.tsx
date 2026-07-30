@@ -228,7 +228,7 @@ export function hideTvLogo() {
 // самое поведение, что и в настоящем TradingView; тип 3 нам приходит уже
 // свёрнутым (Time), различить «12:00» и «13:00» на этом уровне API нельзя.
 const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-function ruTickMark(time: unknown, type: number): string {
+export function ruTickMark(time: unknown, type: number): string {
   const t = typeof time === 'number' ? time : 0;
   const d = new Date(t * 1000);
   if (type === 0) return String(d.getUTCFullYear());
