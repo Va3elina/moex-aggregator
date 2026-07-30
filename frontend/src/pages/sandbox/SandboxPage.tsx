@@ -465,7 +465,21 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   }, [st, bringFront, setActivePanels]);
 
-  const toggleTheme = useCallback(() => setSt((s) => ({ ...s, sbTheme: s.sbTheme === 'dark' ? 'light' : 'dark' })), []);
+  // Тема ОБОЛОЧКИ ведёт за собой ВСЕ окна — на всех листах. Раньше менялся только
+  // sbTheme, а панель, у которой хоть раз нажали ◐, оставалась со своим
+  // themeOverride навсегда и переставала реагировать на смену фона (Вадим:
+  // «должны менять цвет все окна»). Сбрасываем оверрайды: смена глобальной темы —
+  // это явное «хочу вот такой фон везде», индивидуальные флипы после неё
+  // ставятся заново.
+  const toggleTheme = useCallback(() => setSt((s) => {
+    const bySheet = Object.fromEntries(
+      Object.entries(s.bySheet).map(([sheet, ps]) => [
+        sheet,
+        (ps || []).map((p) => (p.themeOverride ? { ...p, themeOverride: null } : p)),
+      ]),
+    );
+    return { ...s, sbTheme: s.sbTheme === 'dark' ? 'light' : 'dark', bySheet };
+  }), []);
   // ◐ панели (§4.3): флип themeOverride относительно эффективной темы.
   const setPanelTheme = useCallback((id: string) => {
     setSt((s) => ({
@@ -543,7 +557,17 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
         // шапка песочницы и остальные панели не рендерятся вообще, вместо шапки —
         // собственный тулбар индикатора (ассет/таймфрейм/… + кнопка «Свернуть» на
         // месте «Развернуть», см. SandboxWindowCtx.maximized в EmbedToolbar).
-        <div style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}>
+        // data-sbtheme/data-theme ОБЯЗАТЕЛЬНЫ и здесь: без них CSS-переменные
+        // наследовались от .sb-root (тема ОБОЛОЧКИ), и кнопка ◐ в развёрнутом
+        // окне не меняла цвет — SandboxThemeScope обновлял только React-контекст
+        // (LwChart.dark), а фон/токены оставались прежними. У обычной панели эти
+        // атрибуты есть (см. ниже), у развёрнутой их забыли.
+        <div
+          className="sb-max"
+          data-sbtheme={maximizedPanel.themeOverride || st.sbTheme}
+          data-theme={(maximizedPanel.themeOverride || st.sbTheme) === 'light' ? 'editorial-light' : 'editorial-dark'}
+          style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}
+        >
           <SandboxWindowCtx.Provider
             value={{
               onExpand: () => toggleMaximize(maximizedPanel.id),
