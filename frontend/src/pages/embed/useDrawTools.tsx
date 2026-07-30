@@ -92,6 +92,12 @@ export interface DrawTools {
   dragLayerId: string | null;
   setDragLayerId: (id: string | null) => void;
   reorderLayer: (fromId: string, toId: string) => void;
+  /** Сдвиг рейла инструментов от дефолта (слева по центру) — чтобы он не
+   *  закрывал ценовую ось. setRailOffset — во время перетаскивания (без записи),
+   *  saveRailOffset — на отпускании (со записью в персист). */
+  railOffset: { dx: number; dy: number };
+  setRailOffset: (o: { dx: number; dy: number }) => void;
+  saveRailOffset: (o: { dx: number; dy: number }) => void;
   /** Пиксельный бокс выделенной фигуры (от LwChart/LwChartPanes) — якорь панели свойств. */
   selRect: { x: number; y: number; w: number; h: number } | null;
   setSelRect: (r: { x: number; y: number; w: number; h: number } | null) => void;
@@ -199,6 +205,19 @@ export function useDrawTools(persistKey: string): DrawTools {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawings]);
 
+  // Позиция рейла инструментов — сдвиг от дефолта (слева, по центру по вертикали).
+  // Персистим ОТДЕЛЬНЫМ ключом и НЕ по persistKey-инструменту: рейл — это про
+  // удобство раскладки окна, а не про конкретный актив; при смене инструмента он
+  // должен остаться там, куда его поставили.
+  const railKey = 'frame:embed:draw:rail';
+  const [railOffset, setRailOffset] = useState<{ dx: number; dy: number }>(() => {
+    try { const o = JSON.parse(rd(railKey, '')); return typeof o?.dx === 'number' ? o : { dx: 0, dy: 0 }; } catch { return { dx: 0, dy: 0 }; }
+  });
+  const saveRailOffset = useCallback((o: { dx: number; dy: number }) => {
+    setRailOffset(o); wr(railKey, JSON.stringify(o));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Клавиатура в режиме рисования (как в TradingView) — e.code надёжнее e.key
   // (Alt+буква на Mac даёт диакритику через e.key).
   useEffect(() => {
@@ -231,6 +250,7 @@ export function useDrawTools(persistKey: string): DrawTools {
     onToolReset, exportOpen, setExportOpen,
     drawKeep, setDrawKeep, setDrawTool, setDrawMagnet, layersOpen, setLayersOpen,
     dragLayerId, setDragLayerId, reorderLayer,
+    railOffset, setRailOffset, saveRailOffset,
     selRect, setSelRect, panelOffset, setPanelOffset, settingsOpen, setSettingsOpen,
     selectedDraw, patchSelected, deleteSelected, cloneSelected, moveSelectedToFront, moveSelectedToBack,
   };
@@ -607,20 +627,66 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
 /** Оверлей рисования: контекстная панель свойств + сайдбар инструментов (слева) +
  *  панель слоёв. Рендерить внутри контейнера графика (position:relative). */
 export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: boolean }): ReactNode {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  // Позиция рейла = дефолт (слева, по центру по вертикали) + сохранённый сдвиг,
+  // прижатый к границам контейнера. Меряем в layout-эффекте: высота рейла зависит
+  // от размера панели (в низких он скроллится), а клампить надо по факту.
+  const [railPos, setRailPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    const host = el.offsetParent as HTMLElement | null;
+    if (!host) return;
+    const place = () => {
+      const HW = host.clientWidth, HH = host.clientHeight;
+      const w = el.offsetWidth, h = el.offsetHeight;
+      let left = 6 + draw.railOffset.dx;
+      let top = Math.max(6, (HH - h) / 2) + draw.railOffset.dy;
+      left = Math.max(4, Math.min(Math.max(4, HW - w - 4), left));
+      top = Math.max(4, Math.min(Math.max(4, HH - h - 4), top));
+      setRailPos((p) => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.top - top) < 0.5 ? p : { left, top }));
+    };
+    place();
+    // Ресайз панели меняет и центр по умолчанию, и границы клампа.
+    const ro = new ResizeObserver(place);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [draw.railOffset, draw.drawMode, visible]);
+
+  const onRailGripDown = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY, d0 = draw.railOffset;
+    let last = d0;
+    const move = (ev: PointerEvent) => {
+      last = { dx: d0.dx + (ev.clientX - sx), dy: d0.dy + (ev.clientY - sy) };
+      draw.setRailOffset(last);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      draw.saveRailOffset(last);   // в персист пишем один раз, на отпускании
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   if (!visible || !draw.drawMode) return null;
+  const railLeft = railPos?.left ?? 6;
+  const railTop = railPos?.top ?? 6;
   return (
     <>
       {/* п.1-3 ТЗ: панель свойств — НЕ постоянная, а контекстная (только когда
           выбрана фигура), с якорем над этой фигурой и перетаскиванием за ⋮⋮. */}
       <DrawStylePanel draw={draw} />
       <div
+        ref={railRef}
         data-export-ignore="true"
         // draw-scroll: в невысоких панелях песочницы рейл инструментов не влезает
         // и включает overflowY → нативный жирный белый скроллбар поперёк иконок.
         // Класс делает его тонким и тема-независимым (см. index.css).
         className="draw-scroll"
         style={{
-          position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', zIndex: 8,
+          position: 'absolute', left: railLeft, top: railTop, zIndex: 8,
           display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 10,
           background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 88%, transparent)',
           border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
@@ -628,6 +694,15 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
           maxHeight: 'calc(100% - 16px)', overflowY: 'auto',
         }}
       >
+        {/* Ручка перетаскивания: по умолчанию рейл стоит слева и накрывает ценовую
+            ось — утащить его можно в любое место графика, позиция запоминается. */}
+        <span
+          onPointerDown={onRailGripDown}
+          title="Переместить панель инструментов"
+          style={{ display: 'flex', justifyContent: 'center', color: 'var(--text-secondary)', cursor: 'grab', padding: '1px 0 2px', touchAction: 'none' }}
+        >
+          <GripVertical size={13} style={{ transform: 'rotate(90deg)' }} />
+        </span>
         <button
           type="button"
           title="Выйти из режима рисования"
@@ -685,8 +760,13 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
         <div
           data-export-ignore="true"
           className="draw-scroll"
+          // Прилипает к рейлу: тот теперь перетаскиваемый, и фиксированный left:48
+          // оставлял бы список слоёв в старом месте. Рейл ушёл вправо — раскрываем
+          // список влево от него, чтобы не уехать за границу панели.
           style={{
-            position: 'absolute', left: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 9,
+            position: 'absolute', zIndex: 9,
+            left: railLeft > 240 ? Math.max(4, railLeft - 200) : railLeft + 42,
+            top: railTop,
             width: 194, maxHeight: 'calc(100% - 20px)', overflowY: 'auto', padding: 6, borderRadius: 10,
             background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 94%, transparent)',
             border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
