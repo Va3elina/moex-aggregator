@@ -39,6 +39,7 @@ from api.database import get_db
 from api.models.user import User
 from api.security import create_token_pair
 from api.logger import get_logger
+from api.ru_tls import RU_TLS_VERIFY
 
 log = get_logger()
 
@@ -376,7 +377,7 @@ async def vk_oauth_callback(
         if data.code_verifier:
             token_payload["code_verifier"] = data.code_verifier
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
             token_resp = await client.post(
                 "https://id.vk.com/oauth2/auth",
                 data=token_payload,
@@ -399,7 +400,7 @@ async def vk_oauth_callback(
             raise HTTPException(400, "VK: не получен access_token")
 
         # 2. Получаем профиль через VK ID user_info
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
             profile_resp = await client.post(
                 "https://id.vk.com/oauth2/user_info",
                 data={
@@ -452,7 +453,7 @@ async def yandex_oauth_callback(
 
     try:
         # 1. Обмениваем code на access_token
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
             token_resp = await client.post(
                 "https://oauth.yandex.ru/token",
                 data={
@@ -471,7 +472,7 @@ async def yandex_oauth_callback(
         access_token = token_data.get("access_token")
 
         # 2. Получаем профиль
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
             profile_resp = await client.get(
                 "https://login.yandex.ru/info",
                 headers={"Authorization": f"OAuth {access_token}"},
