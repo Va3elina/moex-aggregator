@@ -14,15 +14,12 @@
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
  * партиционирован → там состояние своё).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Camera, Pencil, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
-  MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
-  Ruler, Layers, X as XIcon, GripVertical, Repeat,
-  Clock, User, Building2, BarChart3, Users, Activity, TrendingDown, ArrowUpDown, Equal,
+  Clock, User, Building2, BarChart3, Users, Activity, TrendingUp, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwDrawing, type LwDrawTool, type LwDash, type LwMagnet, type LwChartHandle } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -35,13 +32,9 @@ import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './Embed
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
-// Экспорт графика (скрин → превью → рисование → скачать/копировать) — переиспользуем
-// движко-агностичный ExportModal сайта на контейнере LwChart. Ленивый чанк (html2canvas
-// грузится только при первом открытии).
-const ExportModal = lazy(() => import('../../components/export/ExportModal'));
-
 const TF_COMPACT: { id: number; label: string }[] = [
   { id: 5, label: '5 мин' },
   { id: 60, label: '1 час' },
@@ -83,35 +76,6 @@ const VARIANT_ICONS: Record<OIVariant, ReactNode> = {
   both: <ArrowUpDown size={14} />,
   net: <Equal size={14} />,
 };
-
-// Инструменты рисования (модель TradingView) — левая панель. rot — поворот иконки (vline).
-const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; rot?: number }[] = [
-  { id: 'select', title: 'Выделение / перемещение', Icon: MousePointer2 },
-  { id: 'trend', title: 'Трендовая линия', Icon: TrendingUp },
-  { id: 'ray', title: 'Луч', Icon: MoveUpRight },
-  { id: 'arrow', title: 'Стрелка', Icon: ArrowUpRight },
-  { id: 'hline', title: 'Горизонтальная линия', Icon: Minus },
-  { id: 'vline', title: 'Вертикальная линия', Icon: Minus, rot: 90 },
-  { id: 'rect', title: 'Прямоугольник', Icon: Square },
-  { id: 'ellipse', title: 'Эллипс', Icon: Circle },
-  { id: 'fib', title: 'Фибоначчи', Icon: AlignJustify },
-  { id: 'brush', title: 'Кисть', Icon: Brush },
-  { id: 'ruler', title: 'Линейка', Icon: Ruler },
-  { id: 'text', title: 'Текст', Icon: Type },
-];
-// tool → короткое имя для панели слоёв.
-const DRAW_TOOL_NAME: Record<string, string> = Object.fromEntries(DRAW_TOOLS.filter((t) => t.id !== 'select').map((t) => [t.id, t.title]));
-// Хоткеи инструментов (как в TradingView) — показываем в тултипе кнопки.
-const DRAW_HOTKEY: Record<string, string> = { trend: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V', fib: 'Alt+F', rect: 'Alt+⇧R' };
-const DRAW_COLORS = ['#FF5C2B', '#5DA3E9', '#5BD49C', '#EF6F6F', '#E0A34E', '#F5F1E8'];
-function drawToolBtn(active: boolean): CSSProperties {
-  return {
-    width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    border: 'none', borderRadius: 7, cursor: 'pointer', padding: 0,
-    background: active ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'transparent',
-    color: active ? 'var(--accent)' : 'var(--text-secondary)',
-  };
-}
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
@@ -204,47 +168,12 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Актуальный фьючерсный контракт (напр. 'SRZ5') для показа в кнопке актива —
   // instrument хранит КОРЕНЬ ('SR'), а видеть надо последний активный контракт.
   const [frontContract, setFrontContract] = useState<string | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);   // модалка экспорта графика
-  // Рисование (модель TradingView): карандаш → режим, фигуры персистят per-инструмент.
-  const [drawMode, setDrawMode] = useState(false);
-  const [drawTool, setDrawTool] = useState<LwDrawTool>('select');
-  const [drawColor, setDrawColor] = useState('#FF5C2B');
-  const [drawings, setDrawings] = useState<LwDrawing[]>([]);
-  const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
-  const [drawMagnet, setDrawMagnet] = useState<LwMagnet>('off');   // магнит: off→weak→strong (цикл)
-  const [drawKeep, setDrawKeep] = useState(false);       // «остаться в режиме рисования» (не сбрасывать инструмент)
-  const [drawHidden, setDrawHidden] = useState(false);   // скрыть рисунки (глаз)
-  const [drawLocked, setDrawLocked] = useState(false);   // замок (запрет перемещения)
-  const [drawWidth, setDrawWidth] = useState(2);         // толщина по умолчанию
-  const [drawDash, setDrawDash] = useState<LwDash>('solid');  // стиль линии по умолчанию
-  const [drawOpacity, setDrawOpacity] = useState(1);     // прозрачность по умолчанию
-  const [layersOpen, setLayersOpen] = useState(false);   // панель «Слои» (список фигур)
-  const [dragLayerId, setDragLayerId] = useState<string | null>(null);   // DnD переупорядочивания слоёв
-  // Переставить фигуру fromId на позицию toId в массиве (z-order).
-  const reorderLayer = (fromId: string, toId: string) => {
-    if (fromId === toId) return;
-    setDrawings((ds) => {
-      const arr = ds.slice();
-      const fi = arr.findIndex((d) => d.id === fromId), ti = arr.findIndex((d) => d.id === toId);
-      if (fi < 0 || ti < 0) return ds;
-      const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m); return arr;
-    });
-  };
-  const drawSaveReady = useRef(false);   // пропустить первую запись (маунт) → не затереть сохранённое
-  // Текущий стиль для тулбара свойств: выделенный элемент (если есть) или дефолты для новых.
-  const selectedDraw = drawings.find((d) => d.id === selectedDrawId) || null;
-  const curColor = selectedDraw?.color ?? drawColor;
-  const curWidth = selectedDraw?.width ?? drawWidth;
-  const curDash: LwDash = selectedDraw?.dash ?? drawDash;
-  const curOpacity = selectedDraw?.opacity ?? drawOpacity;
-  // Применить стиль: меняет дефолт (для новых фигур) И, если выделен элемент — патчит его.
-  const applyStyle = (patch: Partial<Pick<LwDrawing, 'color' | 'width' | 'dash' | 'opacity'>>) => {
-    if (patch.color !== undefined) setDrawColor(patch.color);
-    if (patch.width !== undefined) setDrawWidth(patch.width);
-    if (patch.dash !== undefined) setDrawDash(patch.dash);
-    if (patch.opacity !== undefined) setDrawOpacity(patch.opacity);
-    if (selectedDrawId) setDrawings((ds) => ds.map((d) => (d.id === selectedDrawId ? { ...d, ...patch } : d)));
-  };
+  // Рисование + экспорт — общий хук useDrawTools (он же у Баффетта/Силы/Фондов).
+  // Раньше ОИ держал полную копию этого стейта и всей UI рисования у себя; копия
+  // разъезжалась с хуком (правки доезжали до трёх индикаторов из четырёх), поэтому
+  // переведён на общий. persistKey — per-инструмент, как и было («рисунки под
+  // каждый актив»): смена instrument перезагружает фигуры внутри хука.
+  const draw = useDrawTools(`frame:embed:oi:draw:${instrument}`);
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -300,43 +229,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       .catch(() => { /* контракт не критичен */ });
     return () => { cancelled = true; };
   }, [instrument]);
-
-  // Рисунки — персист per-инструмент («под каждый актив», Вадим). Загрузка при смене
-  // инструмента; сохранение при изменении (ключ берём из ref → без затирания при switch).
-  const instrumentRef = useRef(instrument); instrumentRef.current = instrument;
-  useEffect(() => {
-    const raw = rd(`frame:embed:oi:draw:${instrument}`, '');
-    try { setDrawings(raw ? (JSON.parse(raw) as LwDrawing[]) : []); } catch { setDrawings([]); }
-    setSelectedDrawId(null);
-  }, [instrument]);
-  useEffect(() => {
-    if (!drawSaveReady.current) { drawSaveReady.current = true; return; }  // пропуск маунта
-    wr(`frame:embed:oi:draw:${instrumentRef.current}`, JSON.stringify(drawings));
-  }, [drawings]);
-
-  // Клавиатура в режиме рисования: удаление, Esc, хоткеи инструментов (как в TradingView).
-  // e.code (физическая клавиша) — надёжнее e.key, т.к. Alt+буква на Mac даёт диакритику.
-  useEffect(() => {
-    if (!drawMode) return;
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
-        setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); return;
-      }
-      if (e.key === 'Escape') { setDrawTool('select'); setSelectedDrawId(null); return; }
-      if (!e.altKey) return;
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyH') { e.preventDefault(); setDrawHidden((v) => !v); return; }  // Ctrl/Cmd+Alt+H — скрыть все
-      if (e.ctrlKey || e.metaKey) return;
-      let tool: LwDrawTool | null = null;
-      if (e.code === 'KeyT') tool = 'trend';
-      else if (e.code === 'KeyH') tool = 'hline';
-      else if (e.code === 'KeyV') tool = 'vline';
-      else if (e.code === 'KeyF') tool = 'fib';
-      else if (e.shiftKey && e.code === 'KeyR') tool = 'rect';   // Alt+Shift+R
-      if (tool) { e.preventDefault(); setDrawTool(tool); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [drawMode, selectedDrawId]);
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
@@ -729,37 +621,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         </div>
       }
       actions={
-        status === 'ok' && data && lwSeries.length > 0 ? (
-          <>
-            <button
-              type="button"
-              onClick={() => { setDrawMode((v) => !v); setSelectedDrawId(null); }}
-              title="Рисование на графике"
-              aria-label="Рисование на графике"
-              style={{
-                width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                border: 'none', borderRadius: 7, cursor: 'pointer', flexShrink: 0, padding: 0,
-                background: drawMode ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'transparent',
-                color: drawMode ? 'var(--accent)' : 'var(--text-secondary)',
-              }}
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setExportOpen(true)}
-              title="Экспорт графика"
-              aria-label="Экспорт графика"
-              style={{
-                width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
-                cursor: 'pointer', flexShrink: 0, padding: 0,
-              }}
-            >
-              <Camera size={15} />
-            </button>
-          </>
-        ) : undefined
+        <DrawExportActions draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
       }
       more={
         <>
@@ -806,196 +668,33 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             animate
-            drawActive={drawMode}
-            drawTool={drawTool}
-            drawings={drawings}
-            onDrawingsChange={setDrawings}
-            drawColor={drawColor}
-            drawWidth={drawWidth}
-            drawDash={drawDash}
-            drawOpacity={drawOpacity}
-            selectedDrawId={selectedDrawId}
-            onSelectDraw={setSelectedDrawId}
-            onToolReset={() => { if (!drawKeep) setDrawTool('select'); }}
-            drawMagnet={drawMagnet}
-            drawHidden={drawHidden}
-            drawLocked={drawLocked}
+            drawActive={draw.drawMode}
+            drawTool={draw.drawTool}
+            drawings={draw.drawings}
+            onDrawingsChange={draw.setDrawings}
+            drawColor={draw.drawColor}
+            drawWidth={draw.drawWidth}
+            drawDash={draw.drawDash}
+            drawOpacity={draw.drawOpacity}
+            selectedDrawId={draw.selectedDrawId}
+            onSelectDraw={draw.setSelectedDrawId}
+            onSelectionRect={draw.setSelRect}
+            onToolReset={draw.onToolReset}
+            drawMagnet={draw.drawMagnet}
+            drawHidden={draw.drawHidden}
+            drawLocked={draw.drawLocked}
           />
         )}
-        {/* Тулбар свойств (модель TradingView / скрины Вадима): стиль линии · толщина ·
-            цвет · прозрачность · удалить. Редактирует ВЫДЕЛЕННЫЙ элемент, иначе — дефолт
-            для новых. Горизонтальный, сверху по центру. data-export-ignore. */}
-        {drawMode && status === 'ok' && data && lwSeries.length > 0 && (
-          <div
-            data-export-ignore="true"
-            style={{
-              position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 9,
-              display: 'flex', alignItems: 'center', gap: 3, padding: '4px 7px', borderRadius: 9,
-              maxWidth: 'calc(100% - 90px)', flexWrap: 'wrap', justifyContent: 'center',
-              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 92%, transparent)',
-              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-            }}
-          >
-            {(['solid', 'dashed', 'dotted'] as LwDash[]).map((id) => (
-              <button key={id} type="button" title={id === 'solid' ? 'Сплошная' : id === 'dashed' ? 'Штриховой пунктир' : 'Точечный пунктир'} onClick={() => applyStyle({ dash: id })} style={drawToolBtn(curDash === id)}>
-                <svg width={18} height={12} style={{ display: 'block' }}><line x1={1} y1={6} x2={17} y2={6} stroke="currentColor" strokeWidth={2} strokeDasharray={id === 'solid' ? undefined : id === 'dashed' ? '4 3' : '0.5 3'} strokeLinecap={id === 'dotted' ? 'round' : 'butt'} /></svg>
-              </button>
-            ))}
-            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
-            {[1, 2, 3, 4].map((wv) => (
-              <button key={wv} type="button" title={`${wv}px`} onClick={() => applyStyle({ width: wv })} style={{ ...drawToolBtn(curWidth === wv), width: 24, fontSize: 11, fontWeight: 700 }}>{wv}</button>
-            ))}
-            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
-            {DRAW_COLORS.map((c) => (
-              <button key={c} type="button" title="Цвет" onClick={() => applyStyle({ color: c })} style={{ width: 20, height: 20, borderRadius: 5, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: curColor === c ? '2px solid var(--text-primary)' : '1px solid transparent' }}>
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: c, display: 'inline-block' }} />
-              </button>
-            ))}
-            <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
-            <input type="range" min={10} max={100} value={Math.round(curOpacity * 100)} title="Прозрачность" onChange={(e) => applyStyle({ opacity: Number(e.target.value) / 100 })} style={{ width: 66, accentColor: 'var(--accent)' }} />
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', minWidth: 30, textAlign: 'right' }}>{Math.round(curOpacity * 100)}%</span>
-            {selectedDrawId && (
-              <>
-                <div style={{ width: 1, height: 18, background: 'var(--border-color,rgba(128,128,128,0.3))', margin: '0 2px' }} />
-                <button type="button" title="Удалить выделенное" onClick={() => { setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); }} style={drawToolBtn(false)}><Trash2 size={15} /></button>
-              </>
-            )}
-          </div>
-        )}
-        {/* Панель инструментов рисования слева (модель TradingView) — только в режиме
-            карандаша. data-export-ignore → не попадает в снимок графика. */}
-        {drawMode && status === 'ok' && data && lwSeries.length > 0 && (
-          <div
-            data-export-ignore="true"
-            style={{
-              position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', zIndex: 8,
-              display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 10,
-              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 88%, transparent)',
-              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-              maxHeight: 'calc(100% - 16px)', overflowY: 'auto',
-            }}
-          >
-            {/* Выход из режима рисования — тот же переключатель, что кнопка-карандаш
-                в тулбаре сверху, но доступен прямо из самой панели инструментов
-                (не нужно тянуться к тулбару, чтобы выйти). Первым, отдельно от
-                инструментов — это не инструмент, а закрытие панели. */}
-            <button
-              type="button"
-              title="Выйти из режима рисования"
-              aria-label="Выйти из режима рисования"
-              onClick={() => { setDrawMode(false); setSelectedDrawId(null); }}
-              style={drawToolBtn(false)}
-            >
-              <XIcon size={16} />
-            </button>
-            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
-            {DRAW_TOOLS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                title={t.title + (DRAW_HOTKEY[t.id] ? ` (${DRAW_HOTKEY[t.id]})` : '')}
-                aria-label={t.title}
-                onClick={() => setDrawTool(t.id)}
-                style={drawToolBtn(drawTool === t.id)}
-              >
-                <t.Icon size={16} style={t.rot ? { transform: `rotate(${t.rot}deg)` } : undefined} />
-              </button>
-            ))}
-            {/* Цвет/стиль/толщина/прозрачность — в горизонтальном тулбаре свойств сверху. */}
-            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
-            {/* Утилиты: магнит / скрыть / замок */}
-            <button type="button" title={`Магнит: ${drawMagnet === 'off' ? 'выкл' : drawMagnet === 'weak' ? 'слабый (рядом с OHLC)' : 'сильный (всегда к OHLC)'} — клик для смены`} aria-label="Магнит" onClick={() => setDrawMagnet((m) => (m === 'off' ? 'weak' : m === 'weak' ? 'strong' : 'off'))} style={{ ...drawToolBtn(drawMagnet !== 'off'), position: 'relative' }}>
-              {drawMagnet === 'strong' && <span style={{ position: 'absolute', top: 3, right: 4, width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)' }} />}
-              <Magnet size={16} />
-            </button>
-            <button type="button" title={drawHidden ? 'Показать рисунки' : 'Скрыть рисунки'} aria-label="Скрыть рисунки" onClick={() => setDrawHidden((v) => !v)} style={drawToolBtn(drawHidden)}>
-              {drawHidden ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <button type="button" title={drawLocked ? 'Разблокировать рисунки' : 'Заблокировать (запрет перемещения)'} aria-label="Замок" onClick={() => setDrawLocked((v) => !v)} style={drawToolBtn(drawLocked)}>
-              {drawLocked ? <Lock size={16} /> : <LockOpen size={16} />}
-            </button>
-            <button type="button" title={drawKeep ? 'Один-за-раз (по умолчанию)' : 'Остаться в режиме рисования (рисовать подряд)'} aria-label="Остаться в режиме" onClick={() => setDrawKeep((v) => !v)} style={drawToolBtn(drawKeep)}>
-              <Repeat size={16} />
-            </button>
-            <button type="button" title="Слои (список фигур)" aria-label="Слои" onClick={() => setLayersOpen((v) => !v)} style={drawToolBtn(layersOpen)}>
-              <Layers size={16} />
-            </button>
-            <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
-            <button
-              type="button"
-              title={selectedDrawId ? 'Удалить выделенное' : 'Очистить всё'}
-              aria-label="Удалить"
-              onClick={() => {
-                if (selectedDrawId) { setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); }
-                else if (drawings.length && window.confirm('Удалить все рисунки?')) setDrawings([]);
-              }}
-              style={drawToolBtn(false)}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        )}
-        {/* Панель «Слои»: список фигур (клик — выделить, глаз — скрыть, корзина — удалить). */}
-        {drawMode && layersOpen && status === 'ok' && data && lwSeries.length > 0 && (
-          <div
-            data-export-ignore="true"
-            style={{
-              position: 'absolute', left: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 9,
-              width: 194, maxHeight: 'calc(100% - 20px)', overflowY: 'auto', padding: 6, borderRadius: 10,
-              background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 94%, transparent)',
-              border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, padding: '0 2px' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Слои ({drawings.length})</span>
-              <button type="button" onClick={() => setLayersOpen(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2 }}><XIcon size={13} /></button>
-            </div>
-            {drawings.length === 0 && <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', padding: '4px 2px' }}>Нет фигур</div>}
-            {[...drawings].reverse().map((d) => (
-              <div
-                key={d.id}
-                draggable
-                onDragStart={() => setDragLayerId(d.id)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => { if (dragLayerId) reorderLayer(dragLayerId, d.id); setDragLayerId(null); }}
-                onDragEnd={() => setDragLayerId(null)}
-                onClick={() => setSelectedDrawId(d.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5, padding: '4px 4px', borderRadius: 6, cursor: 'pointer',
-                  background: selectedDrawId === d.id ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
-                  opacity: dragLayerId === d.id ? 0.5 : 1,
-                }}
-              >
-                <GripVertical size={12} style={{ color: 'var(--text-muted, #888)', cursor: 'grab', flexShrink: 0 }} />
-                <span style={{ width: 9, height: 9, borderRadius: 2, background: d.color, flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: d.hidden ? 'var(--text-muted, #888)' : 'var(--text-primary)' }}>
-                  {DRAW_TOOL_NAME[d.tool] || d.tool}{d.tool === 'text' && d.text ? `: ${d.text}` : ''}
-                </span>
-                <button type="button" title={d.hidden ? 'Показать' : 'Скрыть'} onClick={(e) => { e.stopPropagation(); setDrawings((ds) => ds.map((x) => (x.id === d.id ? { ...x, hidden: !x.hidden } : x))); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2, flexShrink: 0 }}>{d.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-                <button type="button" title="Удалить" onClick={(e) => { e.stopPropagation(); setDrawings((ds) => ds.filter((x) => x.id !== d.id)); if (selectedDrawId === d.id) setSelectedDrawId(null); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2, flexShrink: 0 }}><Trash2 size={13} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Модалка экспорта (триггер 📷 — в тулбаре рядом с ⚙, см. actions). Снимает
-            контейнер LwChart → превью → рисование → PNG/буфер. Portal → место в дереве неважно. */}
-        {exportOpen && chartBoxRef.current && (
-          <Suspense fallback={null}>
-            <ExportModal
-              targetElement={chartBoxRef.current}
-              filename={`frame-oi-${instrument}-${interval}`}
-              metadata={exportMeta}
-              beforeCapture={() => {
-                const r = chartBoxRef.current?.getBoundingClientRect();
-                if (r) lwChartRef.current?.syncBeforeCapture(r.width, r.height);
-              }}
-              onClose={() => setExportOpen(false)}
-            />
-          </Suspense>
-        )}
+        {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
+            слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
+        <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
+        <ChartExportModal
+          draw={draw}
+          targetElement={chartBoxRef.current}
+          lwChartRef={lwChartRef}
+          filename={`frame-oi-${instrument}-${interval}`}
+          metadata={exportMeta}
+        />
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
             пустой холст без объяснения (аудит). */}
         {status === 'ok' && data && lwSeries.length === 0 && (

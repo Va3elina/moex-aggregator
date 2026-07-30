@@ -1952,6 +1952,21 @@ a.btn-accent:active {
   display: none;
 }
 
+/* Скроллбар оверлеев рисования (рейл инструментов, список слоёв). Отдельно от
+   .styled-scrollbar: тот жёстко белый и на светлой теме превращается в невидимый
+   ползунок с заметным нативным треком. Здесь цвет берём от текста → работает и в
+   светлой, и в тёмной. */
+.draw-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary, #888) 22%, transparent) transparent;
+}
+.draw-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.draw-scroll::-webkit-scrollbar-track { background: transparent; }
+.draw-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-primary, #888) 22%, transparent);
+  border-radius: 3px;
+}
+
 /* Стилизованный скроллбар */
 .styled-scrollbar {
   scrollbar-width: thin;

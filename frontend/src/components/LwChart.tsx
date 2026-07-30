@@ -63,7 +63,7 @@ export type LwDrawTool = 'select' | LwDrawShape;
 export interface LwDrawPoint { logical: number; price: number }
 export type LwDash = 'solid' | 'dashed' | 'dotted';
 export type LwMagnet = 'off' | 'weak' | 'strong';   // магнит TradingView: слабый (рядом) / сильный (всегда)
-export interface LwDrawing { id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number; text?: string; dash?: LwDash; opacity?: number; hidden?: boolean }
+export interface LwDrawing { id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number; text?: string; dash?: LwDash; opacity?: number; hidden?: boolean; locked?: boolean }
 
 interface LwChartProps {
   series: LwSeries[];
@@ -120,6 +120,12 @@ interface LwChartProps {
   drawWidth?: number;                   // толщина для новых фигур
   selectedDrawId?: string | null;       // выделенная фигура (для подсветки/удаления)
   onSelectDraw?: (id: string | null) => void;
+  /** Пиксельный бокс выделенной фигуры В КООРДИНАТАХ КОНТЕЙНЕРА графика — чтобы
+   *  React-оверлей мог поставить контекстную панель свойств НАД фигурой (как в
+   *  TradingView). Отдаём из drawShapes(), а не считаем снаружи: только там есть
+   *  актуальная проекция logical/price→px, и она уже пересчитывается на каждый
+   *  пан/зум/ресайз/перетаскивание. null — ничего не выделено (или всё скрыто). */
+  onSelectionRect?: (r: { x: number; y: number; w: number; h: number } | null) => void;
   drawMagnet?: LwMagnet;                 // магнит: off | weak (рядом) | strong (всегда) — к ближайшему OHLC
   drawHidden?: boolean;                  // временно скрыть все рисунки (глаз)
   drawLocked?: boolean;                  // замок: запретить выделение/перемещение
@@ -240,7 +246,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, crosshairTimeFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps, forwardedRef) {
+const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, crosshairTimeFmt, timeVisible, legendItems, hideLegend, expirations, priceLines, onCreateAlert, alertAxes, watermark, animate, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth, selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset }: LwChartProps, forwardedRef) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
@@ -262,6 +268,7 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
   const drawWidthRef = useRef(drawWidth); drawWidthRef.current = drawWidth;
   const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
   const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
+  const onSelectionRectRef = useRef(onSelectionRect); onSelectionRectRef.current = onSelectionRect;
   const drawMagnetRef = useRef(drawMagnet); drawMagnetRef.current = drawMagnet;
   const drawHiddenRef = useRef(drawHidden); drawHiddenRef.current = drawHidden;
   const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
@@ -831,6 +838,35 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number } } = null;
     const HANDLE_R = 8;   // радиус захвата вершины (ручки) для правки формы
     const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+
+    // Габарит фигуры в пикселях контейнера — якорь контекстной панели свойств.
+    // hline/vline растянуты на всё поле: за «фигуру» берём саму линию (h=0/w=0),
+    // иначе панель улетала бы в угол графика.
+    const shapeRect = (d: LwDrawing): { x: number; y: number; w: number; h: number } | null => {
+      const pb = plotBox();
+      const pts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[];
+      if (!pts.length) return null;
+      if (d.tool === 'hline') return { x: pb.left, y: pts[0].y, w: pb.width, h: 0 };
+      if (d.tool === 'vline') return { x: pts[0].x, y: 0, w: 0, h: pb.height };
+      if (d.tool === 'text') {
+        const fs = 13 + d.width * 2;
+        return { x: pts[0].x, y: pts[0].y - fs, w: Math.max(40, (d.text || 'Текст').length * fs * 0.58), h: fs };
+      }
+      if (d.tool === 'ray' && pts.length >= 2) pts[1] = rayEnd(pts[0], pts[1], pb);
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+    };
+    // Дедуп: drawShapes зовётся на каждый кадр пана/зума, а голый вызов сеттера
+    // React'а каждый кадр = лишние ре-рендеры оверлея. Шлём только при сдвиге ≥1px.
+    let lastRectKey = ' ';
+    const emitSelRect = (r: { x: number; y: number; w: number; h: number } | null) => {
+      const key = r ? `${Math.round(r.x)}|${Math.round(r.y)}|${Math.round(r.w)}|${Math.round(r.h)}` : '';
+      if (key === lastRectKey) return;
+      lastRectKey = key;
+      onSelectionRectRef.current?.(r);
+    };
+
     const drawShapes = () => {
       if (!chartRef.current) return;
       // html2canvas трактует <svg> как replaced-элемент и меряет его через getBoundingClientRect
@@ -840,10 +876,15 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       drawSvg.setAttribute('width', String(box.clientWidth));
       drawSvg.setAttribute('height', String(box.clientHeight));
       while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
-      if (drawHiddenRef.current) return;   // «глаз»: временно скрыть все рисунки
+      if (drawHiddenRef.current) { emitSelRect(null); return; }   // «глаз»: временно скрыть все рисунки
       const selId = selectedDrawIdRef.current;
       for (const d of (drawingsRef.current ?? [])) { if (d.hidden) continue; renderOne(d, d.id === selId); }   // per-element hide (слои)
       if (dragState) renderOne(dragState.d, false, true);
+      // Якорь панели свойств. Во время перетаскивания берём ЖИВУЮ фигуру из
+      // dragState (в drawingsRef она ещё старая, коммит только на pointerup) —
+      // иначе панель отставала бы от фигуры на всё время драга.
+      const live = dragState && dragState.d.id === selId ? dragState.d : (drawingsRef.current ?? []).find((d) => d.id === selId);
+      emitSelRect(live && !live.hidden ? shapeRect(live) : null);
     };
     const syncDrawInteractivity = () => {
       const on = !!drawActiveRef.current;
@@ -883,7 +924,7 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
         if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }   // замок: не выделяем/не двигаем
         const hit = hitTest(x, y);
         selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
-        if (hit) {
+        if (hit && !hit.locked) {   // per-element замок (🔓 в панели свойств): выделить можно, двигать нельзя
           // клик у ВЕРШИНЫ (ручки) → правка формы (тащим точку); иначе двигаем всю фигуру.
           let vi = -1;
           if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
@@ -1297,7 +1338,7 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
 
   // Рисование: перерисовать фигуры + пересинхронить интерактивность оверлея при смене
   // карандаша/инструмента/фигур/выделения/стиля (сам чарт не пересоздаётся).
-  useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked]);
+  useEffect(() => { drawShapesRef.current?.(); }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity]);
 
   // 62px — отступ под реально существующую левую ценовую шкалу (индекс/цена
   // слева, как на ОИ/СЧА-Фондах). Если ни одна серия НЕ сидит на 'left' —

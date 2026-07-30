@@ -72,6 +72,9 @@ interface LwChartPanesProps {
   drawWidth?: number;
   selectedDrawId?: string | null;
   onSelectDraw?: (id: string | null) => void;
+  /** Бокс выделенной фигуры в пикселях КОРНЕВОГО контейнера (не пейна) — якорь
+   *  контекстной панели свойств. См. LwChart.onSelectionRect. */
+  onSelectionRect?: (r: { x: number; y: number; w: number; h: number } | null) => void;
   drawMagnet?: LwMagnet;
   drawHidden?: boolean;
   drawLocked?: boolean;
@@ -114,7 +117,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  selectedDrawId, onSelectDraw, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
+  selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
@@ -138,6 +141,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawWidthRef = useRef(drawWidth); drawWidthRef.current = drawWidth;
   const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
   const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
+  const onSelectionRectRef = useRef(onSelectionRect); onSelectionRectRef.current = onSelectionRect;
   const drawMagnetRef = useRef(drawMagnet); drawMagnetRef.current = drawMagnet;
   const drawHiddenRef = useRef(drawHidden); drawHiddenRef.current = drawHidden;
   const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
@@ -485,6 +489,34 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number } } = null;
       const HANDLE_R = 8;
       const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+
+      // Габарит фигуры — якорь панели свойств (см. LwChart.shapeRect). Здесь слой
+      // живёт в ПЕЙНЕ, а панель рендерится в корневом контейнере embed'а, поэтому
+      // добавляем смещение пейна (box.offsetTop/Left) — иначе панель уезжала бы
+      // вверх на высоту верхнего пейна.
+      const shapeRect = (d: LwDrawing): { x: number; y: number; w: number; h: number } | null => {
+        const pb = plotBox(), ox = box.offsetLeft, oy = box.offsetTop;
+        const pts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[];
+        if (!pts.length) return null;
+        if (d.tool === 'hline') return { x: pb.left + ox, y: pts[0].y + oy, w: pb.width, h: 0 };
+        if (d.tool === 'vline') return { x: pts[0].x + ox, y: oy, w: 0, h: pb.height };
+        if (d.tool === 'text') {
+          const fs = 13 + d.width * 2;
+          return { x: pts[0].x + ox, y: pts[0].y - fs + oy, w: Math.max(40, (d.text || 'Текст').length * fs * 0.58), h: fs };
+        }
+        if (d.tool === 'ray' && pts.length >= 2) pts[1] = rayEnd(pts[0], pts[1], pb);
+        const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+        const x = Math.min(...xs), y = Math.min(...ys);
+        return { x: x + ox, y: y + oy, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+      };
+      let lastRectKey = ' ';
+      const emitSelRect = (r: { x: number; y: number; w: number; h: number } | null) => {
+        const key = r ? `${Math.round(r.x)}|${Math.round(r.y)}|${Math.round(r.w)}|${Math.round(r.h)}` : '';
+        if (key === lastRectKey) return;
+        lastRectKey = key;
+        onSelectionRectRef.current?.(r);
+      };
+
       const drawShapes = () => {
         if (!chart()) return;
         // html2canvas трактует <svg> как replaced-элемент и меряет его через
@@ -493,10 +525,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         drawSvg.setAttribute('width', String(box.clientWidth));
         drawSvg.setAttribute('height', String(box.clientHeight));
         while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
-        if (drawHiddenRef.current) return;
+        if (drawHiddenRef.current) { emitSelRect(null); return; }
         const selId = selectedDrawIdRef.current;
         for (const d of (drawingsRef.current ?? [])) { if (d.hidden) continue; renderOne(d, d.id === selId); }
         if (dragState) renderOne(dragState.d, false, true);
+        const live = dragState && dragState.d.id === selId ? dragState.d : (drawingsRef.current ?? []).find((d) => d.id === selId);
+        emitSelRect(live && !live.hidden ? shapeRect(live) : null);
       };
       const syncDrawInteractivity = () => {
         const on = !!drawActiveRef.current;
@@ -536,7 +570,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }
           const hit = hitTest(x, y);
           selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
-          if (hit) {
+          if (hit && !hit.locked) {   // per-element замок: выделить можно, двигать нельзя
             let vi = -1;
             if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
             dragState = vi >= 0

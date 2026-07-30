@@ -129,7 +129,8 @@
    панелей hover-подсказка, бегающая за курсором, мешает больше чем помогает.
    На сайте/в расширении эти же компоненты остаются как есть — класс
    chart-tooltip-root ничего не меняет вне .sb-panel. */
-.sb-panel .chart-tooltip-root { display: none !important; }
+.sb-panel .chart-tooltip-root,
+.sb-max .chart-tooltip-root { display: none !important; }
 
 /* тонкий скроллбар оверлеев песочницы */
 .sb-scroll::-webkit-scrollbar { width: 9px; height: 9px; }

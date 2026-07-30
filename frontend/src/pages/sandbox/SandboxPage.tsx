@@ -881,7 +881,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
         </>
       )}
 
-      <div style={footNote}>песочница · приватный превью</div>
+      {/* В развёрнутом окне (⤢) график занимает весь экран, и position:fixed-подпись
+          ложилась поверх подписей оси времени («2026» в левом нижнем углу). Своего
+          stacking-контекста у .sb-max нет, так что просто прячем подпись. */}
+      {!maximizedPanel && <div style={footNote}>песочница · приватный превью</div>}
     </div>
     </ChartPrefsCtx.Provider>
   );
