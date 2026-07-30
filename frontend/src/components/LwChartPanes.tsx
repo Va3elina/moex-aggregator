@@ -24,7 +24,7 @@ import { forwardRef, useContext, useEffect, useImperativeHandle, useRef } from '
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   LineSeries, AreaSeries, HistogramSeries, CandlestickSeries, BarSeries,
-  type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
+  type IChartApi, type ISeriesApi, type IPriceLine, type UTCTimestamp, type Time, type LogicalRange,
   type Logical, type Coordinate,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
@@ -74,6 +74,11 @@ interface LwChartPanesProps {
   drawColor?: string;
   drawWidth?: number;
   selectedDrawId?: string | null;
+  /** Клик по «+» у ценовой оси → создать алерт на уровне под курсором. Работает
+   *  на панели цены (индекс 0), как и экспирации. */
+  onCreateAlert?: (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => void;
+  /** На каких осях показывать «+». Пустой массив/undefined — не показывать. */
+  alertAxes?: ('left' | 'right')[];
   /** Метки экспираций (смена контракта). Рисуются на панели цены (индекс 0). */
   expirations?: ExpirationMark[];
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
@@ -137,7 +142,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend, timeVisible, priceLines, expirations,
+  watermark, hideLegend, timeVisible, priceLines, expirations, onCreateAlert, alertAxes,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -171,6 +176,15 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const expRef = useRef(expirations); expRef.current = expirations;
+  const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
+  const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
+  // Превью-уровень = НАТИВНАЯ price line. В отличие от LwChart здесь у неё включён
+  // axisLabelVisible: значение рисует сама библиотека. Самодельный DOM-пилс
+  // (попиксельная реплика лейбла оси с калибровкой кегля после fonts.ready) не
+  // портируется намеренно — в стеке панелей он умножался бы на их число.
+  const previewLineRef = useRef<{ [k in 'left' | 'right']?: IPriceLine }>({});
+  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: AnySeries; last?: number; color?: string } }>({});
+  const layoutAlertRef = useRef<(() => void) | null>(null);
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
@@ -288,7 +302,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
       unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler));
       if (i === 0) {
-        const redrawExp = () => drawExpRef.current?.();
+        const redrawExp = () => { drawExpRef.current?.(); layoutAlertRef.current?.(); };
         chart.timeScale().subscribeVisibleLogicalRangeChange(redrawExp);
         unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(redrawExp));
       }
@@ -313,6 +327,99 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         },
       });
       drawExpRef.current = () => expLayerApi?.draw();
+    }
+
+    // ── §OI-3 алерты: «+» у ценовой оси панели цены ──────────────────────────
+    // ДЕШЁВЫЙ вариант порта: превью-уровень — нативная price line с
+    // axisLabelVisible, значение рисует сама библиотека. Самодельный DOM-пилс из
+    // LwChart (реплика лейбла оси с калибровкой кегля по canvas/DOM после
+    // fonts.ready и подгонкой чётности) НЕ переносим: в стеке он умножался бы на
+    // число панелей плюс вопрос «какая панель под курсором». Внешне уровень
+    // выглядит как подпись оси, а не как оранжевый чип.
+    const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertPlus: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+    const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
+    const alertBox = boxes[0];
+    if (alertBox) {
+      const hidePreview = (side: 'left' | 'right') => {
+        const pl = previewLineRef.current[side];
+        if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
+      };
+      const hideAll = () => {
+        for (const side of ['left', 'right'] as const) {
+          const p = alertPlus[side]; if (p) p.style.display = 'none';
+          hidePreview(side);
+          alertPending[side] = undefined;
+        }
+      };
+      const showAt = (rawY: number) => {
+        const ch = chartsRef.current[0];
+        const axes = alertAxesRef.current;
+        if (!ch || !onCreateAlertRef.current || !axes || axes.length === 0) { hideAll(); return; }
+        const axisH = chartsRef.current.length > 1 ? 0 : (ch.timeScale().height() || 26);
+        const y = Math.max(0, Math.min(alertBox.clientHeight - axisH, rawY));
+        for (const side of ['left', 'right'] as const) {
+          const plus = alertPlus[side];
+          const info = axisInfoRef.current[side];
+          if (!plus || !axes.includes(side) || !info) { if (plus) plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
+          const price = info.api.coordinateToPrice(y as number);
+          if (price == null) { plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
+          const pl = previewLineRef.current[side];
+          // axisLabelVisible:true — вот и вся замена самодельному пилсу.
+          if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true }); } catch { /* серия снята */ } }
+          let axisW = 54;
+          try { axisW = ch.priceScale(side).width() || 54; } catch { /* §R2-30: «Value is null» сразу после смены visible */ }
+          plus.style.background = info.color || 'var(--accent,#FF5C2B)';
+          plus.style.top = y + 'px';
+          plus.style.display = 'flex';
+          plus.style.left = side === 'left' ? axisW + 4 + 'px' : 'auto';
+          plus.style.right = side === 'right' ? axisW + 4 + 'px' : 'auto';
+          alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
+        }
+      };
+      for (const side of ['left', 'right'] as const) {
+        const strip = document.createElement('div');
+        strip.style.cssText = 'position:absolute;top:0;display:none;pointer-events:auto;z-index:6;cursor:crosshair;' + side + ':0';
+        strip.addEventListener('mousemove', (e) => showAt(e.clientY - alertBox.getBoundingClientRect().top));
+        alertBox.appendChild(strip);
+        alertStrips[side] = strip;
+
+        const plus = document.createElement('div');
+        plus.style.cssText = 'position:absolute;display:none;align-items:center;justify-content:center;'
+          + 'width:15px;height:15px;border-radius:50%;transform:translateY(-50%);z-index:7;'
+          + 'cursor:pointer;pointer-events:auto;color:#fff;font-size:12px;line-height:1;font-weight:700';
+        plus.textContent = '+';
+        plus.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const p = alertPending[side];
+          if (p) onCreateAlertRef.current?.(p);
+        });
+        alertBox.appendChild(plus);
+        alertPlus[side] = plus;
+      }
+      alertBox.addEventListener('mouseleave', hideAll);
+      unsubs.push(() => alertBox.removeEventListener('mouseleave', hideAll));
+
+      // Геометрия полос-хитзон: ширина = ширина шкалы, высота = поле без оси.
+      const layoutAlert = () => {
+        const ch = chartsRef.current[0];
+        const axes = alertAxesRef.current;
+        const axisH = chartsRef.current.length > 1 ? 0 : (ch?.timeScale().height() || 26);
+        const h = Math.max(0, alertBox.clientHeight - axisH);
+        for (const side of ['left', 'right'] as const) {
+          const strip = alertStrips[side];
+          if (!strip) continue;
+          const on = !!ch && !!onCreateAlertRef.current && !!axes?.includes(side);
+          if (!on) { strip.style.display = 'none'; const p = alertPlus[side]; if (p) p.style.display = 'none'; continue; }
+          let w = 54;
+          try { w = ch!.priceScale(side).width() || 54; } catch { /* см. §R2-30 */ }
+          strip.style.display = 'block';
+          strip.style.width = Math.max(28, w) + 'px';
+          strip.style.height = h + 'px';
+        }
+      };
+      layoutAlertRef.current = layoutAlert;
+      requestAnimationFrame(layoutAlert);
     }
 
     // ── общий кроссхэйр + единый тултип ──
@@ -775,6 +882,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     return () => {
       expLayerApi?.destroy();
       drawExpRef.current = null;
+      layoutAlertRef.current = null;
+      for (const el of [alertStrips.left, alertStrips.right, alertPlus.left, alertPlus.right]) el?.parentNode?.removeChild(el);
       wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
       cleanupDraw?.();
@@ -800,11 +909,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           : {
               mode: CrosshairMode.Normal,
               vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-              horzLine: { color: c.cross, labelBackgroundColor: c.lab },
+              // При активных alertAxes горизонталь кроссхэйра гасим: её роль
+              // играет превью-линия уровня, иначе на оси две подписи разом.
+              horzLine: {
+                color: c.cross, labelBackgroundColor: c.lab,
+                visible: !(alertAxes && alertAxes.length),
+                labelVisible: !(alertAxes && alertAxes.length),
+              },
             },
       });
     });
-  }, [dark, chartPrefs]);
+  }, [dark, chartPrefs, alertAxes]);
 
   // ── серии всех панелей ──
   useEffect(() => {
@@ -936,6 +1051,29 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
       }
     });
+
+    // Инфо по осям панели цены + превью-линии алерта. Пересоздаются здесь же:
+    // createPriceLine привязан к серии, а серии в этом эффекте пересоздаются.
+    axisInfoRef.current = {};
+    previewLineRef.current = {};
+    if (onCreateAlert && panes[0]) {
+      const box0 = boxes[0];
+      for (const side of ['left', 'right'] as const) {
+        const idx = panes[0].series.findIndex((d) => (d.scale ?? 'right') === side);
+        const api = idx >= 0 ? apisRef.current[0]?.[idx] : undefined;
+        if (!api || !box0) continue;
+        const def = panes[0].series[idx];
+        const last = def.data.length ? def.data[def.data.length - 1].value : undefined;
+        axisInfoRef.current[side] = { api, last, color: resolveColor(box0, def.color) };
+        try {
+          previewLineRef.current[side] = api.createPriceLine({
+            price: last ?? 0, color: resolveColor(box0, 'var(--text-secondary)'),
+            lineWidth: 1, lineStyle: LineStyle.Dashed,
+            lineVisible: false, axisLabelVisible: false, title: '',
+          });
+        } catch { /* серия ещё не готова */ }
+      }
+    }
 
     // Уровни алертов. Живут ВМЕСТЕ с серией (removeSeries сносит и линии), поэтому
     // создаются здесь же, а не отдельным эффектом. priceLines обязан быть в депсах
