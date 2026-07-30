@@ -277,6 +277,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             drawOpacity={draw.drawOpacity}
             selectedDrawId={draw.selectedDrawId}
             onSelectDraw={draw.setSelectedDrawId}
+            onSelectionRect={draw.setSelRect}
             onToolReset={draw.onToolReset}
             drawMagnet={draw.drawMagnet}
             drawHidden={draw.drawHidden}
