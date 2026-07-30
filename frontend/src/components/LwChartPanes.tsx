@@ -269,6 +269,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
 
       // Единый тултип этой панели (строки всех панелей дописываются в кроссхэйре).
       const tip = document.createElement('div');
+      // Тот же класс, что у тултипа LwChart: по нему песочница гасит курсорную
+      // подсказку (sandbox.css) и по нему же его вычищает экспорт в PNG. Без
+      // класса тултип Panes не попадал ни под одно из этих правил.
+      tip.className = 'chart-tooltip-root';
       tip.style.cssText = [
         'position:absolute', 'pointer-events:none', 'z-index:6', 'display:none',
         'background:var(--bg-secondary,#17161A)', 'border:1px solid var(--border-color,rgba(245,241,232,0.18))',

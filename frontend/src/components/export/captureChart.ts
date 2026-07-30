@@ -58,7 +58,7 @@ export async function captureChart(
         // не достаёт. Баг: «нажать экспорт и быстро навести курсор» → crosshair
         // попадал в снимок. Помечены классом chart-hover-ui в SimpleChart.
         onclone: (clonedDoc) => {
-            clonedDoc.querySelectorAll('.chart-hover-ui').forEach((el) => el.remove());
+            clonedDoc.querySelectorAll('.chart-hover-ui, .chart-tooltip-root').forEach((el) => el.remove());
         },
     });
 
