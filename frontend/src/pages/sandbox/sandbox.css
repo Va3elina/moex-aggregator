@@ -9,8 +9,14 @@
 
    Тема задаётся data-sbtheme на .sb-root; для per-panel override (◐, §4.3) те же
    переменные можно переопределить на .sb-panel[data-sbtheme=…] (задел на будущее).
+
+   .sb-max — обёртка РАЗВЁРНУТОГО окна (⤢). Ей нужны те же токены: без неё
+   переменные наследовались от .sb-root (тема ОБОЛОЧКИ) и кнопка ◐ в полноэкранном
+   режиме не меняла цвет. Класс отдельный, не .sb-panel — чтобы не притащить хром
+   панели (бордер/радиус/тень, см. ниже) на полноэкранный оверлей.
    ──────────────────────────────────────────────────────────────────────── */
 .sb-root[data-sbtheme="dark"],
+.sb-max[data-sbtheme="dark"],
 .sb-panel[data-sbtheme="dark"] {
   --bg: #0E0E10;
   --panel: #201E25;
@@ -50,6 +56,7 @@
   --chart-line-3: var(--c-up);
 }
 .sb-root[data-sbtheme="light"],
+.sb-max[data-sbtheme="light"],
 .sb-panel[data-sbtheme="light"] {
   --bg: #F4F1EA;
   --panel: #FFFFFF;
