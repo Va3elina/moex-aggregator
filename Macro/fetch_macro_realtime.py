@@ -38,6 +38,11 @@ from sqlalchemy import create_engine, text
 BASE_DIR = Path(__file__).parent
 PROJECT_DIR = BASE_DIR.parent
 
+# Оркестратор запускает скрипт с cwd=Macro/, поэтому корень репо в sys.path
+# сам не попадает. Нужен и для api.ru_tls (TLS-контекст Росстата ниже), и для
+# moex_calendar.
+sys.path.insert(0, str(PROJECT_DIR))
+
 load_dotenv(PROJECT_DIR / ".env")
 DB_URL = os.getenv("DB_URL")
 
@@ -52,16 +57,39 @@ CBR_M2_URL = "https://www.cbr.ru/vfs/statistics/credit_statistics/monetary_agg.x
 # Поэтому URL файла извлекается из HTML страницы регуляркой.
 ROSSTAT_GDP_PAGE_URL = "https://rosstat.gov.ru/statistics/accounts"
 ROSSTAT_BASE_URL = "https://rosstat.gov.ru"
-# Сертификат rosstat.gov.ru подписан Russian Trusted Root CA, отсутствующим в
-# certifi и системных store macOS/Linux. Используем небезопасный SSL-контекст
-# (verify=False). Альтернатива — установить корневой серт, но это лишняя зависимость.
+# Сертификат rosstat.gov.ru подписан Russian Trusted Root CA (Минцифры),
+# которого нет в certifi, и сам Росстат не присылает промежуточный сертификат.
+# Цепочку достраиваем своим бандлом — см. api/ru_tls.py::rosstat_ssl_context.
+# До 30.07.2026 здесь стоял CERT_NONE, то есть данные ВВП принимались вообще
+# без проверки сертификата.
 import re as _re
 import ssl as _ssl
+from api.ru_tls import rosstat_ssl_context as _ru_tls_rosstat_context
+
+
 def _rosstat_ssl_context() -> _ssl.SSLContext:
-    ctx = _ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = _ssl.CERT_NONE
-    return ctx
+    """Контекст с полной проверкой цепочки Минцифры.
+
+    Тонкая обёртка: имя приватное, но на него ссылаются рунбуки ручного
+    импорта ВВП (скилл moex-macro-refresh), поэтому сохраняем как есть.
+    """
+    return _ru_tls_rosstat_context()
+
+
+def _tls_hint(exc: Exception) -> str:
+    """Подсказка, если упала именно проверка сертификата Росстата.
+
+    Сбой ВВП не красит пайплайн (GDP-фетч некритичен), так что единственный
+    след — эта строка в логе. Пусть она сразу говорит, что чинить.
+    """
+    if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+        return ""
+    return (
+        " — не сошлась цепочка Минцифры. Вероятнее всего Росстату выписали "
+        "лист под новым Sub CA: обновить certs/russian_trusted_sub_ca.pem "
+        "(порядок действий — в шапке этого файла), проверка — "
+        "python scripts/check_ru_tls.py"
+    )
 
 # === Лимиты валидации ===
 M2_MIN_VALUE = 1            # M2 min (млрд руб) — в 1993 M2 было ~6.5 млрд руб
@@ -74,8 +102,7 @@ GDP_MAX_VALUE = 100_000_000 # GDP max (100 трлн руб за квартал)
 GDP_MAX_JUMP_PCT = 50       # Максимальный скачок между кварталами (%)
 GDP_MIN_DATE = date(1995, 1, 1)  # GDP доступна с 1995
 
-# === Календарь MOEX ===
-sys.path.insert(0, str(PROJECT_DIR))
+# === Календарь MOEX ===  (PROJECT_DIR уже в sys.path, см. блок «Пути»)
 try:
     from moex_calendar import get_moscow_time, is_trading_day
 except ImportError:
@@ -679,7 +706,7 @@ def discover_gdp_url() -> Optional[str]:
                 return None
             html = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
-        log.error(f"  Не удалось загрузить landing-страницу: {e}")
+        log.error(f"  Не удалось загрузить landing-страницу: {e}{_tls_hint(e)}")
         return None
 
     m = GDP_XLSX_HREF_RE.search(html)
@@ -715,7 +742,7 @@ def _download_to_tempfile(url: str, ssl_context=None) -> Optional[str]:
         log.info(f"  Скачано: {len(data):,} байт → {path}")
         return path
     except Exception as e:
-        log.error(f"  Ошибка скачивания {url}: {e}")
+        log.error(f"  Ошибка скачивания {url}: {e}{_tls_hint(e)}")
         return None
 
 
