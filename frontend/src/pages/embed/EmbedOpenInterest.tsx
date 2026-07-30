@@ -34,6 +34,7 @@ import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './Embe
 import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 // Экспорт графика (скрин → превью → рисование → скачать/копировать) — переиспользуем
@@ -114,7 +115,19 @@ function drawToolBtn(active: boolean): CSSProperties {
 
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
-const loadPeriodFor = (interval: number): string => (interval === 24 ? '1y' : '1m');
+// Дневной ТФ раньше был жёстко '1y' — обрезал историю ровно годом для ВСЕХ
+// тарифов, включая admin/pro (у которых max_history_days вообще не ограничен).
+// Бэкенд (enforce_tier_limits) HARD-REJECT'ит period, если он больше разрешённого
+// тарифом — поэтому здесь нельзя слепо слать 'all': guest/free/basic вместо
+// урезанного-но-рабочего графика получили бы голую ошибку. Выбираем САМЫЙ
+// длинный период, который canUsePeriod разрешает текущему тарифу.
+const DAILY_PERIOD_CANDIDATES = ['all', '5y', '2y', '1y', '6m', '3m', '1m'] as const;
+function bestDailyPeriod(canUsePeriod: (p: string) => boolean): string {
+  for (const p of DAILY_PERIOD_CANDIDATES) {
+    if (canUsePeriod(p)) return p;
+  }
+  return '1m';
+}
 // Время → UNIX-секунды для LwChart. Дневной ТФ: UTC-полночь по дате (чтобы не было
 // сдвига даты из-за таймзоны); интрадей — полный timestamp.
 const toSec = (t: string, intraday: boolean): number => {
@@ -181,6 +194,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
+  const oiAccess = useTierAccess('open_interest');
 
   const sf = useSeriesFormats('frame:embed:oi:fmts');   // §OI-5: формат на каждую линию
   const [instrument, setInstrument] = useState<string>(() =>
@@ -327,9 +341,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
     if (!instrument) { setStatus('empty'); return; }
+    // Пока тариф не разрешился — безопасный '1y' (прежнее поведение, никого не
+    // ломает); как только oiAccess.isLoading станет false, эффект перезапустится
+    // (он в deps) и для admin/pro/pro-эквивалентных тарифов подтянется вся история.
+    const period = interval === 24
+      ? (oiAccess.isLoading ? '1y' : bestDailyPeriod(oiAccess.canUsePeriod))
+      : '1m';
     let cancelled = false;
     setStatus('loading');
-    getChartData(instrument, instrument, 'futures', interval, clgroup, true, loadPeriodFor(interval))
+    getChartData(instrument, instrument, 'futures', interval, clgroup, true, period)
       .then((res) => {
         if (cancelled) return;
         // ТФ персистится per-embed и не сбрасывается при смене актива (клик по
@@ -353,7 +373,12 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [instrument, clgroup, interval]);
+  // oiAccess.canUsePeriod — НЕ мемоизированная функция (новый reference каждый
+  // рендер) — в deps нельзя, будет бесконечный рефетч. tier/isLoading — обычные
+  // примитивы, стабильны между рендерами и меняются ровно тогда, когда реально
+  // должен пересчитаться разрешённый период.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instrument, clgroup, interval, oiAccess.isLoading, oiAccess.tier]);
 
   // Список ТФ в дропдауне — только те, где у ЭТОГО актива реально есть OI-данные
   // (available_intervals из ответа /api/chart, независим от запрошенного interval).
