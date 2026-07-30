@@ -33,6 +33,11 @@ export interface LwSeries {
   data: LwPoint[];
   color: string;
   scale?: 'left' | 'right';
+  /** Номер панели: 0 (по умолчанию) — основной график, 1+ — отдельная панель под
+   *  ним (нативные панели lightweight-charts v5). Так индикатор переезжает
+   *  «на графике ⇄ отдельной панелью» без пересоздания чарта. Панели создаются
+   *  и удаляются автоматически по максимальному номеру среди серий. */
+  pane?: number;
   lineWidth?: number;
   /** Пунктирная линия — для прогнозного «хвоста» (Баффетт): проекцию не выдаём
    *  за реальные данные. Действует на line и area. */
@@ -48,6 +53,9 @@ export interface LwSeries {
   /** Мин. шаг цены оси/пилюли. Дефолт 1 (целые — ОИ/Баффетт); проценты/breadth → 0.01/0.1. */
   minMove?: number;
 }
+
+/** Во сколько раз основной график выше панели индикатора. */
+const MAIN_PANE_STRETCH = 2.6;
 
 export interface LwMarker { time: number; text?: string; color?: string; position?: 'aboveBar' | 'belowBar' | 'inBar' }
 
@@ -1147,6 +1155,23 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     chartRef.current?.applyOptions({ timeScale: { timeVisible: !!timeVisible } });
   }, [timeVisible]);
 
+  // ── панели (v5) ───────────────────────────────────────────────────────────
+  // Отдельно от эффекта серий и по ЧИСЛУ панелей, а не по массиву серий: эффект
+  // серий перезапускается на каждое обновление данных, и создавать/сносить там
+  // панели значило дёргать раскладку чарта постоянно — в замерах высота
+  // подпанели скакала 0 ⇄ норма от перезагрузки к перезагрузке. Здесь это
+  // происходит ровно тогда, когда индикатор реально переехал на панель или назад.
+  const paneCount = Math.max(0, ...series.map((s) => s.pane ?? 0)) + 1;
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    // addPane(true): без флага пустую панель выбрасывает ДО того, как в неё
+    // положат серию — panes().length так и оставался 1 (проверено).
+    while (chart.panes().length < paneCount) chart.addPane(true);
+    while (chart.panes().length > paneCount) chart.removePane(chart.panes().length - 1);
+    if (paneCount > 1) chart.panes().forEach((p, i) => p.setStretchFactor(i === 0 ? MAIN_PANE_STRETCH : 1));
+  }, [paneCount]);
+
   // ── серии (пересоздаём при смене набора/данных, зум сохраняем) ──
   useEffect(() => {
     const chart = chartRef.current;
@@ -1156,16 +1181,21 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
     seriesApiRef.current.forEach((s) => chart.removeSeries(s));
     seriesApiRef.current = [];
 
-    const usesLeft = series.some((s) => (s.scale ?? 'right') === 'left');
-    const usesRight = series.some((s) => (s.scale ?? 'right') === 'right');
-    chart.priceScale('left').applyOptions({ visible: usesLeft });
-    chart.priceScale('right').applyOptions({ visible: usesRight });
+    // Видимость ценовых осей — ПОПАНЕЛЬНО: у подпанели своя пара шкал, и без
+    // этого шкала индикатора либо пропадала, либо висела пустой. Сами панели
+    // создаёт/сносит отдельный эффект выше (по paneCount).
+    for (let pi = 0; pi < Math.min(paneCount, chart.panes().length); pi++) {
+      const inPane = series.filter((s) => (s.pane ?? 0) === pi);
+      chart.priceScale('left', pi).applyOptions({ visible: inPane.some((s) => (s.scale ?? 'right') === 'left') });
+      chart.priceScale('right', pi).applyOptions({ visible: inPane.some((s) => (s.scale ?? 'right') === 'right') });
+    }
 
     const box = boxRef.current;
     const rc = (col: string | undefined): string => (box ? resolveColor(box, col) : (col ?? '#888888'));
 
     for (const def of series) {
       const scaleId = def.scale ?? 'right';
+      const paneIdx = def.pane ?? 0;
       const priceFormat = def.axisFmt
         ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
         : undefined;
@@ -1181,9 +1211,9 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
       const isOhlc = def.type === 'candlestick' || def.type === 'bar';
       if (def.type === 'line') {
-        s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat }, paneIdx);
       } else if (def.type === 'area') {
-        s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat }, paneIdx);
       } else if (def.type === 'candlestick') {
         // up/down = палитра «Покупки/Продажи» (та же, что у свечей сайта): в editorial
         // это сине-стальной/янтарь, не зелёный/красный (дальтоник-палитра проекта).
@@ -1191,12 +1221,12 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
         // (мигает зелёным/красным на оси цены); наш §R2-пилс при наведении даёт значение
         // в фиксированном цвете. Для OHLC отключаем мигающий лейбл.
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+        s = chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat }, paneIdx);
       } else if (def.type === 'bar') {
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addSeries(BarSeries, { upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+        s = chart.addSeries(BarSeries, { upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat }, paneIdx);
       } else {
-        s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
+        s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat }, paneIdx);
       }
       try {
         // union-тип s → .setData требует точного типа данных: касты по ветке.
