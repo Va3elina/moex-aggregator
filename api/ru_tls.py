@@ -31,6 +31,13 @@ TLS-доверие к корню Минцифры для российских в
     Минцифры его ротировали. Пиннинг интермедиата = поломка при следующей
     ротации. Проверено вживую: certifi + корень валидирует обоих вендоров.
 
+ИСКЛЮЧЕНИЕ — РОССТАТ (rosstat.gov.ru)
+    Там правило выше не работает: сервер отдаёт ТОЛЬКО листовой сертификат,
+    без промежуточного (openssl: `Verify return code: 21`). Достроить путь до
+    корня нечем, поэтому для него собран второй бандл — с Sub CA внутри
+    (rosstat-bundle.pem, см. rosstat_ssl_context ниже). Бандлы держим врозь,
+    чтобы пин интермедиата не протёк в платёжный путь.
+
 ЛОКАЛЬНАЯ РАЗРАБОТКА
     Бандл собирается на этапе docker build (см. Dockerfile). Вне контейнера
     файла нет → молча откатываемся на обычный certifi. Боевые домены пока на
@@ -43,6 +50,7 @@ from __future__ import annotations
 
 import logging
 import os
+import ssl
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -70,3 +78,68 @@ if RU_TLS_VERIFY is True:
     )
 else:
     log.info("TLS-бандл с корнем Минцифры активен: %s", RU_CA_BUNDLE_PATH)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#   Росстат — второй бандл, с промежуточным сертификатом
+# ══════════════════════════════════════════════════════════════════════
+
+ROSSTAT_CA_BUNDLE_PATH = Path(
+    os.getenv("FRAME_ROSSTAT_CA_BUNDLE", "/etc/ssl/frame/rosstat-bundle.pem")
+)
+
+# Фоллбэк для запуска вне контейнера: тот же набор CA, но из репозитория.
+# Внутрь образа certs/ не копируется (там whitelist-COPY только кода), так
+# что в проде всегда выигрывает бандл, собранный на этапе docker build.
+_REPO_CERTS_DIR = Path(__file__).resolve().parent.parent / "certs"
+_MINCIFRY_PEMS = (
+    _REPO_CERTS_DIR / "russian_trusted_root_ca.pem",
+    _REPO_CERTS_DIR / "russian_trusted_sub_ca.pem",
+)
+
+
+def rosstat_ssl_context() -> ssl.SSLContext:
+    """SSLContext для rosstat.gov.ru — с ПОЛНОЙ проверкой сертификата.
+
+    Нужен отдельный контекст, а не общий бандл, по двум причинам:
+
+    1. Корня Минцифры нет в certifi (как и для T-Bank/VK).
+    2. Росстат не присылает промежуточный сертификат — в хендшейке ровно
+       один `BEGIN CERTIFICATE`, openssl отвечает `Verify return code: 21
+       (unable to verify the first certificate)`. Поэтому Sub CA лежит в
+       бандле у нас; для вендоров так делать НЕ надо, они его шлют сами.
+
+    Клиент здесь — стандартный `urllib` (фетчер ВВП), которому нужен именно
+    SSLContext, а не строка для httpx `verify=`. Пути к бандлу хватило бы и
+    в виде cafile, но вызывающему коду удобнее готовый контекст.
+
+    Raises:
+        FileNotFoundError: нет ни собранного бандла, ни PEM-ов в репозитории.
+            Падаем громко и осознанно: тихий откат на `verify=False` — ровно
+            та дыра, которую эта функция закрывает (до 30.07.2026 фетчер ВВП
+            ходил с CERT_NONE).
+    """
+    if ROSSTAT_CA_BUNDLE_PATH.is_file():
+        return ssl.create_default_context(cafile=str(ROSSTAT_CA_BUNDLE_PATH))
+
+    missing = [str(p) for p in _MINCIFRY_PEMS if not p.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "Нет бандла с цепочкой Минцифры для rosstat.gov.ru: "
+            f"{ROSSTAT_CA_BUNDLE_PATH} отсутствует (норма вне контейнера), "
+            f"и в репозитории не найдено: {', '.join(missing)}. "
+            "Внутри контейнера это означает сломанный docker build."
+        )
+
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+
+        ctx.load_verify_locations(cafile=certifi.where())
+    except ImportError:
+        pass  # системного store хватит: цепочку Минцифры добавляем ниже
+    for pem in _MINCIFRY_PEMS:
+        ctx.load_verify_locations(cafile=str(pem))
+
+    log.info("Росстат: бандл не найден, доверие собрано из %s", _REPO_CERTS_DIR)
+    return ctx

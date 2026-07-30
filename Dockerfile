@@ -47,27 +47,45 @@ RUN pip install --no-cache-dir -r requirements.txt
 # что requirements.txt uncommitted (signal-engine territory, Вадимов patch).
 RUN pip install --no-cache-dir gunicorn==21.2.0
 
-# ─── TLS-бандл с корнем Минцифры (T-Bank + VK ID) ────────────────────────
-# T-Bank и VK ID переводят сертификаты на Russian Trusted Root CA, которого
-# нет ни в certifi, ни в системном store. Собираем ОТДЕЛЬНЫЙ бандл
-# (certifi + корень) — он подключается явным verify= только в биллинге и
-# OAuth (api/ru_tls.py). В /usr/local/share/ca-certificates НЕ кладём и
-# update-ca-certificates НЕ зовём сознательно: этот CA может выпустить
-# сертификат на любой домен, и глобальное доверие распространило бы его на
-# весь исходящий трафик (MOEX, Telegram, GitHub).
+# ─── TLS-бандлы с цепочкой Минцифры ──────────────────────────────────────
+# T-Bank, VK ID и rosstat.gov.ru сидят на Russian Trusted Root CA, которого
+# нет ни в certifi, ни в системном store. Собираем ОТДЕЛЬНЫЕ бандлы — они
+# подключаются явным verify= ровно там, где нужны (api/ru_tls.py). В
+# /usr/local/share/ca-certificates НЕ кладём и update-ca-certificates НЕ
+# зовём сознательно: этот CA может выпустить сертификат на любой домен, и
+# глобальное доверие распространило бы его на весь исходящий трафик (MOEX,
+# Telegram, GitHub).
+#
+# Бандлов два, и они РАЗНЫЕ по составу:
+#   ru-trusted-bundle.pem  = certifi + корень.        Биллинг + OAuth.
+#       Промежуточный сертификат эти вендоры присылают сами в хендшейке,
+#       поэтому пин интермедиата был бы лишней точкой отказа при ротации.
+#   rosstat-bundle.pem     = certifi + корень + Sub CA.  Фетчер ВВП.
+#       Росстат присылает ТОЛЬКО лист (`Verify return code: 21`), достроить
+#       цепочку нечем → интермедиат обязан лежать у нас.
+# Держим их врозь, чтобы пин интермедиата не протёк в платёжный путь.
 #
 # Шаг обязан идти ПОСЛЕ pip install — нужен установленный certifi.
-# Финальная строка — build-time проверка: если PEM битый или пустой,
-# сборка падает здесь, а не в проде на первом платеже.
-COPY certs/russian_trusted_root_ca.pem /etc/ssl/frame/
-RUN cat "$(python3 -c 'import certifi; print(certifi.where())')" \
-        /etc/ssl/frame/russian_trusted_root_ca.pem \
+# Финальный python — build-time проверка: если PEM битый, пустой или в бандле
+# не оказалось нужного звена, сборка падает здесь, а не в проде на первом
+# платеже (и не тихо, через квартал, на обновлении ВВП).
+COPY certs/russian_trusted_root_ca.pem certs/russian_trusted_sub_ca.pem /etc/ssl/frame/
+RUN CERTIFI="$(python3 -c 'import certifi; print(certifi.where())')" && \
+    cat "$CERTIFI" /etc/ssl/frame/russian_trusted_root_ca.pem \
         > /etc/ssl/frame/ru-trusted-bundle.pem && \
-    chmod 0644 /etc/ssl/frame/ru-trusted-bundle.pem && \
+    cat "$CERTIFI" /etc/ssl/frame/russian_trusted_root_ca.pem \
+        /etc/ssl/frame/russian_trusted_sub_ca.pem \
+        > /etc/ssl/frame/rosstat-bundle.pem && \
+    chmod 0644 /etc/ssl/frame/ru-trusted-bundle.pem /etc/ssl/frame/rosstat-bundle.pem && \
     python3 -c "import ssl, sys; \
-ctx = ssl.create_default_context(cafile='/etc/ssl/frame/ru-trusted-bundle.pem'); \
-n = len(ctx.get_ca_certs()); \
-sys.exit(0) if n > 100 else sys.exit(f'ru-trusted-bundle.pem: только {n} корней')"
+c = ssl.create_default_context(cafile='/etc/ssl/frame/ru-trusted-bundle.pem').get_ca_certs(); \
+sys.exit(0) if len(c) > 100 else sys.exit(f'ru-trusted-bundle.pem: только {len(c)} сертификатов')" && \
+    python3 -c "import ssl, sys; \
+c = ssl.create_default_context(cafile='/etc/ssl/frame/rosstat-bundle.pem').get_ca_certs(); \
+cn = {v for x in c for rdn in x.get('subject', ()) for k, v in rdn if k == 'commonName'}; \
+gone = [n for n in ('Russian Trusted Root CA', 'Russian Trusted Sub CA') if n not in cn]; \
+sys.exit(f'rosstat-bundle.pem: в бандле нет {gone}') if gone else None; \
+sys.exit(0) if len(c) > 100 else sys.exit(f'rosstat-bundle.pem: только {len(c)} сертификатов')"
 
 # Код приложения
 COPY api/ ./api/

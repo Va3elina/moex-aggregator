@@ -46,8 +46,15 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 -i ~/.ssh/i
 - ⚠️ **Имя файла ПЛАВАЕТ**: `VVP_kvartal_s_1995-2025` → `s1995` → `s-1995-2026` (дефис,
   инцидент 02.07.2026, PR #288). Регэксп теперь `s[-_]?\d{4}`. Если Росстат снова
   сменит паттерн — discover отвалится, чинить регэксп.
-- ⚠️ **SSL**: сертификат Росстата подписан Russian Trusted Root CA → нужен
-  `_rosstat_ssl_context()`. WebFetch и обычный curl БЕЗ этого CA НЕ возьмут страницу.
+- ⚠️ **SSL**: сертификат Росстата подписан Russian Trusted Root CA (Минцифры), и вдобавок
+  Росстат **не присылает промежуточный сертификат** (`Verify return code: 21`). Поэтому нужен
+  `_rosstat_ssl_context()` → `api/ru_tls.py::rosstat_ssl_context()`: бандл
+  `/etc/ssl/frame/rosstat-bundle.pem` = certifi + корень + Sub CA. WebFetch и обычный curl
+  БЕЗ этого бандла страницу НЕ возьмут.
+  С 30.07.2026 проверка сертификата **включена** (до этого стоял `CERT_NONE`, PR #858).
+  Если фетчер ляжет с `CERTIFICATE_VERIFY_FAILED` — Росстату выписали лист под новым Sub CA:
+  порядок обновления в шапке `certs/russian_trusted_sub_ca.pem`, проверка —
+  `python scripts/check_ru_tls.py` (Росстат там отдельной строкой).
 - Индикатор в БД: `macro_data.indicator = 'GDP_QUARTERLY'`, млрд ₽, `source=ROSSTAT_XLSX`.
 
 ## Ручной путь, если auto-discover сломался

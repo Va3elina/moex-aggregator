@@ -2,9 +2,13 @@
 """
 Канарейка миграции T-Bank и VK ID на корень Минцифры (Russian Trusted Root CA).
 
-Отвечает на два вопроса:
+Отвечает на три вопроса:
   1. Переключил ли вендор БОЕВОЙ домен на Минцифры-цепочку?
   2. Готовы ли мы — то есть проходит ли проверка с нашим бандлом?
+  3. Жив ли rosstat.gov.ru (фетчер ВВП). Он на Минцифры давно, но там
+     запинен ещё и промежуточный сертификат — Росстат его не присылает.
+     Ротация Sub CA сломает загрузку ВВП, а пайплайн от этого не покраснеет,
+     так что проверять его надо именно тут.
 
 Смысл в связке «боевой + канареечный» домен: тест-контуры вендоров
 (rest-api-test.tinkoff.ru, partners.api.vk.ru) переключились раньше боевых,
@@ -38,14 +42,17 @@ from pathlib import Path
 # Скрипт должен работать и из корня репо, и из scripts/, и в контейнере.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# (хост, что это, боевой ли)
-HOSTS: list[tuple[str, str, bool]] = [
-    ("securepay.tinkoff.ru", "T-Bank эквайринг", True),
-    ("rest-api-test.tinkoff.ru", "T-Bank тест-контур", False),
-    ("id.vk.com", "VK ID (OAuth)", True),
-    ("partners.api.vk.ru", "VK Partners API", False),
-    ("oauth.yandex.ru", "Яндекс OAuth", True),
-    ("login.yandex.ru", "Яндекс профиль", True),
+# (хост, что это, боевой ли, каким бандлом проверяем)
+#   vendor  — ru-trusted-bundle.pem (certifi + корень), миграция ещё идёт
+#   rosstat — rosstat-bundle.pem (+ Sub CA), уже на Минцифры и навсегда
+HOSTS: list[tuple[str, str, bool, str]] = [
+    ("securepay.tinkoff.ru", "T-Bank эквайринг", True, "vendor"),
+    ("rest-api-test.tinkoff.ru", "T-Bank тест-контур", False, "vendor"),
+    ("id.vk.com", "VK ID (OAuth)", True, "vendor"),
+    ("partners.api.vk.ru", "VK Partners API", False, "vendor"),
+    ("oauth.yandex.ru", "Яндекс OAuth", True, "vendor"),
+    ("login.yandex.ru", "Яндекс профиль", True, "vendor"),
+    ("rosstat.gov.ru", "Росстат (ВВП)", True, "rosstat"),
 ]
 
 MINCIFRY = "Russian Trusted"
@@ -111,6 +118,21 @@ def _bundle_config() -> tuple[Path, str | bool]:
         return p, (str(p) if p.is_file() else True)
 
 
+def _rosstat_verify():
+    """verify= для Росстата (httpx принимает и готовый SSLContext).
+
+    Берём контекст из api.ru_tls, а не путь к бандлу: вне контейнера бандла
+    нет, и контекст сам соберёт то же доверие из certs/ репозитория. Иначе
+    канарейка ругалась бы на Росстат на каждой локальной машине.
+    """
+    try:
+        from api.ru_tls import rosstat_ssl_context
+
+        return rosstat_ssl_context()
+    except (ImportError, FileNotFoundError):
+        return True  # проверить нечем — пусть честно покажет FAIL
+
+
 def cmd_status() -> int:
     try:
         import httpx
@@ -119,9 +141,16 @@ def cmd_status() -> int:
         return 1
 
     RU_CA_BUNDLE_PATH, RU_TLS_VERIFY = _bundle_config()
+    rosstat_verify = _rosstat_verify()
 
     bundle_on = RU_TLS_VERIFY is not True
-    print(f"Наш бандл: {RU_CA_BUNDLE_PATH if bundle_on else 'НЕ НАЙДЕН → обычный certifi'}\n")
+    print(f"Бандл вендоров: {RU_CA_BUNDLE_PATH if bundle_on else 'НЕ НАЙДЕН → обычный certifi'}")
+    print(
+        "Бандл Росстата: "
+        + ("собран (корень + Sub CA)" if rosstat_verify is not True
+           else "НЕ СОБРАН → обычный certifi")
+        + "\n"
+    )
 
     print(f"{'хост':<26} {'корень цепочки':<26} {'certifi':<9} {'наш бандл'}")
     print("─" * 74)
@@ -129,7 +158,7 @@ def cmd_status() -> int:
     broken: list[str] = []
     flipped_prod: list[str] = []
 
-    for host, label, is_prod in HOSTS:
+    for host, label, is_prod, kind in HOSTS:
         chain = chain_of(host)
         if not chain:
             print(f"{host:<26} {'— недоступен —':<26} {'?':<9} ?")
@@ -137,9 +166,14 @@ def cmd_status() -> int:
 
         root = chain[-1]
         is_mincifry = MINCIFRY in root
-        root_short = MINCIFRY if is_mincifry else re.sub(
-            r".*?(?:O|CN)\s*=\s*([^,]+).*", r"\1", root
-        )[:25]
+        if len(chain) == 1:
+            # Хост прислал только лист (Росстат) — «корня цепочки» тут нет,
+            # иначе в колонку попал бы сам лист и выглядел бы как self-signed.
+            root_short = "— только лист —"
+        else:
+            root_short = MINCIFRY if is_mincifry else re.sub(
+                r".*?(?:O|CN)\s*=\s*([^,]+).*", r"\1", root
+            )[:25]
 
         def probe(verify) -> str:
             try:
@@ -149,11 +183,15 @@ def cmd_status() -> int:
                 return "FAIL" if "CERTIFICATE_VERIFY" in str(ex) else "err"
 
         plain = probe(True)
-        ours = probe(RU_TLS_VERIFY) if bundle_on else plain
+        if kind == "rosstat":
+            ours = probe(rosstat_verify)
+        else:
+            ours = probe(RU_TLS_VERIFY) if bundle_on else plain
 
         if ours != "OK":
             broken.append(f"{host} ({label})")
-        if is_prod and is_mincifry:
+        # Росстат на Минцифры был всегда — в сводку о миграции вендоров не идёт.
+        if kind == "vendor" and is_prod and is_mincifry:
             flipped_prod.append(f"{host} ({label})")
 
         mark = " ←" if is_mincifry else ""
@@ -171,7 +209,7 @@ def cmd_status() -> int:
         print("\nНЕ ВАЛИДИРУЕТСЯ НАШИМ БАНДЛОМ:")
         for h in broken:
             print(f"   • {h}")
-        print("\n→ Это сломает платежи или вход. Разбираться сейчас.")
+        print("\n→ Это сломает платежи, вход или обновление ВВП. Разбираться сейчас.")
         return 1
 
     print("Все хосты валидируются нашей конфигурацией.")
