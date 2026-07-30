@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Scale } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
+import { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getBuffettCapGdp,
@@ -128,21 +129,12 @@ export default function EmbedBuffett() {
   // Рисование + экспорт графика (см. useDrawTools.tsx) — рыночный индикатор без
   // инструмента → статичный ключ персиста (не per-instrument, как у ОИ).
   const draw = useDrawTools('frame:embed:buffett:draw');
-  const lwChartRef = useRef<LwChartHandle>(null);
+  const lwChartRef = useRef<LwChartPanesHandle>(null);
 
-  // Резиновая высота графика.
+  // Высота графика НЕ считается: LwChartPanes всегда занимает 100% родителя, а
+  // родитель — <div position:absolute;inset:0>. Прежний chartH + ResizeObserver
+  // существовали только ради пропа height у LwChart.
   const chartBoxRef = useRef<HTMLDivElement>(null);
-  const [chartH, setChartH] = useState(280);
-  useEffect(() => {
-    const el = chartBoxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setChartH(Math.round(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   // Клиентский прогноз (только cap-gdp): к cap (primary в графике) и ratio
   // (secondary) дописываем 12 синтетических месячных точек, тянущих серию к
@@ -271,10 +263,10 @@ export default function EmbedBuffett() {
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && lwSeries.length > 0 && (
-          <LwChart
+          <LwChartPanes
             ref={lwChartRef}
-            series={lwSeries}
-            height={chartH}
+            panes={[{ series: lwSeries }]}
+            drawPaneIndex={0}
             dark={dark}
             fitKey={`${viewMode}|${timeframe}|${forecastTarget ?? 'off'}`}
             tickFmt={monthsYearsTickFmt}

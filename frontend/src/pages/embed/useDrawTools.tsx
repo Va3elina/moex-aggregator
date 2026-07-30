@@ -330,6 +330,7 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
   const [menu, setMenu] = useState<null | 'color' | 'width' | 'dash' | 'more'>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const lastPosRef = useRef<{ left: number; top: number } | null>(null);
 
   // Закрытие выпадашки по клику вне панели. capture=true — иначе pointerdown
   // сначала уйдёт на слой рисования графика и снимет выделение.
@@ -353,8 +354,18 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
     if (top < 4) top = selRect.y + selRect.h + 12 + draw.panelOffset.dy;
     left = Math.max(4, Math.min(Math.max(4, HW - pw - 4), left));
     top = Math.max(4, Math.min(Math.max(4, HH - ph - 4), top));
-    setPos((p) => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.top - top) < 0.5 ? p : { left, top }));
-  }, [selRect, draw.panelOffset, menu, selectedDraw?.id]);
+    // ⚠️ Эффект пишет state, ВЫВЕДЕННЫЙ ИЗ ВЁРСТКИ, — классический источник
+    // бесконечного цикла «setState → рендер → замер → setState». Сравнения с
+    // текущим pos мало: достаточно, чтобы геометрия колебалась между двумя
+    // значениями (так и случилось, когда у панели появилась левая ценовая шкала),
+    // и React упирался в лимит вложенных обновлений. Поэтому запоминаем последнее
+    // ПРИМЕНЁННОЕ значение в ref и выходим, не трогая state, если оно то же.
+    if (lastPosRef.current && Math.abs(lastPosRef.current.left - left) < 0.5 && Math.abs(lastPosRef.current.top - top) < 0.5) return;
+    lastPosRef.current = { left, top };
+    setPos({ left, top });
+    // Депсы — ПРИМИТИВЫ, а не объекты: selRect и panelOffset пересоздаются, и по
+    // ссылке эффект перезапускался бы на каждый рендер.
+  }, [selRect?.x, selRect?.y, selRect?.w, selRect?.h, draw.panelOffset.dx, draw.panelOffset.dy, menu, selectedDraw?.id]);
 
   const onGripDown = (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -365,7 +376,7 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
     window.addEventListener('pointerup', up);
   };
 
-  if (!selectedDraw || !selRect) return null;
+  if (!selectedDraw || !selRect) { lastPosRef.current = null; return null; }
   const d = selectedDraw;
   const op = d.opacity == null ? 1 : d.opacity;
   const dash: LwDash = d.dash ?? 'solid';
