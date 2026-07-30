@@ -29,6 +29,7 @@ import {
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
+import { VolumeProfilePrimitive, type VolumeProfileOptions } from './chart/volumeProfilePrimitive';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
@@ -41,6 +42,11 @@ export interface LwPane {
   series: LwSeries[];
   /** Доля высоты (flex-grow). Дефолт 1. Сила рынка в макете ≈ 1.1 / 0.9. */
   flex?: number;
+}
+
+export interface VolumeProfileSpec extends VolumeProfileOptions {
+  /** id серии панели 0, к которой крепится профиль. */
+  seriesId: string;
 }
 
 export interface LwChartPanesHandle {
@@ -81,6 +87,10 @@ interface LwChartPanesProps {
   alertAxes?: ('left' | 'right')[];
   /** Метки экспираций (смена контракта). Рисуются на панели цены (индекс 0). */
   expirations?: ExpirationMark[];
+  /** Профиль объёма на панели 0. `seriesId` — на какую серию вешать: профиль
+   *  берёт у неё priceToCoordinate, поэтому серия обязана быть ЦЕНОВОЙ. Если
+   *  серии с таким id нет (пользователь скрыл цену) — профиль не рисуется. */
+  volumeProfile?: (VolumeProfileSpec) | null;
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -147,7 +157,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, onCreateAlert, alertAxes,
+  watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -186,6 +196,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // подпись, и её читаем через ref.
   const crossFmtRef = useRef(crosshairTimeFmt); crossFmtRef.current = crosshairTimeFmt;
   const expRef = useRef(expirations); expRef.current = expirations;
+  // Профиль объёма живёт ВНЕ эффекта серий: держать его в его депсах значило бы
+  // пересоздавать все серии на каждую правку числа уровней (сотня миллисекунд
+  // ради перерисовки одного слоя). Эффект серий только переприкрепляет примитив
+  // после пересоздания серии-носителя, а сами опции доезжают отдельным эффектом.
+  const vpSpecRef = useRef(volumeProfile); vpSpecRef.current = volumeProfile;
+  const vpRef = useRef<{ prim: VolumeProfilePrimitive; api: AnySeries } | null>(null);
+  const syncVpRef = useRef<(() => void) | null>(null);
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   // Превью-уровень = НАТИВНАЯ price line. В отличие от LwChart здесь у неё включён
@@ -1129,6 +1146,43 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       }
     }
 
+    // Профиль объёма. Примитив живёт на серии — removeSeries выше уже снёс
+    // предыдущий вместе с ней, поэтому старую ссылку просто забываем (detach на
+    // снятой серии бросил бы). Функция кладётся в ref: её же зовёт эффект опций,
+    // когда серии не менялись.
+    vpRef.current = null;
+    syncVpRef.current = () => {
+      const spec = vpSpecRef.current;
+      const prev = vpRef.current;
+      const box0 = boxes[0];
+      const idx = spec ? panes[0]?.series.findIndex((d) => d.id === spec.seriesId) ?? -1 : -1;
+      const api = idx >= 0 ? apisRef.current[0]?.[idx] : undefined;
+      // Носитель сменился (пользователь переключил тип цены или скрыл её) — старый
+      // примитив снимаем именно с той серии, на которой он висел.
+      if (prev && prev.api !== api) {
+        try { prev.api.detachPrimitive(prev.prim); } catch { /* серия уже снята */ }
+        vpRef.current = null;
+      }
+      if (!spec || !api || !box0) { vpRef.current = null; return; }
+      // Цвета резолвим здесь, а не в примитиве: canvas не понимает var()/color-mix,
+      // а probe требует живой узел панели (та же идиома, что у серий).
+      const resolved: VolumeProfileSpec = {
+        ...spec,
+        upColor: resolveColor(box0, spec.upColor),
+        downColor: resolveColor(box0, spec.downColor),
+        pocColor: resolveColor(box0, spec.pocColor),
+      };
+      if (vpRef.current) { vpRef.current.prim.applyOptions(resolved); return; }
+      const prim = new VolumeProfilePrimitive(resolved);
+      try {
+        api.attachPrimitive(prim);
+        vpRef.current = { prim, api };
+      } catch (err) {
+        console.error('LwChartPanes attachPrimitive failed:', err);
+      }
+    };
+    syncVpRef.current();
+
     // Метки экспираций пересчитываем здесь же: expirations в депсах этого
     // эффекта, иначе тумблер «Экспирации» не давал бы эффекта до следующего
     // пана (ровно та дыра, что была бы у priceLines).
@@ -1149,6 +1203,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     }
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
+
+  // Правки профиля объёма (уровни, сторона, цвет) — БЕЗ пересоздания серий.
+  useEffect(() => {
+    syncVpRef.current?.();
+  }, [volumeProfile]);
 
   // Смена таймфрейма (интрадей ⇄ дневной) не пересоздаёт чарты, поэтому
   // timeVisible применяем реактивно — иначе ось застревает в режиме маунта.

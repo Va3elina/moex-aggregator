@@ -9,6 +9,11 @@
  * одной шкале он превратился бы в плоскую линию у края — поэтому «вернуть на
  * график» им недоступно (overlayOk).
  *
+ * Профиль объёма стоит особняком: он вообще не временной ряд и не может быть
+ * серией, поэтому наружу уходит не через indicatorSeriesByPane, а отдельным
+ * описанием для примитива (volumeProfileSpec). Панель у него всегда 0 —
+ * гистограмма по цене имеет смысл только рядом с ценой (ownPaneOk).
+ *
  * Компонент НЕ трогает сам чарт: индикаторы отдаются наружу массивом серий,
  * сгруппированным по панелям, а embed уже собирает из этого panes для
  * LwChartPanes.
@@ -16,11 +21,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Eye, EyeOff, Settings2, X as XIcon, Plus, PanelBottom, ChartNoAxesColumn } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { sma, ema, bollinger, rsi, atr, volumeBars, type IndCandle } from '../../utils/indicators';
+import type { VolumeProfileSpec } from '../../components/LwChartPanes';
+import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
+import { sma, ema, bollinger, rsi, atr, volumeBars, VOLUME_UP, VOLUME_DOWN, type IndCandle } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
-export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume';
+export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp';
 
 export interface IndicatorInst {
   id: string;
@@ -34,6 +41,8 @@ export interface IndicatorInst {
   visible: boolean;
   /** 0 = поверх графика, 1+ — отдельная панель. */
   pane: number;
+  /** К какому краю прижат профиль объёма. Только для kind='vp'. */
+  side?: 'left' | 'right';
 }
 
 interface KindDef {
@@ -48,6 +57,14 @@ interface KindDef {
   defaultPane: 0 | 1;
   /** Можно ли класть поверх цены вообще (пункт «Вернуть на график»). */
   overlayOk: boolean;
+  /** Можно ли вынести в свою панель. false — у профиля объёма: он рисуется
+   *  по ценовой шкале и в пустой панели показывать было бы нечего. */
+  ownPaneOk?: boolean;
+  /** Нужен объём в свече. Такие индикаторы прячем там, где его нет — иначе
+   *  пользователь добавляет строку, а на графике не появляется ничего. */
+  needsVolume?: boolean;
+  /** Подпись поля «Период», если оно значит не период. */
+  lengthLabel?: string;
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
@@ -56,7 +73,11 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
   bb: { label: 'Полосы Боллинджера', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true },
   rsi: { label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
   atr: { label: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
-  volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false },
+  volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true },
+  vp: {
+    label: 'Профиль объёма', title: () => 'Профиль объёма', defLength: VP_DEFAULTS.rows,
+    defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
+  },
 };
 
 /** Палитра наложений — та же CC-гамма, что у ⚙-Формата серий. */
@@ -64,7 +85,13 @@ const PALETTE = ['#9B8BF0', '#E0A34E', '#57C7C7', '#5BD49C', '#EF6F6F', '#5DA3E9
 
 const uid = () => 'ind_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
-/** Санитизация чужого JSON из localStorage — по образцу parse() в EmbedFormat. */
+/**
+ * Санитизация чужого JSON из localStorage — по образцу parse() в EmbedFormat.
+ *
+ * ⚠️ Объект собирается ПОЛЯ ЗА ПОЛЕМ, а не спредом распарсенного. Это намеренно
+ * (в localStorage может лежать что угодно), но означает, что каждое новое поле
+ * IndicatorInst нужно добавлять и сюда — иначе оно работает ровно до F5.
+ */
 function parseList(raw: string): IndicatorInst[] {
   try {
     const arr = JSON.parse(raw);
@@ -84,6 +111,7 @@ function parseList(raw: string): IndicatorInst[] {
         width,
         visible: x.visible !== false,
         pane: Number.isFinite(x.pane) ? x.pane : 0,
+        side: x.side === 'left' || x.side === 'right' ? x.side : undefined,
       }];
     });
   } catch { return []; }
@@ -217,6 +245,51 @@ export function indicatorSeriesByPane(
   return out;
 }
 
+/**
+ * Описание профиля объёма для примитива графика — или null, если профиля в
+ * списке нет.
+ *
+ * Берём ПЕРВЫЙ видимый: два профиля на одной панели легли бы друг на друга и
+ * читались как один кривой. Настройки при этом у каждой строки свои, так что
+ * пользователь может держать несколько заготовок и переключать их «глазом».
+ *
+ * Цвета: полосы — те же токены, что у индикатора «Объёмы» (покупки/продажи), а
+ * выбранный в палитре цвет уходит на POC. Иначе выбор цвета не значил бы ничего:
+ * сам профиль двухцветный по смыслу.
+ */
+export function volumeProfileSpec(
+  list: IndicatorInst[],
+  candles: IndCandle<string>[],
+  seriesId: string,
+  colorOf: (i: IndicatorInst) => string,
+): VolumeProfileSpec | null {
+  const inst = list.find((i) => i.kind === 'vp' && i.visible);
+  if (!inst || !candles.length) return null;
+  return {
+    seriesId,
+    candles,
+    rows: Math.max(4, Math.min(400, Math.round(inst.length))),
+    side: inst.side ?? VP_DEFAULTS.side,
+    widthPct: VP_DEFAULTS.widthPct,
+    valueAreaPct: VP_DEFAULTS.valueAreaPct,
+    upColor: VOLUME_UP,
+    downColor: VOLUME_DOWN,
+    pocColor: colorOf(inst),
+  };
+}
+
+/** Мемо-обёртка: новая ссылка на спеку сама по себе дёшева (серии не трогает),
+ *  но лишний вызов applyOptions сбрасывает кэш профиля и заставляет пересчитать
+ *  его на ближайшем кадре. */
+export function useVolumeProfileSpec(
+  list: IndicatorInst[],
+  candles: IndCandle<string>[],
+  seriesId: string,
+  colorOf: (i: IndicatorInst) => string,
+): VolumeProfileSpec | null {
+  return useMemo(() => volumeProfileSpec(list, candles, seriesId, colorOf), [list, candles, seriesId, colorOf]);
+}
+
 // ─────────────────────────────── UI ───────────────────────────────
 
 const SURFACE: CSSProperties = {
@@ -246,10 +319,13 @@ export interface NativeRow {
  * z-index 10: выше слоя рисования (7), хит-слоя (8) и панели слоёв (9), ниже
  * тулбара (20). data-export-ignore обязателен — иначе список попадёт в PNG.
  */
-export function IndicatorList({ api, native, visible }: {
+export function IndicatorList({ api, native, visible, hasVolume = false }: {
   api: IndicatorsApi;
   native: NativeRow[];
   visible: boolean;
+  /** Есть ли объём в свечах. Без него «Объёмы» и «Профиль объёма» не показываем:
+   *  добавились бы строки, за которыми на графике пусто. */
+  hasVolume?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
@@ -287,6 +363,7 @@ export function IndicatorList({ api, native, visible }: {
           onRemove={() => api.remove(i.id)}
           pane={i.pane}
           canOverlay={KINDS[i.kind].overlayOk}
+          canOwnPane={KINDS[i.kind].ownPaneOk}
           onTogglePane={() => api.setPane(i.id, i.pane === 0)}
         />
       ))}
@@ -306,7 +383,7 @@ export function IndicatorList({ api, native, visible }: {
         </button>
         {menuOpen && (
           <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2, minWidth: 232, padding: 5, borderRadius: 9, ...SURFACE }}>
-            {(Object.keys(KINDS) as IndicatorKind[]).map((k) => {
+            {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => hasVolume || !KINDS[k].needsVolume).map((k) => {
               const d = KINDS[k];
               return (
                 <button
@@ -333,10 +410,10 @@ export function IndicatorList({ api, native, visible }: {
   );
 }
 
-function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canOverlay, onTogglePane }: {
+function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canOverlay, canOwnPane, onTogglePane }: {
   color: string; label: string; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
-  pane?: number; canOverlay?: boolean; onTogglePane?: () => void;
+  pane?: number; canOverlay?: boolean; canOwnPane?: boolean; onTogglePane?: () => void;
 }) {
   return (
     <div
@@ -354,8 +431,9 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canO
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
       </button>
       {/* У RSI/ATR/объёма своя шкала — «вернуть на график» им недоступно вовсе:
-          на ценовой оси они превратились бы в плоскую линию у края. */}
-      {onTogglePane && canOverlay !== false && (
+          на ценовой оси они превратились бы в плоскую линию у края. Профиль
+          объёма, наоборот, никуда не выносится: он рисуется по ценовой шкале. */}
+      {onTogglePane && canOverlay !== false && canOwnPane !== false && (
         <button
           type="button"
           title={pane === 0 ? 'Вынести в отдельную панель' : 'Вернуть на график'}
@@ -382,13 +460,31 @@ function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: Ind
         <button type="button" onClick={onClose} style={ICON_BTN}><XIcon size={12} /></button>
       </div>
       <div style={row}>
-        <span style={label}>Период</span>
+        <span style={label}>{d.lengthLabel ?? 'Период'}</span>
         <input
           type="number" min={2} max={500} value={inst.length}
           onChange={(e) => api.patch(inst.id, { length: Math.max(2, Math.min(500, Number(e.target.value) || 2)) })}
           style={{ width: 64, padding: '3px 6px', borderRadius: 6, fontSize: 11.5, border: '1px solid var(--border-color, rgba(128,128,128,0.35))', background: 'var(--bg-base, transparent)', color: 'var(--text-primary)' }}
         />
       </div>
+      {inst.kind === 'vp' && (
+        // Сторона настраивается, потому что у окна ОИ обе оси заняты: слева цена,
+        // справа открытый интерес — какой край свободнее, зависит от показателя.
+        <div style={row}>
+          <span style={label}>Сторона</span>
+          {([['right', 'Справа'], ['left', 'Слева']] as const).map(([v, t]) => (
+            <button
+              key={v} type="button" onClick={() => api.patch(inst.id, { side: v })}
+              style={{
+                ...ICON_BTN, width: 'auto', padding: '0 7px', fontSize: 10.5, fontWeight: 700,
+                color: (inst.side ?? 'right') === v ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
       {inst.kind === 'bb' && (
         <div style={row}>
           <span style={label}>Отклонение</span>
@@ -400,7 +496,9 @@ function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: Ind
         </div>
       )}
       <div style={row}>
-        <span style={label}>Цвет</span>
+        {/* У профиля это цвет POC: сами полосы двухцветные по смыслу
+            (покупки/продажи), см. volumeProfileSpec. */}
+        <span style={label}>{inst.kind === 'vp' ? 'Цвет POC' : 'Цвет'}</span>
         <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
           {PALETTE.map((c) => (
             <button
@@ -410,17 +508,20 @@ function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: Ind
           ))}
         </div>
       </div>
-      <div style={row}>
-        <span style={label}>Толщина</span>
-        {([1, 2, 3, 4] as const).map((w) => (
-          <button
-            key={w} type="button" onClick={() => api.patch(inst.id, { width: w })}
-            style={{ ...ICON_BTN, width: 22, fontSize: 10.5, fontWeight: 700, color: inst.width === w ? 'var(--accent)' : 'var(--text-secondary)' }}
-          >
-            {w}
-          </button>
-        ))}
-      </div>
+      {/* Профиль рисуется прямоугольниками — толщина линии ему не про что. */}
+      {inst.kind !== 'vp' && (
+        <div style={row}>
+          <span style={label}>Толщина</span>
+          {([1, 2, 3, 4] as const).map((w) => (
+            <button
+              key={w} type="button" onClick={() => api.patch(inst.id, { width: w })}
+              style={{ ...ICON_BTN, width: 22, fontSize: 10.5, fontWeight: 700, color: inst.width === w ? 'var(--accent)' : 'var(--text-secondary)' }}
+            >
+              {w}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

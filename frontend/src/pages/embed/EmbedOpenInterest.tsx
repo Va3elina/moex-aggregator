@@ -34,7 +34,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, IndicatorList, type NativeRow } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, IndicatorList, type NativeRow } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -54,6 +54,10 @@ type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
 // value = close; open/high/low опциональны (нужны только режимам свечи/бары цены).
 type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number; volume?: number }[];
+
+/** Стабильная ссылка на пустой ряд: новый литерал на каждый рендер сбрасывал бы
+ *  мемоизацию потребителей (профиль объёма пересчитывался бы впустую). */
+const EMPTY_CANDLES: Series = [];
 
 // Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
 const CLGROUP_OPTS: { id: ClGroup; label: string; icon: ReactNode }[] = [
@@ -567,6 +571,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // цена — от неё берут отсчёт магнит и линейка слоя рисования.
   const toSecFn = useCallback((t: string) => toSec(t, interval !== 24), [interval]);
   const indSeries = useIndicatorSeries(inds.list, chartData, toSecFn, inds.colorOf);
+  // Профиль объёма — не серия, а примитив на ценовой серии (он гистограмма по
+  // цене, а не по времени). Крепится к 'price': на линии ОИ он отрисовал бы
+  // уровни по чужой шкале. Цена скрыта → серии нет → профиля тоже нет.
+  const vpSpec = useVolumeProfileSpec(inds.list, showPrice ? chartData : EMPTY_CANDLES, 'price', inds.colorOf);
+  const hasVolume = useMemo(() => chartData.some((p) => p.volume != null), [chartData]);
   // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
   // источник правды), у линий ОИ — поле visible в карте форматов.
   const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
@@ -690,6 +699,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawPaneIndex={0}
             hideLegend
             expirations={expirations}
+            volumeProfile={vpSpec}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}
@@ -717,7 +727,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
-        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} />
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} hasVolume={hasVolume} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}
