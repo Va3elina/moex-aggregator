@@ -12,9 +12,10 @@
  */
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
 import {
-  createChart, ColorType, LineStyle, CrosshairMode,
+  createChart, createSeriesMarkers, ColorType, LineStyle, CrosshairMode,
+  LineSeries, AreaSeries, CandlestickSeries, BarSeries, HistogramSeries,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker, type Time, type IPriceLine,
-  type Logical, type Coordinate,
+  type Logical, type Coordinate, type ISeriesMarkersPluginApi,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 import { captureFontScale } from './chart/chartTypography';
@@ -250,6 +251,10 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>[]>([]);
+  // v5: маркеры — не метод серии (setMarkers), а плагин. Держим его инстанс и
+  // серию, к которой он прикреплён: серии пересоздаются при смене набора, и на
+  // новую серию нужен новый плагин, а на ту же — просто setMarkers.
+  const markersPluginRef = useRef<{ series: ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>; api: ISeriesMarkersPluginApi<Time> } | null>(null);
   const defsRef = useRef<LwSeries[]>(series);
   defsRef.current = series;
   // Читаем через ref, чтобы смена пропа-функции/массива не пересоздавала чарт/серии.
@@ -1176,9 +1181,9 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
       const isOhlc = def.type === 'candlestick' || def.type === 'bar';
       if (def.type === 'line') {
-        s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
       } else if (def.type === 'area') {
-        s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+        s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
       } else if (def.type === 'candlestick') {
         // up/down = палитра «Покупки/Продажи» (та же, что у свечей сайта): в editorial
         // это сине-стальной/янтарь, не зелёный/красный (дальтоник-палитра проекта).
@@ -1186,12 +1191,12 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
         // (мигает зелёным/красным на оси цены); наш §R2-пилс при наведении даёт значение
         // в фиксированном цвете. Для OHLC отключаем мигающий лейбл.
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+        s = chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
       } else if (def.type === 'bar') {
         const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
-        s = chart.addBarSeries({ upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+        s = chart.addSeries(BarSeries, { upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
       } else {
-        s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
+        s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
       }
       try {
         // union-тип s → .setData требует точного типа данных: касты по ветке.
@@ -1258,7 +1263,8 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       }
     }
 
-    if (markers && seriesApiRef.current[0]) {
+    const s0 = seriesApiRef.current[0];
+    if (markers && s0) {
       const ms: SeriesMarker<Time>[] = markers.map((m) => ({
         time: m.time as UTCTimestamp,
         position: m.position ?? 'aboveBar',
@@ -1266,7 +1272,11 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
         shape: 'circle',
         text: m.text,
       }));
-      seriesApiRef.current[0].setMarkers(ms);
+      if (markersPluginRef.current?.series !== s0) markersPluginRef.current = { series: s0, api: createSeriesMarkers(s0, ms) };
+      else markersPluginRef.current.api.setMarkers(ms);
+    } else if (markersPluginRef.current) {
+      // markers сняли — чистим, иначе плагин держал бы прошлый набор на графике
+      markersPluginRef.current.api.setMarkers([]);
     }
 
     const fitChanged = fitKey !== lastFitRef.current;
