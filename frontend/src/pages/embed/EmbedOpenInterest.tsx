@@ -693,7 +693,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               label="Многопанельный"
               checked={engine === 'panes'}
               onChange={(v) => setEngine(v ? 'panes' : 'lw')}
-              hint="Новый движок под индикаторы отдельными панелями. Пока без «+» алертов на ценовых осях."
+              hint="Новый движок под индикаторы отдельными панелями. Уровень алерта показывается подписью оси, а не оранжевым чипом."
             />
           </DrawerSection>
           <WheelHint>
@@ -711,6 +711,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawPaneIndex={0}
             hideLegend
             expirations={expirations}
+            onCreateAlert={handleCreateAlertFromChart}
+            alertAxes={alertAxes}
             dark={dark}
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
