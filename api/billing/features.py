@@ -186,25 +186,31 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     #   Free  — только «Годовая» (histogram закрыт целиком).
     #   Basic — histogram + weekday/monthday/monthly (без intraday).
     #   Pro   — без ограничений (allowed_modes=None ⇒ canUseMode всегда true).
+    #
+    # Глубина истории у сезонности НЕ ограничена ни на одном тарифе — все видят
+    # всю доступную историю (у бесплатных тикеров это ~19 лет, с 2007). Раньше
+    # здесь лежало поле max_history_years (free=10), но enforce_tier_limits его
+    # никогда не проверял — гейт был мёртвым, и фронт всегда слал iterations=9999.
+    # Поле убрано осознанно (решение 2026-07-30): включать его сейчас означало бы
+    # забрать у действующих free-юзеров половину глубины. Если понадобится
+    # гейтить историю — придётся и добавить проверку в access_control, и заново
+    # решить продуктовый вопрос, а не просто вернуть строчку в конфиг.
     "seasonality": {
         "free": {
             "assets_whitelist": FREE_SEASONALITY_ASSETS,   # 10 крупных
             "allowed_modes": ["yearly"],
-            "max_history_years": 10,
             "filter_no_outliers": False,
             "filter_no_dividends": False,
         },
         "basic": {
             "assets_whitelist": None,
             "allowed_modes": ["histogram", "weekday", "monthday", "monthly", "yearly"],  # без intraday
-            "max_history_years": None,
             "filter_no_outliers": False,
             "filter_no_dividends": False,
         },
         "pro": {
             "assets_whitelist": None,
             "allowed_modes": None,   # без ограничений — все режимы сезонности
-            "max_history_years": None,
             "filter_no_outliers": True,
             "filter_no_dividends": True,
         },

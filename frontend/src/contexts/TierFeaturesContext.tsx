@@ -34,7 +34,8 @@ export interface IndicatorLimits {
     universes?: string[] | null;
     clgroups?: string[] | null;
     max_history_days?: number | null;
-    max_history_years?: number | null;
+    // max_history_years удалён 2026-07-30 вместе с мёртвым гейтом сезонности —
+    // бэкенд его никогда не проверял (см. features.py, блок "seasonality").
     data_delay_hours?: number;
     // Per-indicator flags:
     mode_imoex?: boolean;
