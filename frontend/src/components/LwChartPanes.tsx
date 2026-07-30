@@ -32,7 +32,7 @@ import { createExpirationsLayer, type ExpirationMark } from './chart/expirations
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
-} from './LwChart';
+} from './chart/lwTypes';
 import { captureFontScale } from './chart/chartTypography';
 
 const BASE_FONT_SIZE = 11;

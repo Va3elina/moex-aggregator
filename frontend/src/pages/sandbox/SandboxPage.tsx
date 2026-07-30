@@ -34,7 +34,7 @@ import {
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { EmbedPidCtx } from '../embed/embedPersist';
-import { ChartPrefsCtx, type ChartPrefs } from '../../components/LwChart';
+import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
 import FrameLogo from '../../components/FrameLogo';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';

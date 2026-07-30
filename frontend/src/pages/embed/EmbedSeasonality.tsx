@@ -19,7 +19,7 @@
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, TrendingUp, Clock, Calendar, CalendarRange } from 'lucide-react';
-import type { LwSeries } from '../../components/LwChart';
+import type { LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import {

@@ -21,7 +21,7 @@ import {
   Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
-import type { LwDrawing, LwDrawTool, LwDash, LwMagnet } from '../../components/LwChart';
+import type { LwDrawing, LwDrawTool, LwDash, LwMagnet } from '../../components/chart/lwTypes';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 

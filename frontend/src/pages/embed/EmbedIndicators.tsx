@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Eye, EyeOff, Settings2, X as XIcon, Plus, PanelBottom, ChartNoAxesColumn } from 'lucide-react';
-import type { LwSeries } from '../../components/LwChart';
+import type { LwSeries } from '../../components/chart/lwTypes';
 import { sma, ema, bollinger, rsi, atr, volumeBars, type IndCandle } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
 
