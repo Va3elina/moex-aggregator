@@ -27,6 +27,7 @@ import {
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
   type Logical, type Coordinate,
 } from 'lightweight-charts';
+import ChartWatermark from './ChartWatermark';
 import {
   ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
@@ -72,6 +73,10 @@ interface LwChartPanesProps {
   drawColor?: string;
   drawWidth?: number;
   selectedDrawId?: string | null;
+  /** Водяной знак «Фрейм» в углу (как в LwChart). false — выключить. */
+  watermark?: boolean;
+  /** Не рисовать встроенную легенду: её заменяет React-список индикаторов. */
+  hideLegend?: boolean;
   onSelectDraw?: (id: string | null) => void;
   /** Бокс выделенной фигуры в пикселях КОРНЕВОГО контейнера (не пейна) — якорь
    *  контекстной панели свойств. См. LwChart.onSelectionRect. */
@@ -112,12 +117,19 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
 type AnySeries = ISeriesApi<'Line' | 'Area' | 'Histogram'>;
 
 const SVGNS = 'http://www.w3.org/2000/svg';
+
+/** Дивы панелей — строго по data-lw-pane, а не по порядку детей корня: в корне
+ *  живёт ещё и водяной знак, и любой будущий оверлей. */
+function paneBoxes(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll(':scope > [data-lw-pane]')) as HTMLElement[];
+}
 const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
+  watermark, hideLegend,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -149,6 +161,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawDashRef = useRef(drawDash); drawDashRef.current = drawDash;
   const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
+  const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const drawShapesRef = useRef<(() => void) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
 
@@ -157,7 +170,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const pi = drawPaneIndexRef.current;
       if (pi != null) {
         const root = rootRef.current;
-        const box = root ? (Array.from(root.children) as HTMLElement[])[pi] : null;
+        const box = root ? paneBoxes(root)[pi] : null;
         const chart = chartsRef.current[pi];
         if (box && chart) {
           // panes делят h пропорционально flex — сам drawPaneIndex-бокс мог не
@@ -190,7 +203,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     const tips: HTMLDivElement[] = [];
     const legends: HTMLDivElement[] = [];
     const unsubs: (() => void)[] = [];
-    const boxes = Array.from(root.children) as HTMLElement[];
+    const boxes = paneBoxes(root);
 
     let syncingRange = false; // guard: программная установка диапазона
     let suppress = false;     // _suppress: программный кроссхэйр соседа
@@ -237,7 +250,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       tips.push(tip);
 
       // Центрированная легенда панели (= заголовок серии, как в макете).
+      // hideLegend — когда её заменяет React-список индикаторов: иначе на экране
+      // окажутся две легенды. Элемент всё равно создаём (индексы legends[] должны
+      // совпадать с панелями), просто не показываем.
       const legend = document.createElement('div');
+      if (hideLegendRef.current) legend.style.display = 'none';
       legend.style.cssText = [
         'position:absolute', 'top:7px', 'left:50%', 'transform:translateX(-50%)', 'z-index:5',
         'display:flex', 'flex-wrap:wrap', 'justify-content:center', 'gap:14px', 'pointer-events:none',
@@ -338,8 +355,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // ── рисование (модель TradingView), только на panes[drawPaneIndex] ──
     // Порт-копия слоя из LwChart.tsx, привязанная к charts[drawPaneIndex]/
     // apisRef.current[drawPaneIndex] вместо единственного chartRef/seriesApiRef.
-    // paneLeftW=0 всегда: левая шкала здесь везде visible:false (в отличие от
-    // LwChart, где она бывает включена под вторую ось).
+    // Координаты движка отсчитываются от левого края ПОЛЯ, а DOM/SVG-слои — от
+    // левого края бокса. Пока левая шкала была везде скрыта, разница была нулём;
+    // с появлением scale:'left' её надо прибавлять, иначе фигуры, хит-тест и
+    // якорь панели свойств уедут на ширину шкалы (в LwChart это paneLeftW).
     let cleanupDraw: (() => void) | null = null;
     const dpi = drawPaneIndexRef.current;
     if (dpi != null && boxes[dpi]) {
@@ -352,6 +371,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       drawHit.style.cssText = 'position:absolute;inset:0;z-index:8;pointer-events:none;touch-action:none';
       box.appendChild(drawHit);
 
+      const isLastPane = dpi === panesRef.current.length - 1;
+      const paneLeftW = () => {
+        const ch = chart(); if (!ch) return 0;
+        try { return ch.priceScale('left').width() || 0; } catch { return 0; }
+      };
       const drawSeries = () => apisRef.current[dpi]?.[0] ?? null;
       const primaryDef = () => panesRef.current[dpi]?.series[0];
       const lp2xy = (p: LwDrawPoint): { x: number; y: number } | null => {
@@ -359,11 +383,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const xc = ch.timeScale().logicalToCoordinate(p.logical as Logical);
         const s = drawSeries(); const yc = s ? s.priceToCoordinate(p.price) : null;
         if (xc == null || yc == null) return null;
-        return { x: xc as number, y: yc as number };
+        return { x: paneLeftW() + (xc as number), y: yc as number };
       };
       const xy2lp = (bx: number, by: number): LwDrawPoint | null => {
         const ch = chart(); if (!ch) return null;
-        const logical = ch.timeScale().coordinateToLogical(bx as Coordinate);
+        const logical = ch.timeScale().coordinateToLogical((bx - paneLeftW()) as Coordinate);
         const s = drawSeries(); const price = s ? s.coordinateToPrice(by as Coordinate) : null;
         if (logical == null || price == null) return null;
         return { logical: logical as number, price: price as number };
@@ -371,8 +395,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const plotBox = () => {
         const ch = chart();
         const w = ch ? (ch.timeScale().width() || box.clientWidth) : box.clientWidth;
-        const axisH = ch ? (ch.timeScale().height() || 0) : 0;
-        return { left: 0, width: w, height: Math.max(0, box.clientHeight - axisH) };
+        // || 26 (а не || 0): на верхних панелях стека оси времени нет, но в первые
+        // кадры height() отдаёт 0 и на нижней — тогда поле считалось выше реального,
+        // и луч с вертикалью рисовались под осью дат.
+        const axisH = ch ? (ch.timeScale().height() || (isLastPane ? 26 : 0)) : 0;
+        return { left: paneLeftW(), width: w, height: Math.max(0, box.clientHeight - axisH) };
       };
       const svgEl = (tag: string, attrs: Record<string, string | number>) => {
         const e = document.createElementNS(SVGNS, tag);
@@ -717,7 +744,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     if (charts.length !== paneCount || paneCount === 0) return;
     const root = rootRef.current;
     if (!root) return;
-    const boxes = Array.from(root.children) as HTMLElement[];
+    const boxes = paneBoxes(root);
     const savedRange = charts[charts.length - 1].timeScale().getVisibleLogicalRange();
 
     apisRef.current.forEach((apis, i) => apis.forEach((s) => { try { charts[i]?.removeSeries(s); } catch { /* removed */ } }));
@@ -729,6 +756,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const box = boxes[i];
       if (!chart || !box) return;
       const rc = (col: string | undefined): string => resolveColor(box, col);
+      // Видимость шкал — по факту наличия серий на каждой оси ЭТОЙ панели.
+      // try/catch: сразу после смены visible библиотека может бросить на шкале
+      // без содержимого (та же защита, что в LwChart).
+      for (const side of ['left', 'right'] as const) {
+        try {
+          chart.priceScale(side).applyOptions({ visible: pane.series.some((x) => (x.scale ?? 'right') === side) });
+        } catch { /* шкала ещё не готова */ }
+      }
       for (const def of pane.series) {
         const priceFormat = def.axisFmt
           ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
@@ -739,13 +774,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const lastHist = def.lastValueVisible ?? chartPrefs?.lastValue ?? false;
         const col = rc(def.color);
         const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
+        const scaleId = def.scale ?? 'right';
         let s: AnySeries;
         if (def.type === 'line') {
-          s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else if (def.type === 'area') {
-          s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else {
-          s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
+          s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
         }
         try {
           s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
@@ -799,9 +835,19 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // пересчитывает фактическую ширину шкалы под новые данные не синхронно с
     // setData, а в своём цикле рендера; без задержки .width() отдаёт старое значение.
     requestAnimationFrame(() => {
-      const maxScaleW = Math.max(0, ...charts.map((ch) => ch.priceScale('right').width()));
-      if (maxScaleW > 0) {
-        charts.forEach((ch) => ch.priceScale('right').applyOptions({ minimumWidth: maxScaleW }));
+      // Обе оси, а не только правая: с левой осью на одной панели и без неё на
+      // другой plot-области разъедутся по ширине, и общая вертикаль кроссхэйра
+      // поедет по X — ровно тот баг, ради которого это выравнивание и писалось.
+      for (const side of ['left', 'right'] as const) {
+        let maxW = 0;
+        for (const ch of charts) {
+          try { maxW = Math.max(maxW, ch.priceScale(side).width()); } catch { /* «Value is null» сразу после смены visible */ }
+        }
+        if (maxW > 0) {
+          for (const ch of charts) {
+            try { ch.priceScale(side).applyOptions({ minimumWidth: maxW }); } catch { /* см. выше */ }
+          }
+        }
       }
     });
 
@@ -826,11 +872,20 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     drawShapesRef.current?.();
   }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity]);
 
+  // Отступ водяного знака слева = ширина ЛЕВОЙ шкалы первой панели: иначе знак
+  // ложится на подписи оси (та же логика, что в LwChart).
+  const hasLeftAxis = panes[0]?.series.some((x) => x.scale === 'left');
   return (
-    <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+    // position:relative — якорь для водяного знака. ⚠️ Пейны ищутся по
+    // data-lw-pane, а НЕ по root.children: раньше любой лишний ребёнок корня
+    // сдвигал бы индексы боксов, и чарт создался бы поверх водяного знака.
+    <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
       {panes.map((p, i) => (
-        <div key={i} style={{ position: 'relative', minHeight: 0, flex: `${p.flex ?? 1} 1 0%` }} />
+        <div key={i} data-lw-pane="" style={{ position: 'relative', minHeight: 0, flex: `${p.flex ?? 1} 1 0%` }} />
       ))}
+      {watermark !== false && chartPrefs?.watermark !== false && (
+        <ChartWatermark bottom={30} left={hasLeftAxis ? 62 : 12} size={26} minSize={16} opacity={0.4} />
+      )}
     </div>
   );
 });
