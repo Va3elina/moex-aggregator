@@ -23,6 +23,7 @@
 import { forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
+  LineSeries, AreaSeries, HistogramSeries,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
   type Logical, type Coordinate,
 } from 'lightweight-charts';
@@ -740,11 +741,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
         let s: AnySeries;
         if (def.type === 'line') {
-          s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else if (def.type === 'area') {
-          s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else {
-          s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
+          s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
         }
         try {
           s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
