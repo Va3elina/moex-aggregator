@@ -19,7 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Clock, User, Building2, BarChart3, Users, Activity, TrendingUp, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
+import { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
@@ -176,15 +176,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // переведён на общий. persistKey — per-инструмент, как и было («рисунки под
   // каждый актив»): смена instrument перезагружает фигуры внутри хука.
   const draw = useDrawTools(`frame:embed:oi:draw:${instrument}`);
-
-  // Флаг движка графика. 'lw' (дефолт) — прежний LwChart, 'panes' — новый
-  // многопанельный LwChartPanes. Нужен, чтобы переезд можно было сверять бок о бок,
-  // не меняя поведение по умолчанию: PR с флагом сливается безопасно.
-  // ⚠️ В режиме 'panes' пока НЕТ меток экспираций и алертов «+» на осях — они
-  // портируются следующими шагами. Всё остальное (свечи, интрадей-ось, уровни
-  // алертов, рисование, экспорт, индикаторы) должно совпадать с 'lw'.
-  const [engine, setEngine] = useState<'lw' | 'panes'>(() => (rd('frame:embed:oi:engine', 'lw') === 'panes' ? 'panes' : 'lw'));
-  useEffect(() => { wr('frame:embed:oi:engine', engine); }, [engine]);
   // Пользовательские индикаторы (наложения поверх графика). Ключ БЕЗ инструмента:
   // набор индикаторов — это про предпочтения пользователя, а не про актив, и при
   // переключении SR→GAZP он должен остаться.
@@ -300,24 +291,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return filtered.length > 0 ? filtered : TF_COMPACT;
   }, [data]);
 
-  // Резиновая высота графика.
-  const chartBoxRef = useRef<HTMLDivElement>(null);
-  const [chartH, setChartH] = useState(280);
-  // Хэндл LwChart — форс-синк перед экспортом (см. LwChartHandle doc), т.к.
-  // chartBoxRef меняет размер сразу, а внутренний бокс LwChart — с лагом
-  // через chartH state.
-  const lwChartRef = useRef<LwChartHandle>(null);
-  const panesRef = useRef<LwChartPanesHandle>(null);
-  useEffect(() => {
-    const el = chartBoxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setChartH(Math.round(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const chartData = useMemo<Series>(
     // value=close + полный OHLC (для режимов свечи/бары; линия/область берут value).
@@ -326,6 +299,12 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume })),
     [data],
   );
+
+  // Контейнер графика (цель экспорта в PNG) + хэндл движка для форс-синка перед
+  // снимком. Высота НЕ считается: LwChartPanes всегда занимает 100% родителя, а
+  // родитель — <div position:absolute;inset:0>.
+  const chartBoxRef = useRef<HTMLDivElement>(null);
+  const panesRef = useRef<LwChartPanesHandle>(null);
 
   // Выравнивание OI данных по временным меткам свечей (порт alignToCandles из
   // OpenInterestPage). OI имеет меньше точек, чем свечи → index-based X-mapping
@@ -600,10 +579,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((series) => ({ series, flex: 1 }))],
     [allSeries, extraPanes],
   );
-  // Старый LwChart панелей не умеет вовсе. Поэтому как только пользователь
-  // вынес индикатор в отдельную панель, движок поднимается до 'panes'
-  // автоматически: иначе индикатор просто не отрисовался бы, без объяснений.
-  const effEngine: 'lw' | 'panes' = engine === 'panes' || extraPanes.length > 0 ? 'panes' : 'lw';
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
       id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
@@ -700,14 +675,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           ) : (
             <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} />
           )}
-          <DrawerSection label="Движок графика (превью)">
-            <ToggleRow
-              label="Многопанельный"
-              checked={engine === 'panes'}
-              onChange={(v) => setEngine(v ? 'panes' : 'lw')}
-              hint="Новый движок под индикаторы отдельными панелями. Уровень алерта показывается подписью оси, а не оранжевым чипом."
-            />
-          </DrawerSection>
           <WheelHint>
             <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми
             оранжевый <b>＋</b> на нужном уровне — как на сайте.
@@ -716,7 +683,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {status === 'ok' && data && lwSeries.length > 0 && effEngine === 'panes' && (
+        {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChartPanes
             ref={panesRef}
             panes={chartPanes}
@@ -748,38 +715,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawLocked={draw.drawLocked}
           />
         )}
-        {status === 'ok' && data && lwSeries.length > 0 && effEngine === 'lw' && (
-          <LwChart
-            ref={lwChartRef}
-            series={allSeries}
-            hideLegend
-            expirations={expirations}
-            height={chartH}
-            dark={dark}
-            fitKey={`${instrument}|${interval}`}
-            initialBars={interval === 24 ? 252 : 220}
-            tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
-            timeVisible={interval !== 24}
-            priceLines={alertLines}
-            onCreateAlert={handleCreateAlertFromChart}
-            alertAxes={alertAxes}
-            drawActive={draw.drawMode}
-            drawTool={draw.drawTool}
-            drawings={draw.drawings}
-            onDrawingsChange={draw.setDrawings}
-            drawColor={draw.drawColor}
-            drawWidth={draw.drawWidth}
-            drawDash={draw.drawDash}
-            drawOpacity={draw.drawOpacity}
-            selectedDrawId={draw.selectedDrawId}
-            onSelectDraw={draw.setSelectedDrawId}
-            onSelectionRect={draw.setSelRect}
-            onToolReset={draw.onToolReset}
-            drawMagnet={draw.drawMagnet}
-            drawHidden={draw.drawHidden}
-            drawLocked={draw.drawLocked}
-          />
-        )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
         <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} />
@@ -787,7 +722,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         <ChartExportModal
           draw={draw}
           targetElement={chartBoxRef.current}
-          lwChartRef={effEngine === 'panes' ? panesRef : lwChartRef}
+          lwChartRef={panesRef}
           filename={`frame-oi-${instrument}-${interval}`}
           metadata={exportMeta}
         />
