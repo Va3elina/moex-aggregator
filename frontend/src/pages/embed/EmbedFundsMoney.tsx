@@ -26,6 +26,7 @@ import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -78,6 +79,8 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
+  const fundsAccess = useTierAccess('funds_money');
+
   const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
   const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category'), rd));
   // Default режим — Притоки-Оттоки (как дефолт страницы).
@@ -89,10 +92,18 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // кэпает дневной срез 1 годом — зеркалим тот же кэп программно, без
   // дискретного контрола: зум остаётся колесом, просто первичная загрузка
   // не тянет вообще всё. Недельный/месячный срез уже редкий → можно шире.
-  const period: FundPeriod = viewMode !== 'flows' ? 'all'
+  // ⚠️ 'all' нельзя слать безусловно: бэкенд (enforce_tier_limits) HARD-REJECT'ит
+  // period > max_history_days тарифа (403, а не clamp), а у free тут лимит 3 года —
+  // режим СЧА и месячные потоки отдавали ему «Ошибка загрузки» вместо графика.
+  // Понижаем до максимально разрешённого тарифу (тот же приём, что в
+  // EmbedOpenInterest.bestDailyPeriod / EmbedStrength.bestHistoryDays).
+  const wantPeriod: FundPeriod = viewMode !== 'flows' ? 'all'
     : flowTimeframe === '1d' ? '1y'
     : flowTimeframe === '1w' ? '3y'
     : 'all';
+  const period: FundPeriod = fundsAccess.isLoading || fundsAccess.canUsePeriod(wantPeriod)
+    ? wantPeriod
+    : (['3y', '1y', '1m', '1w'] as FundPeriod[]).find((p) => fundsAccess.canUsePeriod(p)) ?? '1y';
   const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
 
   const [data, setData] = useState<FundsResp | null>(null);

@@ -21,6 +21,7 @@ import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -46,7 +47,23 @@ const UNIVERSE_ICONS: Record<UniverseBase, ReactNode> = {
 };
 
 // Вся история сразу (время — перетаскиванием оси, как в макете); дефолт-окно ≈ год.
-const ALL_DAYS = 7000;
+// ⚠️ Раньше здесь был безусловный ALL_DAYS=7000 — бэкенд (enforce_tier_limits)
+// HARD-REJECT'ит days > max_history_days тарифа (403, а не clamp), поэтому free
+// (365) и basic (3650) получали не укороченный график, а «Ошибка загрузки».
+// Выбираем максимальную глубину, разрешённую текущему тарифу — тот же приём, что
+// в EmbedOpenInterest.bestDailyPeriod и в StrengthPage (tier-коррекция периода).
+const PERIOD_DAYS_DESC: { period: string; days: number }[] = [
+  { period: 'all', days: 7000 },
+  { period: '10y', days: 3650 },
+  { period: '5y', days: 1825 },
+  { period: '1y', days: 365 },
+];
+function bestHistoryDays(canUsePeriod: (p: string) => boolean): number {
+  for (const { period, days } of PERIOD_DAYS_DESC) {
+    if (canUsePeriod(period)) return days;
+  }
+  return 365;
+}
 const INITIAL_BARS = 252;
 
 // 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart.
@@ -67,6 +84,7 @@ export default function EmbedStrength() {
   // индекс, если showPrice включён, иначе breadth — см. LwChartPanes.
   const draw = useDrawTools('frame:embed:strength:draw');
   const lwChartRef = useRef<LwChartPanesHandle>(null);
+  const strengthAccess = useTierAccess('strength');
 
   const [ema, setEma] = useState<Ema>(() => (Number(rd('frame:embed:strength:ema', '200')) || 200) as Ema);
   const [chartMode, setChartMode] = useState<ChartMode>(() => rd('frame:embed:strength:chartMode', 'histogram') as ChartMode);
@@ -93,9 +111,13 @@ export default function EmbedStrength() {
   const indexLegend = currency === 'usd' ? 'Индекс РТС (RTSI)' : 'Индекс МосБиржи (IMOEX)';
 
   useEffect(() => {
+    // Пока тариф не разрешился — безопасный минимум (365), чтобы никогда не
+    // словить 403 на первом запросе; как только isLoading спадёт, эффект
+    // перезапустится (isLoading/tier в deps) и подтянет полную историю.
+    const days = strengthAccess.isLoading ? 365 : bestHistoryDays(strengthAccess.canUsePeriod);
     let cancelled = false;
     setStatus('loading');
-    getBreadthHistory(ema, ALL_DAYS, universe)
+    getBreadthHistory(ema, days, universe)
       .then((res) => {
         if (cancelled) return;
         // Симметричный мёрж: точка попадает в ряд только если есть ОБА значения
@@ -113,7 +135,10 @@ export default function EmbedStrength() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [ema, universe]);
+    // canUsePeriod — не мемоизированная функция (новый reference каждый рендер),
+    // в deps нельзя — будет бесконечный рефетч. tier/isLoading — примитивы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ema, universe, strengthAccess.isLoading, strengthAccess.tier]);
 
   // Панели §5.7: [индекс?] + breadth. Индекс — синяя линия; breadth — по режиму:
   // area (циан, градиент 22%→0) или бинарная гистограмма (зел ≥50 / крас <50).
