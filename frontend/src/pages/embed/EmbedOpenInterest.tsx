@@ -19,7 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Clock, User, Building2, BarChart3, Users, Activity, TrendingUp, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
-import { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';

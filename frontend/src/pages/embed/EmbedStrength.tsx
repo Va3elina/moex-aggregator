@@ -16,7 +16,7 @@ import { LineChart, BarChart3, Landmark, Grid3x3 } from 'lucide-react';
 import LwChartPanes, { type LwPane, type LwChartPanesHandle } from '../../components/LwChartPanes';
 // Дефолт оси времени в LwChartPanes сменился на ruTickMark (нужен интрадею ОИ) —
 // «Сила рынка» живёт на дневках, поэтому свой формат задаём явно.
-import { monthsYearsTickFmt } from '../../components/LwChart';
+import { monthsYearsTickFmt } from '../../components/chart/lwTypes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';

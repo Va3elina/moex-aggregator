@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
-import { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import {

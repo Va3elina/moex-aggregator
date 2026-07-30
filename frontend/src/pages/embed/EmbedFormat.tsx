@@ -8,7 +8,7 @@
  * сайте, в расширении и в песочнице.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import type { LwSeries } from '../../components/LwChart';
+import type { LwSeries } from '../../components/chart/lwTypes';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
 
