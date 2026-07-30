@@ -14,9 +14,9 @@
  * массивом LwSeries и конкатенируются к существующим сериям embed'а.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Eye, EyeOff, Settings2, X as XIcon, Plus } from 'lucide-react';
+import { Eye, EyeOff, Settings2, X as XIcon, Plus, PanelBottom, ChartNoAxesColumn } from 'lucide-react';
 import type { LwSeries } from '../../components/LwChart';
-import { sma, ema, bollinger, type IndCandle } from '../../utils/indicators';
+import { sma, ema, bollinger, rsi, atr, volumeBars, type IndCandle } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
@@ -42,18 +42,21 @@ interface KindDef {
   title: (i: IndicatorInst) => string;
   defLength: number;
   defMult?: number;
-  /** Может ли лежать поверх ценового графика: у RSI/ATR/объёма своя шкала. */
-  overlay: boolean;
-  hint?: string;
+  /** Куда кладём по умолчанию: 0 — поверх графика, 1 — отдельной панелью.
+   *  У RSI/ATR/объёма своя шкала (0..100 против десятков тысяч у цены), им
+   *  на ценовой оси делать нечего. */
+  defaultPane: 0 | 1;
+  /** Можно ли класть поверх цены вообще (пункт «Вернуть на график»). */
+  overlayOk: boolean;
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
-  ma: { label: 'Скользящая средняя (MA)', title: (i) => `MA ${i.length}`, defLength: 20, overlay: true },
-  ema: { label: 'Экспоненциальная средняя (EMA)', title: (i) => `EMA ${i.length}`, defLength: 20, overlay: true },
-  bb: { label: 'Полосы Боллинджера', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, overlay: true },
-  rsi: { label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, overlay: false, hint: 'Нужна отдельная панель — скоро' },
-  atr: { label: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, overlay: false, hint: 'Нужна отдельная панель — скоро' },
-  volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 0, overlay: false, hint: 'Нужна отдельная панель — скоро' },
+  ma: { label: 'Скользящая средняя (MA)', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
+  ema: { label: 'Экспоненциальная средняя (EMA)', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
+  bb: { label: 'Полосы Боллинджера', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true },
+  rsi: { label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
+  atr: { label: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
+  volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false },
 };
 
 /** Палитра наложений — та же CC-гамма, что у ⚙-Формата серий. */
@@ -91,6 +94,7 @@ export interface IndicatorsApi {
   add: (kind: IndicatorKind) => void;
   remove: (id: string) => void;
   patch: (id: string, p: Partial<IndicatorInst>) => void;
+  setPane: (id: string, toOwnPane: boolean) => void;
   colorOf: (i: IndicatorInst) => string;
 }
 
@@ -110,7 +114,16 @@ export function useIndicators(lsKey: string): IndicatorsApi {
 
   const add = useCallback((kind: IndicatorKind) => {
     const d = KINDS[kind];
-    setList((l) => [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane: 0 }]);
+    setList((l) => {
+      // Индикаторы со своей шкалой садятся каждый в СВОЮ панель: RSI и ATR на
+      // одной оси были бы нечитаемы (0..100 против абсолютных значений цены).
+      const pane = d.defaultPane === 0 ? 0 : nextFreePane(l);
+      return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane }];
+    });
+  }, []);
+  /** Перенос строки: на график ⇄ в свою панель. */
+  const setPane = useCallback((id: string, toOwnPane: boolean) => {
+    setList((l) => l.map((x) => (x.id === id ? { ...x, pane: toOwnPane ? nextFreePane(l.filter((y) => y.id !== id)) : 0 } : x)));
   }, []);
   const remove = useCallback((id: string) => setList((l) => l.filter((x) => x.id !== id)), []);
   const patch = useCallback((id: string, p: Partial<IndicatorInst>) => {
@@ -118,7 +131,16 @@ export function useIndicators(lsKey: string): IndicatorsApi {
   }, []);
   const colorOf = useCallback((i: IndicatorInst) => i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length], []);
 
-  return { list, add, remove, patch, colorOf };
+  return { list, add, remove, patch, setPane, colorOf };
+}
+
+/** Минимальный свободный номер панели ≥1 (после удаления индикатора номера не
+ *  переиспользуются автоматически — иначе оставшиеся строки прыгали бы). */
+function nextFreePane(list: IndicatorInst[]): number {
+  const used = new Set(list.filter((x) => x.pane > 0).map((x) => x.pane));
+  let p = 1;
+  while (used.has(p)) p++;
+  return p;
 }
 
 function hash(s: string): number {
@@ -135,30 +157,69 @@ function hash(s: string): number {
  * правило перевода зависит от таймфрейма (дневной — UTC-полночь, интрадей —
  * полный timestamp).
  */
-export function indicatorSeries(
+/**
+ * Индикаторы → серии, СГРУППИРОВАННЫЕ ПО ПАНЕЛЯМ. Индекс массива = номер панели,
+ * 0 — основной график. Пустые панели схлопываются вызывающим.
+ *
+ * Считаем на клиенте (замер: весь набор на 5000 барах — 2.7 мс против 100 мс на
+ * пересоздание серий графика, узкое место не тут).
+ *
+ * `toSec` передаётся снаружи: у embed'ов время в исходных точках строковое, а
+ * правило перевода зависит от таймфрейма.
+ */
+export function indicatorSeriesByPane(
   list: IndicatorInst[],
   candles: IndCandle<string>[],
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
-): LwSeries[] {
-  if (!candles.length) return [];
-  const out: LwSeries[] = [];
-  const conv = (pts: { time: string; value: number }[]) => pts.map((p) => ({ time: toSec(p.time), value: p.value }));
+): LwSeries[][] {
+  const out: LwSeries[][] = [[]];
+  if (!candles.length) return out;
+  const put = (pane: number, sers: LwSeries[]) => {
+    while (out.length <= pane) out.push([]);
+    out[pane].push(...sers);
+  };
+  const conv = (pts: { time: string; value: number; color?: string }[]) =>
+    pts.map((p) => ({ time: toSec(p.time), value: p.value, ...(p.color ? { color: p.color } : {}) }));
+
   for (const i of list) {
-    if (!i.visible || i.pane !== 0 || !KINDS[i.kind].overlay) continue;
+    if (!i.visible) continue;
     const color = colorOf(i);
-    const base = { scale: 'left' as const, color, lineWidth: i.width, type: 'line' as const, lastValueVisible: false };
+    const onMain = i.pane === 0;
+    // На основном графике индикатор садится на ЦЕНОВУЮ (левую) ось; в своей
+    // панели — на правую, там она единственная.
+    const base = {
+      scale: (onMain ? 'left' : 'right') as 'left' | 'right',
+      color, lineWidth: i.width, type: 'line' as const, lastValueVisible: !onMain,
+    };
     if (i.kind === 'ma' || i.kind === 'ema') {
       const pts = (i.kind === 'ma' ? sma : ema)(candles, i.length);
-      if (!pts.length) continue;
-      out.push({ ...base, id: i.id, label: KINDS[i.kind].title(i), data: conv(pts) });
+      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS[i.kind].title(i), data: conv(pts) }]);
     } else if (i.kind === 'bb') {
       const { mid, upper, lower } = bollinger(candles, i.length, i.mult ?? 2);
-      if (!mid.length) continue;
-      // Полосы тоньше середины и пунктиром — иначе три одинаковые линии сливаются.
-      out.push({ ...base, id: i.id + ':u', label: `${KINDS.bb.title(i)} ↑`, data: conv(upper), dashed: true, lineWidth: 1 });
-      out.push({ ...base, id: i.id, label: KINDS.bb.title(i), data: conv(mid) });
-      out.push({ ...base, id: i.id + ':l', label: `${KINDS.bb.title(i)} ↓`, data: conv(lower), dashed: true, lineWidth: 1 });
+      if (mid.length) {
+        // Полосы тоньше середины и пунктиром — иначе три линии сливаются.
+        put(i.pane, [
+          { ...base, id: i.id + ':u', label: `${KINDS.bb.title(i)} ↑`, data: conv(upper), dashed: true, lineWidth: 1 },
+          { ...base, id: i.id, label: KINDS.bb.title(i), data: conv(mid) },
+          { ...base, id: i.id + ':l', label: `${KINDS.bb.title(i)} ↓`, data: conv(lower), dashed: true, lineWidth: 1 },
+        ]);
+      }
+    } else if (i.kind === 'rsi') {
+      const pts = rsi(candles, i.length);
+      // minMove 0.01 — иначе ось RSI округлит всё до целых и станет ступенчатой.
+      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: 0.01 }]);
+    } else if (i.kind === 'atr') {
+      const pts = atr(candles, i.length);
+      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), minMove: 0.01 }]);
+    } else if (i.kind === 'volume') {
+      const pts = volumeBars(candles);
+      if (pts.length) {
+        put(i.pane, [{
+          ...base, type: 'histogram', id: i.id, label: 'Объёмы', data: conv(pts), base: 0,
+          axisFmt: (v: number) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'М' : v >= 1e3 ? Math.round(v / 1e3) + 'т' : String(Math.round(v))),
+        }]);
+      }
     }
   }
   return out;
@@ -232,6 +293,9 @@ export function IndicatorList({ api, native, visible }: {
           onToggle={() => api.patch(i.id, { visible: !i.visible })}
           onSettings={() => setSettingsFor(settingsFor === i.id ? null : i.id)}
           onRemove={() => api.remove(i.id)}
+          pane={i.pane}
+          canOverlay={KINDS[i.kind].overlayOk}
+          onTogglePane={() => api.setPane(i.id, i.pane === 0)}
         />
       ))}
 
@@ -256,18 +320,15 @@ export function IndicatorList({ api, native, visible }: {
                 <button
                   key={k}
                   type="button"
-                  disabled={!d.overlay}
-                  title={d.hint}
-                  onClick={() => { if (d.overlay) { api.add(k); setMenuOpen(false); } }}
+                  onClick={() => { api.add(k); setMenuOpen(false); }}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6,
                     border: 'none', background: 'transparent', fontSize: 11.5,
-                    color: d.overlay ? 'var(--text-primary)' : 'var(--text-muted, #888)',
-                    cursor: d.overlay ? 'pointer' : 'default',
+                    color: 'var(--text-primary)', cursor: 'pointer',
                   }}
                 >
                   {d.label}
-                  {!d.overlay && <span style={{ fontSize: 10, opacity: 0.75 }}> · {d.hint}</span>}
+                  {d.defaultPane > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}> · отдельной панелью</span>}
                 </button>
               );
             })}
@@ -280,9 +341,10 @@ export function IndicatorList({ api, native, visible }: {
   );
 }
 
-function Row({ color, label, visible, onToggle, onSettings, onRemove }: {
+function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canOverlay, onTogglePane }: {
   color: string; label: string; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
+  pane?: number; canOverlay?: boolean; onTogglePane?: () => void;
 }) {
   return (
     <div
@@ -299,6 +361,18 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove }: {
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
       </button>
+      {/* У RSI/ATR/объёма своя шкала — «вернуть на график» им недоступно вовсе:
+          на ценовой оси они превратились бы в плоскую линию у края. */}
+      {onTogglePane && canOverlay !== false && (
+        <button
+          type="button"
+          title={pane === 0 ? 'Вынести в отдельную панель' : 'Вернуть на график'}
+          onClick={onTogglePane}
+          style={ICON_BTN}
+        >
+          {pane === 0 ? <PanelBottom size={11} /> : <ChartNoAxesColumn size={11} />}
+        </button>
+      )}
       {onSettings && <button type="button" title="Настройки" onClick={onSettings} style={ICON_BTN}><Settings2 size={11} /></button>}
       {onRemove && <button type="button" title="Удалить" onClick={onRemove} style={ICON_BTN}><XIcon size={11} /></button>}
     </div>
@@ -366,6 +440,6 @@ export function useIndicatorSeries(
   candles: IndCandle<string>[],
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
-): LwSeries[] {
-  return useMemo(() => indicatorSeries(list, candles, toSec, colorOf), [list, candles, toSec, colorOf]);
+): LwSeries[][] {
+  return useMemo(() => indicatorSeriesByPane(list, candles, toSec, colorOf), [list, candles, toSec, colorOf]);
 }

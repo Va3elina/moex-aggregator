@@ -20,7 +20,7 @@ import {
   Clock, User, Building2, BarChart3, Users, Activity, TrendingUp, TrendingDown, ArrowUpDown, Equal,
 } from 'lucide-react';
 import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
-import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
+import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
@@ -591,7 +591,19 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
   // источник правды), у линий ОИ — поле visible в карте форматов.
   const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
-  const allSeries = useMemo(() => [...visibleNative, ...indSeries], [visibleNative, indSeries]);
+  // indSeries сгруппированы по панелям: [0] — наложения на основной график,
+  // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
+  const allSeries = useMemo(() => [...visibleNative, ...(indSeries[0] ?? [])], [visibleNative, indSeries]);
+  const extraPanes = useMemo(() => indSeries.slice(1).filter((arr) => arr.length > 0), [indSeries]);
+  const chartPanes = useMemo<LwPane[]>(
+    // Основной график заметно выше служебных, иначе RSI съедает цену.
+    () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((series) => ({ series, flex: 1 }))],
+    [allSeries, extraPanes],
+  );
+  // Старый LwChart панелей не умеет вовсе. Поэтому как только пользователь
+  // вынес индикатор в отдельную панель, движок поднимается до 'panes'
+  // автоматически: иначе индикатор просто не отрисовался бы, без объяснений.
+  const effEngine: 'lw' | 'panes' = engine === 'panes' || extraPanes.length > 0 ? 'panes' : 'lw';
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
       id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
@@ -704,10 +716,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {status === 'ok' && data && lwSeries.length > 0 && engine === 'panes' && (
+        {status === 'ok' && data && lwSeries.length > 0 && effEngine === 'panes' && (
           <LwChartPanes
             ref={panesRef}
-            panes={[{ series: allSeries }]}
+            panes={chartPanes}
             drawPaneIndex={0}
             hideLegend
             expirations={expirations}
@@ -736,7 +748,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawLocked={draw.drawLocked}
           />
         )}
-        {status === 'ok' && data && lwSeries.length > 0 && engine === 'lw' && (
+        {status === 'ok' && data && lwSeries.length > 0 && effEngine === 'lw' && (
           <LwChart
             ref={lwChartRef}
             series={allSeries}
@@ -775,7 +787,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         <ChartExportModal
           draw={draw}
           targetElement={chartBoxRef.current}
-          lwChartRef={engine === 'panes' ? panesRef : lwChartRef}
+          lwChartRef={effEngine === 'panes' ? panesRef : lwChartRef}
           filename={`frame-oi-${instrument}-${interval}`}
           metadata={exportMeta}
         />

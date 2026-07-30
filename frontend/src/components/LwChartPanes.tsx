@@ -185,6 +185,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const previewLineRef = useRef<{ [k in 'left' | 'right']?: IPriceLine }>({});
   const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: AnySeries; last?: number; color?: string } }>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
+  // Последний видимый диапазон. Эффект создания чартов зависит от paneCount, то
+  // есть «вынести индикатор в свою панель» ПЕРЕСОЗДАЁТ все инстансы — и зум
+  // слетел бы на fit ровно в момент, когда пользователь этого не просил.
+  // Читаем его при восстановлении, если у свежесозданного чарта своего ещё нет.
+  const lastRangeRef = useRef<LogicalRange | null>(null);
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
@@ -294,6 +299,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     charts.forEach((chart, i) => {
       const handler = (range: LogicalRange | null) => {
         if (syncingRange || !range) return;
+        lastRangeRef.current = range;
         syncingRange = true;
         try {
           charts.forEach((other, j) => { if (j !== i) other.timeScale().setVisibleLogicalRange(range); });
@@ -1114,8 +1120,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       } else {
         charts.forEach((ch) => ch.timeScale().fitContent());
       }
-    } else if (savedRange) {
-      lead.timeScale().setVisibleLogicalRange(savedRange);
+    } else if (savedRange ?? lastRangeRef.current) {
+      lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
     }
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
