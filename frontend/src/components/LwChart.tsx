@@ -19,6 +19,7 @@ import {
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 import { captureFontScale } from './chart/chartTypography';
+import { createExpirationsLayer } from './chart/expirationsLayer';
 
 const BASE_FONT_SIZE = 11;
 
@@ -381,94 +382,19 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
 
     // ── Слой экспираций (§OI-4): кружок с кодом контракта у оси дат + hover-тултип
     // (from→to) + общая пунктирная вертикаль — как на сайте (SimpleChart annotations).
-    // Позиции — timeToCoordinate; перерисовка на зум/пан/ресайз. Цвета — CSS-var (DOM,
-    // не canvas) → следуют за темой панели.
-    const expLayer = document.createElement('div');
-    expLayer.style.cssText = 'position:absolute;left:0;right:0;height:0;pointer-events:none;z-index:4';
-    box.appendChild(expLayer);
-    const expGuide = document.createElement('div');
-    expGuide.style.cssText = 'position:absolute;top:0;width:0;display:none;pointer-events:none;z-index:3;border-left:1px dashed var(--text-secondary,#9A958C);opacity:0.45';
-    box.appendChild(expGuide);
-    const plotHeight = () => {
-      const ch = chartRef.current;
-      const axisH = ch ? (ch.timeScale().height() || 26) : 26;
-      return Math.max(0, box.clientHeight - axisH);
-    };
-    const drawExp = () => {
-      const ch = chartRef.current;
-      if (!ch) return;
-      while (expLayer.firstChild) expLayer.removeChild(expLayer.firstChild);
-      expGuide.style.display = 'none';
-      const exps = expRef.current;
-      if (!exps || exps.length === 0) return;
-      const ts = ch.timeScale();
-      const axisH = ts.height() || 26;
-      expLayer.style.bottom = axisH + 'px';
-      // §R2-23: timeToCoordinate меряет от ЛЕВОГО КРАЯ ПОЛЯ (после левой ценовой оси),
-      // а слой — от края бокса → переводим (+paneL). Кружок, пересёкший ценовую ось
-      // (левую или правую), не рисуем вовсе — иначе при ресайзе/пане он наезжает на
-      // числа оси.
-      const paneL = ch.priceScale('left').width() || 0;
-      const paneW = ts.width() || Math.max(0, box.clientWidth - paneL - (ch.priceScale('right').width() || 0));
-      const R = 17 / 2;   // половина кружка
-      for (const ex of exps) {
-        const x = ts.timeToCoordinate(ex.time as UTCTimestamp);
-        if (x == null || x < R || x > paneW - R) continue;
-        const bx = paneL + x;
-        // §R2-27: текст в flex-центрированном div съезжал вниз в PNG-экспорте
-        // (html2canvas не воспроизводит flex/line-height вертикальное
-        // центрирование текста — см. фикс #704 на SimpleChart). Кружок+буквы
-        // рисуем инлайн-SVG с dominantBaseline="central" — геометрическая
-        // инструкция позиционирования, рендерится одинаково и в браузере, и
-        // в html2canvas. opacity — на ВНЕШНЕМ div, не на svg (см. #705: opacity
-        // на svg html2canvas применяет дважды — бейкает в растр + ещё раз поверх).
-        const circle = document.createElement('div');
-        circle.style.cssText = [
-          'position:absolute', 'bottom:2px', 'left:' + bx + 'px', 'transform:translateX(-50%)',
-          'width:17px', 'height:17px', 'cursor:default',
-          'pointer-events:auto', 'opacity:0.5', 'transition:opacity 0.12s', 'box-sizing:border-box',
-        ].join(';');
-        const circleSvg = document.createElementNS(SVGNS, 'svg');
-        circleSvg.setAttribute('width', '17'); circleSvg.setAttribute('height', '17');
-        circleSvg.style.cssText = 'position:absolute;inset:0;display:block';
-        const ring = document.createElementNS(SVGNS, 'circle');
-        ring.setAttribute('cx', '8.5'); ring.setAttribute('cy', '8.5'); ring.setAttribute('r', '8');
-        ring.setAttribute('fill', 'var(--bg-secondary,#26262B)');
-        ring.setAttribute('stroke', 'var(--border-color,rgba(245,241,232,0.18))');
-        ring.setAttribute('stroke-width', '1');
-        const label = document.createElementNS(SVGNS, 'text');
-        label.setAttribute('x', '8.5'); label.setAttribute('y', '9');
-        label.setAttribute('text-anchor', 'middle'); label.setAttribute('dominant-baseline', 'central');
-        label.setAttribute('font-size', '8.5'); label.setAttribute('font-weight', '700');
-        label.setAttribute('fill', 'var(--text-secondary,#9A958C)');
-        label.textContent = (ex.label || '').slice(0, 2);
-        circleSvg.appendChild(ring); circleSvg.appendChild(label);
-        circle.appendChild(circleSvg);
-        const tipEl = document.createElement('div');
-        tipEl.style.cssText = [
-          'position:absolute', 'bottom:calc(100% + 6px)', 'left:50%', 'transform:translateX(-50%)',
-          'display:none', 'white-space:nowrap', 'pointer-events:none', 'z-index:8',
-          'background:var(--bg-secondary,#17161A)', 'color:var(--text-primary,#F5F1E8)',
-          'border:1px solid var(--border-color,rgba(245,241,232,0.18))', 'border-radius:7px',
-          'padding:4px 8px', 'font-size:10.5px', 'font-weight:600', 'box-shadow:0 8px 22px rgba(0,0,0,0.45)',
-        ].join(';');
-        tipEl.textContent = ex.description || '';
-        circle.appendChild(tipEl);
-        circle.addEventListener('mouseenter', () => {
-          circle.style.opacity = '1';
-          tipEl.style.display = 'block';
-          expGuide.style.left = bx + 'px';
-          expGuide.style.height = plotHeight() + 'px';
-          expGuide.style.display = 'block';
-        });
-        circle.addEventListener('mouseleave', () => {
-          circle.style.opacity = '0.5';
-          tipEl.style.display = 'none';
-          expGuide.style.display = 'none';
-        });
-        expLayer.appendChild(circle);
-      }
-    };
+    // Слой меток экспираций — общий модуль (его же использует LwChartPanes).
+    // Высоту оси дат отдаём колбэком: в одиночном чарте это своя ось, а в стеке
+    // панелей она есть только у нижней — см. комментарий в expirationsLayer.ts.
+    const expLayerApi = createExpirationsLayer({
+      box,
+      getChart: () => chartRef.current,
+      getMarks: () => expRef.current,
+      getAxisHeight: () => {
+        const ch = chartRef.current;
+        return ch ? (ch.timeScale().height() || 26) : 26;
+      },
+    });
+    const drawExp = () => expLayerApi.draw();
     drawExpRef.current = drawExp;
 
     // ── §OI-3/§R2-21 axis-алерты: превью-уровень = НАТИВНАЯ price line (только серый
@@ -1108,7 +1034,8 @@ const LwChart = forwardRef<LwChartHandle, LwChartProps>(function LwChart({ serie
       drawHit.removeEventListener('pointermove', onDrawMove);
       drawHit.removeEventListener('pointerup', onDrawUp);
       drawHit.removeEventListener('dblclick', onDrawDbl);
-      for (const el of [tip, legend, expLayer, expGuide, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right, drawSvg, drawHit]) {
+      expLayerApi.destroy();
+      for (const el of [tip, legend, measCanvas, alertStrips.left, alertStrips.right, alertChips.left, alertChips.right, drawSvg, drawHit]) {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
     };

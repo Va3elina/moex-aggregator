@@ -28,6 +28,7 @@ import {
   type Logical, type Coordinate,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
+import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
@@ -73,6 +74,8 @@ interface LwChartPanesProps {
   drawColor?: string;
   drawWidth?: number;
   selectedDrawId?: string | null;
+  /** Метки экспираций (смена контракта). Рисуются на панели цены (индекс 0). */
+  expirations?: ExpirationMark[];
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -134,7 +137,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend, timeVisible, priceLines,
+  watermark, hideLegend, timeVisible, priceLines, expirations,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -167,6 +170,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
+  const expRef = useRef(expirations); expRef.current = expirations;
+  const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
 
@@ -259,12 +264,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       // окажутся две легенды. Элемент всё равно создаём (индексы legends[] должны
       // совпадать с панелями), просто не показываем.
       const legend = document.createElement('div');
-      if (hideLegendRef.current) legend.style.display = 'none';
       legend.style.cssText = [
         'position:absolute', 'top:7px', 'left:50%', 'transform:translateX(-50%)', 'z-index:5',
         'display:flex', 'flex-wrap:wrap', 'justify-content:center', 'gap:14px', 'pointer-events:none',
         'max-width:calc(100% - 130px)',
       ].join(';');
+      // ⚠️ ПОСЛЕ cssText: присвоение style.cssText перезаписывает стиль целиком и
+      // затёрло бы display, если поставить его строкой выше.
+      if (hideLegendRef.current) legend.style.display = 'none';
       box.appendChild(legend);
       legends.push(legend);
     }
@@ -280,7 +287,33 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       };
       chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
       unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler));
+      if (i === 0) {
+        const redrawExp = () => drawExpRef.current?.();
+        chart.timeScale().subscribeVisibleLogicalRangeChange(redrawExp);
+        unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(redrawExp));
+      }
     });
+
+    // ── метки экспираций (общий модуль, тот же что в LwChart) ──
+    // Слой живёт на панели ЦЕНЫ (0), а высоту оси дат берём у НИЖНЕЙ панели:
+    // в стеке ось есть только у неё (visible: isLast), и своя высота у панели 0
+    // равна нулю — кружки встали бы посреди графика, оторванные от дат.
+    let expLayerApi: { draw: () => void; destroy: () => void } | null = null;
+    if (boxes[0]) {
+      expLayerApi = createExpirationsLayer({
+        box: boxes[0],
+        getChart: () => chartsRef.current[0] ?? null,
+        getMarks: () => expRef.current,
+        getAxisHeight: () => {
+          const last = chartsRef.current[chartsRef.current.length - 1];
+          if (!last) return 26;
+          // Ось у нижней панели; на панели цены её высота не входит в её бокс,
+          // поэтому в одиночном чарте это своя ось, а в стеке — 0 отступа.
+          return chartsRef.current.length > 1 ? 0 : (last.timeScale().height() || 26);
+        },
+      });
+      drawExpRef.current = () => expLayerApi?.draw();
+    }
 
     // ── общий кроссхэйр + единый тултип ──
     charts.forEach((chart, i) => {
@@ -740,6 +773,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     });
 
     return () => {
+      expLayerApi?.destroy();
+      drawExpRef.current = null;
       wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
       cleanupDraw?.();
@@ -926,6 +961,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       }
     }
 
+    // Метки экспираций пересчитываем здесь же: expirations в депсах этого
+    // эффекта, иначе тумблер «Экспирации» не давал бы эффекта до следующего
+    // пана (ровно та дыра, что была бы у priceLines).
+    requestAnimationFrame(() => drawExpRef.current?.());
+
     // Fit/восстановление зума — через нижнюю панель, синк разнесёт по остальным.
     const lead = charts[charts.length - 1];
     if (fitKey !== lastFitRef.current) {
@@ -940,7 +980,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       lead.timeScale().setVisibleLogicalRange(savedRange);
     }
     drawShapesRef.current?.();
-  }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines]);
+  }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
 
   // Смена таймфрейма (интрадей ⇄ дневной) не пересоздаёт чарты, поэтому
   // timeVisible применяем реактивно — иначе ось застревает в режиме маунта.
