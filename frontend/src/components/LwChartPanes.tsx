@@ -90,6 +90,11 @@ interface LwChartPanesProps {
   watermark?: boolean;
   /** Не рисовать встроенную легенду: её заменяет React-список индикаторов. */
   hideLegend?: boolean;
+  /** Оверрайд пунктов легенды панели 0 (одна серия → несколько подписей: у Фондов
+   *  «Приток»/«Отток» у одной гистограммы, у Сезонности «Рост»/«Падение»). */
+  legendItems?: { label: string; color: string }[];
+  /** Формат подписи времени в кроссхэйре (Сезонность: синтетическое время). */
+  crosshairTimeFmt?: (time: number) => string;
   onSelectDraw?: (id: string | null) => void;
   /** Бокс выделенной фигуры в пикселях КОРНЕВОГО контейнера (не пейна) — якорь
    *  контекстной панели свойств. См. LwChart.onSelectionRect. */
@@ -142,7 +147,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend, timeVisible, priceLines, expirations, onCreateAlert, alertAxes,
+  watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, onCreateAlert, alertAxes,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -175,6 +180,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
+  const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
+  // Снапшот на монтаже: включён формат или нет, меняться не может (потребитель
+  // либо передаёт его всю жизнь компонента, либо никогда) — меняется только сама
+  // подпись, и её читаем через ref.
+  const crossFmtRef = useRef(crosshairTimeFmt); crossFmtRef.current = crosshairTimeFmt;
   const expRef = useRef(expirations); expRef.current = expirations;
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
@@ -244,7 +254,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const chart = createChart(box, {
         autoSize: true,
         layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: BASE_FONT_SIZE },
-        localization: { locale: 'ru-RU' },
+        localization: {
+          locale: 'ru-RU',
+          // Снапшот на монтаже — как в LwChart: сам факт «формат включён» не
+          // меняется на лету, меняется только подпись (через ref).
+          ...(crossFmtRef.current ? { timeFormatter: (t: Time) => crossFmtRef.current!(t as unknown as number) } : {}),
+        },
         grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
         leftPriceScale: { visible: false, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
         rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
@@ -1014,7 +1029,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         while (legend.firstChild) legend.removeChild(legend.firstChild);
         const FS = 11, GAP = 5, SEG_W = 12, SEG_H = 2.5;
         const legTotalH = Math.ceil(FS * 1.35);
-        for (const def of pane.series) {
+        // legendItems — только для панели 0: он описывает смысл СЕРИИ, а не набор
+        // панелей (у Фондов одна гистограмма даёт два пункта: приток и отток).
+        const legDefs = i === 0 && legendItemsRef.current
+          ? legendItemsRef.current.map((x) => ({ label: x.label, color: x.color }))
+          : pane.series.map((d) => ({ label: d.label, color: d.color }));
+        for (const def of legDefs) {
           const w = SEG_W + GAP + Math.ceil((def.label || '').length * FS * 0.62) + 4;
           const item = document.createElementNS(SVGNS, 'svg');
           item.setAttribute('width', String(w));

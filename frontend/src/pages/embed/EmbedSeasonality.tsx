@@ -19,7 +19,8 @@
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, TrendingUp, Clock, Calendar, CalendarRange } from 'lucide-react';
-import LwChart, { type LwSeries } from '../../components/LwChart';
+import type { LwSeries } from '../../components/LwChart';
+import LwChartPanes from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getSeasonality,
@@ -214,19 +215,10 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
-  // Резиновая высота графика.
+  // Высоту не считаем: LwChartPanes всегда занимает 100% родителя, а родитель —
+  // <div position:absolute;inset:0>. Прежний ResizeObserver существовал только
+  // ради пропа height у LwChart.
   const boxRef = useRef<HTMLDivElement>(null);
-  const [boxH, setBoxH] = useState(360);
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setBoxH(Math.round(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const isHist = chartType === 'histogram';
   const bars = histBase?.bars ?? [];
@@ -387,9 +379,8 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {status === 'ok' && lwSeries.length > 0 && (
-          <LwChart
-            series={lwSeries}
-            height={boxH}
+          <LwChartPanes
+            panes={[{ series: lwSeries }]}
             dark={dark}
             fitKey={`${chartType}|${stock}|${mode}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
             tickFmt={isHist ? histTickFmt : yearlyTickFmt}

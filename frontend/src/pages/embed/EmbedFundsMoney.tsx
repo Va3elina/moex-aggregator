@@ -9,7 +9,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwChartHandle } from '../../components/LwChart';
+import { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
+import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
@@ -159,21 +160,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // Рисование + экспорт графика (см. useDrawTools.tsx) — персист per-категория
   // (данные категорий несопоставимы, как per-инструмент у ОИ).
   const draw = useDrawTools(`frame:embed:funds:draw:${category}`);
-  const lwChartRef = useRef<LwChartHandle>(null);
-
-  // Резиновая высота графика (как в Баффетте).
+  const lwChartRef = useRef<LwChartPanesHandle>(null);
   const chartBoxRef = useRef<HTMLDivElement>(null);
-  const [chartH, setChartH] = useState(280);
-  useEffect(() => {
-    const el = chartBoxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setChartH(Math.round(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+
+  // Высоту не считаем: LwChartPanes всегда 100% родителя (absolute inset:0).
 
   // Серии LwChart.
   const lwSeries = useMemo<LwSeries[]>(() => {
@@ -257,10 +247,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {st === 'ok' && lwSeries.length > 0 && (
-          <LwChart
+          <LwChartPanes
             ref={lwChartRef}
-            series={lwSeries}
-            height={chartH}
+            panes={[{ series: lwSeries }]}
+            drawPaneIndex={0}
             dark={dark}
             fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
             tickFmt={monthsYearsTickFmt}
