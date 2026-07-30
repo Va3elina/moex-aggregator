@@ -13,7 +13,9 @@ import { DrawerSection, SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
 
 export type ChartKind = 'line' | 'area' | 'histogram' | 'candlestick' | 'bar';
-export interface ChartFormat { kind: ChartKind; color: string | null } // color null = цвет индикатора
+// color null = цвет индикатора; visible — «глаз» строки в списке индикаторов
+// (undefined трактуем как true, чтобы старый персист читался без миграции).
+export interface ChartFormat { kind: ChartKind; color: string | null; visible?: boolean }
 
 // Реестр «id → подпись». 'histogram' («Столбцы») больше НЕ в выбираемых наборах
 // (убран по фидбеку Вадима), но остаётся валидным типом для нативных серий (funds-flow)
@@ -37,12 +39,17 @@ const SWATCHES = ['#5DA3E9', '#5BD49C', '#EF6F6F', '#9B8BF0', '#E0A34E', '#57C7C
 
 const DEF: ChartFormat = { kind: 'line', color: null };
 
+// ⚠️ parse ПЕРЕСОБИРАЕТ объект руками, а не спредит распарсенное — это намеренно
+// (санитизация чужого JSON из localStorage), но означает, что КАЖДОЕ новое поле
+// ChartFormat нужно добавлять и сюда. Иначе оно молча теряется при первом же
+// чтении: в UI работает до перезагрузки страницы, а после F5 сбрасывается.
 function parse(raw: string): ChartFormat {
   try {
     const j = JSON.parse(raw) as Partial<ChartFormat>;
     const kind = (j.kind && j.kind in KIND_LABELS ? j.kind : 'line') as ChartKind;
     const color = typeof j.color === 'string' && SWATCHES.includes(j.color) ? j.color : null;
-    return { kind, color };
+    const visible = typeof j.visible === 'boolean' ? j.visible : undefined;
+    return { kind, color, ...(visible === undefined ? {} : { visible }) };
   } catch { return DEF; }
 }
 
@@ -83,7 +90,10 @@ export function useSeriesFormats(lsKey: string) {
   const get = useCallback((id: string, defKind: ChartKind = 'line'): ChartFormat => map[id] ?? { kind: defKind, color: null }, [map]);
   const setKind = useCallback((id: string, kind: ChartKind) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), kind } })), []);
   const setColor = useCallback((id: string, color: string | null) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), color } })), []);
-  return { get, setKind, setColor };
+  // «Глаз» строки в списке индикаторов: нативную серию нельзя удалить, но можно
+  // скрыть. undefined трактуется как видимая — старый персист читается как есть.
+  const setVisible = useCallback((id: string, visible: boolean) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), visible } })), []);
+  return { get, setKind, setColor, setVisible };
 }
 
 /** Применить формат к серии: тип + цвет (+ градиент области / база столбцов). */

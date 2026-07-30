@@ -33,6 +33,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
+import { useIndicators, useIndicatorSeries, IndicatorList, type NativeRow } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -51,7 +52,7 @@ type DisplayMode = 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
 // value = close; open/high/low опциональны (нужны только режимам свечи/бары цены).
-type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number }[];
+type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number; volume?: number }[];
 
 // Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
 const CLGROUP_OPTS: { id: ClGroup; label: string; icon: ReactNode }[] = [
@@ -174,6 +175,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // переведён на общий. persistKey — per-инструмент, как и было («рисунки под
   // каждый актив»): смена instrument перезагружает фигуры внутри хука.
   const draw = useDrawTools(`frame:embed:oi:draw:${instrument}`);
+  // Пользовательские индикаторы (наложения поверх графика). Ключ БЕЗ инструмента:
+  // набор индикаторов — это про предпочтения пользователя, а не про актив, и при
+  // переключении SR→GAZP он должен остаться.
+  const inds = useIndicators('frame:embed:oi:indicators');
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -305,7 +310,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
 
   const chartData = useMemo<Series>(
     // value=close + полный OHLC (для режимов свечи/бары; линия/область берут value).
-    () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close })),
+    // volume нужен индикатору «Объёмы» и не стоит ничего: он уже приходит в свече
+    // (ChartResponse.candles), а раньше просто терялся при этом маппинге.
+    () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume })),
     [data],
   );
 
@@ -565,6 +572,31 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return out;
   }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get]);
 
+  // Индикаторы считаются от свечей и кладутся на ЛЕВУЮ (ценовую) ось. Порядок
+  // важен: наложения идут ПОСЛЕ нативных серий, чтобы первой в массиве осталась
+  // цена — от неё берут отсчёт магнит и линейка слоя рисования.
+  const toSecFn = useCallback((t: string) => toSec(t, interval !== 24), [interval]);
+  const indSeries = useIndicatorSeries(inds.list, chartData, toSecFn, inds.colorOf);
+  // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
+  // источник правды), у линий ОИ — поле visible в карте форматов.
+  const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
+  const allSeries = useMemo(() => [...visibleNative, ...indSeries], [visibleNative, indSeries]);
+  const nativeRows = useMemo<NativeRow[]>(() => {
+    const rows: NativeRow[] = [{
+      id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
+      visible: showPrice, onToggle: () => setShowPrice((v) => !v),
+    }];
+    for (const d of lwSeries) {
+      if (d.id === 'price') continue;
+      rows.push({
+        id: d.id, label: d.label, color: d.color,
+        visible: sf.get(d.id).visible !== false,
+        onToggle: () => sf.setVisible(d.id, sf.get(d.id).visible === false),
+      });
+    }
+    return rows;
+  }, [lwSeries, sf, showPrice, displayName]);
+
   return (
     <EmbedFrame
       toolbarUnified
@@ -656,7 +688,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChart
             ref={lwChartRef}
-            series={lwSeries}
+            series={allSeries}
+            hideLegend
             expirations={expirations}
             height={chartH}
             dark={dark}
@@ -667,7 +700,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             priceLines={alertLines}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
-            animate
             drawActive={draw.drawMode}
             drawTool={draw.drawTool}
             drawings={draw.drawings}
@@ -687,6 +719,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}
