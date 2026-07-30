@@ -37,6 +37,7 @@ from typing import Any
 import httpx
 
 from api.billing.provider import CheckoutSession, WebhookEvent
+from api.ru_tls import RU_TLS_VERIFY
 
 log = logging.getLogger(__name__)
 
@@ -300,7 +301,7 @@ class TBankProvider:
             body["Receipt"] = receipt
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/Init", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.create_checkout: HTTP error: %s", e)
@@ -388,7 +389,7 @@ class TBankProvider:
             body["Receipt"] = receipt
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/Init", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.create_sbp_checkout: Init HTTP error: %s", e)
@@ -444,7 +445,7 @@ class TBankProvider:
         }
         body["Token"] = self._make_token(body)
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/GetQr", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.GetQr(%s,%s): HTTP error: %s", payment_id, data_type, e)
@@ -479,7 +480,7 @@ class TBankProvider:
         }
         body["Token"] = self._make_token(body)
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/GetAddAccountQrState", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.get_account_qr_state(%s): HTTP error: %s", request_key, e)
@@ -639,7 +640,7 @@ class TBankProvider:
         body["Token"] = self._make_token(body)
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/GetState", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.verify_payment(%s): %s", payment_id, e)
@@ -683,7 +684,7 @@ class TBankProvider:
             payload, extra_exclude=("SuccessURL", "FailURL", "NotificationURL")
         )
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/{path}", json=payload)
         except httpx.HTTPError as e:
             log.error("TBank.%s: HTTP error: %s", path, e)
@@ -807,7 +808,7 @@ class TBankProvider:
             init_body["Receipt"] = receipt
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/Init", json=init_body)
         except httpx.HTTPError as e:
             log.error("TBank.charge: Init HTTP error: %s", e)
@@ -842,7 +843,7 @@ class TBankProvider:
         charge_body["Token"] = self._make_token(charge_body)
 
         try:
-            with httpx.Client(timeout=30) as client:
+            with httpx.Client(timeout=30, verify=RU_TLS_VERIFY) as client:
                 # Charge может ждать обработки карты дольше чем Init
                 resp = client.post(f"{TBANK_API_BASE}/Charge", json=charge_body)
         except httpx.HTTPError as e:
@@ -946,7 +947,7 @@ class TBankProvider:
             init_body["Receipt"] = receipt
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/Init", json=init_body)
         except httpx.HTTPError as e:
             log.error("TBank.charge_qr: Init HTTP error: %s", e)
@@ -975,7 +976,7 @@ class TBankProvider:
             charge_body["BankMemberId"] = str(bank_member_id)
         charge_body["Token"] = self._make_token(charge_body)
         try:
-            with httpx.Client(timeout=30) as client:
+            with httpx.Client(timeout=30, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/ChargeQr", json=charge_body)
         except httpx.HTTPError as e:
             log.error("TBank.charge_qr: ChargeQr HTTP error pid=%s: %s", payment_id, e)
@@ -1053,7 +1054,7 @@ class TBankProvider:
         body["Token"] = self._make_token(body)
 
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
                 resp = client.post(f"{TBANK_API_BASE}/Cancel", json=body)
             resp.raise_for_status()
             data = resp.json()

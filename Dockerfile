@@ -47,6 +47,28 @@ RUN pip install --no-cache-dir -r requirements.txt
 # что requirements.txt uncommitted (signal-engine territory, Вадимов patch).
 RUN pip install --no-cache-dir gunicorn==21.2.0
 
+# ─── TLS-бандл с корнем Минцифры (T-Bank + VK ID) ────────────────────────
+# T-Bank и VK ID переводят сертификаты на Russian Trusted Root CA, которого
+# нет ни в certifi, ни в системном store. Собираем ОТДЕЛЬНЫЙ бандл
+# (certifi + корень) — он подключается явным verify= только в биллинге и
+# OAuth (api/ru_tls.py). В /usr/local/share/ca-certificates НЕ кладём и
+# update-ca-certificates НЕ зовём сознательно: этот CA может выпустить
+# сертификат на любой домен, и глобальное доверие распространило бы его на
+# весь исходящий трафик (MOEX, Telegram, GitHub).
+#
+# Шаг обязан идти ПОСЛЕ pip install — нужен установленный certifi.
+# Финальная строка — build-time проверка: если PEM битый или пустой,
+# сборка падает здесь, а не в проде на первом платеже.
+COPY certs/russian_trusted_root_ca.pem /etc/ssl/frame/
+RUN cat "$(python3 -c 'import certifi; print(certifi.where())')" \
+        /etc/ssl/frame/russian_trusted_root_ca.pem \
+        > /etc/ssl/frame/ru-trusted-bundle.pem && \
+    chmod 0644 /etc/ssl/frame/ru-trusted-bundle.pem && \
+    python3 -c "import ssl, sys; \
+ctx = ssl.create_default_context(cafile='/etc/ssl/frame/ru-trusted-bundle.pem'); \
+n = len(ctx.get_ca_certs()); \
+sys.exit(0) if n > 100 else sys.exit(f'ru-trusted-bundle.pem: только {n} корней')"
+
 # Код приложения
 COPY api/ ./api/
 COPY OI/ ./OI/
