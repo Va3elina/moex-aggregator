@@ -31,6 +31,13 @@ export interface Indicator {
   posterUrl?: string;
   /** SVG/JSX preview если видео ещё не записано (fallback) */
   illustration?: ReactNode;
+  /** CSS aspect-ratio media-контейнера, напр. `'1280 / 716'` — родной аспект
+   *  записанного видео (см. хелпер `v()` в LandingPage.tsx). Высота card
+   *  отличается между индикаторами (record-indicator.mjs кропает кадр по
+   *  факту отрендеренной карточки), поэтому родной аспект видео тоже разный —
+   *  фиксированный 16:10 для всех давал бы object-cover обрезку по бокам там,
+   *  где видео шире 16:10. Дефолт '16 / 10' — для illustration-fallback. */
+  aspectRatio?: string;
   /** Текст CTA-кнопки (default: «Открыть») */
   ctaLabel?: string;
   /** Опциональный бэдж рядом с заголовком (например «Alfa тест» для сырых индикаторов) */
@@ -89,7 +96,7 @@ export default function IndicatorGroup({ title, subtitle, indicators }: GroupPro
  * Видео занимает ~770px ширины на десктопе (1280-padding-text-area-gaps).
  */
 function IndicatorCard({ indicator }: { indicator: Indicator }) {
-  const { title, desc, icon, ctaIcon, href, videoUrl, posterUrl, illustration, ctaLabel = 'Открыть', badge } = indicator;
+  const { title, desc, icon, ctaIcon, href, videoUrl, posterUrl, illustration, ctaLabel = 'Открыть', badge, aspectRatio = '16 / 10' } = indicator;
 
   return (
     <Link
@@ -100,14 +107,16 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
       }}
     >
       {/* Media: editorial-style frame — 1.5px outline + paper-bg внутри.
-          Aspect 1280/800 = 16:10. Match'ит размер видео записанных через
-          record-indicator.mjs (viewport 1280×800). */}
+          aspectRatio — родной аспект ИМЕННО этого видео (см. Indicator.aspectRatio),
+          не фиксированный 16:10 — иначе object-cover обрезал бы по бокам там, где
+          видео шире 16:10 (card ниже 800px, record-indicator.mjs кропает кадр по
+          факту отрендеренной карточки без чёрного фона). */}
       <div
         className="overflow-hidden w-full lg:flex-1 lg:max-w-[820px]"
         style={{
           backgroundColor: 'var(--bg-primary)',
           border: '1.5px solid var(--text-primary)',
-          aspectRatio: '16 / 10',
+          aspectRatio,
         }}
       >
         <MediaArea videoUrl={videoUrl} posterUrl={posterUrl} illustration={illustration} />

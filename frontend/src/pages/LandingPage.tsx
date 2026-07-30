@@ -40,10 +40,20 @@ import MultiChartShowcase from '../components/landing/MultiChartShowcase';
 const ICON_SIZE = 20;
 const CTA_ICON_SIZE = 14;
 
-// Хелпер: добавляет videoUrl + posterUrl по name (видео в /videos/<name>.{webm,mp4})
-const v = (name: string) => ({
+// Хелпер: добавляет videoUrl + posterUrl по name (видео в /videos/<name>.{webm,mp4}).
+// videoHeight — реальная высота отснятого видео (ширина всегда 1280, см.
+// scripts/landing-videos/record-indicator.mjs) — card-контейнер получает
+// aspectRatio ИМЕННО этого видео, а не фиксированный 16:10. Высота card у
+// разных индикаторов отличается (record-indicator.mjs кропает кадр по факту
+// отрендеренной карточки, без чёрного фона), поэтому родной аспект видео
+// тоже разный. Раньше контейнер был жёстко 16:10 → object-cover докраивал
+// видео по бокам там, где родной аспект шире (напр. strength 1280:716).
+// Проверяй актуальную высоту после каждой перезаписи видео:
+//   ffprobe -v error -select_streams v -show_entries stream=height -of csv=p=0 <name>.mp4
+const v = (name: string, videoHeight: number) => ({
   videoUrl: `/videos/${name}.webm`,
   posterUrl: `/videos/${name}-poster.jpg`,
+  aspectRatio: `1280 / ${videoHeight}`,
 });
 
 // Группа 1: Что чувствуют участники
@@ -54,7 +64,7 @@ const SENTIMENT_INDICATORS: Indicator[] = [
     icon: <Activity size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/strength',
-    ...v('strength'),
+    ...v('strength', 716),
   },
   {
     title: 'Индикатор Баффетта',
@@ -62,7 +72,7 @@ const SENTIMENT_INDICATORS: Indicator[] = [
     icon: <TrendingUp size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/buffett',
-    ...v('buffett'),
+    ...v('buffett', 792),
   },
 ];
 
@@ -74,7 +84,7 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
     icon: <BarChart3 size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/oi',
-    ...v('oi'),
+    ...v('oi', 792),
   },
   {
     title: 'Деньги в фондах',
@@ -82,7 +92,7 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
     icon: <Wallet size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/funds-money',
-    ...v('funds-money'),
+    ...v('funds-money', 792),
   },
 ];
 
@@ -94,7 +104,7 @@ const PATTERNS_INDICATORS: Indicator[] = [
     icon: <CalendarDays size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/seasonality',
-    ...v('seasonality'),
+    ...v('seasonality', 676),
   },
   {
     title: 'Карта рынка',
@@ -102,7 +112,7 @@ const PATTERNS_INDICATORS: Indicator[] = [
     icon: <Grid3X3 size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/heatmap',
-    ...v('heatmap'),
+    ...v('heatmap', 766),
   },
 ];
 
