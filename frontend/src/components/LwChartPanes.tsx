@@ -23,13 +23,13 @@
 import { forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
-  LineSeries, AreaSeries, HistogramSeries,
+  LineSeries, AreaSeries, HistogramSeries, CandlestickSeries, BarSeries,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
   type Logical, type Coordinate,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 import {
-  ChartPrefsCtx, hideTvLogo, monthsYearsTickFmt, type LwSeries,
+  ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
 } from './LwChart';
 import { captureFontScale } from './chart/chartTypography';
@@ -73,6 +73,11 @@ interface LwChartPanesProps {
   drawColor?: string;
   drawWidth?: number;
   selectedDrawId?: string | null;
+  /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
+   *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
+  timeVisible?: boolean;
+  /** Уровни-пунктиры (активные алерты). pane — на какой панели, по умолчанию 0. */
+  priceLines?: { price: number; color?: string; scale?: 'left' | 'right'; title?: string; pane?: number }[];
   /** Водяной знак «Фрейм» в углу (как в LwChart). false — выключить. */
   watermark?: boolean;
   /** Не рисовать встроенную легенду: её заменяет React-список индикаторов. */
@@ -114,7 +119,7 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
   } catch { return color; }
 }
 
-type AnySeries = ISeriesApi<'Line' | 'Area' | 'Histogram'>;
+type AnySeries = ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>;
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -129,7 +134,7 @@ const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend,
+  watermark, hideLegend, timeVisible, priceLines,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -223,7 +228,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           borderVisible: false, rightOffset: 6, secondsVisible: false,
           visible: isLast, // §5.7: ось дат только на нижней панели
           tickMarkFormatter: (time: Time, type: number) =>
-            (tickFmtRef.current ?? monthsYearsTickFmt)(time as unknown as number, type),
+            (tickFmtRef.current ?? ruTickMark)(time as unknown as number, type),
         },
         crosshair: {
           mode: CrosshairMode.Normal,
@@ -330,7 +335,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const paneW = chart.timeScale().width() || w;
           const rawLeft = param.point.x > paneW / 2 ? param.point.x - tw - 16 : param.point.x + 16;
           tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
-          tip.style.top = Math.max(6, param.point.y - 8) + 'px';
+          // Math.min — иначе на низкой панели тултип вылезает за её нижний край.
+          tip.style.top = Math.max(6, Math.min(box.clientHeight - tip.offsetHeight - 6, param.point.y - 8)) + 'px';
         }
         suppress = true;
         try {
@@ -707,7 +713,34 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       };
     }
 
+    // Вертикальный масштаб колесом: Shift+колесо где угодно ИЛИ колесо над осью
+    // цифр (порт из LwChart). Масштабируем ТОЛЬКО панель под курсором — это и
+    // проще, и ожидаемее, чем тянуть общий масштаб на весь стек. Без capture +
+    // stopImmediatePropagation библиотека перехватит колесо и начнёт зумить время.
+    const wheelOff: (() => void)[] = [];
+    boxes.forEach((bx, i) => {
+      const margin = { v: 0.12 };
+      const onWheel = (e: WheelEvent) => {
+        const ch = chartsRef.current[i];
+        if (!ch) return;
+        const r = bx.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const overAxis = x < 60 || x > r.width - 60;
+        if (!e.shiftKey && !overAxis) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        margin.v = Math.min(0.42, Math.max(0, margin.v + (e.deltaY > 0 ? 0.028 : -0.028)));
+        const sm = { top: margin.v, bottom: margin.v };
+        for (const side of ['left', 'right'] as const) {
+          try { ch.priceScale(side).applyOptions({ scaleMargins: sm }); } catch { /* шкала скрыта */ }
+        }
+      };
+      bx.addEventListener('wheel', onWheel, { capture: true, passive: false });
+      wheelOff.push(() => bx.removeEventListener('wheel', onWheel, true));
+    });
+
     return () => {
+      wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
       cleanupDraw?.();
       charts.forEach((ch) => ch.remove());
@@ -775,8 +808,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const col = rc(def.color);
         const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
         const scaleId = def.scale ?? 'right';
+        const isOhlc = def.type === 'candlestick' || def.type === 'bar';
         let s: AnySeries;
-        if (def.type === 'line') {
+        if (isOhlc) {
+          // up/down = палитра «Покупки/Продажи» (см. LwChart): в editorial это
+          // сине-стальной/янтарь, не зелёный/красный. lastValueVisible:false —
+          // нативный лейбл свечи красится по up/down и мигает на оси.
+          const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
+          s = def.type === 'candlestick'
+            ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat })
+            : chart.addSeries(BarSeries, { upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+        } else if (def.type === 'line') {
           s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else if (def.type === 'area') {
           s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
@@ -784,7 +826,16 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
         }
         try {
-          s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+          // value ВСЕГДА = close (инвариант LwPoint) — на нём держатся тултип,
+          // магнит и сигнатуры; для OHLC-серий подставляем open/high/low отдельно.
+          if (isOhlc) {
+            (s as ISeriesApi<'Candlestick'>).setData(def.data.map((p) => ({
+              time: p.time as UTCTimestamp,
+              open: p.open ?? p.value, high: p.high ?? p.value, low: p.low ?? p.value, close: p.close ?? p.value,
+            })));
+          } else {
+            (s as ISeriesApi<'Line'>).setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+          }
         } catch (err) {
           console.error('LwChartPanes setData failed:', def.id, err);
         }
@@ -851,6 +902,30 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       }
     });
 
+    // Уровни алертов. Живут ВМЕСТЕ с серией (removeSeries сносит и линии), поэтому
+    // создаются здесь же, а не отдельным эффектом. priceLines обязан быть в депсах
+    // этого эффекта: он меняется от перезагрузки списка алертов, когда сами серии
+    // не менялись, и без него пунктир созданного алерта не появлялся бы до
+    // следующей смены данных.
+    if (priceLines && priceLines.length) {
+      for (const pl of priceLines) {
+        const pi = pl.pane ?? 0;
+        const paneSeries = panes[pi]?.series ?? [];
+        const sc = pl.scale ?? 'left';
+        let idx = paneSeries.findIndex((d) => (d.scale ?? 'right') === sc);
+        if (idx < 0) idx = 0;
+        const api = apisRef.current[pi]?.[idx];
+        const bx = boxes[pi];
+        if (!api || !bx) continue;
+        try {
+          api.createPriceLine({
+            price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
+            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'алерт',
+          });
+        } catch { /* серия уже снята */ }
+      }
+    }
+
     // Fit/восстановление зума — через нижнюю панель, синк разнесёт по остальным.
     const lead = charts[charts.length - 1];
     if (fitKey !== lastFitRef.current) {
@@ -865,7 +940,15 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       lead.timeScale().setVisibleLogicalRange(savedRange);
     }
     drawShapesRef.current?.();
-  }, [panes, fitKey, initialBars, paneCount, chartPrefs]);
+  }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines]);
+
+  // Смена таймфрейма (интрадей ⇄ дневной) не пересоздаёт чарты, поэтому
+  // timeVisible применяем реактивно — иначе ось застревает в режиме маунта.
+  useEffect(() => {
+    for (const ch of chartsRef.current) {
+      try { ch.applyOptions({ timeScale: { timeVisible: !!timeVisible } }); } catch { /* чарт снят */ }
+    }
+  }, [timeVisible]);
 
   // ── реагировать на изменение пропов рисования (как в LwChart.tsx) ──
   useEffect(() => {
