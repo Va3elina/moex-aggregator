@@ -347,7 +347,11 @@ export function IndicatorList({ api, native, visible, hasVolume = false }: {
     <div
       ref={rootRef}
       data-export-ignore="true"
-      style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}
+      // Отступ слева = ширина ЛЕВОЙ ценовой оси + 8. Переменную ставит
+      // LwChartPanes по факту замера; без неё список ложится на цифры оси, а
+      // ширина оси плавает от масштаба чисел (у ОИ это десятки тысяч) —
+      // константой не угадать. Фолбэк 0px = прежнее поведение там, где чарта нет.
+      style={{ position: 'absolute', top: 8, left: 'calc(var(--lw-axis-left, 0px) + 8px)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}
     >
       {native.map((r) => (
         <Row key={r.id} color={r.color} label={r.label} visible={r.visible} onToggle={r.onToggle} />
