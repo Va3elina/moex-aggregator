@@ -29,8 +29,10 @@ export interface BandsOptions {
   lower: number;
   /** Средняя линия. null — не рисовать. */
   middle: number | null;
-  /** Цвет линий уровней. */
-  lineColor: string;
+  /** Цвета линий уровней — по одному на границу. */
+  upperColor: string;
+  middleColor: string;
+  lowerColor: string;
   /** Заливка полосы между границами. */
   bandColor: string;
   /** Заливка зоны перекупленности (выше upper). */
@@ -119,21 +121,21 @@ class BandsRenderer implements IPrimitivePaneRenderer {
       ctx.fillStyle = o.bandColor;
       ctx.fillRect(0, top, w, Math.max(0, bottom - top));
 
-      ctx.strokeStyle = o.lineColor;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
-      const line = (y: number) => {
+      const line = (y: number, color: string) => {
+        ctx.strokeStyle = color;
         ctx.beginPath();
         // +0.5 — иначе линия толщиной 1 размазывается на два пикселя.
         ctx.moveTo(0, Math.round(y) + 0.5);
         ctx.lineTo(w, Math.round(y) + 0.5);
         ctx.stroke();
       };
-      line(yUp);
-      line(yLo);
+      line(yUp, o.upperColor);
+      line(yLo, o.lowerColor);
       if (o.middle != null) {
         const yMid = this._series.priceToCoordinate(o.middle);
-        if (yMid != null) { ctx.globalAlpha = 0.6; line(yMid); }
+        if (yMid != null) line(yMid, o.middleColor);
       }
       ctx.restore();
     });

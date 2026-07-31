@@ -81,12 +81,18 @@ export default function ChartLabPage() {
   }, [bars, showPrice, toSec]);
 
   const panes = useMemo<LwPane[]>(() => {
-    const extra = indSeries.slice(1).filter((a) => a.length > 0);
+    const extra = indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0);
     return [
       { series: [...native, ...(indSeries[0] ?? [])], flex: extra.length ? 2.6 : 1 },
-      ...extra.map((series) => ({ series, flex: 1 })),
+      ...extra.map((x) => ({ series: x.series, flex: 1 })),
     ];
   }, [native, indSeries]);
+
+  // Соответствие «панель графика → панель индикатора»: пустые схлопываются.
+  const paneMap = useMemo(
+    () => indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0).map((x) => x.pane),
+    [indSeries],
+  );
 
   const rows = useMemo<NativeRow[]>(() => [
     { id: 'price', label: 'Цена (синтетика)', color: '#5DA3E9', visible: showPrice, onToggle: () => setShowPrice((v) => !v) },
@@ -102,7 +108,7 @@ export default function ChartLabPage() {
       <div ref={boxRef} style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <LwChartPanes
           panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec}
-          paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={i} />)}
+          paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} />)}
         />
         <IndicatorList api={inds} native={rows} visible hasVolume />
       </div>

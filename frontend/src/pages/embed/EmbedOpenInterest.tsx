@@ -582,10 +582,18 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
   const allSeries = useMemo(() => [...visibleNative, ...(indSeries[0] ?? [])], [visibleNative, indSeries]);
-  const extraPanes = useMemo(() => indSeries.slice(1).filter((arr) => arr.length > 0), [indSeries]);
+  // ⚠️ Пустые панели схлопываются, поэтому номер панели ГРАФИКА не равен номеру
+  // панели ИНДИКАТОРА: удалили индикатор из панели 1 — тот, что был в панели 2,
+  // становится первой дополнительной панелью, оставаясь pane=2 в модели. Без
+  // сохранённого соответствия строка индикатора не находилась, и удалить его
+  // было уже нечем — крестика на экране просто нет.
+  const extraPanes = useMemo(
+    () => indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0),
+    [indSeries],
+  );
   const chartPanes = useMemo<LwPane[]>(
     // Основной график заметно выше служебных, иначе RSI съедает цену.
-    () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((series) => ({ series, flex: 1 }))],
+    () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((x) => ({ series: x.series, flex: 1 }))],
     [allSeries, extraPanes],
   );
   const nativeRows = useMemo<NativeRow[]>(() => {
@@ -701,7 +709,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             expirations={expirations}
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
-            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={i} />)}
+            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} />)}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}

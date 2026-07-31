@@ -28,6 +28,7 @@ import {
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
+import { ColorButton, type ElStyle } from './ColorPicker';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
 export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp';
@@ -70,6 +71,11 @@ export interface IndicatorInst {
   fillOn?: boolean;
   /** Знаков после запятой в подписях. undefined — авто. */
   precision?: number;
+  /** Стиль КАЖДОГО элемента отдельно: 'line' — сама линия, 'ma' —
+   *  сглаживающая, 'upper'/'middle'/'lower' — границы зон, 'band'/'over'/'under'
+   *  — заливки. Картой, а не плоскими полями: элементов у одного индикатора уже
+   *  восемь, и на каждый нужны цвет, прозрачность, толщина и пунктир. */
+  styles?: Record<string, ElStyle>;
 }
 
 interface KindDef {
@@ -191,9 +197,35 @@ function parseList(raw: string): IndicatorInst[] {
         bandsOn: typeof x.bandsOn === 'boolean' ? x.bandsOn : undefined,
         fillOn: typeof x.fillOn === 'boolean' ? x.fillOn : undefined,
         precision: Number.isFinite(x.precision) ? Math.max(0, Math.min(8, Math.round(x.precision))) : undefined,
+        styles: parseStyles(x.styles),
       }];
     });
   } catch { return []; }
+}
+
+/** Санитизация карты стилей: ключи свои, значения — только знакомые поля. */
+function parseStyles(raw: unknown): Record<string, ElStyle> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<string, ElStyle> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue;
+    const o = v as Record<string, unknown>;
+    const st: ElStyle = {};
+    if (typeof o.color === 'string') st.color = o.color;
+    if (Number.isFinite(o.opacity)) st.opacity = Math.max(0, Math.min(100, Math.round(o.opacity as number)));
+    if ([1, 2, 3, 4].includes(o.width as number)) st.width = o.width as 1 | 2 | 3 | 4;
+    if (o.dash === 'solid' || o.dash === 'dashed' || o.dash === 'dotted') st.dash = o.dash;
+    if (Object.keys(st).length) out[k] = st;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Цвет с прозрачностью → строка для канваса. Прозрачность отдельным полем, а
+ *  не восьмизначным hex: слайдер должен двигаться, не трогая тон. */
+export function styleColor(st: ElStyle | undefined, fallback: string): string {
+  const c = st?.color ?? fallback;
+  const op = st?.opacity ?? 100;
+  return op >= 100 ? c : `color-mix(in srgb, ${c} ${op}%, transparent)`;
 }
 
 export interface IndicatorsApi {
@@ -201,6 +233,8 @@ export interface IndicatorsApi {
   add: (kind: IndicatorKind) => void;
   remove: (id: string) => void;
   patch: (id: string, p: Partial<IndicatorInst>) => void;
+  /** Правка стиля ОДНОГО элемента индикатора (линия, сглаживающая, граница…). */
+  patchStyle: (id: string, el: string, p: Partial<ElStyle>) => void;
   setPane: (id: string, toOwnPane: boolean) => void;
   colorOf: (i: IndicatorInst) => string;
 }
@@ -236,9 +270,15 @@ export function useIndicators(lsKey: string): IndicatorsApi {
   const patch = useCallback((id: string, p: Partial<IndicatorInst>) => {
     setList((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x)));
   }, []);
-  const colorOf = useCallback((i: IndicatorInst) => i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length], []);
+  const patchStyle = useCallback((id: string, el: string, p: Partial<ElStyle>) => {
+    setList((l) => l.map((x) => (x.id === id ? { ...x, styles: { ...x.styles, [el]: { ...x.styles?.[el], ...p } } } : x)));
+  }, []);
+  const colorOf = useCallback(
+    (i: IndicatorInst) => i.styles?.line?.color ?? i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length],
+    [],
+  );
 
-  return { list, add, remove, patch, setPane, colorOf };
+  return { list, add, remove, patch, patchStyle, setPane, colorOf };
 }
 
 /** Минимальный свободный номер панели ≥1 (после удаления индикатора номера не
@@ -291,9 +331,15 @@ export function indicatorSeriesByPane(
     const src = withSource(candles, i.source ?? 'close');
     // На основном графике индикатор садится на ЦЕНОВУЮ (левую) ось; в своей
     // панели — на правую, там она единственная.
+    const elStyle = (el: string): ElStyle | undefined => i.styles?.[el];
+    const line = elStyle('line');
     const base = {
       scale: (onMain ? 'left' : 'right') as 'left' | 'right',
-      color, lineWidth: i.width, type: 'line' as const, lastValueVisible: !onMain,
+      color: styleColor(line, color),
+      lineWidth: line?.width ?? i.width,
+      dashed: line?.dash === 'dashed' || line?.dash === 'dotted',
+      type: 'line' as const,
+      lastValueVisible: !onMain,
     };
     if (i.kind === 'ma' || i.kind === 'ema') {
       const pts = (i.kind === 'ma' ? sma : ema)(src, i.length);
@@ -323,6 +369,12 @@ export function indicatorSeriesByPane(
               bands: {
                 upper: i.upper ?? b.upper, lower: i.lower ?? b.lower, middle: b.middle,
                 fill: i.fillOn !== false,
+                upperColor: styleColor(elStyle('upper'), 'var(--text-secondary)'),
+                middleColor: styleColor(elStyle('middle'), 'color-mix(in srgb, var(--text-secondary) 60%, transparent)'),
+                lowerColor: styleColor(elStyle('lower'), 'var(--text-secondary)'),
+                bandFill: elStyle('band') ? styleColor(elStyle('band'), '#888888') : undefined,
+                overFill: elStyle('over') ? styleColor(elStyle('over'), 'var(--oi-green)') : undefined,
+                underFill: elStyle('under') ? styleColor(elStyle('under'), 'var(--oi-red)') : undefined,
               },
             }),
           });
@@ -333,7 +385,13 @@ export function indicatorSeriesByPane(
           const sl = i.smoothLength ?? 14;
           const ma = smoothOf(pts, st, sl);
           if (ma.length) {
-            out.push({ ...base, id: i.id + ':ma', label: `MA ${sl}`, color: i.maColor ?? MA_COLOR, data: conv(ma), minMove: mm, lineWidth: 1 });
+            const maSt = elStyle('ma');
+            out.push({
+              ...base, id: i.id + ':ma', label: `MA ${sl}`, data: conv(ma), minMove: mm,
+              color: styleColor(maSt, i.maColor ?? MA_COLOR),
+              lineWidth: maSt?.width ?? 1,
+              dashed: maSt?.dash === 'dashed' || maSt?.dash === 'dotted',
+            });
             // Полосы Боллинджера вокруг сглаживающей — только у sma_bb.
             if (st === 'sma_bb') {
               const bb = bollinger(pts, sl, i.bbMult ?? 2);
@@ -742,17 +800,15 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                 label={d.shortName ?? d.label}
                 on={inst.lineOn !== false}
                 onToggle={() => set({ lineOn: inst.lineOn === false })}
-                color={api.colorOf(inst)}
-                onColor={(c) => set({ color: c })}
-                width={inst.width}
-                onWidth={(w) => set({ width: w })}
+                style={inst.styles?.line ?? { color: api.colorOf(inst), width: inst.width }}
+                onStyle={(p) => api.patchStyle(inst.id, 'line', p)}
               />
               {d.hasSmoothing && smooth !== 'none' && (
                 <StyleRow
                   label="Сглаживающая"
                   on
-                  color={inst.maColor ?? MA_COLOR}
-                  onColor={(c) => set({ maColor: c })}
+                  style={inst.styles?.ma ?? { color: '#E0A34E', width: 1 }}
+                  onStyle={(p) => api.patchStyle(inst.id, 'ma', p)}
                 />
               )}
               {d.bands && (
@@ -761,20 +817,47 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     label="Верхняя граница"
                     on={inst.bandsOn !== false}
                     onToggle={() => set({ bandsOn: inst.bandsOn === false })}
+                    style={inst.styles?.upper ?? { color: '#9C9C9C', dash: 'dashed' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'upper', p)}
                     value={inst.upper ?? d.bands.upper}
                     onValue={(v) => set({ upper: clampBand(String(v), 51, 99, d.bands!.upper) })}
                   />
-                  <StyleRow label="Средняя" on={inst.bandsOn !== false} value={d.bands.middle ?? 50} />
+                  <StyleRow
+                    label="Средняя"
+                    on={inst.bandsOn !== false}
+                    style={inst.styles?.middle ?? { color: '#7B7B7B', dash: 'dashed' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'middle', p)}
+                    value={d.bands.middle ?? 50}
+                  />
                   <StyleRow
                     label="Нижняя граница"
                     on={inst.bandsOn !== false}
+                    style={inst.styles?.lower ?? { color: '#9C9C9C', dash: 'dashed' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'lower', p)}
                     value={inst.lower ?? d.bands.lower}
                     onValue={(v) => set({ lower: clampBand(String(v), 1, 49, d.bands!.lower) })}
                   />
                   <StyleRow
-                    label="Заливка зон"
+                    label="Заливка зоны"
                     on={inst.fillOn !== false}
                     onToggle={() => set({ fillOn: inst.fillOn === false })}
+                    style={inst.styles?.band ?? { color: '#9C9C9C', opacity: 8 }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'band', p)}
+                    noLine
+                  />
+                  <StyleRow
+                    label="Перекупленность"
+                    on={inst.fillOn !== false}
+                    style={inst.styles?.over ?? { color: '#5BD49C', opacity: 12 }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'over', p)}
+                    noLine
+                  />
+                  <StyleRow
+                    label="Перепроданность"
+                    on={inst.fillOn !== false}
+                    style={inst.styles?.under ?? { color: '#EF6F6F', opacity: 12 }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'under', p)}
+                    noLine
                   />
                 </>
               )}
@@ -834,12 +917,13 @@ function Field({ label, children, dim }: { label: string; children: ReactNode; d
   );
 }
 
-/** Строка вкладки «Стиль»: галка · подпись · цвет · толщина · значение уровня. */
-function StyleRow({ label, on, onToggle, color, onColor, width, onWidth, value, onValue }: {
+/** Строка вкладки «Стиль»: галка · подпись · кнопка цвета/линии · значение. */
+function StyleRow({ label, on, onToggle, style, onStyle, value, onValue, noLine }: {
   label: string; on: boolean; onToggle?: () => void;
-  color?: string; onColor?: (c: string) => void;
-  width?: 1 | 2 | 3 | 4; onWidth?: (w: 1 | 2 | 3 | 4) => void;
+  style?: ElStyle; onStyle?: (p: Partial<ElStyle>) => void;
   value?: number; onValue?: (v: number) => void;
+  /** Заливкам линия не нужна — только цвет и прозрачность. */
+  noLine?: boolean;
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, opacity: on ? 1 : 0.45 }}>
@@ -852,33 +936,12 @@ function StyleRow({ label, on, onToggle, color, onColor, width, onWidth, value, 
         }}
       />
       <span style={{ fontSize: 11.5, color: 'var(--text-primary)', flex: 1 }}>{label}</span>
-      {color != null && (
-        <div style={{ display: 'flex', gap: 3 }}>
-          {PALETTE.map((c) => (
-            <button
-              key={c} type="button" title={c} onClick={() => onColor?.(c)}
-              style={{ width: 12, height: 12, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: color === c ? '2px solid var(--text-primary)' : '1px solid rgba(128,128,128,0.35)' }}
-            />
-          ))}
-        </div>
-      )}
-      {width != null && (
-        <div style={{ display: 'flex' }}>
-          {([1, 2, 3, 4] as const).map((w) => (
-            <button
-              key={w} type="button" onClick={() => onWidth?.(w)}
-              style={{ ...ICON_BTN, width: 17, fontSize: 10, fontWeight: 700, color: width === w ? 'var(--accent)' : 'var(--text-secondary)' }}
-            >
-              {w}
-            </button>
-          ))}
-        </div>
-      )}
+      {style && onStyle && <ColorButton value={style} onChange={onStyle} showLine={!noLine} />}
       {value != null && (
         <input
           type="number" value={value} disabled={!onValue}
           onChange={(e) => onValue?.(Number(e.target.value))}
-          style={numInput(56, !onValue)}
+          style={numInput(52, !onValue)}
         />
       )}
     </div>

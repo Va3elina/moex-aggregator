@@ -1094,16 +1094,20 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           // ⚠️ color-mix резолвим ЧЕРЕЗ ПРОБУ, а не подставляем уже посчитанный
           // rgb внутрь строки: canvas не понимает ни var(), ни color-mix, и
           // fillStyle с таким значением молча не применится.
-          const raw = def.bands.color ?? 'var(--text-secondary)';
+          const b = def.bands;
+          const raw = b.color ?? 'var(--text-secondary)';
+          const noFill = b.fill === false;
           try {
             s.attachPrimitive(new BandsPrimitive({
-              upper: def.bands.upper,
-              lower: def.bands.lower,
-              middle: def.bands.middle ?? null,
-              lineColor: rc(raw),
-              bandColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc(`color-mix(in srgb, ${raw} 8%, transparent)`),
-              overColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc('color-mix(in srgb, var(--oi-green) 12%, transparent)'),
-              underColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc('color-mix(in srgb, var(--oi-red) 12%, transparent)'),
+              upper: b.upper,
+              lower: b.lower,
+              middle: b.middle ?? null,
+              upperColor: rc(b.upperColor ?? raw),
+              middleColor: rc(b.middleColor ?? raw),
+              lowerColor: rc(b.lowerColor ?? raw),
+              bandColor: noFill ? 'rgba(0,0,0,0)' : rc(b.bandFill ?? `color-mix(in srgb, ${raw} 8%, transparent)`),
+              overColor: noFill ? 'rgba(0,0,0,0)' : rc(b.overFill ?? 'color-mix(in srgb, var(--oi-green) 12%, transparent)'),
+              underColor: noFill ? 'rgba(0,0,0,0)' : rc(b.underFill ?? 'color-mix(in srgb, var(--oi-red) 12%, transparent)'),
             }));
           } catch (err) { console.error('LwChartPanes bands failed:', def.id, err); }
         }
