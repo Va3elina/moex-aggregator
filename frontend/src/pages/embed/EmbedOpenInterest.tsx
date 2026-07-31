@@ -582,15 +582,16 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
   const allSeries = useMemo(() => [...visibleNative, ...(indSeries[0] ?? [])], [visibleNative, indSeries]);
-  // ⚠️ Пустые панели схлопываются, поэтому номер панели ГРАФИКА не равен номеру
-  // панели ИНДИКАТОРА: удалили индикатор из панели 1 — тот, что был в панели 2,
-  // становится первой дополнительной панелью, оставаясь pane=2 в модели. Без
-  // сохранённого соответствия строка индикатора не находилась, и удалить его
-  // было уже нечем — крестика на экране просто нет.
-  const extraPanes = useMemo(
-    () => indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0),
-    [indSeries],
-  );
+  // ⚠️ Панели держатся по СПИСКУ индикаторов, а не по наличию у них серий.
+  // Скрытый «глазом» индикатор серий не даёт — если считать панели по сериям,
+  // панель схлопнется вместе со строкой, и вернуть индикатор станет нечем. Ровно
+  // тот же тупик, что был при удалении. Заодно это и есть соответствие «панель
+  // графика → панель индикатора»: номера панелей не подряд (после удалений
+  // остаются дыры), и без него строка искалась бы не в той панели.
+  const extraPanes = useMemo(() => {
+    const used = [...new Set(inds.list.filter((i) => i.pane > 0).map((i) => i.pane))].sort((a, b) => a - b);
+    return used.map((pane) => ({ pane, series: indSeries[pane] ?? [] }));
+  }, [inds.list, indSeries]);
   const chartPanes = useMemo<LwPane[]>(
     // Основной график заметно выше служебных, иначе RSI съедает цену.
     () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((x) => ({ series: x.series, flex: 1 }))],
