@@ -668,12 +668,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           if (y == null) { q.box.style.display = 'none'; return; }
           const def = defs[idx];
           q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
-          // ⚠️ Пилс под курсором НЕЙТРАЛЬНЫЙ, а не в цвет линии — как в
-          // TradingView. Цветных пилсов на графике и так по одному на серию, и
-          // ещё один цветной среди них не читается как «вот где мой курсор».
+          // ⚠️ Тот же цвет, что у пилса ДАТЫ на горизонтальной оси
+          // (themeColors().lab — движок красит им подпись вертикальной линии
+          // кроссхэйра). Оба пилса показывают одно и то же: где сейчас курсор,
+          // — и разный цвет у них читался бы как разный смысл.
           const nd = darkRef.current !== false;
-          q.val.style.background = nd ? '#FFFFFF' : '#131316';
-          q.val.style.color = nd ? '#131316' : '#FFFFFF';
+          const lab = themeColors(nd).lab;
+          q.val.style.background = lab;
+          q.val.style.color = nd ? '#E7E2D6' : '#26262B';
           // ⚠️ Прижимаем к кромке ПОЛЯ, а не к краю панели: пилс последнего
           // значения движок рисует именно там, и без этого свой пилс вставал в
           // другую колонку и наезжал на соседний.
