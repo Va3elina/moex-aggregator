@@ -13,7 +13,7 @@ import time
 from api.database import get_engine
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits, enforce_tier_limits
+from api.security.access_control import enforce_tier_limits
 
 router = APIRouter(prefix="/api/buffett", tags=["buffett"])
 log = get_logger()
@@ -234,12 +234,11 @@ async def get_buffett_mcftr_m2(
     MCFTR / M2: индекс полной доходности / денежная масса.
     M2 линейно интерполирована на ежедневную сетку.
     """
-    # Ограничения для гостей. ⚠️ Единственный из трёх режимов, сидящий на ЛЕГАСИ-гейте
-    # (enforce_guest_limits, не матрица тиров) — и потому строже соседей: гостю тут
-    # период режется по GUEST_MAX_PERIOD=1y, тогда как cap-gdp/cap-m2 открыты целиком.
-    # Мигрировать на enforce_tier_limits(user, "buffett", mode=...) — вместе с решением,
-    # оставлять ли асимметрию.
-    enforce_guest_limits(user, period=period)
+    # Tier: как cap-gdp/cap-m2 — открыт на всех тирах, глубина не ограничена.
+    # До 2026-07-31 сидел на легаси-гейте enforce_guest_limits и резал гостю период
+    # по GUEST_MAX_PERIOD=1y, пока соседние режимы отдавали всю историю. Асимметрия
+    # была наследием, а не замыслом — снята переводом на общую матрицу тиров.
+    enforce_tier_limits(user, "buffett", mode="mcftr-m2", period=period)
 
     start_time = time.time()
     engine = get_engine()
