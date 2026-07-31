@@ -19,7 +19,8 @@
  * LwChartPanes.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Eye, EyeOff, Settings2, X as XIcon, Plus, MoreHorizontal, ChevronRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Eye, EyeOff, Settings2, X as XIcon, Trash2, Plus, MoreHorizontal, ChevronRight } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
@@ -627,17 +628,12 @@ const listBoxStyle: CSSProperties = {
  *  позиционировать через всю иерархию. */
 function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
-  }, [open]);
+  // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
+  // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
+  // принимал бы за клик мимо любое нажатие внутри самого окна — оно закрывалось
+  // бы на первом же действии. Закрытие живёт в окне: подложка, ✕, Отмена, Ок.
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }}>
       <Row
         color={api.colorOf(inst)}
         label={KINDS[inst.kind].title(inst)}
@@ -676,7 +672,9 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, menu }: {
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
       </button>
       {onSettings && <button type="button" title="Настройки" onClick={onSettings} style={ICON_BTN}><Settings2 size={11} /></button>}
-      {onRemove && <button type="button" title="Удалить" onClick={onRemove} style={ICON_BTN}><XIcon size={11} /></button>}
+      {/* КОРЗИНА, а не крестик: крестик читается как «закрыть/скрыть», а кнопка
+          удаляет индикатор насовсем — рядом с «глазом» это путало. */}
+      {onRemove && <button type="button" title="Удалить" onClick={onRemove} style={ICON_BTN}><Trash2 size={11} /></button>}
       {menu}
     </div>
   );
@@ -751,8 +749,9 @@ function RowMenu({ inst, api, onSettings }: { inst: IndicatorInst; api: Indicato
             )}
           </div>
           {item('Дублировать', () => api.duplicate(inst.id))}
-          {item(inst.visible ? 'Скрыть' : 'Показать', () => api.patch(inst.id, { visible: !inst.visible }))}
-          {item('Удалить', () => api.remove(inst.id))}
+          {/* «Скрыть» и «Удалить» в меню НЕ дублируем: они уже есть на строке
+              отдельными кнопками (глаз и корзина), а два пути к одному действию
+              заставляют гадать, чем они отличаются. */}
         </div>
       )}
     </div>
@@ -796,7 +795,10 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
   const set = (p: Partial<IndicatorInst>) => api.patch(inst.id, p);
   const smooth = inst.smoothType ?? 'none';
 
-  return (
+  // Порталом в body: строка индикатора живёт внутри своей панели, а та в
+  // песочнице сидит в панели с backdrop-filter — предок с фильтром становится
+  // точкой отсчёта для fixed, и окно уехало бы вместе с ней.
+  return createPortal(
     <div style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={DIALOG} onPointerDown={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
@@ -974,7 +976,8 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
           <button type="button" onClick={onClose} style={btn(true)}>Ок</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

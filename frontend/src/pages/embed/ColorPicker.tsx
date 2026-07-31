@@ -13,6 +13,7 @@
  * темах — та же логика, что у свотчей ⚙-Формата (см. EmbedFormat).
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 
 /** Стиль одного элемента индикатора. */
 export interface ElStyle {
@@ -55,16 +56,23 @@ export function ColorButton({ value, onChange, showLine = true }: {
   showLine?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  // ⚠️ Поповер позиционируется FIXED по прямоугольнику кнопки. Внутри окна
-  // настроек тело прокручиваемое (overflow-y), и absolute-поповер оно обрезает —
-  // «Стиль линии» просто не видно. Якорь считаем в момент открытия.
+  // ⚠️ Поповер идёт ПОРТАЛОМ в body и позиционируется по прямоугольнику кнопки.
+  // Двух причин хватает: (1) тело окна настроек прокручиваемое, absolute-поповер
+  // оно обрезает; (2) у окна backdrop-filter, а он — как и transform — делает
+  // предка точкой отсчёта для position:fixed, и поповер, посчитанный от экрана,
+  // уезжает на смещение окна. Портал снимает обе.
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
+  // Поповер живёт в body, поэтому «клик мимо» обязан проверять И его: иначе
+  // первый же выбор цвета закрывал бы палитру как клик снаружи.
+  const popRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener('pointerdown', onDown, true);
     return () => document.removeEventListener('pointerdown', onDown, true);
@@ -98,8 +106,8 @@ export function ColorButton({ value, onChange, showLine = true }: {
         <span style={{ width: 15, height: 15, borderRadius: 3, background: color, opacity: op / 100, flexShrink: 0 }} />
         {showLine && <LinePreview color={color} width={value.width ?? 2} dash={value.dash ?? 'solid'} w={26} />}
       </button>
-      {open && anchor && (
-        <div style={{ ...POPOVER, top: anchor.top, left: anchor.left }}>
+      {open && anchor && createPortal(
+        <div ref={popRef} style={{ ...POPOVER, top: anchor.top, left: anchor.left }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${HUES.length}, 1fr)`, gap: 3 }}>
             {GRID.flat().map((c) => (
               <button
@@ -154,7 +162,8 @@ export function ColorButton({ value, onChange, showLine = true }: {
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

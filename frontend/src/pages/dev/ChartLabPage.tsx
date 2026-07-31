@@ -81,17 +81,18 @@ export default function ChartLabPage() {
   }, [bars, showPrice, toSec]);
 
   const panes = useMemo<LwPane[]>(() => {
-    const extra = indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0);
+    const used = [...new Set(inds.list.filter((i) => i.pane > 0).map((i) => i.pane))].sort((a, b) => a - b);
+    const extra = used.map((pane) => ({ pane, series: indSeries[pane] ?? [] }));
     return [
       { series: [...native, ...(indSeries[0] ?? [])], flex: extra.length ? 2.6 : 1 },
       ...extra.map((x) => ({ series: x.series, flex: 1 })),
     ];
-  }, [native, indSeries]);
+  }, [native, indSeries, inds.list]);
 
   // Соответствие «панель графика → панель индикатора»: пустые схлопываются.
   const paneMap = useMemo(
-    () => indSeries.map((series, pane) => ({ series, pane })).slice(1).filter((x) => x.series.length > 0).map((x) => x.pane),
-    [indSeries],
+    () => [...new Set(inds.list.filter((i) => i.pane > 0).map((i) => i.pane))].sort((a, b) => a - b),
+    [inds.list],
   );
 
   const rows = useMemo<NativeRow[]>(() => [
