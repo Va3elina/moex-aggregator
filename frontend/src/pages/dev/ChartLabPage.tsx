@@ -101,7 +101,10 @@ export default function ChartLabPage() {
     [inds.list],
   );
 
-  const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
+  // Значения под курсором для строк индикаторов: в терминалах строка показывает
+  // то, на чём стоит курсор, а не последний бар.
+  const [hoverVals, setHoverVals] = useState<Record<string, number> | null>(null);
+  const indValues = useMemo(() => indicatorValues(indSeries, hoverVals), [indSeries, hoverVals]);
 
   const rows = useMemo<NativeRow[]>(() => [
     { id: 'price', label: 'Цена (синтетика)', color: '#5DA3E9', visible: showPrice, onToggle: () => setShowPrice((v) => !v) },
@@ -125,6 +128,7 @@ export default function ChartLabPage() {
       >
         <LwChartPanes
           panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec} dark={dark}
+          onCrosshairValues={setHoverVals}
           paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} values={indValues} />)}
         />
         <IndicatorList api={inds} native={rows} visible hasVolume values={indValues} />
