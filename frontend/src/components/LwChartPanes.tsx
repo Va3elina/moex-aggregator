@@ -282,6 +282,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // подпись, и её читаем через ref.
   const crossFmtRef = useRef(crosshairTimeFmt); crossFmtRef.current = crosshairTimeFmt;
   const expRef = useRef(expirations); expRef.current = expirations;
+  const darkRef = useRef(dark); darkRef.current = dark;
   // Профиль объёма живёт ВНЕ эффекта серий: держать его в его депсах значило бы
   // пересоздавать все серии на каждую правку числа уровней (сотня миллисекунд
   // ради перерисовки одного слоя). Эффект серий только переприкрепляет примитив
@@ -667,7 +668,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           if (y == null) { q.box.style.display = 'none'; return; }
           const def = defs[idx];
           q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
-          q.val.style.background = pillColorRef.current[pi]?.[sd] || 'rgba(128,128,128,0.75)';
+          // ⚠️ Пилс под курсором НЕЙТРАЛЬНЫЙ, а не в цвет линии — как в
+          // TradingView. Цветных пилсов на графике и так по одному на серию, и
+          // ещё один цветной среди них не читается как «вот где мой курсор».
+          const nd = darkRef.current !== false;
+          q.val.style.background = nd ? '#FFFFFF' : '#131316';
+          q.val.style.color = nd ? '#131316' : '#FFFFFF';
           // ⚠️ Прижимаем к кромке ПОЛЯ, а не к краю панели: пилс последнего
           // значения движок рисует именно там, и без этого свой пилс вставал в
           // другую колонку и наезжал на соседний.
@@ -696,14 +702,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const api = idx >= 0 ? apisRef.current[i]?.[idx] : undefined;
           showPill(i, sd, api ? (api.coordinateToPrice(param.point.y) as number | null) : null);
         }
+        // Пилс ОДИН и переезжает за курсором, как в TradingView: на соседних
+        // панелях его нет. Их значения видны в общем тултипе, а набор осей у
+        // панелей разный — второй пилс на чужой шкале только путал бы.
         panesRef.current.forEach((_, pi) => {
           if (pi === i) return;
-          for (const sd of ['left', 'right'] as const) {
-            const v = mapsRef.current[pi]?.[0]?.get(t);
-            const defs = panesRef.current[pi]?.series ?? [];
-            const isSide = (defs[0]?.scale ?? 'right') === sd;
-            showPill(pi, sd, isSide && v != null ? v : null);
-          }
+          for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
         });
 
         suppress = true;
