@@ -582,7 +582,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const plus = document.createElement('div');
           plus.style.cssText = 'width:14px;height:14px;border-radius:50%;display:none;'
             + 'align-items:center;justify-content:center;font-size:12px;line-height:1;'
-            + 'pointer-events:auto;cursor:pointer;order:' + (side === 'left' ? '-1' : '1');
+            // Кружок с ВНУТРЕННЕЙ стороны — к полю графика: у левой оси справа
+            // от числа, у правой слева. Снаружи он упирался в край панели.
+            + 'pointer-events:auto;cursor:pointer;order:' + (side === 'left' ? '1' : '-1');
           plus.textContent = '+';
           plus.dataset.plus = side;
           el.appendChild(plus);
@@ -666,6 +668,15 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const def = defs[idx];
           q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
           q.val.style.background = pillColorRef.current[pi]?.[sd] || 'rgba(128,128,128,0.75)';
+          // ⚠️ Прижимаем к кромке ПОЛЯ, а не к краю панели: пилс последнего
+          // значения движок рисует именно там, и без этого свой пилс вставал в
+          // другую колонку и наезжал на соседний.
+          let axisW = 0;
+          try { axisW = ch.priceScale(sd).width() || 0; } catch { /* §R2-30 */ }
+          const bw = (pillsRef.current[pi]?.[sd]?.box.parentElement as HTMLElement | null)?.clientWidth ?? 0;
+          const inset = Math.max(0, bw - axisW);
+          if (sd === 'left') { q.box.style.right = inset + 'px'; q.box.style.left = 'auto'; }
+          else { q.box.style.left = inset + 'px'; q.box.style.right = 'auto'; }
           q.box.style.top = y + 'px';
           q.box.style.display = 'flex';
           const plus = q.box.querySelector('[data-plus]') as HTMLDivElement | null;
