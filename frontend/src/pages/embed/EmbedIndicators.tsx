@@ -19,7 +19,7 @@
  * LwChartPanes.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Eye, EyeOff, Settings2, X as XIcon, Plus, PanelBottom, ChartNoAxesColumn } from 'lucide-react';
+import { Eye, EyeOff, Settings2, X as XIcon, Plus, MoreHorizontal, ChevronRight } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
@@ -235,6 +235,10 @@ export interface IndicatorsApi {
   patch: (id: string, p: Partial<IndicatorInst>) => void;
   /** Правка стиля ОДНОГО элемента индикатора (линия, сглаживающая, граница…). */
   patchStyle: (id: string, el: string, p: Partial<ElStyle>) => void;
+  /** Копия со всеми настройками — чтобы сравнить два периода одного индикатора. */
+  duplicate: (id: string) => void;
+  /** Поменять панель местами с соседней занятой. dir: -1 выше, +1 ниже. */
+  movePane: (id: string, dir: -1 | 1) => void;
   setPane: (id: string, toOwnPane: boolean) => void;
   colorOf: (i: IndicatorInst) => string;
 }
@@ -273,12 +277,38 @@ export function useIndicators(lsKey: string): IndicatorsApi {
   const patchStyle = useCallback((id: string, el: string, p: Partial<ElStyle>) => {
     setList((l) => l.map((x) => (x.id === id ? { ...x, styles: { ...x.styles, [el]: { ...x.styles?.[el], ...p } } } : x)));
   }, []);
+  const duplicate = useCallback((id: string) => {
+    setList((l) => {
+      const src = l.find((x) => x.id === id);
+      if (!src) return l;
+      // Копия садится в СВОЮ панель, если оригинал сидит в отдельной: две линии
+      // на одной шкале — это то, ради чего копию и делают, но два RSI в одной
+      // панели накладываются друг на друга и читаются хуже, чем рядом.
+      const pane = src.pane === 0 ? 0 : nextFreePane(l);
+      return [...l, { ...src, id: uid(), pane }];
+    });
+  }, []);
+
+  const movePane = useCallback((id: string, dir: -1 | 1) => {
+    setList((l) => {
+      const cur = l.find((x) => x.id === id);
+      if (!cur || cur.pane === 0) return l;
+      // Меняемся номерами с ближайшей ЗАНЯТОЙ панелью в нужную сторону: пустые
+      // номера пропускаем, иначе «выше» иногда не давало бы видимого эффекта.
+      const occupied = [...new Set(l.filter((x) => x.pane > 0).map((x) => x.pane))].sort((a, b) => a - b);
+      const at = occupied.indexOf(cur.pane);
+      const target = occupied[at + dir];
+      if (target == null) return l;
+      return l.map((x) => (x.pane === cur.pane ? { ...x, pane: target } : x.pane === target ? { ...x, pane: cur.pane } : x));
+    });
+  }, []);
+
   const colorOf = useCallback(
     (i: IndicatorInst) => i.styles?.line?.color ?? i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length],
     [],
   );
 
-  return { list, add, remove, patch, patchStyle, setPane, colorOf };
+  return { list, add, remove, patch, patchStyle, setPane, duplicate, movePane, colorOf };
 }
 
 /** Минимальный свободный номер панели ≥1 (после удаления индикатора номера не
@@ -615,20 +645,20 @@ function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
         onRemove={() => api.remove(inst.id)}
-        pane={inst.pane}
-        canOverlay={KINDS[inst.kind].overlayOk}
-        canOwnPane={KINDS[inst.kind].ownPaneOk}
-        onTogglePane={() => api.setPane(inst.id, inst.pane === 0)}
+        menu={<RowMenu inst={inst} api={api} onSettings={() => setOpen(true)} />}
       />
       {open && <SettingsDialog inst={inst} api={api} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canOverlay, canOwnPane, onTogglePane }: {
+function Row({ color, label, visible, onToggle, onSettings, onRemove, menu }: {
   color: string; label: string; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
-  pane?: number; canOverlay?: boolean; canOwnPane?: boolean; onTogglePane?: () => void;
+  /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
+   *  перенос живёт в меню, как в терминалах: на строке и так тесно, а
+   *  пользуются им редко. */
+  menu?: ReactNode;
 }) {
   return (
     <div
@@ -645,21 +675,86 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canO
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
       </button>
-      {/* У RSI/ATR/объёма своя шкала — «вернуть на график» им недоступно вовсе:
-          на ценовой оси они превратились бы в плоскую линию у края. Профиль
-          объёма, наоборот, никуда не выносится: он рисуется по ценовой шкале. */}
-      {onTogglePane && canOverlay !== false && canOwnPane !== false && (
-        <button
-          type="button"
-          title={pane === 0 ? 'Вынести в отдельную панель' : 'Вернуть на график'}
-          onClick={onTogglePane}
-          style={ICON_BTN}
-        >
-          {pane === 0 ? <PanelBottom size={11} /> : <ChartNoAxesColumn size={11} />}
-        </button>
-      )}
       {onSettings && <button type="button" title="Настройки" onClick={onSettings} style={ICON_BTN}><Settings2 size={11} /></button>}
       {onRemove && <button type="button" title="Удалить" onClick={onRemove} style={ICON_BTN}><XIcon size={11} /></button>}
+      {menu}
+    </div>
+  );
+}
+
+/**
+ * Меню строки индикатора. Из меню терминала взято только то, что у нас есть за
+ * чем стоять: перенос между панелями (раньше был отдельной кнопкой), дубль,
+ * скрытие, удаление и настройки.
+ *
+ * Чего нет и почему: оповещения по индикатору (алерты у нас по цене и ОИ, не по
+ * значению индикатора), «добавить индикатор на индикатор», Избранное, порядок
+ * слоёв, видимость по интервалам, «о скрипте»/«исходный код»/«дерево объектов» —
+ * всё это про пользовательские Pine-скрипты, которых у нас нет.
+ */
+function RowMenu({ inst, api, onSettings }: { inst: IndicatorInst; api: IndicatorsApi; onSettings: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [sub, setSub] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSub(false); }
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [open]);
+
+  const d = KINDS[inst.kind];
+  const own = inst.pane > 0;
+  const close = () => { setOpen(false); setSub(false); };
+  const item = (label: string, onClick: () => void, disabled = false): ReactNode => (
+    <button
+      type="button" disabled={disabled}
+      onClick={() => { onClick(); close(); }}
+      style={{
+        display: 'block', width: '100%', textAlign: 'left', padding: '5px 9px', borderRadius: 6,
+        border: 'none', background: 'transparent', fontSize: 11.5, cursor: disabled ? 'default' : 'pointer',
+        color: disabled ? 'var(--text-secondary)' : 'var(--text-primary)', opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button type="button" title="Ещё" onClick={() => setOpen((v) => !v)} style={ICON_BTN}>
+        <MoreHorizontal size={11} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 40, minWidth: 196, padding: 4, borderRadius: 9, ...SURFACE }}>
+          {item('Настройки…', onSettings)}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button" onClick={() => setSub((v) => !v)}
+              style={{
+                display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
+                padding: '5px 9px', borderRadius: 6, border: 'none', background: 'transparent',
+                fontSize: 11.5, color: 'var(--text-primary)', cursor: 'pointer',
+              }}
+            >
+              Переместить<ChevronRight size={12} />
+            </button>
+            {sub && (
+              <div style={{ position: 'absolute', top: 0, left: '100%', marginLeft: 4, zIndex: 41, minWidth: 186, padding: 4, borderRadius: 9, ...SURFACE }}>
+                {item('Выше', () => api.movePane(inst.id, -1), !own)}
+                {item('Ниже', () => api.movePane(inst.id, 1), !own)}
+                {d.ownPaneOk !== false && !own && item('В отдельную панель', () => api.setPane(inst.id, true))}
+                {d.overlayOk && own && item('На основной график', () => api.setPane(inst.id, false))}
+              </div>
+            )}
+          </div>
+          {item('Дублировать', () => api.duplicate(inst.id))}
+          {item(inst.visible ? 'Скрыть' : 'Показать', () => api.patch(inst.id, { visible: !inst.visible }))}
+          {item('Удалить', () => api.remove(inst.id))}
+        </div>
+      )}
     </div>
   );
 }
