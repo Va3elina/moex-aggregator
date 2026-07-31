@@ -33,6 +33,18 @@ export interface LwSeries {
   zeroLine?: boolean;
   /** Мин. шаг цены оси/пилюли. Дефолт 1 (целые — ОИ/Баффетт); проценты/breadth → 0.01/0.1. */
   minMove?: number;
+  /** Зоны на шкале серии (RSI: 30/70). Рисуются примитивом под линией, цвета
+   *  резолвятся из токенов на стороне чарта. См. chart/bandsPrimitive.ts. */
+  bands?: LwBands;
+}
+
+/** Границы зон индикатора. Цвета — CSS-токены, резолвятся в LwChartPanes. */
+export interface LwBands {
+  upper: number;
+  lower: number;
+  /** null — среднюю линию не рисовать. */
+  middle?: number | null;
+  color?: string;
 }
 
 // ── Рисование (модель TradingView): фигуры живут в координатах {logical, price},

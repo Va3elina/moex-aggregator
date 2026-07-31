@@ -34,7 +34,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, IndicatorList, type NativeRow } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, IndicatorList, PaneIndicatorList, type NativeRow } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -700,6 +700,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             hideLegend
             expirations={expirations}
             volumeProfile={vpSpec}
+            // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
+            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={i} />)}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}
