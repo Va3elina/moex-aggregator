@@ -34,7 +34,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, IndicatorList, PaneIndicatorList, type NativeRow } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, type NativeRow } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -597,6 +597,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((x) => ({ series: x.series, flex: 1 }))],
     [allSeries, extraPanes],
   );
+  const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
+
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
       id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
@@ -710,7 +712,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             expirations={expirations}
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
-            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} />)}
+            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} />)}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}
@@ -738,7 +740,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
-        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} hasVolume={hasVolume} />
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} hasVolume={hasVolume} values={indValues} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}

@@ -499,6 +499,25 @@ export function useVolumeProfileSpec(
   return useMemo(() => volumeProfileSpec(list, candles, seriesId, colorOf), [list, candles, seriesId, colorOf]);
 }
 
+/**
+ * Последние значения индикаторов — для показа В СТРОКЕ, справа от названия
+ * (как «ATR 14 RMA 5,51» в терминалах).
+ *
+ * Так значение читается там же, где написано, чей оно, — а пилс на оси для
+ * объёма вдобавок бессмыслен: это объём одного бара, а не уровень.
+ */
+export function indicatorValues(seriesByPane: LwSeries[][]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const arr of seriesByPane) {
+    for (const d of arr) {
+      const last = d.data[d.data.length - 1];
+      if (!last) continue;
+      out[d.id] = d.axisFmt ? d.axisFmt(last.value) : String(Math.round(last.value));
+    }
+  }
+  return out;
+}
+
 // ─────────────────────────────── UI ───────────────────────────────
 
 const SURFACE: CSSProperties = {
@@ -528,10 +547,12 @@ export interface NativeRow {
  * z-index 10: выше слоя рисования (7), хит-слоя (8) и панели слоёв (9), ниже
  * тулбара (20). data-export-ignore обязателен — иначе список попадёт в PNG.
  */
-export function IndicatorList({ api, native, visible, hasVolume = false }: {
+export function IndicatorList({ api, native, visible, hasVolume = false, values }: {
   api: IndicatorsApi;
   native: NativeRow[];
   visible: boolean;
+  /** id серии → последнее значение. Показывается в строке, справа от названия. */
+  values?: Record<string, string>;
   /** Есть ли объём в свечах. Без него «Объёмы» и «Профиль объёма» не показываем:
    *  добавились бы строки, за которыми на графике пусто. */
   hasVolume?: boolean;
@@ -558,7 +579,7 @@ export function IndicatorList({ api, native, visible, hasVolume = false }: {
       {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
           своим графиком — см. PaneIndicatorList. */}
       {api.list.filter((i) => i.pane === 0).map((i) => (
-        <IndicatorRow key={i.id} inst={i} api={api} />
+        <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />
       ))}
 
       <div style={{ position: 'relative' }}>
@@ -608,12 +629,12 @@ export function IndicatorList({ api, native, visible, hasVolume = false }: {
  * Why: индикатор в своей панели и его строка в общем списке наверху — это два
  * разных места для одной сущности. Пользователь ищет подпись там, где линия.
  */
-export function PaneIndicatorList({ api, pane }: { api: IndicatorsApi; pane: number }) {
+export function PaneIndicatorList({ api, pane, values }: { api: IndicatorsApi; pane: number; values?: Record<string, string> }) {
   const rows = api.list.filter((i) => i.pane === pane);
   if (!rows.length) return null;
   return (
     <div data-export-ignore="true" style={listBoxStyle}>
-      {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} />)}
+      {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />)}
     </div>
   );
 }
@@ -629,7 +650,7 @@ const listBoxStyle: CSSProperties = {
 /** Строка индикатора вместе со своей шестерёнкой: попап живёт рядом со строкой,
  *  а не в корне списка — иначе для панельных строк его пришлось бы отдельно
  *  позиционировать через всю иерархию. */
-function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }) {
+function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: IndicatorsApi; value?: string }) {
   const [open, setOpen] = useState(false);
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
@@ -640,6 +661,7 @@ function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }
       <Row
         color={api.colorOf(inst)}
         label={KINDS[inst.kind].title(inst)}
+        value={value}
         visible={inst.visible}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
@@ -651,8 +673,8 @@ function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }
   );
 }
 
-function Row({ color, label, visible, onToggle, onSettings, onRemove, menu }: {
-  color: string; label: string; visible: boolean;
+function Row({ color, label, value, visible, onToggle, onSettings, onRemove, menu }: {
+  color: string; label: string; value?: string; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
   /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
    *  перенос живёт в меню, как в терминалах: на строке и так тесно, а
@@ -671,6 +693,11 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, menu }: {
           поддерева панели переменная разрешится сама (тема живёт на data-theme). */}
       <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
       <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{label}</span>
+      {/* Значение справа от названия — в цвет линии, моноширинным: так читается,
+          чьё оно, и цифры не пляшут при смене последнего бара. */}
+      {value && (
+        <span style={{ fontSize: 10.5, fontWeight: 700, color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      )}
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
       </button>

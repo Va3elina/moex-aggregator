@@ -15,7 +15,7 @@
 import { useCallback, useMemo, useRef, useState, type CSSProperties } from 'react';
 import LwChartPanes, { type LwPane } from '../../components/LwChartPanes';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { IndicatorList, PaneIndicatorList, useIndicators, useIndicatorSeries, useVolumeProfileSpec } from '../embed/EmbedIndicators';
+import { IndicatorList, PaneIndicatorList, indicatorValues, useIndicators, useIndicatorSeries, useVolumeProfileSpec } from '../embed/EmbedIndicators';
 import type { NativeRow } from '../embed/EmbedIndicators';
 
 const DAY = 86400;
@@ -101,6 +101,8 @@ export default function ChartLabPage() {
     [inds.list],
   );
 
+  const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
+
   const rows = useMemo<NativeRow[]>(() => [
     { id: 'price', label: 'Цена (синтетика)', color: '#5DA3E9', visible: showPrice, onToggle: () => setShowPrice((v) => !v) },
     { id: 'oi', label: 'Чистая позиция', color: 'var(--accent)', visible: true, onToggle: () => {} },
@@ -123,9 +125,9 @@ export default function ChartLabPage() {
       >
         <LwChartPanes
           panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec} dark={dark}
-          paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} />)}
+          paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} values={indValues} />)}
         />
-        <IndicatorList api={inds} native={rows} visible hasVolume />
+        <IndicatorList api={inds} native={rows} visible hasVolume values={indValues} />
       </div>
       <Readout />
     </div>
