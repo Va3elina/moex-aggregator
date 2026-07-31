@@ -30,6 +30,7 @@ import {
 import ChartWatermark from './ChartWatermark';
 import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
 import { VolumeProfilePrimitive, type VolumeProfileOptions } from './chart/volumeProfilePrimitive';
+import { BandsPrimitive } from './chart/bandsPrimitive';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
@@ -91,6 +92,10 @@ interface LwChartPanesProps {
    *  берёт у неё priceToCoordinate, поэтому серия обязана быть ЦЕНОВОЙ. Если
    *  серии с таким id нет (пользователь скрыл цену) — профиль не рисуется. */
   volumeProfile?: (VolumeProfileSpec) | null;
+  /** Что отрисовать ВНУТРИ панели с этим индексом (строка индикатора над своей
+   *  панелью). Панель — position:relative, так что абсолютный ребёнок ложится
+   *  по её углам, а не по углам всего чарта. */
+  paneOverlay?: (paneIndex: number) => React.ReactNode;
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -158,6 +163,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
+  paneOverlay,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1081,6 +1087,26 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         if (def.zeroLine) {
           s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
         }
+        // Зоны (RSI 30/70). Примитив живёт на серии и снимается вместе с ней,
+        // отдельного цикла жизни не заводим. Цвета собираем из цвета зоны, а не
+        // из отдельных токенов: так зона всегда согласована с уровнем.
+        if (def.bands) {
+          // ⚠️ color-mix резолвим ЧЕРЕЗ ПРОБУ, а не подставляем уже посчитанный
+          // rgb внутрь строки: canvas не понимает ни var(), ни color-mix, и
+          // fillStyle с таким значением молча не применится.
+          const raw = def.bands.color ?? 'var(--text-secondary)';
+          try {
+            s.attachPrimitive(new BandsPrimitive({
+              upper: def.bands.upper,
+              lower: def.bands.lower,
+              middle: def.bands.middle ?? null,
+              lineColor: rc(raw),
+              bandColor: rc(`color-mix(in srgb, ${raw} 8%, transparent)`),
+              overColor: rc('color-mix(in srgb, var(--oi-green) 12%, transparent)'),
+              underColor: rc('color-mix(in srgb, var(--oi-red) 12%, transparent)'),
+            }));
+          } catch (err) { console.error('LwChartPanes bands failed:', def.id, err); }
+        }
         apisRef.current[i].push(s);
         mapsRef.current[i].push(new Map(def.data.map((p) => [p.time, p.value])));
       }
@@ -1286,7 +1312,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // сдвигал бы индексы боксов, и чарт создался бы поверх водяного знака.
     <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
       {panes.map((p, i) => (
-        <div key={i} data-lw-pane="" style={{ position: 'relative', minHeight: 0, flex: `${p.flex ?? 1} 1 0%` }} />
+        <div key={i} data-lw-pane="" style={{ position: 'relative', minHeight: 0, flex: `${p.flex ?? 1} 1 0%` }}>
+          {/* Оверлей ВНУТРИ панели: строка индикатора должна жить над своим
+              графиком, а не в общем углу сверху. Позиционируется по
+              --lw-axis-left, как и список панели 0. */}
+          {paneOverlay?.(i)}
+        </div>
       ))}
       {watermark !== false && chartPrefs?.watermark !== false && (
         <ChartWatermark bottom={30} left={hasLeftAxis ? 62 : 12} size={26} minSize={16} opacity={0.4} />

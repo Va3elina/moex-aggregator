@@ -8,14 +8,14 @@
  * отказа, ни одна из которых к самому багу отношения не имеет. Здесь данные
  * синтетические, зависимостей ноль, страница открывается за секунду.
  *
- * И главное — снизу живой ЗАМЕР геометрии. «Кажется, линия съехала» — плохой
- * баг-репорт даже от самого себя; «поле панели 0 начинается на 54px правее, чем
+ * И главное — снизу ЗАМЕР геометрии по кнопке. «Кажется, линия съехала» — плохой
+ * баг-репорт даже от самого себя; «поле панели 0 начинается на 74px правее, чем
  * у панели 1» — точный. Скриншот оставляем на финальное подтверждение.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from 'react';
 import LwChartPanes, { type LwPane } from '../../components/LwChartPanes';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { IndicatorList, useIndicators, useIndicatorSeries, useVolumeProfileSpec } from '../embed/EmbedIndicators';
+import { IndicatorList, PaneIndicatorList, useIndicators, useIndicatorSeries, useVolumeProfileSpec } from '../embed/EmbedIndicators';
 import type { NativeRow } from '../embed/EmbedIndicators';
 
 const DAY = 86400;
@@ -100,10 +100,13 @@ export default function ChartLabPage() {
         Добавь через «+ Индикатор» RSI и ATR, чтобы получить нижние панели.
       </div>
       <div ref={boxRef} style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-        <LwChartPanes panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec} />
+        <LwChartPanes
+          panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec}
+          paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={i} />)}
+        />
         <IndicatorList api={inds} native={rows} visible hasVolume />
       </div>
-      <Readout boxRef={boxRef} paneCount={panes.length} />
+      <Readout />
     </div>
   );
 }
@@ -111,44 +114,46 @@ export default function ChartLabPage() {
 const EMPTY: Bar[] = [];
 
 /**
- * Живой замер геометрии. Читает ФАКТИЧЕСКИЕ прямоугольники: где начинается поле
- * каждой панели и где левый край оверлея-списка. Расхождение `поле слева` между
- * панелями — это ровно та величина, на которую разъезжается вертикаль кроссхэйра.
+ * Замер геометрии по кнопке. Читает ФАКТИЧЕСКИЕ прямоугольники: где начинается
+ * поле каждой панели и где левый край оверлея-списка. Расхождение `поле слева`
+ * между панелями — ровно та величина, на которую разъезжается вертикаль
+ * кроссхэйра. Мерить ПОСЛЕ того, как график устоялся.
  */
-function Readout({ boxRef, paneCount }: { boxRef: React.RefObject<HTMLDivElement | null>; paneCount: number }) {
+function Readout() {
   const [m, setM] = useState<{ panes: { i: number; plotLeft: number; plotW: number }[]; listLeft: number | null; tick: number }>({ panes: [], listLeft: null, tick: 0 });
 
-  // ⚠️ Счётчик замеров на экране обязателен. Замерщик, который тихо застыл на
-  // первом кадре (до того как движок разложил оси), показывает старые числа с
-  // тем же видом уверенности, что и свежие, — и отправляет чинить уже
-  // починенное. Растёт счётчик — данные живые.
-  useEffect(() => {
-    let n = 0;
-    const tick = () => {
-      const box = boxRef.current;
-      if (!box) return;
-      n++;
-      const paneEls = Array.from(box.querySelectorAll(':scope > div > [data-lw-pane]')) as HTMLElement[];
-      const panes = paneEls.map((el, i) => {
-        // Мерим по СТРУКТУРЕ таблицы движка: первый ряд = [левая ось][поле][правая
-        // ось]. Эвристика «самый широкий канвас» здесь врёт — поверх лежат
-        // полноширинные слои рисования и водяного знака.
-        const tds = Array.from(el.querySelectorAll('table tr:first-child > td')) as HTMLElement[];
-        if (tds.length < 2) return { i, plotLeft: -1, plotW: -1 };
-        return {
-          i,
-          plotLeft: Math.round(tds[0].getBoundingClientRect().width),
-          plotW: Math.round(tds[1].getBoundingClientRect().width),
-        };
-      });
-      const list = box.querySelector('[data-export-ignore="true"]') as HTMLElement | null;
-      const listLeft = list ? Math.round(list.getBoundingClientRect().left - box.getBoundingClientRect().left) : null;
-      setM({ panes, listLeft, tick: n });
-    };
-    tick();
-    const id = window.setInterval(tick, 400);
-    return () => window.clearInterval(id);
-  }, [boxRef, paneCount]);
+  // ⚠️ Замер ПО КНОПКЕ, а не по таймеру. Автообновление я уже писал — оно
+  // подвисало на ранних числах (оси ещё нулевой ширины) и показывало их с тем же
+  // видом уверенности, что и свежие: дважды отправило чинить уже починенное.
+  // Инструмент, которому нельзя верить молча, хуже отсутствующего.
+  const measure = useCallback(() => {
+    // ⚠️ Панели берём ИЗ ДОКУМЕНТА, а не через React-ссылку на контейнер. Ссылка
+    // уже дважды указывала на узлы, которых на экране нет (HMR оставляет
+    // отсоединённое дерево), и замер уверенно показывал числа мёртвой копии.
+    // На стенде чарт ровно один, так что document-скоуп однозначен.
+    const paneEls = Array.from(document.querySelectorAll('[data-lw-pane]')) as HTMLElement[];
+    const box = paneEls[0]?.parentElement?.parentElement as HTMLElement | undefined;
+    if (!box) return;
+    const panes = paneEls.map((el, i) => {
+      // НЕ полагаться ни на номер строки таблицы движка, ни на «самый широкий
+      // канвас»: строк несколько, а поверх канвасов лежат полноширинные слои
+      // рисования. Оба варианта уже показывали числа от другого элемента.
+      const tds = Array.from(el.querySelectorAll('table td')) as HTMLElement[];
+      const pr = el.getBoundingClientRect();
+      let best: DOMRect | null = null;
+      for (const td of tds) {
+        const r = td.getBoundingClientRect();
+        if (!best || r.width > best.width) best = r;
+      }
+      if (!best) return { i, plotLeft: -1, plotW: -1 };
+      return { i, plotLeft: Math.round(best.left - pr.left), plotW: Math.round(best.width) };
+    });
+    // Только ПРЯМОЙ ребёнок: с тех пор как строки индикаторов переехали внутрь
+    // своих панелей, таких оверлеев несколько.
+    const list = box.querySelector(':scope > [data-export-ignore="true"]') as HTMLElement | null;
+    const listLeft = list ? Math.round(list.getBoundingClientRect().left - box.getBoundingClientRect().left) : null;
+    setM({ panes, listLeft, tick: Date.now() % 100000 });
+  }, []);
 
   const lefts = m.panes.map((p) => p.plotLeft);
   const aligned = lefts.length > 1 && lefts.every((x) => x === lefts[0]);
@@ -184,7 +189,11 @@ function Readout({ boxRef, paneCount }: { boxRef: React.RefObject<HTMLDivElement
         <span style={m.listLeft != null && m.listLeft < (lefts[0] ?? 0) ? { color: '#EF6F6F' } : undefined}>
           список индикаторов слева: {m.listLeft ?? '—'}px (должен быть ≥ поля панели 0: {lefts[0] ?? '—'}px)
         </span>
-        {' · '}<span style={{ opacity: 0.55 }}>замер #{m.tick}</span>
+        {' · '}
+        <button type="button" onClick={measure} style={{ padding: '1px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 11, border: '1px solid var(--border-color, #444)', background: 'transparent', color: 'var(--text-primary)' }}>
+          Замерить
+        </button>
+        {m.tick > 0 && <span style={{ opacity: 0.45 }}> · метка {m.tick}</span>}
       </div>
     </div>
   );

@@ -43,6 +43,9 @@ export interface IndicatorInst {
   pane: number;
   /** К какому краю прижат профиль объёма. Только для kind='vp'. */
   side?: 'left' | 'right';
+  /** Границы зон осциллятора (RSI: перекупленность/перепроданность). */
+  upper?: number;
+  lower?: number;
 }
 
 interface KindDef {
@@ -65,13 +68,21 @@ interface KindDef {
   needsVolume?: boolean;
   /** Подпись поля «Период», если оно значит не период. */
   lengthLabel?: string;
+  /** Дефолтные границы зон. Есть — значит у индикатора есть перекупленность и
+   *  перепроданность, и он рисует их разметкой. */
+  bands?: { upper: number; lower: number; middle: number | null };
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
   ma: { label: 'Скользящая средняя (MA)', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
   ema: { label: 'Экспоненциальная средняя (EMA)', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
   bb: { label: 'Полосы Боллинджера', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true },
-  rsi: { label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
+  // 30/70 — канон Уайлдера, тот же дефолт в TradingView и любом терминале.
+  // Середина 50 отделяет бычью половину диапазона от медвежьей.
+  rsi: {
+    label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false,
+    bands: { upper: 70, lower: 30, middle: 50 },
+  },
   atr: { label: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
   volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true },
   vp: {
@@ -112,6 +123,8 @@ function parseList(raw: string): IndicatorInst[] {
         visible: x.visible !== false,
         pane: Number.isFinite(x.pane) ? x.pane : 0,
         side: x.side === 'left' || x.side === 'right' ? x.side : undefined,
+        upper: Number.isFinite(x.upper) ? x.upper : undefined,
+        lower: Number.isFinite(x.lower) ? x.lower : undefined,
       }];
     });
   } catch { return []; }
@@ -227,8 +240,14 @@ export function indicatorSeriesByPane(
       }
     } else if (i.kind === 'rsi') {
       const pts = rsi(candles, i.length);
+      const b = KINDS.rsi.bands!;
       // minMove 0.01 — иначе ось RSI округлит всё до целых и станет ступенчатой.
-      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: 0.01 }]);
+      if (pts.length) {
+        put(i.pane, [{
+          ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: 0.01,
+          bands: { upper: i.upper ?? b.upper, lower: i.lower ?? b.lower, middle: b.middle },
+        }]);
+      }
     } else if (i.kind === 'atr') {
       const pts = atr(candles, i.length);
       if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), minMove: 0.01 }]);
@@ -328,54 +347,34 @@ export function IndicatorList({ api, native, visible, hasVolume = false }: {
   hasVolume?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!menuOpen && !settingsFor) return;
+    if (!menuOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) { setMenuOpen(false); setSettingsFor(null); }
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener('pointerdown', onDown, true);
     return () => document.removeEventListener('pointerdown', onDown, true);
-  }, [menuOpen, settingsFor]);
+  }, [menuOpen]);
 
   if (!visible) return null;
-  const sel = api.list.find((x) => x.id === settingsFor) || null;
 
   return (
-    <div
-      ref={rootRef}
-      data-export-ignore="true"
-      // Отступ слева = ширина ЛЕВОЙ ценовой оси + 8. Переменную ставит
-      // LwChartPanes по факту замера; без неё список ложится на цифры оси, а
-      // ширина оси плавает от масштаба чисел (у ОИ это десятки тысяч) —
-      // константой не угадать. Фолбэк 0px = прежнее поведение там, где чарта нет.
-      style={{ position: 'absolute', top: 8, left: 'calc(var(--lw-axis-left, 0px) + 8px)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}
-    >
+    <div ref={rootRef} data-export-ignore="true" style={listBoxStyle}>
       {native.map((r) => (
         <Row key={r.id} color={r.color} label={r.label} visible={r.visible} onToggle={r.onToggle} />
       ))}
-      {api.list.map((i) => (
-        <Row
-          key={i.id}
-          color={api.colorOf(i)}
-          label={KINDS[i.kind].title(i)}
-          visible={i.visible}
-          onToggle={() => api.patch(i.id, { visible: !i.visible })}
-          onSettings={() => setSettingsFor(settingsFor === i.id ? null : i.id)}
-          onRemove={() => api.remove(i.id)}
-          pane={i.pane}
-          canOverlay={KINDS[i.kind].overlayOk}
-          canOwnPane={KINDS[i.kind].ownPaneOk}
-          onTogglePane={() => api.setPane(i.id, i.pane === 0)}
-        />
+      {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
+          своим графиком — см. PaneIndicatorList. */}
+      {api.list.filter((i) => i.pane === 0).map((i) => (
+        <IndicatorRow key={i.id} inst={i} api={api} />
       ))}
 
       <div style={{ position: 'relative' }}>
         <button
           type="button"
-          onClick={() => { setSettingsFor(null); setMenuOpen((v) => !v); }}
+          onClick={() => setMenuOpen((v) => !v)}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', marginTop: 2,
             borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 10.5, fontWeight: 600,
@@ -408,8 +407,64 @@ export function IndicatorList({ api, native, visible, hasVolume = false }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {sel && <SettingsPopover inst={sel} api={api} onClose={() => setSettingsFor(null)} />}
+/**
+ * Строки индикаторов КОНКРЕТНОЙ панели. Рендерится внутрь этой панели (проп
+ * paneOverlay у LwChartPanes), поэтому садится в её левый верхний угол.
+ *
+ * Why: индикатор в своей панели и его строка в общем списке наверху — это два
+ * разных места для одной сущности. Пользователь ищет подпись там, где линия.
+ */
+export function PaneIndicatorList({ api, pane }: { api: IndicatorsApi; pane: number }) {
+  const rows = api.list.filter((i) => i.pane === pane);
+  if (!rows.length) return null;
+  return (
+    <div data-export-ignore="true" style={listBoxStyle}>
+      {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} />)}
+    </div>
+  );
+}
+
+/** Общая посадка списков: отступ слева = ширина ценовой оси (её публикует
+ *  LwChartPanes), иначе список ложится на цифры шкалы. z 10 — выше слоя
+ *  рисования (7) и хит-слоя (8), ниже тулбара (20). */
+const listBoxStyle: CSSProperties = {
+  position: 'absolute', top: 8, left: 'calc(var(--lw-axis-left, 0px) + 8px)', zIndex: 10,
+  display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start',
+};
+
+/** Строка индикатора вместе со своей шестерёнкой: попап живёт рядом со строкой,
+ *  а не в корне списка — иначе для панельных строк его пришлось бы отдельно
+ *  позиционировать через всю иерархию. */
+function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <Row
+        color={api.colorOf(inst)}
+        label={KINDS[inst.kind].title(inst)}
+        visible={inst.visible}
+        onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
+        onSettings={() => setOpen((v) => !v)}
+        onRemove={() => api.remove(inst.id)}
+        pane={inst.pane}
+        canOverlay={KINDS[inst.kind].overlayOk}
+        canOwnPane={KINDS[inst.kind].ownPaneOk}
+        onTogglePane={() => api.setPane(inst.id, inst.pane === 0)}
+      />
+      {open && <SettingsPopover inst={inst} api={api} onClose={() => setOpen(false)} />}
     </div>
   );
 }
@@ -453,6 +508,20 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canO
   );
 }
 
+const numInput = (w: number): CSSProperties => ({
+  width: w, padding: '3px 6px', borderRadius: 6, fontSize: 11.5,
+  border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
+  background: 'var(--bg-base, transparent)', color: 'var(--text-primary)',
+});
+
+/** Границы зон не должны пересекаться, иначе заливка выворачивается наизнанку:
+ *  верхняя держится выше середины, нижняя ниже. */
+function clampBand(raw: string, min: number, max: number, def: number): number {
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return def;
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
 function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: IndicatorsApi; onClose: () => void }) {
   const d = KINDS[inst.kind];
   const label: CSSProperties = { fontSize: 11, color: 'var(--text-secondary)', minWidth: 72 };
@@ -471,6 +540,25 @@ function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: Ind
           style={{ width: 64, padding: '3px 6px', borderRadius: 6, fontSize: 11.5, border: '1px solid var(--border-color, rgba(128,128,128,0.35))', background: 'var(--bg-base, transparent)', color: 'var(--text-primary)' }}
         />
       </div>
+      {d.bands && (
+        // Границы, а не «включить зоны»: смысл осциллятора в том, где проходит
+        // граница, и на разных инструментах её сдвигают (на трендовых 80/20).
+        <div style={row}>
+          <span style={label}>Зоны</span>
+          <input
+            type="number" min={51} max={99} value={inst.upper ?? d.bands.upper}
+            title="Верхняя граница — выше неё перекупленность"
+            onChange={(e) => api.patch(inst.id, { upper: clampBand(e.target.value, 51, 99, d.bands!.upper) })}
+            style={numInput(64)}
+          />
+          <input
+            type="number" min={1} max={49} value={inst.lower ?? d.bands.lower}
+            title="Нижняя граница — ниже неё перепроданность"
+            onChange={(e) => api.patch(inst.id, { lower: clampBand(e.target.value, 1, 49, d.bands!.lower) })}
+            style={numInput(64)}
+          />
+        </div>
+      )}
       {inst.kind === 'vp' && (
         // Сторона настраивается, потому что у окна ОИ обе оси заняты: слева цена,
         // справа открытый интерес — какой край свободнее, зависит от показателя.
