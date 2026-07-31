@@ -288,6 +288,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const expRef = useRef(expirations); expRef.current = expirations;
   const darkRef = useRef(dark); darkRef.current = dark;
   const onCrossValsRef = useRef(onCrosshairValues); onCrossValsRef.current = onCrosshairValues;
+  // ⚠️ Последний ОТДАННЫЙ наружу бар. Без этого гейта получается петля: колбэк
+  // дёргает setState потребителя → тот перерисовывается → чарт перерисовывается
+  // → движок снова стреляет crosshairMove → setState… Значение в строке дрожит
+  // без движения мыши, пан срывается и «возвращает назад», экран трясёт.
+  const lastEmitRef = useRef<number | null>(null);
   // Профиль объёма живёт ВНЕ эффекта серий: держать его в его депсах значило бы
   // пересоздавать все серии на каждую правку числа уровней (сотня миллисекунд
   // ради перерисовки одного слоя). Эффект серий только переприкрепляет примитив
@@ -620,7 +625,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const tip = tips[i];
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
-          onCrossValsRef.current?.(null);
+          if (lastEmitRef.current !== null) { lastEmitRef.current = null; onCrossValsRef.current?.(null); }
           tips.forEach((tp) => { tp.style.display = 'none'; });
           pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
           suppress = true;
@@ -657,7 +662,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Значения под курсором наружу — для строк индикаторов. Собираем из тех
         // же time-Map'ов, что и тултип, чтобы цифры совпадали гарантированно.
-        if (onCrossValsRef.current) {
+        // Отдаём наружу ТОЛЬКО при смене бара: внутри одного бара значения те же,
+        // а лишний setState — это и есть петля перерисовки.
+        if (onCrossValsRef.current && lastEmitRef.current !== t) {
+          lastEmitRef.current = t;
           const vals: Record<string, number> = {};
           panesRef.current.forEach((pane, pi) => {
             pane.series.forEach((def, si) => {
