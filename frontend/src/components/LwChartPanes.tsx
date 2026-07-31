@@ -1052,13 +1052,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           : {
               mode: CrosshairMode.Normal,
               vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-              // При активных alertAxes горизонталь кроссхэйра гасим: её роль
-              // играет превью-линия уровня, иначе на оси две подписи разом.
-              horzLine: {
-                color: c.cross, labelBackgroundColor: c.lab,
-                visible: !(alertAxes && alertAxes.length),
-                labelVisible: !(alertAxes && alertAxes.length),
-              },
+              // ⚠️ Горизонталь видна ВСЕГДА. Раньше она гасилась при непустом
+              // alertAxes — «её роль играет превью-линия уровня». Но превью
+              // появляется только при наведении на саму ценовую шкалу, а в окне
+              // ОИ alertAxes непустой почти всегда: график жил вообще без
+              // горизонтальной линии кроссхэйра. Двоения подписей нет — когда
+              // курсор на шкале, он не над полем графика.
+              horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: true, labelVisible: true },
             },
       });
     });
