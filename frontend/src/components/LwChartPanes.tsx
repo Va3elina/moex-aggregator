@@ -99,7 +99,7 @@ interface LwChartPanesProps {
   /** Значения всех серий в точке под курсором (id серии → значение), null при
    *  уходе курсора. Нужен строкам индикаторов: в терминалах они показывают
    *  значение под курсором, а не последнее. */
-  onCrosshairValues?: (v: Record<string, number> | null) => void;
+  onCrosshairValues?: (v: { time: number; values: Record<string, number> } | null) => void;
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -665,7 +665,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
               if (v != null) vals[def.id] = v;
             });
           });
-          onCrossValsRef.current(vals);
+          onCrossValsRef.current({ time: t, values: vals });
         }
 
         // Скрыть тултипы неактивных панелей, кроссхэйр — на соседей.
