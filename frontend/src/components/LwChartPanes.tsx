@@ -154,6 +154,34 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
   } catch { return color; }
 }
 
+/**
+ * Цветовые опции серии — ОДИН источник и для создания, и для перекраски.
+ *
+ * ⚠️ Свечи и бары красятся НЕ из def.color: у них жёсткая пара «покупки/продажи»
+ * (в editorial это сине-стальной и янтарь), а def.color у цены — токен линии или
+ * пользовательский цвет из ⚙-Формата, и он игнорируется сознательно. Если вывести
+ * up/down из def.color, создание и перекраска разойдутся: свечи создадутся
+ * правильными, а после первой же смены темы молча перекрасятся в цвет линии.
+ */
+function seriesColorOpts(box: HTMLElement, def: LwSeries): Record<string, string> {
+  const rc = (c: string | undefined) => resolveColor(box, c);
+  if (def.type === 'candlestick' || def.type === 'bar') {
+    const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
+    return def.type === 'candlestick'
+      ? { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down }
+      : { upColor: up, downColor: down };
+  }
+  const col = rc(def.color);
+  if (def.type === 'area') {
+    return {
+      lineColor: col,
+      topColor: rc(def.areaTop ?? def.color),
+      bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)',
+    };
+  }
+  return { color: col };
+}
+
 type AnySeries = ISeriesApi<'Line' | 'Area' | 'Histogram' | 'Candlestick' | 'Bar'>;
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -176,6 +204,16 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const rootRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
+  // ⚠️ Определения серий храним ПАРАЛЛЕЛЬНО apisRef, а не читаем из panesRef.
+  // panesRef присваивается во время рендера, apisRef — в эффекте: это разные
+  // фазы, и отложенная на кадр перекраска может застать их рассогласованными
+  // при совпавших длинах (сменился, скажем, показатель ОИ). Здесь цветовой
+  // источник физически принадлежит той серии, которая существует.
+  const seriesDefsRef = useRef<LwSeries[][]>([]);
+  // Примитивы зон и созданные price line'ы: applyOptions'ом их не достать иначе —
+  // ссылки на них сейчас выбрасывались сразу после создания.
+  const bandsRef = useRef<(BandsPrimitive | null)[][]>([]);
+  const lineRegRef = useRef<{ line: IPriceLine; token: string; pane: number }[]>([]);
   // Невидимые ряды-хребты, по одному на панель: держат общее индексное
   // пространство времени (см. spineTimes в эффекте серий). Хранятся отдельно от
   // apisRef, чтобы не сбить парность apisRef[i][k] ↔ mapsRef[i][k] в тултипе.
@@ -189,6 +227,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const showTooltipRef = useRef(showTooltip); showTooltipRef.current = showTooltip;
   const paneCount = panes.length;
   const chartPrefs = useContext(ChartPrefsCtx);
+  // Зеркало для обработчиков, созданных в эффекте [paneCount]: из их замыкания
+  // chartPrefs остался бы навсегда тем, каким был при создании панелей.
+  const chartPrefsRef = useRef(chartPrefs); chartPrefsRef.current = chartPrefs;
 
   // ── рисование: рефы состояния (та же идиома, что в LwChart.tsx) ──
   const drawActiveRef = useRef(drawActive); drawActiveRef.current = drawActive;
@@ -1016,6 +1057,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     apisRef.current.forEach((apis, i) => apis.forEach((s) => { try { charts[i]?.removeSeries(s); } catch { /* removed */ } }));
     apisRef.current = panes.map(() => []);
     mapsRef.current = panes.map(() => []);
+    seriesDefsRef.current = panes.map(() => []);
+    bandsRef.current = panes.map(() => []);
+    // Линии живут вместе с сериями: removeSeries снёс их выше, ссылки забываем.
+    lineRegRef.current = [];
 
     // Какие оси заняты хоть где-то в стеке — от этого зависит видимость шкал на
     // ВСЕХ панелях сразу (см. комментарий у applyOptions ниже).
@@ -1090,10 +1135,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           // up/down = палитра «Покупки/Продажи» (см. LwChart): в editorial это
           // сине-стальной/янтарь, не зелёный/красный. lastValueVisible:false —
           // нативный лейбл свечи красится по up/down и мигает на оси.
-          const up = rc('var(--oi-green)'), down = rc('var(--oi-red)');
+          const co = seriesColorOpts(box, def);
           s = def.type === 'candlestick'
-            ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat })
-            : chart.addSeries(BarSeries, { upColor: up, downColor: down, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
+            ? chart.addSeries(CandlestickSeries, { ...co, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat })
+            : chart.addSeries(BarSeries, { ...co, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
         } else if (def.type === 'line') {
           s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
         } else if (def.type === 'area') {
@@ -1116,7 +1161,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           console.error('LwChartPanes setData failed:', def.id, err);
         }
         if (def.zeroLine) {
-          s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+          const zl = s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+          lineRegRef.current.push({ line: zl, token: def.color, pane: i });
         }
         // Зоны (RSI 30/70). Примитив живёт на серии и снимается вместе с ней,
         // отдельного цикла жизни не заводим. Цвета собираем из цвета зоны, а не
@@ -1129,7 +1175,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const raw = b.color ?? 'var(--text-secondary)';
           const noFill = b.fill === false;
           try {
-            s.attachPrimitive(new BandsPrimitive({
+            const prim = new BandsPrimitive({
               upper: b.upper,
               lower: b.lower,
               middle: b.middle ?? null,
@@ -1139,10 +1185,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
               bandColor: noFill ? 'rgba(0,0,0,0)' : rc(b.bandFill ?? `color-mix(in srgb, ${raw} 8%, transparent)`),
               overColor: noFill ? 'rgba(0,0,0,0)' : rc(b.overFill ?? 'color-mix(in srgb, var(--oi-green) 12%, transparent)'),
               underColor: noFill ? 'rgba(0,0,0,0)' : rc(b.underFill ?? 'color-mix(in srgb, var(--oi-red) 12%, transparent)'),
-            }));
+            });
+            s.attachPrimitive(prim);
+            bandsRef.current[i][pane.series.indexOf(def)] = prim;
           } catch (err) { console.error('LwChartPanes bands failed:', def.id, err); }
         }
         apisRef.current[i].push(s);
+        seriesDefsRef.current[i].push(def);
         mapsRef.current[i].push(new Map(def.data.map((p) => [p.time, p.value])));
       }
       // Легенда панели. flex align-items:center текст съезжает вниз в PNG-экспорте
@@ -1254,10 +1303,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const bx = boxes[pi];
         if (!api || !bx) continue;
         try {
-          api.createPriceLine({
+          const al = api.createPriceLine({
             price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
             lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'алерт',
           });
+          lineRegRef.current.push({ line: al, token: pl.color ?? 'var(--accent)', pane: pi });
         } catch { /* серия уже снята */ }
       }
     }
@@ -1322,6 +1372,77 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     applyThemeRef.current?.();
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
+
+  /**
+   * ПЕРЕКРАСКА ПРИ СМЕНЕ ТЕМЫ — без пересоздания серий.
+   *
+   * Цвета задаются токенами (var/color-mix) и резолвятся пробой в момент создания
+   * серий, а `dark` в депсах того эффекта нет — иначе он пересоздаёт всё (и это
+   * ровно та регрессия с пустой панелью цены, см. предупреждение выше). Поэтому
+   * при переключении темы линии, нулевая линия, уровни алертов и зоны оставались
+   * покрашенными от ПРОШЛОЙ темы: на светлой они сливались с бумагой. Отсюда
+   * «на светлой теме нет горизонтальных линий».
+   *
+   * rAF обязателен: data-theme проставляет СВОЙ эффект темы, а эффекты идут
+   * снизу вверх — без отложки проба прочитает старую тему и перекрасит в неё же.
+   */
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || chartsRef.current.length !== paneCount) return;
+    const id = requestAnimationFrame(() => {
+      if (!root.isConnected) return;
+      const boxes = paneBoxes(root);
+      seriesDefsRef.current.forEach((defs, i) => {
+        const apis = apisRef.current[i];
+        const box = boxes[i];
+        // Пара «серия ↔ её определение» должна совпадать по длине: за кадр мог
+        // прийти новый рендер. Не совпало — панель пропускаем, её перекрасит
+        // эффект серий.
+        if (!box || !apis || apis.length !== defs.length) return;
+        defs.forEach((def, k) => {
+          const api = apis[k];
+          if (!api) return;
+          try { api.applyOptions(seriesColorOpts(box, def)); } catch { /* серия снята */ }
+          // Пер-точечные цвета (объёмы, сезонность, потоки) живут в данных, и
+          // достать их applyOptions'ом нельзя — только setData.
+          // ⚠️ Только для НЕ-OHLC: свечной серии {time,value,color} не скормить,
+          // движок бросит на валидации и оборвёт перекраску остальных панелей.
+          const isOhlc = def.type === 'candlestick' || def.type === 'bar';
+          if (!isOhlc && def.data.some((pt) => pt.color)) {
+            try {
+              (api as ISeriesApi<'Line'>).setData(def.data.map((pt) => ({
+                time: pt.time as UTCTimestamp, value: pt.value,
+                ...(pt.color ? { color: resolveColor(box, pt.color) } : {}),
+              })));
+            } catch (err) { console.error('LwChartPanes repaint setData failed:', def.id, err); }
+          }
+          if (def.bands) {
+            const b = def.bands;
+            const raw = b.color ?? 'var(--text-secondary)';
+            const noFill = b.fill === false;
+            const rc = (c: string | undefined) => resolveColor(box, c);
+            bandsRef.current[i]?.[k]?.applyOptions({
+              upperColor: rc(b.upperColor ?? raw),
+              middleColor: rc(b.middleColor ?? raw),
+              lowerColor: rc(b.lowerColor ?? raw),
+              bandColor: noFill ? 'rgba(0,0,0,0)' : rc(b.bandFill ?? `color-mix(in srgb, ${raw} 8%, transparent)`),
+              overColor: noFill ? 'rgba(0,0,0,0)' : rc(b.overFill ?? 'color-mix(in srgb, var(--oi-green) 12%, transparent)'),
+              underColor: noFill ? 'rgba(0,0,0,0)' : rc(b.underFill ?? 'color-mix(in srgb, var(--oi-red) 12%, transparent)'),
+            });
+          }
+        });
+      });
+      for (const reg of lineRegRef.current) {
+        const box = boxes[reg.pane];
+        const c = box && probeColor(box, reg.token);
+        if (c) { try { reg.line.applyOptions({ color: c }); } catch { /* линия снята с серией */ } }
+      }
+      applyThemeRef.current?.();
+      syncVpRef.current?.();
+      drawShapesRef.current?.();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [dark, paneCount]);
 
   // Правки профиля объёма (уровни, сторона, цвет) — БЕЗ пересоздания серий.
   useEffect(() => {
