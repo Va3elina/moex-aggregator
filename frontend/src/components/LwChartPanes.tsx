@@ -131,6 +131,13 @@ function themeColors(dark: boolean) {
   };
 }
 
+/** Как resolveColor, но null при неудачной пробе — вызывающий тогда НЕ применяет
+ *  цвет, а не красит неизвестно чем. */
+function probeColor(box: HTMLElement, color: string | undefined): string | null {
+  const v = resolveColor(box, color);
+  return v && !v.includes('var(') && !v.includes('color-mix') ? v : null;
+}
+
 // Canvas НЕ понимает var()/color-mix — резолвим через probe (копия идиомы LwChart).
 function resolveColor(box: HTMLElement, color: string | undefined): string {
   if (!color) return '#888888';
@@ -949,29 +956,53 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   }, [paneCount]);
 
   // ── тема + дефолты §9 (сетка/кроссхэйр) ──
-  useEffect(() => {
+  // ⚠️ `panes` в депсы этого эффекта НЕ добавлять: проверено бисектом — от этого
+  // панель цены перестаёт рисоваться совсем (ось есть, серий нет). Свежесть
+  // цветов при смене серий обеспечивается иначе: тело вынесено в ref и вызывается
+  // ещё и из эффекта серий, где panes заведомо актуальны. Та же идиома, что у
+  // drawExpRef/syncVpRef рядом.
+  const applyThemeRef = useRef<(() => void) | null>(null);
+  applyThemeRef.current = () => {
     const c = themeColors(dark);
-    const gridCol = chartPrefs?.grid === false ? 'rgba(0,0,0,0)' : c.grid;
-    chartsRef.current.forEach((chart) => {
+    const root = rootRef.current;
+    const boxes = root ? paneBoxes(root) : [];
+    chartsRef.current.forEach((chart, i) => {
+      // Пилс под курсором — ОТ ЦВЕТА ЛИНИИ своей панели, светлее её. Глухой серый
+      // (было) сливался и с тёмным фоном, и со светлой бумагой.
+      // ⚠️ Светлее — только подмешиванием НЕПРОЗРАЧНОГО белого: контраст подписи
+      // движок считает через generateContrastColors, а тот отбрасывает альфу, и
+      // «светлее через прозрачность» вернуло бы ровно исходный яркий цвет.
+      const lead = panesRef.current[i]?.series[0];
+      const box = boxes[i];
+      const hover = (box && lead && probeColor(box, `color-mix(in srgb, ${lead.color} 62%, #FFFFFF)`)) || c.lab;
       chart.applyOptions({
         layout: { textColor: c.text },
-        grid: { vertLines: { color: gridCol }, horzLines: { color: gridCol } },
+        grid: chartPrefs?.grid === false
+          ? { vertLines: { color: 'transparent' }, horzLines: { color: 'transparent' } }
+          : { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
         crosshair: chartPrefs?.crosshair === false
           ? { mode: CrosshairMode.Hidden }
           : {
               mode: CrosshairMode.Normal,
               vertLine: { color: c.cross, labelBackgroundColor: c.lab },
-              // При активных alertAxes горизонталь кроссхэйра гасим: её роль
-              // играет превью-линия уровня, иначе на оси две подписи разом.
-              horzLine: {
-                color: c.cross, labelBackgroundColor: c.lab,
-                visible: !(alertAxes && alertAxes.length),
-                labelVisible: !(alertAxes && alertAxes.length),
-              },
+              // ⚠️ Горизонталь видна ВСЕГДА. Раньше гасилась при непустом
+              // alertAxes «чтобы не двоилась с уровнем алерта» — но уровень
+              // появляется только при наведении на саму шкалу, а в окне ОИ
+              // alertAxes непустой почти всегда. График жил без горизонтальной
+              // линии вообще, и единственной горизонталью был уровень алерта —
+              // отсюда и «пилс алерта показывается по умолчанию».
+              horzLine: { color: c.cross, labelBackgroundColor: hover },
             },
       });
     });
-  }, [dark, chartPrefs, alertAxes]);
+  };
+
+  // paneCount в депсах обязателен: добавление/удаление панели пересоздаёт чарты
+  // с ДЕФОЛТНЫМИ опциями, и без перезапуска тема, сетка и кроссхэйр молча
+  // откатывались к заводским — линия то появлялась, то исчезала сама собой.
+  useEffect(() => {
+    applyThemeRef.current?.();
+  }, [dark, chartPrefs, paneCount]);
 
   // ── серии всех панелей ──
   useEffect(() => {
@@ -1286,6 +1317,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     } else if (savedRange ?? lastRangeRef.current) {
       lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
     }
+    // Цвета кроссхэйра зависят от цвета первой серии панели — обновляем здесь,
+    // где panes заведомо свежие (в депсы эффекта темы их класть нельзя).
+    applyThemeRef.current?.();
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
 
