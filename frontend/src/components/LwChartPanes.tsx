@@ -1101,9 +1101,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
               lower: def.bands.lower,
               middle: def.bands.middle ?? null,
               lineColor: rc(raw),
-              bandColor: rc(`color-mix(in srgb, ${raw} 8%, transparent)`),
-              overColor: rc('color-mix(in srgb, var(--oi-green) 12%, transparent)'),
-              underColor: rc('color-mix(in srgb, var(--oi-red) 12%, transparent)'),
+              bandColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc(`color-mix(in srgb, ${raw} 8%, transparent)`),
+              overColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc('color-mix(in srgb, var(--oi-green) 12%, transparent)'),
+              underColor: def.bands.fill === false ? 'rgba(0,0,0,0)' : rc('color-mix(in srgb, var(--oi-red) 12%, transparent)'),
             }));
           } catch (err) { console.error('LwChartPanes bands failed:', def.id, err); }
         }

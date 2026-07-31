@@ -18,12 +18,15 @@
  * сгруппированным по панелям, а embed уже собирает из этого panes для
  * LwChartPanes.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Eye, EyeOff, Settings2, X as XIcon, Plus, PanelBottom, ChartNoAxesColumn } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
-import { sma, ema, bollinger, rsi, atr, volumeBars, VOLUME_UP, VOLUME_DOWN, type IndCandle } from '../../utils/indicators';
+import {
+  sma, ema, bollinger, rsi, atr, volumeBars, wma, rma, withSource,
+  SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
+} from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
@@ -46,6 +49,27 @@ export interface IndicatorInst {
   /** Границы зон осциллятора (RSI: перекупленность/перепроданность). */
   upper?: number;
   lower?: number;
+
+  // ── вкладка «Аргументы» ───────────────────────────────────────────────
+  /** Что скармливаем индикатору: закрытие, максимум, типичная цена и т.д. */
+  source?: IndSource;
+  /** Сглаживание поверх индикатора — вторая линия (в TradingView «RSI-based MA»). */
+  smoothType?: SmoothType;
+  smoothLength?: number;
+  /** Отклонение полос Боллинджера вокруг сглаживающей — только для smoothType='sma_bb'. */
+  bbMult?: number;
+
+  // ── вкладка «Стиль» ───────────────────────────────────────────────────
+  /** Показывать саму линию индикатора. Выключают, когда нужна только её MA. */
+  lineOn?: boolean;
+  /** Цвет сглаживающей. null — жёлтый по умолчанию, как в терминалах. */
+  maColor?: string | null;
+  /** Пунктиры границ зон. */
+  bandsOn?: boolean;
+  /** Заливки зон. Отдельно от линий: кому-то мешает фон, а уровни нужны. */
+  fillOn?: boolean;
+  /** Знаков после запятой в подписях. undefined — авто. */
+  precision?: number;
 }
 
 interface KindDef {
@@ -71,25 +95,58 @@ interface KindDef {
   /** Дефолтные границы зон. Есть — значит у индикатора есть перекупленность и
    *  перепроданность, и он рисует их разметкой. */
   bands?: { upper: number; lower: number; middle: number | null };
+  /** Короткое имя для заголовков секций окна («RSI», а не «RSI (индекс…)»). */
+  shortName?: string;
+  /** Есть ли выбор источника цены. У объёма и профиля его нет: они считаются от
+   *  объёма, а не от цены. */
+  hasSource?: boolean;
+  /** Можно ли положить сверху сглаживающую (вторую линию). */
+  hasSmoothing?: boolean;
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
-  ma: { label: 'Скользящая средняя (MA)', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
-  ema: { label: 'Экспоненциальная средняя (EMA)', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true },
-  bb: { label: 'Полосы Боллинджера', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true },
+  ma: { label: 'Скользящая средняя (MA)', shortName: 'MA', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
+  ema: { label: 'Экспоненциальная средняя (EMA)', shortName: 'EMA', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
+  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
   // 30/70 — канон Уайлдера, тот же дефолт в TradingView и любом терминале.
   // Середина 50 отделяет бычью половину диапазона от медвежьей.
   rsi: {
-    label: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false,
+    label: 'RSI', shortName: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false,
     bands: { upper: 70, lower: 30, middle: 50 },
+    hasSource: true, hasSmoothing: true, lengthLabel: 'Длина RSI',
   },
-  atr: { label: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false },
-  volume: { label: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true },
+  atr: { label: 'ATR', shortName: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false, lengthLabel: 'Длина' },
+  volume: { label: 'Объёмы', shortName: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true, lengthLabel: 'Длина' },
   vp: {
     label: 'Профиль объёма', title: () => 'Профиль объёма', defLength: VP_DEFAULTS.rows,
-    defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
+    shortName: 'Профиль', defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
   },
 };
+
+/** Виды сглаживающей поверх индикатора (вкладка «Аргументы» → СГЛАЖИВАНИЕ). */
+export type SmoothType = 'none' | 'sma' | 'sma_bb' | 'ema' | 'rma' | 'wma';
+export const SMOOTH_LABELS: Record<SmoothType, string> = {
+  none: 'Нет',
+  sma: 'Простая скользящая средняя (SMA)',
+  sma_bb: 'SMA + полосы Боллинджера',
+  ema: 'EMA',
+  rma: 'Сглаженная (накатная)',
+  wma: 'Взвешенная (WMA)',
+};
+
+/** Цвет сглаживающей по умолчанию — янтарный, как в терминалах: он не спорит с
+ *  цветом самой линии и читается на тёмном фоне зон. */
+const MA_COLOR = 'var(--oi-amber)';
+
+/** Применить выбранное сглаживание. `none` → пусто, вызывающий просто не строит
+ *  вторую линию. */
+function smoothOf<T>(pts: IndPoint<T>[], type: SmoothType, length: number): IndPoint<T>[] {
+  if (type === 'none') return [];
+  if (type === 'ema') return ema(pts, length);
+  if (type === 'wma') return wma(pts, length);
+  if (type === 'rma') return rma(pts, length);
+  return sma(pts, length);   // sma и sma_bb — середина одна и та же
+}
 
 /** Палитра наложений — та же CC-гамма, что у ⚙-Формата серий. */
 const PALETTE = ['#9B8BF0', '#E0A34E', '#57C7C7', '#5BD49C', '#EF6F6F', '#5DA3E9'];
@@ -125,6 +182,15 @@ function parseList(raw: string): IndicatorInst[] {
         side: x.side === 'left' || x.side === 'right' ? x.side : undefined,
         upper: Number.isFinite(x.upper) ? x.upper : undefined,
         lower: Number.isFinite(x.lower) ? x.lower : undefined,
+        source: x.source in SOURCE_LABELS ? x.source : undefined,
+        smoothType: x.smoothType in SMOOTH_LABELS ? x.smoothType : undefined,
+        smoothLength: Number.isFinite(x.smoothLength) ? Math.max(1, Math.min(500, Math.round(x.smoothLength))) : undefined,
+        bbMult: Number.isFinite(x.bbMult) ? x.bbMult : undefined,
+        lineOn: typeof x.lineOn === 'boolean' ? x.lineOn : undefined,
+        maColor: typeof x.maColor === 'string' ? x.maColor : undefined,
+        bandsOn: typeof x.bandsOn === 'boolean' ? x.bandsOn : undefined,
+        fillOn: typeof x.fillOn === 'boolean' ? x.fillOn : undefined,
+        precision: Number.isFinite(x.precision) ? Math.max(0, Math.min(8, Math.round(x.precision))) : undefined,
       }];
     });
   } catch { return []; }
@@ -219,6 +285,10 @@ export function indicatorSeriesByPane(
     if (!i.visible) continue;
     const color = colorOf(i);
     const onMain = i.pane === 0;
+    // Источник — общий для всех расчётных индикаторов: RSI по максимумам и RSI
+    // по закрытиям это разные ряды, и настройка обязана влиять на математику,
+    // а не только на подпись.
+    const src = withSource(candles, i.source ?? 'close');
     // На основном графике индикатор садится на ЦЕНОВУЮ (левую) ось; в своей
     // панели — на правую, там она единственная.
     const base = {
@@ -226,10 +296,10 @@ export function indicatorSeriesByPane(
       color, lineWidth: i.width, type: 'line' as const, lastValueVisible: !onMain,
     };
     if (i.kind === 'ma' || i.kind === 'ema') {
-      const pts = (i.kind === 'ma' ? sma : ema)(candles, i.length);
+      const pts = (i.kind === 'ma' ? sma : ema)(src, i.length);
       if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS[i.kind].title(i), data: conv(pts) }]);
     } else if (i.kind === 'bb') {
-      const { mid, upper, lower } = bollinger(candles, i.length, i.mult ?? 2);
+      const { mid, upper, lower } = bollinger(src, i.length, i.mult ?? 2);
       if (mid.length) {
         // Полосы тоньше середины и пунктиром — иначе три линии сливаются.
         put(i.pane, [
@@ -239,18 +309,46 @@ export function indicatorSeriesByPane(
         ]);
       }
     } else if (i.kind === 'rsi') {
-      const pts = rsi(candles, i.length);
+      const pts = rsi(src, i.length);
       const b = KINDS.rsi.bands!;
-      // minMove 0.01 — иначе ось RSI округлит всё до целых и станет ступенчатой.
+      // minMove по выбранной точности; дефолт 0.01 — иначе ось RSI округлит всё
+      // до целых и станет ступенчатой.
+      const mm = i.precision != null ? Math.pow(10, -i.precision) : 0.01;
       if (pts.length) {
-        put(i.pane, [{
-          ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: 0.01,
-          bands: { upper: i.upper ?? b.upper, lower: i.lower ?? b.lower, middle: b.middle },
-        }]);
+        const out: LwSeries[] = [];
+        if (i.lineOn !== false) {
+          out.push({
+            ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: mm,
+            ...(i.bandsOn === false ? {} : {
+              bands: {
+                upper: i.upper ?? b.upper, lower: i.lower ?? b.lower, middle: b.middle,
+                fill: i.fillOn !== false,
+              },
+            }),
+          });
+        }
+        // Сглаживающая поверх RSI — вторая линия, как «RSI-based MA» в TradingView.
+        const st = i.smoothType ?? 'none';
+        if (st !== 'none') {
+          const sl = i.smoothLength ?? 14;
+          const ma = smoothOf(pts, st, sl);
+          if (ma.length) {
+            out.push({ ...base, id: i.id + ':ma', label: `MA ${sl}`, color: i.maColor ?? MA_COLOR, data: conv(ma), minMove: mm, lineWidth: 1 });
+            // Полосы Боллинджера вокруг сглаживающей — только у sma_bb.
+            if (st === 'sma_bb') {
+              const bb = bollinger(pts, sl, i.bbMult ?? 2);
+              if (bb.upper.length) {
+                out.push({ ...base, id: i.id + ':bbu', label: 'BB ↑', color: i.maColor ?? MA_COLOR, data: conv(bb.upper), minMove: mm, lineWidth: 1, dashed: true });
+                out.push({ ...base, id: i.id + ':bbl', label: 'BB ↓', color: i.maColor ?? MA_COLOR, data: conv(bb.lower), minMove: mm, lineWidth: 1, dashed: true });
+              }
+            }
+          }
+        }
+        if (out.length) put(i.pane, out);
       }
     } else if (i.kind === 'atr') {
       const pts = atr(candles, i.length);
-      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), minMove: 0.01 }]);
+      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), minMove: i.precision != null ? Math.pow(10, -i.precision) : 0.01 }]);
     } else if (i.kind === 'volume') {
       const pts = volumeBars(candles);
       if (pts.length) {
@@ -464,7 +562,7 @@ function IndicatorRow({ inst, api }: { inst: IndicatorInst; api: IndicatorsApi }
         canOwnPane={KINDS[inst.kind].ownPaneOk}
         onTogglePane={() => api.setPane(inst.id, inst.pane === 0)}
       />
-      {open && <SettingsPopover inst={inst} api={api} onClose={() => setOpen(false)} />}
+      {open && <SettingsDialog inst={inst} api={api} onClose={() => setOpen(false)} />}
     </div>
   );
 }
@@ -508,8 +606,8 @@ function Row({ color, label, visible, onToggle, onSettings, onRemove, pane, canO
   );
 }
 
-const numInput = (w: number): CSSProperties => ({
-  width: w, padding: '3px 6px', borderRadius: 6, fontSize: 11.5,
+const numInput = (w: number, dim = false): CSSProperties => ({
+  width: w, opacity: dim ? 0.5 : 1, padding: '3px 6px', borderRadius: 6, fontSize: 11.5,
   border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
   background: 'var(--bg-base, transparent)', color: 'var(--text-primary)',
 });
@@ -522,101 +620,293 @@ function clampBand(raw: string, min: number, max: number, def: number): number {
   return Math.max(min, Math.min(max, Math.round(v)));
 }
 
-function SettingsPopover({ inst, api, onClose }: { inst: IndicatorInst; api: IndicatorsApi; onClose: () => void }) {
+/**
+ * Окно настроек индикатора — по образцу TradingView (скриншоты Вадима): три
+ * вкладки, секции с заголовками, подпись слева / контрол справа, футер
+ * «Отмена / Ок».
+ *
+ * ⚠️ Правки применяются СРАЗУ, а «Ок» просто закрывает: график под окном виден,
+ * и настройка, которую видно только после подтверждения, заставляет открывать
+ * окно по три раза, чтобы подобрать значение. «Отмена» откатывает к снимку,
+ * сделанному на открытии.
+ *
+ * Чего из оригинала здесь НЕТ и почему: вкладка «Видимость» по таймфреймам (у
+ * нас их три, а не полтора десятка от тиков до месяцев), «Интервал/дождаться
+ * закрытия» (данные приходят готовыми свечами, внутрибарных обновлений нет) и
+ * «Рассчитать отклонение» (дивергенции — отдельная задача, не настройка).
+ */
+function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: IndicatorsApi; onClose: () => void }) {
   const d = KINDS[inst.kind];
-  const label: CSSProperties = { fontSize: 11, color: 'var(--text-secondary)', minWidth: 72 };
-  const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 };
+  const [tab, setTab] = useState<'args' | 'style'>('args');
+  // Снимок на открытии — для «Отмены». Правки идут в реальном времени.
+  const snapshot = useRef<IndicatorInst>(inst);
+  const set = (p: Partial<IndicatorInst>) => api.patch(inst.id, p);
+  const smooth = inst.smoothType ?? 'none';
+
   return (
-    <div style={{ position: 'absolute', top: 0, left: 'calc(100% + 8px)', zIndex: 3, width: 216, padding: 9, borderRadius: 9, ...SURFACE }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>{d.title(inst)}</span>
-        <button type="button" onClick={onClose} style={ICON_BTN}><XIcon size={12} /></button>
-      </div>
-      <div style={row}>
-        <span style={label}>{d.lengthLabel ?? 'Период'}</span>
-        <input
-          type="number" min={2} max={500} value={inst.length}
-          onChange={(e) => api.patch(inst.id, { length: Math.max(2, Math.min(500, Number(e.target.value) || 2)) })}
-          style={{ width: 64, padding: '3px 6px', borderRadius: 6, fontSize: 11.5, border: '1px solid var(--border-color, rgba(128,128,128,0.35))', background: 'var(--bg-base, transparent)', color: 'var(--text-primary)' }}
-        />
-      </div>
-      {d.bands && (
-        // Границы, а не «включить зоны»: смысл осциллятора в том, где проходит
-        // граница, и на разных инструментах её сдвигают (на трендовых 80/20).
-        <div style={row}>
-          <span style={label}>Зоны</span>
-          <input
-            type="number" min={51} max={99} value={inst.upper ?? d.bands.upper}
-            title="Верхняя граница — выше неё перекупленность"
-            onChange={(e) => api.patch(inst.id, { upper: clampBand(e.target.value, 51, 99, d.bands!.upper) })}
-            style={numInput(64)}
-          />
-          <input
-            type="number" min={1} max={49} value={inst.lower ?? d.bands.lower}
-            title="Нижняя граница — ниже неё перепроданность"
-            onChange={(e) => api.patch(inst.id, { lower: clampBand(e.target.value, 1, 49, d.bands!.lower) })}
-            style={numInput(64)}
-          />
+    <div style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={DIALOG} onPointerDown={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{d.title(inst)}</span>
+          <button type="button" onClick={onClose} style={ICON_BTN}><XIcon size={13} /></button>
         </div>
-      )}
-      {inst.kind === 'vp' && (
-        // Сторона настраивается, потому что у окна ОИ обе оси заняты: слева цена,
-        // справа открытый интерес — какой край свободнее, зависит от показателя.
-        <div style={row}>
-          <span style={label}>Сторона</span>
-          {([['right', 'Справа'], ['left', 'Слева']] as const).map(([v, t]) => (
+
+        <div style={{ display: 'flex', gap: 14, padding: '0 12px', borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.28))' }}>
+          {([['args', 'Аргументы'], ['style', 'Стиль']] as const).map(([id, t]) => (
             <button
-              key={v} type="button" onClick={() => api.patch(inst.id, { side: v })}
+              key={id} type="button" onClick={() => setTab(id)}
               style={{
-                ...ICON_BTN, width: 'auto', padding: '0 7px', fontSize: 10.5, fontWeight: 700,
-                color: (inst.side ?? 'right') === v ? 'var(--accent)' : 'var(--text-secondary)',
+                border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px 0 7px',
+                fontSize: 12, fontWeight: tab === id ? 700 : 500,
+                color: tab === id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                borderBottom: tab === id ? '2px solid var(--text-primary)' : '2px solid transparent',
               }}
             >
               {t}
             </button>
           ))}
         </div>
-      )}
-      {inst.kind === 'bb' && (
-        <div style={row}>
-          <span style={label}>Отклонение</span>
-          <input
-            type="number" min={0.5} max={5} step={0.5} value={inst.mult ?? 2}
-            onChange={(e) => api.patch(inst.id, { mult: Math.max(0.5, Math.min(5, Number(e.target.value) || 2)) })}
-            style={{ width: 64, padding: '3px 6px', borderRadius: 6, fontSize: 11.5, border: '1px solid var(--border-color, rgba(128,128,128,0.35))', background: 'var(--bg-base, transparent)', color: 'var(--text-primary)' }}
-          />
+
+        <div style={{ padding: '10px 12px', overflowY: 'auto', flex: 1 }}>
+          {tab === 'args' ? (
+            <>
+              <Section label={`Настройки ${d.shortName ?? d.label}`}>
+                <Field label={d.lengthLabel ?? 'Длина'}>
+                  <input
+                    type="number" min={2} max={500} value={inst.length}
+                    onChange={(e) => set({ length: clampBand(e.target.value, 2, 500, d.defLength) })}
+                    style={numInput(78)}
+                  />
+                </Field>
+                {d.hasSource && (
+                  <Field label="Данные">
+                    <Select
+                      value={inst.source ?? 'close'}
+                      options={(Object.keys(SOURCE_LABELS) as IndSource[]).map((k) => ({ id: k, label: SOURCE_LABELS[k] }))}
+                      onChange={(v) => set({ source: v as IndSource })}
+                    />
+                  </Field>
+                )}
+                {inst.kind === 'bb' && (
+                  <Field label="Отклонение">
+                    <input
+                      type="number" min={0.5} max={5} step={0.5} value={inst.mult ?? 2}
+                      onChange={(e) => set({ mult: Math.max(0.5, Math.min(5, Number(e.target.value) || 2)) })}
+                      style={numInput(78)}
+                    />
+                  </Field>
+                )}
+                {inst.kind === 'vp' && (
+                  <Field label="Сторона">
+                    <Select
+                      value={inst.side ?? 'right'}
+                      options={[{ id: 'right', label: 'Справа' }, { id: 'left', label: 'Слева' }]}
+                      onChange={(v) => set({ side: v as 'left' | 'right' })}
+                    />
+                  </Field>
+                )}
+              </Section>
+
+              {d.hasSmoothing && (
+                <Section label="Сглаживание">
+                  <Field label="Тип">
+                    <Select
+                      value={smooth}
+                      options={(Object.keys(SMOOTH_LABELS) as SmoothType[]).map((k) => ({ id: k, label: SMOOTH_LABELS[k] }))}
+                      onChange={(v) => set({ smoothType: v as SmoothType })}
+                    />
+                  </Field>
+                  <Field label="Длина" dim={smooth === 'none'}>
+                    <input
+                      type="number" min={2} max={500} value={inst.smoothLength ?? 14} disabled={smooth === 'none'}
+                      onChange={(e) => set({ smoothLength: clampBand(e.target.value, 2, 500, 14) })}
+                      style={numInput(78, smooth === 'none')}
+                    />
+                  </Field>
+                  {/* Отклонение живёт только у варианта с полосами — в остальных
+                      случаях поле показываем погашенным, как в оригинале, чтобы
+                      было видно, что оно относится именно к этому выбору. */}
+                  <Field label="Боллинджер, откл." dim={smooth !== 'sma_bb'}>
+                    <input
+                      type="number" min={0.5} max={5} step={0.5} value={inst.bbMult ?? 2} disabled={smooth !== 'sma_bb'}
+                      onChange={(e) => set({ bbMult: Math.max(0.5, Math.min(5, Number(e.target.value) || 2)) })}
+                      style={numInput(78, smooth !== 'sma_bb')}
+                    />
+                  </Field>
+                </Section>
+              )}
+            </>
+          ) : (
+            <>
+              <StyleRow
+                label={d.shortName ?? d.label}
+                on={inst.lineOn !== false}
+                onToggle={() => set({ lineOn: inst.lineOn === false })}
+                color={api.colorOf(inst)}
+                onColor={(c) => set({ color: c })}
+                width={inst.width}
+                onWidth={(w) => set({ width: w })}
+              />
+              {d.hasSmoothing && smooth !== 'none' && (
+                <StyleRow
+                  label="Сглаживающая"
+                  on
+                  color={inst.maColor ?? MA_COLOR}
+                  onColor={(c) => set({ maColor: c })}
+                />
+              )}
+              {d.bands && (
+                <>
+                  <StyleRow
+                    label="Верхняя граница"
+                    on={inst.bandsOn !== false}
+                    onToggle={() => set({ bandsOn: inst.bandsOn === false })}
+                    value={inst.upper ?? d.bands.upper}
+                    onValue={(v) => set({ upper: clampBand(String(v), 51, 99, d.bands!.upper) })}
+                  />
+                  <StyleRow label="Средняя" on={inst.bandsOn !== false} value={d.bands.middle ?? 50} />
+                  <StyleRow
+                    label="Нижняя граница"
+                    on={inst.bandsOn !== false}
+                    value={inst.lower ?? d.bands.lower}
+                    onValue={(v) => set({ lower: clampBand(String(v), 1, 49, d.bands!.lower) })}
+                  />
+                  <StyleRow
+                    label="Заливка зон"
+                    on={inst.fillOn !== false}
+                    onToggle={() => set({ fillOn: inst.fillOn === false })}
+                  />
+                </>
+              )}
+              <Section label="Выходные значения">
+                <Field label="Точность">
+                  <Select
+                    value={String(inst.precision ?? 2)}
+                    options={[0, 1, 2, 3, 4].map((n) => ({ id: String(n), label: n === 0 ? 'Целые' : `${n} знака` }))}
+                    onChange={(v) => set({ precision: Number(v) })}
+                  />
+                </Field>
+              </Section>
+            </>
+          )}
         </div>
-      )}
-      <div style={row}>
-        {/* У профиля это цвет POC: сами полосы двухцветные по смыслу
-            (покупки/продажи), см. volumeProfileSpec. */}
-        <span style={label}>{inst.kind === 'vp' ? 'Цвет POC' : 'Цвет'}</span>
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--border-color, rgba(128,128,128,0.28))' }}>
+          <button type="button" onClick={() => { api.patch(inst.id, snapshot.current); onClose(); }} style={btn(false)}>Отмена</button>
+          <button type="button" onClick={onClose} style={btn(true)}>Ок</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ⚠️ fixed, а не absolute. Строка индикатора живёт ВНУТРИ своей панели, а та у
+// RSI высотой ~180px: absolute-оверлей зажимался в неё, и окно обрезалось по
+// «Отмена/Ок». Модалка обязана вставать над всем окном. z 100000 — конвенция
+// песочницы для оверлеев (меню и шторки живут там же).
+const DIALOG_BACKDROP: CSSProperties = {
+  position: 'fixed', inset: 0, zIndex: 100000, display: 'flex',
+  alignItems: 'center', justifyContent: 'center',
+  background: 'color-mix(in srgb, #000 45%, transparent)',
+};
+const DIALOG: CSSProperties = {
+  width: 'min(340px, 92vw)', maxHeight: 'min(560px, 86vh)', display: 'flex', flexDirection: 'column',
+  borderRadius: 10, ...SURFACE,
+};
+
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', opacity: 0.75, marginBottom: 7 }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, children, dim }: { label: string; children: ReactNode; dim?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8, opacity: dim ? 0.45 : 1 }}>
+      <span style={{ fontSize: 11.5, color: 'var(--text-primary)' }}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** Строка вкладки «Стиль»: галка · подпись · цвет · толщина · значение уровня. */
+function StyleRow({ label, on, onToggle, color, onColor, width, onWidth, value, onValue }: {
+  label: string; on: boolean; onToggle?: () => void;
+  color?: string; onColor?: (c: string) => void;
+  width?: 1 | 2 | 3 | 4; onWidth?: (w: 1 | 2 | 3 | 4) => void;
+  value?: number; onValue?: (v: number) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, opacity: on ? 1 : 0.45 }}>
+      <button
+        type="button" onClick={onToggle} disabled={!onToggle}
+        style={{
+          width: 14, height: 14, borderRadius: 3, flexShrink: 0, padding: 0, cursor: onToggle ? 'pointer' : 'default',
+          border: '1.5px solid var(--border-color, rgba(128,128,128,0.45))',
+          background: on ? 'var(--accent)' : 'transparent',
+        }}
+      />
+      <span style={{ fontSize: 11.5, color: 'var(--text-primary)', flex: 1 }}>{label}</span>
+      {color != null && (
+        <div style={{ display: 'flex', gap: 3 }}>
           {PALETTE.map((c) => (
             <button
-              key={c} type="button" title={c} onClick={() => api.patch(inst.id, { color: c })}
-              style={{ width: 14, height: 14, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: api.colorOf(inst) === c ? '2px solid var(--text-primary)' : '1px solid rgba(128,128,128,0.35)' }}
+              key={c} type="button" title={c} onClick={() => onColor?.(c)}
+              style={{ width: 12, height: 12, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: color === c ? '2px solid var(--text-primary)' : '1px solid rgba(128,128,128,0.35)' }}
             />
           ))}
         </div>
-      </div>
-      {/* Профиль рисуется прямоугольниками — толщина линии ему не про что. */}
-      {inst.kind !== 'vp' && (
-        <div style={row}>
-          <span style={label}>Толщина</span>
+      )}
+      {width != null && (
+        <div style={{ display: 'flex' }}>
           {([1, 2, 3, 4] as const).map((w) => (
             <button
-              key={w} type="button" onClick={() => api.patch(inst.id, { width: w })}
-              style={{ ...ICON_BTN, width: 22, fontSize: 10.5, fontWeight: 700, color: inst.width === w ? 'var(--accent)' : 'var(--text-secondary)' }}
+              key={w} type="button" onClick={() => onWidth?.(w)}
+              style={{ ...ICON_BTN, width: 17, fontSize: 10, fontWeight: 700, color: width === w ? 'var(--accent)' : 'var(--text-secondary)' }}
             >
               {w}
             </button>
           ))}
         </div>
       )}
+      {value != null && (
+        <input
+          type="number" value={value} disabled={!onValue}
+          onChange={(e) => onValue?.(Number(e.target.value))}
+          style={numInput(56, !onValue)}
+        />
+      )}
     </div>
   );
 }
+
+function Select({ value, options, onChange }: { value: string; options: { id: string; label: string }[]; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        maxWidth: 168, padding: '3px 6px', borderRadius: 6, fontSize: 11.5,
+        border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
+        background: 'var(--bg-base, transparent)', color: 'var(--text-primary)', cursor: 'pointer',
+      }}
+    >
+      {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+    </select>
+  );
+}
+
+const btn = (primary: boolean): CSSProperties => ({
+  padding: '4px 14px', borderRadius: 7, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+  border: primary ? 'none' : '1px solid var(--border-color, rgba(128,128,128,0.45))',
+  background: primary ? 'var(--accent)' : 'transparent',
+  color: primary ? '#fff' : 'var(--text-primary)',
+});
 
 /** Мемо-обёртка: пересчёт дешёвый, но новая ссылка на массив пересоздаёт ВСЕ
  *  серии графика (эффект серий зависит от массива), а это уже сотня миллисекунд. */
