@@ -571,7 +571,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const per: { [k in 'left' | 'right']?: { box: HTMLDivElement; val: HTMLSpanElement } } = {};
       for (const side of ['left', 'right'] as const) {
         const el = document.createElement('div');
-        el.style.cssText = 'position:absolute;display:none;align-items:center;gap:4px;z-index:6;'
+        el.style.cssText = 'position:absolute;display:none;align-items:center;z-index:6;'
           + 'transform:translateY(-50%);pointer-events:none;font-size:11px;font-weight:600;color:#fff;'
           + 'white-space:nowrap;' + side + ':0';
         const val = document.createElement('span');
@@ -581,11 +581,16 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         // над ними обещал бы действие, которого не существует.
         if (i === 0) {
           const plus = document.createElement('div');
-          plus.style.cssText = 'width:14px;height:14px;border-radius:50%;display:none;'
+          // ⚠️ Кружок ВНЕ ПОТОКА (absolute). Пока он был флекс-соседом, его
+          // ширина входила в габарит группы, и выравнивание по краю шкалы
+          // сдвигало САМО ЧИСЛО. Теперь позицию задаёт только пилс, а кружок
+          // висит рядом и ни на что не влияет.
+          // Сторона внутренняя, к полю графика: у левой оси справа от числа,
+          // у правой слева — снаружи он упирался в край панели.
+          plus.style.cssText = 'position:absolute;width:14px;height:14px;border-radius:50%;display:none;'
             + 'align-items:center;justify-content:center;font-size:12px;line-height:1;'
-            // Кружок с ВНУТРЕННЕЙ стороны — к полю графика: у левой оси справа
-            // от числа, у правой слева. Снаружи он упирался в край панели.
-            + 'pointer-events:auto;cursor:pointer;order:' + (side === 'left' ? '1' : '-1');
+            + 'pointer-events:auto;cursor:pointer;top:50%;transform:translateY(-50%);'
+            + (side === 'left' ? 'left:calc(100% + 4px)' : 'right:calc(100% + 4px)');
           plus.textContent = '+';
           plus.dataset.plus = side;
           el.appendChild(plus);
@@ -691,7 +696,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           if (plus) {
             const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.includes(sd);
             plus.style.display = on ? 'flex' : 'none';
-            plus.style.background = pillColorRef.current[pi]?.[sd] || 'var(--accent)';
+            // Тот же цвет, что у пилса: кружок — его продолжение, а не отдельный
+            // элемент со своим смыслом.
+            plus.style.background = lab;
+            plus.style.color = nd ? '#E7E2D6' : '#26262B';
             plus.onclick = on ? (e) => {
               e.stopPropagation();
               onCreateAlertRef.current?.({ axis: sd, price, currentValue: price });
