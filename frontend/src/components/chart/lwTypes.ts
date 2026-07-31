@@ -45,6 +45,8 @@ export interface LwBands {
   /** null — среднюю линию не рисовать. */
   middle?: number | null;
   color?: string;
+  /** Заливать зоны. false — только пунктиры уровней (кому мешает фон). */
+  fill?: boolean;
 }
 
 // ── Рисование (модель TradingView): фигуры живут в координатах {logical, price},

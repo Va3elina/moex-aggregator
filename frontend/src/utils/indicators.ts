@@ -153,6 +153,70 @@ export function atr<T>(candles: IndCandle<T>[], length: number): IndPoint<T>[] {
   return out;
 }
 
+/**
+ * Источник цены — то, ЧТО именно скармливается индикатору. В терминалах это
+ * отдельная настройка, потому что RSI по максимумам и RSI по закрытиям — разные
+ * ряды, и сигналы у них расходятся. hlc3 («типичная цена») и ohlc4 сглаживают
+ * шум внутри бара, hlcc4 даёт закрытию двойной вес.
+ */
+export type IndSource = 'close' | 'open' | 'high' | 'low' | 'hl2' | 'hlc3' | 'ohlc4' | 'hlcc4';
+
+export const SOURCE_LABELS: Record<IndSource, string> = {
+  close: 'Цена закрытия', open: 'Цена открытия', high: 'Максимум', low: 'Минимум',
+  hl2: '(макс+мин)/2', hlc3: '(макс+мин+закр)/3', ohlc4: '(откр+макс+мин+закр)/4',
+  hlcc4: '(макс+мин+закр+закр)/4',
+};
+
+/** Пересобрать ряд под выбранный источник. Если OHLC не пришли (ряд не свечной),
+ *  всё вырождается в value — расчёт не падает, просто источник ни на что не влияет. */
+export function withSource<T>(candles: IndCandle<T>[], src: IndSource = 'close'): IndPoint<T>[] {
+  if (src === 'close') return candles.map((c) => ({ time: c.time, value: c.close ?? c.value }));
+  return candles.map((c) => {
+    const o = c.open ?? c.value, h = c.high ?? c.value, l = c.low ?? c.value, cl = c.close ?? c.value;
+    const v = src === 'open' ? o
+      : src === 'high' ? h
+      : src === 'low' ? l
+      : src === 'hl2' ? (h + l) / 2
+      : src === 'hlc3' ? (h + l + cl) / 3
+      : src === 'ohlc4' ? (o + h + l + cl) / 4
+      : src === 'hlcc4' ? (h + l + cl + cl) / 4
+      : cl;
+    return { time: c.time, value: v };
+  });
+}
+
+/** Взвешенное скользящее среднее: вес линейно растёт к свежим барам. */
+export function wma<T>(pts: IndPoint<T>[], length: number): IndPoint<T>[] {
+  const n = Math.max(1, Math.floor(length));
+  if (pts.length < n) return [];
+  const denom = (n * (n + 1)) / 2;
+  const out: IndPoint<T>[] = [];
+  for (let i = n - 1; i < pts.length; i++) {
+    let acc = 0;
+    for (let k = 0; k < n; k++) acc += pts[i - n + 1 + k].value * (k + 1);
+    out.push({ time: pts[i].time, value: acc / denom });
+  }
+  return out;
+}
+
+/**
+ * Сглаживание Уайлдера (в Pine — ta.rma, в терминалах «сглаженная/накатная»).
+ * Тот же рекуррент, что внутри RSI и ATR: prev*(n-1)/n + cur/n.
+ */
+export function rma<T>(pts: IndPoint<T>[], length: number): IndPoint<T>[] {
+  const n = Math.max(1, Math.floor(length));
+  if (pts.length < n) return [];
+  let acc = 0;
+  for (let i = 0; i < n; i++) acc += pts[i].value;
+  let a = acc / n;
+  const out: IndPoint<T>[] = [{ time: pts[n - 1].time, value: a }];
+  for (let i = n; i < pts.length; i++) {
+    a = (a * (n - 1) + pts[i].value) / n;
+    out.push({ time: pts[i].time, value: a });
+  }
+  return out;
+}
+
 /** Цвета баров объёма: растущая свеча — зелёный токен, падающая — красный. */
 export const VOLUME_UP = 'var(--oi-green)';
 export const VOLUME_DOWN = 'var(--oi-red)';
