@@ -442,7 +442,10 @@ export function indicatorSeriesByPane(
       const pts = volumeBars(candles);
       if (pts.length) {
         put(i.pane, [{
-          ...base, type: 'histogram', id: i.id, label: 'Объёмы', data: conv(pts), base: 0,
+          // lastValueVisible:false — у гистограммы объёма пилс последнего бара не
+          // несёт смысла (это объём одного дня, а не уровень), а место на оси
+          // занимает. В TradingView его там тоже нет.
+          ...base, type: 'histogram', id: i.id, label: 'Объёмы', data: conv(pts), base: 0, lastValueVisible: false,
           axisFmt: (v: number) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'М' : v >= 1e3 ? Math.round(v / 1e3) + 'т' : String(Math.round(v))),
         }]);
       }
