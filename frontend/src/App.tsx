@@ -81,6 +81,9 @@ const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
 const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
+// Стенд геометрии графика. ТОЛЬКО dev: в прод-сборке import.meta.env.DEV = false,
+// ветка с lazy() выпадает при сборке и на прод не уезжает.
+const ChartLabPage = lazy(() => import('./pages/dev/ChartLabPage'));
 const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 
 /** "/" conditional: auth → карта рынка, guest → Landing. */
@@ -168,6 +171,15 @@ export default function App() {
 
           {/* Style preview — standalone без Layout, для оценки нового дизайна */}
           <Route path="/style-preview" element={<StylePreviewPage />} />
+
+          {/* Стенд геометрии графика — dev-only, на проде роут ведёт на главную
+              (в SEO_META его нет намеренно: там он и не должен открываться). */}
+          <Route
+            path="/chart-lab"
+            element={import.meta.env.DEV
+              ? <Suspense fallback={null}><ChartLabPage /></Suspense>
+              : <Navigate to="/" replace />}
+          />
 
           {/* Headless-render для signal-engine — без Layout (только chart+frame) */}
           <Route path="/signal-export" element={<SignalExportPage />} />

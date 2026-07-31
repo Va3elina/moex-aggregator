@@ -163,6 +163,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const rootRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
+  // Невидимые ряды-хребты, по одному на панель: держат общее индексное
+  // пространство времени (см. spineTimes в эффекте серий). Хранятся отдельно от
+  // apisRef, чтобы не сбить парность apisRef[i][k] ↔ mapsRef[i][k] в тултипе.
+  const spinesRef = useRef<AnySeries[]>([]);
   const mapsRef = useRef<Map<number, number>[][]>([]); // [pane][series] time→value
   const panesRef = useRef<LwPane[]>(panes); panesRef.current = panes;
   const tipsRef = useRef<HTMLDivElement[]>([]);
@@ -976,17 +980,60 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     apisRef.current = panes.map(() => []);
     mapsRef.current = panes.map(() => []);
 
+    // Какие оси заняты хоть где-то в стеке — от этого зависит видимость шкал на
+    // ВСЕХ панелях сразу (см. комментарий у applyOptions ниже).
+    const sideUsed = {
+      left: panes.some((p) => p.series.some((x) => (x.scale ?? 'right') === 'left')),
+      right: panes.some((p) => p.series.some((x) => (x.scale ?? 'right') === 'right')),
+    };
+
+    // ⚠️ ОБЩАЯ ОСЬ ВРЕМЕНИ ДЛЯ ВСЕГО СТЕКА.
+    // Панели синхронизируются ЛОГИЧЕСКИМ диапазоном, а логический индекс — это
+    // номер бара внутри данных КОНКРЕТНОЙ панели. У индикаторов прогрев срезан
+    // (RSI 14 начинается с 14-го бара), поэтому индекс 0 на нижней панели — уже
+    // другая дата, и весь стек уезжает ровно на длину прогрева. Тем же болеют
+    // ряды с дырами: «Объёмы» пропускают бары без объёма.
+    // Лечится не пересчётом индексов, а тем, что у всех панелей индексное
+    // пространство становится ОДНИМ: в каждую добавляется невидимый ряд-хребет
+    // из одних времён (whitespace) по объединению всех дат стека.
+    // Одиночному графику хребет не нужен — рассинхронизироваться не с чем, а
+    // лишняя серия на четырёх остальных embed'ах это лишний риск на ровном месте.
+    const spineTimes = panes.length < 2 ? [] : (() => {
+      const set = new Set<number>();
+      for (const p of panes) for (const s of p.series) for (const pt of s.data) set.add(pt.time);
+      return Array.from(set).sort((a, b) => a - b);
+    })();
+    spinesRef.current.forEach((s, i) => { try { charts[i]?.removeSeries(s); } catch { /* снят вместе с чартом */ } });
+    spinesRef.current = [];
+
     panes.forEach((pane, i) => {
       const chart = charts[i];
       const box = boxes[i];
       if (!chart || !box) return;
       const rc = (col: string | undefined): string => resolveColor(box, col);
-      // Видимость шкал — по факту наличия серий на каждой оси ЭТОЙ панели.
-      // try/catch: сразу после смены visible библиотека может бросить на шкале
-      // без содержимого (та же защита, что в LwChart).
+      // Хребет ставим ПЕРВЫМ, до реальных серий: он задаёт индексное пространство
+      // панели. priceScaleId '' — оверлей без своей шкалы, на оси он не виден и
+      // на автомасштаб не влияет; данные — только времена, без значений.
+      if (spineTimes.length) {
+        try {
+          const spine = chart.addSeries(LineSeries, {
+            priceScaleId: '', visible: false, lastValueVisible: false,
+            priceLineVisible: false, crosshairMarkerVisible: false,
+          });
+          spine.setData(spineTimes.map((t) => ({ time: t as UTCTimestamp })));
+          spinesRef.current[i] = spine;
+        } catch (err) { console.error('LwChartPanes spine failed:', err); }
+      }
+      // ⚠️ Видимость шкал — по ВСЕМУ СТЕКУ, а не по своей панели. Если ось есть
+      // только у панели цены (у ОИ так и есть: слева цена, у RSI/ATR слева
+      // ничего), её поле оказывается уже соседних ровно на ширину оси, и общая
+      // вертикаль кроссхэйра расходится на столько же. Выравнивание minimumWidth
+      // ниже эту сторону не спасало: оно ставило ширину СКРЫТОЙ шкале, а скрытая
+      // всё равно нулевая. Поэтому пустая шкала остаётся видимой — она просто
+      // держит отступ, подписей на ней нет.
       for (const side of ['left', 'right'] as const) {
         try {
-          chart.priceScale(side).applyOptions({ visible: pane.series.some((x) => (x.scale ?? 'right') === side) });
+          chart.priceScale(side).applyOptions({ visible: sideUsed[side] });
         } catch { /* шкала ещё не готова */ }
       }
       for (const def of pane.series) {
@@ -1095,6 +1142,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           for (const ch of charts) {
             try { ch.priceScale(side).applyOptions({ minimumWidth: maxW }); } catch { /* см. выше */ }
           }
+        }
+        // Ширину ЛЕВОЙ оси публикуем наружу переменной на родителе (а не на своём
+        // корне): оверлеи вроде списка индикаторов — СОСЕДИ чарта, внутрь него
+        // они не вложены и переменную с корня не унаследовали бы. Иначе такой
+        // оверлей может лечь только на глазок и рано или поздно накроет цифры оси.
+        if (side === 'left') {
+          const host = root.parentElement ?? root;
+          host.style.setProperty('--lw-axis-left', `${Math.round(maxW)}px`);
         }
       }
     });
