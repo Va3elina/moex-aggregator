@@ -575,7 +575,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           + 'transform:translateY(-50%);pointer-events:none;font-size:11px;font-weight:600;color:#fff;'
           + 'white-space:nowrap;' + side + ':0';
         const val = document.createElement('span');
-        val.style.cssText = 'padding:1px 6px;border-radius:4px;font-variant-numeric:tabular-nums';
+        // ⚠️ Отступ со стороны ПОЛЯ — 10px, с внешней 6px. Движок отбивает
+        // цифру оси от кромки поля на ~9.6px (тик 5 + внутренний отступ 4.6,
+        // геометрия из исходников v4 PriceAxisViewRenderer, см. §R2-24).
+        // При симметричных 6px цифра пилса вставала на 3-4px не в ту колонку,
+        // что цифры оси, и это видно глазом.
+        val.style.cssText = 'border-radius:4px;font-variant-numeric:tabular-nums;padding:1px '
+          + (side === 'left' ? '10px 1px 6px' : '6px 1px 10px');
         el.appendChild(val);
         // «Плюс» — ТОЛЬКО на панели цены: алертов по индикаторам нет, и кружок
         // над ними обещал бы действие, которого не существует.
