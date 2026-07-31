@@ -135,13 +135,34 @@ function themeColors(dark: boolean) {
  *  цвет, а не красит неизвестно чем. */
 function probeColor(box: HTMLElement, color: string | undefined): string | null {
   const v = resolveColor(box, color);
-  return v && !v.includes('var(') && !v.includes('color-mix') ? v : null;
+  return v === '#888888' ? null : v;
 }
 
-// Canvas НЕ понимает var()/color-mix — резолвим через probe (копия идиомы LwChart).
+/** Поколение цветов: растёт при смене темы и сбрасывает кэш ниже — иначе
+ *  перекраска брала бы из кэша значения ПРОШЛОЙ темы. */
+let colorGen = 0;
+const colorCache = new WeakMap<HTMLElement, { gen: number; m: Map<string, string> }>();
+
+/**
+ * Canvas не понимает var()/color-mix — резолвим пробой в контексте панели.
+ *
+ * ⚠️ КЭШИРУЕТСЯ, и это не оптимизация «на всякий случай». Каждый промах вставляет
+ * узел в DOM и зовёт getComputedStyle, то есть форсит пересчёт стиля. Цвет точки
+ * резолвится ПО ТОЧКЕ (у объёмов и потоков он свой на каждом баре), так что на
+ * ряду в тысячи баров выходили тысячи пересчётов подряд и вкладка вставала на
+ * секунды. Различных цветов при этом два-три — рост и падение.
+ *
+ * ⚠️ Никогда не возвращаем сырую строку var(...): canvas молча игнорирует
+ * невалидный цвет, и серия просто перестаёт рисоваться — тихий отказ без ошибок.
+ */
 function resolveColor(box: HTMLElement, color: string | undefined): string {
   if (!color) return '#888888';
   if (!color.includes('var(') && !color.includes('color-mix')) return color;
+  let e = colorCache.get(box);
+  if (!e || e.gen !== colorGen) { e = { gen: colorGen, m: new Map() }; colorCache.set(box, e); }
+  const hit = e.m.get(color);
+  if (hit !== undefined) return hit;
+  let v = '#888888';
   try {
     const probe = document.createElement('span');
     probe.style.color = color;
@@ -150,8 +171,10 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
     box.appendChild(probe);
     const rgb = getComputedStyle(probe).color;
     box.removeChild(probe);
-    return rgb || color;
-  } catch { return color; }
+    if (rgb && !rgb.includes('var(') && !rgb.includes('color-mix')) v = rgb;
+  } catch { /* узел не в документе — остаётся серый по умолчанию */ }
+  e.m.set(color, v);
+  return v;
 }
 
 /**
@@ -1403,6 +1426,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     if (!root || chartsRef.current.length !== paneCount) return;
     const id = requestAnimationFrame(() => {
       if (!root.isConnected) return;
+      // Тема сменилась — прежние резолвы недействительны.
+      colorGen++;
       const boxes = paneBoxes(root);
       seriesDefsRef.current.forEach((defs, i) => {
         const apis = apisRef.current[i];
