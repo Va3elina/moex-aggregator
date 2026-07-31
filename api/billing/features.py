@@ -170,12 +170,17 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     # 5. Индикатор Баффетта (/buffett)
     # ───────────────────────────────────────────────────────────────
+    # ⚠️ modes должен перечислять ВСЕ режимы, которые роутер передаёт в
+    # enforce_tier_limits(mode=...) — включая те, которых нет в UI. Режим,
+    # отсутствующий здесь, ловит `mode not in allowed` и отдаёт 403 всем тирам,
+    # включая Pro. mcftr-m2 фронтом не используется (только API), но в списке
+    # обязан быть — иначе эндпоинт умрёт целиком.
     "buffett": {
-        # NB: с 2026-07 индикатор полностью бесплатен — оба режима, вся история,
+        # NB: с 2026-07 индикатор полностью бесплатен — все режимы, вся история,
         # кастомные диапазоны на всех тирах (гость мапится на free).
-        "free":  {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
-        "basic": {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
-        "pro":   {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
+        "free":  {"modes": ["cap-gdp", "cap-m2", "mcftr-m2"], "max_history_days": None, "custom_ranges": True},
+        "basic": {"modes": ["cap-gdp", "cap-m2", "mcftr-m2"], "max_history_days": None, "custom_ranges": True},
+        "pro":   {"modes": ["cap-gdp", "cap-m2", "mcftr-m2"], "max_history_days": None, "custom_ranges": True},
     },
 
     # ───────────────────────────────────────────────────────────────
