@@ -47,6 +47,7 @@ from typing import Optional
 import jwt
 from pydantic import BaseModel
 import os
+import uuid
 
 # === КОНФИГУРАЦИЯ ===
 # В production эти значения должны быть в .env файле!
@@ -168,6 +169,18 @@ def create_refresh_token(user_id: int) -> str:
         "exp": expires,
         "iat": now,
         "type": "refresh",  # Отличаем от access токена
+        # jti — уникальный идентификатор токена (RFC 7519 §4.1.7). ОБЯЗАТЕЛЕН, и вот
+        # почему: без него payload полностью определяется парой (user_id, текущая
+        # СЕКУНДА) — exp/iat PyJWT кладёт целыми секундами, HS256 детерминирован.
+        # Два параллельных /refresh одного юзера в одну секунду давали БАЙТ-В-БАЙТ
+        # одинаковый токен → одинаковый sha256 → нарушение UNIQUE-индекса
+        # refresh_tokens.token_hash → 500. Хуже того, к моменту вставки старый токен
+        # уже отозван, так что ретрай ловил 401 и юзера выкидывало из аккаунта.
+        # Масштаб до фикса: ≥62 инцидента за 7 дней (уникальные секунды с этой
+        # ошибкой в journald, 24-30.07.2026) — не редкий гонок, а ежедневный.
+        # verify_token собирает TokenPayload по явному списку полей и jti не читает,
+        # поэтому старые токены без него проходят как раньше.
+        "jti": uuid.uuid4().hex,
     }
 
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
