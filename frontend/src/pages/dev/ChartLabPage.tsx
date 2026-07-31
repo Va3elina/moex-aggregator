@@ -56,6 +56,12 @@ export default function ChartLabPage() {
   const inds = useIndicators('frame:chartlab:indicators');
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [showPrice, setShowPrice] = useState(true);
+  // Тумблер темы — без него светлую тему в стенде воспроизвести нечем, а
+  // «на светлой пропали линии» это ровно тот класс багов, ради которого стенд и
+  // заведён. data-theme ставим на СУЩЕСТВУЮЩИЙ бокс, а не на новую обёртку:
+  // от неё зависит --lw-axis-left (публикуется на родителя корня чарта) и
+  // положение списка индикаторов.
+  const [dark, setDark] = useState(true);
 
   const toSec = useMemo(() => (t: string) => Number(t), []);
   const indSeries = useIndicatorSeries(inds.list, bars, toSec, inds.colorOf);
@@ -105,10 +111,18 @@ export default function ChartLabPage() {
       <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color, #333)' }}>
         <b style={{ color: 'var(--text-primary)' }}>ChartLab</b> — стенд геометрии, синтетические данные.
         Добавь через «+ Индикатор» RSI и ATR, чтобы получить нижние панели.
+        {' · '}
+        <button type="button" onClick={() => setDark((v) => !v)} style={{ padding: '1px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 11, border: '1px solid var(--border-color, #444)', background: 'transparent', color: 'var(--text-primary)' }}>
+          Тема: {dark ? 'тёмная' : 'светлая'}
+        </button>
       </div>
-      <div ref={boxRef} style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+      <div
+        ref={boxRef}
+        data-theme={dark ? 'editorial-dark' : 'editorial-light'}
+        style={{ position: 'relative', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}
+      >
         <LwChartPanes
-          panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec}
+          panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec} dark={dark}
           paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} />)}
         />
         <IndicatorList api={inds} native={rows} visible hasVolume />
