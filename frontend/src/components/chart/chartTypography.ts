@@ -27,8 +27,14 @@ export interface ChartFontScale {
  * Cascade: vw попадает в один из 6 buckets, размер берётся из таблицы.
  */
 export function chartFontScale(vw: number): ChartFontScale {
-    if (vw >= 1440) return { axis: 17, legend: 19, legendDot: 16 };
-    if (vw >= 1024) return { axis: 15, legend: 17, legendDot: 14 };
+    // ⚠️ Десктопные ступени возвращены к дореформенным 14px. Их подняли до
+    // 17/15 вместе с экспортной типографикой (#75f9171a), но эта таблица —
+    // размеры САЙТА (SimpleChart и мобильные графики), а не экспорта. Песочница
+    // её не читает вовсе: LwChartPanes держит свой BASE_FONT_SIZE=11 и
+    // масштабирует его только на время снимка (captureFontScale). Поэтому
+    // возврат сюда откатывает сайт и НЕ трогает песочницу.
+    if (vw >= 1440) return { axis: 14, legend: 16, legendDot: 13 };
+    if (vw >= 1024) return { axis: 14, legend: 16, legendDot: 13 };
     if (vw >= 768)  return { axis: 13, legend: 15, legendDot: 13 };
     if (vw >= 425)  return { axis: 11, legend: 13, legendDot: 11 };
     if (vw >= 375)  return { axis: 10, legend: 12, legendDot: 10 };

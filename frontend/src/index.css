@@ -1510,8 +1510,8 @@
      :root = wide desktop (>=1440). Меньшие размеры через max-width media
      queries в конце файла (Chart axis responsive scale section).
      Используются Strength/Seasonality/ChartYAxis. */
-  --chart-font-y: 17px;
-  --chart-font-x: 17px;
+  --chart-font-y: 14px;
+  --chart-font-x: 14px;
   --chart-font-y-weight: 700;
 
   /* Tooltip */
@@ -2198,8 +2198,8 @@ a.btn-accent:active {
    для viewport ≥1440. */
 @media (max-width: 1439px) {
   :root {
-    --chart-font-y: 15px;
-    --chart-font-x: 15px;
+    --chart-font-y: 14px;
+    --chart-font-x: 14px;
   }
 }
 @media (max-width: 1023px) {
