@@ -47,6 +47,14 @@ export interface LwBands {
   color?: string;
   /** Заливать зоны. false — только пунктиры уровней (кому мешает фон). */
   fill?: boolean;
+  /** Цвета по элементам: каждая граница и каждая заливка настраиваются отдельно
+   *  (иначе на одной панели соседние элементы приходится красить одинаково). */
+  upperColor?: string;
+  middleColor?: string;
+  lowerColor?: string;
+  bandFill?: string;
+  overFill?: string;
+  underFill?: string;
 }
 
 // ── Рисование (модель TradingView): фигуры живут в координатах {logical, price},
