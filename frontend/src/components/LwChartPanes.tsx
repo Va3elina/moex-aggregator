@@ -244,6 +244,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const mapsRef = useRef<Map<number, number>[][]>([]); // [pane][series] time→value
   const panesRef = useRef<LwPane[]>(panes); panesRef.current = panes;
   const tipsRef = useRef<HTMLDivElement[]>([]);
+  // Свои пилсы значения под курсором: [панель][сторона]. Библиотечную подпись
+  // кроссхэйра не используем — она одна на весь чарт, а на панели цены две оси
+  // с разными цветами, и «плюс» в неё не вставить в принципе (как на сайте).
+  const pillsRef = useRef<{ [k in 'left' | 'right']?: { box: HTMLDivElement; val: HTMLSpanElement } }[]>([]);
+  const pillColorRef = useRef<{ [k in 'left' | 'right']?: string }[]>([]);
   const legendsRef = useRef<HTMLDivElement[]>([]);
   const lastFitRef = useRef<string | undefined>(undefined);
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
@@ -557,6 +562,38 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       requestAnimationFrame(layoutAlert);
     }
 
+    // ── свои пилсы значения под курсором ──
+    // Яркий пилс последнего значения рисует движок сам; этот — светлее, он
+    // показывает значение в точке, куда наведён курсор. Так на сайте.
+    const pills: { [k in 'left' | 'right']?: { box: HTMLDivElement; val: HTMLSpanElement } }[] = [];
+    boxes.forEach((box, i) => {
+      const per: { [k in 'left' | 'right']?: { box: HTMLDivElement; val: HTMLSpanElement } } = {};
+      for (const side of ['left', 'right'] as const) {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;display:none;align-items:center;gap:4px;z-index:6;'
+          + 'transform:translateY(-50%);pointer-events:none;font-size:11px;font-weight:600;color:#fff;'
+          + 'white-space:nowrap;' + side + ':0';
+        const val = document.createElement('span');
+        val.style.cssText = 'padding:1px 6px;border-radius:4px;font-variant-numeric:tabular-nums';
+        el.appendChild(val);
+        // «Плюс» — ТОЛЬКО на панели цены: алертов по индикаторам нет, и кружок
+        // над ними обещал бы действие, которого не существует.
+        if (i === 0) {
+          const plus = document.createElement('div');
+          plus.style.cssText = 'width:14px;height:14px;border-radius:50%;display:none;'
+            + 'align-items:center;justify-content:center;font-size:12px;line-height:1;'
+            + 'pointer-events:auto;cursor:pointer;order:' + (side === 'left' ? '-1' : '1');
+          plus.textContent = '+';
+          plus.dataset.plus = side;
+          el.appendChild(plus);
+        }
+        box.appendChild(el);
+        per[side] = { box: el, val };
+      }
+      pills[i] = per;
+    });
+    pillsRef.current = pills;
+
     // ── общий кроссхэйр + единый тултип ──
     charts.forEach((chart, i) => {
       const handler = (param: { time?: unknown; point?: { x: number; y: number } }) => {
@@ -565,6 +602,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
           tips.forEach((tp) => { tp.style.display = 'none'; });
+          pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
           suppress = true;
           try { charts.forEach((other, j) => { if (j !== i) other.clearCrosshairPosition(); }); }
           finally { suppress = false; }
@@ -613,6 +651,50 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           // Math.min — иначе на низкой панели тултип вылезает за её нижний край.
           tip.style.top = Math.max(6, Math.min(box.clientHeight - tip.offsetHeight - 6, param.point.y - 8)) + 'px';
         }
+        // Пилсы: на активной панели — значение под курсором, на остальных —
+        // значение синхронизированной точки на их первой серии.
+        const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
+          const q = pillsRef.current[pi]?.[sd];
+          if (!q) return;
+          const ch = chartsRef.current[pi];
+          const defs = panesRef.current[pi]?.series ?? [];
+          const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
+          const api = idx >= 0 ? apisRef.current[pi]?.[idx] : undefined;
+          if (price == null || !api || !ch) { q.box.style.display = 'none'; return; }
+          const y = api.priceToCoordinate(price);
+          if (y == null) { q.box.style.display = 'none'; return; }
+          const def = defs[idx];
+          q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
+          q.val.style.background = pillColorRef.current[pi]?.[sd] || 'rgba(128,128,128,0.75)';
+          q.box.style.top = y + 'px';
+          q.box.style.display = 'flex';
+          const plus = q.box.querySelector('[data-plus]') as HTMLDivElement | null;
+          if (plus) {
+            const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.includes(sd);
+            plus.style.display = on ? 'flex' : 'none';
+            plus.style.background = pillColorRef.current[pi]?.[sd] || 'var(--accent)';
+            plus.onclick = on ? (e) => {
+              e.stopPropagation();
+              onCreateAlertRef.current?.({ axis: sd, price, currentValue: price });
+            } : null;
+          }
+        };
+        for (const sd of ['left', 'right'] as const) {
+          const defs = panesRef.current[i]?.series ?? [];
+          const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
+          const api = idx >= 0 ? apisRef.current[i]?.[idx] : undefined;
+          showPill(i, sd, api ? (api.coordinateToPrice(param.point.y) as number | null) : null);
+        }
+        panesRef.current.forEach((_, pi) => {
+          if (pi === i) return;
+          for (const sd of ['left', 'right'] as const) {
+            const v = mapsRef.current[pi]?.[0]?.get(t);
+            const defs = panesRef.current[pi]?.series ?? [];
+            const isSide = (defs[0]?.scale ?? 'right') === sd;
+            showPill(pi, sd, isSide && v != null ? v : null);
+          }
+        });
+
         suppress = true;
         try {
           charts.forEach((other, j) => {
@@ -1058,7 +1140,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
               // ОИ alertAxes непустой почти всегда: график жил вообще без
               // горизонтальной линии кроссхэйра. Двоения подписей нет — когда
               // курсор на шкале, он не над полем графика.
-              horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: true, labelVisible: true },
+              // labelVisible:false — подпись рисуем СВОИМ пилсом (см. pillsRef): у движка
+              // она одна на чарт, а на панели цены две оси с разными цветами.
+              horzLine: { color: c.cross, labelBackgroundColor: c.lab, visible: true, labelVisible: false },
             },
       });
     });
@@ -1213,6 +1297,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         seriesDefsRef.current[i].push(def);
         mapsRef.current[i].push(new Map(def.data.map((p) => [p.time, p.value])));
       }
+      // Цвет своего пилса: цвет линии этой оси, но светлее — смешиваем с ФОНОМ,
+      // тогда одна формула работает и на тёмной теме, и на светлой (как на сайте).
+      pillColorRef.current[i] = {};
+      for (const side of ['left', 'right'] as const) {
+        const d = pane.series.find((x) => (x.scale ?? 'right') === side);
+        if (d) pillColorRef.current[i][side] = rc(`color-mix(in srgb, ${d.color} 45%, var(--bg-primary))`);
+      }
+
       // Легенда панели. flex align-items:center текст съезжает вниз в PNG-экспорте
       // (html2canvas не воспроизводит flex-центрирование текста, см. LwChart.tsx
       // тот же фикс + #704/#196ce935) — сегмент+подпись инлайн-SVG с
