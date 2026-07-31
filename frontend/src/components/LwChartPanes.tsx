@@ -439,8 +439,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertPlus: { [k in 'left' | 'right']?: HTMLDivElement } = {};
     const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
-    const alertBox = boxes[0];
-    if (alertBox) {
+    // ⚠️ Отдельный СЛОЙ с overflow:hidden, а не сама панель. Кружок «+» имеет
+    // высоту 15px и сидит на translateY(-50%): у нижней кромки он выпирал бы за
+    // панель цены и наезжал на панель индикатора — алертов по индикаторам нет,
+    // и «плюс» над ними означал бы действие, которого не существует.
+    // Именно слой, а не div панели: в панели живут строки индикаторов и меню
+    // «⋯», им обрезка сломала бы выпадашки.
+    const alertBox = boxes[0] ? document.createElement('div') : null;
+    if (alertBox && boxes[0]) {
+      alertBox.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6';
+      boxes[0].appendChild(alertBox);
+      unsubs.push(() => { try { alertBox.remove(); } catch { /* уже снят */ } });
       const hidePreview = (side: 'left' | 'right') => {
         const pl = previewLineRef.current[side];
         if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
@@ -497,8 +506,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         alertBox.appendChild(plus);
         alertPlus[side] = plus;
       }
-      alertBox.addEventListener('mouseleave', hideAll);
-      unsubs.push(() => alertBox.removeEventListener('mouseleave', hideAll));
+      // mouseleave вешаем на ПАНЕЛЬ, а не на слой: у слоя pointer-events:none,
+      // события до него не доходят, и «плюс» остался бы висеть после ухода мыши.
+      const paneEl = boxes[0];
+      paneEl.addEventListener('mouseleave', hideAll);
+      unsubs.push(() => paneEl.removeEventListener('mouseleave', hideAll));
 
       // Геометрия полос-хитзон: ширина = ширина шкалы, высота = поле без оси.
       const layoutAlert = () => {
