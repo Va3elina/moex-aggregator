@@ -506,13 +506,17 @@ export function useVolumeProfileSpec(
  * Так значение читается там же, где написано, чей оно, — а пилс на оси для
  * объёма вдобавок бессмыслен: это объём одного бара, а не уровень.
  */
-export function indicatorValues(seriesByPane: LwSeries[][]): Record<string, string> {
+export function indicatorValues(
+  seriesByPane: LwSeries[][],
+  /** Значения под курсором (id → число). Есть — показываем их, нет — последние. */
+  hover?: Record<string, number> | null,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const arr of seriesByPane) {
     for (const d of arr) {
-      const last = d.data[d.data.length - 1];
-      if (!last) continue;
-      out[d.id] = d.axisFmt ? d.axisFmt(last.value) : String(Math.round(last.value));
+      const v = hover?.[d.id] ?? d.data[d.data.length - 1]?.value;
+      if (v == null) continue;
+      out[d.id] = d.axisFmt ? d.axisFmt(v) : String(Math.round(v));
     }
   }
   return out;
