@@ -599,7 +599,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   );
   // Значения под курсором для строк индикаторов: в терминалах строка показывает
   // то, на чём стоит курсор, а не последний бар.
-  const [hoverVals, setHoverVals] = useState<Record<string, number> | null>(null);
+  const [hoverVals, setHoverVals] = useState<{ time: number; values: Record<string, number> } | null>(null);
   const indValues = useMemo(() => indicatorValues(indSeries, hoverVals), [indSeries, hoverVals]);
 
   const nativeRows = useMemo<NativeRow[]>(() => {

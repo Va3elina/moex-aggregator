@@ -506,17 +506,33 @@ export function useVolumeProfileSpec(
  * Так значение читается там же, где написано, чей оно, — а пилс на оси для
  * объёма вдобавок бессмыслен: это объём одного бара, а не уровень.
  */
+export interface IndValue { text: string; color?: string }
+
 export function indicatorValues(
   seriesByPane: LwSeries[][],
-  /** Значения под курсором (id → число). Есть — показываем их, нет — последние. */
-  hover?: Record<string, number> | null,
-): Record<string, string> {
-  const out: Record<string, string> = {};
+  /** Точка под курсором. Нет — показываем последний бар. */
+  hover?: { time: number; values: Record<string, number> } | null,
+): Record<string, IndValue> {
+  const out: Record<string, IndValue> = {};
   for (const arr of seriesByPane) {
     for (const d of arr) {
-      const v = hover?.[d.id] ?? d.data[d.data.length - 1]?.value;
-      if (v == null) continue;
-      out[d.id] = d.axisFmt ? d.axisFmt(v) : String(Math.round(v));
+      const n = d.data.length;
+      if (!n) continue;
+      // Индекс точки: под курсором — по времени, иначе последняя.
+      let idx = n - 1;
+      if (hover && hover.values[d.id] != null) {
+        const found = d.data.findIndex((pt) => pt.time === hover.time);
+        if (found >= 0) idx = found;
+      }
+      const pt = d.data[idx];
+      if (!pt) continue;
+      // Цвет: у ряда с ПОТОЧЕЧНЫМ цветом (объёмы) — цвет самого бара, чтобы
+      // число и столбик не расходились. У остальных — по направлению против
+      // предыдущего бара: вырос зелёным, упал красным.
+      const prev = idx > 0 ? d.data[idx - 1]?.value : undefined;
+      const color = pt.color
+        ?? (prev == null ? undefined : pt.value >= prev ? VOLUME_UP : VOLUME_DOWN);
+      out[d.id] = { text: d.axisFmt ? d.axisFmt(pt.value) : String(Math.round(pt.value)), color };
     }
   }
   return out;
@@ -556,7 +572,7 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
   native: NativeRow[];
   visible: boolean;
   /** id серии → последнее значение. Показывается в строке, справа от названия. */
-  values?: Record<string, string>;
+  values?: Record<string, IndValue>;
   /** Есть ли объём в свечах. Без него «Объёмы» и «Профиль объёма» не показываем:
    *  добавились бы строки, за которыми на графике пусто. */
   hasVolume?: boolean;
@@ -633,7 +649,7 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
  * Why: индикатор в своей панели и его строка в общем списке наверху — это два
  * разных места для одной сущности. Пользователь ищет подпись там, где линия.
  */
-export function PaneIndicatorList({ api, pane, values }: { api: IndicatorsApi; pane: number; values?: Record<string, string> }) {
+export function PaneIndicatorList({ api, pane, values }: { api: IndicatorsApi; pane: number; values?: Record<string, IndValue> }) {
   const rows = api.list.filter((i) => i.pane === pane);
   if (!rows.length) return null;
   return (
@@ -654,7 +670,7 @@ const listBoxStyle: CSSProperties = {
 /** Строка индикатора вместе со своей шестерёнкой: попап живёт рядом со строкой,
  *  а не в корне списка — иначе для панельных строк его пришлось бы отдельно
  *  позиционировать через всю иерархию. */
-function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: IndicatorsApi; value?: string }) {
+function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: IndicatorsApi; value?: IndValue }) {
   const [open, setOpen] = useState(false);
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
@@ -678,7 +694,7 @@ function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: Indicato
 }
 
 function Row({ color, label, value, visible, onToggle, onSettings, onRemove, menu }: {
-  color: string; label: string; value?: string; visible: boolean;
+  color: string; label: string; value?: IndValue; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
   /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
    *  перенос живёт в меню, как в терминалах: на строке и так тесно, а
@@ -700,7 +716,7 @@ function Row({ color, label, value, visible, onToggle, onSettings, onRemove, men
       {/* Значение справа от названия — в цвет линии, моноширинным: так читается,
           чьё оно, и цифры не пляшут при смене последнего бара. */}
       {value && (
-        <span style={{ fontSize: 10.5, fontWeight: 700, color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: value.color ?? color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value.text}</span>
       )}
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
