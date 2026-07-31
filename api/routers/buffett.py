@@ -109,7 +109,10 @@ async def get_buffett_cap_gdp(
     Индикатор Баффетта: 100 × Капитализация / ВВП (TTM).
     GDP_TTM = скользящая сумма 4 последних кварталов, линейно интерполированная на ежедневную сетку.
     """
-    # Tier: cap-gdp доступен всем, проверяем только period
+    # Tier: с 2026-07 индикатор бесплатен целиком — оба режима на всех тирах,
+    # max_history_days=None, поэтому period здесь фактически НЕ проверяется и
+    # вызов сейчас no-op. Оставлен точкой гейта на случай возврата ограничений.
+    # Источник истины — INDICATOR_FEATURES["buffett"] в api/billing/features.py.
     enforce_tier_limits(user, "buffett", mode="cap-gdp", period=period)
 
     start_time = time.time()
@@ -231,7 +234,11 @@ async def get_buffett_mcftr_m2(
     MCFTR / M2: индекс полной доходности / денежная масса.
     M2 линейно интерполирована на ежедневную сетку.
     """
-    # Ограничения для гостей
+    # Ограничения для гостей. ⚠️ Единственный из трёх режимов, сидящий на ЛЕГАСИ-гейте
+    # (enforce_guest_limits, не матрица тиров) — и потому строже соседей: гостю тут
+    # период режется по GUEST_MAX_PERIOD=1y, тогда как cap-gdp/cap-m2 открыты целиком.
+    # Мигрировать на enforce_tier_limits(user, "buffett", mode=...) — вместе с решением,
+    # оставлять ли асимметрию.
     enforce_guest_limits(user, period=period)
 
     start_time = time.time()
@@ -314,7 +321,7 @@ async def get_buffett_cap_m2(
     Капитализация / M2: рыночная капитализация / денежная масса.
     M2 линейно интерполирована на сетку дат капитализации.
     """
-    # Tier: cap-m2 доступен только Basic+ (Free имеет только cap-gdp)
+    # Tier: cap-m2 открыт на всех тирах, включая free/гостя (см. cap-gdp выше)
     enforce_tier_limits(user, "buffett", mode="cap-m2", period=period)
 
     start_time = time.time()

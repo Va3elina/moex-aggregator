@@ -386,8 +386,17 @@ Wait 10 seconds and retry. If still restarting, check logs for fatal error (typi
 This means the router wasn't registered OR the deploy didn't propagate to image. Report which endpoint and suggest: "verify api/main.py has include_router for this + commit/push; re-run deploy via `gh workflow run deploy-prod` (emergency manual: `cd /opt/frame && git reset --hard origin/main && docker compose build api && up -d --force-recreate api`)".
 
 ### "403 from an endpoint"
-Проверка ходит **без авторизации** → тир Guest. 403 с JSON-телом `{"detail": ...}` означает,
-что сработал `enforce_tier_limits` — роутер жив, гейт работает. Это НЕ поломка деплоя.
+Проверка ходит **без авторизации** → тир Guest. 403 с JSON-телом означает, что сработал
+`enforce_tier_limits` — роутер жив, гейт работает. Это НЕ поломка деплоя.
+
+Тело ошибки НЕ ванильное фастапишное `{"detail": ...}`: `setup_exception_handlers`
+(`api/middleware.py`) переупаковывает всё в
+
+```json
+{"success": false, "error": {"code": 403, "message": "Режим 'all' недоступен на тарифе Guest. Доступные: ['imoex']."}}
+```
+
+Причину гейта читать в `error.message`, а не в `detail` (там будет пусто).
 Два случая:
 - URL помечен `expect=403` в списке (сейчас только `/api/heatmap/stocks`) → ожидаемо, зелёный.
 - URL помечен `expect=200`, а пришёл 403 → **параметры запроса вышли за free-лимиты**.
