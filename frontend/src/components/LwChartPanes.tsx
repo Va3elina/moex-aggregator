@@ -81,11 +81,12 @@ interface LwChartPanesProps {
   drawColor?: string;
   drawWidth?: number;
   selectedDrawId?: string | null;
-  /** Клик по «+» у ценовой оси → создать алерт на уровне под курсором. Работает
-   *  на панели цены (индекс 0), как и экспирации. */
-  onCreateAlert?: (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => void;
-  /** На каких осях показывать «+». Пустой массив/undefined — не показывать. */
-  alertAxes?: ('left' | 'right')[];
+  /** Клик по «+» у оси → создать алерт на уровне под курсором. `pane` — в какой
+   *  панели нажали: ряд, по которому ставят алерт, может уехать из панели цены
+   *  в свою (открытый интерес), и одной стороны оси для опознания уже мало. */
+  onCreateAlert?: (p: { axis: 'left' | 'right'; pane: number; price: number; currentValue: number }) => void;
+  /** На каких осях каких панелей показывать «+». Пустой массив/undefined — нигде. */
+  alertAxes?: { pane: number; side: 'left' | 'right' }[];
   /** Метки экспираций (смена контракта). Рисуются на панели цены (индекс 0). */
   expirations?: ExpirationMark[];
   /** Профиль объёма на панели 0. `seriesId` — на какую серию вешать: профиль
@@ -296,8 +297,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // axisLabelVisible: значение рисует сама библиотека. Самодельный DOM-пилс
   // (попиксельная реплика лейбла оси с калибровкой кегля после fonts.ready) не
   // портируется намеренно — в стеке панелей он умножался бы на их число.
-  const previewLineRef = useRef<{ [k in 'left' | 'right']?: IPriceLine }>({});
-  const axisInfoRef = useRef<{ [k in 'left' | 'right']?: { api: AnySeries; last?: number; color?: string } }>({});
+  const previewLineRef = useRef<Record<number, { [k in 'left' | 'right']?: IPriceLine }>>({});
+  const axisInfoRef = useRef<Record<number, { [k in 'left' | 'right']?: { api: AnySeries; last?: number; color?: string } }>>({});
   const layoutAlertRef = useRef<(() => void) | null>(null);
   // Последний видимый диапазон. Эффект создания чартов зависит от paneCount, то
   // есть «вынести индикатор в свою панель» ПЕРЕСОЗДАЁТ все инстансы — и зум
@@ -314,7 +315,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     const root = rootRef.current;
     const host = root?.parentElement ?? root;
     if (!host) return;
-    panesRef.current.forEach((pane, pi) => {
+    for (const pane of panesRef.current) {
       for (const def of pane.series) {
         const el = host.querySelector(`[data-ind-value="${def.id}"]`) as HTMLElement | null;
         if (!el) continue;
@@ -358,10 +359,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         } else {
           el.appendChild(num(pt.value));
         }
-        // Изменение показываем только у рядов ОСНОВНОЙ панели (цена, открытый
-        // интерес). У индикаторов оно шум: RSI даёт «+0», объёмы «+176%» —
-        // цифры формально верные, но смысла в них нет.
-        if (prevClose != null && pi === 0) {
+        if (prevClose != null && def.legendChange) {
           const cur = pt.close ?? pt.value;
           const d = cur - prevClose;
           const pct = prevClose === 0 ? 0 : (d / Math.abs(prevClose)) * 100;
@@ -373,7 +371,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           el.appendChild(sp);
         }
       }
-    });
+    }
   };
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
@@ -536,22 +534,30 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // fonts.ready и подгонкой чётности) НЕ переносим: в стеке он умножался бы на
     // число панелей плюс вопрос «какая панель под курсором». Внешне уровень
     // выглядит как подпись оси, а не как оранжевый чип.
-    const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
-    const alertPlus: { [k in 'left' | 'right']?: HTMLDivElement } = {};
-    const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; price: number; currentValue: number } } = {};
-    // ⚠️ Отдельный СЛОЙ с overflow:hidden, а не сама панель. Кружок «+» имеет
-    // высоту 15px и сидит на translateY(-50%): у нижней кромки он выпирал бы за
-    // панель цены и наезжал на панель индикатора — алертов по индикаторам нет,
-    // и «плюс» над ними означал бы действие, которого не существует.
-    // Именно слой, а не div панели: в панели живут строки индикаторов и меню
-    // «⋯», им обрезка сломала бы выпадашки.
-    const alertBox = boxes[0] ? document.createElement('div') : null;
-    if (alertBox && boxes[0]) {
+    const alertEls: HTMLElement[] = [];
+    const layoutAlerts: (() => void)[] = [];
+    // Слой алертов строится ДЛЯ КАЖДОЙ панели: ряд, по которому ставят уровень,
+    // может уехать из панели цены в свою (открытый интерес), и «плюс» обязан
+    // уехать вместе с ним. Панели без осей в alertAxes просто ничего не рисуют.
+    boxes.forEach((paneBox, pi) => {
+      const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+      const alertPlus: { [k in 'left' | 'right']?: HTMLDivElement } = {};
+      const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; pane: number; price: number; currentValue: number } } = {};
+      // ⚠️ Отдельный СЛОЙ с overflow:hidden, а не сама панель. Кружок «+» имеет
+      // высоту 15px и сидит на translateY(-50%): у нижней кромки он выпирал бы за
+      // свою панель и наезжал на соседнюю — а там уровень означал бы действие,
+      // которого не существует.
+      // Именно слой, а не div панели: в панели живут строки индикаторов и меню
+      // «⋯», им обрезка сломала бы выпадашки.
+      if (!paneBox) return;
+      const alertBox = document.createElement('div');
       alertBox.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6';
-      boxes[0].appendChild(alertBox);
+      paneBox.appendChild(alertBox);
+      alertEls.push(alertBox);
       unsubs.push(() => { try { alertBox.remove(); } catch { /* уже снят */ } });
+      const sidesOn = () => (alertAxesRef.current ?? []).filter((a) => a.pane === pi).map((a) => a.side);
       const hidePreview = (side: 'left' | 'right') => {
-        const pl = previewLineRef.current[side];
+        const pl = previewLineRef.current[pi]?.[side];
         if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
       };
       const hideAll = () => {
@@ -562,18 +568,19 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
       };
       const showAt = (rawY: number) => {
-        const ch = chartsRef.current[0];
-        const axes = alertAxesRef.current;
-        if (!ch || !onCreateAlertRef.current || !axes || axes.length === 0) { hideAll(); return; }
-        const axisH = chartsRef.current.length > 1 ? 0 : (ch.timeScale().height() || 26);
+        const ch = chartsRef.current[pi];
+        const axes = sidesOn();
+        if (!ch || !onCreateAlertRef.current || axes.length === 0) { hideAll(); return; }
+        // Ось дат есть только у НИЖНЕЙ панели — выше неё поле идёт до самого низа.
+        const axisH = pi < chartsRef.current.length - 1 ? 0 : (ch.timeScale().height() || 26);
         const y = Math.max(0, Math.min(alertBox.clientHeight - axisH, rawY));
         for (const side of ['left', 'right'] as const) {
           const plus = alertPlus[side];
-          const info = axisInfoRef.current[side];
+          const info = axisInfoRef.current[pi]?.[side];
           if (!plus || !axes.includes(side) || !info) { if (plus) plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
           const price = info.api.coordinateToPrice(y as number);
           if (price == null) { plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
-          const pl = previewLineRef.current[side];
+          const pl = previewLineRef.current[pi]?.[side];
           // axisLabelVisible:true — вот и вся замена самодельному пилсу.
           if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true }); } catch { /* серия снята */ } }
           let axisW = 54;
@@ -583,7 +590,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           plus.style.display = 'flex';
           plus.style.left = side === 'left' ? axisW + 4 + 'px' : 'auto';
           plus.style.right = side === 'right' ? axisW + 4 + 'px' : 'auto';
-          alertPending[side] = { axis: side, price: price as number, currentValue: info.last ?? (price as number) };
+          alertPending[side] = { axis: side, pane: pi, price: price as number, currentValue: info.last ?? (price as number) };
         }
       };
       for (const side of ['left', 'right'] as const) {
@@ -608,20 +615,19 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       }
       // mouseleave вешаем на ПАНЕЛЬ, а не на слой: у слоя pointer-events:none,
       // события до него не доходят, и «плюс» остался бы висеть после ухода мыши.
-      const paneEl = boxes[0];
-      paneEl.addEventListener('mouseleave', hideAll);
-      unsubs.push(() => paneEl.removeEventListener('mouseleave', hideAll));
+      paneBox.addEventListener('mouseleave', hideAll);
+      unsubs.push(() => paneBox.removeEventListener('mouseleave', hideAll));
 
       // Геометрия полос-хитзон: ширина = ширина шкалы, высота = поле без оси.
       const layoutAlert = () => {
-        const ch = chartsRef.current[0];
-        const axes = alertAxesRef.current;
-        const axisH = chartsRef.current.length > 1 ? 0 : (ch?.timeScale().height() || 26);
+        const ch = chartsRef.current[pi];
+        const axes = sidesOn();
+        const axisH = pi < chartsRef.current.length - 1 ? 0 : (ch?.timeScale().height() || 26);
         const h = Math.max(0, alertBox.clientHeight - axisH);
         for (const side of ['left', 'right'] as const) {
           const strip = alertStrips[side];
           if (!strip) continue;
-          const on = !!ch && !!onCreateAlertRef.current && !!axes?.includes(side);
+          const on = !!ch && !!onCreateAlertRef.current && axes.includes(side);
           if (!on) { strip.style.display = 'none'; const p = alertPlus[side]; if (p) p.style.display = 'none'; continue; }
           let w = 54;
           try { w = ch!.priceScale(side).width() || 54; } catch { /* см. §R2-30 */ }
@@ -630,9 +636,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           strip.style.height = h + 'px';
         }
       };
-      layoutAlertRef.current = layoutAlert;
+      layoutAlerts.push(layoutAlert);
       requestAnimationFrame(layoutAlert);
-    }
+    });
+    layoutAlertRef.current = () => { for (const f of layoutAlerts) f(); };
 
     // ── свои пилсы значения под курсором ──
     // Яркий пилс последнего значения рисует движок сам; этот — светлее, он
@@ -780,7 +787,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           q.box.style.display = 'flex';
           const plus = q.box.querySelector('[data-plus]') as HTMLDivElement | null;
           if (plus) {
-            const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.includes(sd);
+            const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.some((a) => a.pane === pi && a.side === sd);
             plus.style.display = on ? 'flex' : 'none';
             // Тот же цвет, что у пилса: кружок — его продолжение, а не отдельный
             // элемент со своим смыслом.
@@ -788,7 +795,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
             plus.style.color = nd ? '#E7E2D6' : '#26262B';
             plus.onclick = on ? (e) => {
               e.stopPropagation();
-              onCreateAlertRef.current?.({ axis: sd, price, currentValue: price });
+              onCreateAlertRef.current?.({ axis: sd, pane: pi, price, currentValue: price });
             } : null;
           }
         };
@@ -1221,7 +1228,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       expLayerApi?.destroy();
       drawExpRef.current = null;
       layoutAlertRef.current = null;
-      for (const el of [alertStrips.left, alertStrips.right, alertPlus.left, alertPlus.right]) el?.parentNode?.removeChild(el);
+      for (const el of alertEls) el.parentNode?.removeChild(el);
       wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
       cleanupDraw?.();
@@ -1496,27 +1503,31 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       }
     });
 
-    // Инфо по осям панели цены + превью-линии алерта. Пересоздаются здесь же:
-    // createPriceLine привязан к серии, а серии в этом эффекте пересоздаются.
+    // Инфо по осям + превью-линии алерта — для КАЖДОЙ панели. Пересоздаются
+    // здесь же: createPriceLine привязан к серии, а серии в этом эффекте
+    // пересоздаются.
     axisInfoRef.current = {};
     previewLineRef.current = {};
-    if (onCreateAlert && panes[0]) {
-      const box0 = boxes[0];
-      for (const side of ['left', 'right'] as const) {
-        const idx = panes[0].series.findIndex((d) => (d.scale ?? 'right') === side);
-        const api = idx >= 0 ? apisRef.current[0]?.[idx] : undefined;
-        if (!api || !box0) continue;
-        const def = panes[0].series[idx];
-        const last = def.data.length ? def.data[def.data.length - 1].value : undefined;
-        axisInfoRef.current[side] = { api, last, color: resolveColor(box0, def.color) };
-        try {
-          previewLineRef.current[side] = api.createPriceLine({
-            price: last ?? 0, color: resolveColor(box0, 'var(--text-secondary)'),
-            lineWidth: 1, lineStyle: LineStyle.Dashed,
-            lineVisible: false, axisLabelVisible: false, title: '',
-          });
-        } catch { /* серия ещё не готова */ }
-      }
+    if (onCreateAlert) {
+      panes.forEach((pane, pi) => {
+        const bx = boxes[pi];
+        if (!bx) return;
+        for (const side of ['left', 'right'] as const) {
+          const idx = pane.series.findIndex((d) => (d.scale ?? 'right') === side);
+          const api = idx >= 0 ? apisRef.current[pi]?.[idx] : undefined;
+          if (!api) continue;
+          const def = pane.series[idx];
+          const last = def.data.length ? def.data[def.data.length - 1].value : undefined;
+          (axisInfoRef.current[pi] ??= {})[side] = { api, last, color: resolveColor(bx, def.color) };
+          try {
+            (previewLineRef.current[pi] ??= {})[side] = api.createPriceLine({
+              price: last ?? 0, color: resolveColor(bx, 'var(--text-secondary)'),
+              lineWidth: 1, lineStyle: LineStyle.Dashed,
+              lineVisible: false, axisLabelVisible: false, title: '',
+            });
+          } catch { /* серия ещё не готова */ }
+        }
+      });
     }
 
     // Уровни алертов. Живут ВМЕСТЕ с серией (removeSeries сносит и линии), поэтому
