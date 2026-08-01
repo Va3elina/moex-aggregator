@@ -18,9 +18,9 @@
  * сгруппированным по панелям, а embed уже собирает из этого panes для
  * LwChartPanes.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, Settings2, X as XIcon, Trash2, Plus, MoreHorizontal, ChevronRight } from 'lucide-react';
+import { Eye, EyeOff, Settings2, X as XIcon, Trash2, Plus, MoreHorizontal, ChevronRight, LineChart } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
@@ -29,6 +29,7 @@ import {
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
+import { ToolbarMenuButton } from './EmbedToolbar';
 import { ColorButton, type ElStyle } from './ColorPicker';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
@@ -241,13 +242,34 @@ export interface IndicatorsApi {
   /** Поменять панель местами с соседней занятой. dir: -1 выше, +1 ниже. */
   movePane: (id: string, dir: -1 | 1) => void;
   setPane: (id: string, toOwnPane: boolean) => void;
+  /** Обмен номерами двух панелей. Публичный, потому что двигать панель умеет не
+   *  только индикатор: нативный ряд embed'а (ОИ) занимает панель на равных. */
+  swapPanes: (a: number, b: number) => void;
+  /** Все занятые панели ≥1, включая зарезервированные под нативные ряды. */
+  occupiedPanes: number[];
+  /** Свободный номер для новой панели — с учётом зарезервированных. */
+  freePane: () => number;
   colorOf: (i: IndicatorInst) => string;
 }
 
-/** Стейт + персист + CRUD. Форма как у useSeriesFormats/useDrawTools. */
-export function useIndicators(lsKey: string): IndicatorsApi {
+/**
+ * Стейт + персист + CRUD. Форма как у useSeriesFormats/useDrawTools.
+ *
+ * ⚠️ Номера панелей — ОБЩЕЕ пространство. Кроме индикаторов панель может занимать
+ * нативный ряд embed'а (открытый интерес), и второй раздатчик номеров без
+ * согласования посадил бы RSI в чужую панель. Поэтому владелец нативного ряда
+ * передаёт свои номера в `reserved`, а перестановку применяет по `onSwapPanes` —
+ * ровно ту же, что движок применил к индикаторам.
+ */
+export function useIndicators(lsKey: string, opts?: {
+  reserved?: number[];
+  onSwapPanes?: (a: number, b: number) => void;
+}): IndicatorsApi {
   const { rd, wr } = useEmbedPersist();
   const [list, setList] = useState<IndicatorInst[]>(() => parseList(rd(lsKey, '')));
+  const listRef = useRef(list); listRef.current = list;
+  const reservedRef = useRef(opts?.reserved); reservedRef.current = opts?.reserved;
+  const onSwapRef = useRef(opts?.onSwapPanes); onSwapRef.current = opts?.onSwapPanes;
   // Пропускаем первую запись (маунт), иначе затрём сохранённое пустым списком —
   // та же ловушка, что в useDrawTools.
   const ready = useRef(false);
@@ -263,13 +285,13 @@ export function useIndicators(lsKey: string): IndicatorsApi {
     setList((l) => {
       // Индикаторы со своей шкалой садятся каждый в СВОЮ панель: RSI и ATR на
       // одной оси были бы нечитаемы (0..100 против абсолютных значений цены).
-      const pane = d.defaultPane === 0 ? 0 : nextFreePane(l);
+      const pane = d.defaultPane === 0 ? 0 : nextFreePane(l, reservedRef.current);
       return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane }];
     });
   }, []);
   /** Перенос строки: на график ⇄ в свою панель. */
   const setPane = useCallback((id: string, toOwnPane: boolean) => {
-    setList((l) => l.map((x) => (x.id === id ? { ...x, pane: toOwnPane ? nextFreePane(l.filter((y) => y.id !== id)) : 0 } : x)));
+    setList((l) => l.map((x) => (x.id === id ? { ...x, pane: toOwnPane ? nextFreePane(l.filter((y) => y.id !== id), reservedRef.current) : 0 } : x)));
   }, []);
   const remove = useCallback((id: string) => setList((l) => l.filter((x) => x.id !== id)), []);
   const patch = useCallback((id: string, p: Partial<IndicatorInst>) => {
@@ -285,37 +307,50 @@ export function useIndicators(lsKey: string): IndicatorsApi {
       // Копия садится в СВОЮ панель, если оригинал сидит в отдельной: две линии
       // на одной шкале — это то, ради чего копию и делают, но два RSI в одной
       // панели накладываются друг на друга и читаются хуже, чем рядом.
-      const pane = src.pane === 0 ? 0 : nextFreePane(l);
+      const pane = src.pane === 0 ? 0 : nextFreePane(l, reservedRef.current);
       return [...l, { ...src, id: uid(), pane }];
     });
   }, []);
 
-  const movePane = useCallback((id: string, dir: -1 | 1) => {
-    setList((l) => {
-      const cur = l.find((x) => x.id === id);
-      if (!cur || cur.pane === 0) return l;
-      // Меняемся номерами с ближайшей ЗАНЯТОЙ панелью в нужную сторону: пустые
-      // номера пропускаем, иначе «выше» иногда не давало бы видимого эффекта.
-      const occupied = [...new Set(l.filter((x) => x.pane > 0).map((x) => x.pane))].sort((a, b) => a - b);
-      const at = occupied.indexOf(cur.pane);
-      const target = occupied[at + dir];
-      if (target == null) return l;
-      return l.map((x) => (x.pane === cur.pane ? { ...x, pane: target } : x.pane === target ? { ...x, pane: cur.pane } : x));
-    });
+  // Перестановка применяется СРАЗУ к обеим сторонам: к индикаторам здесь, к
+  // нативному ряду — его владельцем через onSwapPanes. Обе стороны делают одно
+  // и то же преобразование a↔b, поэтому порядок вызовов роли не играет.
+  const swapPanes = useCallback((a: number, b: number) => {
+    if (a === b) return;
+    setList((l) => l.map((x) => (x.pane === a ? { ...x, pane: b } : x.pane === b ? { ...x, pane: a } : x)));
+    onSwapRef.current?.(a, b);
   }, []);
+
+  const occupiedPanes = useMemo(
+    () => [...new Set([...list.filter((x) => x.pane > 0).map((x) => x.pane), ...(opts?.reserved ?? [])])].sort((a, b) => a - b),
+    [list, opts?.reserved],
+  );
+  const occupiedRef = useRef(occupiedPanes); occupiedRef.current = occupiedPanes;
+  const freePane = useCallback(() => nextFreePane(listRef.current, reservedRef.current), []);
+
+  const movePane = useCallback((id: string, dir: -1 | 1) => {
+    const cur = listRef.current.find((x) => x.id === id);
+    if (!cur || cur.pane === 0) return;
+    // Меняемся номерами с ближайшей ЗАНЯТОЙ панелью в нужную сторону: пустые
+    // номера пропускаем, иначе «выше» иногда не давало бы видимого эффекта.
+    const occupied = occupiedRef.current;
+    const target = occupied[occupied.indexOf(cur.pane) + dir];
+    if (target != null) swapPanes(cur.pane, target);
+  }, [swapPanes]);
 
   const colorOf = useCallback(
     (i: IndicatorInst) => i.styles?.line?.color ?? i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length],
     [],
   );
 
-  return { list, add, remove, patch, patchStyle, setPane, duplicate, movePane, colorOf };
+  return { list, add, remove, patch, patchStyle, setPane, duplicate, movePane, swapPanes, occupiedPanes, freePane, colorOf };
 }
 
 /** Минимальный свободный номер панели ≥1 (после удаления индикатора номера не
- *  переиспользуются автоматически — иначе оставшиеся строки прыгали бы). */
-function nextFreePane(list: IndicatorInst[]): number {
-  const used = new Set(list.filter((x) => x.pane > 0).map((x) => x.pane));
+ *  переиспользуются автоматически — иначе оставшиеся строки прыгали бы).
+ *  `reserved` — панели нативных рядов embed'а, их движок не видит в списке. */
+function nextFreePane(list: IndicatorInst[], reserved?: number[]): number {
+  const used = new Set([...list.filter((x) => x.pane > 0).map((x) => x.pane), ...(reserved ?? [])]);
   let p = 1;
   while (used.has(p)) p++;
   return p;
@@ -545,6 +580,14 @@ const ICON_BTN: CSSProperties = {
   cursor: 'pointer', padding: 0, flexShrink: 0,
 };
 
+/** Один выбор в ⋯-меню нативной строки (у ОИ — режим и показатель). */
+export interface NativeChoice {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onChange: (v: string) => void;
+}
+
 /** Строка списка для НАТИВНОЙ серии embed'а (цена, ОИ): её нельзя удалить. */
 export interface NativeRow {
   id: string;
@@ -552,6 +595,16 @@ export interface NativeRow {
   color: string;
   visible: boolean;
   onToggle: () => void;
+  /** Панель ряда: 0 — основной график, 1+ — своя. */
+  pane?: number;
+  /** Перенос между панелями. Есть → в ⋯ появляется «Переместить».
+   *  Считать соседей embed обязан сам: движок не знает, где его нативный ряд. */
+  onMove?: (to: 'up' | 'down' | 'own' | 'main') => void;
+  canUp?: boolean;
+  canDown?: boolean;
+  /** Настройки ряда прямо в ⋯ — у ОИ это режим (позиции/трейдеры) и показатель.
+   *  Отдельного окна им не заводим: это два списка из пяти пунктов, а не форма. */
+  choices?: NativeChoice[];
 }
 
 /**
@@ -586,10 +639,7 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
 
   return (
     <div ref={rootRef} data-export-ignore="true" style={listBoxStyle}>
-      {native.map((r) => (
-        <Row key={r.id} color={r.color} label={r.label} visible={r.visible} onToggle={r.onToggle}
-             value={{ text: '' }} valueId={r.id} />
-      ))}
+      {native.filter((r) => (r.pane ?? 0) === 0).map((r) => <NativeRowView key={r.id} row={r} />)}
       {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
           своим графиком — см. PaneIndicatorList. */}
       {api.list.filter((i) => i.pane === 0).map((i) => (
@@ -611,28 +661,50 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
         </button>
         {menuOpen && (
           <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2, minWidth: 232, padding: 5, borderRadius: 9, ...SURFACE }}>
-            {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => hasVolume || !KINDS[k].needsVolume).map((k) => {
-              const d = KINDS[k];
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => { api.add(k); setMenuOpen(false); }}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6,
-                    border: 'none', background: 'transparent', fontSize: 11.5,
-                    color: 'var(--text-primary)', cursor: 'pointer',
-                  }}
-                >
-                  {d.label}
-                  {d.defaultPane > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}> · отдельной панелью</span>}
-                </button>
-              );
-            })}
+            <AddIndicatorMenu api={api} hasVolume={hasVolume} onDone={() => setMenuOpen(false)} />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** Список видов индикаторов — общий для кнопки в графике и кнопки в тулбаре. */
+export function AddIndicatorMenu({ api, hasVolume, onDone }: {
+  api: IndicatorsApi; hasVolume: boolean; onDone: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 222 }}>
+      {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => hasVolume || !KINDS[k].needsVolume).map((k) => {
+        const d = KINDS[k];
+        return (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { api.add(k); onDone(); }}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6,
+              border: 'none', background: 'transparent', fontSize: 11.5,
+              color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {d.label}
+            {d.defaultPane > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}> · отдельной панелью</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Кнопка «Индикаторы» для тулбара виджета — тот же список, что и в графике. */
+export function IndicatorsButton({ api, hasVolume, compact }: {
+  api: IndicatorsApi; hasVolume: boolean; compact?: boolean;
+}) {
+  return (
+    <ToolbarMenuButton label="Индикаторы" title="Добавить индикатор" icon={<LineChart size={14} />} compact={compact}>
+      {(close) => <AddIndicatorMenu api={api} hasVolume={hasVolume} onDone={close} />}
+    </ToolbarMenuButton>
   );
 }
 
@@ -643,13 +715,32 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
  * Why: индикатор в своей панели и его строка в общем списке наверху — это два
  * разных места для одной сущности. Пользователь ищет подпись там, где линия.
  */
-export function PaneIndicatorList({ api, pane, values }: { api: IndicatorsApi; pane: number; values?: Record<string, IndValue> }) {
+export function PaneIndicatorList({ api, pane, values, native }: {
+  api: IndicatorsApi; pane: number; values?: Record<string, IndValue>;
+  /** Нативные ряды embed'а, съехавшие в эту панель (ОИ). */
+  native?: NativeRow[];
+}) {
   const rows = api.list.filter((i) => i.pane === pane);
-  if (!rows.length) return null;
+  const nat = (native ?? []).filter((r) => (r.pane ?? 0) === pane);
+  if (!rows.length && !nat.length) return null;
   return (
     <div data-export-ignore="true" style={listBoxStyle}>
+      {nat.map((r) => <NativeRowView key={r.id} row={r} />)}
       {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />)}
     </div>
+  );
+}
+
+/** Строка нативного ряда. Удалить её нельзя (ряд принадлежит самому виджету),
+ *  зато можно скрыть, перенести в свою панель и — у ОИ — переключить показатель. */
+function NativeRowView({ row }: { row: NativeRow }) {
+  const hasMenu = !!row.onMove || !!row.choices?.length;
+  return (
+    <Row
+      color={row.color} label={row.label} visible={row.visible} onToggle={row.onToggle}
+      value={{ text: '' }} valueId={row.id}
+      menu={hasMenu ? <NativeRowMenu row={row} /> : undefined}
+    />
   );
 }
 
@@ -736,70 +827,208 @@ function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRe
  * всё это про пользовательские Pine-скрипты, которых у нас нет.
  */
 function RowMenu({ inst, api, onSettings }: { inst: IndicatorInst; api: IndicatorsApi; onSettings: () => void }) {
-  const [open, setOpen] = useState(false);
   const [sub, setSub] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const d = KINDS[inst.kind];
+  const own = inst.pane > 0;
+  const side = useSubmenuSide(sub);
+
+  return (
+    <RowPopMenu>
+      {(close) => {
+        const item = (label: string, onClick: () => void, disabled = false): ReactNode =>
+          menuItem(label, () => { onClick(); setSub(false); close(); }, disabled);
+        return (
+          <>
+            {item('Настройки…', onSettings)}
+            <div style={{ position: 'relative' }}>
+              {subTrigger('Переместить', () => setSub((v) => !v))}
+              {sub && (
+                <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
+                  {item('Выше', () => api.movePane(inst.id, -1), !own)}
+                  {item('Ниже', () => api.movePane(inst.id, 1), !own)}
+                  {d.ownPaneOk !== false && !own && item('В отдельную панель', () => api.setPane(inst.id, true))}
+                  {d.overlayOk && own && item('На основной график', () => api.setPane(inst.id, false))}
+                </div>
+              )}
+            </div>
+            {item('Дублировать', () => api.duplicate(inst.id))}
+            {/* «Скрыть» и «Удалить» в меню НЕ дублируем: они уже есть на строке
+                отдельными кнопками (глаз и корзина), а два пути к одному действию
+                заставляют гадать, чем они отличаются. */}
+          </>
+        );
+      }}
+    </RowPopMenu>
+  );
+}
+
+/**
+ * Кнопка «⋯» со своим меню. Меню уходит ПОРТАЛОМ в body и позиционируется по
+ * кнопке.
+ *
+ * Why: строки живут внутри панели графика, а панель режет по своим краям. Меню,
+ * висевшее на `position:absolute` внутри строки, срезало справа на узкой панели
+ * («В отдельную пан…») и снизу — у короткой нижней панели, где строка стоит
+ * почти у самой кромки. Портал снимает вопрос целиком, ценой ручного замера.
+ */
+function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Меряем ПОСЛЕ вставки: до неё габаритов нет. Первый кадр — скрытый (visibility),
+  // иначе меню мигнёт в левом верхнем углу и прыгнет на место.
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const a = btnRef.current, el = boxRef.current;
+    if (!a || !el) return;
+    const r = a.getBoundingClientRect(), m = el.getBoundingClientRect();
+    const left = Math.max(6, Math.min(r.left, window.innerWidth - m.width - 6));
+    // Не влезло вниз — раскрываем ВВЕРХ от кнопки.
+    const top = r.bottom + 4 + m.height > window.innerHeight - 6
+      ? Math.max(6, r.top - m.height - 4)
+      : r.bottom + 4;
+    setPos({ left, top });
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSub(false); }
+      const t = e.target as Node;
+      if (!btnRef.current?.contains(t) && !boxRef.current?.contains(t)) setOpen(false);
     };
     document.addEventListener('pointerdown', onDown, true);
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, [open]);
 
-  const d = KINDS[inst.kind];
-  const own = inst.pane > 0;
-  const close = () => { setOpen(false); setSub(false); };
-  const item = (label: string, onClick: () => void, disabled = false): ReactNode => (
+  return (
+    <>
+      <button ref={btnRef} type="button" title="Ещё" onClick={() => setOpen((v) => !v)} style={ICON_BTN}>
+        <MoreHorizontal size={11} />
+      </button>
+      {open && createPortal(
+        <div
+          ref={boxRef}
+          style={{
+            position: 'fixed', left: pos?.left ?? 0, top: pos?.top ?? 0,
+            visibility: pos ? 'visible' : 'hidden',
+            zIndex: 60, minWidth: 196, padding: 4, borderRadius: 9, ...SURFACE,
+          }}
+        >
+          {children(() => setOpen(false))}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+/** Пункт всплывающего меню строки — общий для индикаторов и нативных рядов. */
+function menuItem(label: string, onClick: () => void, disabled = false, active = false): ReactNode {
+  return (
     <button
-      type="button" disabled={disabled}
-      onClick={() => { onClick(); close(); }}
+      type="button" disabled={disabled} onClick={onClick}
       style={{
         display: 'block', width: '100%', textAlign: 'left', padding: '5px 9px', borderRadius: 6,
-        border: 'none', background: 'transparent', fontSize: 11.5, cursor: disabled ? 'default' : 'pointer',
-        color: disabled ? 'var(--text-secondary)' : 'var(--text-primary)', opacity: disabled ? 0.45 : 1,
+        border: 'none', fontSize: 11.5, cursor: disabled ? 'default' : 'pointer',
+        background: active ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
+        color: disabled ? 'var(--text-secondary)' : active ? 'var(--accent)' : 'var(--text-primary)',
+        fontWeight: active ? 800 : 500,
+        opacity: disabled ? 0.45 : 1,
       }}
     >
       {label}
     </button>
   );
+}
+
+/** Кнопка подменю («Переместить ›», «Показатель ›»). */
+function subTrigger(label: string, onClick: () => void): ReactNode {
+  return (
+    <button
+      type="button" onClick={onClick}
+      style={{
+        display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
+        padding: '5px 9px', borderRadius: 6, border: 'none', background: 'transparent',
+        fontSize: 11.5, color: 'var(--text-primary)', cursor: 'pointer',
+      }}
+    >
+      {label}<ChevronRight size={12} />
+    </button>
+  );
+}
+
+const SUBMENU: CSSProperties = { position: 'absolute', top: 0, left: '100%', marginLeft: 4, zIndex: 41, minWidth: 186, padding: 4, borderRadius: 9 };
+const SUBMENU_FLIPPED: CSSProperties = { ...SUBMENU, left: 'auto', right: '100%', marginLeft: 0, marginRight: 4 };
+
+/**
+ * Подменю открывается вправо, но список строк живёт ВНУТРИ панели графика, а у
+ * неё overflow:hidden — на узкой панели пункты срезало на полуслове («В отдельную
+ * пан…»). Меряем по ближайшему предку, который реально обрезает, а не по окну:
+ * места в окне полно, режет именно панель.
+ */
+function useSubmenuSide(open: boolean) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [flip, setFlip] = useState(false);
+  useLayoutEffect(() => {
+    if (!open || !ref.current) { setFlip(false); return; }
+    const el = ref.current;
+    let box: HTMLElement | null = el.parentElement;
+    while (box && getComputedStyle(box).overflow === 'visible') box = box.parentElement;
+    const limit = box ? box.getBoundingClientRect().right : window.innerWidth;
+    setFlip(el.getBoundingClientRect().right > limit - 4);
+  }, [open]);
+  return { ref, style: (flip ? SUBMENU_FLIPPED : SUBMENU) as CSSProperties };
+}
+
+/**
+ * ⋯-меню нативной строки. Здесь живут настройки ряда, которых раньше не было
+ * вовсе: у ОИ — режим и показатель, стоявшие двумя выпадашками в тулбаре.
+ *
+ * Why: тулбар — место для того, что меняют часто и что относится ко всему окну
+ * (актив, таймфрейм). Показатель ОИ относится к ОДНОЙ линии, и когда рядом
+ * появились пользовательские индикаторы со своими ⋯, две выпадашки наверху
+ * стали единственным исключением из общего правила «настройки ряда — в строке».
+ */
+function NativeRowMenu({ row }: { row: NativeRow }) {
+  const [sub, setSub] = useState<string | null>(null);
+  const own = (row.pane ?? 0) > 0;
+  const side = useSubmenuSide(!!sub);
 
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button type="button" title="Ещё" onClick={() => setOpen((v) => !v)} style={ICON_BTN}>
-        <MoreHorizontal size={11} />
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 40, minWidth: 196, padding: 4, borderRadius: 9, ...SURFACE }}>
-          {item('Настройки…', onSettings)}
-          <div style={{ position: 'relative' }}>
-            <button
-              type="button" onClick={() => setSub((v) => !v)}
-              style={{
-                display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
-                padding: '5px 9px', borderRadius: 6, border: 'none', background: 'transparent',
-                fontSize: 11.5, color: 'var(--text-primary)', cursor: 'pointer',
-              }}
-            >
-              Переместить<ChevronRight size={12} />
-            </button>
-            {sub && (
-              <div style={{ position: 'absolute', top: 0, left: '100%', marginLeft: 4, zIndex: 41, minWidth: 186, padding: 4, borderRadius: 9, ...SURFACE }}>
-                {item('Выше', () => api.movePane(inst.id, -1), !own)}
-                {item('Ниже', () => api.movePane(inst.id, 1), !own)}
-                {d.ownPaneOk !== false && !own && item('В отдельную панель', () => api.setPane(inst.id, true))}
-                {d.overlayOk && own && item('На основной график', () => api.setPane(inst.id, false))}
+    <RowPopMenu>
+      {(closeMenu) => {
+        const pick = (fn: () => void) => { fn(); setSub(null); closeMenu(); };
+        return (
+          <>
+            {row.choices?.map((c) => (
+              <div key={c.label} style={{ position: 'relative' }}>
+                {subTrigger(c.label, () => setSub((s) => (s === c.label ? null : c.label)))}
+                {sub === c.label && (
+                  <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
+                    {c.options.map((o) => menuItem(o.label, () => pick(() => c.onChange(o.id)), false, o.id === c.value))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {row.onMove && (
+              <div style={{ position: 'relative' }}>
+                {subTrigger('Переместить', () => setSub((s) => (s === 'move' ? null : 'move')))}
+                {sub === 'move' && (
+                  <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
+                    {menuItem('Выше', () => pick(() => row.onMove?.('up')), !own || !row.canUp)}
+                    {menuItem('Ниже', () => pick(() => row.onMove?.('down')), !own || !row.canDown)}
+                    {!own && menuItem('В отдельную панель', () => pick(() => row.onMove?.('own')))}
+                    {own && menuItem('На основной график', () => pick(() => row.onMove?.('main')))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-          {item('Дублировать', () => api.duplicate(inst.id))}
-          {/* «Скрыть» и «Удалить» в меню НЕ дублируем: они уже есть на строке
-              отдельными кнопками (глаз и корзина), а два пути к одному действию
-              заставляют гадать, чем они отличаются. */}
-        </div>
-      )}
-    </div>
+          </>
+        );
+      }}
+    </RowPopMenu>
   );
 }
 

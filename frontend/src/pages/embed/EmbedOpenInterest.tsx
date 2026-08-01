@@ -16,9 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Clock, User, Building2, BarChart3, Users, Activity, TrendingUp, TrendingDown, ArrowUpDown, Equal,
-} from 'lucide-react';
+import { Clock, User, Building2 } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -34,7 +32,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, type NativeRow } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -59,7 +57,8 @@ type Series = { time: string; value: number; open?: number; high?: number; low?:
  *  мемоизацию потребителей (профиль объёма пересчитывался бы впустую). */
 const EMPTY_CANDLES: Series = [];
 
-// Опции тулбар-выпадашек §OI-2 (группа участников / режим) — перенесены из drawer.
+// Группа участников — единственная выпадашка ОИ, оставшаяся в тулбаре: она
+// относится ко всему окну (чьи позиции смотрим), а не к отдельной линии.
 const CLGROUP_OPTS: { id: ClGroup; label: string; icon: ReactNode }[] = [
   { id: 'FIZ', label: 'Физлица', icon: <User size={14} /> },
   { id: 'YUR', label: 'Юрлица', icon: <Building2 size={14} /> },
@@ -68,21 +67,6 @@ const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'positions', label: 'Объём позиций' },
   { id: 'participants', label: 'Число трейдеров' },
 ];
-// Иконки для Dropdown (Режим/Показатель ОИ) зависят от выбранного значения —
-// передаются как функция value→icon, а не статичный узел (options самого
-// Dropdown иконок не несёт, в отличие от PillGroup).
-const MODE_ICONS: Record<DisplayMode, ReactNode> = {
-  positions: <BarChart3 size={14} />,
-  participants: <Users size={14} />,
-};
-const VARIANT_ICONS: Record<OIVariant, ReactNode> = {
-  oi: <Activity size={14} />,
-  long: <TrendingUp size={14} />,
-  short: <TrendingDown size={14} />,
-  both: <ArrowUpDown size={14} />,
-  net: <Equal size={14} />,
-};
-
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
 // Дневной ТФ раньше был жёстко '1y' — обрезал историю ровно годом для ВСЕХ
@@ -183,7 +167,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Пользовательские индикаторы (наложения поверх графика). Ключ БЕЗ инструмента:
   // набор индикаторов — это про предпочтения пользователя, а не про актив, и при
   // переключении SR→GAZP он должен остаться.
-  const inds = useIndicators('frame:embed:oi:indicators');
+  // Панель линий ОИ: 0 — на графике цены (правая ось), 1+ — своя панель снизу.
+  // Номер общий с индикаторами, поэтому уходит к ним в reserved, а перестановку
+  // «Выше/Ниже» обе стороны применяют одну и ту же (см. useIndicators).
+  const [oiPane, setOiPane] = useState<number>(() => Number(rd('frame:embed:oi:oiPane', '0')) || 0);
+  const reservedPanes = useMemo(() => (oiPane > 0 ? [oiPane] : []), [oiPane]);
+  const onSwapPanes = useCallback((a: number, b: number) => {
+    setOiPane((p) => (p === a ? b : p === b ? a : p));
+  }, []);
+  const inds = useIndicators('frame:embed:oi:indicators', { reserved: reservedPanes, onSwapPanes });
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
@@ -203,6 +195,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Перезагружаем на смену актива и на закрытие модалки (создали → подтянуть уровень).
   const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
   const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number; currentLabel?: string } | null>(null);
+  // Индекс панели ОИ в стеке. Через ref: обработчик «+» объявлен выше сборки
+  // панелей, а тащить туда весь расчёт ради одного числа — лишний порядок.
+  const oiChartIndexRef = useRef(0);
   const reloadAlerts = useCallback(() => {
     listAlerts({ limit: 200 }).then((r) => setMyAlerts(r.items)).catch(() => { /* не критично для графика */ });
   }, []);
@@ -216,6 +211,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   useEffect(() => { wr('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
   useEffect(() => { wr('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
   useEffect(() => { wr('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
+  useEffect(() => { wr('frame:embed:oi:oiPane', String(oiPane)); }, [oiPane]);
 
   const changeInterval = (next: number) => setIntervalValue(next);
 
@@ -476,37 +472,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
 
   // §OI-3: клик по «+» у оси → модалка с префиллом (метрика по оси + уровень +
   // «Сейчас: …»). Левая ось = цена (₽), правая = уровень ОИ (контракты/участники).
-  const handleCreateAlertFromChart = (p: { axis: 'left' | 'right'; price: number; currentValue: number }) => {
-    const isOi = p.axis === 'right';
+  const handleCreateAlertFromChart = (p: { axis: 'left' | 'right'; pane: number; price: number; currentValue: number }) => {
+    // ОИ = правая ось ТОЙ панели, где он сейчас живёт (он умеет уезжать вниз).
+    const isOi = p.axis === 'right' && p.pane === oiChartIndexRef.current;
     const currentLabel = isOi
       ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} ${oiLegUnit}`
       : `${formatPrice(p.currentValue)} ₽`;
     setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.price, currentLabel });
   };
-
-  // §OI-3: на каких осях кликабельный «+». Вариант «both» (3 линии) — уровневый
-  // алерт двусмыслен, выключаем целиком (как на сайте). Иначе: левая — если цена
-  // показана; правая (ОИ) — всегда.
-  const alertAxes = useMemo<('left' | 'right')[]>(() => {
-    if (oiVariant === 'both') return [];
-    const ax: ('left' | 'right')[] = [];
-    if (showPrice) ax.push('left');
-    ax.push('right');
-    return ax;
-  }, [oiVariant, showPrice]);
-
-  // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
-  const alertLines = useMemo(() => {
-    type Line = { price: number; color: string; scale: 'left' | 'right'; title: string };
-    const lines: Line[] = myAlerts
-      .filter((a) => a.status === 'active' && a.asset === instrument)
-      .flatMap((a): Line[] => {
-        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'алерт' }];
-        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', title: 'алерт' }];
-        return [];
-      });
-    return lines.length ? lines : undefined;
-  }, [myAlerts, instrument]);
 
   const displayName = instrumentName || displayTicker(instrument);
 
@@ -534,7 +507,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       const lastPx = Math.abs(chartData[chartData.length - 1].value);
       const pxMinMove = lastPx >= 100 ? 1 : lastPx >= 10 ? 0.01 : 0.0001;
       out.push(applyFormat({
-        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove,
+        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove, legendChange: true,
         // OHLC пробрасываем — режимы «Свечи»/«Бары» рисуют по ним; линия/область берут value.
         data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value, open: p.open, high: p.high, low: p.low, close: p.close })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
@@ -543,20 +516,20 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     if (oiSeries.secondary && oiSeries.secondary.length > 0) {
       if (oiVariant === 'both') {
         out.push(applyFormat({
-          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
+          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary, legendChange: true,
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
         }, sf.get('oi-long')));
         if (oiSeries.third) {
           out.push(applyFormat({
-            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
+            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third, legendChange: true,
             data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
             tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
           }, sf.get('oi-short')));
         }
       } else {
         out.push(applyFormat({
-          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
+          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary, legendChange: true,
           zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
@@ -581,7 +554,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
-  const allSeries = useMemo(() => [...visibleNative, ...(indSeries[0] ?? [])], [visibleNative, indSeries]);
+  // Линии ОИ уезжают в свою панель целиком (их 1–2, и обе на одной шкале).
+  // ⚠️ Если после переезда на основной панели не осталось НИЧЕГО (цена скрыта,
+  // наложений нет) — возвращаем ОИ наверх: пустая ценовая панель это полоса
+  // пустоты во всю ширину и график без единой линии.
+  const oiOwn = useMemo(() => visibleNative.filter((d) => d.id !== 'price'), [visibleNative]);
+  const mainNative = useMemo(() => (oiPane > 0 ? visibleNative.filter((d) => d.id === 'price') : visibleNative), [visibleNative, oiPane]);
+  const oiPaneEff = mainNative.length === 0 && (indSeries[0] ?? []).length === 0 ? 0 : oiPane;
+  const allSeries = useMemo(
+    () => [...(oiPaneEff > 0 ? mainNative : visibleNative), ...(indSeries[0] ?? [])],
+    [visibleNative, mainNative, oiPaneEff, indSeries],
+  );
   // ⚠️ Панели держатся по СПИСКУ индикаторов, а не по наличию у них серий.
   // Скрытый «глазом» индикатор серий не даёт — если считать панели по сериям,
   // панель схлопнется вместе со строкой, и вернуть индикатор станет нечем. Ровно
@@ -589,9 +572,44 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // графика → панель индикатора»: номера панелей не подряд (после удалений
   // остаются дыры), и без него строка искалась бы не в той панели.
   const extraPanes = useMemo(() => {
-    const used = [...new Set(inds.list.filter((i) => i.pane > 0).map((i) => i.pane))].sort((a, b) => a - b);
-    return used.map((pane) => ({ pane, series: indSeries[pane] ?? [] }));
-  }, [inds.list, indSeries]);
+    const used = [...new Set([
+      ...inds.list.filter((i) => i.pane > 0).map((i) => i.pane),
+      ...(oiPaneEff > 0 ? [oiPaneEff] : []),
+    ])].sort((a, b) => a - b);
+    return used.map((pane) => ({
+      pane,
+      series: [...(pane === oiPaneEff ? oiOwn : []), ...(indSeries[pane] ?? [])],
+    }));
+  }, [inds.list, indSeries, oiPaneEff, oiOwn]);
+  // Номер панели ≠ её индекс в стеке: номера не подряд (после удалений остаются
+  // дыры), а осям алертов и уровням нужен именно индекс.
+  const oiChartIndex = oiPaneEff === 0 ? 0 : extraPanes.findIndex((x) => x.pane === oiPaneEff) + 1;
+  oiChartIndexRef.current = oiChartIndex;
+
+  // §OI-3: на каких осях кликабельный «+». Вариант «both» (3 линии) — уровневый
+  // алерт двусмыслен, выключаем целиком (как на сайте). Иначе: левая — если цена
+  // показана; правая (ОИ) — всегда.
+  const alertAxes = useMemo<{ pane: number; side: 'left' | 'right' }[]>(() => {
+    if (oiVariant === 'both') return [];
+    const ax: { pane: number; side: 'left' | 'right' }[] = [];
+    if (showPrice) ax.push({ pane: 0, side: 'left' });
+    ax.push({ pane: oiChartIndex, side: 'right' });
+    return ax;
+  }, [oiVariant, showPrice, oiChartIndex]);
+
+  // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
+  const alertLines = useMemo(() => {
+    type Line = { price: number; color: string; scale: 'left' | 'right'; pane?: number; title: string };
+    const lines: Line[] = myAlerts
+      .filter((a) => a.status === 'active' && a.asset === instrument)
+      .flatMap((a): Line[] => {
+        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'алерт' }];
+        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex, title: 'алерт' }];
+        return [];
+      });
+    return lines.length ? lines : undefined;
+  }, [myAlerts, instrument, oiChartIndex]);
+
   const chartPanes = useMemo<LwPane[]>(
     // Основной график заметно выше служебных, иначе RSI съедает цену.
     () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((x) => ({ series: x.series, flex: 1 }))],
@@ -599,21 +617,41 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   );
   const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
 
+  // Перенос линий ОИ между панелями. Двигаются ВСЕ разом (в варианте
+  // «Покупки + Продажи» их две, и на разных панелях они несравнимы).
+  const moveOi = useCallback((to: 'up' | 'down' | 'own' | 'main') => {
+    if (to === 'main') { setOiPane(0); return; }
+    if (to === 'own') { setOiPane(inds.freePane()); return; }
+    const occ = inds.occupiedPanes;
+    const target = occ[occ.indexOf(oiPane) + (to === 'up' ? -1 : 1)];
+    // swapPanes переставит индикаторы и через onSwapPanes — сам oiPane.
+    if (target != null) inds.swapPanes(oiPane, target);
+  }, [inds, oiPane]);
+
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
       id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
       visible: showPrice, onToggle: () => setShowPrice((v) => !v),
     }];
+    // Настройки самой величины ОИ — здесь, в строке. Раньше это были две
+    // выпадашки в тулбаре; см. NativeRowMenu о том, почему они переехали.
+    const choices = [
+      { label: 'Режим', value: displayMode, options: MODE_OPTS, onChange: (v: string) => setDisplayMode(v as DisplayMode) },
+      { label: 'Показатель', value: oiVariant, options: variantOpts, onChange: (v: string) => setOiVariant(v as OIVariant) },
+    ];
+    const at = inds.occupiedPanes.indexOf(oiPaneEff);
     for (const d of lwSeries) {
       if (d.id === 'price') continue;
       rows.push({
         id: d.id, label: d.label, color: d.color,
         visible: sf.get(d.id).visible !== false,
         onToggle: () => sf.setVisible(d.id, sf.get(d.id).visible === false),
+        pane: oiPaneEff, onMove: moveOi, choices,
+        canUp: at > 0, canDown: at >= 0 && at < inds.occupiedPanes.length - 1,
       });
     }
     return rows;
-  }, [lwSeries, sf, showPrice, displayName]);
+  }, [lwSeries, sf, showPrice, displayName, displayMode, oiVariant, variantOpts, oiPaneEff, inds.occupiedPanes, moveOi]);
 
   return (
     <EmbedFrame
@@ -653,11 +691,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           >
             <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} />
             <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
-            <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICONS[displayMode]} />
-            <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" icon={VARIANT_ICONS[oiVariant]} />
+            <IndicatorsButton api={inds} hasVolume={hasVolume} />
           </div>
           {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
-              горизонтальные пилюли (2 пункта). Вид графика убран из тулбара → настраивается
+              горизонтальные пилюли (2 пункта). Режим и показатель ОИ из тулбара УБРАНЫ:
+              они относятся к одной линии, а не ко всему окну, и живут в её ⋯ вместе
+              с настройками пользовательских индикаторов. На их месте — «Индикаторы».
+              Вид графика убран из тулбара → настраивается
               per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике).
               Список фильтруется по tfOptions — неликвидные EOD-only фьючерсы (напр.
               PXU6 «Полюс мини») не отдают интрадей-ОИ вообще, так что 5м/1ч для них
@@ -666,8 +706,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               (toolbarCompact, см. измеритель выше); title сохраняет текст в тултипе. */}
           <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={toolbarCompact} />
           <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
-          <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICONS[displayMode]} compact={toolbarCompact} />
-          <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" icon={VARIANT_ICONS[oiVariant]} compact={toolbarCompact} />
+          <IndicatorsButton api={inds} hasVolume={hasVolume} compact={toolbarCompact} />
         </div>
       }
       actions={
@@ -712,7 +751,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             expirations={expirations}
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
-            paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} />)}
+            paneOverlay={(i) => (i === 0 ? null : (
+              <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} />
+            ))}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}

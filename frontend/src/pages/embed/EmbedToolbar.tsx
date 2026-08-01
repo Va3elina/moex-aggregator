@@ -563,6 +563,43 @@ export function Dropdown<T extends string | number>({
   );
 }
 
+/**
+ * Кнопка тулбара, открывающая произвольное меню (не выбор значения — для него
+ * Dropdown). Схлопывается в иконку на узкой панели тем же правилом, что и
+ * остальные контролы: лейбл уходит в title.
+ */
+export function ToolbarMenuButton({ label, icon, title, compact, children }: {
+  label: string;
+  icon: ReactNode;
+  title?: string;
+  compact?: boolean;
+  /** Содержимое поповера. Аргумент — закрыть меню. */
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  return (
+    <div style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}>
+      <button
+        ref={btnRef}
+        type="button"
+        title={title ?? label}
+        aria-label={compact ? label : undefined}
+        style={{ ...ddBtnStyle(open), ...(compact ? { padding: 'var(--emb-dd-pad-icon, 4px 8px)' } : {}) }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+        {!compact && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{label}</span>}
+      </button>
+      {open && (
+        <Popover anchorEl={btnRef.current} align="left" compact width="max-content" onClose={() => setOpen(false)}>
+          {children(() => setOpen(false))}
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 function iconBtnStyle(active: boolean): CSSProperties {
   return {
     width: 28,
