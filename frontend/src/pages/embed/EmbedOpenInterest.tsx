@@ -597,10 +597,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     () => [{ series: allSeries, flex: extraPanes.length ? 2.6 : 1 }, ...extraPanes.map((x) => ({ series: x.series, flex: 1 }))],
     [allSeries, extraPanes],
   );
-  // Значения под курсором для строк индикаторов: в терминалах строка показывает
-  // то, на чём стоит курсор, а не последний бар.
-  const [hoverVals, setHoverVals] = useState<{ time: number; values: Record<string, number> } | null>(null);
-  const indValues = useMemo(() => indicatorValues(indSeries, hoverVals), [indSeries, hoverVals]);
+  const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
 
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
@@ -715,7 +712,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             expirations={expirations}
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
-            onCrosshairValues={setHoverVals}
             paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} />)}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}

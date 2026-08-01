@@ -510,20 +510,13 @@ export interface IndValue { text: string; color?: string }
 
 export function indicatorValues(
   seriesByPane: LwSeries[][],
-  /** Точка под курсором. Нет — показываем последний бар. */
-  hover?: { time: number; values: Record<string, number> } | null,
 ): Record<string, IndValue> {
   const out: Record<string, IndValue> = {};
   for (const arr of seriesByPane) {
     for (const d of arr) {
       const n = d.data.length;
       if (!n) continue;
-      // Индекс точки: под курсором — по времени, иначе последняя.
-      let idx = n - 1;
-      if (hover && hover.values[d.id] != null) {
-        const found = d.data.findIndex((pt) => pt.time === hover.time);
-        if (found >= 0) idx = found;
-      }
+      const idx = n - 1;
       const pt = d.data[idx];
       if (!pt) continue;
       // Цвет: у ряда с ПОТОЧЕЧНЫМ цветом (объёмы) — цвет самого бара, чтобы

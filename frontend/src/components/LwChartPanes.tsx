@@ -96,10 +96,6 @@ interface LwChartPanesProps {
    *  панелью). Панель — position:relative, так что абсолютный ребёнок ложится
    *  по её углам, а не по углам всего чарта. */
   paneOverlay?: (paneIndex: number) => React.ReactNode;
-  /** Значения всех серий в точке под курсором (id серии → значение), null при
-   *  уходе курсора. Нужен строкам индикаторов: в терминалах они показывают
-   *  значение под курсором, а не последнее. */
-  onCrosshairValues?: (v: { time: number; values: Record<string, number> } | null) => void;
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -225,7 +221,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
-  paneOverlay, onCrosshairValues,
+  paneOverlay,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -287,12 +283,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const crossFmtRef = useRef(crosshairTimeFmt); crossFmtRef.current = crosshairTimeFmt;
   const expRef = useRef(expirations); expRef.current = expirations;
   const darkRef = useRef(dark); darkRef.current = dark;
-  const onCrossValsRef = useRef(onCrosshairValues); onCrossValsRef.current = onCrosshairValues;
-  // ⚠️ Последний ОТДАННЫЙ наружу бар. Без этого гейта получается петля: колбэк
-  // дёргает setState потребителя → тот перерисовывается → чарт перерисовывается
-  // → движок снова стреляет crosshairMove → setState… Значение в строке дрожит
-  // без движения мыши, пан срывается и «возвращает назад», экран трясёт.
-  const lastEmitRef = useRef<number | null>(null);
   // Профиль объёма живёт ВНЕ эффекта серий: держать его в его депсах значило бы
   // пересоздавать все серии на каждую правку числа уровней (сотня миллисекунд
   // ради перерисовки одного слоя). Эффект серий только переприкрепляет примитив
@@ -625,7 +615,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const tip = tips[i];
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
-          if (lastEmitRef.current !== null) { lastEmitRef.current = null; onCrossValsRef.current?.(null); }
           tips.forEach((tp) => { tp.style.display = 'none'; });
           pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
           suppress = true;
@@ -662,20 +651,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Значения под курсором наружу — для строк индикаторов. Собираем из тех
         // же time-Map'ов, что и тултип, чтобы цифры совпадали гарантированно.
-        // Отдаём наружу ТОЛЬКО при смене бара: внутри одного бара значения те же,
-        // а лишний setState — это и есть петля перерисовки.
-        if (onCrossValsRef.current && lastEmitRef.current !== t) {
-          lastEmitRef.current = t;
-          const vals: Record<string, number> = {};
-          panesRef.current.forEach((pane, pi) => {
-            pane.series.forEach((def, si) => {
-              const v = mapsRef.current[pi]?.[si]?.get(t);
-              if (v != null) vals[def.id] = v;
-            });
-          });
-          onCrossValsRef.current({ time: t, values: vals });
-        }
-
         // Скрыть тултипы неактивных панелей, кроссхэйр — на соседей.
         tips.forEach((tp, j) => { if (j !== i) tp.style.display = 'none'; });
         if (!any) {
