@@ -587,7 +587,8 @@ export function IndicatorList({ api, native, visible, hasVolume = false, values 
   return (
     <div ref={rootRef} data-export-ignore="true" style={listBoxStyle}>
       {native.map((r) => (
-        <Row key={r.id} color={r.color} label={r.label} visible={r.visible} onToggle={r.onToggle} />
+        <Row key={r.id} color={r.color} label={r.label} visible={r.visible} onToggle={r.onToggle}
+             value={{ text: '' }} valueId={r.id} />
       ))}
       {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
           своим графиком — см. PaneIndicatorList. */}

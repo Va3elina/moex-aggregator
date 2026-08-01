@@ -314,7 +314,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     const root = rootRef.current;
     const host = root?.parentElement ?? root;
     if (!host) return;
-    for (const pane of panesRef.current) {
+    panesRef.current.forEach((pane, pi) => {
       for (const def of pane.series) {
         const el = host.querySelector(`[data-ind-value="${def.id}"]`) as HTMLElement | null;
         if (!el) continue;
@@ -327,14 +327,53 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         const pt = def.data[idx];
         if (!pt) continue;
-        el.textContent = def.axisFmt ? def.axisFmt(pt.value) : String(Math.round(pt.value));
-        // Цвет: у ряда с поточечным цветом (объёмы) — цвет бара, иначе по
-        // направлению против предыдущего бара.
-        const prev = idx > 0 ? def.data[idx - 1]?.value : undefined;
-        const c = pt.color ?? (prev == null ? undefined : pt.value >= prev ? 'var(--oi-green)' : 'var(--oi-red)');
-        if (c) el.style.color = c;
+        const fmt = (v: number) => (def.axisFmt ? def.axisFmt(v) : String(Math.round(v)));
+        const prevPt = idx > 0 ? def.data[idx - 1] : undefined;
+        const prevClose = prevPt?.close ?? prevPt?.value;
+        const isOhlc = pt.open != null && pt.high != null && pt.low != null;
+        // Направление: у свечи — против ПРЕДЫДУЩЕГО закрытия (так в терминалах),
+        // у линии — против предыдущего значения. Цвет точки (объёмы) главнее.
+        const up = prevClose == null ? undefined : (pt.close ?? pt.value) >= prevClose;
+        const c = pt.color ?? (up == null ? undefined : up ? 'var(--oi-green)' : 'var(--oi-red)');
+
+        while (el.firstChild) el.removeChild(el.firstChild);
+        const num = (v: number) => {
+          const sp = document.createElement('span');
+          sp.textContent = fmt(v);
+          if (c) sp.style.color = c;
+          return sp;
+        };
+        const cap = (t: string) => {
+          const sp = document.createElement('span');
+          sp.textContent = t;
+          sp.style.cssText = 'color:var(--text-secondary);font-weight:600;margin-left:6px';
+          return sp;
+        };
+        if (isOhlc) {
+          // Легенда свечи как в терминалах: ОТКР/МАКС/МИН/ЗАКР + изменение.
+          el.appendChild(cap('ОТКР')); el.appendChild(num(pt.open as number));
+          el.appendChild(cap('МАКС')); el.appendChild(num(pt.high as number));
+          el.appendChild(cap('МИН')); el.appendChild(num(pt.low as number));
+          el.appendChild(cap('ЗАКР')); el.appendChild(num(pt.close ?? pt.value));
+        } else {
+          el.appendChild(num(pt.value));
+        }
+        // Изменение показываем только у рядов ОСНОВНОЙ панели (цена, открытый
+        // интерес). У индикаторов оно шум: RSI даёт «+0», объёмы «+176%» —
+        // цифры формально верные, но смысла в них нет.
+        if (prevClose != null && pi === 0) {
+          const cur = pt.close ?? pt.value;
+          const d = cur - prevClose;
+          const pct = prevClose === 0 ? 0 : (d / Math.abs(prevClose)) * 100;
+          const sp = document.createElement('span');
+          sp.style.cssText = 'margin-left:6px';
+          if (c) sp.style.color = c;
+          const sign = d >= 0 ? '+' : '−';
+          sp.textContent = `${sign}${fmt(Math.abs(d))} (${sign}${Math.abs(pct).toFixed(2)}%)`;
+          el.appendChild(sp);
+        }
       }
-    }
+    });
   };
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
@@ -1546,6 +1585,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // эффекта, иначе тумблер «Экспирации» не давал бы эффекта до следующего
     // пана (ровно та дыра, что была бы у priceLines).
     requestAnimationFrame(() => drawExpRef.current?.());
+
+    // Значения в строках индикаторов: в покое (курсор вне графика) показываем
+    // последний бар. Иначе после смены данных строка стояла бы пустой до
+    // первого наведения — кроссхэйр её единственный другой источник.
+    paintRowValuesRef.current?.(null);
 
     // Fit/восстановление зума — через нижнюю панель, синк разнесёт по остальным.
     const lead = charts[charts.length - 1];
