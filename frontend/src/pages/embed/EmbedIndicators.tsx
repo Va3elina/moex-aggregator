@@ -675,6 +675,7 @@ function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: Indicato
         color={api.colorOf(inst)}
         label={KINDS[inst.kind].title(inst)}
         value={value}
+        valueId={inst.id}
         visible={inst.visible}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
@@ -686,8 +687,8 @@ function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: Indicato
   );
 }
 
-function Row({ color, label, value, visible, onToggle, onSettings, onRemove, menu }: {
-  color: string; label: string; value?: IndValue; visible: boolean;
+function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRemove, menu }: {
+  color: string; label: string; value?: IndValue; valueId?: string; visible: boolean;
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
   /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
    *  перенос живёт в меню, как в терминалах: на строке и так тесно, а
@@ -709,7 +710,7 @@ function Row({ color, label, value, visible, onToggle, onSettings, onRemove, men
       {/* Значение справа от названия — в цвет линии, моноширинным: так читается,
           чьё оно, и цифры не пляшут при смене последнего бара. */}
       {value && (
-        <span style={{ fontSize: 10.5, fontWeight: 700, color: value.color ?? color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value.text}</span>
+        <span data-ind-value={valueId} style={{ fontSize: 10.5, fontWeight: 700, color: value.color ?? color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value.text}</span>
       )}
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}
