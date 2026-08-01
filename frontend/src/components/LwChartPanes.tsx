@@ -304,6 +304,38 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // слетел бы на fit ровно в момент, когда пользователь этого не просил.
   // Читаем его при восстановлении, если у свежесозданного чарта своего ещё нет.
   const lastRangeRef = useRef<LogicalRange | null>(null);
+  /**
+   * Обновление чисел в строках индикаторов. time — точка под курсором, null —
+   * вернуть последний бар. Ищем узлы по data-ind-value и пишем textContent:
+   * React их не перерисовывает (проп values статичен), так что перетирания нет.
+   */
+  const paintRowValuesRef = useRef<((time: number | null) => void) | null>(null);
+  paintRowValuesRef.current = (time) => {
+    const root = rootRef.current;
+    const host = root?.parentElement ?? root;
+    if (!host) return;
+    for (const pane of panesRef.current) {
+      for (const def of pane.series) {
+        const el = host.querySelector(`[data-ind-value="${def.id}"]`) as HTMLElement | null;
+        if (!el) continue;
+        const n = def.data.length;
+        if (!n) continue;
+        let idx = n - 1;
+        if (time != null) {
+          const found = def.data.findIndex((pt) => pt.time === time);
+          if (found >= 0) idx = found;
+        }
+        const pt = def.data[idx];
+        if (!pt) continue;
+        el.textContent = def.axisFmt ? def.axisFmt(pt.value) : String(Math.round(pt.value));
+        // Цвет: у ряда с поточечным цветом (объёмы) — цвет бара, иначе по
+        // направлению против предыдущего бара.
+        const prev = idx > 0 ? def.data[idx - 1]?.value : undefined;
+        const c = pt.color ?? (prev == null ? undefined : pt.value >= prev ? 'var(--oi-green)' : 'var(--oi-red)');
+        if (c) el.style.color = c;
+      }
+    }
+  };
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
@@ -615,6 +647,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const tip = tips[i];
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
+          paintRowValuesRef.current?.(null);
           tips.forEach((tp) => { tp.style.display = 'none'; });
           pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
           suppress = true;
@@ -651,6 +684,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Значения под курсором наружу — для строк индикаторов. Собираем из тех
         // же time-Map'ов, что и тултип, чтобы цифры совпадали гарантированно.
+        // Число в строке индикатора обновляем НАПРЯМУЮ через DOM.
+        // ⚠️ Не через состояние React: любой ререндер во время перетаскивания
+        // доходит до эффекта серий, а тот восстанавливает сохранённый диапазон —
+        // график «отскакивает назад» (см. память, откат #903).
+        paintRowValuesRef.current?.(t);
+
         // Скрыть тултипы неактивных панелей, кроссхэйр — на соседей.
         tips.forEach((tp, j) => { if (j !== i) tp.style.display = 'none'; });
         if (!any) {
@@ -733,8 +772,18 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           charts.forEach((other, j) => {
             if (j === i) return;
             const firstApi = apisRef.current[j]?.[0];
+            if (!firstApi) { other.clearCrosshairPosition(); return; }
+            // ⚠️ На СОСЕДНИХ панелях нужна только ВЕРТИКАЛЬ. setCrosshairPosition
+            // рисует крест целиком, а отключить горизонталь через
+            // applyOptions({crosshair}) нельзя — вне эффекта темы это убивает
+            // кроссхэйр насмерть (см. память chart_architecture). Поэтому цену
+            // берём ЗА ВЕРХНЕЙ КРОМКОЙ пейна: горизонталь уходит в отсечение и
+            // не видна, вертикаль остаётся. Иначе при трёх индикаторах на экране
+            // четыре горизонтальные линии разом.
+            const off = firstApi.coordinateToPrice(-40 as Coordinate);
             const v = mapsRef.current[j]?.[0]?.get(t);
-            if (firstApi && v != null) other.setCrosshairPosition(v, t as UTCTimestamp, firstApi);
+            if (off != null) other.setCrosshairPosition(off as number, t as UTCTimestamp, firstApi);
+            else if (v != null) other.setCrosshairPosition(v, t as UTCTimestamp, firstApi);
             else other.clearCrosshairPosition();
           });
         } finally { suppress = false; }
