@@ -11,10 +11,8 @@ import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
     getFundsFlows,
-    getFundsDetail,
     type FundsChartResponse,
     type FundsFlowsResponse,
-    type FundInfo,
     type FundCategory,
     type FundPeriod,
     type FlowTimeframe
@@ -26,7 +24,6 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
-import FundDetailModal from '../components/funds/FundDetailModal';
 import FundsTable from '../components/funds/FundsTable';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -233,7 +230,6 @@ export default function FundsMoneyPage() {
     // делят страницу, но НЕ должны делить флаг loading — иначе быстрый nav-ответ гасил
     // спиннер, пока flows ещё грузится («даже не начал обновляться» при смене категории).
     const [flowsLoading, setFlowsLoading] = useState(false);
-    const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
     // Скрытые фонды. Персистим по категории (frame:funds:hidden:<category>) —
     // выбор не сбрасывается на новой сессии и хранится отдельно для каждой
     // категории; смена категории перечитывает набор под новый ключ (это заменяет
@@ -491,13 +487,6 @@ export default function FundsMoneyPage() {
             }
             return next;
         });
-    };
-
-    // Открытие карточки фонда: только выбираем фонд — FundDetailModal грузит
-    // детали сам через loadDetail (getFundsDetail). Drill-down в актив
-    // (состав + клик по бумаге) — только для фондов акций (enableDrilldown).
-    const openFundCard = (fund: FundInfo) => {
-        setSelectedFund(fund);
     };
 
     const handleFlowMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1141,7 +1130,6 @@ export default function FundsMoneyPage() {
                                 onSetHiddenFunds={setHiddenFunds}
                                 onSetCollapsedSubcats={setCollapsedSubcats}
                                 onSetNavSortDir={setNavSortDir}
-                                onOpenFundCard={openFundCard}
                             />
                         </div>
                         {/* «Готово» — как в пикере фондов «Сделок фондов»: выбор
@@ -1175,18 +1163,9 @@ export default function FundsMoneyPage() {
                 </div>
             )}
 
-            {/* Модальная карточка фонда — общая с «Покупками фондов».
-                enableDrilldown только для фондов акций (состав + клик в актив);
-                для облигаций/золота/денег/юаня — базовая карточка (СЧА + доходность). */}
-            {selectedFund && (
-                <FundDetailModal
-                    ticker={selectedFund.ticker}
-                    loadDetail={() => getFundsDetail(selectedFund.fund_id)}
-                    navRub={selectedFund.data?.[selectedFund.data.length - 1]?.nav ?? null}
-                    enableDrilldown={category === 'stocks'}
-                    onClose={() => setSelectedFund(null)}
-                />
-            )}
+            {/* Карточки фонда здесь нет: список фондов — это выбор того, что
+                показывать на графике, клик по строке переключает галочку.
+                Путь к карточке фонда не лежит через «Деньги в фондах». */}
 
             {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ
                 модалки (дефолт — все фонды), без привязки к текущей категории. */}
