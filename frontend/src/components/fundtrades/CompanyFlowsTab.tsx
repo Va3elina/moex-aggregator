@@ -30,7 +30,7 @@ import Skeleton from '../Skeleton';
 import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
-import PortfolioFundPicker from './PortfolioFundPicker';
+import PortfolioFundPicker, { defaultPortfolioTickers } from './PortfolioFundPicker';
 import SegmentedControl from '../SegmentedControl';
 import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
@@ -45,10 +45,6 @@ type Period = '1y' | '3y' | 'all';
 const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 года', 'all': 'Всё' };
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
-
-// ITEM 2 — сколько фондов выбрать по умолчанию для свежей бумаги:
-// top-N по суммарному |потоку| (см. computeTopFunds). Пусто-выбор = все фонды.
-const DEFAULT_FUND_COUNT = 3;
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
 // Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
@@ -81,21 +77,16 @@ function pluralFunds(n: number): string {
     return 'фондов';
 }
 
-// ITEM 2 — дефолт-выбор фондов для свежей бумаги: тикеры N фондов с наибольшим
-// суммарным |потоком| (Σ|values|) по этой бумаге. Возвращает Set тикеров.
-// Если фондов ≤ N — берём все (для пикера пустой Set = «все», поэтому при
-// ≤ N выгоднее вернуть пусто и не плодить «частичный» выбор → даём пусто).
-function computeTopFunds(
-    funds: { ticker: string; values: (number | null)[] }[],
-    n: number,
-): Set<string> {
-    if (funds.length <= n) return new Set();
-    const scored = funds.map(f => ({
-        ticker: f.ticker,
-        score: f.values.reduce<number>((acc, v) => acc + (v == null ? 0 : Math.abs(v)), 0),
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    return new Set(scored.slice(0, n).map(s => s.ticker));
+// Дефолт-выбор фондов для свежей бумаги — тот же, что в «Общем портфеле»: все
+// держатели бумаги, кроме индексных фондов. Индексные почти идентичны друг другу,
+// их движения это ребалансировка вслед за индексом, а не решения управляющих.
+// Тумблер «Без индексных фондов» в пикере возвращает их обратно.
+// Если индексных держателей нет вовсе — отдаём пусто (= «все»), чтобы не
+// изображать частичный выбор там, где выбраны все.
+function defaultFunds(funds: FundWithHistory[]): Set<string> {
+    const tickers = defaultPortfolioTickers(funds);
+    if (tickers.length === funds.length) return new Set();
+    return new Set(tickers);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,15 +127,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
 
     // ITEM 2 — выбранные КОНКРЕТНЫЕ фонды (ключ = ticker). Пусто = все фонды.
     // Персистится и переживает смену бумаги/перезагрузку. До первого ручного
-    // выбора действует авто-дефолт (top-3 по |потоку|, пере-выбор на каждую
-    // бумагу — см. эффект ниже); как только пользователь сам трогает пикер, его
-    // выбор замораживается за ним (включая явное «Все фонды» = пустой Set).
+    // выбора действует авто-дефолт (все держатели, кроме индексных — пере-выбор
+    // на каждую бумагу, см. эффект ниже); как только пользователь сам трогает
+    // пикер, его выбор замораживается за ним (включая «Все фонды» = пустой Set).
     const [selectedFunds, setSelectedFunds] = usePersistedSet<string>('frame:companyflows:funds');
     const [fundsTouched, setFundsTouched] = usePersistedState<boolean>('frame:companyflows:funds-touched', false);
-    // «Трогал ли пикер» читаем из эффекта загрузки через ref, не делая его
-    // зависимостью эффекта — иначе первый ручной выбор ре-дёрнул бы загрузку.
-    const fundsTouchedRef = useRef(fundsTouched);
-    useEffect(() => { fundsTouchedRef.current = fundsTouched; }, [fundsTouched]);
     // Ручной выбор в пикере: помечаем «тронуто» и сохраняем набор (персист-сеттер
     // сам пишет в localStorage). Авто-дефолт в эффекте зовёт setSelectedFunds
     // напрямую и «тронуто» НЕ ставит.
@@ -237,12 +224,6 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             .then(resp => {
                 if (cancelled) return;
                 setFlows(resp);
-                // ITEM 2 — авто-дефолт top-3 по |потоку| ТОЛЬКО пока пользователь
-                // сам не выбирал фонды. Тронул пикер → его выбор переживает смену
-                // бумаги, дефолт больше не навязываем. (≤3 фондов → пусто = все.)
-                if (!fundsTouchedRef.current) {
-                    setSelectedFunds(computeTopFunds(resp.funds, DEFAULT_FUND_COUNT));
-                }
                 setFlowsError(null);
             })
             .catch(err => {
@@ -281,6 +262,15 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             top_holdings: [],
         } satisfies FundWithHistory));
     }, [flows, fundsMeta]);
+
+    // Авто-дефолт набора фондов — пока пользователь сам не выбирал. Пере-выбор на
+    // каждую бумагу (у каждой свои держатели) и повторно, когда доедут карточки
+    // фондов: без них не видно, кто индексный. Тронул пикер → его выбор переживает
+    // смену бумаги, дефолт больше не навязываем.
+    useEffect(() => {
+        if (fundsTouched || pickerFunds.length === 0) return;
+        setSelectedFunds(defaultFunds(pickerFunds));
+    }, [pickerFunds, fundsTouched, setSelectedFunds]);
 
     // Персист-набор общий на все бумаги, поэтому в нём остаются тикеры фондов,
     // которые ЭТУ бумагу не держат. Работаем с пересечением: пикер не пишет
@@ -452,16 +442,15 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 </button>
 
                 {/* Фонды — тот же пикер, что в «Общем портфеле»: таблица со СЧА и
-                    доходностью, группы-подкатегории, «Выбрать все», применение по
-                    закрытию. Набор сужен до держателей бумаги, поэтому таблетки
-                    «Без индексных фондов» тут нет. */}
+                    доходностью, группы-подкатегории, «Выбрать все», таблетка «Без
+                    индексных фондов», применение по закрытию. Набор сужен до
+                    держателей бумаги — отсюда свои заголовок и подпись таблетки. */}
                 <PortfolioFundPicker
                     funds={pickerFunds}
                     selected={effectiveFunds}
                     onChange={handleFundsChange}
                     title="Фонды с этой бумагой"
                     allLabel="Все фонды"
-                    indexToggle={false}
                 />
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё). */}
