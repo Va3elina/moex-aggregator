@@ -451,7 +451,9 @@ function PickerModal({
                             >
                                 Без индексных фондов
                             </button>
-                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} />
+                            {/* float — окно модалки с overflow:hidden обрезало бы
+                                поповер по своему краю (особенно на узком экране). */}
+                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
                         </span>
                     )}
                     <button
@@ -555,7 +557,7 @@ function PickerModal({
                                                         фондах»; клик по «?» не сворачивает группу. */}
                                                     {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
                                                         <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
-                                                            <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} />
+                                                            <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} float />
                                                         </span>
                                                     )}
                                                     {gAny && !gAll && (

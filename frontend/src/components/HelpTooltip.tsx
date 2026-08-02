@@ -39,9 +39,13 @@ interface HelpTooltipProps {
   /** Иконка триггера: 'help' (default, «?» — методология индикаторов) или
    *  'info' («i» в кружке — пояснения метрик, admin-stats). */
   icon?: 'help' | 'info';
+  /** Поповер поверх всего, а не внутри потока: position:fixed по координатам
+   *  иконки + прижим к вьюпорту. Нужен там, где «?» живёт внутри контейнера с
+   *  overflow:hidden (модалки) — иначе подсказка обрезается его краем. */
+  float?: boolean;
 }
 
-export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo, align = 'left', icon = 'help' }: HelpTooltipProps) {
+export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo, align = 'left', icon = 'help', float = false }: HelpTooltipProps) {
   const IconCmp = icon === 'info' ? Info : HelpCircle;
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -78,6 +82,30 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
     };
   }, [open]);
 
+  // float-режим: координаты считаем от иконки и держим поповер в fixed-слое.
+  // Пересчитываем на скролле (capture — ловим и скролл внутренних контейнеров)
+  // и на ресайзе, иначе подсказка «отклеится» от «?» при прокрутке списка.
+  const [floatPos, setFloatPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!float || !open) { setFloatPos(null); return; }
+    const place = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const w = Math.min(360, window.innerWidth - 32);
+      const raw = align === 'right' ? r.right - w : r.left;
+      const left = Math.max(16, Math.min(raw, window.innerWidth - 16 - w));
+      setFloatPos({ top: r.bottom + 6, left });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [float, open, align]);
+
   const shortText = entry?.short ?? title ?? '';
   const fullText = entry?.full ?? content ?? '';
 
@@ -102,9 +130,11 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
       onMouseEnter={hoverOpen}
       onMouseLeave={hoverClose}
       style={{
-        position: 'absolute',
-        top: 'calc(100% + 6px)',
-        ...(align === 'right' ? { right: 0 } : { left: 0 }),
+        // fixed не режется overflow:hidden предков (у модалок он есть), пока
+        // никто из них не создаёт containing block через transform/filter.
+        ...(float
+            ? { position: 'fixed', top: floatPos?.top ?? -9999, left: floatPos?.left ?? -9999 }
+            : { position: 'absolute', top: 'calc(100% + 6px)', ...(align === 'right' ? { right: 0 } : { left: 0 }) }),
         zIndex: 60,
         width: 'min(360px, calc(100vw - 32px))',
         padding: 'var(--sp-4) var(--sp-5)',
