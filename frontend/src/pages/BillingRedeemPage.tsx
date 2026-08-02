@@ -3,16 +3,24 @@
  *
  * Flow:
  * 1. Пользователь кликает invite-ссылку → попадает сюда
- * 2. Если НЕ залогинен → сохраняем token в sessionStorage, редиректим на /login
- *    После успешного входа (в LoginPage добавить redirect back) → возвращаемся сюда
+ * 2. Если НЕ залогинен → запоминаем token и ведём на регистрацию
  * 3. Если залогинен → POST /api/billing/redeem {token} → активация
  * 4. Показываем результат (успех или ошибка)
+ *
+ * Возврат после регистрации держится НЕ на `?next=` (он терялся на пути
+ * регистрация → /verify-email → главная, и человек оставался без подписки).
+ * Токен применяет PendingRedeemApplier по факту авторизации, на любой странице.
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { CheckCircle2, XCircle, Gift, LogIn } from 'lucide-react';
+import { CheckCircle2, XCircle, Gift, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
+import {
+  clearPendingRedeemToken,
+  getPendingRedeemToken,
+  setPendingRedeemToken,
+} from '../utils/pendingRedeem';
 
 type State =
   | { kind: 'loading' }
@@ -20,7 +28,7 @@ type State =
   | { kind: 'success'; tier: string; expires_at: string | null }
   | { kind: 'error'; message: string };
 
-const REDEEM_TOKEN_KEY = 'pending_redeem_token';
+const SIGNUP_URL = '/login?mode=register&next=/billing/redeem';
 
 export default function BillingRedeemPage() {
   const [params] = useSearchParams();
@@ -28,11 +36,8 @@ export default function BillingRedeemPage() {
   const { isAuthenticated } = useAuth();
 
   const tokenFromUrl = params.get('token') || '';
-  // Если после login пришли без token — читаем из sessionStorage
-  const [token] = useState<string>(() => {
-    if (tokenFromUrl) return tokenFromUrl;
-    return sessionStorage.getItem(REDEEM_TOKEN_KEY) || '';
-  });
+  // Пришли без token (вернулись после регистрации) — берём отложенный
+  const [token] = useState<string>(() => tokenFromUrl || getPendingRedeemToken() || '');
   const [state, setState] = useState<State>({ kind: 'loading' });
 
   useEffect(() => {
@@ -42,8 +47,8 @@ export default function BillingRedeemPage() {
     }
 
     if (!isAuthenticated) {
-      // Сохраняем токен чтобы продолжить после login
-      sessionStorage.setItem(REDEEM_TOKEN_KEY, token);
+      // Запоминаем токен, чтобы применить сразу после регистрации или входа
+      setPendingRedeemToken(token);
       setState({ kind: 'need-login' });
       return;
     }
@@ -59,11 +64,14 @@ export default function BillingRedeemPage() {
         if (cancelled) return;
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
+          // Токен мёртв (истёк / отозван / исчерпан) — выкидываем, чтобы он не
+          // висел в хранилище и не дёргал redeem на каждой навигации.
+          if (r.status < 500) clearPendingRedeemToken();
           setState({ kind: 'error', message: err.detail || 'Ошибка активации' });
           return;
         }
         const data = await r.json();
-        sessionStorage.removeItem(REDEEM_TOKEN_KEY); // очищаем
+        clearPendingRedeemToken();
         setState({
           kind: 'success',
           tier: data.tier,
@@ -78,10 +86,10 @@ export default function BillingRedeemPage() {
     return () => { cancelled = true; };
   }, [token, isAuthenticated]);
 
-  // Если нужен login — автоматически редирект через 2 сек (чтобы пользователь прочёл что происходит)
+  // Гостю даём 2 секунды прочитать, что происходит, и уводим на регистрацию
   useEffect(() => {
     if (state.kind !== 'need-login') return;
-    const t = setTimeout(() => navigate(`/login?next=/billing/redeem`), 2000);
+    const t = setTimeout(() => navigate(SIGNUP_URL), 2000);
     return () => clearTimeout(t);
   }, [state, navigate]);
 
@@ -97,18 +105,18 @@ export default function BillingRedeemPage() {
 
       {state.kind === 'need-login' && (
         <>
-          <LogIn className="w-16 h-16 mx-auto mb-4 text-blue-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Вход в аккаунт</h1>
+          <UserPlus className="w-16 h-16 mx-auto mb-4 text-blue-400" />
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">Нужен аккаунт</h1>
           <p className="text-theme-secondary mb-4">
-            Чтобы применить ссылку, войди в свой аккаунт.<br />
-            После входа подписка активируется автоматически.
+            Создай аккаунт или войди в существующий.<br />
+            Подписка активируется сразу после этого, возвращаться по ссылке не нужно.
           </p>
           <Link
-            to="/login?next=/billing/redeem"
+            to={SIGNUP_URL}
             className="inline-block px-6 py-3 rounded-xl font-medium"
             style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
           >
-            Войти
+            Создать аккаунт
           </Link>
           <div className="text-xs text-theme-muted mt-4">Перенаправляем через 2 секунды...</div>
         </>
