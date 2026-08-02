@@ -19,16 +19,18 @@ import { ChevronDown, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
+    listFundsWithHistory,
     getCompanyFlows,
     type FundTradeAsset,
     type CompanyFlowsResponse,
+    type FundWithHistory,
 } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import Skeleton from '../Skeleton';
 import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
-import FundPicker, { type FundPickerFund } from './FundPicker';
+import PortfolioFundPicker from './PortfolioFundPicker';
 import SegmentedControl from '../SegmentedControl';
 import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
@@ -81,7 +83,7 @@ function pluralFunds(n: number): string {
 
 // ITEM 2 — дефолт-выбор фондов для свежей бумаги: тикеры N фондов с наибольшим
 // суммарным |потоком| (Σ|values|) по этой бумаге. Возвращает Set тикеров.
-// Если фондов ≤ N — берём все (для FundPicker пустой Set = «все», поэтому при
+// Если фондов ≤ N — берём все (для пикера пустой Set = «все», поэтому при
 // ≤ N выгоднее вернуть пусто и не плодить «частичный» выбор → даём пусто).
 function computeTopFunds(
     funds: { ticker: string; values: (number | null)[] }[],
@@ -118,6 +120,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);
+    // Карточки фондов (СЧА, доходность, подкатегория) — их показывает пикер
+    // фондов, тот же, что в «Общем портфеле». Универсум совпадает: и /funds, и
+    // /company-flows отдают только whitelist-фонды акций. Ошибку глотаем: без
+    // метаданных пикер всё равно соберётся из flows.funds (см. pickerFunds).
+    const [fundsMeta, setFundsMeta] = useState<FundWithHistory[]>([]);
 
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [flows, setFlows] = useState<CompanyFlowsResponse | null>(null);
@@ -172,6 +179,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             .finally(() => {
                 if (!cancelled) setAssetsLoading(false);
             });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Список фондов с метаданными — один раз, независимо от выбранной бумаги.
+    useEffect(() => {
+        let cancelled = false;
+        listFundsWithHistory()
+            .then(r => { if (!cancelled) setFundsMeta(r.funds); })
+            .catch(() => { /* пикер переживёт без СЧА/доходности */ });
         return () => {
             cancelled = true;
         };
@@ -240,16 +258,39 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         };
     }, [selectedAsset, metric]);
 
-    // ITEM 2 — список фондов для FundPicker (сгруппируется по УК внутри пикера).
-    // uk-имя не передаём — FundPicker берёт его из UK_LOGOS[uk_id] (канон).
-    const fundPickerFunds: FundPickerFund[] = useMemo(() => {
+    // Фонды для пикера — только держатели этой бумаги (flows.funds), но карточкой
+    // из /funds: СЧА, доходность, подкатегория, дата последнего состава. Пока
+    // метаданные не пришли (или не пришли вовсе) — минимальная карточка из flows,
+    // чтобы фильтр работал с первой же секунды.
+    const pickerFunds: FundWithHistory[] = useMemo(() => {
         if (!flows) return [];
-        return flows.funds.map(f => ({
+        const meta = new Map(fundsMeta.map(f => [f.ticker, f]));
+        return flows.funds.map((f, idx) => meta.get(f.ticker) ?? ({
+            fund_id: -1 - idx,
             ticker: f.ticker,
             name: f.fund_name,
+            uk: null,
+            category: 'stocks',
+            subcategory: null,
+            last_snapshot_date: null,
+            snapshot_count: 0,
+            holdings_count: 0,
             uk_id: f.uk_id,
-        }));
-    }, [flows]);
+            nav_rub: null,
+            returns: { m1: null, m3: null, m6: null, y1: null },
+            top_holdings: [],
+        } satisfies FundWithHistory));
+    }, [flows, fundsMeta]);
+
+    // Персист-набор общий на все бумаги, поэтому в нём остаются тикеры фондов,
+    // которые ЭТУ бумагу не держат. Работаем с пересечением: пикер не пишет
+    // «5 из 3 фондов», а бумага, по которой не выбран ни один сохранённый фонд,
+    // показывает всех держателей, а не пустой график.
+    const effectiveFunds = useMemo(() => {
+        if (selectedFunds.size === 0 || !flows) return new Set<string>();
+        const holders = new Set(flows.funds.map(f => f.ticker));
+        return new Set([...selectedFunds].filter(t => holders.has(t)));
+    }, [selectedFunds, flows]);
 
     // ITEM 2 — фонды, попадающие в чарт: фильтр по выбранным тикерам (пусто = все).
     // Цвет фонда привязан к индексу в ПОЛНОМ списке (стабилен при фильтрации).
@@ -268,9 +309,9 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     } as CompanyFlowsSeries,
                 };
             })
-            .filter(x => selectedFunds.size === 0 || selectedFunds.has(x.ticker))
+            .filter(x => effectiveFunds.size === 0 || effectiveFunds.has(x.ticker))
             .map(x => x.series);
-    }, [flows, selectedFunds]);
+    }, [flows, effectiveFunds]);
 
     // Все фонды сняты пользователем (но у бумаги фонды есть) — empty-state.
     const noFundsSelected = !!flows && flows.funds.length > 0 && fundSeries.length === 0;
@@ -295,7 +336,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
 
     // Триггер entrance-волны баров: перезапуск при смене бумаги, набора фондов
     // ИЛИ периода — новое окно должно проиграть каскад заново.
-    const animTrigger = `${selectedAsset?.key ?? ''}|${[...selectedFunds].sort().join(',')}|${period}`;
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}`;
 
     // ── Рендер ──
     if (assetsLoading) {
@@ -410,11 +451,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
                 </button>
 
-                <FundPicker
-                    funds={fundPickerFunds}
-                    mode="multi"
-                    selected={selectedFunds}
+                {/* Фонды — тот же пикер, что в «Общем портфеле»: таблица со СЧА и
+                    доходностью, группы-подкатегории, «Выбрать все», применение по
+                    закрытию. Набор сужен до держателей бумаги, поэтому таблетки
+                    «Без индексных фондов» тут нет. */}
+                <PortfolioFundPicker
+                    funds={pickerFunds}
+                    selected={effectiveFunds}
                     onChange={handleFundsChange}
+                    title="Фонды с этой бумагой"
+                    allLabel="Все фонды"
+                    indexToggle={false}
                 />
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё). */}
@@ -438,8 +485,8 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                                 ticker: selectedTicker,
                                 details: [
                                     PERIOD_LABELS[period],
-                                    selectedFunds.size > 0
-                                        ? `${selectedFunds.size} ${pluralFunds(selectedFunds.size)}`
+                                    effectiveFunds.size > 0
+                                        ? `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`
                                         : 'Все фонды',
                                 ],
                             }}

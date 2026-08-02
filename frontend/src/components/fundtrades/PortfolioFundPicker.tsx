@@ -194,6 +194,8 @@ function PickerModal({
     selected,
     targetMonth,
     excludedTickers,
+    title,
+    indexToggle,
     onApply,
     onClose,
 }: {
@@ -201,6 +203,8 @@ function PickerModal({
     selected: Set<string>;
     targetMonth?: string | null;
     excludedTickers?: Set<string>;
+    title: string;
+    indexToggle: boolean;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
 }) {
@@ -304,7 +308,9 @@ function PickerModal({
     // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
     // включён ⇔ ни один индексный фонд не отмечен. Поэтому ручная галка на
     // индексном фонде сама его выключает, без рассинхрона.
-    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
+    // indexToggle=false (напр. «По бумаге») — пустой список тикеров разом гасит
+    // и таблетку, и размытие группы, и урезание пула.
+    const idxTickers = useMemo(() => (indexToggle ? indexFundTickers(funds) : []), [funds, indexToggle]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !draft.has(t));
     const toggleIndexOff = () => {
         setDraft((prev) => {
@@ -411,7 +417,7 @@ function PickerModal({
                     style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: SOFT_BORDER }}
                 >
                     <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
-                        Фонды акций
+                        {title}
                     </span>
                     {/* Знаменатель — доступные к выбору фонды: с прожатой таблеткой
                         индексные из пула выпадают (19 → 16). Сколько именно выключено,
@@ -745,10 +751,18 @@ export interface PortfolioFundPickerProps {
     targetMonth?: string | null;
     /** Тикеры, не опубликовавшие состав за месяц среза (excluded_funds из /portfolio). */
     excludedTickers?: Set<string>;
+    /** Заголовок модалки. По умолчанию — весь набор фондов акций. */
+    title?: string;
+    /** Подпись таблетки, когда выбран весь пул. */
+    allLabel?: string;
+    /** Таблетка «Без индексных фондов». Выключается там, где набор фондов уже
+     *  сужен по смыслу (напр. «По бумаге» — только держатели этой бумаги). */
+    indexToggle?: boolean;
 }
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
+    title = 'Фонды акций', allLabel = 'Все фонды акций', indexToggle = true,
 }: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
     // Подпись таблетки читает тумблер «Без индексных фондов» тем же способом, что и
@@ -756,12 +770,12 @@ export default function PortfolioFundPicker({
     // фонды. Взят весь пул целиком (в том числе дефолт «всё, кроме индексных») — это
     // «Все фонды акций», ручной отбор внутри пула — «15 из 16 фондов». Знаменатель
     // по всему набору (19) писал бы «16 из 19», будто три фонда сняты вручную.
-    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
+    const idxTickers = useMemo(() => (indexToggle ? indexFundTickers(funds) : []), [funds, indexToggle]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
     const pool = funds.length - (indexOff ? idxTickers.length : 0);
     const allActive = selected.size === 0 || selected.size === pool;
     const active = !allActive;
-    const label = allActive ? 'Все фонды акций' : `${selected.size} из ${pool} фондов`;
+    const label = allActive ? allLabel : `${selected.size} из ${pool} фондов`;
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
@@ -796,6 +810,8 @@ export default function PortfolioFundPicker({
                     selected={selected}
                     targetMonth={targetMonth}
                     excludedTickers={excludedTickers}
+                    title={title}
+                    indexToggle={indexToggle}
                     onApply={onChange}
                     onClose={() => setOpen(false)}
                 />
