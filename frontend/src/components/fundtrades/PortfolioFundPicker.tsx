@@ -195,7 +195,6 @@ function PickerModal({
     targetMonth,
     excludedTickers,
     title,
-    indexToggle,
     onApply,
     onClose,
 }: {
@@ -204,7 +203,6 @@ function PickerModal({
     targetMonth?: string | null;
     excludedTickers?: Set<string>;
     title: string;
-    indexToggle: boolean;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
 }) {
@@ -308,9 +306,7 @@ function PickerModal({
     // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
     // включён ⇔ ни один индексный фонд не отмечен. Поэтому ручная галка на
     // индексном фонде сама его выключает, без рассинхрона.
-    // indexToggle=false (напр. «По бумаге») — пустой список тикеров разом гасит
-    // и таблетку, и размытие группы, и урезание пула.
-    const idxTickers = useMemo(() => (indexToggle ? indexFundTickers(funds) : []), [funds, indexToggle]);
+    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !draft.has(t));
     const toggleIndexOff = () => {
         setDraft((prev) => {
@@ -755,14 +751,11 @@ export interface PortfolioFundPickerProps {
     title?: string;
     /** Подпись таблетки, когда выбран весь пул. */
     allLabel?: string;
-    /** Таблетка «Без индексных фондов». Выключается там, где набор фондов уже
-     *  сужен по смыслу (напр. «По бумаге» — только держатели этой бумаги). */
-    indexToggle?: boolean;
 }
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
-    title = 'Фонды акций', allLabel = 'Все фонды акций', indexToggle = true,
+    title = 'Фонды акций', allLabel = 'Все фонды акций',
 }: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
     // Подпись таблетки читает тумблер «Без индексных фондов» тем же способом, что и
@@ -770,7 +763,7 @@ export default function PortfolioFundPicker({
     // фонды. Взят весь пул целиком (в том числе дефолт «всё, кроме индексных») — это
     // «Все фонды акций», ручной отбор внутри пула — «15 из 16 фондов». Знаменатель
     // по всему набору (19) писал бы «16 из 19», будто три фонда сняты вручную.
-    const idxTickers = useMemo(() => (indexToggle ? indexFundTickers(funds) : []), [funds, indexToggle]);
+    const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
     const pool = funds.length - (indexOff ? idxTickers.length : 0);
     const allActive = selected.size === 0 || selected.size === pool;
@@ -811,7 +804,6 @@ export default function PortfolioFundPicker({
                     targetMonth={targetMonth}
                     excludedTickers={excludedTickers}
                     title={title}
-                    indexToggle={indexToggle}
                     onApply={onChange}
                     onClose={() => setOpen(false)}
                 />
