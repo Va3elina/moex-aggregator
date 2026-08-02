@@ -57,6 +57,9 @@ interface CompanyFlowsHistogramProps {
     noFundsSelected?: boolean;
     /** Перезапуск волны: меняй при смене бумаги / набора фондов. */
     animTrigger?: string;
+    /** Подписи чистого потока в тултипе. Дефолт — «Чистая покупка/продажа»
+     *  (потоки по компании); карточка фонда передаёт «Приток/Отток». */
+    tooltipLabels?: { pos: string; neg: string };
 }
 
 // Число потока в млн без знака/единиц: целое с разделителем тысяч при ≥10 млн,
@@ -92,6 +95,7 @@ export default function CompanyFlowsHistogram({
     loading = false,
     noFundsSelected = false,
     animTrigger,
+    tooltipLabels,
 }: CompanyFlowsHistogramProps) {
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -393,12 +397,15 @@ export default function CompanyFlowsHistogram({
                                     <TooltipRow
                                         hideDot
                                         color={netColor}
-                                        label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'}
+                                        label={net >= 0 ? (tooltipLabels?.pos ?? 'Чистая покупка') : (tooltipLabels?.neg ?? 'Чистая продажа')}
                                         value={fmtFlow(net)}
                                         labelClass="font-bold"
                                         labelColor="var(--text-primary)"
                                     />
-                                    {shown.length > 0 && (
+                                    {/* Разбивка по сериям — только когда серий > 1: для
+                                        единственной серии (карточка фонда) она дублировала бы
+                                        итоговое число строкой ниже. */}
+                                    {series.length > 1 && shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
                                             {/* Имя фонда — тем же начертанием и цветом, что и
                                                 число справа (font-semibold + серый оси Y):

@@ -1,32 +1,38 @@
 /**
- * FundDetailModal — детальная карточка фонда (объём СЧА + график доходности
- * пая + опционально donut состава с drill-down в актив).
+ * FundDetailModal — детальная карточка фонда, собранная композицией уже
+ * существующих на сайте блоков:
+ *   - СЧА крупно + график «Доходность пая, %» (SimpleChart) + плашки returns;
+ *   - «Приток и отток денег» — гистограмма CompanyFlowsHistogram (та же, что
+ *     в «Потоках по компании») поверх /funds/flows с fund_ids по одному фонду;
+ *   - «Состав фонда» — Donut + список бумаг в стиле «Обзора портфеля»
+ *     (логотип · имя · полоса · доля · объём, топ-10 + разворот);
+ *   - «Что купили и продали» — diff месячных снапшотов (new/accumulated/
+ *     reduced/sold_out) из того же ответа detail.
  *
- * Вынесен из FundTradesPage, чтобы переиспользовать в «Деньги в фондах».
- * Контракт обобщён: вместо внутреннего `getFundTradesDetail(ticker, period)`
- * карточка принимает `loadDetail()` от родителя (замыкает ticker/period/id),
- * а СЧА/returns/has_distributions берутся из ответа detail, иначе из пропов.
+ * Контракт обобщён: карточка принимает `loadDetail()` от родителя (замыкает
+ * ticker/period/id), а СЧА/returns/has_distributions берутся из ответа detail,
+ * иначе из пропов.
  *
  * `enableDrilldown`:
- *   - true  → секция «Состав фонда» (donut + таблица топ-активов) + клик в
- *             актив открывает AssetHistoryModal («как фонд покупал бумагу»).
- *   - false → БАЗОВАЯ карточка: шапка + СЧА + «Доходность пая» (график +
- *             плашки), без состава и без drill-down.
- *
- * Всё поведение «Покупок фондов» сохранено вербатим: анимаций нет, но есть
- * мемоизация payChartData + дефолт-окно графика «последний год», своп
- * имя-главное/тикер-вторичный в шапке, hover-связь донат↔таблица состава.
+ *   - true  → состав + покупки/продажи + клик в актив открывает
+ *             AssetHistoryModal («как фонд покупал бумагу»).
+ *   - false → БАЗОВАЯ карточка: шапка + СЧА + доходность + притоки-оттоки.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Calendar } from 'lucide-react';
 import {
     getAssetHistory,
+    getFundsFlows,
     type FundTradesDetail,
     type FundReturns,
     type AssetHistory,
+    type FundsFlowsResponse,
+    type FundCategory,
+    type FundPeriod,
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import ChartCaptureButton from '../export/ChartCaptureButton';
+import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
 import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
@@ -76,6 +82,76 @@ function formatMonthYearShort(iso: string): string {
     const d = new Date(iso);
     const mm = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
     return `${mm[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Список бумаг в стиле «Обзора портфеля» (CombinedPortfolioView):
+// fade-обрезка имени, компактный объём, логотип с фолбэком-кругом.
+// ════════════════════════════════════════════════════════════════════
+
+// Длинное имя обрезаем плавным затуханием справа (fade-out), не многоточием.
+const FADE_MASK = 'linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%)';
+const nameFade: CSSProperties = {
+    overflow: 'hidden', whiteSpace: 'nowrap',
+    maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK,
+};
+
+// Компактный объём: «12.7 млрд», «540 млн», «12 тыс» (без ₽ — единица в шапке).
+function fmtVolShort(v: number): string {
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1)} млрд`;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(0)} млн`;
+    return `${Math.round(v / 1e3)} тыс`;
+}
+
+// Δ доли в процентных пунктах: «+0.42 п.п.» / «−1.10 п.п.».
+function fmtDeltaPp(v: number | null): string {
+    if (v == null) return '—';
+    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+    return `${sign}${Math.abs(v).toFixed(2)} п.п.`;
+}
+
+// Логотип бумаги: InstrumentIcon по резолвнутому тикеру; ОФЗ — иконка RB;
+// иначе цветной круг (тот же фолбэк, что в таблице состава раньше).
+function HoldingLogo({ name, isin, idx, size }: { name: string; isin: string | null; idx: number; size: number }) {
+    const tk = resolveFundTicker(name, isin);
+    if (tk) return <InstrumentIcon sectype={tk} size={size} rounded="full" />;
+    if (isOfzBond(name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
+    return (
+        <span style={{
+            width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
+            backgroundColor: fundAssetColor(name, isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length],
+        }} />
+    );
+}
+
+// Бейджи изменений состава: «новая/продана» — залитые (событие), «докупили/
+// сократили» — контурные (продолжение позиции). Цвет = знак движения.
+const CHANGE_META: Record<string, { label: string; color: string; filled?: boolean }> = {
+    new:         { label: 'Новая',     color: 'var(--funds-flow-positive)', filled: true },
+    accumulated: { label: 'Докупили',  color: 'var(--funds-flow-positive)' },
+    reduced:     { label: 'Сократили', color: 'var(--funds-flow-negative)' },
+    sold_out:    { label: 'Продана',   color: 'var(--funds-flow-negative)', filled: true },
+};
+
+function ChangeBadge({ type }: { type: string }) {
+    const meta = CHANGE_META[type];
+    if (!meta) return null;
+    return (
+        <span style={{
+            display: 'inline-block',
+            padding: '2px 8px',
+            borderRadius: 999,
+            fontSize: 'var(--fs-2xs)',
+            fontWeight: 800,
+            letterSpacing: '0.02em',
+            whiteSpace: 'nowrap',
+            border: `1.5px solid ${meta.color}`,
+            background: meta.filled ? meta.color : 'transparent',
+            color: meta.filled ? '#fff' : meta.color,
+        }}>
+            {meta.label}
+        </span>
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -173,30 +249,63 @@ export default function FundDetailModal({
     // AssetHistoryModal, что в «Обзоре снапшота»). Открывается кликом по
     // сектору пончика ИЛИ по строке списка состава. Только при enableDrilldown.
     const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
-    // Hover-связь пончик↔таблица состава (индекс позиции в holds).
+    // Hover-связь пончик↔список состава (индекс позиции в holds).
     const [modalHover, setModalHover] = useState<number | null>(null);
+    // Развороты списков: состав (топ-10 → все) и изменения (топ-10 → все).
+    const [showAllHoldings, setShowAllHoldings] = useState(false);
+    const [showAllDiff, setShowAllDiff] = useState(false);
 
-    // Pay-график: точки (СЧА на пай) + дефолтное окно «последний год».
-    // Мемоизируем по data, чтобы hover доната (setModalHover) НЕ пересоздавал
-    // массив → SimpleChart не сбрасывал бы зум навигатора на каждый ре-рендер.
-    const payChartData = useMemo(
-        () => (data?.performance?.timeline ?? [])
-            .filter((p) => p.pay != null)
-            .map((p) => ({ time: p.date, value: p.pay })),
-        [data],
+    // График «Доходность пая, %»: цена пая нормируется к первой точке истории
+    // ((pay/pay₀ − 1)·100). Раньше рисовали сырую «СЧА на пай, ₽» — рублёвая
+    // цена пая ни о чём не говорит (номинал у всех фондов разный); в процентах
+    // кривая читается как доходность с запуска фонда, конец совпадает с плашкой
+    // «Всё время». Мемоизируем по data, чтобы hover доната НЕ пересоздавал
+    // массив → SimpleChart не сбрасывал зум навигатора на каждый ре-рендер.
+    const payChartData = useMemo(() => {
+        const pts = (data?.performance?.timeline ?? []).filter((p) => p.pay != null && p.pay > 0);
+        const base = pts[0]?.pay;
+        if (!base) return [];
+        return pts.map((p) => ({ time: p.date, value: ((p.pay as number) / base - 1) * 100 }));
+    }, [data]);
+
+    // Притоки-оттоки этого фонда: /funds/flows умеет fund_ids → помесячный срез
+    // по одному фонду. Net flow там очищен от рыночного роста пая, т.е. бары —
+    // именно «занесли/забрали деньги», а не переоценка. Период — каскад
+    // 'all' → '3y' → '1y': длинные окна могут быть закрыты тарифом (403), тогда
+    // пробуем короче; совсем не вышло → блок не показывается.
+    const [flows, setFlows] = useState<FundsFlowsResponse | null>(null);
+    const [flowsLoading, setFlowsLoading] = useState(false);
+    const fundId = data?.fund?.fund_id;
+    const fundCategory = data?.fund?.category;
+    useEffect(() => {
+        if (!fundId || !fundCategory) return;
+        let cancelled = false;
+        setFlows(null);
+        setFlowsLoading(true);
+        (async () => {
+            for (const p of ['all', '3y', '1y'] as FundPeriod[]) {
+                try {
+                    const r = await getFundsFlows(fundCategory as FundCategory, '1m', p, [fundId]);
+                    if (!cancelled) setFlows(r);
+                    return;
+                } catch { /* период недоступен — пробуем короче */ }
+            }
+        })().finally(() => { if (!cancelled) setFlowsLoading(false); });
+        return () => { cancelled = true; };
+    }, [fundId, fundCategory]);
+
+    const flowMonths = useMemo(
+        () => flows?.flows.map((f) => f.period_end.slice(0, 7)) ?? [],
+        [flows],
     );
-    // Дефолтное окно навигатора: первый индекс за последние 12 месяцев. Лечит
-    // диссонанс «линия СЧА вверх за всю историю / доходность за 3 мес вниз» —
-    // по умолчанию виден последний год, остальное доступно перетаскиванием.
-    const payInitialStartIndex = useMemo(() => {
-        if (payChartData.length < 2) return 0;
-        const lastT = payChartData[payChartData.length - 1].time;
-        const cutoff = new Date(lastT);
-        cutoff.setFullYear(cutoff.getFullYear() - 1);
-        const cutoffMs = cutoff.getTime();
-        const idx = payChartData.findIndex((d) => new Date(d.time).getTime() >= cutoffMs);
-        return idx > 0 ? idx : 0;
-    }, [payChartData]);
+    // Значения приходят в млрд ₽ → в ₽ (CompanyFlowsHistogram сам делит на 1e6
+    // и подписывает «млн ₽» — масштаб потоков одного фонда как раз миллионный).
+    const flowSeries = useMemo(
+        () => flows
+            ? [{ label: 'Чистый поток', color: 'var(--accent)', values: flows.flows.map((f) => f.flow * 1e9) }]
+            : [],
+        [flows],
+    );
 
     // loadDetail обычно — inline-замыкание от родителя (новая ссылка на каждый
     // ре-рендер). Держим его в ref и перезапускаем загрузку ТОЛЬКО при смене
@@ -359,7 +468,7 @@ export default function FundDetailModal({
                                 )}
                             </div>
 
-                            {/* (3) График доходности (СЧА на пай) + плашки returns */}
+                            {/* (3) График доходности пая (%) + плашки returns */}
                             {(() => {
                                 const perf = data.performance;
                                 const ret = perf?.returns ?? returns ?? null;
@@ -382,12 +491,14 @@ export default function FundDetailModal({
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
-                                                initialStartIndex={payInitialStartIndex}
                                                 height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
-                                                primaryLabel="СЧА на пай, ₽"
+                                                primaryLabel="Доходность пая, %"
                                                 legendPosition="top"
-                                                formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
-                                                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
+                                                formatValue={(v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`}
+                                                formatPrimaryAxis={(v) => {
+                                                    const a = Math.abs(v);
+                                                    return `${v > 0 ? '+' : v < 0 ? '−' : ''}${a.toFixed(a >= 100 ? 0 : 1)}`;
+                                                }}
                                                 formatTime={formatMonthYearShort}
                                                 tooltipDateFormat={formatMonthYearShort}
                                                 clampEdgeLabels
@@ -468,13 +579,48 @@ export default function FundDetailModal({
                                         </div>
                                         {hasDist && (
                                             <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                                                Доходность — полная, с&nbsp;учётом выплат дохода.
-                                                График показывает цену пая — она снижается в&nbsp;даты выплат.
+                                                Плашки — полная доходность, с&nbsp;учётом выплат дохода.
+                                                Линия графика — изменение цены пая: в&nbsp;даты выплат она снижается.
                                             </div>
                                         )}
                                     </div>
                                 );
                             })()}
+
+                            {/* (3b) Приток и отток денег инвесторов — /funds/flows по одному
+                                фонду. Гистограмма — тот же самодостаточный
+                                CompanyFlowsHistogram, что в «Потоках по компании». Это
+                                принципиально другая метрика, чем доходность: чистый поток
+                                денег, очищенный от роста рынка. */}
+                            {(flowsLoading || flowMonths.length > 1) && (
+                                <div style={{ marginBottom: 24 }}>
+                                    <h3
+                                        style={{
+                                            fontSize: 'var(--fs-md)',
+                                            fontWeight: 700,
+                                            color: 'var(--text-primary)',
+                                            marginBottom: 4,
+                                        }}
+                                    >
+                                        Приток и отток денег
+                                    </h3>
+                                    <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+                                        Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
+                                        Рост рынка вычтен — это не доходность, а именно движение денег.
+                                    </div>
+                                    <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
+                                        <CompanyFlowsHistogram
+                                            months={flowMonths}
+                                            series={flowSeries}
+                                            title="Чистый приток и отток денег (млн ₽)"
+                                            height={isMobile ? 260 : 320}
+                                            loading={flowsLoading}
+                                            animTrigger={ticker}
+                                            tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             {/* (4) Donut состава + список топ-позиций — только при enableDrilldown */}
                             {enableDrilldown && (
@@ -494,8 +640,10 @@ export default function FundDetailModal({
                                         // массив (фирменный/индекс, «Прочее» серый). maxSlices = длине →
                                         // Donut НЕ агрегирует сам, индекс слайса 1:1 совпадает с массивом,
                                         // поэтому onSliceClick(i) корректно мапится на бумагу.
+                                        // TOP = 10 — синхронно с превью списка: сектора пончика 1:1
+                                        // соответствуют видимым строкам (hover-связь без «слепых» зон).
                                         const holds = data.current_holdings;
-                                        const TOP = 14;
+                                        const TOP = 10;
                                         const topHolds = holds.slice(0, TOP);
                                         const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
                                         const donutHoldings = [
@@ -513,6 +661,14 @@ export default function FundDetailModal({
                                             && (drillDown.isin ?? null) === (h.isin ?? null);
                                         const openAsset = (h: typeof holds[number]) =>
                                             setDrillDown({ asset_name: h.asset_name, isin: h.isin ?? null });
+                                        // Список в стиле «Обзора портфеля»: логотип · имя (fade) ·
+                                        // нейтральная полоса · доля · объём. Цвет несёт пончик.
+                                        const top10W = topHolds.reduce((s, h) => s + (h.weight ?? 0), 0);
+                                        const maxW = Math.max(...holds.map((h) => h.weight ?? 0), 0.0001);
+                                        const shownHolds = showAllHoldings ? holds : topHolds;
+                                        const listGrid = isMobile
+                                            ? '24px minmax(0, 1fr) 56px'
+                                            : '30px minmax(110px, 1.1fr) minmax(60px, 1fr) 60px 84px';
                                         return (
                                         <div
                                             style={{
@@ -539,101 +695,86 @@ export default function FundDetailModal({
                                                     }}
                                                 />
                                             </div>
-                                            <div style={{ flex: 1, minWidth: 240 }}>
-                                                <table
-                                                    style={{
-                                                        width: '100%',
-                                                        borderCollapse: 'collapse',
-                                                        fontSize: 'var(--fs-sm)',
-                                                    }}
-                                                >
-                                                    <thead>
-                                                        <tr>
-                                                            <th style={{
-                                                                textAlign: 'left',
-                                                                padding: '8px 12px',
-                                                                color: 'var(--text-muted)',
-                                                                fontSize: 'var(--fs-2xs)',
-                                                                textTransform: 'uppercase',
-                                                                letterSpacing: '0.05em',
-                                                                fontWeight: 700,
-                                                                borderBottom: '2px solid var(--text-primary)',
-                                                            }}>Актив</th>
-                                                            <th style={{
-                                                                textAlign: 'right',
-                                                                padding: '8px 12px',
-                                                                color: 'var(--text-muted)',
-                                                                fontSize: 'var(--fs-2xs)',
-                                                                textTransform: 'uppercase',
-                                                                letterSpacing: '0.05em',
-                                                                fontWeight: 700,
-                                                                borderBottom: '2px solid var(--text-primary)',
-                                                            }}>Доля, %</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {holds.slice(0, 30).map((h, i) => {
-                                                            const selected = isSelected(h);
-                                                            return (
-                                                            <tr
-                                                                key={h.asset_name}
-                                                                onClick={() => openAsset(h)}
-                                                                onMouseEnter={() => setModalHover(i)}
-                                                                onMouseLeave={() => setModalHover(null)}
-                                                                style={{
-                                                                    cursor: 'pointer',
-                                                                    background: selected
-                                                                        ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-                                                                        : (modalHover === i ? 'var(--bg-secondary)' : 'transparent'),
-                                                                    transition: 'background 100ms',
-                                                                }}
-                                                            >
-                                                                <td style={{
-                                                                    padding: '7px 12px',
-                                                                    borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-                                                                    color: 'var(--text-primary)',
-                                                                }}>
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                                        {/* Лого + согласованное имя — как в «потоке по компании»:
-                                                                            тикер резолвим по ISIN (fallback — по имени), даём логотип;
-                                                                            без логотипа — цветная точка того же размера. Имя — через
-                                                                            fundAssetName, чтобы «ГАЗПРОМ ао»→«Газпром», «ВТБ ао»→«ВТБ» и т.д. */}
-                                                                        {(() => {
-                                                                            const tk = resolveFundTicker(h.asset_name, h.isin);
-                                                                            return tk ? (
-                                                                                <InstrumentIcon sectype={tk} size={20} rounded="full" />
-                                                                            ) : isOfzBond(h.asset_name) ? (
-                                                                                <InstrumentIcon sectype="RB" size={20} rounded="full" />
-                                                                            ) : (
-                                                                                <span
-                                                                                    style={{
-                                                                                        width: 20,
-                                                                                        height: 20,
-                                                                                        borderRadius: '50%',
-                                                                                        flexShrink: 0,
-                                                                                        backgroundColor: fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
-                                                                                    }}
-                                                                                />
-                                                                            );
-                                                                        })()}
-                                                                        {fundAssetName(h.asset_name, h.isin)}
-                                                                    </span>
-                                                                </td>
-                                                                <td style={{
-                                                                    padding: '7px 12px',
-                                                                    textAlign: 'right',
-                                                                    borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-                                                                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                                                    color: 'var(--text-primary)',
-                                                                    fontWeight: 600,
-                                                                }}>
-                                                                    {h.weight !== null ? h.weight.toFixed(2) : '—'}
-                                                                </td>
-                                                            </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
+                                            <div style={{ flex: 1, minWidth: isMobile ? 220 : 320 }}>
+                                                {/* Концентрация: сколько позиций и сколько весит топ-10 —
+                                                    отличает индексный фонд от концентрированного. */}
+                                                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
+                                                    {holds.length} позиций · топ-10 занимают {Math.min(top10W, 100).toFixed(1).replace('.', ',')}%
+                                                </div>
+                                                {/* Шапка списка — как в «Обзоре портфеля». */}
+                                                <div style={{ display: 'grid', gridTemplateColumns: listGrid, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                                                    <span /><span>Бумага</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>Доля</span>{!isMobile && <span style={{ textAlign: 'right' }}>Объём</span>}
+                                                </div>
+                                                {shownHolds.map((h, i) => {
+                                                    const selected = isSelected(h);
+                                                    const w = h.weight ?? 0;
+                                                    const pct = Math.max(2, (w / maxW) * 100);
+                                                    const hov = modalHover === i;
+                                                    const last = i === shownHolds.length - 1;
+                                                    return (
+                                                        <div
+                                                            key={h.asset_name}
+                                                            onClick={() => openAsset(h)}
+                                                            onMouseEnter={() => setModalHover(i)}
+                                                            onMouseLeave={() => setModalHover(null)}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAsset(h); } }}
+                                                            title={`По бумаге: ${fundAssetName(h.asset_name, h.isin)}`}
+                                                            style={{
+                                                                display: 'grid',
+                                                                gridTemplateColumns: listGrid,
+                                                                gap: 10,
+                                                                alignItems: 'center',
+                                                                padding: '6px 8px',
+                                                                margin: '0 -8px',
+                                                                borderRadius: 8,
+                                                                cursor: 'pointer',
+                                                                background: selected
+                                                                    ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                                                                    : hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent',
+                                                                borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                                transition: 'background 0.12s ease',
+                                                            }}
+                                                        >
+                                                            <HoldingLogo name={h.asset_name} isin={h.isin} idx={i} size={isMobile ? 24 : 30} />
+                                                            <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>
+                                                                {fundAssetName(h.asset_name, h.isin)}
+                                                            </span>
+                                                            {/* Полоса нейтральная — цвет несёт пончик слева. */}
+                                                            {!isMobile && (
+                                                                <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                                                                    <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
+                                                                </div>
+                                                            )}
+                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                                {h.weight !== null ? `${w.toFixed(2)}%` : '—'}
+                                                            </span>
+                                                            {!isMobile && (
+                                                                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                                                    {h.amount_rub != null ? fmtVolShort(h.amount_rub) : '—'}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                {/* Разворот «Прочие бумаги» — та же неяркая ссылка, что в
+                                                    «Обзоре портфеля»; разворачивает список inline (модалка
+                                                    и так скроллится). */}
+                                                {holds.length > TOP && (
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
+                                                        <button
+                                                            onClick={() => setShowAllHoldings((v) => !v)}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
+                                                        >
+                                                            {showAllHoldings
+                                                                ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                : <>Прочие бумаги · ещё {holds.length - TOP} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         );
@@ -649,6 +790,116 @@ export default function FundDetailModal({
                                             Состав не публикуется
                                         </div>
                                     )}
+
+                                    {/* (5) Что купили и продали — diff текущего и предыдущего
+                                        месячных снапшотов (уже приходит в ответе detail).
+                                        new/sold_out — залитые бейджи (событие),
+                                        accumulated/reduced — контурные. Клик по строке —
+                                        тот же drill-down в бумагу. */}
+                                    {data.diff.length > 0 && data.previous_snapshot_date && data.current_snapshot_date && (() => {
+                                        const DIFF_PREVIEW = 10;
+                                        const shownDiff = showAllDiff ? data.diff : data.diff.slice(0, DIFF_PREVIEW);
+                                        const chips = [
+                                            { key: 'new', label: 'Новые', color: 'var(--funds-flow-positive)' },
+                                            { key: 'accumulated', label: 'Докупили', color: 'var(--funds-flow-positive)' },
+                                            { key: 'reduced', label: 'Сократили', color: 'var(--funds-flow-negative)' },
+                                            { key: 'sold_out', label: 'Вышли', color: 'var(--funds-flow-negative)' },
+                                        ].filter((c) => (data.summary as Record<string, number>)[c.key] > 0);
+                                        const diffGrid = isMobile
+                                            ? '24px minmax(0, 1fr) 88px 78px'
+                                            : '30px minmax(140px, 1fr) 110px 96px';
+                                        return (
+                                            <div style={{ marginTop: 28 }}>
+                                                <h3
+                                                    style={{
+                                                        fontSize: 'var(--fs-md)',
+                                                        fontWeight: 700,
+                                                        color: 'var(--text-primary)',
+                                                        marginBottom: 4,
+                                                    }}
+                                                >
+                                                    Что купили и продали
+                                                </h3>
+                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+                                                    Изменения состава: {formatSnapshotDate(data.previous_snapshot_date)} → {formatSnapshotDate(data.current_snapshot_date)} (месячные срезы)
+                                                </div>
+                                                {chips.length > 0 && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                                                        {chips.map((c) => (
+                                                            <span key={c.key} style={{
+                                                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                padding: '4px 10px', borderRadius: 999,
+                                                                border: '1.5px solid var(--text-primary)',
+                                                                fontSize: 'var(--fs-2xs)', fontWeight: 700,
+                                                                color: 'var(--text-primary)', whiteSpace: 'nowrap',
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                            }}>
+                                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                                                                {c.label} · {(data.summary as Record<string, number>)[c.key]}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {shownDiff.map((d, i) => {
+                                                    const delta = d.delta_weight;
+                                                    const dColor = delta == null || delta === 0
+                                                        ? 'var(--text-muted)'
+                                                        : delta > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+                                                    const last = i === shownDiff.length - 1;
+                                                    const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
+                                                    return (
+                                                        <div
+                                                            key={`${d.asset_name}|${d.isin ?? ''}`}
+                                                            onClick={openDiffAsset}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
+                                                            title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}`}
+                                                            style={{
+                                                                display: 'grid',
+                                                                gridTemplateColumns: diffGrid,
+                                                                gap: 10,
+                                                                alignItems: 'center',
+                                                                padding: '6px 8px',
+                                                                margin: '0 -8px',
+                                                                borderRadius: 8,
+                                                                cursor: 'pointer',
+                                                                borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                                transition: 'background 0.12s ease',
+                                                            }}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                                        >
+                                                            <HoldingLogo name={d.asset_name} isin={d.isin ?? null} idx={i} size={isMobile ? 24 : 30} />
+                                                            <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>
+                                                                {fundAssetName(d.asset_name, d.isin ?? null)}
+                                                            </span>
+                                                            <span style={{ textAlign: 'right' }}>
+                                                                <ChangeBadge type={d.change_type} />
+                                                            </span>
+                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: dColor, whiteSpace: 'nowrap' }}>
+                                                                {fmtDeltaPp(delta)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {data.diff.length > DIFF_PREVIEW && (
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
+                                                        <button
+                                                            onClick={() => setShowAllDiff((v) => !v)}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
+                                                        >
+                                                            {showAllDiff
+                                                                ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                : <>Все изменения · ещё {data.diff.length - DIFF_PREVIEW} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </>
                             )}
                         </>
