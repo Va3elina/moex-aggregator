@@ -43,7 +43,11 @@ export default function LoginPage() {
     const [searchParams] = useSearchParams();
     // Куда вернуть после входа (?next=). Валидируем (только внутренние пути).
     const urlNext = safeInternalPath(searchParams.get('next'));
-    const [mode, setMode] = useState<'login' | 'register'>('login');
+    // ?mode=register — открыть сразу форму регистрации. Нужно тем, кто приходит
+    // по инвайт-ссылке: у них аккаунта нет, и форма входа их только тормозит.
+    const [mode, setMode] = useState<'login' | 'register'>(
+        searchParams.get('mode') === 'register' ? 'register' : 'login',
+    );
 
     // Если уже залогинен — редирект на next (или главную)
     useEffect(() => {
@@ -92,7 +96,8 @@ export default function LoginPage() {
 
             if (mode === 'register') {
                 // /register возвращает UserResponse без токенов — логинимся отдельно,
-                // затем ведём на подтверждение email (код уже отправлен письмом при регистрации).
+                // затем ведём на next (если пришли откуда-то по ссылке) либо на
+                // подтверждение email (код уже отправлен письмом при регистрации).
                 const loginResp = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -103,7 +108,10 @@ export default function LoginPage() {
                     throw new Error(loginData.error?.message || loginData.detail || 'Регистрация прошла. Войдите, чтобы продолжить.');
                 }
                 await auth.login({ access_token: loginData.access_token, refresh_token: loginData.refresh_token });
-                navigate('/verify-email');
+                // Раньше здесь безусловно стоял '/verify-email' — и next терялся:
+                // человек, пришедший по инвайт-ссылке, регистрировался и оставался
+                // без подписки. Подтвердить почту он сможет из баннера в профиле.
+                navigate(urlNext || '/verify-email');
                 return;
             }
 

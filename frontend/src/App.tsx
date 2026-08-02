@@ -10,6 +10,7 @@ import { UpgradePromptProvider } from './components/tier/UpgradeModal';
 import { AnomalyProvider } from './contexts/AnomalyContext';
 import { ToastHost } from './components/anomaly/ToastHost';
 import CookieConsentBanner from './components/CookieConsentBanner';
+import PendingRedeemApplier from './components/PendingRedeemApplier';
 import FounderOfferBanner from './components/FounderOfferBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
@@ -157,6 +158,7 @@ export default function App() {
       <AnalyticsProvider>
       <ToastHost />
       <ScrollToTop />
+      <PendingRedeemApplier />
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
       <FounderOfferBanner />
