@@ -141,7 +141,6 @@ interface FundsTableProps {
     onSetHiddenFunds: React.Dispatch<React.SetStateAction<Set<number>>>;
     onSetCollapsedSubcats: React.Dispatch<React.SetStateAction<Set<string>>>;
     onSetNavSortDir: React.Dispatch<React.SetStateAction<'desc' | 'asc'>>;
-    onOpenFundCard: (fund: FundInfo) => void;
     /** Bare-режим для рендера внутри модалки-виджета: без внешней editorial-рамки
      *  (border/тень/скругление/mt-6) — её даёт родитель-модалка. */
     bare?: boolean;
@@ -157,7 +156,6 @@ export default function FundsTable({
     onSetHiddenFunds,
     onSetCollapsedSubcats,
     onSetNavSortDir,
-    onOpenFundCard,
     bare = false,
 }: FundsTableProps) {
     const { showUpgrade } = useUpgradePrompt();
@@ -507,7 +505,7 @@ export default function FundsTable({
                                             const isLocked = fund.tier_locked === true;
 
                                             // Click-handler для locked → upgrade modal вместо
-                                            // открытия FundCard (нет данных, нечего смотреть).
+                                            // переключения галочки (данных нет, показывать нечего).
                                             const handleLockedClick = (e: React.MouseEvent) => {
                                                 e.stopPropagation();
                                                 const requiredTier = fundsAccess.requiredTierFor({});
@@ -521,10 +519,14 @@ export default function FundsTable({
                                             return (
                                                 <tr
                                                     key={fund.fund_id}
-                                                    className={`${bare ? '' : 'border-t border-theme'} transition-colors ${
+                                                    className={`${bare ? '' : 'border-t border-theme'} transition-colors select-none ${
                                                         isLocked ? 'cursor-not-allowed' :
-                                                        isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'
+                                                        isHidden ? 'opacity-50 grayscale cursor-pointer' : 'hover:bg-white/5 cursor-pointer'
                                                     }`}
+                                                    // Клик по ЛЮБОМУ месту строки = переключить галочку
+                                                    // (список фондов — это выбор того, что на графике,
+                                                    // а не навигация: карточка фонда сюда не подвешена).
+                                                    onClick={isLocked ? handleLockedClick : () => onToggleFundVisibility(fund.fund_id)}
                                                     // bare: высота строки 41px — точно как строка списка
                                                     // активов в поиске ОИ (.instrument-item, замер 41px).
                                                     style={{
@@ -535,17 +537,12 @@ export default function FundsTable({
                                                 >
                                                     <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                         {isLocked ? (
-                                                            <div
-                                                                className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
-                                                                onClick={handleLockedClick}
-                                                            >
+                                                            <div className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer">
                                                                 <Lock size={14} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
                                                             </div>
                                                         ) : (
-                                                            <div
-                                                                className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
-                                                                onClick={() => onToggleFundVisibility(fund.fund_id)}
-                                                            >
+                                                            /* Своего onClick нет — клик ловит вся строка (tr). */
+                                                            <div className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
                                                                 {bare ? (
                                                                     <CheckBox checked={!isHidden} />
                                                                 ) : (
@@ -561,8 +558,7 @@ export default function FundsTable({
                                                         )}
                                                     </td>
                                                     <td
-                                                        className={`${bare ? 'pl-1 pr-2 overflow-hidden' : 'pl-1 pr-4'} py-1 cursor-pointer`}
-                                                        onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
+                                                        className={`${bare ? 'pl-1 pr-2 overflow-hidden' : 'pl-1 pr-4'} py-1`}
                                                     >
                                                         <div className="flex items-center gap-2 min-w-0">
                                                             {(() => {
@@ -626,9 +622,8 @@ export default function FundsTable({
                                                     </td>
                                                     {!bare && (
                                                         <td
-                                                            className="px-4 py-1 text-theme-secondary cursor-pointer"
+                                                            className="px-4 py-1 text-theme-secondary"
                                                             style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}
-                                                            onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                         >
                                                             {fund.ticker}
                                                         </td>
