@@ -650,6 +650,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     // Последняя позиция курсора В ПОЛЕ: с неё берём вертикаль, когда курсор ушёл
     // на шкалу. Держим в координатах бокса, чтобы не пересчитывать оси заново.
     let lastFieldX: number | null = null;
+    let lastFieldY = 0;
+    let lastPane = 0;
+    // «Держим» состояние: курсор ушёл с канваса, но остался в пределах графика —
+    // на ценовую шкалу или на НАШ ЖЕ оверлей (пилс, кружок «+», строка
+    // индикатора). Для движка это уход с панели, для пользователя — нет.
+    let hold = false;
     let overAxis = false;
 
     const axisSides = (i: number): { lw: number; rw: number } => {
@@ -660,6 +666,20 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       return { lw, rw };
     };
 
+    // Полное гашение курсорного UI. Нужно отдельной функцией, потому что гасить
+    // приходится из ДВУХ мест: по событию движка (курсор ушёл с поля вбок) и по
+    // своему mousemove (курсор ушёл за пределы графика вовсе). Во втором случае
+    // движок молчит — он погасил свой крест раньше, когда мы его придержали, и
+    // больше событий не шлёт. Без этого пилсы и вертикаль оставались висеть.
+    const hideCursorUi = () => {
+      paintRowValuesRef.current?.(null);
+      tips.forEach((tp) => { tp.style.display = 'none'; });
+      pillsRef.current.forEach((per) => {
+        for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; }
+      });
+      hideAxisCross();
+    };
+
     const onRootMove = (e: MouseEvent) => {
       let hit = -1;
       let rect: DOMRect | null = null;
@@ -668,17 +688,34 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const r = b.getBoundingClientRect();
         if (e.clientY >= r.top && e.clientY < r.bottom && e.clientX >= r.left && e.clientX < r.right) { hit = i; rect = r; }
       });
-      if (hit < 0 || !rect) { overAxis = false; hideAxisCross(); return; }
+      if (hit < 0 || !rect) {
+        if (hold) { hold = false; overAxis = false; hideCursorUi(); }
+        else { overAxis = false; hideAxisCross(); }
+        return;
+      }
       const r = rect as DOMRect;
       const x = e.clientX - r.left, y = e.clientY - r.top;
       const { lw, rw } = axisSides(hit);
-      const on = x < lw || x > r.width - rw;
-      if (on === false) { overAxis = false; hideAxisCross(); return; }
-      overAxis = true;
+      overAxis = x < lw || x > r.width - rw;
+      // ⚠️ Канвас движка — единственная поверхность, с которой он ведёт крест.
+      // Наши оверлеи лежат ПОВЕРХ поля и ловят мышь: кружок «+» вообще висит
+      // ровно на уровне курсора, так что подвести к нему мышь = увести её с
+      // канваса. Движок гасил крест, пилс исчезал, курсор снова оказывался над
+      // канвасом, пилс возвращался под курсор — и так каждый кадр. Выглядело
+      // как «пилс дёргается, и все кроссхэйры тоже». На узкой панели оверлеи
+      // занимают бо́льшую долю поля, поэтому там это ловится постоянно, а на
+      // полном экране почти никогда — отсюда и «на весь экран этого нет».
+      const overOverlay = (e.target as HTMLElement | null)?.tagName !== 'CANVAS';
+      hold = overAxis || overOverlay;
+      if (!hold) { hideAxisCross(); return; }
       const nd = darkRef.current !== false;
       const col = themeColors(nd).cross;
       // Вертикаль — на всех панелях, как у общего кроссхэйра; горизонталь только
-      // на той, чью шкалу читают.
+      // на той панели, где курсор. Над оверлеем горизонталь ЗАМОРОЖЕНА на
+      // последней позиции в поле: иначе она поехала бы за курсором, который
+      // тянется к кнопке, и «+» снова убежал бы из-под него.
+      const hy = overAxis ? y : lastFieldY;
+      const hPane = overAxis ? hit : lastPane;
       boxes.forEach((b, j) => {
         if (!b) return;
         const v = axV[j], h = axH[j];
@@ -691,11 +728,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           }
         }
         if (h) {
-          if (j !== hit) h.style.display = 'none';
-          else { h.style.borderTopColor = col; h.style.top = y + 'px'; h.style.display = 'block'; }
+          if (j !== hPane) h.style.display = 'none';
+          else { h.style.borderTopColor = col; h.style.top = hy + 'px'; h.style.display = 'block'; }
         }
       });
-      // Пилсы: на панели под курсором — значение по вертикали курсора.
+      // Пилсы пересчитываем ТОЛЬКО над шкалой: там курсор и означает уровень.
+      // Над своим оверлеем они остаются как есть — по ним и целятся.
+      if (!overAxis) return;
       const defs = panesRef.current[hit]?.series ?? [];
       for (const sd of ['left', 'right'] as const) {
         const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
@@ -707,11 +746,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
       });
     };
-    const onRootLeave = () => { overAxis = false; hideAxisCross(); };
-    root.addEventListener('mousemove', onRootMove, true);
+    const onRootLeave = () => { hold = false; overAxis = false; hideCursorUi(); };
+    // На DOCUMENT, а не на корне чарта: строки индикаторов рендерятся СОСЕДОМ
+    // чарта (React-оверлей поверх всей области), и события с них до корня не
+    // доходят — а именно их кнопки чаще всего и перехватывают мышь.
+    document.addEventListener('mousemove', onRootMove, true);
     root.addEventListener('mouseleave', onRootLeave);
     unsubs.push(() => {
-      root.removeEventListener('mousemove', onRootMove, true);
+      document.removeEventListener('mousemove', onRootMove, true);
       root.removeEventListener('mouseleave', onRootLeave);
       for (const el of [...axV, ...axH]) el?.parentNode?.removeChild(el);
     });
@@ -723,12 +765,10 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const tip = tips[i];
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
-          // Курсор ушёл на ценовую шкалу — движок гасит свой крест, но для
-          // пользователя это то же наведение: прятать пилсы и тултип нельзя.
-          if (overAxis) return;
-          paintRowValuesRef.current?.(null);
-          tips.forEach((tp) => { tp.style.display = 'none'; });
-          pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
+          // Курсор ушёл на шкалу или на наш оверлей — движок гасит свой крест,
+          // но для пользователя это то же наведение: прятать нельзя.
+          if (hold) return;
+          hideCursorUi();
           suppress = true;
           try { charts.forEach((other, j) => { if (j !== i) other.clearCrosshairPosition(); }); }
           finally { suppress = false; }
@@ -788,7 +828,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         // Пилсы: на активной панели — значение под курсором, на остальных —
         // значение синхронизированной точки на их первой серии.
         lastFieldX = param.point.x;
-        if (!overAxis) hideAxisCross();
+        lastFieldY = param.point.y;
+        lastPane = i;
+        if (!hold) hideAxisCross();
         for (const sd of ['left', 'right'] as const) {
           const defs = panesRef.current[i]?.series ?? [];
           const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
