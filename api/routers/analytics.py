@@ -556,18 +556,22 @@ async def list_users(
     days: int = Query(30, ge=1, le=365, description="За сколько дней считать stats"),
     sort: str = Query("last_active", description="last_active / events / sessions / created / plan"),
     search: str = Query("", description="Поиск по email или display_name"),
-    flt: str = Query("all", alias="filter", description="all / paid / free / admin"),
+    flt: str = Query("all", alias="filter", description="all / paid / invite / free / admin"),
     user=Depends(require_admin),
 ):
     """List всех users с aggregated stats за последние N дней.
 
-    filter: paid — есть активная подписка сейчас; free — нет активной подписки
-    (админы исключены — они не клиенты); admin — role=admin.
+    filter: paid — подписка, купленная за деньги; invite — подписка выдана по
+    пригласительной ссылке (subscriptions.period='invite', см. billing/invites.py);
+    free — нет активной подписки (админы исключены — они не клиенты);
+    admin — role=admin.
 
     Возвращает users[] (id, email, display_name, role, created_at, last_login_at,
-    is_active, oauth_provider, plan/plan_expires_at/is_paid — активная подписка,
-    sessions_count, events_count, last_active_ts) + total_count/paid_count —
-    счётчики по ВСЕЙ базе (без учёта filter/search) для шапки блока.
+    is_active, oauth_provider, plan/plan_expires_at/is_paid/is_invite — активная
+    подписка, sessions_count, events_count, last_active_ts) + total_count/
+    paid_count/invite_count — счётчики по ВСЕЙ базе (без учёта filter/search)
+    для шапки блока. paid_count — БЕЗ инвайтов: деньги и подарки в одной цифре
+    смешивать нельзя, иначе выручка выглядит больше, чем она есть.
     """
     engine = get_engine()
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -592,7 +596,8 @@ async def list_users(
         params["q"] = f"%{search_clean}%"
 
     where_filter = {
-        "paid": " AND sub.tier IS NOT NULL",
+        "paid": " AND sub.tier IS NOT NULL AND sub.period <> 'invite'",
+        "invite": " AND sub.tier IS NOT NULL AND sub.period = 'invite'",
         "free": " AND sub.tier IS NULL AND u.role <> 'admin'",
         "admin": " AND u.role = 'admin'",
     }.get(flt, "")
@@ -608,6 +613,7 @@ async def list_users(
                 u.oauth_provider, u.avatar_url,
                 sub.tier AS plan,
                 sub.expires_at AS plan_expires_at,
+                sub.period AS plan_period,
                 (SELECT COUNT(DISTINCT ae.session_id) FROM analytics_events ae
                   WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
                 (SELECT COUNT(*) FROM analytics_events ae
@@ -626,7 +632,7 @@ async def list_users(
                 ) AS last_active_ts
             FROM users u
             LEFT JOIN LATERAL (
-                SELECT s.tier, s.expires_at
+                SELECT s.tier, s.expires_at, s.period
                 FROM subscriptions s
                 WHERE s.user_id = u.id AND s.status = 'active'
                 ORDER BY s.created_at DESC
@@ -641,13 +647,16 @@ async def list_users(
             SELECT
                 (SELECT COUNT(*) FROM users) AS total,
                 (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
-                  WHERE s.status = 'active') AS paid
+                  WHERE s.status = 'active' AND s.period <> 'invite') AS paid,
+                (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
+                  WHERE s.status = 'active' AND s.period = 'invite') AS invited
         """)).fetchone()
 
     return {
         "period_days": days,
         "total_count": int(totals[0]) if totals else 0,
         "paid_count": int(totals[1]) if totals else 0,
+        "invite_count": int(totals[2]) if totals else 0,
         "users": [
             {
                 "id": int(r[0]),
@@ -663,10 +672,14 @@ async def list_users(
                 "avatar_url": r[10],
                 "plan": r[11],
                 "plan_expires_at": r[12].isoformat() if r[12] else None,
-                "is_paid": r[11] is not None,
-                "sessions_count": int(r[13]) if r[13] else 0,
-                "events_count": int(r[14]) if r[14] else 0,
-                "last_active_ts": r[15].isoformat() if r[15] else None,
+                # period='invite' ставит только redeem_invite (billing/invites.py);
+                # платные подписки приходят с monthly/yearly.
+                "plan_period": r[13],
+                "is_invite": r[13] == "invite",
+                "is_paid": r[11] is not None and r[13] != "invite",
+                "sessions_count": int(r[14]) if r[14] else 0,
+                "events_count": int(r[15]) if r[15] else 0,
+                "last_active_ts": r[16].isoformat() if r[16] else None,
             }
             for r in rows
         ],
