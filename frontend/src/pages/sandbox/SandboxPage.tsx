@@ -326,8 +326,17 @@ export default function SandboxPage() {
   }, []);
 
   const bringFront = useCallback((id: string) => {
-    zTop.current += 1; const z = zTop.current;
-    setActivePanels((ps) => ps.map((p) => (p.id === id ? { ...p, z } : p)));
+    setActivePanels((ps) => {
+      // Панель уже сверху → НИЧЕГО не делаем. bringFront зовётся с pointerdown
+      // ЛЮБОГО клика внутри панели (не только за шапку), и безусловный setState
+      // перерисовывал весь лист на каждый клик по графику — кроссхэйр вздрагивал.
+      // На развёрнутом окне этот путь не срабатывает — потому там и не дёргалось.
+      // Возврат ТОЙ ЖЕ ссылки — React пропускает рендер целиком.
+      const cur = ps.find((p) => p.id === id);
+      if (!cur || ps.every((p) => p.id === id || p.z < cur.z)) return ps;
+      zTop.current += 1; const z = zTop.current;
+      return ps.map((p) => (p.id === id ? { ...p, z } : p));
+    });
   }, [setActivePanels]);
 
   const spawn = useCallback((type: IndKind, cfg?: PanelCfg) => {

@@ -422,6 +422,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
 
     let syncingRange = false; // guard: программная установка диапазона
     let suppress = false;     // _suppress: программный кроссхэйр соседа
+    let buttonsDown = false;  // зажата кнопка → идёт пан, свои кресты не трогаем
+    const onBtnDown = () => { buttonsDown = true; };
+    const onBtnUp = () => { buttonsDown = false; };
+    window.addEventListener('pointerdown', onBtnDown, true);
+    window.addEventListener('pointerup', onBtnUp, true);
+    window.addEventListener('pointercancel', onBtnUp, true);
+    unsubs.push(() => {
+      window.removeEventListener('pointerdown', onBtnDown, true);
+      window.removeEventListener('pointerup', onBtnUp, true);
+      window.removeEventListener('pointercancel', onBtnUp, true);
+    });
 
     for (let i = 0; i < paneCount; i++) {
       const box = boxes[i];
@@ -793,6 +804,44 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           // рисует onRootMove. (Пилсы и «+» мышь не ловят вовсе — см. их
           // pointer-events:none — так что через них сюда не попадаем.)
           if (overAxis) return;
+          // Точка ЕСТЬ, времени НЕТ → курсор в поле, но правее последнего бара:
+          // пустошь rightOffset. Движок прибивает вертикаль к последнему бару, а
+          // мы принимали это за «курсор ушёл с графика» и гасили всё — у правой
+          // оси выходила мёртвая зона шириной в rightOffset (слева пустоши нет,
+          // потому слева её и не было). Ведём крест здесь сами, как TradingView:
+          // вертикаль по курсору на всех панелях, горизонталь и пилсы — на своей.
+          if (param.point) {
+            if (buttonsDown) return; // посреди пана крестами не рулим
+            suppress = true;
+            try { charts.forEach((c) => c.clearCrosshairPosition()); }
+            finally { suppress = false; }
+            const x = param.point.x, y = param.point.y;
+            const nd = darkRef.current !== false;
+            const col = themeColors(nd).cross;
+            boxes.forEach((b, j) => {
+              if (!b) return;
+              const v = axV[j], h = axH[j];
+              if (v) { v.style.borderLeftColor = col; v.style.left = (axisSides(j).lw + x) + 'px'; v.style.display = 'block'; }
+              if (h) {
+                if (j !== i) h.style.display = 'none';
+                else { h.style.borderTopColor = col; h.style.top = y + 'px'; h.style.display = 'block'; }
+              }
+            });
+            const wDefs = panesRef.current[i]?.series ?? [];
+            for (const sd of ['left', 'right'] as const) {
+              const wIdx = wDefs.findIndex((d) => (d.scale ?? 'right') === sd);
+              const wApi = wIdx >= 0 ? apisRef.current[i]?.[wIdx] : undefined;
+              showPill(i, sd, wApi ? (wApi.coordinateToPrice(y as Coordinate) as number | null) : null);
+            }
+            panesRef.current.forEach((_, pi) => {
+              if (pi === i) return;
+              for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
+            });
+            // Данных под курсором нет — строка показывает последний бар, тултип молчит.
+            paintRowValuesRef.current?.(null);
+            tips.forEach((tp) => { tp.style.display = 'none'; });
+            return;
+          }
           hideCursorUi();
           suppress = true;
           try { charts.forEach((other, j) => { if (j !== i) other.clearCrosshairPosition(); }); }
