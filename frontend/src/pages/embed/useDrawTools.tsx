@@ -343,15 +343,34 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
 
   // Позиция: по умолчанию НАД фигурой и по её центру; не влезло сверху — под ней;
   // плюс ручное смещение (перетаскивание) и клампинг в границы контейнера.
+  const prevOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el || !selRect) return;
     const host = el.offsetParent as HTMLElement | null;
     const HW = host?.clientWidth ?? 0, HH = host?.clientHeight ?? 0;
     const pw = el.offsetWidth, ph = el.offsetHeight;
-    let left = selRect.x + selRect.w / 2 - pw / 2 + draw.panelOffset.dx;
-    let top = selRect.y - ph - 12 + draw.panelOffset.dy;
-    if (top < 4) top = selRect.y + selRect.h + 12 + draw.panelOffset.dy;
+    const po = prevOffsetRef.current;
+    const offsetDelta = po ? { dx: draw.panelOffset.dx - po.dx, dy: draw.panelOffset.dy - po.dy } : { dx: 0, dy: 0 };
+    prevOffsetRef.current = { ...draw.panelOffset };
+    let left: number, top: number;
+    if (lastPosRef.current == null) {
+      // Первое появление — над фигурой, по её центру.
+      left = selRect.x + selRect.w / 2 - pw / 2 + draw.panelOffset.dx;
+      top = selRect.y - ph - 12 + draw.panelOffset.dy;
+      if (top < 4) top = selRect.y + selRect.h + 12 + draw.panelOffset.dy;
+    } else if (offsetDelta.dx !== 0 || offsetDelta.dy !== 0) {
+      // Юзер тащит панель за ⋮⋮ — двигаем от текущего места.
+      left = lastPosRef.current.left + offsetDelta.dx;
+      top = lastPosRef.current.top + offsetDelta.dy;
+    } else {
+      // Сменилось выделение или фигура переехала — панель ОСТАЁТСЯ на месте
+      // (только кламп в границы). Раньше она пересчитывалась от фигуры и
+      // «резко телепортировалась» через график к дальней линии — Вадим
+      // попросил как в TradingView: панель стоит, где стоит.
+      left = lastPosRef.current.left;
+      top = lastPosRef.current.top;
+    }
     left = Math.max(4, Math.min(Math.max(4, HW - pw - 4), left));
     top = Math.max(4, Math.min(Math.max(4, HH - ph - 4), top));
     // ⚠️ Эффект пишет state, ВЫВЕДЕННЫЙ ИЗ ВЁРСТКИ, — классический источник
