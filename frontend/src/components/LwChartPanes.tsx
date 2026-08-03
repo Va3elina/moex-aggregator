@@ -1181,6 +1181,44 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           drawSvg.appendChild(t);
         }
       };
+      // Инлайн-редактор текста ПРЯМО на графике — вместо window.prompt: браузерный
+      // диалог выглядел чужеродно («окно как у Google») и блокировал страницу.
+      // Enter/клик мимо — сохранить, Escape — отменить.
+      let textEditEl: HTMLInputElement | null = null;
+      const closeTextEditor = () => { const el = textEditEl; textEditEl = null; el?.remove(); };
+      const openTextEditor = (ax: number, ay: number, initial: string, onDone: (v: string | null) => void) => {
+        closeTextEditor();
+        const inp = document.createElement('input');
+        textEditEl = inp;
+        inp.type = 'text';
+        inp.value = initial;
+        inp.placeholder = 'Текст…';
+        inp.dataset.exportIgnore = 'true';
+        inp.style.cssText = 'position:absolute;z-index:30;transform:translate(-50%,-50%);width:150px;'
+          + 'padding:4px 8px;border-radius:7px;font:600 12.5px Inter,-apple-system,sans-serif;'
+          + 'background:var(--bg-secondary,#17161A);color:var(--text-primary,#F5F1E8);'
+          + 'border:1.5px solid var(--accent,#FF5C2B);outline:none;box-shadow:0 8px 22px rgba(0,0,0,0.45)';
+        inp.style.left = Math.max(84, Math.min(box.clientWidth - 84, ax)) + 'px';
+        inp.style.top = Math.max(18, Math.min(box.clientHeight - 18, ay)) + 'px';
+        let finished = false;
+        const done = (ok: boolean) => {
+          if (finished) return;
+          finished = true;
+          const v = inp.value.trim();
+          closeTextEditor();
+          onDone(ok ? v : null);
+        };
+        inp.addEventListener('keydown', (ke) => {
+          ke.stopPropagation();
+          if (ke.key === 'Enter') done(true);
+          else if (ke.key === 'Escape') done(false);
+        });
+        inp.addEventListener('blur', () => done(true));
+        inp.addEventListener('pointerdown', (pe) => pe.stopPropagation());
+        box.appendChild(inp);
+        requestAnimationFrame(() => { inp.focus(); inp.select(); });
+      };
+
       // Клик в текст-зону УЖЕ выделенной линии → ввод/правка текста. Только
       // выделенной: первый клик по линии выделяет, второй — редактирует, как в
       // терминале; иначе зона у середины мешала бы просто выделять линию.
@@ -1191,8 +1229,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (!d || d.hidden) return false;
         const z = lineTextZone(d);
         if (!z || bx < z.x || bx > z.x + z.w || by < z.y || by > z.y + z.h) return false;
-        const txt = window.prompt('Текст:', d.text || '');
-        if (txt != null) commit((drawingsRef.current ?? []).map((q) => (q.id === selId ? { ...q, text: txt || undefined } : q)));
+        openTextEditor(z.x + z.w / 2, z.y + z.h / 2, d.text || '', (v) => {
+          if (v != null) commit((drawingsRef.current ?? []).map((q) => (q.id === selId ? { ...q, text: v || undefined } : q)));
+        });
         return true;
       };
 
@@ -1393,8 +1432,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const dash = drawDashRef.current, opacity = drawOpacityRef.current;
         if (tool === 'text') {
           const id = uid();
-          commit([...(drawingsRef.current ?? []), { id, tool: 'text', pts: [lp], color, width, dash, opacity, text: 'Текст' }]);
+          commit([...(drawingsRef.current ?? []), { id, tool: 'text', pts: [lp], color, width, dash, opacity, text: '' }]);
           selectedDrawIdRef.current = id; onSelectDrawRef.current?.(id); onToolResetRef.current?.();
+          // Сразу поле ввода на месте будущего текста; пустой ввод — фигура не нужна.
+          openTextEditor(x, y - 8, '', (v) => {
+            if (v) commit((drawingsRef.current ?? []).map((q) => (q.id === id ? { ...q, text: v } : q)));
+            else { commit((drawingsRef.current ?? []).filter((q) => q.id !== id)); selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); }
+          });
           return;
         }
         const base = { color, width, dash, opacity };
@@ -1458,8 +1502,10 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const { x, y } = relXY(e as unknown as PointerEvent);
         const hit = hitTest(x, y);
         if (hit && hit.tool === 'text') {
-          const txt = window.prompt('Текст:', hit.text || '');
-          if (txt != null) commit((drawingsRef.current ?? []).map((d) => (d.id === hit.id ? { ...d, text: txt } : d)));
+          const xy = lp2xy(hit.pts[0]);
+          openTextEditor(xy?.x ?? x, (xy?.y ?? y) - 8, hit.text || '', (v) => {
+            if (v != null) commit((drawingsRef.current ?? []).map((d) => (d.id === hit.id ? { ...d, text: v || d.text } : d)));
+          });
         }
       };
       drawHit.addEventListener('pointerdown', onDrawDown);
@@ -1467,6 +1513,45 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       drawHit.addEventListener('pointerup', onDrawUp);
       drawHit.addEventListener('dblclick', onDrawDbl);
       syncDrawInteractivity();
+
+      // ── перетаскивание фигур ВНЕ режима рисования (как в TradingView) ──
+      // Зажал фигуру — тащишь целиком, зажал вершину — тянешь вершину. Пан
+      // графика не задет: перехват в capture-фазе строго ПРИ попадании в
+      // фигуру, мимо — событие живёт своей жизнью. mousedown движка — отдельное
+      // событие, его глушим одноразовым флагом, иначе движок начнёт пан
+      // параллельно с нашим перетаскиванием.
+      let swallowMouse = false;
+      const onOutsideDown = (e: PointerEvent) => {
+        if (drawActiveRef.current) return;                       // в режиме этим занят drawHit
+        if (drawHiddenRef.current || drawLockedRef.current) return;
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement | null)?.tagName !== 'CANVAS') return; // строки/кнопки/грипы — не наши
+        if (!(drawingsRef.current ?? []).length) return;
+        const { x, y } = relXY(e);
+        const hit = hitTest(x, y);
+        if (!hit) return;
+        e.preventDefault(); e.stopPropagation();
+        swallowMouse = true;
+        selectedDrawIdRef.current = hit.id; onSelectDrawRef.current?.(hit.id);
+        if (hit.locked) { drawShapes(); return; }
+        let vi = -1;
+        if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
+        dragState = vi >= 0
+          ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, vi, startXY: { x, y } }
+          : { mode: 'move', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, orig: hit.pts.map((pp) => ({ ...pp })), startXY: { x, y } };
+        drawShapes();
+        const mv = (ev: PointerEvent) => onDrawMove(ev);
+        const up = (ev: PointerEvent) => {
+          window.removeEventListener('pointermove', mv);
+          window.removeEventListener('pointerup', up);
+          onDrawUp(ev);
+        };
+        window.addEventListener('pointermove', mv);
+        window.addEventListener('pointerup', up);
+      };
+      const onSwallow = (e: Event) => { if (swallowMouse) { swallowMouse = false; e.stopPropagation(); e.preventDefault(); } };
+      box.addEventListener('pointerdown', onOutsideDown, true);
+      box.addEventListener('mousedown', onSwallow, true);
 
       // Перепроецировать фигуры на пан/зум/ресайз этой панели (как экспирации LwChart).
       // rAF-коалесинг: событие диапазона при пане прилетает чаще кадра, а каждый
@@ -1487,6 +1572,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       drawRo.observe(box);
 
       cleanupDraw = () => {
+        box.removeEventListener('pointerdown', onOutsideDown, true);
+        box.removeEventListener('mousedown', onSwallow, true);
+        closeTextEditor();
         drawHit.removeEventListener('pointerdown', onDrawDown);
         drawHit.removeEventListener('pointermove', onDrawMove);
         drawHit.removeEventListener('pointerup', onDrawUp);
