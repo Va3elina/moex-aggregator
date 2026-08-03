@@ -297,9 +297,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // axisLabelVisible: значение рисует сама библиотека. Самодельный DOM-пилс
   // (попиксельная реплика лейбла оси с калибровкой кегля после fonts.ready) не
   // портируется намеренно — в стеке панелей он умножался бы на их число.
-  const previewLineRef = useRef<Record<number, { [k in 'left' | 'right']?: IPriceLine }>>({});
-  const axisInfoRef = useRef<Record<number, { [k in 'left' | 'right']?: { api: AnySeries; last?: number; color?: string } }>>({});
-  const layoutAlertRef = useRef<(() => void) | null>(null);
   // Последний видимый диапазон. Эффект создания чартов зависит от paneCount, то
   // есть «вынести индикатор в свою панель» ПЕРЕСОЗДАЁТ все инстансы — и зум
   // слетел бы на fit ровно в момент, когда пользователь этого не просил.
@@ -500,7 +497,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
       unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler));
       if (i === 0) {
-        const redrawExp = () => { drawExpRef.current?.(); layoutAlertRef.current?.(); };
+        const redrawExp = () => { drawExpRef.current?.(); };
         chart.timeScale().subscribeVisibleLogicalRangeChange(redrawExp);
         unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(redrawExp));
       }
@@ -534,113 +531,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // fonts.ready и подгонкой чётности) НЕ переносим: в стеке он умножался бы на
     // число панелей плюс вопрос «какая панель под курсором». Внешне уровень
     // выглядит как подпись оси, а не как оранжевый чип.
-    const alertEls: HTMLElement[] = [];
-    const layoutAlerts: (() => void)[] = [];
-    // Слой алертов строится ДЛЯ КАЖДОЙ панели: ряд, по которому ставят уровень,
-    // может уехать из панели цены в свою (открытый интерес), и «плюс» обязан
-    // уехать вместе с ним. Панели без осей в alertAxes просто ничего не рисуют.
-    boxes.forEach((paneBox, pi) => {
-      const alertStrips: { [k in 'left' | 'right']?: HTMLDivElement } = {};
-      const alertPlus: { [k in 'left' | 'right']?: HTMLDivElement } = {};
-      const alertPending: { [k in 'left' | 'right']?: { axis: 'left' | 'right'; pane: number; price: number; currentValue: number } } = {};
-      // ⚠️ Отдельный СЛОЙ с overflow:hidden, а не сама панель. Кружок «+» имеет
-      // высоту 15px и сидит на translateY(-50%): у нижней кромки он выпирал бы за
-      // свою панель и наезжал на соседнюю — а там уровень означал бы действие,
-      // которого не существует.
-      // Именно слой, а не div панели: в панели живут строки индикаторов и меню
-      // «⋯», им обрезка сломала бы выпадашки.
-      if (!paneBox) return;
-      const alertBox = document.createElement('div');
-      alertBox.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6';
-      paneBox.appendChild(alertBox);
-      alertEls.push(alertBox);
-      unsubs.push(() => { try { alertBox.remove(); } catch { /* уже снят */ } });
-      const sidesOn = () => (alertAxesRef.current ?? []).filter((a) => a.pane === pi).map((a) => a.side);
-      const hidePreview = (side: 'left' | 'right') => {
-        const pl = previewLineRef.current[pi]?.[side];
-        if (pl) { try { pl.applyOptions({ lineVisible: false, axisLabelVisible: false }); } catch { /* серия снята */ } }
-      };
-      const hideAll = () => {
-        for (const side of ['left', 'right'] as const) {
-          const p = alertPlus[side]; if (p) p.style.display = 'none';
-          hidePreview(side);
-          alertPending[side] = undefined;
-        }
-      };
-      const showAt = (rawY: number) => {
-        const ch = chartsRef.current[pi];
-        const axes = sidesOn();
-        if (!ch || !onCreateAlertRef.current || axes.length === 0) { hideAll(); return; }
-        // Ось дат есть только у НИЖНЕЙ панели — выше неё поле идёт до самого низа.
-        const axisH = pi < chartsRef.current.length - 1 ? 0 : (ch.timeScale().height() || 26);
-        const y = Math.max(0, Math.min(alertBox.clientHeight - axisH, rawY));
-        for (const side of ['left', 'right'] as const) {
-          const plus = alertPlus[side];
-          const info = axisInfoRef.current[pi]?.[side];
-          if (!plus || !axes.includes(side) || !info) { if (plus) plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
-          const price = info.api.coordinateToPrice(y as number);
-          if (price == null) { plus.style.display = 'none'; hidePreview(side); alertPending[side] = undefined; continue; }
-          const pl = previewLineRef.current[pi]?.[side];
-          // axisLabelVisible:true — вот и вся замена самодельному пилсу.
-          if (pl) { try { pl.applyOptions({ price: price as number, lineVisible: true, axisLabelVisible: true }); } catch { /* серия снята */ } }
-          let axisW = 54;
-          try { axisW = ch.priceScale(side).width() || 54; } catch { /* §R2-30: «Value is null» сразу после смены visible */ }
-          plus.style.background = info.color || 'var(--accent,#FF5C2B)';
-          plus.style.top = y + 'px';
-          plus.style.display = 'flex';
-          plus.style.left = side === 'left' ? axisW + 4 + 'px' : 'auto';
-          plus.style.right = side === 'right' ? axisW + 4 + 'px' : 'auto';
-          alertPending[side] = { axis: side, pane: pi, price: price as number, currentValue: info.last ?? (price as number) };
-        }
-      };
-      for (const side of ['left', 'right'] as const) {
-        const strip = document.createElement('div');
-        strip.style.cssText = 'position:absolute;top:0;display:none;pointer-events:auto;z-index:6;cursor:crosshair;' + side + ':0';
-        strip.addEventListener('mousemove', (e) => showAt(e.clientY - alertBox.getBoundingClientRect().top));
-        alertBox.appendChild(strip);
-        alertStrips[side] = strip;
-
-        const plus = document.createElement('div');
-        plus.style.cssText = 'position:absolute;display:none;align-items:center;justify-content:center;'
-          + 'width:15px;height:15px;border-radius:50%;transform:translateY(-50%);z-index:7;'
-          + 'cursor:pointer;pointer-events:auto;color:#fff;font-size:12px;line-height:1;font-weight:700';
-        plus.textContent = '+';
-        plus.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const p = alertPending[side];
-          if (p) onCreateAlertRef.current?.(p);
-        });
-        alertBox.appendChild(plus);
-        alertPlus[side] = plus;
-      }
-      // mouseleave вешаем на ПАНЕЛЬ, а не на слой: у слоя pointer-events:none,
-      // события до него не доходят, и «плюс» остался бы висеть после ухода мыши.
-      paneBox.addEventListener('mouseleave', hideAll);
-      unsubs.push(() => paneBox.removeEventListener('mouseleave', hideAll));
-
-      // Геометрия полос-хитзон: ширина = ширина шкалы, высота = поле без оси.
-      const layoutAlert = () => {
-        const ch = chartsRef.current[pi];
-        const axes = sidesOn();
-        const axisH = pi < chartsRef.current.length - 1 ? 0 : (ch?.timeScale().height() || 26);
-        const h = Math.max(0, alertBox.clientHeight - axisH);
-        for (const side of ['left', 'right'] as const) {
-          const strip = alertStrips[side];
-          if (!strip) continue;
-          const on = !!ch && !!onCreateAlertRef.current && axes.includes(side);
-          if (!on) { strip.style.display = 'none'; const p = alertPlus[side]; if (p) p.style.display = 'none'; continue; }
-          let w = 54;
-          try { w = ch!.priceScale(side).width() || 54; } catch { /* см. §R2-30 */ }
-          strip.style.display = 'block';
-          strip.style.width = Math.max(28, w) + 'px';
-          strip.style.height = h + 'px';
-        }
-      };
-      layoutAlerts.push(layoutAlert);
-      requestAnimationFrame(layoutAlert);
-    });
-    layoutAlertRef.current = () => { for (const f of layoutAlerts) f(); };
-
     // ── свои пилсы значения под курсором ──
     // Яркий пилс последнего значения рисует движок сам; этот — светлее, он
     // показывает значение в точке, куда наведён курсор. Так на сайте.
@@ -687,6 +577,41 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     pillsRef.current = pills;
 
     // ── общий кроссхэйр + единый тултип ──
+    //
+    // ⚠️ ВО ВРЕМЯ ПЕРЕТАСКИВАНИЯ соседние панели не трогаем вообще.
+    // setCrosshairPosition — не пометка на канвасе, а полная перерисовка чужого
+    // чарта. На каждое движение мыши их выходило по числу соседей ПОВЕРХ
+    // перерисовки от самого пана: на полном экране с тремя панелями график
+    // начинал идти рывками. Плюс горизонталь соседа (мы уводим её за верхнюю
+    // кромку, но движок ЗАЖИМАЕТ координату) при этом дёргалась по кромке.
+    // Поэтому на нажатие кнопки гасим кроссхэйр соседей разом и до отпускания
+    // синк не трогаем: видна одна линия — на той панели, которую тащат.
+    let dragging = false;
+    const endDrag = () => { dragging = false; };
+    // Страховка от залипания: отпускание могло случиться вне окна (курсор ушёл
+    // за пределы вкладки), и тогда pointerup сюда не придёт. Любое движение без
+    // нажатой кнопки означает, что перетаскивания уже нет.
+    const checkDrag = (e: PointerEvent) => { if (dragging && e.buttons === 0) dragging = false; };
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    window.addEventListener('pointermove', checkDrag);
+    unsubs.push(() => {
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      window.removeEventListener('pointermove', checkDrag);
+    });
+    boxes.forEach((box, i) => {
+      if (!box) return;
+      const onDown = () => {
+        dragging = true;
+        suppress = true;
+        try { chartsRef.current.forEach((c, j) => { if (j !== i) c.clearCrosshairPosition(); }); }
+        finally { suppress = false; }
+      };
+      box.addEventListener('pointerdown', onDown);
+      unsubs.push(() => box.removeEventListener('pointerdown', onDown));
+    });
+
     charts.forEach((chart, i) => {
       const handler = (param: { time?: unknown; point?: { x: number; y: number } }) => {
         if (suppress) return; // ПЕРВОЙ строкой — иначе рекурсия через setCrosshairPosition
@@ -813,6 +738,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
         });
 
+        if (dragging) return;   // см. комментарий выше: соседей во время пана не трогаем
         suppress = true;
         try {
           charts.forEach((other, j) => {
@@ -827,9 +753,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
             // не видна, вертикаль остаётся. Иначе при трёх индикаторах на экране
             // четыре горизонтальные линии разом.
             const off = firstApi.coordinateToPrice(-40 as Coordinate);
-            const v = mapsRef.current[j]?.[0]?.get(t);
             if (off != null) other.setCrosshairPosition(off as number, t as UTCTimestamp, firstApi);
-            else if (v != null) other.setCrosshairPosition(v, t as UTCTimestamp, firstApi);
             else other.clearCrosshairPosition();
           });
         } finally { suppress = false; }
@@ -1227,8 +1151,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     return () => {
       expLayerApi?.destroy();
       drawExpRef.current = null;
-      layoutAlertRef.current = null;
-      for (const el of alertEls) el.parentNode?.removeChild(el);
       wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
       cleanupDraw?.();
@@ -1502,33 +1424,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
       }
     });
-
-    // Инфо по осям + превью-линии алерта — для КАЖДОЙ панели. Пересоздаются
-    // здесь же: createPriceLine привязан к серии, а серии в этом эффекте
-    // пересоздаются.
-    axisInfoRef.current = {};
-    previewLineRef.current = {};
-    if (onCreateAlert) {
-      panes.forEach((pane, pi) => {
-        const bx = boxes[pi];
-        if (!bx) return;
-        for (const side of ['left', 'right'] as const) {
-          const idx = pane.series.findIndex((d) => (d.scale ?? 'right') === side);
-          const api = idx >= 0 ? apisRef.current[pi]?.[idx] : undefined;
-          if (!api) continue;
-          const def = pane.series[idx];
-          const last = def.data.length ? def.data[def.data.length - 1].value : undefined;
-          (axisInfoRef.current[pi] ??= {})[side] = { api, last, color: resolveColor(bx, def.color) };
-          try {
-            (previewLineRef.current[pi] ??= {})[side] = api.createPriceLine({
-              price: last ?? 0, color: resolveColor(bx, 'var(--text-secondary)'),
-              lineWidth: 1, lineStyle: LineStyle.Dashed,
-              lineVisible: false, axisLabelVisible: false, title: '',
-            });
-          } catch { /* серия ещё не готова */ }
-        }
-      });
-    }
 
     // Уровни алертов. Живут ВМЕСТЕ с серией (removeSeries сносит и линии), поэтому
     // создаются здесь же, а не отдельным эффектом. priceLines обязан быть в депсах
