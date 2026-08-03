@@ -576,48 +576,156 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     });
     pillsRef.current = pills;
 
-    // ── общий кроссхэйр + единый тултип ──
+const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
+      const q = pillsRef.current[pi]?.[sd];
+      if (!q) return;
+      const ch = chartsRef.current[pi];
+      const defs = panesRef.current[pi]?.series ?? [];
+      const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
+      const api = idx >= 0 ? apisRef.current[pi]?.[idx] : undefined;
+      if (price == null || !api || !ch) { q.box.style.display = 'none'; return; }
+      const y = api.priceToCoordinate(price);
+      if (y == null) { q.box.style.display = 'none'; return; }
+      const def = defs[idx];
+      q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
+      // ⚠️ Тот же цвет, что у пилса ДАТЫ на горизонтальной оси
+      // (themeColors().lab — движок красит им подпись вертикальной линии
+      // кроссхэйра). Оба пилса показывают одно и то же: где сейчас курсор,
+      // — и разный цвет у них читался бы как разный смысл.
+      const nd = darkRef.current !== false;
+      const lab = themeColors(nd).lab;
+      q.val.style.background = lab;
+      q.val.style.color = nd ? '#E7E2D6' : '#26262B';
+      // ⚠️ Прижимаем к кромке ПОЛЯ, а не к краю панели: пилс последнего
+      // значения движок рисует именно там, и без этого свой пилс вставал в
+      // другую колонку и наезжал на соседний.
+      let axisW = 0;
+      try { axisW = ch.priceScale(sd).width() || 0; } catch { /* §R2-30 */ }
+      const bw = (pillsRef.current[pi]?.[sd]?.box.parentElement as HTMLElement | null)?.clientWidth ?? 0;
+      const inset = Math.max(0, bw - axisW);
+      if (sd === 'left') { q.box.style.right = inset + 'px'; q.box.style.left = 'auto'; }
+      else { q.box.style.left = inset + 'px'; q.box.style.right = 'auto'; }
+      q.box.style.top = y + 'px';
+      q.box.style.display = 'flex';
+      const plus = q.box.querySelector('[data-plus]') as HTMLDivElement | null;
+      if (plus) {
+        const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.some((a) => a.pane === pi && a.side === sd);
+        plus.style.display = on ? 'flex' : 'none';
+        // Тот же цвет, что у пилса: кружок — его продолжение, а не отдельный
+        // элемент со своим смыслом.
+        plus.style.background = lab;
+        plus.style.color = nd ? '#E7E2D6' : '#26262B';
+        plus.onclick = on ? (e) => {
+          e.stopPropagation();
+          onCreateAlertRef.current?.({ axis: sd, pane: pi, price, currentValue: price });
+        } : null;
+      }
+    };
+
+    // ── свой крест на время наведения на ЦЕНОВЫЕ ОСИ ──
     //
-    // ⚠️ ВО ВРЕМЯ ПЕРЕТАСКИВАНИЯ соседние панели не трогаем вообще.
-    // setCrosshairPosition — не пометка на канвасе, а полная перерисовка чужого
-    // чарта. На каждое движение мыши их выходило по числу соседей ПОВЕРХ
-    // перерисовки от самого пана: на полном экране с тремя панелями график
-    // начинал идти рывками. Плюс горизонталь соседа (мы уводим её за верхнюю
-    // кромку, но движок ЗАЖИМАЕТ координату) при этом дёргалась по кромке.
-    // Поэтому на нажатие кнопки гасим кроссхэйр соседей разом и до отпускания
-    // синк не трогаем: видна одна линия — на той панели, которую тащат.
-    let dragging = false;
-    const endDrag = () => { dragging = false; };
-    // Страховка от залипания: отпускание могло случиться вне окна (курсор ушёл
-    // за пределы вкладки), и тогда pointerup сюда не придёт. Любое движение без
-    // нажатой кнопки означает, что перетаскивания уже нет.
-    const checkDrag = (e: PointerEvent) => { if (dragging && e.buttons === 0) dragging = false; };
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
-    window.addEventListener('pointermove', checkDrag);
-    unsubs.push(() => {
-      window.removeEventListener('pointerup', endDrag);
-      window.removeEventListener('pointercancel', endDrag);
-      window.removeEventListener('pointermove', checkDrag);
-    });
+    // Движок рисует крест только внутри ПОЛЯ: как только курсор уходит на шкалу,
+    // панель получает mouseleave и крест гаснет весь, вместе с пилсами. А шкала —
+    // ровно то место, куда ведёшь курсор, чтобы прочитать уровень. Поэтому на
+    // время наведения на шкалу рисуем крест сами: вертикаль по последнему бару
+    // (она не должна прыгать от вертикального движения), горизонталь по курсору.
+    const axV: HTMLDivElement[] = [];
+    const axH: HTMLDivElement[] = [];
     boxes.forEach((box, i) => {
       if (!box) return;
-      const onDown = () => {
-        dragging = true;
-        suppress = true;
-        try { chartsRef.current.forEach((c, j) => { if (j !== i) c.clearCrosshairPosition(); }); }
-        finally { suppress = false; }
+      const mk = (vert: boolean) => {
+        const el = document.createElement('div');
+        el.dataset.exportIgnore = 'true';
+        el.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:none;'
+          + (vert ? 'top:0;bottom:0;border-left:1px dotted' : 'left:0;right:0;border-top:1px dotted');
+        box.appendChild(el);
+        return el;
       };
-      box.addEventListener('pointerdown', onDown);
-      unsubs.push(() => box.removeEventListener('pointerdown', onDown));
+      axV[i] = mk(true);
+      axH[i] = mk(false);
+    });
+    const hideAxisCross = () => {
+      for (const el of [...axV, ...axH]) if (el) el.style.display = 'none';
+    };
+    // Последняя позиция курсора В ПОЛЕ: с неё берём вертикаль, когда курсор ушёл
+    // на шкалу. Держим в координатах бокса, чтобы не пересчитывать оси заново.
+    let lastFieldX: number | null = null;
+    let overAxis = false;
+
+    const axisSides = (i: number): { lw: number; rw: number } => {
+      const ch = chartsRef.current[i];
+      let lw = 0, rw = 0;
+      try { lw = ch?.priceScale('left').width() || 0; } catch { /* §R2-30 */ }
+      try { rw = ch?.priceScale('right').width() || 0; } catch { /* §R2-30 */ }
+      return { lw, rw };
+    };
+
+    const onRootMove = (e: MouseEvent) => {
+      let hit = -1;
+      let rect: DOMRect | null = null;
+      boxes.forEach((b, i) => {
+        if (!b) return;
+        const r = b.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY < r.bottom && e.clientX >= r.left && e.clientX < r.right) { hit = i; rect = r; }
+      });
+      if (hit < 0 || !rect) { overAxis = false; hideAxisCross(); return; }
+      const r = rect as DOMRect;
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const { lw, rw } = axisSides(hit);
+      const on = x < lw || x > r.width - rw;
+      if (on === false) { overAxis = false; hideAxisCross(); return; }
+      overAxis = true;
+      const nd = darkRef.current !== false;
+      const col = themeColors(nd).cross;
+      // Вертикаль — на всех панелях, как у общего кроссхэйра; горизонталь только
+      // на той, чью шкалу читают.
+      boxes.forEach((b, j) => {
+        if (!b) return;
+        const v = axV[j], h = axH[j];
+        if (v) {
+          if (lastFieldX == null) v.style.display = 'none';
+          else {
+            v.style.borderLeftColor = col;
+            v.style.left = (axisSides(j).lw + lastFieldX) + 'px';
+            v.style.display = 'block';
+          }
+        }
+        if (h) {
+          if (j !== hit) h.style.display = 'none';
+          else { h.style.borderTopColor = col; h.style.top = y + 'px'; h.style.display = 'block'; }
+        }
+      });
+      // Пилсы: на панели под курсором — значение по вертикали курсора.
+      const defs = panesRef.current[hit]?.series ?? [];
+      for (const sd of ['left', 'right'] as const) {
+        const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
+        const api = idx >= 0 ? apisRef.current[hit]?.[idx] : undefined;
+        showPill(hit, sd, api ? (api.coordinateToPrice(y as Coordinate) as number | null) : null);
+      }
+      panesRef.current.forEach((_, pi) => {
+        if (pi === hit) return;
+        for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
+      });
+    };
+    const onRootLeave = () => { overAxis = false; hideAxisCross(); };
+    root.addEventListener('mousemove', onRootMove, true);
+    root.addEventListener('mouseleave', onRootLeave);
+    unsubs.push(() => {
+      root.removeEventListener('mousemove', onRootMove, true);
+      root.removeEventListener('mouseleave', onRootLeave);
+      for (const el of [...axV, ...axH]) el?.parentNode?.removeChild(el);
     });
 
+    // ── общий кроссхэйр + единый тултип ──
     charts.forEach((chart, i) => {
       const handler = (param: { time?: unknown; point?: { x: number; y: number } }) => {
         if (suppress) return; // ПЕРВОЙ строкой — иначе рекурсия через setCrosshairPosition
         const tip = tips[i];
         const t = typeof param.time === 'number' ? param.time : null;
         if (t == null || !param.point) {
+          // Курсор ушёл на ценовую шкалу — движок гасит свой крест, но для
+          // пользователя это то же наведение: прятать пилсы и тултип нельзя.
+          if (overAxis) return;
           paintRowValuesRef.current?.(null);
           tips.forEach((tp) => { tp.style.display = 'none'; });
           pillsRef.current.forEach((per) => { for (const sd of ['left', 'right'] as const) { const q = per?.[sd]; if (q) q.box.style.display = 'none'; } });
@@ -679,51 +787,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
         // Пилсы: на активной панели — значение под курсором, на остальных —
         // значение синхронизированной точки на их первой серии.
-        const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
-          const q = pillsRef.current[pi]?.[sd];
-          if (!q) return;
-          const ch = chartsRef.current[pi];
-          const defs = panesRef.current[pi]?.series ?? [];
-          const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
-          const api = idx >= 0 ? apisRef.current[pi]?.[idx] : undefined;
-          if (price == null || !api || !ch) { q.box.style.display = 'none'; return; }
-          const y = api.priceToCoordinate(price);
-          if (y == null) { q.box.style.display = 'none'; return; }
-          const def = defs[idx];
-          q.val.textContent = def.axisFmt ? def.axisFmt(price) : String(Math.round(price));
-          // ⚠️ Тот же цвет, что у пилса ДАТЫ на горизонтальной оси
-          // (themeColors().lab — движок красит им подпись вертикальной линии
-          // кроссхэйра). Оба пилса показывают одно и то же: где сейчас курсор,
-          // — и разный цвет у них читался бы как разный смысл.
-          const nd = darkRef.current !== false;
-          const lab = themeColors(nd).lab;
-          q.val.style.background = lab;
-          q.val.style.color = nd ? '#E7E2D6' : '#26262B';
-          // ⚠️ Прижимаем к кромке ПОЛЯ, а не к краю панели: пилс последнего
-          // значения движок рисует именно там, и без этого свой пилс вставал в
-          // другую колонку и наезжал на соседний.
-          let axisW = 0;
-          try { axisW = ch.priceScale(sd).width() || 0; } catch { /* §R2-30 */ }
-          const bw = (pillsRef.current[pi]?.[sd]?.box.parentElement as HTMLElement | null)?.clientWidth ?? 0;
-          const inset = Math.max(0, bw - axisW);
-          if (sd === 'left') { q.box.style.right = inset + 'px'; q.box.style.left = 'auto'; }
-          else { q.box.style.left = inset + 'px'; q.box.style.right = 'auto'; }
-          q.box.style.top = y + 'px';
-          q.box.style.display = 'flex';
-          const plus = q.box.querySelector('[data-plus]') as HTMLDivElement | null;
-          if (plus) {
-            const on = !!onCreateAlertRef.current && !!alertAxesRef.current?.some((a) => a.pane === pi && a.side === sd);
-            plus.style.display = on ? 'flex' : 'none';
-            // Тот же цвет, что у пилса: кружок — его продолжение, а не отдельный
-            // элемент со своим смыслом.
-            plus.style.background = lab;
-            plus.style.color = nd ? '#E7E2D6' : '#26262B';
-            plus.onclick = on ? (e) => {
-              e.stopPropagation();
-              onCreateAlertRef.current?.({ axis: sd, pane: pi, price, currentValue: price });
-            } : null;
-          }
-        };
+        lastFieldX = param.point.x;
+        if (!overAxis) hideAxisCross();
         for (const sd of ['left', 'right'] as const) {
           const defs = panesRef.current[i]?.series ?? [];
           const idx = defs.findIndex((d) => (d.scale ?? 'right') === sd);
@@ -738,12 +803,27 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           for (const sd of ['left', 'right'] as const) showPill(pi, sd, null);
         });
 
-        if (dragging) return;   // см. комментарий выше: соседей во время пана не трогаем
         suppress = true;
         try {
           charts.forEach((other, j) => {
             if (j === i) return;
-            const firstApi = apisRef.current[j]?.[0];
+            // ⚠️ seriesApi у setCrosshairPosition нужен движку ТОЛЬКО чтобы найти
+            // панель. Саму цену он пересчитывает в координату по ДЕФОЛТНОЙ шкале
+            // этой панели — правой, если она видима и не пуста
+            // (Pane.defaultPriceScale в исходниках библиотеки). Мы же считали
+            // «цену за кромкой» по ПЕРВОЙ серии, а на панели цены первая — сама
+            // цена, и она на ЛЕВОЙ шкале. Число вроде 30000 движок прикладывал к
+            // шкале открытого интереса, и горизонталь соседа улетала в
+            // произвольное место поля — это и есть «линия телепортируется на 0».
+            // Хуже: если правая шкала пуста, firstValue у неё null и библиотека
+            // бросает изнутри — посреди обработки перетаскивания, потому что наш
+            // обработчик вызывается из её же pressedMouseMove. Кадр пана не
+            // дорабатывался: отсюда рывки и «на территории индикаторов всё
+            // пропадает» (до остальных соседей очередь не доходила).
+            const defs = panesRef.current[j]?.series ?? [];
+            let k = defs.findIndex((d) => (d.scale ?? 'right') === 'right');
+            if (k < 0) k = 0;
+            const firstApi = apisRef.current[j]?.[k];
             if (!firstApi) { other.clearCrosshairPosition(); return; }
             // ⚠️ На СОСЕДНИХ панелях нужна только ВЕРТИКАЛЬ. setCrosshairPosition
             // рисует крест целиком, а отключить горизонталь через
@@ -753,8 +833,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
             // не видна, вертикаль остаётся. Иначе при трёх индикаторах на экране
             // четыре горизонтальные линии разом.
             const off = firstApi.coordinateToPrice(-40 as Coordinate);
-            if (off != null) other.setCrosshairPosition(off as number, t as UTCTimestamp, firstApi);
-            else other.clearCrosshairPosition();
+            try {
+              if (off != null) other.setCrosshairPosition(off as number, t as UTCTimestamp, firstApi);
+              else other.clearCrosshairPosition();
+            } catch { /* шкала соседа ещё без данных — пропускаем кадр, но не рвём пан */ }
           });
         } finally { suppress = false; }
       };
@@ -1157,6 +1239,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       charts.forEach((ch) => ch.remove());
       tips.forEach((tp) => tp.parentNode?.removeChild(tp));
       legends.forEach((lg) => lg.parentNode?.removeChild(lg));
+      // ⚠️ Пилсы тоже. Их не убирали — а боксы панелей React ПЕРЕИСПОЛЬЗУЕТ,
+      // так что при смене числа панелей старые оставались в тех же div'ах и
+      // висели на экране призраками с прошлыми значениями.
+      pills.forEach((per) => {
+        if (!per) return;
+        for (const sd of ['left', 'right'] as const) per[sd]?.box.parentNode?.removeChild(per[sd]!.box);
+      });
+      pillsRef.current = [];
       chartsRef.current = [];
       apisRef.current = [];
     };
