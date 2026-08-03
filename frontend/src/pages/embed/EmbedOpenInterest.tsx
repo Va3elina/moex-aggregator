@@ -617,6 +617,25 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   );
   const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
 
+  // Пользовательские высоты панелей (разделитель между ценой и индикаторами).
+  // Ключ включает ЧИСЛО панелей: набор индикаторов меняет состав стека, и доли
+  // трёх панелей к стеку из двух не относятся.
+  const paneCountNow = chartPanes.length;
+  const [paneSizes, setPaneSizes] = useState<number[] | undefined>(undefined);
+  useEffect(() => {
+    const raw = rd(`frame:embed:oi:paneSizes:${paneCountNow}`, '');
+    try {
+      const v = raw ? (JSON.parse(raw) as number[]) : undefined;
+      setPaneSizes(v && v.length === paneCountNow && v.every((n) => Number.isFinite(n) && n > 0) ? v : undefined);
+    } catch { setPaneSizes(undefined); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneCountNow]);
+  const onPaneSizesChange = useCallback((sizes: number[]) => {
+    setPaneSizes(sizes);
+    wr(`frame:embed:oi:paneSizes:${sizes.length}`, JSON.stringify(sizes.map((v) => Math.round(v * 1000) / 1000)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Перенос линий ОИ между панелями. Двигаются ВСЕ разом (в варианте
   // «Покупки + Продажи» их две, и на разных панелях они несравнимы).
   const moveOi = useCallback((to: 'up' | 'down' | 'own' | 'main') => {
@@ -754,6 +773,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             paneOverlay={(i) => (i === 0 ? null : (
               <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} />
             ))}
+            paneSizes={paneSizes}
+            onPaneSizesChange={onPaneSizesChange}
             onCreateAlert={handleCreateAlertFromChart}
             alertAxes={alertAxes}
             dark={dark}
