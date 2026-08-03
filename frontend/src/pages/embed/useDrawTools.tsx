@@ -681,7 +681,11 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
     window.addEventListener('pointerup', up);
   };
 
-  if (!visible || !draw.drawMode) return null;
+  if (!visible) return null;
+  // ВНЕ режима рисования оверлей не исчезает целиком: фигуры выделяются обычным
+  // кликом (как в TradingView), и панель свойств обязана открываться для правки.
+  // Рейл инструментов при этом не нужен — он про создание новых фигур.
+  if (!draw.drawMode) return <DrawStylePanel draw={draw} />;
   const railLeft = railPos?.left ?? 6;
   const railTop = railPos?.top ?? 6;
   return (

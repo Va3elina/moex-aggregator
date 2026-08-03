@@ -97,6 +97,13 @@ interface LwChartPanesProps {
    *  панелью). Панель — position:relative, так что абсолютный ребёнок ложится
    *  по её углам, а не по углам всего чарта. */
   paneOverlay?: (paneIndex: number) => React.ReactNode;
+  /** Пользовательские доли высоты панелей (перетаскивание разделителя).
+   *  Приоритетнее panes[].flex; длина не совпала с числом панелей — игнор. */
+  paneSizes?: number[];
+  /** Разделитель отпустили → нормированные доли (сумма = числу панелей).
+   *  Зовётся ОДИН раз на жест: во время самого перетаскивания высоты меняются
+   *  напрямую в DOM, без React — см. правило №2 кроссхэйра, тот же принцип. */
+  onPaneSizesChange?: (sizes: number[]) => void;
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
@@ -228,7 +235,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
-  paneOverlay,
+  paneOverlay, paneSizes, onPaneSizesChange,
   selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -298,6 +305,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const vpRef = useRef<{ prim: VolumeProfilePrimitive; api: AnySeries } | null>(null);
   const syncVpRef = useRef<(() => void) | null>(null);
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
+  const onPaneSizesChangeRef = useRef(onPaneSizesChange); onPaneSizesChangeRef.current = onPaneSizesChange;
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   // Превью-уровень = НАТИВНАЯ price line. В отличие от LwChart здесь у неё включён
   // axisLabelVisible: значение рисует сама библиотека. Самодельный DOM-пилс
@@ -378,6 +386,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   };
   const drawExpRef = useRef<(() => void) | null>(null);
   const drawShapesRef = useRef<(() => void) | null>(null);
+  /** Клик по слою рисования ВНЕ режима: текст-зона выделенной линии → правка
+   *  текста; фигура → выделение; пусто → снять выделение. true = клик съеден. */
+  const drawClickRef = useRef<((x: number, y: number) => boolean) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
 
   useImperativeHandle(forwardedRef, () => ({
@@ -409,6 +420,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     },
   }), []);
 
+  // Пользовательские доли высоты применяются ПОСЛЕ КАЖДОГО рендера (без депсов):
+  // React пишет в style панелей flex из panes[].flex, и любой ререндер затирал
+  // бы перетащенное. Запись того же значения relayout не вызывает — дёшево.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !paneSizes) return;
+    const bxs = paneBoxes(root);
+    if (paneSizes.length !== bxs.length) return;
+    bxs.forEach((b, i) => { if (b) b.style.flex = `${paneSizes[i]} 1 0%`; });
+  });
+
   // ── создание N чартов + связка (пересоздаётся при смене числа панелей) ──
   useEffect(() => {
     const root = rootRef.current;
@@ -424,7 +446,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     let suppress = false;     // _suppress: программный кроссхэйр соседа
     let buttonsDown = false;  // зажата кнопка → идёт пан, свои кресты не трогаем
     const onBtnDown = () => { buttonsDown = true; };
-    const onBtnUp = () => { buttonsDown = false; };
+    const onBtnUp = () => {
+      buttonsDown = false;
+      // Жест кончился → перерисовать фигуры и дослать замороженный selRect.
+      requestAnimationFrame(() => drawShapesRef.current?.());
+    };
     window.addEventListener('pointerdown', onBtnDown, true);
     window.addEventListener('pointerup', onBtnUp, true);
     window.addEventListener('pointercancel', onBtnUp, true);
@@ -603,6 +629,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       if (!box) return;
       const onPillClick = (e: MouseEvent) => {
         if ((e.target as HTMLElement | null)?.tagName !== 'CANVAS') return;
+        // Вне режима рисования фигуры выделяются обычным кликом (как в
+        // TradingView): хит-тест по слою рисования этой панели. В режиме
+        // рисования сюда не попадаем — клики забирает его хит-слой (не CANVAS).
+        if (i === drawPaneIndexRef.current && drawClickRef.current) {
+          const br = box.getBoundingClientRect();
+          if (drawClickRef.current(e.clientX - br.left, e.clientY - br.top)) { e.stopPropagation(); return; }
+        }
         const per = pillsRef.current[i];
         if (!per) return;
         for (const sd of ['left', 'right'] as const) {
@@ -666,6 +699,55 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         plus.style.color = nd ? '#E7E2D6' : '#26262B';
       }
     };
+
+    // ── разделители панелей: перетаскивание высоты (как в TradingView) ──
+    // Высоты меняются НАПРЯМУЮ в DOM (style.flex): ререндер во время жеста
+    // упирается в правило №2 кроссхэйра (эффект серий восстанавливает диапазон,
+    // вид дёргается). autoSize чартов сам подхватывает новую высоту. Наружу
+    // (персист) уходит ОДИН вызов на отпускании.
+    boxes.forEach((bx, i) => {
+      if (!bx || i === 0) return;
+      const grip = document.createElement('div');
+      grip.dataset.exportIgnore = 'true';
+      grip.style.cssText = 'position:absolute;left:0;right:0;top:-3px;height:7px;z-index:9;cursor:row-resize;background:transparent';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute;left:0;right:0;top:3px;height:1px;background:transparent;transition:background .12s;pointer-events:none';
+      grip.appendChild(bar);
+      grip.addEventListener('mouseenter', () => { bar.style.background = 'var(--accent,#FF5C2B)'; });
+      grip.addEventListener('mouseleave', () => { bar.style.background = 'transparent'; });
+      grip.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const above = boxes[i - 1];
+        if (!above) return;
+        const h0a = above.getBoundingClientRect().height;
+        const h0b = bx.getBoundingClientRect().height;
+        const y0 = e.clientY;
+        // Все панели переводим на пиксельные доли — иначе изменение двух flex
+        // при третьей панели перераспределяло бы и её высоту.
+        const all = boxes.map((b) => (b ? b.getBoundingClientRect().height : 0));
+        boxes.forEach((b, j) => { if (b) b.style.flex = `${all[j]} 1 0%`; });
+        const move = (ev: PointerEvent) => {
+          const dy = ev.clientY - y0;
+          // Минимумы: цене — чтобы остался читаемый график, индикатору — строка.
+          let na = h0a + dy, nb = h0b - dy;
+          if (na < 64) { na = 64; nb = h0a + h0b - 64; }
+          if (nb < 44) { nb = 44; na = h0a + h0b - 44; }
+          above.style.flex = `${na} 1 0%`;
+          bx.style.flex = `${nb} 1 0%`;
+        };
+        const up = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          const hs = boxes.map((b) => (b ? b.getBoundingClientRect().height : 1));
+          const sum = hs.reduce((acc, v) => acc + v, 0) || 1;
+          onPaneSizesChangeRef.current?.(hs.map((h) => (h / sum) * hs.length));
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+      bx.appendChild(grip);
+      unsubs.push(() => grip.remove());
+    });
 
     // ── свой крест на время наведения на ЦЕНОВЫЕ ОСИ ──
     //
@@ -743,6 +825,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       }
       const r = rect as DOMRect;
       const x = e.clientX - r.left, y = e.clientY - r.top;
+      // Ниже кромки ПОЛЯ (полоса оси дат нижней панели и её углы под ценовыми
+      // шкалами) значений нет: coordinateToPrice охотно экстраполирует за поле,
+      // и в этой полосе пилсы показывали числа, к которым курсор не имеет
+      // отношения — «под индикатором видно значение цены».
+      const axisHBot = hit === boxes.length - 1 ? (chartsRef.current[hit]?.timeScale().height() || 0) : 0;
+      if (axisHBot && y > r.height - axisHBot) {
+        if (overAxis) { overAxis = false; hideCursorUi(); }
+        return;
+      }
       const { lw, rw } = axisSides(hit);
       const on = x < lw || x > r.width - rw;
       if (!on) { overAxis = false; hideAxisCross(); return; }
@@ -1049,6 +1140,62 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (dash === 'dotted') return `0.1 ${Math.max(w * 2.4, 4)}`;
         return 'none';
       };
+      // ── текст на линиях/стрелках (как в TradingView): у выделенной линии в
+      // середине живёт «+ Добавьте текст», клик по нему — ввод; введённый текст
+      // рисуется над серединой цветом фигуры. Инструменты: тренд/луч/стрелка/
+      // горизонталь/вертикаль.
+      const LINE_TEXT_TOOLS = new Set(['trend', 'ray', 'arrow', 'hline', 'vline']);
+      const lineTextAnchor = (d: LwDrawing): { x: number; y: number } | null => {
+        const pb = plotBox();
+        if (d.tool === 'hline') { const xy = lp2xy(d.pts[0]); return xy ? { x: pb.left + pb.width / 2, y: xy.y } : null; }
+        if (d.tool === 'vline') { const xy = lp2xy(d.pts[0]); return xy ? { x: xy.x, y: pb.height / 2 } : null; }
+        const a = lp2xy(d.pts[0]), b0 = d.pts[1] ? lp2xy(d.pts[1]) : null;
+        if (!a || !b0) return null;
+        const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
+        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      };
+      const lineTextZone = (d: LwDrawing): { x: number; y: number; w: number; h: number } | null => {
+        if (!LINE_TEXT_TOOLS.has(d.tool)) return null;
+        const anch = lineTextAnchor(d); if (!anch) return null;
+        const label = d.text || '+ Добавьте текст';
+        const w2 = Math.max(46, label.length * 7 / 2) + 6;
+        return { x: anch.x - w2, y: anch.y - 26, w: w2 * 2, h: 26 };
+      };
+      const renderLineText = (d: LwDrawing, sel: boolean, preview: boolean) => {
+        if (!LINE_TEXT_TOOLS.has(d.tool)) return;
+        const anch = lineTextAnchor(d); if (!anch) return;
+        const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
+        if (d.text) {
+          const t = svgEl('text', {
+            x: anch.x, y: anch.y - 7 - d.width, fill: d.color, 'font-size': 12.5,
+            'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op,
+          });
+          t.textContent = d.text;
+          drawSvg.appendChild(t);
+        } else if (sel && !preview) {
+          const t = svgEl('text', {
+            x: anch.x, y: anch.y - 8, fill: d.color, 'font-size': 12,
+            'font-family': 'Inter,-apple-system,sans-serif', 'text-anchor': 'middle', opacity: '0.55',
+          });
+          t.textContent = '+ Добавьте текст';
+          drawSvg.appendChild(t);
+        }
+      };
+      // Клик в текст-зону УЖЕ выделенной линии → ввод/правка текста. Только
+      // выделенной: первый клик по линии выделяет, второй — редактирует, как в
+      // терминале; иначе зона у середины мешала бы просто выделять линию.
+      const lineTextClick = (bx: number, by: number): boolean => {
+        const selId = selectedDrawIdRef.current;
+        if (!selId) return false;
+        const d = (drawingsRef.current ?? []).find((q) => q.id === selId);
+        if (!d || d.hidden) return false;
+        const z = lineTextZone(d);
+        if (!z || bx < z.x || bx > z.x + z.w || by < z.y || by > z.y + z.h) return false;
+        const txt = window.prompt('Текст:', d.text || '');
+        if (txt != null) commit((drawingsRef.current ?? []).map((q) => (q.id === selId ? { ...q, text: txt || undefined } : q)));
+        return true;
+      };
+
       const renderOne = (d: LwDrawing, sel: boolean, preview = false) => {
         const col = d.color, w = d.width, pb = plotBox();
         const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
@@ -1060,10 +1207,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
           drawSvg.appendChild(svgEl('line', { x1: pb.left, y1: xy.y, x2: pb.left + pb.width, y2: xy.y, ...S, 'stroke-linecap': lc }));
           if (sel) dot(pb.left + pb.width / 2, xy.y);
+          renderLineText(d, sel, preview);
         } else if (d.tool === 'vline') {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
           drawSvg.appendChild(svgEl('line', { x1: xy.x, y1: 0, x2: xy.x, y2: pb.height, ...S, 'stroke-linecap': lc }));
           if (sel) dot(xy.x, pb.height / 2);
+          renderLineText(d, sel, preview);
         } else if (d.tool === 'trend' || d.tool === 'ray' || d.tool === 'arrow') {
           const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (!a || !b0) return;
           const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
@@ -1073,6 +1222,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
             for (const s of [-0.42, 0.42]) drawSvg.appendChild(svgEl('line', { x1: b0.x, y1: b0.y, x2: b0.x - ah * Math.cos(ang - s), y2: b0.y - ah * Math.sin(ang - s), stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
           }
           if (sel) { dot(a.x, a.y); dot(b0.x, b0.y); }
+          renderLineText(d, sel, preview);
         } else if (d.tool === 'rect' || d.tool === 'ellipse') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
           const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
@@ -1150,6 +1300,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       };
       let lastRectKey = ' ';
       const emitSelRect = (r: { x: number; y: number; w: number; h: number } | null) => {
+        // ⚠️ ПОКА ИДЁТ ЖЕСТ (тащат фигуру или панорамируют график с выделением)
+        // — НЕ слать. Прямоугольник меняется каждый кадр, а onSelectionRect —
+        // это setState embed'а: выходил ререндер на каждый кадр жеста — те
+        // самые «фризы и подёргивания только в режиме рисования». Панель
+        // свойств на время жеста замирает (как в TradingView), актуальный rect
+        // досылается по отпусканию кнопки (см. onBtnUp).
+        if (dragState || buttonsDown) return;
         const key = r ? `${Math.round(r.x)}|${Math.round(r.y)}|${Math.round(r.w)}|${Math.round(r.h)}` : '';
         if (key === lastRectKey) return;
         lastRectKey = key;
@@ -1177,6 +1334,17 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawHit.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
       };
       drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
+      drawClickRef.current = (bx: number, by: number): boolean => {
+        if (drawHiddenRef.current || drawLockedRef.current) return false;
+        if (lineTextClick(bx, by)) return true;
+        const hit = hitTest(bx, by);
+        const cur = selectedDrawIdRef.current;
+        if (!hit && cur == null) return false;   // пусто и выделения не было — клик не наш
+        selectedDrawIdRef.current = hit ? hit.id : null;
+        onSelectDrawRef.current?.(hit ? hit.id : null);
+        drawShapes();
+        return !!hit;
+      };
 
       const distToSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
         const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
@@ -1207,6 +1375,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const { x, y } = relXY(e);
         if (tool === 'select') {
           if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }
+          if (lineTextClick(x, y)) return;
           const hit = hitTest(x, y);
           selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
           if (hit && !hit.locked) {   // per-element замок: выделить можно, двигать нельзя
@@ -1300,9 +1469,21 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       syncDrawInteractivity();
 
       // Перепроецировать фигуры на пан/зум/ресайз этой панели (как экспирации LwChart).
-      const onRange = () => drawShapes();
+      // rAF-коалесинг: событие диапазона при пане прилетает чаще кадра, а каждый
+      // вызов — полная пересборка SVG. Без коалесинга фигуры «плыли» за графиком
+      // с отставанием, это выглядело как «нарисованное съезжает при перемещении».
+      let shapesRaf = 0;
+      const scheduleShapes = () => {
+        if (shapesRaf) return;
+        shapesRaf = requestAnimationFrame(() => { shapesRaf = 0; drawShapes(); });
+      };
+      const onRange = () => scheduleShapes();
       chart()?.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-      const drawRo = new ResizeObserver(() => drawShapes());
+      // Двойной тик: RO срабатывает ДО того, как чарт применит новый размер
+      // (его autoSize — свой асинхронный RO). Один прогон по старой геометрии,
+      // второй кадром позже по новой — иначе после разворота на весь экран
+      // фигуры оставались спроецированными по старым координатам.
+      const drawRo = new ResizeObserver(() => { drawShapes(); requestAnimationFrame(() => drawShapes()); });
       drawRo.observe(box);
 
       cleanupDraw = () => {
@@ -1311,10 +1492,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawHit.removeEventListener('pointerup', onDrawUp);
         drawHit.removeEventListener('dblclick', onDrawDbl);
         try { chart()?.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* chart removed */ }
+        if (shapesRaf) cancelAnimationFrame(shapesRaf);
         drawRo.disconnect();
         drawSvg.parentNode?.removeChild(drawSvg);
         drawHit.parentNode?.removeChild(drawHit);
         drawShapesRef.current = null;
+        drawClickRef.current = null;
       };
     }
 
