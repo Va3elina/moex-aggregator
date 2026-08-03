@@ -488,7 +488,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
         },
         handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: false } },
+        // price: true — тянешь ЦЕНОВУЮ ОСЬ и масштаб фиксируется (движок сам
+        // снимает autoScale). Без этого шкала была ВСЕГДА автоматической и
+        // пересчитывалась под каждое новое окно при пане: у цены и ОИ пределы
+        // разные, они «дышали» вразнобой — Вадим видел это как «график странно
+        // меняет масштаб при перемещении по времени». Вернуть авто — двойной
+        // клик по оси (ниже). time остаётся false: горизонтальный масштаб
+        // общий для стека и синхронизируется отдельно.
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: true } },
       });
       charts.push(chart);
       hideTvLogo();
@@ -1067,7 +1074,10 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       const box = boxes[dpi];
       const chart = () => chartsRef.current[dpi];
       const drawSvg = document.createElementNS(SVGNS, 'svg');
-      drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:visible;pointer-events:none;touch-action:none';
+      // ⚠️ overflow:hidden, НЕ visible. Слой живёт в боксе панели цены, и с visible
+      // длинная трендовая линия рисовалась поверх панелей индикаторов снизу —
+      // перечёркивала RSI. Обрезаем по своей панели, как терминал.
+      drawSvg.style.cssText = 'position:absolute;inset:0;z-index:7;overflow:hidden;pointer-events:none;touch-action:none';
       box.appendChild(drawSvg);
       const drawHit = document.createElement('div');
       drawHit.style.cssText = 'position:absolute;inset:0;z-index:8;pointer-events:none;touch-action:none';
@@ -1368,9 +1378,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         emitSelRect(live && !live.hidden ? shapeRect(live) : null);
       };
       const syncDrawInteractivity = () => {
-        const on = !!drawActiveRef.current;
+        // ⚠️ Хит-слой перехватывает мышь ТОЛЬКО когда выбран инструмент рисования.
+        // На «выделении» он прозрачен: иначе в режиме рисования график нельзя было
+        // ни панорамировать, ни зумить — слой съедал все жесты. Выделение и
+        // перетаскивание фигур на «выделении» работают через onOutsideDown
+        // (тот же путь, что и вне режима), а он перехватывает строго при
+        // попадании в фигуру.
+        const on = !!drawActiveRef.current && !!drawToolRef.current && drawToolRef.current !== 'select';
         drawHit.style.pointerEvents = on ? 'auto' : 'none';
-        drawHit.style.cursor = on ? ((drawToolRef.current && drawToolRef.current !== 'select') ? 'crosshair' : 'default') : 'default';
+        drawHit.style.cursor = on ? 'crosshair' : 'default';
       };
       drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
       drawClickRef.current = (bx: number, by: number): boolean => {
@@ -1522,7 +1538,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       // параллельно с нашим перетаскиванием.
       let swallowMouse = false;
       const onOutsideDown = (e: PointerEvent) => {
-        if (drawActiveRef.current) return;                       // в режиме этим занят drawHit
+        // В режиме рисования сюда доходим только на «выделении» (при активном
+        // инструменте хит-слой ловит события сам и мы до канваса не добираемся).
+        if (drawActiveRef.current && drawToolRef.current && drawToolRef.current !== 'select') return;
         if (drawHiddenRef.current || drawLockedRef.current) return;
         if (e.button !== 0) return;
         if ((e.target as HTMLElement | null)?.tagName !== 'CANVAS') return; // строки/кнопки/грипы — не наши
@@ -1613,6 +1631,25 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       };
       bx.addEventListener('wheel', onWheel, { capture: true, passive: false });
       wheelOff.push(() => bx.removeEventListener('wheel', onWheel, true));
+      // Двойной клик по ценовой оси — вернуть автомасштаб (и сбросить отступы,
+      // накрученные колесом). Ровно как в терминалах.
+      const onAxisDbl = (e: MouseEvent) => {
+        const ch = chartsRef.current[i];
+        if (!ch) return;
+        const r = bx.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        let lw = 0, rw = 0;
+        try { lw = ch.priceScale('left').width() || 0; } catch { /* §R2-30 */ }
+        try { rw = ch.priceScale('right').width() || 0; } catch { /* §R2-30 */ }
+        if (x >= lw && x <= r.width - rw) return;   // двойной клик в поле — не наш
+        e.preventDefault(); e.stopPropagation();
+        margin.v = 0.12;
+        for (const side of ['left', 'right'] as const) {
+          try { ch.priceScale(side).applyOptions({ autoScale: true, scaleMargins: { top: 0.12, bottom: 0.06 } }); } catch { /* шкала скрыта */ }
+        }
+      };
+      bx.addEventListener('dblclick', onAxisDbl, true);
+      wheelOff.push(() => bx.removeEventListener('dblclick', onAxisDbl, true));
     });
 
     return () => {

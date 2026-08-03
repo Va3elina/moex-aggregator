@@ -7,7 +7,7 @@
  * в обеих темах): это осознанный выбор пользователя, поэтому он одинаков на
  * сайте, в расширении и в песочнице.
  */
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
@@ -93,7 +93,12 @@ export function useSeriesFormats(lsKey: string) {
   // «Глаз» строки в списке индикаторов: нативную серию нельзя удалить, но можно
   // скрыть. undefined трактуется как видимая — старый персист читается как есть.
   const setVisible = useCallback((id: string, visible: boolean) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), visible } })), []);
-  return { get, setKind, setColor, setVisible };
+  // ⚠️ useMemo обязателен. Новый объект на каждый рендер попадал в депсы мемо
+  // в embed'ах (visibleNative/allSeries → chartPanes), и ЛЮБОЙ ререндер —
+  // например, выделение фигуры кликом — пересоздавал ВСЕ серии графика с
+  // восстановлением диапазона. Вадим видел это как «нажал на линию и меня
+  // телепортировало» плюс микрофриз (пересоздание серий ≈ 100 мс по замеру).
+  return useMemo(() => ({ get, setKind, setColor, setVisible }), [get, setKind, setColor, setVisible]);
 }
 
 /** Применить формат к серии: тип + цвет (+ градиент области / база столбцов). */
