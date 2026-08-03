@@ -393,22 +393,21 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
 
   useImperativeHandle(forwardedRef, () => ({
     syncBeforeCapture: () => {
-      const pi = drawPaneIndexRef.current;
-      if (pi != null) {
-        const root = rootRef.current;
-        const box = root ? paneBoxes(root)[pi] : null;
-        const chart = chartsRef.current[pi];
-        if (box && chart) {
-          // panes делят h пропорционально flex — сам drawPaneIndex-бокс мог не
-          // получить обновлённый размер синхронно; берём его РЕАЛЬНЫЙ текущий
-          // clientWidth/Height (уже актуальный к моменту вызова), а не входные w/h
-          // (те — размер ВСЕГО стека панелей, не одной панели).
-          chart.resize(box.clientWidth, box.clientHeight);
-        }
-      }
+      const root = rootRef.current;
+      const boxes = root ? paneBoxes(root) : [];
+      // ⚠️ Ресайзим ВСЕ панели, а не только ту, где рисование. Раньше здесь была
+      // одна панель (drawPaneIndex), и на экспортном снимке панели индикаторов
+      // оставались с прежним размером канваса — их поле выходило шире ценового,
+      // края не совпадали. Панели делят высоту по flex, и свой РЕАЛЬНЫЙ
+      // clientWidth/Height к этому моменту знает каждая (входные w/h — размер
+      // всего стека, а не отдельной панели).
+      chartsRef.current.forEach((chart, i) => {
+        const box = boxes[i];
+        if (box && chart) chart.resize(box.clientWidth, box.clientHeight);
+      });
       // Шрифт масштабируем по ширине ВСЕГО стека панелей (общая для всех) —
       // см. LwChartHandle.syncBeforeCapture в LwChart.tsx.
-      const stackW = rootRef.current?.clientWidth;
+      const stackW = root?.clientWidth;
       if (stackW) {
         const fs = Math.round(BASE_FONT_SIZE * captureFontScale(stackW));
         chartsRef.current.forEach((chart) => chart.applyOptions({ layout: { fontSize: fs } }));
@@ -1020,34 +1019,31 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           charts.forEach((other, j) => {
             if (j === i) return;
             // ⚠️ seriesApi у setCrosshairPosition нужен движку ТОЛЬКО чтобы найти
-            // панель. Саму цену он пересчитывает в координату по ДЕФОЛТНОЙ шкале
-            // этой панели — правой, если она видима и не пуста
-            // (Pane.defaultPriceScale в исходниках библиотеки). Мы же считали
-            // «цену за кромкой» по ПЕРВОЙ серии, а на панели цены первая — сама
-            // цена, и она на ЛЕВОЙ шкале. Число вроде 30000 движок прикладывал к
-            // шкале открытого интереса, и горизонталь соседа улетала в
-            // произвольное место поля — это и есть «линия телепортируется на 0».
-            // Хуже: если правая шкала пуста, firstValue у неё null и библиотека
-            // бросает изнутри — посреди обработки перетаскивания, потому что наш
-            // обработчик вызывается из её же pressedMouseMove. Кадр пана не
-            // дорабатывался: отсюда рывки и «на территории индикаторов всё
-            // пропадает» (до остальных соседей очередь не доходила).
+            // панель. Цену он пересчитывает в координату по ДЕФОЛТНОЙ шкале этой
+            // панели — правой, если она видима и не пуста (Pane.defaultPriceScale
+            // в исходниках библиотеки). Поэтому и серию берём с той же шкалы:
+            // считать по первой серии панели нельзя, на панели цены первая — сама
+            // цена на ЛЕВОЙ шкале (PR #923).
             const defs = panesRef.current[j]?.series ?? [];
             let k = defs.findIndex((d) => (d.scale ?? 'right') === 'right');
             if (k < 0) k = 0;
             const firstApi = apisRef.current[j]?.[k];
             if (!firstApi) { other.clearCrosshairPosition(); return; }
-            // ⚠️ На СОСЕДНИХ панелях нужна только ВЕРТИКАЛЬ. setCrosshairPosition
-            // рисует крест целиком, а отключить горизонталь через
-            // applyOptions({crosshair}) нельзя — вне эффекта темы это убивает
-            // кроссхэйр насмерть (см. память chart_architecture). Поэтому цену
-            // берём ЗА ВЕРХНЕЙ КРОМКОЙ пейна: горизонталь уходит в отсечение и
-            // не видна, вертикаль остаётся. Иначе при трёх индикаторах на экране
-            // четыре горизонтальные линии разом.
-            const off = firstApi.coordinateToPrice(-40 as Coordinate);
+            // На соседях нужна только ВЕРТИКАЛЬ. Отключить горизонталь через
+            // applyOptions({crosshair}) нельзя (правило №1), поэтому уводим её
+            // цену далеко за пределы данных.
+            // ⚠️ Считаем от ДАННЫХ, а не от координаты кромки. Раньше тут было
+            // coordinateToPrice(-40): цена «на 40px выше поля» ВЕРНА ТОЛЬКО ДЛЯ
+            // ТЕКУЩЕГО масштаба, а при перетаскивании шкала автоскейлится каждый
+            // кадр — и та же цена оказывалась уже внутри диапазона. Горизонталь
+            // соседа выныривала у верхней кромки и дёргалась: Вадим видел
+            // «кроссхэйр по горизонтали улетает в самый верх». В маленьком окне
+            // перестройка шкалы крупнее относительно высоты — потому и заметнее.
+            const dat = defs[k]?.data;
+            const base = dat && dat.length ? (dat[dat.length - 1].value ?? 0) : 0;
+            const off = base - (Math.abs(base) + 1) * 1e4;
             try {
-              if (off != null) other.setCrosshairPosition(off as number, t as UTCTimestamp, firstApi);
-              else other.clearCrosshairPosition();
+              other.setCrosshairPosition(off, t as UTCTimestamp, firstApi);
             } catch { /* шкала соседа ещё без данных — пропускаем кадр, но не рвём пан */ }
           });
         } finally { suppress = false; }
@@ -1176,9 +1172,25 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const anch = lineTextAnchor(d); if (!anch) return;
         const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
         if (d.text) {
+          const fs = d.textSize ?? 12.5;
+          const fill = d.textColor || d.color;
+          const pos = d.textPos ?? 'above';
+          // above — над линией, center — по её оси, below — под ней. Отступ от
+          // толщины линии, иначе жирная линия наезжает на буквы.
+          const dy = pos === 'center' ? fs * 0.36 : pos === 'below' ? fs + 5 + d.width : -(7 + d.width);
+          const ty = anch.y + dy;
+          if (d.textBg) {
+            // Подложка ЗА текстом: на свечах голая подпись читается плохо.
+            const bw = d.text.length * fs * 0.56 + 10, bh = fs + 6;
+            drawSvg.appendChild(svgEl('rect', {
+              x: anch.x - bw / 2, y: ty - fs * 0.82, width: bw, height: bh, rx: 4,
+              fill: 'var(--bg-secondary,#17161A)', 'fill-opacity': op, stroke: fill, 'stroke-opacity': String(Number(op) * 0.45), 'stroke-width': 1,
+            }));
+          }
           const t = svgEl('text', {
-            x: anch.x, y: anch.y - 7 - d.width, fill: d.color, 'font-size': 12.5,
-            'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op,
+            x: anch.x, y: ty, fill, 'font-size': fs,
+            'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': d.textBold === false ? 500 : 600,
+            'text-anchor': 'middle', opacity: op,
           });
           t.textContent = d.text;
           drawSvg.appendChild(t);
@@ -1318,8 +1330,18 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
         } else if (d.tool === 'text') {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
-          const t = svgEl('text', { x: xy.x, y: xy.y, fill: col, 'font-size': 13 + w * 2, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': 600, opacity: op });
-          t.textContent = d.text || 'Текст';
+          const fs = d.textSize ?? (13 + w * 2);
+          const fill = d.textColor || col;
+          const label = d.text || 'Текст';
+          if (d.textBg) {
+            const bw = label.length * fs * 0.56 + 10, bh = fs + 6;
+            drawSvg.appendChild(svgEl('rect', {
+              x: xy.x - 5, y: xy.y - fs * 0.82, width: bw, height: bh, rx: 4,
+              fill: 'var(--bg-secondary,#17161A)', 'fill-opacity': op, stroke: fill, 'stroke-opacity': String(Number(op) * 0.45), 'stroke-width': 1,
+            }));
+          }
+          const t = svgEl('text', { x: xy.x, y: xy.y, fill, 'font-size': fs, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': d.textBold === false ? 500 : 600, opacity: op });
+          t.textContent = label;
           drawSvg.appendChild(t);
           if (sel) dot(xy.x - 4, xy.y - 5);
         }
@@ -1339,7 +1361,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (d.tool === 'hline') return { x: pb.left + ox, y: pts[0].y + oy, w: pb.width, h: 0 };
         if (d.tool === 'vline') return { x: pts[0].x + ox, y: oy, w: 0, h: pb.height };
         if (d.tool === 'text') {
-          const fs = 13 + d.width * 2;
+          const fs = d.textSize ?? (13 + d.width * 2);
           return { x: pts[0].x + ox, y: pts[0].y - fs + oy, w: Math.max(40, (d.text || 'Текст').length * fs * 0.58), h: fs };
         }
         if (d.tool === 'ray' && pts.length >= 2) pts[1] = rayEnd(pts[0], pts[1], pb);
@@ -1418,7 +1440,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           else if (d.tool === 'rect' || d.tool === 'ellipse' || d.tool === 'ruler') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
           else if (d.tool === 'fib') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x); if (bx >= xL - 5 && bx <= xR + 5) { const p0 = d.pts[0].price, p1 = d.pts[1].price; for (const lv of FIB) { const yy = priceY(p0 + (p1 - p0) * lv); if (yy != null && Math.abs(by - yy) < 6) return d; } } } }
           else if (d.tool === 'brush') { const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[]; for (let j = 1; j < pnts.length; j++) if (distToSeg(bx, by, pnts[j - 1].x, pnts[j - 1].y, pnts[j].x, pnts[j].y) < 6) return d; }
-          else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 44 && Math.abs(by - (xy.y - 6)) < 14) return d; }
+          else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); const fs = d.textSize ?? (13 + d.width * 2); const half = Math.max(30, (d.text || 'Текст').length * fs * 0.3); if (xy && bx > xy.x - 6 && bx < xy.x + half * 2 && Math.abs(by - (xy.y - fs * 0.35)) < fs * 0.8 + 4) return d; }
         }
         return null;
       };

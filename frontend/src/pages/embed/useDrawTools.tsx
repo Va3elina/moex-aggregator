@@ -21,7 +21,7 @@ import {
   Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
-import type { LwDrawing, LwDrawTool, LwDash, LwMagnet } from '../../components/chart/lwTypes';
+import type { LwDrawing, LwDrawTool, LwDash, LwMagnet, LwTextPos } from '../../components/chart/lwTypes';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 
@@ -41,6 +41,13 @@ const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; r
   { id: 'ruler', title: 'Линейка', Icon: Ruler },
   { id: 'text', title: 'Текст', Icon: Type },
 ];
+/** Кто поддерживает текст: сама текст-фигура и линии (подпись на фигуре). */
+const TEXT_TOOLS = new Set(['text', 'trend', 'ray', 'arrow', 'hline', 'vline']);
+const TEXT_SIZES = [11, 13, 16, 20, 26];
+/** Дефолтный кегль: у линий — 12.5, у текст-фигуры историческая формула от
+ *  толщины (её сохраняем, чтобы старые подписи не поменяли размер). */
+const defTextSize = (d: LwDrawing): number => (d.tool === 'text' ? 13 + d.width * 2 : 12.5);
+
 const DRAW_TOOL_NAME: Record<string, string> = Object.fromEntries(DRAW_TOOLS.filter((t) => t.id !== 'select').map((t) => [t.id, t.title]));
 const DRAW_HOTKEY: Record<string, string> = { trend: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V', fib: 'Alt+F', rect: 'Alt+⇧R' };
 /** Палитра поповера цвета: верхний ряд — базовые тона (те же, что были в старом
@@ -527,7 +534,9 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
   const dash: LwDash = d.dash ?? 'solid';
   const tabs: { id: typeof tab; name: string }[] = [
     { id: 'style', name: 'Стиль' },
-    ...(d.tool === 'text' ? [{ id: 'text' as const, name: 'Текст' }] : []),
+    // Текст есть и у линий (подпись на фигуре, как в TradingView) — вкладка
+    // показывается для всех, кто его поддерживает.
+    ...(TEXT_TOOLS.has(d.tool) ? [{ id: 'text' as const, name: 'Текст' }] : []),
     { id: 'coords', name: 'Координаты' },
   ];
   const label: CSSProperties = { fontSize: 11, color: 'var(--text-secondary)', minWidth: 96 };
@@ -602,15 +611,64 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
         {tab === 'text' && (
           <>
             <textarea
-              value={d.text ?? ''} onChange={(e) => set({ text: e.target.value })} rows={3}
-              placeholder="Текст на графике"
+              value={d.text ?? ''} onChange={(e) => set({ text: e.target.value || undefined })} rows={2}
+              placeholder={d.tool === 'text' ? 'Текст на графике' : 'Подпись на фигуре'}
               style={{ ...inputSt, width: '100%', resize: 'vertical', marginBottom: 9, fontFamily: 'inherit' }}
             />
             <div style={row}>
               <span style={label}>Размер</span>
-              {[1, 2, 3, 4].map((wv) => (
-                <button key={wv} type="button" onClick={() => set({ width: wv })} style={{ ...PBTN, fontSize: 11, fontWeight: 700, border: '1px solid ' + (d.width === wv ? 'var(--accent)' : 'transparent') }}>{13 + wv * 2}</button>
+              {TEXT_SIZES.map((fs) => (
+                <button
+                  key={fs} type="button" onClick={() => set({ textSize: fs })}
+                  style={{ ...PBTN, fontSize: 11, fontWeight: 700, border: '1px solid ' + ((d.textSize ?? defTextSize(d)) === fs ? 'var(--accent)' : 'transparent') }}
+                >
+                  {fs}
+                </button>
               ))}
+            </div>
+            <div style={row}>
+              <span style={label}>Цвет текста</span>
+              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* «Как фигура» — дефолт: подпись перекрашивается вместе с линией. */}
+                <button
+                  type="button" title="Как у фигуры" onClick={() => set({ textColor: null })}
+                  style={{ ...PBTN, fontSize: 10, padding: '0 6px', width: 'auto', border: '1px solid ' + (d.textColor ? 'transparent' : 'var(--accent)') }}
+                >
+                  как фигура
+                </button>
+                {PALETTE_ROWS[0].slice(0, 6).map((c) => (
+                  <button key={c} type="button" title={c} onClick={() => set({ textColor: c })} style={{ width: 15, height: 15, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: (d.textColor || '').toLowerCase() === c.toLowerCase() ? '2px solid var(--accent)' : '1px solid rgba(128,128,128,0.35)' }} />
+                ))}
+                <input type="color" value={d.textColor || d.color} onChange={(e) => set({ textColor: e.target.value })} title="Свой цвет" style={{ width: 22, height: 17, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }} />
+              </div>
+            </div>
+            {d.tool !== 'text' && (
+              <div style={row}>
+                <span style={label}>Положение</span>
+                {([['above', 'над'], ['center', 'по центру'], ['below', 'под']] as [LwTextPos, string][]).map(([id, name]) => (
+                  <button
+                    key={id} type="button" onClick={() => set({ textPos: id })}
+                    style={{ ...PBTN, width: 'auto', padding: '0 8px', fontSize: 11, border: '1px solid ' + ((d.textPos ?? 'above') === id ? 'var(--accent)' : 'transparent') }}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={row}>
+              <span style={label}>Оформление</span>
+              <button
+                type="button" onClick={() => set({ textBold: d.textBold === false })}
+                style={{ ...PBTN, width: 'auto', padding: '0 9px', fontSize: 12, fontWeight: 800, border: '1px solid ' + (d.textBold === false ? 'transparent' : 'var(--accent)') }}
+              >
+                Ж
+              </button>
+              <button
+                type="button" title="Подложка под текстом — читаемо поверх свечей" onClick={() => set({ textBg: !d.textBg })}
+                style={{ ...PBTN, width: 'auto', padding: '0 9px', fontSize: 11, border: '1px solid ' + (d.textBg ? 'var(--accent)' : 'transparent') }}
+              >
+                подложка
+              </button>
             </div>
           </>
         )}
@@ -704,7 +762,16 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
   // ВНЕ режима рисования оверлей не исчезает целиком: фигуры выделяются обычным
   // кликом (как в TradingView), и панель свойств обязана открываться для правки.
   // Рейл инструментов при этом не нужен — он про создание новых фигур.
-  if (!draw.drawMode) return <DrawStylePanel draw={draw} />;
+  if (!draw.drawMode) {
+    // Панель свойств + модалка настроек фигуры. Рейл инструментов не нужен —
+    // он про создание новых фигур, а вне режима мы только правим готовые.
+    return (
+      <>
+        <DrawStylePanel draw={draw} />
+        <DrawSettingsModal draw={draw} />
+      </>
+    );
+  }
   const railLeft = railPos?.left ?? 6;
   const railTop = railPos?.top ?? 6;
   return (
