@@ -322,7 +322,15 @@ export default function SandboxPage() {
 
   // обновить массив панелей АКТИВНОГО листа
   const setActivePanels = useCallback((updater: (prev: Panel[]) => Panel[]) => {
-    setSt((s) => ({ ...s, bySheet: { ...s.bySheet, [s.activeSheet]: updater(s.bySheet[s.activeSheet] || []) } }));
+    setSt((s) => {
+      const prev = s.bySheet[s.activeSheet] || [];
+      const next = updater(prev);
+      // Апдейтер вернул ту же ссылку → состояние не менялось; отдаём ТО ЖЕ s,
+      // и React пропускает рендер. Раньше новый объект собирался безусловно,
+      // из-за чего no-op из bringFront всё равно перерисовывал весь лист.
+      if (next === prev) return s;
+      return { ...s, bySheet: { ...s.bySheet, [s.activeSheet]: next } };
+    });
   }, []);
 
   const bringFront = useCallback((id: string) => {
