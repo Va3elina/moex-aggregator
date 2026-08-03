@@ -14,6 +14,8 @@ Tier × Indicator × Feature-flags — единая матрица доступ�
 from __future__ import annotations
 from typing import Optional
 
+from api.billing.plans import LEGACY_TIER_ALIASES
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Whitelist'ы крупных активов для Free (хардкод по спецификации 2026-05-20)
@@ -321,9 +323,10 @@ VALID_TIERS = ("free", "basic", "pro")
 
 
 def _normalize_tier(tier: str) -> str:
-    """admin → pro доступ; guest → free; unknown → free."""
+    """admin → pro доступ; legacy premium → pro; guest → free; unknown → free."""
     if tier == "admin":
         return "pro"
+    tier = LEGACY_TIER_ALIASES.get(tier, tier)
     if tier in VALID_TIERS:
         return tier
     return "free"

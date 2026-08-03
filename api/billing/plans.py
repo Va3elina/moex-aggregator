@@ -27,6 +27,41 @@ TIER_LEVELS: dict[str, int] = {
 }
 
 
+# Legacy-тиры, которых больше нет в TIER_LEVELS, но которые остались в проде
+# (subscriptions.tier / users.role, выданные до 2026-05-20).
+#
+# Без этого маппинга TIER_LEVELS.get('premium', 0) → 0, что НИЖЕ free=1, а
+# features._normalize_tier('premium') → 'free': платящий premium-клиент получил
+# бы доступ уровня бесплатного. Premium-фичи были перенесены в Pro, поэтому
+# правильный резолв — premium → pro.
+#
+# Новые premium не появляются: create_invites (invites.py) и PLANS ограничены
+# basic/pro. Это исключительно совместимость со старыми строками.
+LEGACY_TIER_ALIASES: dict[str, str] = {
+    "premium": "pro",
+}
+
+
+def normalize_tier(tier: str | None) -> str:
+    """Канонический tier: legacy-алиасы резолвятся, неизвестное → 'free'.
+
+    Единая точка входа для всего, что читает tier из БД (subscriptions.tier,
+    users.role). 'guest'/'admin' проходят как есть — они валидные уровни.
+    """
+    t = (tier or "free").lower()
+    t = LEGACY_TIER_ALIASES.get(t, t)
+    return t if t in TIER_LEVELS else "free"
+
+
+def tier_level(tier: str | None) -> int:
+    """Числовой уровень tier'а с учётом legacy-алиасов.
+
+    Используй ВМЕСТО TIER_LEVELS.get(tier, 0) везде, где tier приходит из БД:
+    голый .get() даёт 0 (ниже free) для legacy-значений вроде 'premium'.
+    """
+    return TIER_LEVELS[normalize_tier(tier)]
+
+
 @dataclass(frozen=True)
 class Plan:
     """Конкретная SKU — комбинация tier + period."""

@@ -36,7 +36,9 @@ export default function AdminBillingInvites() {
   const [error, setError] = useState<string | null>(null);
 
   // Форма создания
-  const [formTier, setFormTier] = useState('premium');
+  // Дефолт 'pro': create_invites (api/billing/invites.py) принимает только
+  // basic/pro — с прежним дефолтом 'premium' форма падала с 400 при submit.
+  const [formTier, setFormTier] = useState('pro');
   const [formDays, setFormDays] = useState(365);
   const [formCount, setFormCount] = useState(1);
   const [formExpires, setFormExpires] = useState(30);

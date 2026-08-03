@@ -26,7 +26,7 @@ from api.billing import service as billing_service
 from api.billing import invites as invite_service
 from api.billing import trial as trial_service
 from api.billing.factory import get_payment_provider, get_yookassa_provider
-from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
+from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, normalize_tier, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.payment_method import UserPaymentMethod
@@ -487,7 +487,7 @@ async def sync_pending(
     return {
         "ok": True,
         "summary": summary,  # {activated, cancelled, skipped, checked}
-        "tier": sub.tier if sub else "free",
+        "tier": normalize_tier(sub.tier) if sub else "free",
         "is_active": sub is not None,
         "subscription_id": sub.id if sub else None,
         "expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else None,

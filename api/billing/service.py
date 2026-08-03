@@ -26,7 +26,7 @@ from api.billing.factory import (
     get_provider_by_name,
     get_provider_for_user,
 )
-from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
+from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback, normalize_tier, tier_level
 from api.billing.provider import WebhookEvent
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
@@ -175,8 +175,8 @@ def create_checkout_for_user(
     if active_sub and not active_sub.cancelled_at and not active_sub.is_trial:
         active_plan = get_plan(active_sub.plan_id)
         if active_plan:
-            active_level = TIER_LEVELS.get(active_plan.tier, 0)
-            card_level = TIER_LEVELS.get(plan.tier, 0)
+            active_level = tier_level(active_plan.tier)
+            card_level = tier_level(plan.tier)
             if card_level < active_level:
                 raise ValueError(
                     f"У вас уже активен более высокий тариф ({active_plan.tier}). "
@@ -399,7 +399,7 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     # renew_expiring_subs матчит только ТОТ ЖЕ tier → крон продолжил бы
     # списывать basic параллельно с pro (двойная оплата). Оплаченный период
     # они дослуживают (expires_at не трогаем) — выключается только продление.
-    new_level = TIER_LEVELS.get(sub.tier, 0)
+    new_level = tier_level(sub.tier)
     lower_subs = db.query(Subscription).filter(
         Subscription.user_id == sub.user_id,
         Subscription.id != sub.id,
@@ -411,7 +411,7 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         # (б) ЛЮБОГО активного ТРИАЛА — покупка/конверсия закрывает пробный период,
         # чтобы он не списался повторно (ревью #1/#3). is_trial есть только у
         # триал-строк → реальные платные подписки тем же/выше tier не затрагиваются.
-        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level:
+        if old_sub.is_trial or tier_level(old_sub.tier) < new_level:
             old_sub.cancelled_at = now
             log.info(
                 "activate_from_webhook: %s — отключено авто-продление подписки #%s "
@@ -491,9 +491,11 @@ def sync_user_role(db: Session, user: User) -> str:
     if not active_subs:
         new_role = "free"
     else:
-        # Берём наивысший tier среди активных
-        best_tier = max(active_subs, key=lambda s: TIER_LEVELS.get(s.tier, 0)).tier
-        new_role = best_tier
+        # Берём наивысший tier среди активных. normalize_tier обязателен: у
+        # legacy-подписок tier='premium', и без резолва в 'pro' в users.role
+        # попала бы роль, которой нет в TIER_LEVELS → доступ схлопнулся бы до free.
+        best_tier = max(active_subs, key=lambda s: tier_level(s.tier)).tier
+        new_role = normalize_tier(best_tier)
 
     if user.role != new_role:
         log.info("sync_user_role: user #%s %s → %s", user.id, user.role, new_role)

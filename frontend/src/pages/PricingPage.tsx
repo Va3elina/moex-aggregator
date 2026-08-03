@@ -67,12 +67,15 @@ const TIER_META: Record<string, { icon: React.ReactNode; color: string; accentBg
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
 // admin=99 — у админа полный доступ, тарифы скрываются.
+// premium — legacy-тир (убран 2026-05-20), эквивалентен pro: зеркало
+// LEGACY_TIER_ALIASES в plans.py. Раньше стояло 4 (выше pro) — у legacy-юзера
+// все карточки читались бы как даунгрейд и покупка блокировалась.
 const TIER_LEVELS: Record<string, number> = {
   guest: 0,
   free: 1,
   basic: 2,
   pro: 3,
-  premium: 4,
+  premium: 3,
   admin: 99,
 };
 

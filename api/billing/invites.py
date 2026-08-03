@@ -46,9 +46,9 @@ def create_invites(
     duration_days — сколько дней подписки получит user после redeem'а.
     expires_in_days — через сколько сам токен истекает (если его не применят).
     """
-    # premium удалён из TIER_LEVELS (plans.py) — инвайт с tier=premium дал бы
-    # уровень 0 (= ничего). Ограничиваем создание реально существующими тирами,
-    # чтобы админ случайно не выпустил «пустые» инвайты.
+    # premium удалён из TIER_LEVELS (plans.py). Legacy-строки резолвятся в pro
+    # через LEGACY_TIER_ALIASES, но плодить новые не надо: создание ограничено
+    # реально существующими тирами.
     if tier not in {"basic", "pro"}:
         raise ValueError(f"Invalid tier: {tier}")
     if duration_days < 1 or duration_days > 3650:  # до 10 лет

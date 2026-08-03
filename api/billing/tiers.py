@@ -22,29 +22,24 @@ from fastapi import Depends, HTTPException, status
 
 from api.models.user import User
 from api.routers.auth import get_current_user, get_current_user_optional
-from api.billing.plans import TIER_LEVELS
+from api.billing.plans import TIER_LEVELS, normalize_tier, tier_level
 
 
 def user_tier(user: User | None) -> str:
     """
     Определяет tier пользователя.
-    None → 'guest', иначе users.role ('free' / 'basic' / 'pro' / 'premium' / 'admin').
-    Если у user'а роль = 'user' (legacy) — считаем 'free'.
+    None → 'guest', иначе users.role ('free' / 'basic' / 'pro' / 'admin').
+    Legacy-роли резолвятся через normalize_tier: 'user' → 'free',
+    'premium' → 'pro' (см. LEGACY_TIER_ALIASES в plans.py).
     """
     if user is None:
         return "guest"
-    role = (user.role or "free").lower()
-    # Legacy compat: 'user' → 'free'
-    if role == "user":
-        return "free"
-    return role if role in TIER_LEVELS else "free"
+    return normalize_tier(user.role)
 
 
 def has_tier(user: User | None, min_tier: str) -> bool:
     """True если tier пользователя ≥ min_tier."""
-    user_level = TIER_LEVELS.get(user_tier(user), 0)
-    required_level = TIER_LEVELS.get(min_tier, 0)
-    return user_level >= required_level
+    return tier_level(user_tier(user)) >= tier_level(min_tier)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
