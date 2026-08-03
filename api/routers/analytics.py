@@ -572,6 +572,12 @@ async def list_users(
     paid_count/invite_count — счётчики по ВСЕЙ базе (без учёта filter/search)
     для шапки блока. paid_count — БЕЗ инвайтов: деньги и подарки в одной цифре
     смешивать нельзя, иначе выручка выглядит больше, чем она есть.
+
+    Инвайтом человек считается, только пока подарок — его единственный доступ.
+    Оплатил сам (в том числе продлив себя после того, как инвайт истёк) — он
+    платящий: и в счётчике, и в фильтрах, и по бейджу в таблице. Истёкший
+    инвайт вообще не в счёт, expire_overdue (billing/service.py, hourly в
+    оркестраторе) переводит просроченные подписки в status='expired'.
     """
     engine = get_engine()
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -635,7 +641,10 @@ async def list_users(
                 SELECT s.tier, s.expires_at, s.period
                 FROM subscriptions s
                 WHERE s.user_id = u.id AND s.status = 'active'
-                ORDER BY s.created_at DESC
+                -- Оплаченная подписка бьёт инвайт, даже если инвайт применён
+                -- позже: человек, который платит, — платящий, а не подарочный.
+                -- Инвайт всплывает только когда платной активной строки нет.
+                ORDER BY (s.period <> 'invite') DESC, s.created_at DESC
                 LIMIT 1
             ) sub ON TRUE
             WHERE 1=1 {where_search}{where_filter}
@@ -648,8 +657,17 @@ async def list_users(
                 (SELECT COUNT(*) FROM users) AS total,
                 (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
                   WHERE s.status = 'active' AND s.period <> 'invite') AS paid,
+                -- Инвайтом считаем только тех, кто СЕЙЧАС пользуется сервисом
+                -- благодаря подарку. Купил сам (в том числе после того, как
+                -- инвайт истёк) — он уходит в paid и из этой цифры пропадает,
+                -- иначе один человек попадал бы в оба счётчика сразу.
                 (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
-                  WHERE s.status = 'active' AND s.period = 'invite') AS invited
+                  WHERE s.status = 'active' AND s.period = 'invite'
+                    AND NOT EXISTS (
+                      SELECT 1 FROM subscriptions p
+                      WHERE p.user_id = s.user_id
+                        AND p.status = 'active' AND p.period <> 'invite'
+                    )) AS invited
         """)).fetchone()
 
     return {
