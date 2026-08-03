@@ -39,6 +39,11 @@ const FOOTER_FONT_SIZE = 14;
 // мелким на большом изображении (Вадим, скрин «текст очень мелкий на фото»).
 // Масштаб растёт линейно с шириной графика; вниз не клампим (< REFERENCE_W
 // уже выглядит корректно на всех текущих SIZE_BY_TYPE панелях — не трогаем).
+//
+// ВАЖНО: масштаб включается только флагом scaleWithWidth — то есть в песочнице
+// и эмбедах, откуда пришла та правка. На сайте графики шире REFERENCE_W почти
+// всегда, и шапка раздувалась в полтора-два раза; там оставляем прежний,
+// зависящий только от DPR кегль.
 const REFERENCE_W = 900;
 function computeLayoutScale(chartW: number, dpr: number): number {
     return Math.max(1, chartW / (REFERENCE_W * dpr));
@@ -65,7 +70,7 @@ export function composeFramedCanvas(
     // computeLayoutScale. sc заменяет dpr как множитель везде ниже, где раньше
     // был просто dpr: header/footer/padding остаются пропорциональны РЕАЛЬНОМУ
     // размеру снимка, а не только retina-плотности экрана.
-    const sc = dpr * computeLayoutScale(chartW, dpr);
+    const sc = options.scaleWithWidth ? dpr * computeLayoutScale(chartW, dpr) : dpr;
 
     const sp = padding * sc;
     const headerH = meta ? HEADER_HEIGHT * sc : 0;
