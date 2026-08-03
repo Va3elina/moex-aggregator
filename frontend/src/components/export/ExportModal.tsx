@@ -51,6 +51,16 @@ function waitFrames(n: number): Promise<void> {
     });
 }
 
+/** Песочница (/sandbox) и эмбеды (/embed/*) — там шапка кадра масштабируется
+ *  под ширину снимка (правка «текст очень мелкий на фото»). На сайте она
+ *  остаётся прежнего кегля, иначе название индикатора в левом верхнем углу
+ *  раздувается в полтора-два раза. */
+function usesWidthScaledFrame(): boolean {
+    if (typeof window === 'undefined') return false;
+    const p = window.location.pathname;
+    return p === '/sandbox' || p.startsWith('/sandbox/') || p.startsWith('/embed/');
+}
+
 interface Props {
     targetElement: HTMLElement;
     filename: string;
@@ -174,6 +184,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     dpr,
                     metadata,
                     watermark: commonFeatures.watermark_on_export,
+                    scaleWithWidth: usesWidthScaledFrame(),
                 });
 
                 if (ac.signal.aborted) return;

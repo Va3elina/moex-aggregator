@@ -59,4 +59,8 @@ export interface FrameOptions {
     /** Free tier — добавляем большой полупрозрачный watermark "таймфрейм.рф"
      *  поверх chart area. Pro/Basic — без watermark. */
     watermark?: boolean;
+    /** Масштабировать шапку/футер/поля пропорционально ширине снимка
+     *  (см. computeLayoutScale). Включено только в песочнице и эмбедах —
+     *  на сайте шапка остаётся прежнего, мелкого кегля. */
+    scaleWithWidth?: boolean;
 }
