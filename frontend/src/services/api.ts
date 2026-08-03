@@ -1117,6 +1117,11 @@ export interface AdminUser {
   plan: string | null;
   // Опциональные: отдаёт только list-эндпоинт /users (не /users/{id})
   plan_expires_at?: string | null;
+  /** 'monthly' | 'yearly' | 'invite' — как подписка появилась */
+  plan_period?: string | null;
+  /** Подписка выдана по пригласительной ссылке, не куплена */
+  is_invite?: boolean;
+  /** Подписка куплена за деньги (инвайты сюда НЕ входят) */
   is_paid?: boolean;
   sessions_count: number;
   events_count: number;
@@ -1127,9 +1132,17 @@ export async function listAdminUsers(opts: {
   days?: number;
   sort?: string;
   search?: string;
-  /** all / paid / free / admin */
+  /** all / paid / invite / free / admin */
   filter?: string;
-}): Promise<{ period_days: number; total_count: number; paid_count: number; users: AdminUser[] }> {
+}): Promise<{
+  period_days: number;
+  total_count: number;
+  /** Купившие за деньги — БЕЗ инвайтов */
+  paid_count: number;
+  /** Получившие подписку по пригласительной ссылке */
+  invite_count: number;
+  users: AdminUser[];
+}> {
   const params = new URLSearchParams();
   if (opts.days !== undefined) params.set('days', String(opts.days));
   if (opts.sort) params.set('sort', opts.sort);

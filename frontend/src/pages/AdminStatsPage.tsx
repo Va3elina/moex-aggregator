@@ -25,7 +25,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2 } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -498,8 +498,12 @@ const PLAN_COLORS: Record<string, string> = {
   premium: 'var(--success)',
 };
 
-/** Бейдж подписки: тир цветом + дата окончания. Free — приглушённый текст. */
-function PlanBadge({ plan, expiresAt }: { plan: string | null; expiresAt?: string | null }) {
+/**
+ * Бейдж подписки: тир цветом + дата окончания. Free — приглушённый текст.
+ * Подписка по пригласительной ссылке помечается отдельно — иначе в таблице она
+ * неотличима от купленной, и «платных» читается больше, чем есть на самом деле.
+ */
+function PlanBadge({ plan, expiresAt, isInvite }: { plan: string | null; expiresAt?: string | null; isInvite?: boolean }) {
   if (!plan) {
     return <span className="text-xs" style={{ color: 'var(--text-muted)' }}>free</span>;
   }
@@ -515,6 +519,19 @@ function PlanBadge({ plan, expiresAt }: { plan: string | null; expiresAt?: strin
       >
         {plan}
       </span>
+      {isInvite && (
+        <span
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"
+          style={{
+            backgroundColor: 'color-mix(in srgb, var(--text-muted) 15%, transparent)',
+            color: 'var(--text-secondary)',
+          }}
+          title="Подписка выдана по пригласительной ссылке, не оплачена"
+        >
+          <Gift size={11} />
+          инвайт
+        </span>
+      )}
       {expiresAt && (
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
           до {new Date(expiresAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
@@ -528,6 +545,7 @@ function UsersBlock({ days }: { days: number }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [paidCount, setPaidCount] = useState<number | null>(null);
+  const [inviteCount, setInviteCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('last_active');
@@ -542,6 +560,7 @@ function UsersBlock({ days }: { days: number }) {
           setUsers(r.users);
           setTotalCount(r.total_count ?? null);
           setPaidCount(r.paid_count ?? null);
+          setInviteCount(r.invite_count ?? null);
         })
         .catch(() => setUsers([]))
         .finally(() => setLoading(false));
@@ -584,6 +603,7 @@ function UsersBlock({ days }: { days: number }) {
           options={[
             { key: 'all', label: 'Все' },
             { key: 'paid', label: 'Платные' },
+            { key: 'invite', label: 'По инвайту' },
             { key: 'free', label: 'Бесплатные' },
             { key: 'admin', label: 'Админы' },
           ]}
@@ -608,6 +628,12 @@ function UsersBlock({ days }: { days: number }) {
             <>
               {' · '}
               <span style={{ color: 'var(--success)', fontWeight: 600 }}>платных: {paidCount}</span>
+            </>
+          )}
+          {inviteCount !== null && inviteCount > 0 && (
+            <>
+              {' · '}
+              <span style={{ fontWeight: 600 }}>по инвайту: {inviteCount}</span>
             </>
           )}
         </span>
@@ -684,7 +710,7 @@ function UsersBlock({ days }: { days: number }) {
                 </td>
 
                 <td className="px-2 py-2">
-                  <PlanBadge plan={u.plan} expiresAt={u.plan_expires_at} />
+                  <PlanBadge plan={u.plan} expiresAt={u.plan_expires_at} isInvite={u.is_invite} />
                 </td>
 
                 <td className="px-2 py-2 hidden md:table-cell">
