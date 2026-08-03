@@ -1,7 +1,7 @@
 /**
  * FundDetailModal — детальная карточка фонда, собранная композицией уже
  * существующих на сайте блоков:
- *   - СЧА крупно + график «Доходность пая, %» (SimpleChart) + плашки returns;
+ *   - СЧА крупно + график «Цена пая, ₽» (SimpleChart) + плашки returns;
  *   - «Приток и отток денег» — гистограмма CompanyFlowsHistogram (та же, что
  *     в «Потоках по компании») поверх /funds/flows с fund_ids по одному фонду;
  *   - «Состав фонда» — Donut + список бумаг в стиле «Обзора портфеля»
@@ -255,18 +255,17 @@ export default function FundDetailModal({
     const [showAllHoldings, setShowAllHoldings] = useState(false);
     const [showAllDiff, setShowAllDiff] = useState(false);
 
-    // График «Доходность пая, %»: цена пая нормируется к первой точке истории
-    // ((pay/pay₀ − 1)·100). Раньше рисовали сырую «СЧА на пай, ₽» — рублёвая
-    // цена пая ни о чём не говорит (номинал у всех фондов разный); в процентах
-    // кривая читается как доходность с запуска фонда, конец совпадает с плашкой
-    // «Всё время». Мемоизируем по data, чтобы hover доната НЕ пересоздавал
-    // массив → SimpleChart не сбрасывал зум навигатора на каждый ре-рендер.
-    const payChartData = useMemo(() => {
-        const pts = (data?.performance?.timeline ?? []).filter((p) => p.pay != null && p.pay > 0);
-        const base = pts[0]?.pay;
-        if (!base) return [];
-        return pts.map((p) => ({ time: p.date, value: ((p.pay as number) / base - 1) * 100 }));
-    }, [data]);
+    // График цены пая — номинал в рублях по всей истории. Проценты пробовали
+    // (нормировка к первой точке), но шкала доходности здесь не нужна: движение
+    // читают по самой цене, а срезы доходности дают плашки под графиком.
+    // Мемоизируем по data, чтобы hover доната НЕ пересоздавал массив →
+    // SimpleChart не сбрасывал зум навигатора на каждый ре-рендер.
+    const payChartData = useMemo(
+        () => (data?.performance?.timeline ?? [])
+            .filter((p) => p.pay != null)
+            .map((p) => ({ time: p.date, value: p.pay as number })),
+        [data],
+    );
 
     // Притоки-оттоки этого фонда: /funds/flows умеет fund_ids → помесячный срез
     // по одному фонду. Net flow там очищен от рыночного роста пая, т.е. бары —
@@ -468,7 +467,7 @@ export default function FundDetailModal({
                                 )}
                             </div>
 
-                            {/* (3) График доходности пая (%) + плашки returns */}
+                            {/* (3) График цены пая (₽) + плашки доходности по периодам */}
                             {(() => {
                                 const perf = data.performance;
                                 const ret = perf?.returns ?? returns ?? null;
@@ -483,7 +482,7 @@ export default function FundDetailModal({
                                                 marginBottom: 10,
                                             }}
                                         >
-                                            Доходность пая
+                                            Цена пая и доходность
                                         </h3>
                                         {/* Мобила: график во всю ширину карточки (компенсируем
                                             боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
@@ -492,13 +491,10 @@ export default function FundDetailModal({
                                             <SimpleChart
                                                 data={chartData}
                                                 height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
-                                                primaryLabel="Доходность пая, %"
+                                                primaryLabel="Цена пая, ₽"
                                                 legendPosition="top"
-                                                formatValue={(v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`}
-                                                formatPrimaryAxis={(v) => {
-                                                    const a = Math.abs(v);
-                                                    return `${v > 0 ? '+' : v < 0 ? '−' : ''}${a.toFixed(a >= 100 ? 0 : 1)}`;
-                                                }}
+                                                formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
+                                                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
                                                 formatTime={formatMonthYearShort}
                                                 tooltipDateFormat={formatMonthYearShort}
                                                 clampEdgeLabels
@@ -519,7 +515,7 @@ export default function FundDetailModal({
                                                     background: 'var(--bg-secondary)',
                                                 }}
                                             >
-                                                Недостаточно истории для графика доходности
+                                                Недостаточно истории для графика цены пая
                                             </div>
                                         )}
                                         </div>
@@ -580,7 +576,7 @@ export default function FundDetailModal({
                                         {hasDist && (
                                             <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                                                 Плашки — полная доходность, с&nbsp;учётом выплат дохода.
-                                                Линия графика — изменение цены пая: в&nbsp;даты выплат она снижается.
+                                                Линия графика — цена пая: в&nbsp;даты выплат она снижается.
                                             </div>
                                         )}
                                     </div>
