@@ -71,7 +71,21 @@ export type LwDrawTool = 'select' | LwDrawShape;
 export interface LwDrawPoint { logical: number; price: number }
 export type LwDash = 'solid' | 'dashed' | 'dotted';
 export type LwMagnet = 'off' | 'weak' | 'strong';   // магнит TradingView: слабый (рядом) / сильный (всегда)
-export interface LwDrawing { id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number; text?: string; dash?: LwDash; opacity?: number; hidden?: boolean; locked?: boolean }
+/** Где текст относительно линии: над ней, по центру (с разрывом линии, как в
+ *  TradingView) или под ней. */
+export type LwTextPos = 'above' | 'center' | 'below';
+export interface LwDrawing {
+  id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number;
+  text?: string; dash?: LwDash; opacity?: number; hidden?: boolean; locked?: boolean;
+  /** ── настройки ТЕКСТА (у текст-фигуры и у подписи на линии) ── */
+  textSize?: number;
+  /** null/undefined — цветом самой фигуры. */
+  textColor?: string | null;
+  textPos?: LwTextPos;
+  textBold?: boolean;
+  /** Подложка под текстом — читаемо поверх свечей. */
+  textBg?: boolean;
+}
 
 /** Пользовательские настройки графика из песочницы (толщина линий, кроссхэйр,
  *  сетка, последнее значение, водяной знак). Пробрасываются контекстом: вне
