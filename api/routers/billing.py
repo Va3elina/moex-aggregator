@@ -725,7 +725,7 @@ async def redeem_invite(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class CreateInvitesRequest(BaseModel):
-    tier: str                  # 'basic' / 'pro' / 'premium'
+    tier: str                  # только 'basic' / 'pro' — premium выведен из TIER_LEVELS
     duration_days: int         # срок подписки после применения
     count: int = 1             # сколько токенов создать
     expires_in_days: int = 30  # когда истекает сам токен (если не использован)

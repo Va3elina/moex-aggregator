@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, Gift, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch } from '../services/api';
+import { apiFetch, parseApiError } from '../services/api';
 import {
   clearPendingRedeemToken,
   getPendingRedeemToken,
@@ -63,11 +63,13 @@ export default function BillingRedeemPage() {
       .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
-          const err = await r.json().catch(() => ({}));
           // Токен мёртв (истёк / отозван / исчерпан) — выкидываем, чтобы он не
           // висел в хранилище и не дёргал redeem на каждой навигации.
           if (r.status < 500) clearPendingRedeemToken();
-          setState({ kind: 'error', message: err.detail || 'Ошибка активации' });
+          // parseApiError, а не err.detail: бэкенд заворачивает ошибки в
+          // {success:false,error:{message}}, и «Срок действия ссылки истёк»
+          // схлопывалось в безликое «Ошибка активации».
+          setState({ kind: 'error', message: await parseApiError(r, 'Ошибка активации') });
           return;
         }
         const data = await r.json();

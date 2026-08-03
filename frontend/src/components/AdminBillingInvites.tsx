@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Copy, Trash2, Plus, Link2, Check } from 'lucide-react';
-import { apiFetch } from '../services/api';
+import { apiFetch, parseApiError } from '../services/api';
 
 interface Invite {
   token: string;
@@ -35,8 +35,13 @@ export default function AdminBillingInvites() {
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Форма создания
-  const [formTier, setFormTier] = useState('premium');
+  // Форма создания.
+  // Тариф — строго один из <option> ниже. Стояло 'premium': такого option нет,
+  // браузер рисовал первый пункт («Basic»), состояние оставалось premium, и
+  // создание молча падало 400 «Invalid tier: premium», пока админ не трогал
+  // селект руками. Тир premium выведен из TIER_LEVELS и запрещён в
+  // create_invites (api/billing/invites.py) — его тут быть не должно.
+  const [formTier, setFormTier] = useState('basic');
   const [formDays, setFormDays] = useState(365);
   const [formCount, setFormCount] = useState(1);
   const [formExpires, setFormExpires] = useState(30);
@@ -49,7 +54,7 @@ export default function AdminBillingInvites() {
   const loadInvites = async () => {
     try {
       const r = await apiFetch('/api/billing/admin/invites');
-      if (!r.ok) throw new Error('Не удалось загрузить список');
+      if (!r.ok) throw new Error(await parseApiError(r, 'Не удалось загрузить список'));
       const data = await r.json();
       setInvites(data.invites || []);
     } catch (e) {
@@ -80,10 +85,10 @@ export default function AdminBillingInvites() {
           note: formNote || null,
         }),
       });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.detail || 'Ошибка создания');
-      }
+      // Бэкенд отдаёт ошибки как {success:false, error:{code,message}} —
+      // читали только legacy `detail`, поэтому вместо «Invalid tier: premium»
+      // на экране висело безликое «Ошибка создания».
+      if (!r.ok) throw new Error(await parseApiError(r, 'Ошибка создания'));
       setCreateOpen(false);
       setFormNote('');
       await loadInvites();
@@ -98,7 +103,7 @@ export default function AdminBillingInvites() {
     if (!confirm('Отозвать эту ссылку? Она перестанет работать навсегда.')) return;
     try {
       const r = await apiFetch(`/api/billing/admin/invites/${token}`, { method: 'DELETE' });
-      if (!r.ok) throw new Error('Не удалось отозвать');
+      if (!r.ok) throw new Error(await parseApiError(r, 'Не удалось отозвать'));
       await loadInvites();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Ошибка');

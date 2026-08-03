@@ -163,7 +163,7 @@ export class ApiError extends Error {
  * FastAPI default `{detail:"..."}` НЕ возвращается — все HTTPException
  * проходят через http_exception_handler middleware.
  */
-async function parseApiError(response: Response, fallback: string): Promise<string> {
+export async function parseApiError(response: Response, fallback: string): Promise<string> {
   try {
     const data = await response.json();
     if (data?.error?.message && typeof data.error.message === 'string') return data.error.message;
