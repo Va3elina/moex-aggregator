@@ -52,6 +52,27 @@ function passwordProblems(pwd: string): string[] {
 
 const PASSWORD_HINT = `Минимум ${MIN_PASSWORD_LENGTH} символов`;
 
+/**
+ * Тело ответа как JSON, но без падения на не-JSON. Отбойники стоят ДО
+ * приложения (лимитер nginx на зоне auth, 502/504 при рестарте контейнера) и
+ * отдают HTML-страницу — resp.json() на ней бросал «Unexpected token '<'»
+ * прямо в лицо пользователю вместо человеческого текста.
+ */
+async function readJsonSafe(resp: Response): Promise<unknown> {
+    try {
+        return JSON.parse(await resp.text());
+    } catch {
+        return null;
+    }
+}
+
+/** Осмысленный текст по одному лишь статусу — когда тела нет или оно не JSON. */
+function statusFallback(status: number): string {
+    if (status === 429) return 'Слишком много попыток. Подождите минуту и попробуйте снова.';
+    if (status === 502 || status === 503 || status === 504) return 'Сервис недоступен, попробуйте через минуту';
+    return 'Ошибка';
+}
+
 export default function LoginPage() {
     const navigate = useNavigate();
     const auth = useAuth();
@@ -114,10 +135,10 @@ export default function LoginPage() {
                 body: JSON.stringify(body),
             });
 
-            const data = await resp.json();
+            const data = await readJsonSafe(resp);
 
             if (!resp.ok) {
-                throw new Error(apiErrorFromBody(data, 'Ошибка'));
+                throw new Error(apiErrorFromBody(data, statusFallback(resp.status)));
             }
 
             if (mode === 'register') {
@@ -129,9 +150,16 @@ export default function LoginPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body),
                 });
-                const loginData = await loginResp.json();
+                const loginData = await readJsonSafe(loginResp);
                 if (!loginResp.ok) {
-                    throw new Error(loginData.error?.message || loginData.detail || 'Регистрация прошла. Войдите, чтобы продолжить.');
+                    // Аккаунт уже создан — что бы ни случилось со входом, это не
+                    // повод пугать «ошибкой регистрации». Частый случай: пара
+                    // register+login летит в один лимитер nginx (зона auth) и
+                    // второй запрос ловит 429.
+                    setMode('login');   // форма уже готова к входу, вводить заново не надо
+                    throw new Error(loginResp.status === 429
+                        ? 'Аккаунт создан. Слишком много попыток подряд — подождите минуту и войдите.'
+                        : 'Аккаунт создан. Войдите, чтобы продолжить.');
                 }
                 await auth.login({ access_token: loginData.access_token, refresh_token: loginData.refresh_token });
                 // Раньше здесь безусловно стоял '/verify-email' — и next терялся:
