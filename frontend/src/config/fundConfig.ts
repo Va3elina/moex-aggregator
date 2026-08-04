@@ -212,6 +212,11 @@ export function assetTicker(name: string | null | undefined): string | undefined
 // 2026-07-08: имена приведены к единому стандарту ОИ (миграция БД
 // 020_unify_asset_names.sql) — regenerate после миграции даст те же значения.
 export const ISIN_TO_TICKER: Record<string, string> = {
+    // Делистингованные бумаги, которые фонды держали в 2021-2023. Тикер нужен,
+    // чтобы «Карта сделок» показала их историю цены (свечи докачивает
+    // Candles/backfill_delisted_history.py); в instruments их нет и быть не должно.
+    'GB0031544546': 'POGR',   // Petropavlovsk — делистинг 2022
+    'JE00B6T5S470': 'POLY',   // Polymetal — делистинг с MOEX 2024
     'RU0006944147': 'TATNP',
     'RU0007252813': 'ALRS',
     'RU0007288411': 'GMKN',
@@ -265,6 +270,7 @@ export const ISIN_TO_TICKER: Record<string, string> = {
     'RU000A0JPPT1': 'MRKU',
     'RU000A0JPR50': 'SELG',
     'RU000A0JPV70': 'MTLRP',
+    'RU000A0JPVJ0': 'RSTI',   // Россети — присоединены к ФСК ЕЭС (FEES) в 2023
     'RU000A0JQ9P9': 'SPBE',
     'RU000A0JQTS3': 'AQUA',
     'RU000A0JQUZ6': 'RAGR',
@@ -272,6 +278,7 @@ export const ISIN_TO_TICKER: Record<string, string> = {
     'RU000A0JRH43': 'MBNK',
     'RU000A0JRKT8': 'PHOR',
     'RU000A0JSE60': 'RNFT',
+    'RU000A0JSQ90': 'DSKY',   // Детский мир — делистинг 2023 после выкупа
     'RU000A0JUG31': 'CBOM',
     'RU000A0JVBT9': 'UWGN',
     'RU000A0JVW89': 'SFIN',
@@ -340,6 +347,7 @@ export const TICKER_TO_NAME: Record<string, string> = {
     'CNRU': 'ЦИАН',
     'DATA': 'iАренадата',
     'DOMRF': 'Дом.РФ',
+    'DSKY': 'Детский мир',
     'ELMT': 'Элемент',
     'ENPG': 'ЭН+',
     'FEES': 'ФСК Россети',
@@ -375,12 +383,15 @@ export const TICKER_TO_NAME: Record<string, string> = {
     'PHOR': 'ФосАгро',
     'PIKK': 'ПИК',
     'PLZL': 'Полюс',
+    'POGR': 'Petropavlovsk',
+    'POLY': 'Полиметалл',
     'POSI': 'Positive Technologies',
     'PRMD': 'Промомед',
     'RAGR': 'Русагро',
     'RASP': 'Распадская',
     'RENI': 'Ренессанс Страхование',
     'ROSN': 'Роснефть',
+    'RSTI': 'Россети',
     'RTKM': 'Ростелеком',
     'RUAL': 'Русал',
     'SBER': 'Сбербанк',
