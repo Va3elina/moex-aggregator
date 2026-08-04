@@ -13,27 +13,28 @@
  */
 import {
   useCallback, useEffect, useLayoutEffect, useRef, useState, Suspense, lazy,
-  type CSSProperties, type ReactNode,
+  type ComponentType, type CSSProperties, type ReactNode,
 } from 'react';
 import {
-  Pencil, Camera, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
-  MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Eye, EyeOff, Lock, LockOpen,
+  Pencil, Camera, MousePointer2, Square, Type, Trash2,
+  Brush, Circle, AlignJustify, Eye, EyeOff, Lock, LockOpen,
   Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
 import type { LwDrawing, LwDrawTool, LwDash } from '../../components/chart/lwTypes';
+import { TrendLineIcon, RayIcon, ArrowLineIcon, HLineIcon, VLineIcon, type DrawIconProps } from '../../components/chart/drawToolIcons';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 
 const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
-const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; rot?: number }[] = [
+const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: ComponentType<DrawIconProps> }[] = [
   { id: 'select', title: 'Выделение / перемещение', Icon: MousePointer2 },
-  { id: 'trend', title: 'Трендовая линия', Icon: TrendingUp },
-  { id: 'ray', title: 'Луч', Icon: MoveUpRight },
-  { id: 'arrow', title: 'Стрелка', Icon: ArrowUpRight },
-  { id: 'hline', title: 'Горизонтальная линия', Icon: Minus },
-  { id: 'vline', title: 'Вертикальная линия', Icon: Minus, rot: 90 },
+  { id: 'trend', title: 'Трендовая линия', Icon: TrendLineIcon },
+  { id: 'ray', title: 'Луч', Icon: RayIcon },
+  { id: 'arrow', title: 'Стрелка', Icon: ArrowLineIcon },
+  { id: 'hline', title: 'Горизонтальная линия', Icon: HLineIcon },
+  { id: 'vline', title: 'Вертикальная линия', Icon: VLineIcon },
   { id: 'rect', title: 'Прямоугольник', Icon: Square },
   { id: 'ellipse', title: 'Эллипс', Icon: Circle },
   { id: 'fib', title: 'Фибоначчи', Icon: AlignJustify },
@@ -858,7 +859,7 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
             onClick={() => draw.setDrawTool(t.id)}
             style={drawToolBtn(draw.drawTool === t.id)}
           >
-            <t.Icon size={16} style={t.rot ? { transform: `rotate(${t.rot}deg)` } : undefined} />
+            <t.Icon size={16} />
           </button>
         ))}
         <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
