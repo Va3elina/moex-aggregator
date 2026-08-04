@@ -127,7 +127,7 @@ export default function ChartLabPage() {
           panes={panes} hideLegend drawPaneIndex={0} watermark={false} volumeProfile={vpSpec} dark={dark}
           paneOverlay={(i) => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} values={indValues} />)}
         />
-        <IndicatorList api={inds} native={rows} visible hasVolume values={indValues} />
+        <IndicatorList api={inds} native={rows} visible values={indValues} />
       </div>
       <Readout />
     </div>
