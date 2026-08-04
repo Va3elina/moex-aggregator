@@ -713,7 +713,9 @@ function NativeRowView({ row }: { row: NativeRow }) {
  *  LwChartPanes), иначе список ложится на цифры шкалы. z 10 — выше слоя
  *  рисования (7) и хит-слоя (8), ниже тулбара (20). */
 const listBoxStyle: CSSProperties = {
-  position: 'absolute', top: 8, left: 'calc(var(--lw-axis-left, 0px) + 8px)', zIndex: 10,
+  // Отступ 4px и сверху, и слева (слева — от кромки ценовой оси, не от кромки
+  // виджета): было 8, и список висел заметно ниже и правее угла поля.
+  position: 'absolute', top: 4, left: 'calc(var(--lw-axis-left, 0px) + 4px)', zIndex: 10,
   display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start',
 };
 
