@@ -1111,63 +1111,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (dash === 'dotted') return `0.1 ${Math.max(w * 2.4, 4)}`;
         return 'none';
       };
-      // ── текст на линиях/стрелках (как в TradingView): у выделенной линии в
-      // середине живёт «+ Добавьте текст», клик по нему — ввод; введённый текст
-      // рисуется над серединой цветом фигуры. Инструменты: тренд/луч/стрелка/
-      // горизонталь/вертикаль.
-      const LINE_TEXT_TOOLS = new Set(['trend', 'ray', 'arrow', 'hline', 'vline']);
-      const lineTextAnchor = (d: LwDrawing): { x: number; y: number } | null => {
-        const pb = plotBox();
-        if (d.tool === 'hline') { const xy = lp2xy(d.pts[0]); return xy ? { x: pb.left + pb.width / 2, y: xy.y } : null; }
-        if (d.tool === 'vline') { const xy = lp2xy(d.pts[0]); return xy ? { x: xy.x, y: pb.height / 2 } : null; }
-        const a = lp2xy(d.pts[0]), b0 = d.pts[1] ? lp2xy(d.pts[1]) : null;
-        if (!a || !b0) return null;
-        const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
-        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      };
-      const lineTextZone = (d: LwDrawing): { x: number; y: number; w: number; h: number } | null => {
-        if (!LINE_TEXT_TOOLS.has(d.tool)) return null;
-        const anch = lineTextAnchor(d); if (!anch) return null;
-        const label = d.text || '+ Добавьте текст';
-        const w2 = Math.max(46, label.length * 7 / 2) + 6;
-        return { x: anch.x - w2, y: anch.y - 26, w: w2 * 2, h: 26 };
-      };
-      const renderLineText = (d: LwDrawing, sel: boolean, preview: boolean) => {
-        if (!LINE_TEXT_TOOLS.has(d.tool)) return;
-        const anch = lineTextAnchor(d); if (!anch) return;
-        const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
-        if (d.text) {
-          const fs = d.textSize ?? 12.5;
-          const fill = d.textColor || d.color;
-          const pos = d.textPos ?? 'above';
-          // above — над линией, center — по её оси, below — под ней. Отступ от
-          // толщины линии, иначе жирная линия наезжает на буквы.
-          const dy = pos === 'center' ? fs * 0.36 : pos === 'below' ? fs + 5 + d.width : -(7 + d.width);
-          const ty = anch.y + dy;
-          if (d.textBg) {
-            // Подложка ЗА текстом: на свечах голая подпись читается плохо.
-            const bw = d.text.length * fs * 0.56 + 10, bh = fs + 6;
-            drawSvg.appendChild(svgEl('rect', {
-              x: anch.x - bw / 2, y: ty - fs * 0.82, width: bw, height: bh, rx: 4,
-              fill: 'var(--bg-secondary,#17161A)', 'fill-opacity': op, stroke: fill, 'stroke-opacity': String(Number(op) * 0.45), 'stroke-width': 1,
-            }));
-          }
-          const t = svgEl('text', {
-            x: anch.x, y: ty, fill, 'font-size': fs,
-            'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': d.textBold === false ? 500 : 600,
-            'text-anchor': 'middle', opacity: op,
-          });
-          t.textContent = d.text;
-          drawSvg.appendChild(t);
-        } else if (sel && !preview) {
-          const t = svgEl('text', {
-            x: anch.x, y: anch.y - 8, fill: d.color, 'font-size': 12,
-            'font-family': 'Inter,-apple-system,sans-serif', 'text-anchor': 'middle', opacity: '0.55',
-          });
-          t.textContent = '+ Добавьте текст';
-          drawSvg.appendChild(t);
-        }
-      };
+      // Подписей на линиях/фигурах нет: текст пишется только инструментом «Текст».
       // Инлайн-редактор текста ПРЯМО на графике — вместо window.prompt: браузерный
       // диалог выглядел чужеродно («окно как у Google») и блокировал страницу.
       // Enter/клик мимо — сохранить, Escape — отменить.
@@ -1206,22 +1150,6 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         requestAnimationFrame(() => { inp.focus(); inp.select(); });
       };
 
-      // Клик в текст-зону УЖЕ выделенной линии → ввод/правка текста. Только
-      // выделенной: первый клик по линии выделяет, второй — редактирует, как в
-      // терминале; иначе зона у середины мешала бы просто выделять линию.
-      const lineTextClick = (bx: number, by: number): boolean => {
-        const selId = selectedDrawIdRef.current;
-        if (!selId) return false;
-        const d = (drawingsRef.current ?? []).find((q) => q.id === selId);
-        if (!d || d.hidden) return false;
-        const z = lineTextZone(d);
-        if (!z || bx < z.x || bx > z.x + z.w || by < z.y || by > z.y + z.h) return false;
-        openTextEditor(z.x + z.w / 2, z.y + z.h / 2, d.text || '', (v) => {
-          if (v != null) commit((drawingsRef.current ?? []).map((q) => (q.id === selId ? { ...q, text: v || undefined } : q)));
-        });
-        return true;
-      };
-
       const renderOne = (d: LwDrawing, sel: boolean, preview = false) => {
         const col = d.color, w = d.width, pb = plotBox();
         const op = String((d.opacity == null ? 1 : d.opacity) * (preview ? 0.7 : 1));
@@ -1233,12 +1161,10 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
           drawSvg.appendChild(svgEl('line', { x1: pb.left, y1: xy.y, x2: pb.left + pb.width, y2: xy.y, ...S, 'stroke-linecap': lc }));
           if (sel) dot(pb.left + pb.width / 2, xy.y);
-          renderLineText(d, sel, preview);
         } else if (d.tool === 'vline') {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
           drawSvg.appendChild(svgEl('line', { x1: xy.x, y1: 0, x2: xy.x, y2: pb.height, ...S, 'stroke-linecap': lc }));
           if (sel) dot(xy.x, pb.height / 2);
-          renderLineText(d, sel, preview);
         } else if (d.tool === 'trend' || d.tool === 'ray' || d.tool === 'arrow') {
           const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (!a || !b0) return;
           const b = d.tool === 'ray' ? rayEnd(a, b0, pb) : b0;
@@ -1248,7 +1174,6 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
             for (const s of [-0.42, 0.42]) drawSvg.appendChild(svgEl('line', { x1: b0.x, y1: b0.y, x2: b0.x - ah * Math.cos(ang - s), y2: b0.y - ah * Math.sin(ang - s), stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }));
           }
           if (sel) { dot(a.x, a.y); dot(b0.x, b0.y); }
-          renderLineText(d, sel, preview);
         } else if (d.tool === 'rect' || d.tool === 'ellipse') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
           const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
@@ -1378,7 +1303,6 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
       drawClickRef.current = (bx: number, by: number): boolean => {
         if (drawHiddenRef.current || drawLockedRef.current) return false;
-        if (lineTextClick(bx, by)) return true;
         const hit = hitTest(bx, by);
         const cur = selectedDrawIdRef.current;
         if (!hit && cur == null) return false;   // пусто и выделения не было — клик не наш
@@ -1417,7 +1341,6 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const { x, y } = relXY(e);
         if (tool === 'select') {
           if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }
-          if (lineTextClick(x, y)) return;
           const hit = hitTest(x, y);
           selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
           if (hit && !hit.locked) {   // per-element замок: выделить можно, двигать нельзя
