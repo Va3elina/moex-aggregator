@@ -130,10 +130,14 @@ export default function EmbedCbrFlows() {
   return (
     <EmbedFrame
       toolbar={
-        <>
+        // overflow:hidden + minWidth:0 — вторая линия защиты от наложения на
+        // хром окна справа: без неё узкая панель включала горизонтальный
+        // скроллбар прямо в тулбаре, а контролы наезжали на кнопки справа.
+        // Первая линия — MINW_BY_TYPE в SandboxPage.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
           <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
-        </>
+        </div>
       }
       actions={
         status === 'ok' && data ? (

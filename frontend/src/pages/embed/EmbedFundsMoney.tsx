@@ -84,7 +84,8 @@ function initCat(p: string | null, rd: (k: string, d: string) => string): Catego
   if (p && CATS.some((c) => c.id === p)) return p as Category;
   const s = rd('frame:embed:funds:category', '');
   if (s && CATS.some((c) => c.id === s)) return s as Category;
-  return 'money_market';
+  // Дефолт — облигации: самая массовая категория БПИФов.
+  return 'bonds';
 }
 
 /** `initialCategory` — стартовая категория от песочницы (спавн по клику на сигнале). */
@@ -101,7 +102,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (rd('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
-  const [flowPeriod, setFlowPeriod] = useState<FundPeriod | 'auto'>(() => (rd('frame:embed:funds:flowPeriod', 'auto')) as FundPeriod | 'auto');
+  const [flowPeriod, setFlowPeriod] = useState<FundPeriod | 'auto'>(() => (rd('frame:embed:funds:flowPeriod', '1y')) as FundPeriod | 'auto');
   // Период убран из UI (неуместен в песочнице) — но НЕ 'all' всегда: дневная
   // сетка потоков за всю историю фонда — сотни-тысячи баров вплотную, график
   // читается как шум. Сайт (FundsMoneyPage.FLOW_MIN_PERIODS) по умолчанию
@@ -218,10 +219,13 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         // «месяц» (влияет лишь на подпись сравнения в тултипе).
         kind: 'month' as const,
         end_date: f.period_end,
-        values: {
-          'Приток': f.gross_in ?? 0,
-          'Отток': f.gross_out ?? 0,
-        },
+        // ⚠️ ЧИСТЫЙ поток, как на сайте: ОДИН столбец на период. Приток и отток
+        // одновременно (gross_in + gross_out) рисовали два столбика в разные
+        // стороны и не отвечали на главный вопрос — «сколько в итоге пришло».
+        // Ненулевая всегда ровно одна «категория», поэтому цвет = направление.
+        values: (f.flow ?? 0) >= 0
+          ? { 'Приток': f.flow ?? 0, 'Отток': 0 }
+          : { 'Приток': 0, 'Отток': f.flow ?? 0 },
       };
     });
   }, [flowsData, flowTimeframe]);
