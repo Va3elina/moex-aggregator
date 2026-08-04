@@ -2475,6 +2475,22 @@ def company_flows(
     }
 
 
+# Коэффициент конвертации при редомициляции: сколько НОВЫХ акций дали за одну
+# СТАРУЮ бумагу (расписку). Цены старой серии умножаем на 1/k, чтобы склеенная
+# линия была в масштабе текущей акции.
+#
+# Почти везде обмен шёл 1:1 (Яндекс, Хэдхантер, X5, Циан, ВК) — их тут нет,
+# дефолт 1.0. Русагро — единственное исключение: 1 ГДР ROS AGRO PLC = 5 акций
+# ПАО «Русагро» (ГДР закрылась 1083.8 ₽ 2024-12-02, акция открылась 216.3 ₽
+# 2025-02-17 — отношение 5.01; размер выпуска 958 749 600 делится на 5 ровно).
+# Без коэффициента на графике был бы фальшивый обвал в пять раз.
+#
+# Ключ — СТАРЫЙ secid (делистингованная бумага), значение — k.
+REDOMICILE_RATIO: dict[str, float] = {
+    "AGRO": 5.0,   # ГДР ROS AGRO PLC → Русагро (RAGR)
+}
+
+
 @router.get("/price-weekly")
 def price_weekly(
     ticker: str = Query(..., description="Тикер акции (secid MOEX)"),
@@ -2491,6 +2507,20 @@ def price_weekly(
     сюда не приходят. Нет строк (не акция / нет истории в candles) → 404,
     фронт показывает empty-state.
 
+    СКЛЕЙКА РЕДОМИЦИЛЯЦИИ. У переехавших бумаг история до переезда лежит под
+    СТАРЫМ secid (HEAD ← HHRU, YDEX ← YNDX, X5 ← FIVE, RAGR ← AGRO,
+    CNRU ← CIAN, VKCO ← MAIL), потому что на бирже это разные инструменты.
+    /company-flows склеивает потоки по canonical_isin, поэтому без такой же
+    склейки цены гистограмма показывала сделки с 2021 года, а карта начиналась
+    с даты листинга новой бумаги (у X5 разрыв был 46 месяцев).
+
+    Группу берём из securities_ref (canonical_isin → все ISIN → их secid) —
+    ничего не хардкодим, кроме коэффициента обмена (REDOMICILE_RATIO), который
+    из данных не выводится. При пересечении дат (день делистинга старой = день
+    листинга новой) выигрывает ЗАПРОШЕННАЯ бумага. Разрыв между делистингом и
+    листингом (у X5 девять месяцев) не заполняем: торгов там не было, фронт
+    соединит точки прямой.
+
     Без тирного гейта: дневная цена публична (гостям /api/candles отдаёт
     interval=24), задержка снапшотов сделок к цене отношения не имеет.
     """
@@ -2500,19 +2530,46 @@ def price_weekly(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    rows = db.execute(text("""
-        SELECT (date_trunc('week', begin_time))::date AS week,
-               (array_agg(close ORDER BY begin_time DESC))[1] AS close
-        FROM candles
-        WHERE secid = :t AND interval = 24 AND type = 'stock' AND close > 0
-        GROUP BY 1
-        ORDER BY 1
-    """), {"t": ticker}).all()
-    if not rows:
+    # Старые secid той же бумаги: canonical_isin запрошенного тикера → вся
+    # группа ISIN → их secid, кроме самого тикера. Нет записи в securities_ref
+    # (или бумага не переезжала) → пустой список, работаем как раньше.
+    legacy = [r[0] for r in db.execute(text("""
+        SELECT DISTINCT sr.secid
+        FROM securities_ref sr
+        WHERE sr.canonical_isin = (
+                SELECT canonical_isin FROM securities_ref
+                WHERE secid = :t AND canonical_isin IS NOT NULL LIMIT 1
+              )
+          AND sr.secid IS NOT NULL AND sr.secid <> :t
+    """), {"t": ticker}).all()]
+
+    # Недельные закрытия по каждому secid отдельно: масштаб старой серии
+    # приводим к текущей акции, а «кто победил» на пересечении решаем ниже.
+    def weekly(secid: str) -> list[tuple]:
+        return db.execute(text("""
+            SELECT (date_trunc('week', begin_time))::date AS week,
+                   (array_agg(close ORDER BY begin_time DESC))[1] AS close
+            FROM candles
+            WHERE secid = :t AND interval = 24 AND type = 'stock' AND close > 0
+            GROUP BY 1
+            ORDER BY 1
+        """), {"t": secid}).all()
+
+    by_week: dict = {}
+    for old in legacy:
+        k = REDOMICILE_RATIO.get(old, 1.0)
+        for wk, close in weekly(old):
+            by_week[wk] = float(close) / k
+    # Запрошенная бумага идёт последней и перетирает пересечения.
+    for wk, close in weekly(ticker):
+        by_week[wk] = float(close)
+
+    if not by_week:
         raise HTTPException(status_code=404, detail="Нет истории цены по этой бумаге")
 
+    weeks = sorted(by_week)
     return {
         "ticker": ticker,
-        "weeks": [r[0].isoformat() for r in rows],
-        "closes": [float(r[1]) for r in rows],
+        "weeks": [w.isoformat() for w in weeks],
+        "closes": [by_week[w] for w in weeks],
     }
