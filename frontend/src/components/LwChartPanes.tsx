@@ -33,7 +33,7 @@ import { VolumeProfilePrimitive, type VolumeProfileOptions } from './chart/volum
 import { BandsPrimitive } from './chart/bandsPrimitive';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
-  type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash, type LwMagnet,
+  type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash,
 } from './chart/lwTypes';
 import { captureFontScale } from './chart/chartTypography';
 
@@ -122,7 +122,6 @@ interface LwChartPanesProps {
   /** Бокс выделенной фигуры в пикселях КОРНЕВОГО контейнера (не пейна) — якорь
    *  контекстной панели свойств. См. LwChart.onSelectionRect. */
   onSelectionRect?: (r: { x: number; y: number; w: number; h: number } | null) => void;
-  drawMagnet?: LwMagnet;
   drawHidden?: boolean;
   drawLocked?: boolean;
   drawDash?: LwDash;
@@ -236,7 +235,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
   paneOverlay, paneSizes, onPaneSizesChange,
-  selectedDrawId, onSelectDraw, onSelectionRect, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
+  selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
@@ -283,7 +282,6 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const selectedDrawIdRef = useRef(selectedDrawId); selectedDrawIdRef.current = selectedDrawId;
   const onSelectDrawRef = useRef(onSelectDraw); onSelectDrawRef.current = onSelectDraw;
   const onSelectionRectRef = useRef(onSelectionRect); onSelectionRectRef.current = onSelectionRect;
-  const drawMagnetRef = useRef(drawMagnet); drawMagnetRef.current = drawMagnet;
   const drawHiddenRef = useRef(drawHidden); drawHiddenRef.current = drawHidden;
   const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
   const drawDashRef = useRef(drawDash); drawDashRef.current = drawDash;
@@ -1080,22 +1078,6 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         return e;
       };
       const priceY = (price: number): number | null => { const s = drawSeries(); const y = s ? s.priceToCoordinate(price) : null; return y == null ? null : (y as number); };
-      const snap = (lp: LwDrawPoint | null, allow = true): LwDrawPoint | null => {
-        const mode = drawMagnetRef.current;
-        if (!lp || !allow || !mode || mode === 'off') return lp;
-        const L = Math.round(lp.logical); const data = primaryDef()?.data;
-        if (!data || L < 0 || L >= data.length) return { ...lp, logical: L };
-        const pt = data[L];
-        const cands = [pt.open, pt.high, pt.low, pt.close, pt.value].filter((v): v is number => v != null);
-        if (!cands.length) return { ...lp, logical: L };
-        let best = cands[0], bd = Infinity;
-        for (const v of cands) { const dd = Math.abs(v - lp.price); if (dd < bd) { bd = dd; best = v; } }
-        if (mode === 'weak') {
-          const yb = priceY(best), yc = priceY(lp.price);
-          if (yb == null || yc == null || Math.abs(yb - yc) > 12) return lp;
-        }
-        return { logical: L, price: best };
-      };
       const rayEnd = (a: { x: number; y: number }, b: { x: number; y: number }, pb: { left: number; width: number; height: number }) => {
         const dx = b.x - a.x, dy = b.y - a.y; if (!dx && !dy) return b;
         let t = Infinity;
@@ -1236,7 +1218,10 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           if (sel) dot(xy.x - 4, xy.y - 5);
         }
       };
-      let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number } } = null;
+      // pending — фигура строится «кликами»: первый клик поставил начало, курсор
+      // тянет её без зажатой кнопки, второй клик фиксирует. Кнопка мыши при этом
+      // отпущена, но dragState жив (в отличие от обычного перетаскивания).
+      let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number }; pending?: boolean } = null;
       const HANDLE_R = 8;
       const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
@@ -1300,7 +1285,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawHit.style.pointerEvents = on ? 'auto' : 'none';
         drawHit.style.cursor = on ? 'crosshair' : 'default';
       };
-      drawShapesRef.current = () => { syncDrawInteractivity(); drawShapes(); };
+      drawShapesRef.current = () => {
+        syncDrawInteractivity();
+        // Сменили инструмент (или вышли из режима) с недостроенной фигурой —
+        // бросаем её, иначе «висячий» превью тянулся бы уже за другим тулом.
+        if (dragState?.pending && (!drawActiveRef.current || drawToolRef.current !== dragState.d.tool)) dragState = null;
+        drawShapes();
+      };
       drawClickRef.current = (bx: number, by: number): boolean => {
         if (drawHiddenRef.current || drawLockedRef.current) return false;
         const hit = hitTest(bx, by);
@@ -1335,8 +1326,16 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       };
       const relXY = (e: PointerEvent) => { const r = box.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
       const commit = (next: LwDrawing[]) => { drawingsRef.current = next; onDrawingsChangeRef.current?.(next); drawShapes(); };
+      // Завершение создания фигуры: кладём в список, выделяем, сбрасываем тул.
+      const finishCreate = (d: LwDrawing) => {
+        commit([...(drawingsRef.current ?? []), d]);
+        selectedDrawIdRef.current = d.id; onSelectDrawRef.current?.(d.id);
+        onToolResetRef.current?.();
+      };
       const onDrawDown = (e: PointerEvent) => {
         if (!drawActiveRef.current) return;
+        // Второй клик по недостроенной фигуре — фиксируем её на месте курсора.
+        if (dragState?.pending) { const ds = dragState; dragState = null; finishCreate(ds.d); return; }
         const tool = drawToolRef.current ?? 'select';
         const { x, y } = relXY(e);
         if (tool === 'select') {
@@ -1353,7 +1352,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           }
           drawShapes(); return;
         }
-        const lp = snap(xy2lp(x, y), tool !== 'brush'); if (!lp) return;
+        const lp = xy2lp(x, y); if (!lp) return;
         const color = drawColorRef.current || '#FF5C2B', width = drawWidthRef.current || 2;
         const dash = drawDashRef.current, opacity = drawOpacityRef.current;
         if (tool === 'text') {
@@ -1397,11 +1396,11 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
                 }
               }
             }
-            const lp = snap(xy2lp(px, py)); if (!lp) return;
+            const lp = xy2lp(px, py); if (!lp) return;
             dragState.d.pts = ONE_PT.has(t) ? [lp] : [dragState.d.pts[0], lp];
           }
         } else if (dragState.mode === 'vertex') {
-          const lp = snap(xy2lp(x, y)); if (!lp) return;
+          const lp = xy2lp(x, y); if (!lp) return;
           const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
         } else {
           const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
@@ -1410,12 +1409,17 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawShapes();
       };
       const onDrawUp = (e: PointerEvent) => {
-        if (!dragState) return;
+        if (!dragState || dragState.pending) return;
         try { drawHit.releasePointerCapture(e.pointerId); } catch { /* уже */ }
         const ds = dragState; dragState = null;
         if (ds.mode === 'create') {
-          if (ds.d.tool === 'brush') { if (ds.d.pts.length < 2) { drawShapes(); return; } }
-          else if (!ONE_PT.has(ds.d.tool)) { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 4) { drawShapes(); return; } }
+          // Кнопку отпустили, а фигуру не растянули — значит это был КЛИК, а не
+          // протяжка: фигура остаётся недостроенной и тянется за курсором до
+          // второго клика (модель TradingView). Протяжка мышью работает как была.
+          const clicked = ds.d.tool === 'brush'
+            ? ds.d.pts.length < 2
+            : !ONE_PT.has(ds.d.tool) && (() => { const a = lp2xy(ds.d.pts[0]), b = lp2xy(ds.d.pts[1]); return !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y) < 4; })();
+          if (clicked) { ds.pending = true; dragState = ds; drawShapes(); return; }
           commit([...(drawingsRef.current ?? []), ds.d]);
           selectedDrawIdRef.current = ds.d.id; onSelectDrawRef.current?.(ds.d.id);
           onToolResetRef.current?.();
@@ -1438,6 +1442,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       drawHit.addEventListener('pointermove', onDrawMove);
       drawHit.addEventListener('pointerup', onDrawUp);
       drawHit.addEventListener('dblclick', onDrawDbl);
+      // Escape во время «клик-клик» построения — бросить недостроенную фигуру.
+      const onDrawEsc = (ke: KeyboardEvent) => {
+        if (ke.key !== 'Escape' || !dragState?.pending) return;
+        dragState = null; drawShapes();
+      };
+      window.addEventListener('keydown', onDrawEsc);
       syncDrawInteractivity();
 
       // ── перетаскивание фигур ВНЕ режима рисования (как в TradingView) ──
@@ -1507,6 +1517,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawHit.removeEventListener('pointermove', onDrawMove);
         drawHit.removeEventListener('pointerup', onDrawUp);
         drawHit.removeEventListener('dblclick', onDrawDbl);
+        window.removeEventListener('keydown', onDrawEsc);
         try { chart()?.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* chart removed */ }
         if (shapesRaf) cancelAnimationFrame(shapesRaf);
         drawRo.disconnect();
@@ -2023,7 +2034,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
   // ── реагировать на изменение пропов рисования (как в LwChart.tsx) ──
   useEffect(() => {
     drawShapesRef.current?.();
-  }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawMagnet, drawHidden, drawLocked, drawDash, drawOpacity]);
+  }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawHidden, drawLocked, drawDash, drawOpacity]);
 
   // Отступ водяного знака слева = ширина ЛЕВОЙ шкалы первой панели: иначе знак
   // ложится на подписи оси (та же логика, что в LwChart).

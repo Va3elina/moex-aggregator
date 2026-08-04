@@ -17,11 +17,11 @@ import {
 } from 'react';
 import {
   Pencil, Camera, MousePointer2, TrendingUp, Minus, Square, Type, Trash2,
-  MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Magnet, Eye, EyeOff, Lock, LockOpen,
+  MoveUpRight, ArrowUpRight, Brush, Circle, AlignJustify, Eye, EyeOff, Lock, LockOpen,
   Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
-import type { LwDrawing, LwDrawTool, LwDash, LwMagnet } from '../../components/chart/lwTypes';
+import type { LwDrawing, LwDrawTool, LwDash } from '../../components/chart/lwTypes';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 
@@ -81,7 +81,6 @@ export interface DrawTools {
   drawOpacity: number;
   selectedDrawId: string | null;
   setSelectedDrawId: (id: string | null) => void;
-  drawMagnet: LwMagnet;
   drawHidden: boolean;
   setDrawHidden: (v: boolean | ((p: boolean) => boolean)) => void;
   drawLocked: boolean;
@@ -93,7 +92,6 @@ export interface DrawTools {
   drawKeep: boolean;
   setDrawKeep: (v: boolean | ((p: boolean) => boolean)) => void;
   setDrawTool: (t: LwDrawTool) => void;
-  setDrawMagnet: (v: LwMagnet | ((p: LwMagnet) => LwMagnet)) => void;
   layersOpen: boolean;
   setLayersOpen: (v: boolean | ((p: boolean) => boolean)) => void;
   dragLayerId: string | null;
@@ -134,7 +132,6 @@ export function useDrawTools(persistKey: string): DrawTools {
   const [drawColor, setDrawColor] = useState('#FF5C2B');
   const [drawings, setDrawings] = useState<LwDrawing[]>([]);
   const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
-  const [drawMagnet, setDrawMagnet] = useState<LwMagnet>('off');
   const [drawKeep, setDrawKeep] = useState(false);
   const [drawHidden, setDrawHidden] = useState(false);
   const [drawLocked, setDrawLocked] = useState(false);
@@ -198,12 +195,54 @@ export function useDrawTools(persistKey: string): DrawTools {
     const arr = ds.slice(); const [m] = arr.splice(i, 1); arr.unshift(m); return arr;
   });
 
+  // ── история (Ctrl+Z) и буфер фигур (Ctrl+C / Ctrl+V) ──
+  // Историю пишем не в каждом обработчике, а одним эффектом на изменение
+  // drawings: правок много (рисование, стиль, слои, удаление), и любой новый
+  // путь автоматически попадает в отмену.
+  const drawingsRef = useRef<LwDrawing[]>(drawings); drawingsRef.current = drawings;
+  const undoStack = useRef<LwDrawing[][]>([]);
+  const prevDrawings = useRef<LwDrawing[]>(drawings);
+  const skipHistory = useRef(true);   // первая раскладка и сам откат — не история
+  const clipboard = useRef<LwDrawing | null>(null);
+  useEffect(() => {
+    if (skipHistory.current) skipHistory.current = false;
+    else if (prevDrawings.current !== drawings) {
+      undoStack.current.push(prevDrawings.current);
+      if (undoStack.current.length > 60) undoStack.current.shift();
+    }
+    prevDrawings.current = drawings;
+  }, [drawings]);
+  const undoDraw = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (!prev) return;
+    skipHistory.current = true;
+    setDrawings(prev);
+    setSelectedDrawId(null);
+  }, []);
+  const newId = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+  const copyDraw = useCallback((id: string | null) => {
+    const src = drawingsRef.current.find((d) => d.id === id);
+    if (src) clipboard.current = { ...src, pts: src.pts.map((p) => ({ ...p })) };
+  }, []);
+  const pasteDraw = useCallback(() => {
+    const src = clipboard.current;
+    if (!src) return;
+    // Вставляем со сдвигом (бар вправо, чуть ниже по цене) — как клон: иначе
+    // копия ложится ровно под оригинал и кажется, что ничего не произошло.
+    const dy = src.pts.length > 1 ? Math.abs(src.pts[0].price - src.pts[1].price) * 0.12 : Math.abs(src.pts[0].price) * 0.01;
+    const id = newId();
+    const copy: LwDrawing = { ...src, id, pts: src.pts.map((p) => ({ logical: p.logical + 1, price: p.price - dy })) };
+    setDrawings((ds) => [...ds, copy]);
+    setSelectedDrawId(id);
+  }, []);
+
   // Персист фигур — по persistKey (может меняться, напр. смена инструмента у ОИ).
   const persistKeyRef = useRef(persistKey); persistKeyRef.current = persistKey;
   useEffect(() => {
     const raw = rd(persistKey, '');
     try { setDrawings(raw ? (JSON.parse(raw) as LwDrawing[]) : []); } catch { setDrawings([]); }
     setSelectedDrawId(null);
+    undoStack.current = []; skipHistory.current = true;   // другой набор фигур — история не переносится
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persistKey]);
   useEffect(() => {
@@ -234,6 +273,15 @@ export function useDrawTools(persistKey: string): DrawTools {
         setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); return;
       }
       if (e.key === 'Escape') { setDrawTool('select'); setSelectedDrawId(null); return; }
+      // Ctrl/⌘ + Z / C / V. По e.code — в русской раскладке e.key даёт «я»/«с»/«м».
+      // В поле ввода (подпись фигуры, поиск) хоткеи не перехватываем.
+      const t = e.target as HTMLElement | null;
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !inField) {
+        if (e.code === 'KeyZ') { e.preventDefault(); undoDraw(); return; }
+        if (e.code === 'KeyC' && selectedDrawId && !window.getSelection()?.toString()) { e.preventDefault(); copyDraw(selectedDrawId); return; }
+        if (e.code === 'KeyV' && clipboard.current) { e.preventDefault(); pasteDraw(); return; }
+      }
       if (!e.altKey) return;
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyH') { e.preventDefault(); setDrawHidden((v) => !v); return; }
       if (e.ctrlKey || e.metaKey) return;
@@ -247,15 +295,15 @@ export function useDrawTools(persistKey: string): DrawTools {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drawMode, selectedDrawId]);
+  }, [drawMode, selectedDrawId, undoDraw, copyDraw, pasteDraw]);
 
   const onToolReset = useCallback(() => { if (!drawKeep) setDrawTool('select'); }, [drawKeep]);
 
   return {
     drawMode, setDrawMode, drawTool, drawColor, drawings, setDrawings, drawWidth, drawDash, drawOpacity,
-    selectedDrawId, setSelectedDrawId, drawMagnet, drawHidden, setDrawHidden, drawLocked, setDrawLocked,
+    selectedDrawId, setSelectedDrawId, drawHidden, setDrawHidden, drawLocked, setDrawLocked,
     onToolReset, exportOpen, setExportOpen,
-    drawKeep, setDrawKeep, setDrawTool, setDrawMagnet, layersOpen, setLayersOpen,
+    drawKeep, setDrawKeep, setDrawTool, layersOpen, setLayersOpen,
     dragLayerId, setDragLayerId, reorderLayer,
     railOffset, setRailOffset, saveRailOffset,
     selRect, setSelRect, panelOffset, setPanelOffset, settingsOpen, setSettingsOpen,
@@ -814,10 +862,6 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
           </button>
         ))}
         <div style={{ height: 1, background: 'var(--border-color, rgba(128,128,128,0.3))', margin: '2px 3px' }} />
-        <button type="button" title={`Магнит: ${draw.drawMagnet === 'off' ? 'выкл' : draw.drawMagnet === 'weak' ? 'слабый (рядом с OHLC)' : 'сильный (всегда к OHLC)'} — клик для смены`} aria-label="Магнит" onClick={() => draw.setDrawMagnet((m) => (m === 'off' ? 'weak' : m === 'weak' ? 'strong' : 'off'))} style={{ ...drawToolBtn(draw.drawMagnet !== 'off'), position: 'relative' }}>
-          {draw.drawMagnet === 'strong' && <span style={{ position: 'absolute', top: 3, right: 4, width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)' }} />}
-          <Magnet size={16} />
-        </button>
         <button type="button" title={draw.drawHidden ? 'Показать рисунки' : 'Скрыть рисунки'} aria-label="Скрыть рисунки" onClick={() => draw.setDrawHidden((v) => !v)} style={drawToolBtn(draw.drawHidden)}>
           {draw.drawHidden ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
