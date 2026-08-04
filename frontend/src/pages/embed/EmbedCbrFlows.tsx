@@ -191,6 +191,7 @@ export default function EmbedCbrFlows() {
             unit={data.unit ?? 'млрд руб.'}
             height={chartH}
             animTrigger={`${type}|${period}`}
+            tooltipInSandbox
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}

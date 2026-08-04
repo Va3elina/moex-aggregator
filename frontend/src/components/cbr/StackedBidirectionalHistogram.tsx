@@ -48,6 +48,14 @@ interface Props {
    * за пределами видимых `periods`. Не передан → fallback на `periods`.
    */
   allPeriods?: CbrFlowsPeriod[];
+  /** Пилс суммы столбца на ценовой шкале. Уместен там, где значение ОДНО
+   *  (чистый поток фондов); для многокатегорийных потоков ЦБ одна цифра
+   *  бессмысленна — там подробный тултип. */
+  valuePill?: boolean;
+  /** Показывать курсорный тултип и В ПЕСОЧНИЦЕ. По умолчанию он там скрыт
+   *  правилом .sb-panel .chart-tooltip-root (мелкие панели), но у потоков ЦБ
+   *  разбор по категориям — единственный способ прочитать числа. */
+  tooltipInSandbox?: boolean;
 }
 
 /**
@@ -96,6 +104,8 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   height,
   loading,
   animTrigger,
+  valuePill,
+  tooltipInSandbox,
   allPeriods,
 }, ref) {
   const { theme } = useTheme();
@@ -549,7 +559,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             через весь график в плитке периодов только мешает. Пилс закрывает
             дыру «видно форму, не видно чисел»: курсорный тултип в песочнице
             скрыт по правилу .sb-panel .chart-tooltip-root. */}
-        {hover && periods[hover.periodIdx] && (() => {
+        {valuePill && hover && periods[hover.periodIdx] && (() => {
           const p = periods[hover.periodIdx];
           const total = categories.reduce((acc, c) => acc + (p.values[c] ?? 0), 0);
           if (!Number.isFinite(total)) return null;
@@ -563,7 +573,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             <div
               data-export-ignore="true"
               style={{
-                position: 'absolute', right: 2, top: Math.max(padTop, Math.min(padTop + h, y)),
+                // ⚠️ Прижимаем к КРОМКЕ ПОЛЯ (ширина оси = pad.right), иначе пилс
+                // уезжает за цифры шкалы и висит у самого края панели.
+                position: 'absolute', right: pad.right, top: Math.max(padTop, Math.min(padTop + h, y)),
                 transform: 'translateY(-50%)', zIndex: 6, pointerEvents: 'none',
                 padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap',
                 fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
@@ -657,7 +669,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
         return (
           <div
             data-export-ignore="true"
-            className={`${TOOLTIP.containerClass} absolute z-20 chart-tooltip-root`}
+            className={`${TOOLTIP.containerClass} absolute z-20${tooltipInSandbox ? '' : ' chart-tooltip-root'}`}
             style={{
               ...TOOLTIP.containerStyle,
               left: `${left}px`,

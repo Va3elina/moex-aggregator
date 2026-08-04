@@ -324,6 +324,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             unit="млрд ₽"
             height={chartH}
             animTrigger={`${category}|${flowTimeframe}|${period}`}
+            valuePill
           />
         )}
         {viewMode !== 'flows' && st === 'ok' && lwSeries.length > 0 && (
