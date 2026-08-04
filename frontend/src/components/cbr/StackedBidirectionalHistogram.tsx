@@ -317,8 +317,11 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   // ~250 столбцов, порог «>100 → 0.25» срабатывал всегда, независимо от того,
   // насколько широкая панель. И наоборот: 30 столбцов в узкой панели песочницы
   // такие же тонкие, как 100 на полной странице.
+  // Пороги подобраны так, чтобы рамка нигде не съедала больше ~8% ширины бара:
+  // на 12px бар — 1px, на 7px — 0.7px и т.д. Иначе на средних ширинах столбец
+  // читается как «сплошной контур», а не как заливка.
   const barPx = Math.max(0, ((containerW || vw) - pad.left - pad.right) * (barW / 100));
-  const outlineWidth = barPx >= 9 ? 1 : barPx >= 5 ? 0.7 : barPx >= 3 ? 0.4 : 0.25;
+  const outlineWidth = barPx >= 12 ? 1 : barPx >= 7 ? 0.7 : barPx >= 3.5 ? 0.4 : 0.25;
 
   return (
     <div
