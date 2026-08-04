@@ -211,21 +211,25 @@ export default function EmbedBuffett() {
     const pushSplit = (
       pts: Series, id: string, scale: 'left' | 'right', color: string,
       label: string, tipFmt: (v: number) => string, axisFmt: (v: number) => string,
-      format?: ChartFormat,
+      format?: ChartFormat, minMove?: number,
     ) => {
       if (pts.length === 0) return;
       const mk = (d: LwSeries): LwSeries => (format ? applyFormat(d, format) : d);
       if (showForecast && pts.length > FC) {
         const cut = pts.length - FC;
-        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts.slice(0, cut)), tipFmt, axisFmt }));
-        out.push({ id: `${id}-fore`, type: 'line', scale, color: format?.color ?? color, lineWidth: 2, dashed: true, lastValueVisible: false, label: `${label} · прогноз`, data: map(pts.slice(cut - 1)), tipFmt, axisFmt });
+        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts.slice(0, cut)), tipFmt, axisFmt, ...(minMove ? { minMove } : {}) }));
+        out.push({ id: `${id}-fore`, type: 'line', scale, color: format?.color ?? color, lineWidth: 2, dashed: true, lastValueVisible: false, label: `${label} · прогноз`, data: map(pts.slice(cut - 1)), tipFmt, axisFmt, ...(minMove ? { minMove } : {}) });
       } else {
-        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts), tipFmt, axisFmt }));
+        out.push(mk({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts), tipFmt, axisFmt, ...(minMove ? { minMove } : {}) }));
       }
     };
 
     if (showCap) pushSplit(projected.cap, 'cap', 'left', 'var(--accent-secondary)', 'Капитализация (трлн ₽)', capTip, capAxis);
-    pushSplit(projected.ratio, 'ratio', 'right', 'var(--accent)', ratioLabel, rTip, rAxis, fmt);
+    // ⚠️ minMove обязателен. Дефолт движка — 1, то есть «шкала дробится не мельче
+    // единицы». В режиме Кап/M2 значения — ДОЛИ (0.27), и ось могла показать
+    // только 0 и 1, то есть 0% и 100%: между ними ни одной подписи. У Кап/ВВП
+    // значения уже в процентах, там нужен свой шаг, иначе подписи идут через 20%.
+    pushSplit(projected.ratio, 'ratio', 'right', 'var(--accent)', ratioLabel, rTip, rAxis, fmt, viewMode === 'cap-gdp' ? 0.1 : 0.001);
     return out;
   }, [projected, showCap, showForecast, viewMode, fmt]);
 

@@ -110,7 +110,18 @@ export default function EmbedStrength() {
 
   // Пользовательские индикаторы. Ключ БЕЗ вселенной/валюты: набор индикаторов —
   // предпочтение пользователя, а не свойство конкретного среза данных.
-  const inds = useIndicators('frame:embed:strength:indicators');
+  // Панель breadth участвует в перестановке НАРАВНЕ с индикаторами: иначе
+  // «Переместить → Выше/Ниже» у единственного индикатора не с чем менять
+  // местами, и пункт просто ничего не делал. Номера панелей — общее
+  // пространство, поэтому breadth уходит в reserved, а перестановку обе
+  // стороны применяют одну и ту же (см. useIndicators).
+  const [breadthPane, setBreadthPane] = useState<number>(() => Number(rd('frame:embed:strength:breadthPane', '1')) || 1);
+  useEffect(() => { wr('frame:embed:strength:breadthPane', String(breadthPane)); }, [breadthPane]);
+  const reservedPanes = useMemo(() => [breadthPane], [breadthPane]);
+  const onSwapPanes = useCallback((a: number, b: number) => {
+    setBreadthPane((p) => (p === a ? b : p === b ? a : p));
+  }, []);
+  const inds = useIndicators('frame:embed:strength:indicators', { reserved: reservedPanes, onSwapPanes });
   const [paneSizes, setPaneSizes] = useState<number[] | undefined>(undefined);
   const onPaneSizesChange = useCallback((sizes: number[]) => {
     setPaneSizes(sizes);
@@ -197,7 +208,7 @@ export default function EmbedStrength() {
       });
     }
     const breadthLabel = `% акций выше EMA${ema}`;
-    out.push({
+    const breadthPaneDef: LwPane = {
       flex: showPrice ? 0.9 : 1,
       series: [chartMode === 'line'
         ? {
@@ -216,13 +227,18 @@ export default function EmbedStrength() {
             })),
             tipFmt: fmtPct, axisFmt: (v) => Math.round(v) + '%', minMove: 0.1,
           }],
-    });
-    // Индикаторы, вынесенные в свои панели (RSI/ATR). Панели держатся по СПИСКУ,
-    // а не по наличию серий: скрытый «глазом» индикатор серий не даёт, и панель
-    // схлопнулась бы вместе со строкой — вернуть его стало бы нечем.
-    for (const pane of indPanes) out.push({ series: indSeries[pane] ?? [], flex: 0.7 });
+    };
+    // Порядок нижних панелей — по НОМЕРУ: breadth и индикаторы в одном
+    // пространстве, поэтому «Выше/Ниже» реально меняет их местами.
+    // Панели держатся по СПИСКУ, а не по наличию серий: скрытый «глазом»
+    // индикатор серий не даёт, и панель схлопнулась бы вместе со строкой.
+    const lower = [
+      { pane: breadthPane, def: breadthPaneDef },
+      ...indPanes.map((pane) => ({ pane, def: { series: indSeries[pane] ?? [], flex: 0.7 } as LwPane })),
+    ].sort((a, b) => a.pane - b.pane);
+    for (const x of lower) out.push(x.def);
     return out;
-  }, [synced, showPrice, chartMode, ema, indexLegend, indSeries, indPanes]);
+  }, [synced, showPrice, chartMode, ema, indexLegend, indSeries, indPanes, breadthPane]);
 
   const paneCountNow = panes.length;
   useEffect(() => {
@@ -305,8 +321,10 @@ export default function EmbedStrength() {
               // Панель breadth — своя нативная строка. Номер -1: у индикаторов
               // панели всегда ≥1, так что пересечься с ними эта строка не может,
               // а фильтр по pane в PaneIndicatorList работает как есть.
-              const breadthIdx = showPrice ? 1 : 0;
-              if (i === breadthIdx) {
+              const base = showPrice ? 1 : 0;
+              const order = [breadthPane, ...indPanes].sort((a, b) => a - b);
+              const pane = order[i - base];
+              if (pane === breadthPane) {
                 return (
                   <PaneIndicatorList
                     api={inds}
@@ -316,11 +334,20 @@ export default function EmbedStrength() {
                       id: 'breadth', label: `% акций выше EMA${ema}`,
                       color: chartMode === 'line' ? 'var(--oi-cyan)' : 'var(--oi-green)',
                       visible: true, onToggle: () => {}, pane: -1,
+                      // Двигается наравне с индикаторами — тем же swapPanes.
+                      onMove: (to) => {
+                        if (to === 'up' || to === 'down') {
+                          const occ = inds.occupiedPanes;
+                          const target = occ[occ.indexOf(breadthPane) + (to === 'up' ? -1 : 1)];
+                          if (target != null) inds.swapPanes(breadthPane, target);
+                        }
+                      },
+                      canUp: inds.occupiedPanes.indexOf(breadthPane) > 0,
+                      canDown: inds.occupiedPanes.indexOf(breadthPane) < inds.occupiedPanes.length - 1,
                     }]}
                   />
                 );
               }
-              const pane = indPanes[i - breadthIdx - 1];
               return pane == null ? null : <PaneIndicatorList api={inds} pane={pane} values={indValues} />;
             }}
             dark={dark}
