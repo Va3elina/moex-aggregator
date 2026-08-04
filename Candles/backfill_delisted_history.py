@@ -74,6 +74,10 @@ def get_delisted_holdings(engine) -> list[tuple[str, str, int]]:
             FROM securities_ref sr
             WHERE sr.secid IS NOT NULL
               AND sr.is_traded IS FALSE
+              -- Суффикс -ME (ETLN-ME, TCS-ME) — внебиржевая доска RPMA: свечей
+              -- по ним ISS не отдаёт, а биржевая история этих бумаг и так цела
+              -- под основным тикером.
+              AND sr.secid NOT LIKE '%-ME'
               AND sr.sec_type IN ('common_share', 'preferred_share', 'depositary_receipt')
               AND sr.isin IN (
                     SELECT DISTINCT h.isin
