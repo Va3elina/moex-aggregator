@@ -11,6 +11,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
+import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
@@ -19,6 +20,7 @@ import {
   type FundCategory,
   type FlowTimeframe,
   type FundsFlowsResponse,
+  type CbrFlowsPeriod,
   type FlowDataPoint,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
@@ -47,6 +49,8 @@ const CATS: { id: Category; label: string; icon: ReactNode }[] = [
 const CAT_ICONS: Record<Category, ReactNode> = Object.fromEntries(CATS.map((c) => [c.id, c.icon])) as Record<Category, ReactNode>;
 /** Период истории потоков. «Авто» = как было: глубина выводится из шага
  *  столбца (день → год, неделя → 3 года, месяц → всё). */
+const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const MONTHS_SHORT_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
   { id: 'auto', label: 'Авто' },
   { id: '1m', label: '1 месяц' },
@@ -182,6 +186,46 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // Высоту не считаем: LwChartPanes всегда 100% родителя (absolute inset:0).
 
   // Серии LwChart.
+  // Потоки → формат движка ЦБ (StackedBidirectionalHistogram): не временной ряд,
+  // а ПЛИТКА ПЕРИОДОВ. Приток и отток — две «категории», они и складываются в
+  // столбец вверх/вниз от нуля. Цвета лежат в общей палитре (CBR_CATEGORY_COLORS),
+  // поэтому берутся тем же путём, что у категорий ЦБ, и остаются тема-зависимыми.
+  // Движку ЦБ нужна ЯВНАЯ высота в пикселях (он рисует SVG в фиксированный
+  // бокс, а не тянется по родителю) — меряем контейнер, как в потоках ЦБ.
+  const [chartH, setChartH] = useState(300);
+  useEffect(() => {
+    const el = chartBoxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h && h > 0) setChartH(Math.round(h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const flowPeriods = useMemo<CbrFlowsPeriod[]>(() => {
+    const flows = flowsData?.flows ?? [];
+    return flows.map((f) => {
+      const d = new Date(f.period_end);
+      const label = flowTimeframe === '1m'
+        ? MONTHS_RU[d.getUTCMonth()]
+        : `${d.getUTCDate()} ${MONTHS_SHORT_RU[d.getUTCMonth()]}`;
+      return {
+        year: d.getUTCFullYear(),
+        label,
+        // Движок различает только месяц и квартал; день и неделя для него —
+        // «месяц» (влияет лишь на подпись сравнения в тултипе).
+        kind: 'month' as const,
+        end_date: f.period_end,
+        values: {
+          'Приток': f.gross_in ?? 0,
+          'Отток': f.gross_out ?? 0,
+        },
+      };
+    });
+  }, [flowsData, flowTimeframe]);
+
   const lwSeries = useMemo<LwSeries[]>(() => {
     if (viewMode === 'flows') {
       const flows = flowsData?.flows ?? [];
@@ -269,7 +313,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       ) : undefined}
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {st === 'ok' && lwSeries.length > 0 && (
+        {viewMode === 'flows' && flowsStatus === 'ok' && flowPeriods.length > 0 && (
+          <StackedBidirectionalHistogram
+            periods={flowPeriods}
+            categories={['Приток', 'Отток']}
+            unit="млрд ₽"
+            height={chartH}
+            animTrigger={`${category}|${flowTimeframe}|${period}`}
+          />
+        )}
+        {viewMode !== 'flows' && st === 'ok' && lwSeries.length > 0 && (
           <LwChartPanes
             ref={lwChartRef}
             panes={[{ series: lwSeries }]}
@@ -281,9 +334,6 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             dark={dark}
             fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
             tickFmt={monthsYearsTickFmt}
-            legendItems={viewMode === 'flows'
-              ? [{ label: 'Приток', color: 'var(--oi-green)' }, { label: 'Отток', color: 'var(--oi-red)' }]
-              : undefined}
             drawActive={draw.drawMode}
             drawTool={draw.drawTool}
             drawings={draw.drawings}
