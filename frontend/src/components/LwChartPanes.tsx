@@ -97,6 +97,11 @@ interface LwChartPanesProps {
    *  панелью). Панель — position:relative, так что абсолютный ребёнок ложится
    *  по её углам, а не по углам всего чарта. */
   paneOverlay?: (paneIndex: number) => React.ReactNode;
+  /** СТАТИЧНЫЙ вид: график не панорамируется и не зумится, а всегда показывает
+   *  ВСЮ историю, подстраиваясь под размер панели. Для рядов, где смысл в
+   *  картине целиком (потоки, сезонность, притоки в фонды), а не в разглядывании
+   *  участка: там пан/зум только сбивают вид, из которого потом не выбраться. */
+  staticView?: boolean;
   /** Пользовательские доли высоты панелей (перетаскивание разделителя).
    *  Приоритетнее panes[].flex; длина не совпала с числом панелей — игнор. */
   paneSizes?: number[];
@@ -234,7 +239,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
-  paneOverlay, paneSizes, onPaneSizesChange,
+  paneOverlay, paneSizes, onPaneSizesChange, staticView,
   selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -304,6 +309,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const syncVpRef = useRef<(() => void) | null>(null);
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
   const onPaneSizesChangeRef = useRef(onPaneSizesChange); onPaneSizesChangeRef.current = onPaneSizesChange;
+  const staticViewRef = useRef(staticView); staticViewRef.current = staticView;
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
   // Превью-уровень = НАТИВНАЯ price line. В отличие от LwChart здесь у неё включён
   // axisLabelVisible: значение рисует сама библиотека. Самодельный DOM-пилс
@@ -481,7 +487,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
           horzLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
         },
-        handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+        handleScroll: staticView
+          ? { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false }
+          : { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
         // price: true — тянешь ЦЕНОВУЮ ОСЬ и масштаб фиксируется (движок сам
         // снимает autoScale). Без этого шкала была ВСЕГДА автоматической и
         // пересчитывалась под каждое новое окно при пане: у цены и ОИ пределы
@@ -489,7 +497,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         // меняет масштаб при перемещении по времени». Вернуть авто — двойной
         // клик по оси (ниже). time остаётся false: горизонтальный масштаб
         // общий для стека и синхронизируется отдельно.
-        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: true } },
+        handleScale: staticView
+          ? { mouseWheel: false, pinch: false, axisPressedMouseMove: { time: false, price: false } }
+          : { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: true } },
       });
       charts.push(chart);
       hideTvLogo();
@@ -1560,6 +1570,17 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       };
     }
 
+    // Статичный вид обязан переподгоняться под размер: панель тянут за угол —
+    // график должен занять новое место целиком, а не остаться в старом окне.
+    let fitRo: ResizeObserver | null = null;
+    if (staticViewRef.current && root) {
+      fitRo = new ResizeObserver(() => {
+        requestAnimationFrame(() => chartsRef.current.forEach((ch) => ch.timeScale().fitContent()));
+      });
+      fitRo.observe(root);
+      unsubs.push(() => fitRo?.disconnect());
+    }
+
     // Вертикальный масштаб колесом: Shift+колесо где угодно ИЛИ колесо над осью
     // цифр (порт из LwChart). Масштабируем ТОЛЬКО панель под курсором — это и
     // проще, и ожидаемее, чем тянуть общий масштаб на весь стек. Без capture +
@@ -1964,7 +1985,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
 
     // Fit/восстановление зума — через нижнюю панель, синк разнесёт по остальным.
     const lead = charts[charts.length - 1];
-    if (fitKey !== lastFitRef.current) {
+    if (staticView) {
+      // Статичный вид: ВСЕГДА вся история. Сохранённый диапазон не применяем —
+      // его тут неоткуда взять (пан/зум выключены), а fitContent обязан
+      // отработать и на смену данных, и на смену размера панели.
+      charts.forEach((ch) => ch.timeScale().fitContent());
+    } else if (fitKey !== lastFitRef.current) {
       lastFitRef.current = fitKey;
       const total = Math.max(0, ...panes.flatMap((p) => p.series.map((s) => s.data.length)));
       if (initialBars && total > initialBars) {
@@ -1976,7 +2002,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
     }
     drawShapesRef.current?.();
-  }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations]);
+  }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations, staticView]);
 
   /**
    * ПЕРЕКРАСКА ПРИ СМЕНЕ ТЕМЫ — без пересоздания серий.

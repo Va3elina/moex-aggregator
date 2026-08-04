@@ -381,6 +381,10 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
         {status === 'ok' && lwSeries.length > 0 && (
           <LwChartPanes
             panes={[{ series: lwSeries }]}
+            // Статичный вид (как у потоков капитала): пан и зум выключены,
+            // график всегда показывает всю историю и подстраивается под панель.
+            // Здесь смысл в картине целиком, а не в разглядывании участка.
+            staticView
             dark={dark}
             fitKey={`${chartType}|${stock}|${mode}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
             tickFmt={isHist ? histTickFmt : yearlyTickFmt}
