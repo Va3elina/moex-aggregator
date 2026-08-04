@@ -188,7 +188,8 @@ export default function EmbedStrength() {
     [synced],
   );
   const toSecFn = useCallback((t: string) => Number(t), []);
-  const indSeries = useIndicatorSeries(inds.list, indCandles, toSecFn, inds.colorOf);
+  // Индекс живёт на ПРАВОЙ оси — туда же кладём наложения (см. overlayScale).
+  const indSeries = useIndicatorSeries(inds.list, indCandles, toSecFn, inds.colorOf, 'right');
   const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
 
   const indPanes = useMemo(
@@ -226,11 +227,7 @@ export default function EmbedStrength() {
           },
           // Наложения (MA/EMA поверх индекса) — ПОСЛЕ индекса: первой в
           // массиве должна остаться сама метрика, от неё считают магнит и линейка.
-          // ⚠️ И ОБЯЗАТЕЛЬНО на ТУ ЖЕ ШКАЛУ, что индекс. Движок индикаторов
-          // кладёт наложения на ЛЕВУЮ ось (у ОИ там цена), а здесь индекс живёт
-          // на правой — левая оставалась пустой, автомасштабировалась сама по
-          // себе, и линии «прыгали» относительно графика, к которому нарисованы.
-          ...(indSeries[0] ?? []).map((d) => ({ ...d, scale: 'right' as const })),
+          ...(indSeries[0] ?? []),
         ],
       });
     }
