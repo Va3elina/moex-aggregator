@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Scale } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
+import HelpTooltip from '../../components/HelpTooltip';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getBuffettCapGdp,
@@ -25,6 +26,19 @@ import { useToolbarCompact } from './useToolbarCompact';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
+
+/** Пояснение режимов — ТЕ ЖЕ тексты, что на сайте (BuffettPage): один смысл
+ *  должен читаться одинаково в обоих местах. */
+const MODE_SECTIONS = [
+  {
+    heading: 'Капитализация / ВВП',
+    body: 'Классический индикатор Баффетта: капитализация рынка к ВВП. Показывает, дорог ли рынок относительно того, что реально производит экономика. Что считать недооценкой или переоценкой, смотрите в контексте конкретного периода: ориентируйтесь на недавние исторические примеры, где контекст ещё актуален. ВВП меняется медленно, поэтому это про долгосрочную картину.',
+  },
+  {
+    heading: 'Капитализация / M2',
+    body: 'Капитализация к денежной массе M2 (наличные и депозиты): сколько в стране денег относительно рынка акций. Низкие значения значат, что денег много, но они не идут в акции, а сидят в депозитах и ОФЗ. M2 чувствительна к действиям ЦБ и бюджета, поэтому быстрее реагирует на монетарные условия.',
+  },
+];
 type Timeframe = '1d' | '1w' | '1m';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Point = { time: string; value: number };
@@ -240,6 +254,9 @@ export default function EmbedBuffett() {
             compact={toolbarCompact}
           />
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
+          {/* «?» с описанием режимов — как на сайте. Смысл режима нужен там, где
+              его выбирают, а не только в справке. */}
+          <HelpTooltip sections={MODE_SECTIONS} size={15} />
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={status === 'ok' && lwSeries.length > 0} />}

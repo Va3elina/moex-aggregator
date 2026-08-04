@@ -39,6 +39,9 @@ import { listAlerts, type AlertInfo } from '../services/api';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
+/** Прогноз Кап/ВВП на сайте: временно скрыт (см. блок с Dropdown ниже). */
+const SHOW_FORECAST = false;
+
 const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
     '5y': '5Л',
     '10y': '10Л',
@@ -350,8 +353,10 @@ export default function BuffettPage() {
                     </div>
                 )}
 
-                {/* Прогноз — только для cap-gdp */}
-                {viewMode === 'cap-gdp' && (
+                {/* Прогноз ВРЕМЕННО ОТКЛЮЧЁН на сайте (Вадим, 04.08.2026).
+                    Флагом, а не удалением: расчёт, персист и отрисовка целы,
+                    вернуть = поставить true. В песочнице прогноз остаётся. */}
+                {SHOW_FORECAST && viewMode === 'cap-gdp' && (
                     <div data-tour="buffett-forecast">
                     <Dropdown<string>
                         options={[
