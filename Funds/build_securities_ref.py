@@ -37,6 +37,7 @@ ISIN_ALIASES = {
     "US87238U2033": "RU000A107UL4",  # TCS-гдр → Т-Технологии (T)
     "US5603172082": "RU000A106YF0",  # VK-гдр (Mail.ru) → ВК (VKCO)
     "US29760G1031": "RU000A10C1L6",  # Эталон ETLN-гдр → МКПАО Эталон Груп
+    "US33835G2057": "RU000A10B5G8",  # Фикс Прайс FIXP-гдр → ПАО «Фикс Прайс» (FIXR)
 }
 
 ISS_URL = ("https://iss.moex.com/iss/securities.json?iss.meta=off&q={q}"
