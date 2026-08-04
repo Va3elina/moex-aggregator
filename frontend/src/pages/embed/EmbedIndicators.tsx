@@ -541,7 +541,7 @@ export function useVolumeProfileSpec(
  * Так значение читается там же, где написано, чей оно, — а пилс на оси для
  * объёма вдобавок бессмыслен: это объём одного бара, а не уровень.
  */
-export interface IndValue { text: string; color?: string }
+export interface IndValue { text: string }
 
 export function indicatorValues(
   seriesByPane: LwSeries[][],
@@ -554,13 +554,10 @@ export function indicatorValues(
       const idx = n - 1;
       const pt = d.data[idx];
       if (!pt) continue;
-      // Цвет: у ряда с ПОТОЧЕЧНЫМ цветом (объёмы) — цвет самого бара, чтобы
-      // число и столбик не расходились. У остальных — по направлению против
-      // предыдущего бара: вырос зелёным, упал красным.
-      const prev = idx > 0 ? d.data[idx - 1]?.value : undefined;
-      const color = pt.color
-        ?? (prev == null ? undefined : pt.value >= prev ? VOLUME_UP : VOLUME_DOWN);
-      out[d.id] = { text: d.axisFmt ? d.axisFmt(pt.value) : String(Math.round(pt.value)), color };
+      // Цвета у числа нет: раньше оно красилось по направлению к предыдущему
+      // бару (зелёный/красный), но в строке это спорило с квадратиком цвета
+      // ряда и с подписью. Число идёт серым, как остальная служебная разметка.
+      out[d.id] = { text: d.axisFmt ? d.axisFmt(pt.value) : String(Math.round(pt.value)) };
     }
   }
   return out;
@@ -799,10 +796,11 @@ function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRe
           поддерева панели переменная разрешится сама (тема живёт на data-theme). */}
       <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
       <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{label}</span>
-      {/* Значение справа от названия — в цвет линии, моноширинным: так читается,
-          чьё оно, и цифры не пляшут при смене последнего бара. */}
+      {/* Значение справа от названия: серым и на пункт мельче подписи — цифра
+          подчинена названию, а не спорит с ним. Моноширинные цифры, чтобы не
+          пляшли при смене бара под курсором. */}
       {value && (
-        <span data-ind-value={valueId} style={{ fontSize: 10.5, fontWeight: 700, color: value.color ?? color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value.text}</span>
+        <span data-ind-value={valueId} style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value.text}</span>
       )}
       <button type="button" title={visible ? 'Скрыть' : 'Показать'} onClick={onToggle} style={ICON_BTN}>
         {visible ? <Eye size={11} /> : <EyeOff size={11} />}

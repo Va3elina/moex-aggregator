@@ -507,7 +507,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       const lastPx = Math.abs(chartData[chartData.length - 1].value);
       const pxMinMove = lastPx >= 100 ? 1 : lastPx >= 10 ? 0.01 : 0.0001;
       out.push(applyFormat({
-        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove, legendChange: true,
+        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove,
         // OHLC пробрасываем — режимы «Свечи»/«Бары» рисуют по ним; линия/область берут value.
         data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value, open: p.open, high: p.high, low: p.low, close: p.close })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
@@ -516,20 +516,20 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     if (oiSeries.secondary && oiSeries.secondary.length > 0) {
       if (oiVariant === 'both') {
         out.push(applyFormat({
-          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary, legendChange: true,
+          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
         }, sf.get('oi-long')));
         if (oiSeries.third) {
           out.push(applyFormat({
-            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third, legendChange: true,
+            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
             data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
             tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
           }, sf.get('oi-short')));
         }
       } else {
         out.push(applyFormat({
-          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary, legendChange: true,
+          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
