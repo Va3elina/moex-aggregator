@@ -155,28 +155,28 @@ export default function AdminBillingInvites() {
             </div>
             <div>
               <label className="text-xs text-theme-secondary mb-1 block">Срок подписки (дней)</label>
-              <input type="number" name="duration_days" id="invite-duration" min={1} max={3650} value={formDays}
+              <input type="number" required name="duration_days" id="invite-duration" min={1} max={3650} value={formDays}
                 onChange={e => setFormDays(Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg border text-sm"
                 style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             </div>
             <div>
               <label className="text-xs text-theme-secondary mb-1 block">Сколько ссылок</label>
-              <input type="number" name="count" id="invite-count" min={1} max={1000} value={formCount}
+              <input type="number" required name="count" id="invite-count" min={1} max={1000} value={formCount}
                 onChange={e => setFormCount(Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg border text-sm"
                 style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             </div>
             <div>
               <label className="text-xs text-theme-secondary mb-1 block">Сам токен истекает через (дней)</label>
-              <input type="number" name="expires_days" id="invite-expires" min={1} max={365} value={formExpires}
+              <input type="number" required name="expires_days" id="invite-expires" min={1} max={365} value={formExpires}
                 onChange={e => setFormExpires(Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg border text-sm"
                 style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             </div>
             <div>
               <label className="text-xs text-theme-secondary mb-1 block">Макс. использований одного токена</label>
-              <input type="number" name="max_uses" id="invite-max-uses" min={1} max={10000} value={formMaxUses}
+              <input type="number" required name="max_uses" id="invite-max-uses" min={1} max={10000} value={formMaxUses}
                 onChange={e => setFormMaxUses(Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-lg border text-sm"
                 style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
