@@ -34,7 +34,10 @@ const SIGNUP_URL = '/login?mode=register&next=/billing/redeem';
 export default function BillingRedeemPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  // Почта не подтверждена и при этом настоящая: у Telegram/VK без email адрес
+  // синтетический, им сначала /add-email, и вести их на ввод кода бессмысленно.
+  const needsEmailVerify = Boolean(user && !user.is_verified && !user.requires_email_setup);
 
   const tokenFromUrl = params.get('token') || '';
   // Пришли без token (вернулись после регистрации) — берём отложенный
@@ -149,11 +152,38 @@ export default function BillingRedeemPage() {
               })}
             </p>
           )}
-          <div className="flex gap-3 justify-center">
+          {/* Подтверждение почты. Регистрация по инвайту ведёт СЮДА, а не на
+              /verify-email (иначе терялась подписка), поэтому шаг с кодом из
+              письма надо предложить здесь — иначе про него узнать неоткуда,
+              кроме баннера в профиле. OAuth-юзерам не показываем: у них
+              is_verified=true от провайдера. */}
+          {needsEmailVerify && (
+            <div
+              className="rounded-xl border p-4 mb-6 text-sm"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              Остался один шаг: подтверди почту. Код уже отправлен на{' '}
+              <strong className="text-theme-primary">{user?.email}</strong>.
+            </div>
+          )}
+          <div className="flex gap-3 justify-center flex-wrap">
+            {needsEmailVerify && (
+              <Link
+                to="/verify-email"
+                className="px-5 py-2 rounded-xl text-sm font-medium"
+                style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+              >
+                Подтвердить почту
+              </Link>
+            )}
             <Link
               to="/"
-              className="px-5 py-2 rounded-xl text-sm font-medium"
-              style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+              className={needsEmailVerify
+                ? 'px-5 py-2 rounded-xl text-sm font-medium border'
+                : 'px-5 py-2 rounded-xl text-sm font-medium'}
+              style={needsEmailVerify
+                ? { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }
+                : { backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
             >
               На главную
             </Link>
