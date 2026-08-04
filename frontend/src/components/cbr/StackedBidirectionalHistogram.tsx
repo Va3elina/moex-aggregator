@@ -544,6 +544,37 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             категориями у нулевой линии он перекрывал данные; на остальных
             графиках сайта ChartWatermark остаётся штатно. */}
 
+        {/* Пилс значения на ЦЕНОВОЙ ШКАЛЕ — сумма столбца под курсором.
+            Горизонтальной линии намеренно НЕТ: столбец и так подсвечен, а линия
+            через весь график в плитке периодов только мешает. Пилс закрывает
+            дыру «видно форму, не видно чисел»: курсорный тултип в песочнице
+            скрыт по правилу .sb-panel .chart-tooltip-root. */}
+        {hover && periods[hover.periodIdx] && (() => {
+          const p = periods[hover.periodIdx];
+          const total = categories.reduce((acc, c) => acc + (p.values[c] ?? 0), 0);
+          if (!Number.isFinite(total)) return null;
+          const cs = getComputedStyle(document.documentElement);
+          const padTop = parseFloat(cs.getPropertyValue('--chart-pad-top')) || 14;
+          const h = (containerRef.current?.clientHeight ?? height) - padTop;
+          // Та же геометрия, что у столбцов: ноль по центру поля, полуразмах = yMax.
+          const y = padTop + h / 2 - (total / yMax) * (h / 2);
+          const up = total >= 0;
+          return (
+            <div
+              data-export-ignore="true"
+              style={{
+                position: 'absolute', right: 2, top: Math.max(padTop, Math.min(padTop + h, y)),
+                transform: 'translateY(-50%)', zIndex: 6, pointerEvents: 'none',
+                padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap',
+                fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                background: up ? 'var(--oi-green)' : 'var(--oi-red)', color: '#fff',
+              }}
+            >
+              {`${up ? '+' : '−'}${Math.abs(total).toFixed(Math.abs(total) >= 10 ? 0 : 1)}`}
+            </div>
+          );
+        })()}
+
         {/* Плавающая дата над графиком — единый стиль/позиция со всеми чартами
             (ChartDatePill: прозрачный текст, низ прижат к верхней грид-линии,
             кламп в границах chart-area чтобы не наезжать на Y-шкалу). */}
