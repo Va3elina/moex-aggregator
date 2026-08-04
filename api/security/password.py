@@ -38,6 +38,10 @@ from passlib.context import CryptContext
 import secrets
 import string
 
+# Единственное обязательное требование к паролю. Должно совпадать с min_length
+# в схемах (api/schemas/auth.py) и с подсказкой в форме входа.
+MIN_PASSWORD_LENGTH = 8
+
 # Настройка контекста хэширования
 pwd_context = CryptContext(
     schemes=["argon2"],  # Используем только Argon2
@@ -154,41 +158,35 @@ def check_password_strength(password: str) -> dict:
     """
     Проверяет надёжность пароля.
 
+    Единственное ОБЯЗАТЕЛЬНОЕ правило — длина. Регистры, цифры и спецсимволы
+    считаются только в score (индикатор надёжности) и в errors НЕ попадают:
+    отказывать из-за них живым людям на регистрации дороже, чем выигрыш в
+    стойкости для этого сервиса.
+
     Returns:
         {
-            "is_valid": True/False,
-            "score": 0-5,
-            "errors": ["Пароль слишком короткий", ...]
+            "is_valid": True/False,     # только по длине
+            "score": 0-5,               # насколько пароль хорош, справочно
+            "errors": ["Минимум 8 символов"]
         }
     """
     errors = []
     score = 0
 
-    # Минимальная длина
-    if len(password) < 8:
-        errors.append("Минимум 8 символов")
+    # Минимальная длина — единственное жёсткое требование
+    if len(password) < MIN_PASSWORD_LENGTH:
+        errors.append(f"Минимум {MIN_PASSWORD_LENGTH} символов")
     else:
         score += 1
 
-    # Есть заглавные буквы
-    if not any(c.isupper() for c in password):
-        errors.append("Добавьте заглавную букву")
-    else:
+    # Ниже — только очки к score, поводом для отказа не являются
+    if any(c.isupper() for c in password):
+        score += 1
+    if any(c.islower() for c in password):
+        score += 1
+    if any(c.isdigit() for c in password):
         score += 1
 
-    # Есть строчные буквы
-    if not any(c.islower() for c in password):
-        errors.append("Добавьте строчную букву")
-    else:
-        score += 1
-
-    # Есть цифры
-    if not any(c.isdigit() for c in password):
-        errors.append("Добавьте цифру")
-    else:
-        score += 1
-
-    # Есть спецсимволы
     special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?"
     if any(c in special_chars for c in password):
         score += 1
