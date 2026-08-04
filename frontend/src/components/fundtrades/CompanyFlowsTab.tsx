@@ -37,12 +37,12 @@ import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHi
 import CompanyFlowsPriceMap from './CompanyFlowsPriceMap';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
-import PortfolioFundPicker, { defaultPortfolioTickers } from './PortfolioFundPicker';
+import PortfolioFundPicker, { indexFundTickers } from './PortfolioFundPicker';
 import SegmentedControl from '../SegmentedControl';
 import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import ChartSettings from '../chart/ChartSettings';
-import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Metric = 'amount' | 'weight';
 
@@ -89,17 +89,27 @@ function pluralFunds(n: number): string {
     return 'фондов';
 }
 
-// Дефолт-выбор фондов для свежей бумаги — тот же, что в «Общем портфеле»: все
-// держатели бумаги, кроме индексных фондов. Индексные почти идентичны друг другу,
-// их движения это ребалансировка вслед за индексом, а не решения управляющих.
-// Тумблер «Без индексных фондов» в пикере возвращает их обратно.
-// Если индексных держателей нет вовсе — отдаём пусто (= «все»), чтобы не
-// изображать частичный выбор там, где выбраны все.
-function defaultFunds(funds: FundWithHistory[]): Set<string> {
-    const tickers = defaultPortfolioTickers(funds);
-    if (tickers.length === funds.length) return new Set();
-    return new Set(tickers);
-}
+// ФИЛЬТР ФОНДОВ ХРАНИТ СНЯТЫЕ, А НЕ ВЫБРАННЫЕ.
+//
+// Держатели у каждой бумаги свои, а настройка фильтра одна на все бумаги, и
+// раньше хранился набор ВЫБРАННЫХ тикеров. Из-за этого выбор перетекал между
+// бумагами и деградировал: выбрал 5 фондов на Сбере → перешёл на Ренессанс, где
+// из них бумагу держат двое → тронул пикер → в память попали только эти двое →
+// вернулся на Сбер и видишь двоих вместо пяти. Плюс когда пересечение выходило
+// пустым, фильтр молча показывал всех.
+//
+// Теперь помним только выключенные фонды. На любой бумаге видны все её
+// держатели, кроме выключенных: набор держателей больше не может «сузить»
+// память, а «этот фонд мне не интересен» продолжает действовать везде.
+//
+// Дефолт (пользователь ещё ничего не трогал) — выключены индексные фонды: их
+// сделки это ребалансировка вслед за индексом, а не решения управляющих.
+// Считаем по ГЛОБАЛЬНОМУ списку фондов, а не по держателям текущей бумаги,
+// иначе индексные, не державшие первую открытую бумагу, всплыли бы на второй.
+const FUNDS_OFF_KEY = 'frame:companyflows:funds-off';
+// Ключи прежней схемы (выбранные + флаг «трогал пикер») — чистим при первом
+// заходе, чтобы не оставлять в localStorage мусор, который уже никто не читает.
+const LEGACY_FUNDS_KEYS = ['frame:companyflows:funds', 'frame:companyflows:funds-touched'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Главный компонент
@@ -137,20 +147,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // ITEM 3 — открыта ли модалка выбора бумаги.
     const [pickerOpen, setPickerOpen] = useState(false);
 
-    // ITEM 2 — выбранные КОНКРЕТНЫЕ фонды (ключ = ticker). Пусто = все фонды.
-    // Персистится и переживает смену бумаги/перезагрузку. До первого ручного
-    // выбора действует авто-дефолт (все держатели, кроме индексных — пере-выбор
-    // на каждую бумагу, см. эффект ниже); как только пользователь сам трогает
-    // пикер, его выбор замораживается за ним (включая «Все фонды» = пустой Set).
-    const [selectedFunds, setSelectedFunds] = usePersistedSet<string>('frame:companyflows:funds');
-    const [fundsTouched, setFundsTouched] = usePersistedState<boolean>('frame:companyflows:funds-touched', false);
-    // Ручной выбор в пикере: помечаем «тронуто» и сохраняем набор (персист-сеттер
-    // сам пишет в localStorage). Авто-дефолт в эффекте зовёт setSelectedFunds
-    // напрямую и «тронуто» НЕ ставит.
-    const handleFundsChange = useCallback((next: Set<string>) => {
-        setFundsTouched(true);
-        setSelectedFunds(next);
-    }, [setFundsTouched, setSelectedFunds]);
+    // ВЫКЛЮЧЕННЫЕ фонды (ключ = ticker), общие на все бумаги. null = пользователь
+    // ещё ничего не трогал → действует дефолт «выключены индексные» (см. offFunds).
+    // Пустой массив — это уже осознанный выбор «показывать всех», и он переживает
+    // перезагрузку, поэтому отличать его от null обязательно.
+    const [fundsOff, setFundsOff] = usePersistedState<string[] | null>(FUNDS_OFF_KEY, null);
 
     // metric toggle — default ₽ (amount).
     const [metric] = useState<Metric>('amount');
@@ -317,24 +318,54 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         } satisfies FundWithHistory));
     }, [flows, fundsMeta]);
 
-    // Авто-дефолт набора фондов — пока пользователь сам не выбирал. Пере-выбор на
-    // каждую бумагу (у каждой свои держатели) и повторно, когда доедут карточки
-    // фондов: без них не видно, кто индексный. Тронул пикер → его выбор переживает
-    // смену бумаги, дефолт больше не навязываем.
+    // Разовая уборка ключей прежней схемы фильтра (см. FUNDS_OFF_KEY выше).
     useEffect(() => {
-        if (fundsTouched || pickerFunds.length === 0) return;
-        setSelectedFunds(defaultFunds(pickerFunds));
-    }, [pickerFunds, fundsTouched, setSelectedFunds]);
+        try {
+            LEGACY_FUNDS_KEYS.forEach(k => window.localStorage.removeItem(k));
+        } catch { /* приватный режим — не беда */ }
+    }, []);
 
-    // Персист-набор общий на все бумаги, поэтому в нём остаются тикеры фондов,
-    // которые ЭТУ бумагу не держат. Работаем с пересечением: пикер не пишет
-    // «5 из 3 фондов», а бумага, по которой не выбран ни один сохранённый фонд,
-    // показывает всех держателей, а не пустой график.
+    // Индексные фонды по ГЛОБАЛЬНОМУ списку: они одинаковы для всех бумаг, и
+    // выключать их надо везде, а не только там, где они оказались держателями.
+    // Пока /funds не доехал — падаем на держателей текущей бумаги, чтобы фильтр
+    // работал с первой секунды.
+    const indexTickers = useMemo(
+        () => indexFundTickers(fundsMeta.length > 0 ? fundsMeta : pickerFunds),
+        [fundsMeta, pickerFunds],
+    );
+
+    // Выключенные фонды: сохранённый набор, а до первого касания — индексные.
+    const offFunds = useMemo(
+        () => new Set(fundsOff ?? indexTickers),
+        [fundsOff, indexTickers],
+    );
+
+    // Что показываем по ЭТОЙ бумаге: все её держатели минус выключенные. Набор
+    // держателей больше не сужает память — он только фильтрует её на показ.
     const effectiveFunds = useMemo(() => {
-        if (selectedFunds.size === 0 || !flows) return new Set<string>();
-        const holders = new Set(flows.funds.map(f => f.ticker));
-        return new Set([...selectedFunds].filter(t => holders.has(t)));
-    }, [selectedFunds, flows]);
+        if (!flows) return new Set<string>();
+        return new Set(flows.funds.map(f => f.ticker).filter(t => !offFunds.has(t)));
+    }, [flows, offFunds]);
+
+    // Правка из пикера: пришёл набор ВЫБРАННЫХ держателей этой бумаги, переводим
+    // его в дельту выключенных. Фонды, которые бумагу не держат, не трогаем —
+    // они остаются в том состоянии, в котором их оставили на своих бумагах.
+    //
+    // Индексные — исключение: тумблер «Без индексных фондов» глобальный по смыслу
+    // («не хочу видеть механическую ребалансировку»), поэтому его переключение
+    // распространяем на все индексные фонды сразу, а не только на держателей.
+    const handleFundsChange = useCallback((next: Set<string>) => {
+        const holders = flows?.funds.map(f => f.ticker) ?? [];
+        const nextOff = new Set(offFunds);
+        holders.forEach(t => (next.has(t) ? nextOff.delete(t) : nextOff.add(t)));
+
+        const idxHolders = holders.filter(t => indexTickers.includes(t));
+        if (idxHolders.length > 0) {
+            const indexShown = idxHolders.some(t => next.has(t));
+            indexTickers.forEach(t => (indexShown ? nextOff.delete(t) : nextOff.add(t)));
+        }
+        setFundsOff([...nextOff]);
+    }, [flows, offFunds, indexTickers, setFundsOff]);
 
     // ITEM 2 — фонды, попадающие в чарт: фильтр по выбранным тикерам (пусто = все).
     // Цвет фонда привязан к индексу в ПОЛНОМ списке (стабилен при фильтрации).
@@ -353,7 +384,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     } as CompanyFlowsSeries,
                 };
             })
-            .filter(x => effectiveFunds.size === 0 || effectiveFunds.has(x.ticker))
+            // effectiveFunds — уже готовый список к показу (держатели минус
+            // выключенные), поэтому никаких «пусто = все»: пустой набор значит,
+            // что выключены все держатели, и ниже сработает empty-state.
+            .filter(x => effectiveFunds.has(x.ticker))
             .map(x => x.series);
     }, [flows, effectiveFunds]);
 
@@ -535,9 +569,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                                 ticker: selectedTicker,
                                 details: [
                                     PERIOD_LABELS[period],
-                                    effectiveFunds.size > 0
-                                        ? `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`
-                                        : 'Все фонды',
+                                    // «Все фонды» ⇔ не выключен ни один держатель;
+                                    // иначе сколько именно осталось на графике.
+                                    effectiveFunds.size === (flows?.funds.length ?? 0)
+                                        ? 'Все фонды'
+                                        : `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`,
                                 ],
                             }}
                             getExportStyles={(): Record<string, string> => ({
