@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, Settings2, X as XIcon, Trash2, Plus, MoreHorizontal, ChevronRight, LineChart } from 'lucide-react';
+import { Eye, EyeOff, Settings2, X as XIcon, Trash2, MoreHorizontal, ChevronRight, LineChart } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
@@ -610,58 +610,26 @@ export interface NativeRow {
  * z-index 10: выше слоя рисования (7), хит-слоя (8) и панели слоёв (9), ниже
  * тулбара (20). data-export-ignore обязателен — иначе список попадёт в PNG.
  */
-export function IndicatorList({ api, native, visible, hasVolume = false, values }: {
+export function IndicatorList({ api, native, visible, values }: {
   api: IndicatorsApi;
   native: NativeRow[];
   visible: boolean;
   /** id серии → последнее значение. Показывается в строке, справа от названия. */
   values?: Record<string, IndValue>;
-  /** Есть ли объём в свечах. Без него «Объёмы» и «Профиль объёма» не показываем:
-   *  добавились бы строки, за которыми на графике пусто. */
-  hasVolume?: boolean;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
-  }, [menuOpen]);
-
   if (!visible) return null;
 
+  // Своей кнопки «+ Индикатор» здесь НЕТ намеренно: добавление живёт в тулбаре
+  // (IndicatorsButton), а вторая точка входа прямо под строками дублировала её
+  // и занимала место в углу графика.
   return (
-    <div ref={rootRef} data-export-ignore="true" style={listBoxStyle}>
+    <div data-export-ignore="true" style={listBoxStyle}>
       {native.filter((r) => (r.pane ?? 0) === 0).map((r) => <NativeRowView key={r.id} row={r} />)}
       {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
           своим графиком — см. PaneIndicatorList. */}
       {api.list.filter((i) => i.pane === 0).map((i) => (
         <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />
       ))}
-
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', marginTop: 2,
-            borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 10.5, fontWeight: 600,
-            background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 80%, transparent)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <Plus size={11} />Индикатор
-        </button>
-        {menuOpen && (
-          <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2, minWidth: 232, padding: 5, borderRadius: 9, ...SURFACE }}>
-            <AddIndicatorMenu api={api} hasVolume={hasVolume} onDone={() => setMenuOpen(false)} />
-          </div>
-        )}
-      </div>
     </div>
   );
 }

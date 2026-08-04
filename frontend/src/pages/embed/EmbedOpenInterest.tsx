@@ -802,7 +802,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
-        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} hasVolume={hasVolume} values={indValues} />
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} values={indValues} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}
