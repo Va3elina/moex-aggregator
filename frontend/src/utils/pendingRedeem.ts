@@ -36,3 +36,41 @@ export function clearPendingRedeemToken(): void {
     sessionStorage.removeItem(KEY);
   } catch { /* игнор */ }
 }
+
+/**
+ * Результат уже применённого токена.
+ *
+ * Нужен из-за гонки: авторизация случается ещё на /login, applier успевает
+ * применить токен и стереть его, а BillingRedeemPage открывается следом уже
+ * с пустым хранилищем и показывает «Ссылка не содержит токен» — хотя подписка
+ * выдана. Applier кладёт сюда исход, страница его забирает и показывает успех.
+ */
+const RESULT_KEY = 'pending_redeem_result';
+
+export type RedeemResult =
+  | { ok: true; tier: string; expires_at: string | null }
+  | { ok: false; message: string };
+
+export function setRedeemResult(result: RedeemResult): void {
+  try {
+    localStorage.setItem(RESULT_KEY, JSON.stringify(result));
+  } catch { /* игнор */ }
+}
+
+/** Забрать и удалить — исход показывается один раз. */
+export function popRedeemResult(): RedeemResult | null {
+  try {
+    const raw = localStorage.getItem(RESULT_KEY);
+    localStorage.removeItem(RESULT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.ok !== 'boolean') return null;
+    if (parsed.ok) {
+      if (typeof parsed.tier !== 'string') return null;
+      return { ok: true, tier: parsed.tier, expires_at: parsed.expires_at ?? null };
+    }
+    return { ok: false, message: String(parsed.message || 'Не удалось применить ссылку') };
+  } catch {
+    return null;
+  }
+}

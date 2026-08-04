@@ -19,6 +19,7 @@ import { apiFetch, parseApiError } from '../services/api';
 import {
   clearPendingRedeemToken,
   getPendingRedeemToken,
+  popRedeemResult,
   setPendingRedeemToken,
 } from '../utils/pendingRedeem';
 
@@ -38,10 +39,20 @@ export default function BillingRedeemPage() {
   const tokenFromUrl = params.get('token') || '';
   // Пришли без token (вернулись после регистрации) — берём отложенный
   const [token] = useState<string>(() => tokenFromUrl || getPendingRedeemToken() || '');
+  // Токена нет, потому что PendingRedeemApplier уже успел его применить и
+  // стереть (авторизация происходит ещё на /login). Тогда он оставил исход —
+  // забираем его при первом рендере, ДО того как решим, что ссылка пустая.
+  const [appliedResult] = useState(() => (tokenFromUrl ? null : popRedeemResult()));
   const [state, setState] = useState<State>({ kind: 'loading' });
 
   useEffect(() => {
     if (!token) {
+      if (appliedResult) {
+        setState(appliedResult.ok
+          ? { kind: 'success', tier: appliedResult.tier, expires_at: appliedResult.expires_at }
+          : { kind: 'error', message: appliedResult.message });
+        return;
+      }
       setState({ kind: 'error', message: 'Ссылка не содержит токен' });
       return;
     }
@@ -86,7 +97,7 @@ export default function BillingRedeemPage() {
         }
       });
     return () => { cancelled = true; };
-  }, [token, isAuthenticated]);
+  }, [token, isAuthenticated, appliedResult]);
 
   // Гостю даём 2 секунды прочитать, что происходит, и уводим на регистрацию
   useEffect(() => {
