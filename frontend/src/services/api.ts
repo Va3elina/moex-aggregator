@@ -162,10 +162,22 @@ export class ApiError extends Error {
  * `{"success":false,"error":{"code":N,"message":"..."}}` (api/middleware.py).
  * FastAPI default `{detail:"..."}` НЕ возвращается — все HTTPException
  * проходят через http_exception_handler middleware.
+ *
+ * У 422 message всегда «Ошибка валидации данных», а что именно не так — в
+ * error.details[] (validation_exception_handler). Без раскрытия details юзер
+ * видел заглушку и не мог понять, какое поле чинить.
  */
 export async function parseApiError(response: Response, fallback: string): Promise<string> {
   try {
     const data = await response.json();
+    const details = data?.error?.details;
+    if (Array.isArray(details) && details.length > 0) {
+      const parts = details
+        .map((d: { field?: string; message?: string }) =>
+          d?.field ? `${d.field}: ${d.message || 'некорректное значение'}` : d?.message)
+        .filter(Boolean);
+      if (parts.length > 0) return parts.join('; ');
+    }
     if (data?.error?.message && typeof data.error.message === 'string') return data.error.message;
     if (typeof data?.detail === 'string') return data.detail;
   } catch {
