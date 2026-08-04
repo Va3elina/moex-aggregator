@@ -295,7 +295,7 @@ export default function Layout() {
               )}
 
               {/* Auth button — единый размер с ThemeToggle/AdminStats.
-                  Filled accent с initial — primary visual hierarchy. */}
+                  Filled accent с эмодзи-профилем — primary visual hierarchy. */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
@@ -311,7 +311,7 @@ export default function Layout() {
                   title="Личный кабинет"
                   aria-label="Личный кабинет"
                 >
-                  {(user?.email || '?')[0].toUpperCase()}
+                  👤
                 </button>
               ) : (
                 <button
