@@ -354,31 +354,63 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawClickRef = useRef<((x: number, y: number) => boolean) | null>(null);
   const drawPaneIndexRef = useRef(drawPaneIndex); drawPaneIndexRef.current = drawPaneIndex;
 
+  // Ширины осей, действовавшие до экспорта — вернуть в restoreAfterCapture.
+  const axisWBeforeRef = useRef<{ left?: number; right?: number }>({});
   useImperativeHandle(forwardedRef, () => ({
     syncBeforeCapture: () => {
       const root = rootRef.current;
-      const boxes = root ? paneBoxes(root) : [];
-      // ⚠️ Ресайзим ВСЕ панели, а не только ту, где рисование. Раньше здесь была
-      // одна панель (drawPaneIndex), и на экспортном снимке панели индикаторов
-      // оставались с прежним размером канваса — их поле выходило шире ценового,
-      // края не совпадали. Панели делят высоту по flex, и свой РЕАЛЬНЫЙ
-      // clientWidth/Height к этому моменту знает каждая (входные w/h — размер
-      // всего стека, а не отдельной панели).
-      chartsRef.current.forEach((chart, i) => {
-        const box = boxes[i];
+      const pi = drawPaneIndexRef.current;
+      if (pi != null) {
+        const box = root ? paneBoxes(root)[pi] : null;
+        const chart = chartsRef.current[pi];
+        // ⚠️ Только панель рисования. Прогон resize по ВСЕМ панелям конфликтует
+        // с autoSize (движок ведёт размер своим ResizeObserver): панели уезжали
+        // и по ширине, и по высоте — нижние наезжали на ценовую.
+        // panes делят высоту по flex, и свой РЕАЛЬНЫЙ clientWidth/Height к этому
+        // моменту бокс уже знает (входные w/h — размер всего стека).
         if (box && chart) chart.resize(box.clientWidth, box.clientHeight);
-      });
+      }
       // Шрифт масштабируем по ширине ВСЕГО стека панелей (общая для всех) —
       // см. LwChartHandle.syncBeforeCapture в LwChart.tsx.
       const stackW = root?.clientWidth;
       if (stackW) {
         const fs = Math.round(BASE_FONT_SIZE * captureFontScale(stackW));
         chartsRef.current.forEach((chart) => chart.applyOptions({ layout: { fontSize: fs } }));
+        // ⚠️ И СРАЗУ выровнять ширину ценовых осей под новый кегль. Крупный
+        // шрифт делает подписи шире, а насколько — зависит от самих чисел:
+        // у цены «52 000», у RSI «80.00». Ширины расходятся, вместе с ними
+        // разъезжаются поля панелей — на снимке индикаторы выходили шире
+        // графика и не совпадали с ним по вертикальным осям. minimumWidth,
+        // выставленный при заливке серий, тут не спасает: он МИНИМУМ, а
+        // фактические ширины стали разными. Оценка ширины через коэффициент
+        // кегля: точность не важна, важно ОДНО значение на все панели.
+        const scale = fs / BASE_FONT_SIZE;
+        for (const side of ['left', 'right'] as const) {
+          let maxW = 0;
+          for (const ch of chartsRef.current) {
+            try { maxW = Math.max(maxW, ch.priceScale(side).width()); } catch { /* §R2-30 */ }
+          }
+          if (maxW <= 0) continue;
+          axisWBeforeRef.current[side] = maxW;
+          const w = Math.ceil(maxW * scale) + 2;
+          for (const ch of chartsRef.current) {
+            try { ch.priceScale(side).applyOptions({ minimumWidth: w }); } catch { /* §R2-30 */ }
+          }
+        }
       }
       drawShapesRef.current?.();
     },
     restoreAfterCapture: () => {
       chartsRef.current.forEach((chart) => chart.applyOptions({ layout: { fontSize: BASE_FONT_SIZE } }));
+      for (const side of ['left', 'right'] as const) {
+        const w = axisWBeforeRef.current[side];
+        if (!w) continue;
+        for (const ch of chartsRef.current) {
+          try { ch.priceScale(side).applyOptions({ minimumWidth: w }); } catch { /* §R2-30 */ }
+        }
+      }
+      axisWBeforeRef.current = {};
+      drawShapesRef.current?.();
     },
   }), []);
 
