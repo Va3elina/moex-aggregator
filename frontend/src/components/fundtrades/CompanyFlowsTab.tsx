@@ -139,7 +139,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // метаданных пикер всё равно соберётся из flows.funds (см. pickerFunds).
     const [fundsMeta, setFundsMeta] = useState<FundWithHistory[]>([]);
 
-    const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    // Выбранная бумага переживает перезагрузку и уход со страницы: ключ = mkey
+    // из /assets (канонический ISIN, стабилен между сессиями). Раньше при каждом
+    // заходе подставлялась первая бумага списка, и выбор терялся.
+    const [selectedKey, setSelectedKey] = usePersistedState<string | null>('frame:companyflows:asset', null);
     const [flows, setFlows] = useState<CompanyFlowsResponse | null>(null);
     const [flowsLoading, setFlowsLoading] = useState(false);
     const [flowsError, setFlowsError] = useState<string | null>(null);
@@ -170,8 +173,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     const [priceLoading, setPriceLoading] = useState(false);
     const [priceError, setPriceError] = useState<string | null>(null);
 
-    // Загрузка списка бумаг → выбрать первую (топ по funds_count), если нет
+    // Загрузка списка бумаг → восстановить последнюю просмотренную, если нет
     // pending-preset (presetAsset выбирается отдельным эффектом и имеет приоритет).
+    // Сохранённой бумаги может уже не быть в списке (вышла из составов фондов или
+    // отсеклась фильтром релевантности) — тогда падаем на первую, самую крупную.
     useEffect(() => {
         let cancelled = false;
         setAssetsLoading(true);
@@ -179,7 +184,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             .then(resp => {
                 if (cancelled) return;
                 setAssets(resp.assets);
-                if (resp.assets.length > 0 && !presetAsset) setSelectedKey(resp.assets[0].key);
+                if (resp.assets.length > 0 && !presetAsset) {
+                    setSelectedKey(prev =>
+                        prev && resp.assets.some(a => a.key === prev) ? prev : resp.assets[0].key);
+                }
                 setAssetsError(null);
             })
             .catch(err => {
