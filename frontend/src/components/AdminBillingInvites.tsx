@@ -7,8 +7,9 @@
  *   - список существующих токенов с кнопками "копировать ссылку" и "отозвать"
  */
 import { useEffect, useState } from 'react';
-import { Copy, Trash2, Plus, Link2, Check } from 'lucide-react';
+import { Copy, Trash2, Plus, Link2, Check, Eye, EyeOff } from 'lucide-react';
 import { apiFetch, parseApiError } from '../services/api';
+import { usePersistedState } from '../hooks/usePersistedState';
 
 interface Invite {
   token: string;
@@ -50,6 +51,13 @@ export default function AdminBillingInvites() {
   const [creating, setCreating] = useState(false);
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Показывать ли отработавшие — истёкшие, исчерпавшие лимит и отозванные.
+  // is_active считает бэкенд (list_invites, api/billing/invites.py), фильтруем
+  // на клиенте: список уже в руках, счётчик отработавших нужен в любом случае.
+  const [showSpent, setShowSpent] = usePersistedState('admin_invites_show_spent', false);
+  const spentCount = invites.filter(inv => !inv.is_active).length;
+  const visibleInvites = showSpent ? invites : invites.filter(inv => inv.is_active);
 
   const loadInvites = async () => {
     try {
@@ -125,18 +133,37 @@ export default function AdminBillingInvites() {
           <Link2 size={20} style={{ color: '#F97316' }} />
           Invite-ссылки <span className="text-xs text-theme-muted">(admin)</span>
         </h2>
-        <button
-          onClick={() => setCreateOpen(!createOpen)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
-          style={{
-            backgroundColor: createOpen ? 'var(--bg-tertiary)' : 'transparent',
-            borderColor: 'var(--border-color)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <Plus size={14} />
-          {createOpen ? 'Скрыть форму' : 'Создать'}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Отработавшие копятся и топят живые ссылки, поэтому по умолчанию
+              спрятаны. Не удаляем — история использования нужна. */}
+          {spentCount > 0 && (
+            <button
+              onClick={() => setShowSpent(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+              style={{
+                backgroundColor: showSpent ? 'var(--bg-tertiary)' : 'transparent',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-secondary)',
+              }}
+              title="Истёкшие, исчерпавшие лимит и отозванные"
+            >
+              {showSpent ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showSpent ? 'Скрыть отработавшие' : `Отработавшие (${spentCount})`}
+            </button>
+          )}
+          <button
+            onClick={() => setCreateOpen(!createOpen)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+            style={{
+              backgroundColor: createOpen ? 'var(--bg-tertiary)' : 'transparent',
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <Plus size={14} />
+            {createOpen ? 'Скрыть форму' : 'Создать'}
+          </button>
+        </div>
       </div>
 
       {/* Форма создания */}
@@ -210,9 +237,14 @@ export default function AdminBillingInvites() {
         <div className="text-sm text-theme-muted text-center py-8">
           Пока нет ни одной ссылки. Создай первую через форму выше.
         </div>
+      ) : visibleInvites.length === 0 ? (
+        // Всё, что есть, отработало. Без этой ветки список молча пустел.
+        <div className="text-sm text-theme-muted text-center py-8">
+          Активных ссылок нет. Отработавшие скрыты — кнопка «Отработавшие ({spentCount})» выше.
+        </div>
       ) : (
         <div className="space-y-2">
-          {invites.map((inv) => {
+          {visibleInvites.map((inv) => {
             const color = TIER_COLORS[inv.tier] || '#9CA3B8';
             return (
               <div key={inv.token}
