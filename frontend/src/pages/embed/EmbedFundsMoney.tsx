@@ -19,6 +19,7 @@ import {
   type FundCategory,
   type FlowTimeframe,
   type FundsFlowsResponse,
+  type FlowDataPoint,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
@@ -44,6 +45,15 @@ const CATS: { id: Category; label: string; icon: ReactNode }[] = [
 // Категория рендерится через Dropdown (не PillGroup) — иконка там одна, по
 // текущему значению (см. CAT_ICONS), а не per-option как в PillGroup.
 const CAT_ICONS: Record<Category, ReactNode> = Object.fromEntries(CATS.map((c) => [c.id, c.icon])) as Record<Category, ReactNode>;
+/** Период истории потоков. «Авто» = как было: глубина выводится из шага
+ *  столбца (день → год, неделя → 3 года, месяц → всё). */
+const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
+  { id: 'auto', label: 'Авто' },
+  { id: '1m', label: '1 месяц' },
+  { id: '1y', label: '1 год' },
+  { id: '3y', label: '3 года' },
+  { id: 'all', label: 'Всё время' },
+];
 const FLOW_TFS: { id: FlowTimeframe; label: string; icon: ReactNode }[] = [
   { id: '1d', label: 'День', icon: <Clock size={14} /> },
   { id: '1w', label: 'Неделя', icon: <CalendarDays size={14} /> },
@@ -87,6 +97,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (rd('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
+  const [flowPeriod, setFlowPeriod] = useState<FundPeriod | 'auto'>(() => (rd('frame:embed:funds:flowPeriod', 'auto')) as FundPeriod | 'auto');
   // Период убран из UI (неуместен в песочнице) — но НЕ 'all' всегда: дневная
   // сетка потоков за всю историю фонда — сотни-тысячи баров вплотную, график
   // читается как шум. Сайт (FundsMoneyPage.FLOW_MIN_PERIODS) по умолчанию
@@ -98,7 +109,11 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // режим СЧА и месячные потоки отдавали ему «Ошибка загрузки» вместо графика.
   // Понижаем до максимально разрешённого тарифу (тот же приём, что в
   // EmbedOpenInterest.bestDailyPeriod / EmbedStrength.bestHistoryDays).
+  // Период выбирается ЯВНО (как у потоков ЦБ), а не выводится из таймфрейма:
+  // раньше «сколько истории» было жёстко привязано к шагу столбца, и увидеть
+  // дневные потоки за 3 года было нельзя в принципе.
   const wantPeriod: FundPeriod = viewMode !== 'flows' ? 'all'
+    : flowPeriod !== 'auto' ? flowPeriod
     : flowTimeframe === '1d' ? '1y'
     : flowTimeframe === '1w' ? '3y'
     : 'all';
@@ -116,6 +131,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   useEffect(() => { wr('frame:embed:funds:category', category); }, [category]);
   useEffect(() => { wr('frame:embed:funds:viewMode', viewMode); }, [viewMode]);
   useEffect(() => { wr('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
+  useEffect(() => { wr('frame:embed:funds:flowPeriod', flowPeriod); }, [flowPeriod]);
   useEffect(() => { wr('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
 
   // ── AUM load ──
@@ -170,20 +186,23 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     if (viewMode === 'flows') {
       const flows = flowsData?.flows ?? [];
       if (!flows.length) return [];
+      // Двунаправленные столбцы, как в потоках ЦБ: приток ВВЕРХ, отток ВНИЗ —
+      // двумя отдельными рядами от нуля. Один ряд «нетто» скрывал главное:
+      // период с большим оборотом и почти нулевым сальдо выглядел как пустой.
       // flow приходит в МЛРД ₽ → в рубли (×1e9), чтобы компактный формат дал «млрд».
-      return [{
-        id: 'flow', type: 'histogram', scale: 'right', base: 0,
-        color: 'var(--oi-green)', label: 'Чистый поток',
-        // Периодический нетто-поток — «последнее значение» на оси неинформативно
+      const mk = (id: string, label: string, color: string, pick: (f: FlowDataPoint) => number): LwSeries => ({
+        id, type: 'histogram', scale: 'right', base: 0, color, label,
+        // Периодический поток — «последнее значение» на оси неинформативно
         // (не тренд, не текущая цена), только пилюля лишняя.
         lastValueVisible: false,
-        data: flows.map((f) => {
-          const val = (f.flow ?? 0) * 1e9;
-          return { time: toSec(f.period_end), value: val, color: val >= 0 ? 'var(--oi-green)' : 'var(--oi-red)' };
-        }),
+        data: flows.map((f) => ({ time: toSec(f.period_end), value: pick(f) * 1e9 })),
         axisFmt: fmtSigned,
         tipFmt: (v) => (v >= 0 ? '+' : '−') + fmtAbs(v) + ' ₽',
-      }];
+      });
+      return [
+        mk('flow-in', 'Приток', 'var(--oi-green)', (f) => Math.max(0, f.gross_in ?? 0)),
+        mk('flow-out', 'Отток', 'var(--oi-red)', (f) => Math.min(0, f.gross_out ?? 0)),
+      ];
     }
     // aum: индекс (линия, левая, синий) + СЧА (область, правая, зелёная).
     const nav = data?.total_nav ?? [];
@@ -222,6 +241,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             />
             <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} />
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
+            <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} />
           </div>
           <PillGroup<ViewMode>
             value={viewMode}
@@ -231,7 +251,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           />
           <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} compact={toolbarCompact} />
           {viewMode === 'flows' && (
-            <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} compact={toolbarCompact} />
+            <>
+              <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} compact={toolbarCompact} />
+              <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} compact={toolbarCompact} />
+            </>
           )}
         </div>
       }
