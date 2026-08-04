@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { safeInternalPath, setPostLoginNext } from '../utils/postLoginRedirect';
+import { apiErrorFromBody } from '../services/api';
 
 // SVG иконки провайдеров — официальные стили (Yandex 2021 rebrand, VK ID 2021)
 const VKIcon = () => (
@@ -36,6 +37,22 @@ interface OAuthProvider {
     name: string;
     configured: boolean;
 }
+
+/**
+ * Чего не хватает паролю. Зеркалит check_password_strength
+ * (api/security/password.py): 8+ символов, заглавная, строчная, цифра.
+ * Спецсимвол там только добавляет очков и обязательным не является.
+ */
+function passwordProblems(pwd: string): string[] {
+    const problems: string[] = [];
+    if (pwd.length < 8) problems.push('Минимум 8 символов');
+    if (!/[A-ZА-ЯЁ]/.test(pwd)) problems.push('Нужна заглавная буква');
+    if (!/[a-zа-яё]/.test(pwd)) problems.push('Нужна строчная буква');
+    if (!/\d/.test(pwd)) problems.push('Нужна цифра');
+    return problems;
+}
+
+const PASSWORD_HINT = 'Минимум 8 символов, заглавная и строчная буквы, цифра';
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -79,6 +96,17 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
+            // Проверяем пароль ДО запроса: бэкенд отвечает на слабый пароль 422,
+            // а у 422 текст всегда «Ошибка валидации данных» — по нему нельзя
+            // понять, чего не хватает. Правила те же, что в
+            // check_password_strength (api/security/password.py).
+            if (mode === 'register') {
+                const problems = passwordProblems(password);
+                if (problems.length > 0) {
+                    throw new Error(`Пароль не подходит: ${problems.join(', ').toLowerCase()}`);
+                }
+            }
+
             const url = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
             const body = { email, password };
 
@@ -91,7 +119,7 @@ export default function LoginPage() {
             const data = await resp.json();
 
             if (!resp.ok) {
-                throw new Error(data.error?.message || data.detail || 'Ошибка');
+                throw new Error(apiErrorFromBody(data, 'Ошибка'));
             }
 
             if (mode === 'register') {
@@ -322,6 +350,13 @@ export default function LoginPage() {
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
+                        {/* Требования показываем заранее: раньше о них узнавали
+                            только по отказу с бэкенда, причём без текста. */}
+                        {mode === 'register' && (
+                            <div className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                                {PASSWORD_HINT}
+                            </div>
+                        )}
                     </div>
 
                     {/* Consent checkbox — только при регистрации.

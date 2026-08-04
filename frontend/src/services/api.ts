@@ -169,20 +169,31 @@ export class ApiError extends Error {
  */
 export async function parseApiError(response: Response, fallback: string): Promise<string> {
   try {
-    const data = await response.json();
-    const details = data?.error?.details;
-    if (Array.isArray(details) && details.length > 0) {
-      const parts = details
-        .map((d: { field?: string; message?: string }) =>
-          d?.field ? `${d.field}: ${d.message || 'некорректное значение'}` : d?.message)
-        .filter(Boolean);
-      if (parts.length > 0) return parts.join('; ');
-    }
-    if (data?.error?.message && typeof data.error.message === 'string') return data.error.message;
-    if (typeof data?.detail === 'string') return data.detail;
+    return apiErrorFromBody(await response.json(), fallback);
   } catch {
     // Response body не JSON
+    return fallback;
   }
+}
+
+/**
+ * То же, но по УЖЕ распарсенному телу — для мест, где body прочитан заранее
+ * (например, ответ нужен и при успехе, и при ошибке).
+ */
+export function apiErrorFromBody(data: unknown, fallback: string): string {
+  const body = data as {
+    error?: { message?: string; details?: { field?: string; message?: string }[] };
+    detail?: string;
+  };
+  const details = body?.error?.details;
+  if (Array.isArray(details) && details.length > 0) {
+    const parts = details
+      .map(d => (d?.field ? `${d.field}: ${d.message || 'некорректное значение'}` : d?.message))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join('; ');
+  }
+  if (typeof body?.error?.message === 'string' && body.error.message) return body.error.message;
+  if (typeof body?.detail === 'string' && body.detail) return body.detail;
   return fallback;
 }
 
