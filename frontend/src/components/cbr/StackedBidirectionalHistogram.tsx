@@ -306,15 +306,19 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
     );
   }
 
-  // Динамическая толщина окантовки
-  const outlineWidth = periods.length <= 20 ? 1
-    : periods.length <= 50 ? 0.7
-    : periods.length <= 100 ? 0.4
-    : 0.25;
-
   const barSlot = 100 / periods.length;  // % одного period-слота
   const barW = barSlot * 0.65;            // 65% слота — сам бар
   const barOffset = (barSlot - barW) / 2;
+
+  // Толщина окантовки (--bar-outline: светлая на тёмной теме, тёмная на светлой).
+  // Считаем по РЕАЛЬНОЙ ширине бара в пикселях, а не по числу периодов: число
+  // ничего не говорит о толщине столбца, пока не известна ширина поля. Из-за
+  // этого у потоков фондов рамки фактически не было — дневной срез за год это
+  // ~250 столбцов, порог «>100 → 0.25» срабатывал всегда, независимо от того,
+  // насколько широкая панель. И наоборот: 30 столбцов в узкой панели песочницы
+  // такие же тонкие, как 100 на полной странице.
+  const barPx = Math.max(0, ((containerW || vw) - pad.left - pad.right) * (barW / 100));
+  const outlineWidth = barPx >= 9 ? 1 : barPx >= 5 ? 0.7 : barPx >= 3 ? 0.4 : 0.25;
 
   return (
     <div
