@@ -364,12 +364,19 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // распространяем на все индексные фонды сразу, а не только на держателей.
     const handleFundsChange = useCallback((next: Set<string>) => {
         const holders = flows?.funds.map(f => f.ticker) ?? [];
+        // КОНТРАКТ ПИКЕРА: когда отмечены все фонды, он отдаёт ПУСТОЙ набор
+        // (у него семантика «пусто = все»), а «снять все» схлопывает в пул
+        // доступных — пустым «ничего не выбрано» он не присылает никогда.
+        // Понятый буквально, пустой набор выключал разом всех держателей, и
+        // попытка вернуть все фонды давала «Не выбрано ни одного фонда».
+        const chosen = next.size === 0 ? new Set(holders) : next;
+
         const nextOff = new Set(offFunds);
-        holders.forEach(t => (next.has(t) ? nextOff.delete(t) : nextOff.add(t)));
+        holders.forEach(t => (chosen.has(t) ? nextOff.delete(t) : nextOff.add(t)));
 
         const idxHolders = holders.filter(t => indexTickers.includes(t));
         if (idxHolders.length > 0) {
-            const indexShown = idxHolders.some(t => next.has(t));
+            const indexShown = idxHolders.some(t => chosen.has(t));
             indexTickers.forEach(t => (indexShown ? nextOff.delete(t) : nextOff.add(t)));
         }
         setFundsOff([...nextOff]);
