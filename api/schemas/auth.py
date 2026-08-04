@@ -44,22 +44,10 @@ class UserRegister(BaseModel):
         examples=["SecurePass123!"]
     )
 
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        """
-        Проверяет сложность пароля.
-
-        Требования:
-        - Минимум 8 символов (уже проверено в Field)
-        - Хотя бы одна цифра
-        - Хотя бы одна буква
-        """
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну цифру")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну букву")
-        return v
+    # Требований к составу пароля намеренно нет: единственное правило —
+    # минимум 8 символов из Field выше. Обязательные цифра/буква (а в
+    # check_password_strength ещё и регистры) отсеивали живых людей на
+    # регистрации, что для этого сервиса дороже, чем выигрыш в стойкости.
 
 
 # === ЛОГИН ===
@@ -209,14 +197,7 @@ class PasswordChange(BaseModel):
         description="Новый пароль"
     )
 
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну цифру")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну букву")
-        return v
+    # Требований к составу нет — см. комментарий в UserRegister.
 
 
 # === СБРОС ПАРОЛЯ ===
@@ -248,14 +229,7 @@ class PasswordReset(BaseModel):
     token: str = Field(..., min_length=20)
     new_password: str = Field(..., min_length=8, max_length=128)
 
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну цифру")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Пароль должен содержать хотя бы одну букву")
-        return v
+    # Требований к составу нет — см. комментарий в UserRegister.
 
 
 # === ОШИБКИ ===

@@ -38,21 +38,19 @@ interface OAuthProvider {
     configured: boolean;
 }
 
+const MIN_PASSWORD_LENGTH = 8;
+
 /**
  * Чего не хватает паролю. Зеркалит check_password_strength
- * (api/security/password.py): 8+ символов, заглавная, строчная, цифра.
- * Спецсимвол там только добавляет очков и обязательным не является.
+ * (api/security/password.py): единственное обязательное требование — длина.
+ * Регистры, цифры и спецсимволы там влияют только на score, отказом не служат.
  */
 function passwordProblems(pwd: string): string[] {
-    const problems: string[] = [];
-    if (pwd.length < 8) problems.push('Минимум 8 символов');
-    if (!/[A-ZА-ЯЁ]/.test(pwd)) problems.push('Нужна заглавная буква');
-    if (!/[a-zа-яё]/.test(pwd)) problems.push('Нужна строчная буква');
-    if (!/\d/.test(pwd)) problems.push('Нужна цифра');
-    return problems;
+    if (pwd.length < MIN_PASSWORD_LENGTH) return [`Минимум ${MIN_PASSWORD_LENGTH} символов`];
+    return [];
 }
 
-const PASSWORD_HINT = 'Минимум 8 символов, заглавная и строчная буквы, цифра';
+const PASSWORD_HINT = `Минимум ${MIN_PASSWORD_LENGTH} символов`;
 
 export default function LoginPage() {
     const navigate = useNavigate();
