@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Camera } from 'lucide-react';
+import { Camera, Users } from 'lucide-react';
 import StackedBidirectionalHistogram, {
   type StackedBidirectionalHistogramHandle,
 } from '../../components/cbr/StackedBidirectionalHistogram';
@@ -19,9 +19,10 @@ import { getDefaultHiddenCategories } from '../../components/cbr/cbrDefaultVisib
 import { getCbrFlows } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
-import { DrawerSection, Checklist } from './EmbedSettings';
-import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
+import { Checklist } from './EmbedSettings';
+import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
@@ -127,6 +128,35 @@ export default function EmbedCbrFlows() {
     return () => ro.disconnect();
   }, []);
 
+  // Фильтр участников — кнопка тулбара (как «Индикаторы» у ОИ), поэтому тулбару
+  // нужен compact-режим: на узкой панели лейблы схлопываются в иконки.
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
+
+  const participants = data && data.categories.length > 0 ? (
+    <ToolbarMenuButton label="Участники" title="Участники биржи" icon={<Users size={14} />} compact={toolbarCompact}>
+      {() => (
+        <div style={{ maxWidth: 260 }}>
+          <Checklist
+            items={data.categories.map((cat) => {
+              const on = !hiddenCategories.has(cat);
+              // Последнюю видимую категорию нельзя выключить.
+              const lockLast = on && visibleCategories.length <= 1;
+              return {
+                id: cat,
+                label: cat,
+                on,
+                color: getCategoryColor(cat, theme),
+                desc: getCategoryInfo(cat) || undefined,
+                disabled: lockLast,
+                onToggle: () => toggleCategory(cat),
+              };
+            })}
+          />
+        </div>
+      )}
+    </ToolbarMenuButton>
+  ) : null;
+
   return (
     <EmbedFrame
       toolbar={
@@ -134,9 +164,16 @@ export default function EmbedCbrFlows() {
         // хром окна справа: без неё узкая панель включала горизонтальный
         // скроллбар прямо в тулбаре, а контролы наезжали на кнопки справа.
         // Первая линия — MINW_BY_TYPE в SandboxPage.
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
-          <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
-          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — всегда полные лейблы, см. useToolbarCompact.ts. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
+            <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
+            <ToolbarMenuButton label="Участники" icon={<Users size={14} />}>{() => null}</ToolbarMenuButton>
+          </div>
+          <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} compact={toolbarCompact} />
+          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" compact={toolbarCompact} />
+          {participants}
         </div>
       }
       actions={
@@ -155,30 +192,6 @@ export default function EmbedCbrFlows() {
             <Camera size={15} />
           </button>
         ) : undefined
-      }
-      more={
-        <>
-          {data && data.categories.length > 0 && (
-            <DrawerSection label="Участники биржи">
-              <Checklist
-                items={data.categories.map((cat) => {
-                  const on = !hiddenCategories.has(cat);
-                  // Последнюю видимую категорию нельзя выключить.
-                  const lockLast = on && visibleCategories.length <= 1;
-                  return {
-                    id: cat,
-                    label: cat,
-                    on,
-                    color: getCategoryColor(cat, theme),
-                    desc: getCategoryInfo(cat) || undefined,
-                    disabled: lockLast,
-                    onToggle: () => toggleCategory(cat),
-                  };
-                })}
-              />
-            </DrawerSection>
-          )}
-        </>
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
