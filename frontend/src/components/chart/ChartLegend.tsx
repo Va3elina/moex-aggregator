@@ -33,9 +33,15 @@ export interface ChartLegendItem {
     opacity?: number;
     /** Текст color override (default — currentColor наследуется от parent) */
     textColor?: string;
-    /** Форма маркера: 'dot' (кружок, default), 'dash' (горизонтальное тире) или
-     *  'none' (без маркера — например для одиночного заголовка-легенды). */
-    marker?: 'dot' | 'dash' | 'none';
+    /** Форма маркера: 'dot' (кружок, default), 'dash' (горизонтальное тире),
+     *  'none' (без маркера — например для одиночного заголовка-легенды) или
+     *  'split' (кружок из двух половин: левая — color, правая — colorRight).
+     *  'split' нужен там, где одна серия несёт два знака сразу: в «Карте
+     *  сделок» кругляши сделок красные на продажу и зелёные на покупку, и
+     *  двумя отдельными item'ами это читалось как две разные серии. */
+    marker?: 'dot' | 'dash' | 'none' | 'split';
+    /** Правая половина маркера 'split'. Для остальных форм игнорируется. */
+    colorRight?: string;
 }
 
 interface Props {
@@ -98,7 +104,7 @@ export default function ChartLegend({
             return { ...it, totalW, totalH, markerW };
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [items.map((i) => `${i.color}|${i.label}|${i.opacity ?? 1}|${i.textColor ?? ''}|${i.marker ?? 'dot'}`).join('||'), effectiveFs, fontWeight, effectiveDot, itemGap]);
+    }, [items.map((i) => `${i.color}|${i.label}|${i.opacity ?? 1}|${i.textColor ?? ''}|${i.marker ?? 'dot'}|${i.colorRight ?? ''}`).join('||'), effectiveFs, fontWeight, effectiveDot, itemGap]);
 
     const containerStyle: React.CSSProperties = {
         display: 'flex',
@@ -122,8 +128,8 @@ export default function ChartLegend({
                     style={{ display: 'block', flexShrink: 0, opacity: it.opacity ?? 1, overflow: 'visible' }}
                     aria-label={it.label}
                 >
-                    {/* Маркер — dot (кружок) или dash (горизонтальное тире).
-                        Оба вписаны в квадрат effectiveDot, center y = totalH/2. */}
+                    {/* Маркер — dot (кружок), dash (тире) или split (две половины).
+                        Все вписаны в квадрат effectiveDot, center y = totalH/2. */}
                     {it.marker === 'none' ? null : it.marker === 'dash' ? (
                         <rect
                             x={0}
@@ -133,6 +139,25 @@ export default function ChartLegend({
                             rx={1}
                             fill={it.color}
                         />
+                    ) : it.marker === 'split' ? (
+                        // Полукруги дугой, а не clipPath: html2canvas в PNG-экспорте
+                        // клипы теряет и маркер уезжает сплошной заливкой.
+                        <g>
+                            <path
+                                d={`M ${effectiveDot / 2} 0
+                                    A ${effectiveDot / 2} ${effectiveDot / 2} 0 0 0 ${effectiveDot / 2} ${effectiveDot}
+                                    Z`}
+                                transform={`translate(0 ${it.totalH / 2 - effectiveDot / 2})`}
+                                fill={it.color}
+                            />
+                            <path
+                                d={`M ${effectiveDot / 2} 0
+                                    A ${effectiveDot / 2} ${effectiveDot / 2} 0 0 1 ${effectiveDot / 2} ${effectiveDot}
+                                    Z`}
+                                transform={`translate(0 ${it.totalH / 2 - effectiveDot / 2})`}
+                                fill={it.colorRight ?? it.color}
+                            />
+                        </g>
                     ) : (
                         <circle
                             cx={effectiveDot / 2}

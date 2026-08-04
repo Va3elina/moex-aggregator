@@ -27,7 +27,7 @@ import {
     useState,
 } from 'react';
 import { LineChart } from 'lucide-react';
-import { GRID, CROSSHAIR, ANIMATION, CHART_COLORS, cssVar } from '../../config/chartTheme';
+import { GRID, CROSSHAIR, ANIMATION, FUND_PALETTE, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -46,6 +46,12 @@ const MIN_VISIBLE_FLOW_MLN = 1;
 const R_MIN = 4;
 const R_MAX = 16;
 
+// Цвет линии цены — deep indigo, первый цвет FUND_PALETTE: им же красится первый
+// период на «Сезонности». Раньше линия шла акцентным рыжим, но он спорил с
+// красными кругляшами продаж (оба тёплые) — на плотных участках было не понять,
+// где линия, а где сделка. Индиго холодный и от зелёного с красным далеко.
+const PRICE_LINE_COLOR = FUND_PALETTE[0];
+
 interface CompanyFlowsPriceMapProps {
     /** "YYYY-MM" — месячная ось потоков (уже обрезана периодом в родителе). */
     months: string[];
@@ -55,7 +61,8 @@ interface CompanyFlowsPriceMapProps {
     weeks: string[];
     /** Недельные закрытия, выровнено с weeks. */
     closes: number[];
-    title?: string;
+    /** Имя бумаги для легенды («Полюс») — подпись линии цены. */
+    assetName?: string;
     height?: number;
     loading?: boolean;
     /** Все фонды сняты пользователем — empty-state (как в гистограмме). */
@@ -93,7 +100,7 @@ export default function CompanyFlowsPriceMap({
     series: seriesAll,
     weeks: weeksAll,
     closes: closesAll,
-    title = 'Цена и чистые сделки фондов',
+    assetName,
     height = 420,
     loading = false,
     noFundsSelected = false,
@@ -375,13 +382,20 @@ export default function CompanyFlowsPriceMap({
                 )}
 
                 <div>
-                    {/* Заголовок + расшифровка кругляшей — тем же ChartLegend. */}
+                    {/* Легенда: линия цены (имя бумаги) + кругляши сделок. Знак
+                        сделки несёт ОДИН двухцветный маркер, а не две отдельные
+                        записи «покупки»/«продажи»: кругляши это одна серия с двумя
+                        знаками, и раздельные записи читались как две разные. */}
                     <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                         <ChartLegend
                             items={[
-                                { color: 'transparent', label: title, marker: 'none' },
-                                { color: 'var(--funds-flow-positive)', label: 'покупки', marker: 'dot' },
-                                { color: 'var(--funds-flow-negative)', label: 'продажи', marker: 'dot' },
+                                { color: PRICE_LINE_COLOR, label: assetName || 'Цена', marker: 'dot' },
+                                {
+                                    color: 'var(--funds-flow-negative)',
+                                    colorRight: 'var(--funds-flow-positive)',
+                                    label: 'Чистые покупки и продажи (млн ₽)',
+                                    marker: 'split',
+                                },
                             ]}
                             fontWeight={600}
                             itemGap={6}
@@ -425,7 +439,7 @@ export default function CompanyFlowsPriceMap({
                                     <path
                                         d={linePath}
                                         fill="none"
-                                        stroke={CHART_COLORS.accent}
+                                        stroke={PRICE_LINE_COLOR}
                                         strokeWidth="2"
                                         vectorEffect="non-scaling-stroke"
                                         strokeLinecap="round"
@@ -555,12 +569,14 @@ export default function CompanyFlowsPriceMap({
                         </div>
                     </div>
 
-                    {/* Навигатор — линия цены (rail-таймлайн, как во всех графиках). */}
+                    {/* Навигатор — та же линия цены в миниатюре, поэтому и цвет тот
+                        же (в остальных графиках рельс акцентный, но здесь рыжий
+                        рельс под синей линией читался бы как другая серия). */}
                     {navigatorData.length > 1 && (
                         <div data-export-ignore="true">
                             <ChartNavigator
                                 data={navigatorData}
-                                color="var(--accent)"
+                                color={PRICE_LINE_COLOR}
                                 previewMode="line"
                                 onChange={(s, e) => setNavRange([s, e])}
                                 insetLeft="var(--chart-pad-left)"
