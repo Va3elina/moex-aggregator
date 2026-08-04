@@ -110,12 +110,18 @@ interface KindDef {
   hasSource?: boolean;
   /** Можно ли положить сверху сглаживающую (вторую линию). */
   hasSmoothing?: boolean;
+  /** Временно убран из меню добавления. Код и рендер живы: уже добавленные
+   *  экземпляры продолжают работать и настраиваться, новые не создать. */
+  hiddenFromMenu?: boolean;
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
   ma: { label: 'Скользящая средняя (MA)', shortName: 'MA', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
   ema: { label: 'Экспоненциальная средняя (EMA)', shortName: 'EMA', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
-  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
+  // Боллинджер и профиль объёма временно скрыты из меню (Вадим, 04.08.2026).
+  // hiddenFromMenu, а не удаление: у кого они уже добавлены — продолжают
+  // рисоваться и настраиваться, вернуть в меню = снять один флаг.
+  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', hiddenFromMenu: true },
   // 30/70 — канон Уайлдера, тот же дефолт в TradingView и любом терминале.
   // Середина 50 отделяет бычью половину диапазона от медвежьей.
   rsi: {
@@ -128,6 +134,7 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
   vp: {
     label: 'Профиль объёма', title: () => 'Профиль объёма', defLength: VP_DEFAULTS.rows,
     shortName: 'Профиль', defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
+    hiddenFromMenu: true,
   },
 };
 
@@ -640,7 +647,7 @@ export function AddIndicatorMenu({ api, hasVolume, onDone }: {
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 222 }}>
-      {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => hasVolume || !KINDS[k].needsVolume).map((k) => {
+      {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => !KINDS[k].hiddenFromMenu && (hasVolume || !KINDS[k].needsVolume)).map((k) => {
         const d = KINDS[k];
         return (
           <button
@@ -654,7 +661,6 @@ export function AddIndicatorMenu({ api, hasVolume, onDone }: {
             }}
           >
             {d.label}
-            {d.defaultPane > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}> · отдельной панелью</span>}
           </button>
         );
       })}
