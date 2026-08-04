@@ -6,7 +6,7 @@ import { useSSE } from '../hooks/useSSE';
 import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
-import { Menu, X, LogIn, BarChart3, Newspaper } from 'lucide-react';
+import { Menu, X, LogIn, BarChart3, Newspaper, User } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
@@ -295,23 +295,25 @@ export default function Layout() {
               )}
 
               {/* Auth button — единый размер с ThemeToggle/AdminStats.
-                  Filled accent с эмодзи-профилем — primary visual hierarchy. */}
+                  Filled accent с lucide-иконкой (как BarChart3/Newspaper) — primary visual hierarchy. */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center rounded-full font-bold"
+                  className="editorial-press grid place-items-center rounded-full"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: '#fff',
                     border: '1.5px solid var(--text-primary)',
-                    fontSize: 'clamp(11px, 0.6vw + 0.5rem, 14px)',
                     width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                     height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
                   title="Личный кабинет"
                   aria-label="Личный кабинет"
                 >
-                  👤
+                  <User
+                    style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
+                    strokeWidth={2}
+                  />
                 </button>
               ) : (
                 <button
