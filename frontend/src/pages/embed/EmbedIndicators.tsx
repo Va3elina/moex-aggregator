@@ -421,6 +421,12 @@ export function indicatorSeriesByPane(
   candles: IndCandle<string>[],
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
+  /** Ось ОСНОВНОГО ряда панели 0 — на неё ложатся наложения (MA/EMA/Боллинджер).
+   *  ⚠️ Раньше здесь было жёстко 'left', потому что у ОИ там цена. На графиках,
+   *  где основной ряд справа (Сила рынка — индекс, Баффетт — коэффициент),
+   *  наложения уходили на ПУСТУЮ левую ось: она автомасштабировалась сама по
+   *  себе, и линии «прыгали» относительно кривой, поверх которой нарисованы. */
+  overlayScale: 'left' | 'right' = 'left',
 ): LwSeries[][] {
   const out: LwSeries[][] = [[]];
   if (!candles.length) return out;
@@ -452,7 +458,8 @@ export function indicatorSeriesByPane(
     const elStyle = (el: string): ElStyle | undefined => i.styles?.[el];
     const line = elStyle('line');
     const base = {
-      scale: (onMain ? 'left' : 'right') as 'left' | 'right',
+      // В своей панели ось всегда правая — она там единственная.
+      scale: (onMain ? overlayScale : 'right') as 'left' | 'right',
       color: styleColor(line, color),
       lineWidth: line?.width ?? i.width,
       dashed: line?.dash === 'dashed' || line?.dash === 'dotted',
@@ -1483,6 +1490,10 @@ export function useIndicatorSeries(
   candles: IndCandle<string>[],
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
+  overlayScale: 'left' | 'right' = 'left',
 ): LwSeries[][] {
-  return useMemo(() => indicatorSeriesByPane(list, candles, toSec, colorOf), [list, candles, toSec, colorOf]);
+  return useMemo(
+    () => indicatorSeriesByPane(list, candles, toSec, colorOf, overlayScale),
+    [list, candles, toSec, colorOf, overlayScale],
+  );
 }
