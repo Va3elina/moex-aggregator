@@ -100,24 +100,20 @@ export function SelectIcon(p: DrawIconProps) {
   );
 }
 
-/** Прямоугольник — якоря в противоположных углах (две точки построения). */
+/** Прямоугольник — чистая фигура, без якорей. */
 export function RectIcon(p: DrawIconProps) {
   return (
     <Svg {...p}>
-      <rect x="4.6" y="5.6" width="14.8" height="12.8" rx="1.5" />
-      <circle cx="4.6" cy="5.6" r={R} />
-      <circle cx="19.4" cy="18.4" r={R} />
+      <rect x="3" y="4.5" width="18" height="15" rx="1.5" />
     </Svg>
   );
 }
 
-/** Эллипс — вписан в те же две точки построения. */
+/** Эллипс — чистая фигура, без якорей. */
 export function EllipseIcon(p: DrawIconProps) {
   return (
     <Svg {...p}>
-      <ellipse cx="12" cy="12" rx="7.6" ry="6.4" />
-      <circle cx="4.6" cy="5.8" r={R} />
-      <circle cx="19.4" cy="18.2" r={R} />
+      <ellipse cx="12" cy="12" rx="9" ry="7.5" />
     </Svg>
   );
 }
@@ -135,25 +131,31 @@ export function FibIcon(p: DrawIconProps) {
   );
 }
 
-/** Кисть — свободный росчерк. */
+/** Кисть — ручка, обжимка и ворс, наискосок. Геометрия рисуется по горизонтали
+ *  и разворачивается группой: так проще править пропорции. */
 export function BrushIcon(p: DrawIconProps) {
   return (
     <Svg {...p}>
-      <path d="M2.6 17.4c2.7 0 2.9-9 5.7-9s2.9 11 5.7 11 3.7-11 7.4-11" />
+      <g transform="rotate(-45 12 12)">
+        <path d="M12.5 8.6 21 8.6a1.4 1.4 0 0 1 1.4 1.4v4a1.4 1.4 0 0 1-1.4 1.4h-8.5Z" />
+        <path d="M12.5 8.2 7.4 8.2 2.2 12 7.4 15.8 12.5 15.8Z" />
+        <line x1="9.6" y1="8.4" x2="9.6" y2="15.6" />
+      </g>
     </Svg>
   );
 }
 
-/** Линейка — отрезок с засечками и якорями на концах. */
+/** Линейка — наклонная линейка с делениями (как обычная канцелярская). */
 export function RulerIcon(p: DrawIconProps) {
   return (
     <Svg {...p}>
-      <line x1="5.4" y1="18.6" x2="18.6" y2="5.4" />
-      <line x1="6.9" y1="14.3" x2="9.7" y2="17.1" />
-      <line x1="10.6" y1="10.6" x2="13.4" y2="13.4" />
-      <line x1="14.3" y1="6.9" x2="17.1" y2="9.7" />
-      <circle cx="3.6" cy="20.4" r={R} />
-      <circle cx="20.4" cy="3.6" r={R} />
+      <g transform="rotate(-45 12 12)">
+        <rect x="1.6" y="9" width="20.8" height="6" rx="1.4" />
+        <line x1="6" y1="9" x2="6" y2="11.8" />
+        <line x1="9.7" y1="9" x2="9.7" y2="13" />
+        <line x1="13.4" y1="9" x2="13.4" y2="11.8" />
+        <line x1="17.1" y1="9" x2="17.1" y2="13" />
+      </g>
     </Svg>
   );
 }
