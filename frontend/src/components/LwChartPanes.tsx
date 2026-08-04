@@ -340,47 +340,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const pt = def.data[idx];
         if (!pt) continue;
         const fmt = (v: number) => (def.axisFmt ? def.axisFmt(v) : String(Math.round(v)));
-        const prevPt = idx > 0 ? def.data[idx - 1] : undefined;
-        const prevClose = prevPt?.close ?? prevPt?.value;
-        const isOhlc = pt.open != null && pt.high != null && pt.low != null;
-        // Направление: у свечи — против ПРЕДЫДУЩЕГО закрытия (так в терминалах),
-        // у линии — против предыдущего значения. Цвет точки (объёмы) главнее.
-        const up = prevClose == null ? undefined : (pt.close ?? pt.value) >= prevClose;
-        const c = pt.color ?? (up == null ? undefined : up ? 'var(--oi-green)' : 'var(--oi-red)');
-
-        while (el.firstChild) el.removeChild(el.firstChild);
-        const num = (v: number) => {
-          const sp = document.createElement('span');
-          sp.textContent = fmt(v);
-          if (c) sp.style.color = c;
-          return sp;
-        };
-        const cap = (t: string) => {
-          const sp = document.createElement('span');
-          sp.textContent = t;
-          sp.style.cssText = 'color:var(--text-secondary);font-weight:600;margin-left:6px';
-          return sp;
-        };
-        if (isOhlc) {
-          // Легенда свечи как в терминалах: ОТКР/МАКС/МИН/ЗАКР + изменение.
-          el.appendChild(cap('ОТКР')); el.appendChild(num(pt.open as number));
-          el.appendChild(cap('МАКС')); el.appendChild(num(pt.high as number));
-          el.appendChild(cap('МИН')); el.appendChild(num(pt.low as number));
-          el.appendChild(cap('ЗАКР')); el.appendChild(num(pt.close ?? pt.value));
-        } else {
-          el.appendChild(num(pt.value));
-        }
-        if (prevClose != null && def.legendChange) {
-          const cur = pt.close ?? pt.value;
-          const d = cur - prevClose;
-          const pct = prevClose === 0 ? 0 : (d / Math.abs(prevClose)) * 100;
-          const sp = document.createElement('span');
-          sp.style.cssText = 'margin-left:6px';
-          if (c) sp.style.color = c;
-          const sign = d >= 0 ? '+' : '−';
-          sp.textContent = `${sign}${fmt(Math.abs(d))} (${sign}${Math.abs(pct).toFixed(2)}%)`;
-          el.appendChild(sp);
-        }
+        // ОДНО число — значение бара под курсором (у свечи это закрытие). Раньше
+        // здесь была терминальная легенда ОТКР/МАКС/МИН/ЗАКР плюс изменение к
+        // предыдущему бару, покрашенное в зелёный/красный: на строке выходило
+        // пять чисел, из которых читают одно. Цвет тоже убран — число живёт в
+        // серой шкале подписи (color задан на самом узле в строке индикатора).
+        el.textContent = fmt(pt.close ?? pt.value);
       }
     }
   };
