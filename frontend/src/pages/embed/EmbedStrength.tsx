@@ -122,6 +122,18 @@ export default function EmbedStrength() {
     setBreadthPane((p) => (p === a ? b : p === b ? a : p));
   }, []);
   const inds = useIndicators('frame:embed:strength:indicators', { reserved: reservedPanes, onSwapPanes });
+  // ⚠️ Разбор коллизии номеров. Индикаторы, добавленные ДО того как breadth стал
+  // занимать панель, могли сесть на её номер: тогда две разные панели считались
+  // «панелью breadth», строка индикатора подменялась строкой breadth и её нельзя
+  // было ни настроить, ни удалить. Съезжаем на первый свободный номер — данные
+  // пользователя при этом целы, меняется только порядковый номер панели.
+  useEffect(() => {
+    if (!inds.list.some((i) => i.pane === breadthPane)) return;
+    const used = new Set(inds.list.filter((i) => i.pane > 0).map((i) => i.pane));
+    let free = 1;
+    while (used.has(free)) free++;
+    setBreadthPane(free);
+  }, [inds.list, breadthPane]);
   const [paneSizes, setPaneSizes] = useState<number[] | undefined>(undefined);
   const onPaneSizesChange = useCallback((sizes: number[]) => {
     setPaneSizes(sizes);
@@ -184,6 +196,17 @@ export default function EmbedStrength() {
     [inds.list],
   );
 
+  // Порядок нижних панелей — ЕДИНЫЙ источник правды и для сборки панелей, и для
+  // строк-оверлеев. Раньше overlay вычислял его заново «по совпадению номера», и
+  // при коллизии номеров строка breadth рисовалась на чужой панели.
+  const lowerOrder = useMemo(
+    () => [
+      { kind: 'breadth' as const, pane: breadthPane },
+      ...indPanes.map((pane) => ({ kind: 'ind' as const, pane })),
+    ].sort((a, b) => a.pane - b.pane),
+    [breadthPane, indPanes],
+  );
+
   // Панели §5.7: [индекс?] + breadth. Индекс — синяя линия; breadth — по режиму:
   // area (циан, градиент 22%→0) или бинарная гистограмма (зел ≥50 / крас <50).
   const panes = useMemo<LwPane[]>(() => {
@@ -232,13 +255,11 @@ export default function EmbedStrength() {
     // пространстве, поэтому «Выше/Ниже» реально меняет их местами.
     // Панели держатся по СПИСКУ, а не по наличию серий: скрытый «глазом»
     // индикатор серий не даёт, и панель схлопнулась бы вместе со строкой.
-    const lower = [
-      { pane: breadthPane, def: breadthPaneDef },
-      ...indPanes.map((pane) => ({ pane, def: { series: indSeries[pane] ?? [], flex: 0.7 } as LwPane })),
-    ].sort((a, b) => a.pane - b.pane);
-    for (const x of lower) out.push(x.def);
+    for (const x of lowerOrder) {
+      out.push(x.kind === 'breadth' ? breadthPaneDef : { series: indSeries[x.pane] ?? [], flex: 0.7 });
+    }
     return out;
-  }, [synced, showPrice, chartMode, ema, indexLegend, indSeries, indPanes, breadthPane]);
+  }, [synced, showPrice, chartMode, ema, indexLegend, indSeries, lowerOrder, breadthPane]);
 
   const paneCountNow = panes.length;
   useEffect(() => {
@@ -322,9 +343,9 @@ export default function EmbedStrength() {
               // панели всегда ≥1, так что пересечься с ними эта строка не может,
               // а фильтр по pane в PaneIndicatorList работает как есть.
               const base = showPrice ? 1 : 0;
-              const order = [breadthPane, ...indPanes].sort((a, b) => a - b);
-              const pane = order[i - base];
-              if (pane === breadthPane) {
+              const slot = lowerOrder[i - base];
+              if (!slot) return null;
+              if (slot.kind === 'breadth') {
                 return (
                   <PaneIndicatorList
                     api={inds}
@@ -348,7 +369,7 @@ export default function EmbedStrength() {
                   />
                 );
               }
-              return pane == null ? null : <PaneIndicatorList api={inds} pane={pane} values={indValues} />;
+              return <PaneIndicatorList api={inds} pane={slot.pane} values={indValues} />;
             }}
             dark={dark}
             fitKey={`${universe}|${ema}|${showPrice}`}
