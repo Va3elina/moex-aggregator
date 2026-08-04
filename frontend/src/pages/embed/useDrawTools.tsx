@@ -16,31 +16,33 @@ import {
   type ComponentType, type CSSProperties, type ReactNode,
 } from 'react';
 import {
-  Pencil, Camera, MousePointer2, Square, Type, Trash2,
-  Brush, Circle, AlignJustify, Eye, EyeOff, Lock, LockOpen,
-  Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
+  Pencil, Camera, Trash2, Eye, EyeOff, Lock, LockOpen,
+  Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
 import type { LwDrawing, LwDrawTool, LwDash } from '../../components/chart/lwTypes';
-import { TrendLineIcon, RayIcon, ArrowLineIcon, HLineIcon, VLineIcon, type DrawIconProps } from '../../components/chart/drawToolIcons';
+import {
+  TrendLineIcon, RayIcon, ArrowLineIcon, HLineIcon, VLineIcon, SelectIcon, RectIcon,
+  EllipseIcon, FibIcon, BrushIcon, RulerIcon, TextIcon, type DrawIconProps,
+} from '../../components/chart/drawToolIcons';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 
 const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
 const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: ComponentType<DrawIconProps> }[] = [
-  { id: 'select', title: 'Выделение / перемещение', Icon: MousePointer2 },
+  { id: 'select', title: 'Выделение / перемещение', Icon: SelectIcon },
   { id: 'trend', title: 'Трендовая линия', Icon: TrendLineIcon },
   { id: 'ray', title: 'Луч', Icon: RayIcon },
   { id: 'arrow', title: 'Стрелка', Icon: ArrowLineIcon },
   { id: 'hline', title: 'Горизонтальная линия', Icon: HLineIcon },
   { id: 'vline', title: 'Вертикальная линия', Icon: VLineIcon },
-  { id: 'rect', title: 'Прямоугольник', Icon: Square },
-  { id: 'ellipse', title: 'Эллипс', Icon: Circle },
-  { id: 'fib', title: 'Фибоначчи', Icon: AlignJustify },
-  { id: 'brush', title: 'Кисть', Icon: Brush },
-  { id: 'ruler', title: 'Линейка', Icon: Ruler },
-  { id: 'text', title: 'Текст', Icon: Type },
+  { id: 'rect', title: 'Прямоугольник', Icon: RectIcon },
+  { id: 'ellipse', title: 'Эллипс', Icon: EllipseIcon },
+  { id: 'fib', title: 'Фибоначчи', Icon: FibIcon },
+  { id: 'brush', title: 'Кисть', Icon: BrushIcon },
+  { id: 'ruler', title: 'Линейка', Icon: RulerIcon },
+  { id: 'text', title: 'Текст', Icon: TextIcon },
 ];
 /** Текст поддерживает только текст-фигура: подписей на линиях/фигурах нет. */
 const TEXT_TOOLS = new Set(['text']);
