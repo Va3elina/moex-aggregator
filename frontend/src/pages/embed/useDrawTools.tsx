@@ -21,7 +21,7 @@ import {
   Ruler, Layers, X as XIcon, GripVertical, Repeat, Settings2, MoreHorizontal, Copy,
   ChevronsUp, ChevronsDown, Plus,
 } from 'lucide-react';
-import type { LwDrawing, LwDrawTool, LwDash, LwMagnet, LwTextPos } from '../../components/chart/lwTypes';
+import type { LwDrawing, LwDrawTool, LwDash, LwMagnet } from '../../components/chart/lwTypes';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
 
@@ -41,12 +41,12 @@ const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: typeof MousePointer2; r
   { id: 'ruler', title: 'Линейка', Icon: Ruler },
   { id: 'text', title: 'Текст', Icon: Type },
 ];
-/** Кто поддерживает текст: сама текст-фигура и линии (подпись на фигуре). */
-const TEXT_TOOLS = new Set(['text', 'trend', 'ray', 'arrow', 'hline', 'vline']);
+/** Текст поддерживает только текст-фигура: подписей на линиях/фигурах нет. */
+const TEXT_TOOLS = new Set(['text']);
 const TEXT_SIZES = [11, 13, 16, 20, 26];
-/** Дефолтный кегль: у линий — 12.5, у текст-фигуры историческая формула от
- *  толщины (её сохраняем, чтобы старые подписи не поменяли размер). */
-const defTextSize = (d: LwDrawing): number => (d.tool === 'text' ? 13 + d.width * 2 : 12.5);
+/** Дефолтный кегль текст-фигуры — историческая формула от толщины (сохраняем,
+ *  чтобы старые надписи не поменяли размер). */
+const defTextSize = (d: LwDrawing): number => 13 + d.width * 2;
 
 const DRAW_TOOL_NAME: Record<string, string> = Object.fromEntries(DRAW_TOOLS.filter((t) => t.id !== 'select').map((t) => [t.id, t.title]));
 const DRAW_HOTKEY: Record<string, string> = { trend: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V', fib: 'Alt+F', rect: 'Alt+⇧R' };
@@ -612,7 +612,7 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
           <>
             <textarea
               value={d.text ?? ''} onChange={(e) => set({ text: e.target.value || undefined })} rows={2}
-              placeholder={d.tool === 'text' ? 'Текст на графике' : 'Подпись на фигуре'}
+              placeholder="Текст на графике"
               style={{ ...inputSt, width: '100%', resize: 'vertical', marginBottom: 9, fontFamily: 'inherit' }}
             />
             <div style={row}>
@@ -642,19 +642,6 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
                 <input type="color" value={d.textColor || d.color} onChange={(e) => set({ textColor: e.target.value })} title="Свой цвет" style={{ width: 22, height: 17, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }} />
               </div>
             </div>
-            {d.tool !== 'text' && (
-              <div style={row}>
-                <span style={label}>Положение</span>
-                {([['above', 'над'], ['center', 'по центру'], ['below', 'под']] as [LwTextPos, string][]).map(([id, name]) => (
-                  <button
-                    key={id} type="button" onClick={() => set({ textPos: id })}
-                    style={{ ...PBTN, width: 'auto', padding: '0 8px', fontSize: 11, border: '1px solid ' + ((d.textPos ?? 'above') === id ? 'var(--accent)' : 'transparent') }}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            )}
             <div style={row}>
               <span style={label}>Оформление</span>
               <button
