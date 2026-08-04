@@ -220,7 +220,7 @@ export default function CompanyFlowsPriceMap({
     const rFor = (net: number) => R_MIN + (R_MAX - R_MIN) * Math.sqrt(Math.abs(net) / maxAbsNet);
 
     // ── Каскадное появление кругляшей (масштаб 0→1, слева направо). ──
-    const [elapsed, setElapsed] = useState(ANIMATION.waveDuration);
+    const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
     const rafRef = useRef<number | null>(null);
     const markersSig = useMemo(() => markers.map(m => m.mi).join(','), [markers]);
     useEffect(() => {
