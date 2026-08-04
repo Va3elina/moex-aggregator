@@ -282,7 +282,6 @@ export default function EmbedBuffett() {
             onSelectDraw={draw.setSelectedDrawId}
             onSelectionRect={draw.setSelRect}
             onToolReset={draw.onToolReset}
-            drawMagnet={draw.drawMagnet}
             drawHidden={draw.drawHidden}
             drawLocked={draw.drawLocked}
           />

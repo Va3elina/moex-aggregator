@@ -64,7 +64,6 @@ export type LwDrawShape = 'trend' | 'hline' | 'vline' | 'ray' | 'arrow' | 'rect'
 export type LwDrawTool = 'select' | LwDrawShape;
 export interface LwDrawPoint { logical: number; price: number }
 export type LwDash = 'solid' | 'dashed' | 'dotted';
-export type LwMagnet = 'off' | 'weak' | 'strong';   // магнит TradingView: слабый (рядом) / сильный (всегда)
 export interface LwDrawing {
   id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number;
   text?: string; dash?: LwDash; opacity?: number; hidden?: boolean; locked?: boolean;
