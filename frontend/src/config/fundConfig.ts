@@ -324,10 +324,14 @@ export const ISIN_TO_TICKER: Record<string, string> = {
     'RU000A10CRQ4': 'GLRX',
     'RU000A10CTQ0': 'BAZA',
     'RU000A10CW95': 'OZON',
+    'US33835G2057': 'FIXP',   // ГДР Fix Price, делистинг 2024. С акцией ФиксПрайс
+                              // (FIXR) НЕ склеены: в securities_ref у них разные
+                              // canonical_isin, поэтому в пикере это две бумаги.
     'US37949E2046': 'GLTR',
     'US42207L1061': 'HEAD',
     'US5603172082': 'VKCO',
     'US69269L1044': 'OZON',
+    'US74735M1080': 'QIWI',   // ГДР QIWI, делистинг 2024
     'US7496552057': 'RAGR',
     'US87238U2033': 'T',
     'US98387E2054': 'X5',
@@ -386,6 +390,8 @@ export const TICKER_TO_NAME: Record<string, string> = {
     'POGR': 'Petropavlovsk',
     'POLY': 'Полиметалл',
     'POSI': 'Positive Technologies',
+    // FIXP намеренно без имени: фолбэк на «FIXP-гдр» из базы отличает расписку
+    // от акции ФиксПрайс (FIXR), пока они не склеены по canonical_isin.
     'PRMD': 'Промомед',
     'RAGR': 'Русагро',
     'RASP': 'Распадская',
