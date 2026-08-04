@@ -25,7 +25,7 @@ import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
 import {
-  sma, ema, bollinger, rsi, atr, volumeBars, wma, rma, withSource,
+  sma, ema, bollinger, rsi, atr, trueRange, volumeBars, volumeMa, wma, rma, withSource,
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
@@ -73,6 +73,19 @@ export interface IndicatorInst {
   fillOn?: boolean;
   /** Знаков после запятой в подписях. undefined — авто. */
   precision?: number;
+  /** Пилс последнего значения на ценовой шкале («Метки на ценовой шкале» в TV). */
+  axisLabel?: boolean;
+  /** Показывать значение в строке индикатора («Значения в строке статуса»). */
+  statusValue?: boolean;
+  /** Показывать параметры в подписи строки: «RSI 14» против «RSI». */
+  statusArgs?: boolean;
+
+  // ── объёмы ──────────────────────────────────────────────────────────────
+  /** Скользящая по объёму (Volume MA). */
+  volMaOn?: boolean;
+  volMaLength?: number;
+  /** Сглаживание ATR: у Уайлдера это RMA, но в TV на выбор. */
+  smooth?: SmoothType;
   /** Стиль КАЖДОГО элемента отдельно: 'line' — сама линия, 'ma' —
    *  сглаживающая, 'upper'/'middle'/'lower' — границы зон, 'band'/'over'/'under'
    *  — заливки. Картой, а не плоскими полями: элементов у одного индикатора уже
@@ -110,6 +123,10 @@ interface KindDef {
   hasSource?: boolean;
   /** Можно ли положить сверху сглаживающую (вторую линию). */
   hasSmoothing?: boolean;
+  /** Раздельные цвета растущий/нисходящий + Volume MA (вкладка «Стиль» у объёмов). */
+  hasVolumeStyle?: boolean;
+  /** Выбор сглаживания (ATR: RMA/SMA/EMA/WMA). */
+  hasAtrSmoothing?: boolean;
   /** Временно убран из меню добавления. Код и рендер живы: уже добавленные
    *  экземпляры продолжают работать и настраиваться, новые не создать. */
   hiddenFromMenu?: boolean;
@@ -129,8 +146,18 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
     bands: { upper: 70, lower: 30, middle: 50 },
     hasSource: true, hasSmoothing: true, lengthLabel: 'Длина RSI',
   },
-  atr: { label: 'ATR', shortName: 'ATR', title: (i) => `ATR ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false, lengthLabel: 'Длина' },
-  volume: { label: 'Объёмы', shortName: 'Объёмы', title: () => 'Объёмы', defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true, lengthLabel: 'Длина' },
+  atr: {
+    label: 'ATR', shortName: 'ATR', title: (i) => (i.statusArgs === false ? 'ATR' : `ATR ${i.length}`),
+    defLength: 14, defaultPane: 1, overlayOk: false, lengthLabel: 'Длина',
+    // Сглаживание ATR: канон Уайлдера — RMA, но в терминале это выбор.
+    hasAtrSmoothing: true,
+  },
+  volume: {
+    label: 'Объёмы', shortName: 'Объёмы',
+    title: (i) => (i.volMaOn && i.statusArgs !== false ? `Объёмы · MA ${i.volMaLength ?? 20}` : 'Объёмы'),
+    defLength: 14, defaultPane: 1, overlayOk: false, needsVolume: true, lengthLabel: 'Длина',
+    hasVolumeStyle: true,
+  },
   vp: {
     label: 'Профиль объёма', title: () => 'Профиль объёма', defLength: VP_DEFAULTS.rows,
     shortName: 'Профиль', defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
@@ -140,6 +167,8 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
 
 /** Виды сглаживающей поверх индикатора (вкладка «Аргументы» → СГЛАЖИВАНИЕ). */
 export type SmoothType = 'none' | 'sma' | 'sma_bb' | 'ema' | 'rma' | 'wma';
+/** Варианты сглаживания ATR (в TV: RMA/SMA/EMA/WMA). */
+export const ATR_SMOOTH: SmoothType[] = ['rma', 'sma', 'ema', 'wma'];
 export const SMOOTH_LABELS: Record<SmoothType, string> = {
   none: 'Нет',
   sma: 'Простая скользящая средняя (SMA)',
@@ -206,6 +235,14 @@ function parseList(raw: string): IndicatorInst[] {
         bandsOn: typeof x.bandsOn === 'boolean' ? x.bandsOn : undefined,
         fillOn: typeof x.fillOn === 'boolean' ? x.fillOn : undefined,
         precision: Number.isFinite(x.precision) ? Math.max(0, Math.min(8, Math.round(x.precision))) : undefined,
+        // ⚠️ Каждое новое поле модели ОБЯЗАНО быть здесь, иначе оно не переживёт
+        // перезагрузку: персист пишет весь объект, а читает — только этот разбор.
+        axisLabel: typeof x.axisLabel === 'boolean' ? x.axisLabel : undefined,
+        statusValue: typeof x.statusValue === 'boolean' ? x.statusValue : undefined,
+        statusArgs: typeof x.statusArgs === 'boolean' ? x.statusArgs : undefined,
+        volMaOn: typeof x.volMaOn === 'boolean' ? x.volMaOn : undefined,
+        volMaLength: Number.isFinite(x.volMaLength) ? Math.max(2, Math.min(500, Math.round(x.volMaLength))) : undefined,
+        smooth: x.smooth in SMOOTH_LABELS ? x.smooth : undefined,
         styles: parseStyles(x.styles),
       }];
     });
@@ -387,6 +424,14 @@ export function indicatorSeriesByPane(
 ): LwSeries[][] {
   const out: LwSeries[][] = [[]];
   if (!candles.length) return out;
+  // «Точность» + «Метки на ценовой шкале» — общие для линейных индикаторов
+  // (в TV это блок ВЫХОДНЫЕ ЗНАЧЕНИЯ).
+  const axisOpts = (i: IndicatorInst): Partial<LwSeries> => {
+    const p = i.precision;
+    if (p == null) return { lastValueVisible: i.axisLabel !== false };
+    const fmt = (v: number) => v.toFixed(p);
+    return { lastValueVisible: i.axisLabel !== false, axisFmt: fmt, tipFmt: fmt, minMove: Math.pow(10, -p) };
+  };
   const put = (pane: number, sers: LwSeries[]) => {
     while (out.length <= pane) out.push([]);
     out[pane].push(...sers);
@@ -478,19 +523,46 @@ export function indicatorSeriesByPane(
         if (out.length) put(i.pane, out);
       }
     } else if (i.kind === 'atr') {
-      const pts = atr(candles, i.length);
-      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), minMove: i.precision != null ? Math.pow(10, -i.precision) : 0.01 }]);
+      // Сглаживание: RMA — канон Уайлдера и наш дефолт; остальные считаем от
+      // ряда истинных диапазонов, как это делает TradingView.
+      const sm = i.smooth ?? 'rma';
+      const pts = sm === 'rma' ? atr(candles, i.length) : smoothOf(trueRange(candles), sm, i.length);
+      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), ...axisOpts(i) }]);
     } else if (i.kind === 'volume') {
-      const pts = volumeBars(candles);
+      // Цвета столбцов раздельные (TV: «Растущий»/«Нисходящий»); дефолт — наши
+      // токены зелёного/красного.
+      const upC = styleColor(elStyle('volUp'), VOLUME_UP);
+      const dnC = styleColor(elStyle('volDown'), VOLUME_DOWN);
+      const volFmt = (v: number) => (
+        i.precision != null ? v.toFixed(i.precision)
+          : v >= 1e6 ? (v / 1e6).toFixed(1) + 'М' : v >= 1e3 ? Math.round(v / 1e3) + 'т' : String(Math.round(v))
+      );
+      const pts = volumeBars(candles, upC, dnC);
+      const sers: LwSeries[] = [];
       if (pts.length) {
-        put(i.pane, [{
-          // lastValueVisible:false — у гистограммы объёма пилс последнего бара не
-          // несёт смысла (это объём одного дня, а не уровень), а место на оси
-          // занимает. В TradingView его там тоже нет.
-          ...base, type: 'histogram', id: i.id, label: 'Объёмы', data: conv(pts), base: 0, lastValueVisible: false,
-          axisFmt: (v: number) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'М' : v >= 1e3 ? Math.round(v / 1e3) + 'т' : String(Math.round(v))),
-        }]);
+        sers.push({
+          // Пилс последнего бара у гистограммы объёма по умолчанию не нужен —
+          // это объём одного дня, а не уровень (в TV так же). Включается
+          // «Метки на ценовой шкале».
+          ...base, type: 'histogram', id: i.id, label: KINDS.volume.title(i), data: conv(pts), base: 0,
+          lastValueVisible: i.axisLabel === true,
+          axisFmt: volFmt, tipFmt: volFmt,
+        });
       }
+      // Volume MA — вторая линия поверх столбцов.
+      if (i.volMaOn) {
+        const ma = volumeMa(candles, i.volMaLength ?? 20) as { time: string; value: number }[];
+        if (ma.length) {
+          const st = elStyle('volMa');
+          sers.push({
+            ...base, type: 'line', id: i.id + ':volma', label: `MA ${i.volMaLength ?? 20}`,
+            color: styleColor(st, 'var(--chart-line-1)'), lineWidth: st?.width ?? 2,
+            dashed: st?.dash === 'dashed' || st?.dash === 'dotted',
+            data: conv(ma), lastValueVisible: i.axisLabel === true, axisFmt: volFmt, tipFmt: volFmt,
+          });
+        }
+      }
+      if (sers.length) put(i.pane, sers);
     }
   }
   return out;
@@ -739,7 +811,7 @@ function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: Indicato
       <Row
         color={api.colorOf(inst)}
         label={KINDS[inst.kind].title(inst)}
-        value={value}
+        value={inst.statusValue === false ? undefined : value}
         valueId={inst.id}
         visible={inst.visible}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
@@ -1110,6 +1182,42 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                 )}
               </Section>
 
+              {d.hasAtrSmoothing && (
+                <Section label="Расчёты">
+                  {/* Канон Уайлдера — RMA; остальные считаются от того же ряда
+                      истинных диапазонов, как в TradingView.
+                      ⚠️ «Интервал расчёта» и «Дождаться закрытия интервала» из
+                      TV не переносим: это мультитаймфрейм (считать индикатор по
+                      часовым барам на дневном графике), у нас его нет. */}
+                  <Field label="Сглаживание">
+                    <Select
+                      value={inst.smooth ?? 'rma'}
+                      options={ATR_SMOOTH.map((k) => ({ id: k, label: SMOOTH_LABELS[k] }))}
+                      onChange={(v) => set({ smooth: v as SmoothType })}
+                    />
+                  </Field>
+                </Section>
+              )}
+
+              {d.hasVolumeStyle && (
+                <Section label="Скользящая по объёму">
+                  <Field label="Показывать">
+                    <Select
+                      value={inst.volMaOn ? 'on' : 'off'}
+                      options={[{ id: 'off', label: 'Нет' }, { id: 'on', label: 'Да' }]}
+                      onChange={(v) => set({ volMaOn: v === 'on' })}
+                    />
+                  </Field>
+                  <Field label="Длина" dim={!inst.volMaOn}>
+                    <input
+                      type="number" min={2} max={500} value={inst.volMaLength ?? 20} disabled={!inst.volMaOn}
+                      onChange={(e) => set({ volMaLength: clampBand(e.target.value, 2, 500, 20) })}
+                      style={numInput(78, !inst.volMaOn)}
+                    />
+                  </Field>
+                </Section>
+              )}
+
               {d.hasSmoothing && (
                 <Section label="Сглаживание">
                   <Field label="Тип">
@@ -1141,13 +1249,43 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
             </>
           ) : (
             <>
-              <StyleRow
-                label={d.shortName ?? d.label}
-                on={inst.lineOn !== false}
-                onToggle={() => set({ lineOn: inst.lineOn === false })}
-                style={inst.styles?.line ?? { color: api.colorOf(inst), width: inst.width }}
-                onStyle={(p) => api.patchStyle(inst.id, 'line', p)}
-              />
+              {d.hasVolumeStyle ? (
+                <>
+                  {/* Столбцы объёма двухцветные по смыслу (бар вверх/вниз), одной
+                      «линии» у них нет — как в TradingView две строки цвета. */}
+                  <StyleRow
+                    label="Растущий"
+                    on={inst.lineOn !== false}
+                    onToggle={() => set({ lineOn: inst.lineOn === false })}
+                    style={inst.styles?.volUp ?? { color: '#5BD49C' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'volUp', p)}
+                    noLine
+                  />
+                  <StyleRow
+                    label="Нисходящий"
+                    on={inst.lineOn !== false}
+                    style={inst.styles?.volDown ?? { color: '#EF6F6F' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'volDown', p)}
+                    noLine
+                  />
+                  {inst.volMaOn && (
+                    <StyleRow
+                      label={`MA ${inst.volMaLength ?? 20}`}
+                      on
+                      style={inst.styles?.volMa ?? { color: '#5B8DEF', width: 2 }}
+                      onStyle={(p) => api.patchStyle(inst.id, 'volMa', p)}
+                    />
+                  )}
+                </>
+              ) : (
+                <StyleRow
+                  label={d.shortName ?? d.label}
+                  on={inst.lineOn !== false}
+                  onToggle={() => set({ lineOn: inst.lineOn === false })}
+                  style={inst.styles?.line ?? { color: api.colorOf(inst), width: inst.width }}
+                  onStyle={(p) => api.patchStyle(inst.id, 'line', p)}
+                />
+              )}
               {d.hasSmoothing && smooth !== 'none' && (
                 <StyleRow
                   label="Сглаживающая"
@@ -1209,9 +1347,30 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
               <Section label="Выходные значения">
                 <Field label="Точность">
                   <Select
-                    value={String(inst.precision ?? 2)}
-                    options={[0, 1, 2, 3, 4].map((n) => ({ id: String(n), label: n === 0 ? 'Целые' : `${n} знака` }))}
-                    onChange={(v) => set({ precision: Number(v) })}
+                    value={inst.precision == null ? 'auto' : String(inst.precision)}
+                    options={[{ id: 'auto', label: 'По умолчанию' }, ...[0, 1, 2, 3, 4].map((n) => ({ id: String(n), label: n === 0 ? 'Целые' : `${n} знака` }))]}
+                    onChange={(v) => set({ precision: v === 'auto' ? undefined : Number(v) })}
+                  />
+                </Field>
+                <Field label="Метки на ценовой шкале">
+                  <Select
+                    value={(d.hasVolumeStyle ? inst.axisLabel === true : inst.axisLabel !== false) ? 'on' : 'off'}
+                    options={[{ id: 'on', label: 'Да' }, { id: 'off', label: 'Нет' }]}
+                    onChange={(v) => set({ axisLabel: v === 'on' })}
+                  />
+                </Field>
+                <Field label="Значения в строке">
+                  <Select
+                    value={inst.statusValue === false ? 'off' : 'on'}
+                    options={[{ id: 'on', label: 'Да' }, { id: 'off', label: 'Нет' }]}
+                    onChange={(v) => set({ statusValue: v === 'on' })}
+                  />
+                </Field>
+                <Field label="Параметры в подписи">
+                  <Select
+                    value={inst.statusArgs === false ? 'off' : 'on'}
+                    options={[{ id: 'on', label: 'Да' }, { id: 'off', label: 'Нет' }]}
+                    onChange={(v) => set({ statusArgs: v === 'on' })}
                   />
                 </Field>
               </Section>

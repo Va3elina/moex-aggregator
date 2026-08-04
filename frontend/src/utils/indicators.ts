@@ -132,6 +132,22 @@ export function rsi<T>(pts: IndPoint<T>[], length: number): IndPoint<T>[] {
  * |Δvalue|: это перестаёт быть каноническим ATR, но остаётся осмысленной мерой
  * волатильности ряда и не роняет расчёт.
  */
+/** Ряд истинных диапазонов (True Range) — сырьё для ATR с любым сглаживанием. */
+export function trueRange<T>(candles: IndCandle<T>[]): IndPoint<T>[] {
+  const out: IndPoint<T>[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i], p = candles[i - 1];
+    const pc = p.close ?? p.value;
+    out.push({
+      time: c.time,
+      value: c.high == null || c.low == null
+        ? Math.abs(c.value - p.value)
+        : Math.max(c.high - c.low, Math.abs(c.high - pc), Math.abs(c.low - pc)),
+    });
+  }
+  return out;
+}
+
 export function atr<T>(candles: IndCandle<T>[], length: number): IndPoint<T>[] {
   const n = Math.max(1, Math.floor(length));
   if (candles.length <= n) return [];
@@ -226,13 +242,27 @@ export const VOLUME_DOWN = 'var(--oi-red)';
  * бара — по направлению свечи. Бары без объёма пропускаем (у ОИ на некоторых
  * контрактах он не приходит), иначе получим ложные нули.
  */
-export function volumeBars<T>(candles: IndCandle<T>[]): (IndPoint<T> & { color: string })[] {
+export function volumeBars<T>(
+  candles: IndCandle<T>[],
+  up: string = VOLUME_UP,
+  down: string = VOLUME_DOWN,
+): (IndPoint<T> & { color: string })[] {
   const out: (IndPoint<T> & { color: string })[] = [];
   for (const c of candles) {
     if (c.volume == null) continue;
     const open = c.open ?? c.value;
     const close = c.close ?? c.value;
-    out.push({ time: c.time, value: c.volume, color: close >= open ? VOLUME_UP : VOLUME_DOWN });
+    out.push({ time: c.time, value: c.volume, color: close >= open ? up : down });
   }
   return out;
+}
+
+/**
+ * Скользящая по ОБЪЁМУ («Volume MA» в TradingView) — средний объём за N баров.
+ * Считается по тому же ряду, что и гистограмма (бары без объёма пропущены),
+ * иначе среднее считалось бы по дыркам и занижалось.
+ */
+export function volumeMa<T>(candles: IndCandle<T>[], length: number): IndPoint<T>[] {
+  const vols = volumeBars(candles).map((p) => ({ time: p.time, value: p.value }));
+  return sma(vols as IndPoint<T>[], length);
 }
