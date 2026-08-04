@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LogOut, Lock, Mail, Calendar, Shield, Crown,
-  Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink, AlertCircle,
+  Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink, AlertCircle, User,
 } from 'lucide-react';
 import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
@@ -240,7 +240,6 @@ export default function ProfilePage() {
 
   const displayName = user.display_name || user.email;
   const isOAuthLocal = user.email.endsWith('@oauth.local');
-  const initials = displayName[0].toUpperCase();
   const roleStyle = ROLE_COLORS[user.role] || ROLE_COLORS.user;
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -298,12 +297,12 @@ export default function ProfilePage() {
       {/* ============ Секция 1: Шапка профиля ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>
         <div className="flex items-center gap-4 mb-5">
-          {/* Аватар — инициал */}
+          {/* Аватар — lucide-иконка User (как на кнопке кабинета в шапке) */}
           <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shrink-0"
+            className="w-16 h-16 rounded-full flex items-center justify-center shrink-0"
             style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
           >
-            {initials}
+            <User style={{ width: 40, height: 40 }} strokeWidth={2} />
           </div>
           <div className="text-left">
             <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
