@@ -1830,6 +1830,24 @@ export async function getCompanyFlows(
     return resp.json();
 }
 
+// Недельные закрытия акции — фон режима «Карта сделок» в «Потоках по компании».
+// 404 (не акция / нет истории в candles) пробрасываем отдельной ошибкой: фронт
+// показывает empty-state, а не тост сетевой ошибки.
+export interface CompanyPriceWeeklyResponse {
+    ticker: string;
+    /** ISO-даты понедельников недель, ASC. */
+    weeks: string[];
+    /** Закрытие недели (последняя дневная свеча), выровнено с weeks. */
+    closes: number[];
+}
+
+export async function getCompanyPriceWeekly(ticker: string): Promise<CompanyPriceWeeklyResponse> {
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/price-weekly?ticker=${encodeURIComponent(ticker)}`);
+    if (resp.status === 404) throw new Error('NO_PRICE_HISTORY');
+    if (!resp.ok) throw new Error('Не удалось загрузить историю цены');
+    return resp.json();
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Telegram alert-bot (привязка + алерты). Бэкенд: /api/alerts/*
 // ════════════════════════════════════════════════════════════════════════════

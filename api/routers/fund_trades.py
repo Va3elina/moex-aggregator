@@ -2473,3 +2473,46 @@ def company_flows(
         "funds": funds_out,
         "total": total,
     }
+
+
+@router.get("/price-weekly")
+def price_weekly(
+    ticker: str = Query(..., description="Тикер акции (secid MOEX)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Недельные закрытия акции из дневных свечей — фон режима «Карта сделок»
+    в «Потоках по компании» (линия цены, на которую фронт сажает кругляши
+    месячных нетто-сделок фондов).
+
+    Агрегация date_trunc('week') по interval=24 / type='stock': закрытие
+    недели = close последней дневной свечи внутри недели. Тикер резолвит
+    фронт (resolveFundTicker по ISIN) — облигации/ОФЗ тикера не имеют и
+    сюда не приходят. Нет строк (не акция / нет истории в candles) → 404,
+    фронт показывает empty-state.
+
+    Без тирного гейта: дневная цена публична (гостям /api/candles отдаёт
+    interval=24), задержка снапшотов сделок к цене отношения не имеет.
+    """
+    from api.schemas.validators import validate_safe_id
+    try:
+        ticker = validate_safe_id(ticker, "ticker")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    rows = db.execute(text("""
+        SELECT (date_trunc('week', begin_time))::date AS week,
+               (array_agg(close ORDER BY begin_time DESC))[1] AS close
+        FROM candles
+        WHERE secid = :t AND interval = 24 AND type = 'stock' AND close > 0
+        GROUP BY 1
+        ORDER BY 1
+    """), {"t": ticker}).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Нет истории цены по этой бумаге")
+
+    return {
+        "ticker": ticker,
+        "weeks": [r[0].isoformat() for r in rows],
+        "closes": [float(r[1]) for r in rows],
+    }

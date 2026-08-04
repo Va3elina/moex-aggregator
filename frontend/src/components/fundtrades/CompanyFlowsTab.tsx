@@ -2,10 +2,14 @@
  * CompanyFlowsTab — раздел «Потоки по компании».
  *
  * Выбор бумаги (таблетка-поиск в стиле «Сезонности») → её помесячные потоки
- * (Δ стоимости позиции) по фондам, что её держат. Один чарт —
- * CompanyFlowsHistogram, оформленный 1-в-1 как «Деньги в фондах»: бары рисуют
- * ЧИСТЫЙ поток (сумму по выбранным фондам, приток зелёный / отток красный), а
- * тултип раскрывает разбивку — какой фонд внёс наибольший вклад в движение.
+ * (Δ стоимости позиции) по фондам, что её держат. Два режима (SegmentedControl):
+ *  - «Гистограмма» — CompanyFlowsHistogram, оформленный 1-в-1 как «Деньги в
+ *    фондах»: бары рисуют ЧИСТЫЙ поток (сумму по выбранным фондам, приток
+ *    зелёный / отток красный), тултип раскрывает разбивку по фондам.
+ *  - «Карта сделок» — CompanyFlowsPriceMap: недельная линия цены акции с
+ *    кругляшами месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких
+ *    уровнях цены фонды покупали и продавали. Цена — /price-weekly по тикеру
+ *    (resolveFundTicker); нет тикера или истории → empty-state внутри чарта.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
  * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млн (÷1e6).
@@ -21,13 +25,16 @@ import {
     listFundTradeAssets,
     listFundsWithHistory,
     getCompanyFlows,
+    getCompanyPriceWeekly,
     type FundTradeAsset,
     type CompanyFlowsResponse,
+    type CompanyPriceWeeklyResponse,
     type FundWithHistory,
 } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import Skeleton from '../Skeleton';
 import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
+import CompanyFlowsPriceMap from './CompanyFlowsPriceMap';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import PortfolioFundPicker, { defaultPortfolioTickers } from './PortfolioFundPicker';
@@ -45,6 +52,11 @@ type Period = '1y' | '3y' | 'all';
 const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 года', 'all': 'Всё' };
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
+
+// Режим отображения: гистограмма потоков / сделки на графике цены.
+type ChartMode = 'hist' | 'map';
+const MODE_LABELS: Record<ChartMode, string> = { hist: 'Гистограмма', map: 'Карта сделок' };
+const CF_MODES: ChartMode[] = ['hist', 'map'];
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
 // Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
@@ -147,6 +159,16 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // дефолт «Всё» — сохраняем прежнее поведение (показывали всю историю).
     const [period, setPeriod] = usePersistedState<Period>('frame:companyflows:period', 'all');
 
+    // Режим отображения (гистограмма / карта сделок). Персист между сессиями.
+    const [mode, setMode] = usePersistedState<ChartMode>('frame:companyflows:mode', 'hist');
+
+    // Недельная цена для «Карты сделок» — грузим лениво, только в режиме map.
+    // priceError: NO_PRICE_HISTORY (404 / нет тикера) → empty-state в чарте,
+    // прочее → красная плашка (как flowsError).
+    const [price, setPrice] = useState<CompanyPriceWeeklyResponse | null>(null);
+    const [priceLoading, setPriceLoading] = useState(false);
+    const [priceError, setPriceError] = useState<string | null>(null);
+
     // Загрузка списка бумаг → выбрать первую (топ по funds_count), если нет
     // pending-preset (presetAsset выбирается отдельным эффектом и имеет приоритет).
     useEffect(() => {
@@ -239,6 +261,38 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         };
     }, [selectedAsset, metric]);
 
+    // Цена для «Карты сделок»: грузим при входе в режим / смене бумаги. Кэш —
+    // сам price (тикер совпал → не перезапрашиваем). Нет тикера (облигация,
+    // ОФЗ, денежный рынок) → сразу «нет истории», без похода на бэкенд.
+    useEffect(() => {
+        if (mode !== 'map') return;
+        if (!selectedTicker) {
+            setPrice(null);
+            setPriceError('NO_PRICE_HISTORY');
+            return;
+        }
+        if (price?.ticker === selectedTicker) return;
+        let cancelled = false;
+        setPriceLoading(true);
+        setPriceError(null);
+        getCompanyPriceWeekly(selectedTicker)
+            .then(resp => {
+                if (cancelled) return;
+                setPrice(resp);
+            })
+            .catch(err => {
+                if (cancelled) return;
+                setPrice(null);
+                setPriceError(err instanceof Error ? err.message : 'Не удалось загрузить историю цены');
+            })
+            .finally(() => {
+                if (!cancelled) setPriceLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [mode, selectedTicker, price]);
+
     // Фонды для пикера — только держатели этой бумаги (flows.funds), но карточкой
     // из /funds: СЧА, доходность, подкатегория, дата последнего состава. Пока
     // метаданные не пришли (или не пришли вовсе) — минимальная карточка из flows,
@@ -324,9 +378,9 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         [fundSeries, periodStart],
     );
 
-    // Триггер entrance-волны баров: перезапуск при смене бумаги, набора фондов
-    // ИЛИ периода — новое окно должно проиграть каскад заново.
-    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}`;
+    // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
+    // набора фондов, периода ИЛИ режима — новое окно проигрывает каскад заново.
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}`;
 
     // ── Рендер ──
     if (assetsLoading) {
@@ -460,6 +514,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     onChange={setPeriod}
                 />
 
+                {/* Режим: гистограмма потоков / сделки на графике цены. */}
+                <SegmentedControl<ChartMode>
+                    options={CF_MODES.map(m => ({ key: m, label: MODE_LABELS[m] }))}
+                    value={mode}
+                    onChange={setMode}
+                />
+
                 {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
                     фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
                     в chartAnchorRef (position:relative). */}
@@ -467,7 +528,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     <ChartActionsMenu containerRef={chartAnchorRef}>
                         <ChartCaptureButton
                             getTargetElement={() => chartAnchorRef.current}
-                            filename={`frame-company-flows-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
+                            filename={`frame-company-flows-${mode}-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
                             metadata={{
                                 title: 'Сделки фондов',
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
@@ -500,21 +561,45 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     {flowsError}
                 </div>
             )}
+            {/* Сетевая ошибка загрузки цены (NO_PRICE_HISTORY — не ошибка, а
+                empty-state внутри самого чарта карты). */}
+            {mode === 'map' && priceError && priceError !== 'NO_PRICE_HISTORY' && (
+                <div
+                    className="rounded-2xl border border-theme"
+                    style={{ padding: 'var(--sp-4)', background: 'var(--bg-secondary)', color: 'var(--funds-flow-negative)' }}
+                >
+                    {priceError}
+                </div>
+            )}
 
-            {/* Чистый поток по бумаге — гистограмма 1-в-1 как «Деньги в фондах».
-                Бары = сумма по выбранным фондам (приток зелёный / отток красный),
-                тултип раскрывает вклад каждого фонда. */}
+            {/* Гистограмма: чистый поток по бумаге 1-в-1 как «Деньги в фондах».
+                Карта сделок: недельная цена + кругляши месячных нетто. Оба чарта
+                получают одинаковые months/series — режимы синхронны по окну. */}
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
             <div ref={chartAnchorRef} style={{ position: 'relative' }}>
-                <CompanyFlowsHistogram
-                    months={visibleMonths}
-                    series={visibleSeries}
-                    height={chartHeight}
-                    loading={flowsLoading}
-                    noFundsSelected={noFundsSelected}
-                    animTrigger={animTrigger}
-                />
+                {mode === 'hist' ? (
+                    <CompanyFlowsHistogram
+                        months={visibleMonths}
+                        series={visibleSeries}
+                        height={chartHeight}
+                        loading={flowsLoading}
+                        noFundsSelected={noFundsSelected}
+                        animTrigger={animTrigger}
+                    />
+                ) : (
+                    <CompanyFlowsPriceMap
+                        months={visibleMonths}
+                        series={visibleSeries}
+                        weeks={price && price.ticker === selectedTicker ? price.weeks : []}
+                        closes={price && price.ticker === selectedTicker ? price.closes : []}
+                        height={chartHeight}
+                        loading={flowsLoading || priceLoading}
+                        noFundsSelected={noFundsSelected}
+                        priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
+                        animTrigger={animTrigger}
+                    />
+                )}
             </div>
 
             {/* ITEM 3 — модалка выбора бумаги (assets = текущий список). */}
