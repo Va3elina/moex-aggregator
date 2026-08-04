@@ -593,6 +593,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         series={visibleSeries}
                         weeks={price && price.ticker === selectedTicker ? price.weeks : []}
                         closes={price && price.ticker === selectedTicker ? price.closes : []}
+                        assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
                         loading={flowsLoading || priceLoading}
                         noFundsSelected={noFundsSelected}
