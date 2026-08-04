@@ -250,6 +250,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           <LwChartPanes
             ref={lwChartRef}
             panes={[{ series: lwSeries }]}
+            // Статичный вид (как у потоков капитала): пан и зум выключены,
+            // график всегда показывает всю историю и подстраивается под панель.
+            // Здесь смысл в картине целиком, а не в разглядывании участка.
+            staticView
             drawPaneIndex={0}
             dark={dark}
             fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
