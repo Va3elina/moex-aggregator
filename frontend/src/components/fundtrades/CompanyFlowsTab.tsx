@@ -55,7 +55,7 @@ const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all'
 
 // Режим отображения: гистограмма потоков / сделки на графике цены.
 type ChartMode = 'hist' | 'map';
-const MODE_LABELS: Record<ChartMode, string> = { hist: 'Гистограмма', map: 'Карта сделок' };
+const MODE_LABELS: Record<ChartMode, string> = { hist: 'Столбцы', map: 'Карта сделок' };
 const CF_MODES: ChartMode[] = ['hist', 'map'];
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в

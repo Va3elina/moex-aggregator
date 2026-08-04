@@ -359,7 +359,7 @@ export default function CompanyFlowsPriceMap({
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 380 }}>
                         Карта сделок доступна для акций, торгующихся на МосБирже.
-                        Потоки по этой бумаге смотрите в режиме «Гистограмма».
+                        Потоки по этой бумаге смотрите в режиме «Столбцы».
                     </div>
                 </div>
             ) : loading && !hasData ? (
