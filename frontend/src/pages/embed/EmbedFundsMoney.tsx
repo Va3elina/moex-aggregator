@@ -21,7 +21,6 @@ import {
   type FlowTimeframe,
   type FundsFlowsResponse,
   type CbrFlowsPeriod,
-  type FlowDataPoint,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
@@ -58,6 +57,9 @@ const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
   { id: '3y', label: '3 года' },
   { id: 'all', label: 'Всё время' },
 ];
+// Стабильная ссылка: массив уходит в депсы мемо внутри гистограммы (yMax,
+// легенда) — инлайновый литерал пересоздавал их на каждый рендер embed'а.
+const FLOW_CATEGORIES = ['Приток', 'Отток'];
 const FLOW_TFS: { id: FlowTimeframe; label: string; icon: ReactNode }[] = [
   { id: '1d', label: 'День', icon: <Clock size={14} /> },
   { id: '1w', label: 'Неделя', icon: <CalendarDays size={14} /> },
@@ -77,7 +79,6 @@ function fmtAbs(a: number): string {
   if (a >= 1e3) return Math.round(a / 1e3).toLocaleString('ru-RU') + ' тыс';
   return Math.round(a).toString();
 }
-const fmtSigned = (v: number): string => (v < 0 ? '−' : '') + fmtAbs(v);
 const fmtInt = (v: number): string => Math.round(v).toLocaleString('ru-RU');
 
 function initCat(p: string | null, rd: (k: string, d: string) => string): Category {
@@ -127,9 +128,13 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     : (['3y', '1y', '1m', '1w'] as FundPeriod[]).find((p) => fundsAccess.canUsePeriod(p)) ?? '1y';
   const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
 
-  const [data, setData] = useState<FundsResp | null>(null);
+  // Загруженные данные держим ВМЕСТЕ с ключом запроса, которым они получены.
+  // Волна появления столбцов и фит графика должны перезапускаться, когда новые
+  // данные ПРИЕХАЛИ, а не когда пользователь нажал кнопку: иначе анимация
+  // проигрывается сначала на старом наборе, потом ещё раз на новом.
+  const [data, setData] = useState<{ res: FundsResp; key: string } | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
-  const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
+  const [flowsLoaded, setFlowsLoaded] = useState<{ res: FundsFlowsResponse; key: string; tf: FlowTimeframe } | null>(null);
   const [flowsStatus, setFlowsStatus] = useState<LoadStatus>('idle');
 
   // Persist
@@ -146,7 +151,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     getFundsChartData(category, period)
       .then((res) => {
         if (cancelled) return;
-        setData(res);
+        setData({ res, key: `${category}|${period}` });
         setStatus((res?.total_nav?.length ?? 0) > 0 ? 'ok' : 'empty');
       })
       .catch((err) => {
@@ -165,7 +170,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     getFundsFlows(category, flowTimeframe, period)
       .then((res) => {
         if (cancelled) return;
-        setFlowsData(res);
+        setFlowsLoaded({ res, key: `${category}|${flowTimeframe}|${period}`, tf: flowTimeframe });
         setFlowsStatus((res?.flows?.length ?? 0) > 0 ? 'ok' : 'empty');
       })
       .catch((err) => {
@@ -205,11 +210,14 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return () => ro.disconnect();
   }, []);
 
+  // Подписи считаем по таймфрейму ЗАГРУЖЕННЫХ данных (flowsLoaded.tf), а не по
+  // текущему значению контрола: пока едет новый запрос, на экране ещё старый
+  // набор, и подписывать его новым шагом нельзя.
   const flowPeriods = useMemo<CbrFlowsPeriod[]>(() => {
-    const flows = flowsData?.flows ?? [];
+    const flows = flowsLoaded?.res.flows ?? [];
     return flows.map((f) => {
       const d = new Date(f.period_end);
-      const label = flowTimeframe === '1m'
+      const label = flowsLoaded?.tf === '1m'
         ? MONTHS_RU[d.getUTCMonth()]
         : `${d.getUTCDate()} ${MONTHS_SHORT_RU[d.getUTCMonth()]}`;
       return {
@@ -228,35 +236,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           : { 'Приток': 0, 'Отток': f.flow ?? 0 },
       };
     });
-  }, [flowsData, flowTimeframe]);
+  }, [flowsLoaded]);
 
+  // Ряды LwChart нужны только режиму СЧА: потоки рисует движок ЦБ.
   const lwSeries = useMemo<LwSeries[]>(() => {
-    if (viewMode === 'flows') {
-      const flows = flowsData?.flows ?? [];
-      if (!flows.length) return [];
-      // Двунаправленные столбцы, как в потоках ЦБ: приток ВВЕРХ, отток ВНИЗ —
-      // двумя отдельными рядами от нуля. Один ряд «нетто» скрывал главное:
-      // период с большим оборотом и почти нулевым сальдо выглядел как пустой.
-      // flow приходит в МЛРД ₽ → в рубли (×1e9), чтобы компактный формат дал «млрд».
-      const mk = (id: string, label: string, color: string, pick: (f: FlowDataPoint) => number): LwSeries => ({
-        id, type: 'histogram', scale: 'right', base: 0, color, label,
-        // Периодический поток — «последнее значение» на оси неинформативно
-        // (не тренд, не текущая цена), только пилюля лишняя.
-        lastValueVisible: false,
-        data: flows.map((f) => ({ time: toSec(f.period_end), value: pick(f) * 1e9 })),
-        axisFmt: fmtSigned,
-        tipFmt: (v) => (v >= 0 ? '+' : '−') + fmtAbs(v) + ' ₽',
-      });
-      return [
-        mk('flow-in', 'Приток', 'var(--oi-green)', (f) => Math.max(0, f.gross_in ?? 0)),
-        mk('flow-out', 'Отток', 'var(--oi-red)', (f) => Math.min(0, f.gross_out ?? 0)),
-      ];
-    }
+    if (viewMode === 'flows') return [];
     // aum: индекс (линия, левая, синий) + СЧА (область, правая, зелёная).
-    const nav = data?.total_nav ?? [];
+    const nav = data?.res.total_nav ?? [];
     if (!nav.length) return [];
     const out: LwSeries[] = [];
-    const idx = data?.index?.data;
+    const idx = data?.res.index?.data;
     if (showIndex && idx?.length) {
       out.push({
         id: 'idx', type: 'line', scale: 'left', color: 'var(--chart-line-1)', lineWidth: 2, label: 'Индекс',
@@ -271,9 +260,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       axisFmt: fmtAbs, tipFmt: (v) => fmtAbs(v) + ' ₽',
     }, fmt));
     return out;
-  }, [viewMode, flowsData, data, showIndex, fmt]);
+  }, [viewMode, data, showIndex, fmt]);
 
   const st = viewMode === 'flows' ? flowsStatus : status;
+  // Что уже нарисовано ПРЯМО СЕЙЧАС. Пока едет новый запрос, прежняя картинка
+  // остаётся на экране — как у потоков ЦБ, где смена периода это клиентская
+  // нарезка без похода на бэкенд. Раньше любой клик по таймфрейму/периоду ронял
+  // flowsStatus в 'loading', а на нём висел рендер и графика, и кнопок справа:
+  // ось значений и весь правый блок мигали и «возвращались» вместе с волной.
+  const hasView = viewMode === 'flows' ? flowPeriods.length > 0 : lwSeries.length > 0;
+  const showChart = hasView && st !== 'error';
 
   return (
     <EmbedFrame
@@ -306,7 +302,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           )}
         </div>
       }
-      actions={<DrawExportActions draw={draw} visible={st === 'ok' && lwSeries.length > 0} />}
+      actions={<DrawExportActions draw={draw} visible={showChart} />}
       more={viewMode === 'aum' ? (
         <>
           <DrawerSection label="Отображение">
@@ -317,17 +313,17 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       ) : undefined}
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {viewMode === 'flows' && flowsStatus === 'ok' && flowPeriods.length > 0 && (
+        {viewMode === 'flows' && showChart && (
           <StackedBidirectionalHistogram
             periods={flowPeriods}
-            categories={['Приток', 'Отток']}
+            categories={FLOW_CATEGORIES}
             unit="млрд ₽"
             height={chartH}
-            animTrigger={`${category}|${flowTimeframe}|${period}`}
+            animTrigger={flowsLoaded?.key ?? ''}
             valuePill
           />
         )}
-        {viewMode !== 'flows' && st === 'ok' && lwSeries.length > 0 && (
+        {viewMode !== 'flows' && showChart && (
           <LwChartPanes
             ref={lwChartRef}
             panes={[{ series: lwSeries }]}
@@ -337,7 +333,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             staticView
             drawPaneIndex={0}
             dark={dark}
-            fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
+            fitKey={`aum|${data?.key ?? ''}`}
             tickFmt={monthsYearsTickFmt}
             drawActive={draw.drawMode}
             drawTool={draw.drawTool}
@@ -355,8 +351,8 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             drawLocked={draw.drawLocked}
           />
         )}
-        <DrawToolsOverlay draw={draw} visible={st === 'ok' && lwSeries.length > 0} />
-        {st === 'loading' && <EmbedMsg text="Загрузка…" />}
+        <DrawToolsOverlay draw={draw} visible={showChart} />
+        {st === 'loading' && !hasView && <EmbedMsg text="Загрузка…" />}
         {st === 'empty' && <EmbedMsg text="Нет данных" />}
         {st === 'error' && <EmbedMsg text="Ошибка загрузки" />}
         <ChartExportModal
