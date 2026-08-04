@@ -256,7 +256,7 @@ export default function EmbedBuffett() {
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
           {/* «?» с описанием режимов — как на сайте. Смысл режима нужен там, где
               его выбирают, а не только в справке. */}
-          <HelpTooltip sections={MODE_SECTIONS} size={15} />
+          <HelpTooltip sections={MODE_SECTIONS} size={15} float />
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={status === 'ok' && lwSeries.length > 0} />}

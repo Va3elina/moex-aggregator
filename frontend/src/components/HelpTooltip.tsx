@@ -13,6 +13,7 @@
  * коротким preview-сниппетом.
  */
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { HelpCircle, Info, X, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { MethodologyEntry } from '../data/methodology';
@@ -243,7 +244,13 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
       >
         <IconCmp size={size} strokeWidth={1.8} />
       </button>
-      {popover}
+      {/* ⚠️ В float-режиме поповер уходит ПОРТАЛОМ в body. Одного
+          position:fixed мало: панель песочницы использует backdrop-filter, а он
+          создаёт containing block — fixed становится относительным панели и
+          режется её overflow:hidden. Подсказка «открывалась», её текст был в
+          DOM, но на экране не появлялась. Тот же капкан ловили с палитрой
+          цветов (см. ColorPicker). */}
+      {float ? (popover ? createPortal(popover, document.body) : null) : popover}
     </span>
   );
 }
