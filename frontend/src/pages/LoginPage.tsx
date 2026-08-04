@@ -58,12 +58,25 @@ const PASSWORD_HINT = `Минимум ${MIN_PASSWORD_LENGTH} символов`;
  * отдают HTML-страницу — resp.json() на ней бросал «Unexpected token '<'»
  * прямо в лицо пользователю вместо человеческого текста.
  */
-async function readJsonSafe(resp: Response): Promise<unknown> {
+interface AuthTokens {
+    access_token: string;
+    refresh_token: string;
+}
+
+async function readJsonSafe(resp: Response): Promise<Partial<AuthTokens> | null> {
     try {
         return JSON.parse(await resp.text());
     } catch {
         return null;
     }
+}
+
+/** Токены из ответа. Ответ без них — сломанный, ловим здесь, а не падением ниже. */
+function requireTokens(body: Partial<AuthTokens> | null): AuthTokens {
+    if (!body?.access_token || !body?.refresh_token) {
+        throw new Error('Сервис вернул неожиданный ответ, попробуйте ещё раз');
+    }
+    return { access_token: body.access_token, refresh_token: body.refresh_token };
 }
 
 /** Осмысленный текст по одному лишь статусу — когда тела нет или оно не JSON. */
@@ -161,7 +174,7 @@ export default function LoginPage() {
                         ? 'Аккаунт создан. Слишком много попыток подряд — подождите минуту и войдите.'
                         : 'Аккаунт создан. Войдите, чтобы продолжить.');
                 }
-                await auth.login({ access_token: loginData.access_token, refresh_token: loginData.refresh_token });
+                await auth.login(requireTokens(loginData));
                 // Раньше здесь безусловно стоял '/verify-email' — и next терялся:
                 // человек, пришедший по инвайт-ссылке, регистрировался и оставался
                 // без подписки. Подтвердить почту он сможет из баннера в профиле.
@@ -170,7 +183,7 @@ export default function LoginPage() {
             }
 
             // Сохраняем токены через AuthContext (login mode)
-            await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
+            await auth.login(requireTokens(data));
             navigate(urlNext || '/');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Произошла ошибка');
