@@ -12,6 +12,7 @@ import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, C
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import FundPickerModal from '../../components/funds/FundPickerModal';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
@@ -23,9 +24,9 @@ import {
   type CbrFlowsPeriod,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { DrawerSection, ToggleRow, Checklist } from './EmbedSettings';
+import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
-import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown, ToolbarButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
@@ -137,6 +138,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // фильтре фондов у /fund-trades, #966).
   const hiddenKey = `frame:embed:funds:hidden:${category}`;
   const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
+  const [fundPickerOpen, setFundPickerOpen] = useState(false);
   useEffect(() => {
     const raw = rd(hiddenKey, '');
     setHiddenFunds(new Set(raw ? raw.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []));
@@ -328,27 +330,18 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       return next;
     });
   };
+  // Открывается ТА ЖЕ модалка, что на странице (FundPickerModal со списком
+  // FundsTable — тикер, название, СЧА, доходность), а не свой чек-лист: одно
+  // действие не должно иметь два разных вида. Модалка идёт порталом в body,
+  // поэтому не обрезается панелью песочницы.
   const fundsFilter = viewMode === 'flows' && funds.length > 1 ? (
-    <ToolbarMenuButton label="Фонды" title="Какие фонды учитывать" icon={<ListFilter size={14} />} compact={toolbarCompact}>
-      {() => (
-        <div style={{ maxWidth: 280 }}>
-          <Checklist
-            items={funds.map((f) => {
-              const on = !hiddenFunds.has(f.fund_id);
-              return {
-                id: String(f.fund_id),
-                label: f.ticker,
-                on,
-                desc: f.name,
-                // Последний видимый не выключаем; фонд вне тарифа и так без данных.
-                disabled: f.tier_locked || (on && visibleFundIds.length <= 1),
-                onToggle: () => toggleFund(f.fund_id),
-              };
-            })}
-          />
-        </div>
-      )}
-    </ToolbarMenuButton>
+    <ToolbarButton
+      label="Фонды"
+      title="Какие фонды учитывать"
+      icon={<ListFilter size={14} />}
+      compact={toolbarCompact}
+      onClick={() => setFundPickerOpen(true)}
+    />
   ) : null;
 
   const st = viewMode === 'flows' ? flowsStatus : status;
@@ -375,7 +368,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} />
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
             <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} />
-            <ToolbarMenuButton label="Фонды" icon={<ListFilter size={14} />}>{() => null}</ToolbarMenuButton>
+            <ToolbarButton label="Фонды" icon={<ListFilter size={14} />} onClick={() => {}} />
           </div>
           <PillGroup<ViewMode>
             value={viewMode}
@@ -450,6 +443,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         {st === 'loading' && !hasView && <EmbedMsg text="Загрузка…" />}
         {st === 'empty' && <EmbedMsg text="Нет данных" />}
         {st === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        {fundPickerOpen && (
+          <FundPickerModal
+            data={data?.res ?? null}
+            hiddenFunds={hiddenFunds}
+            onSetHiddenFunds={setHiddenFunds}
+            onToggleFundVisibility={toggleFund}
+            onClose={() => setFundPickerOpen(false)}
+            categoryGenitive={CATS.find((c) => c.id === category)?.genitive}
+          />
+        )}
         <ChartExportModal
           draw={draw}
           targetElement={chartBoxRef.current}
