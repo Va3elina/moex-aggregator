@@ -135,8 +135,6 @@ interface Props {
 
 export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
-  const [signalDate, setSignalDate] = useState<string | null>(null);
-  const [intradayDate, setIntradayDate] = useState<string | null>(null);  // свежайший интрадей-бар
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
@@ -161,7 +159,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     setRows(null);
     setError(false);
     getOiScreener(clgroup, horizon)
-      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setIntradayDate(r.intraday_date); setMinPart(r.min_part); } })
+      .then((r) => { if (!cancelled) { setRows(r.rows); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [clgroup, horizon]);
