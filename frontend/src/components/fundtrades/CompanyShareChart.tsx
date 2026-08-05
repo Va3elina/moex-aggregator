@@ -254,8 +254,11 @@ export default function CompanyShareChart({
 
     // Координаты в СВОЁМ viewBox 0..1000 каждой панели.
     const slotX = (mi: number, frac = 0.5) => ((mi - visStart + frac) / visCount) * 1000;
+    // Верхний зазор панели цены задан в px снаружи (--chart-pad-top), поэтому
+    // здесь верхний тик стоит на 0: иначе inset задваивался бы и грид-линия
+    // уезжала ниже, чем в OI.
     const priceY = (close: number) =>
-        (0.05 + (1 - (close - priceLo) / (priceHi - priceLo)) * 0.9) * 1000;
+        ((1 - (close - priceLo) / (priceHi - priceLo)) * 0.95) * 1000;
     const shareY = (v: number) => (1 - v / shareMax) * 1000;
 
     // Линия цены: недели видимых месяцев, дробно внутри слотов.
@@ -349,8 +352,8 @@ export default function CompanyShareChart({
     // уровне карточки, а обёртка — вложенный .chart-reveal) здесь НЕЛЬЗЯ:
     // это двойной учёт, из-за него пилюля уезжала вниз и вправо от курсора.
     //
-    // topLineY — верхняя грид-линия ПЕРВОЙ панели (цена 5% высоты своего
-    // viewBox; без цены — верхний тик доли 10.7%). Контракт тот же, что в
+    // topLineY — верхняя грид-линия ПЕРВОЙ панели (цена — на самом верху
+    // своего viewBox; без цены — верхний тик доли 10.7%). Контракт тот же, что в
     // «Силе рынка»: низ пилюли = topLineY + PILL_GAP_ABOVE_LINE, а тултип
     // клампится в коридор от этой линии до полосы X-подписей.
     const overlayGeom = (() => {
@@ -362,7 +365,7 @@ export default function CompanyShareChart({
         return {
             plotLeft: svgRect.left - wrapRect.left,
             plotWidth: svgRect.width,
-            topLineY: (svgRect.top - wrapRect.top) + (hasPrice ? 0.05 : 0.107) * svgRect.height,
+            topLineY: (svgRect.top - wrapRect.top) + (hasPrice ? 0 : 0.107) * svgRect.height,
         };
     })();
 
@@ -496,7 +499,10 @@ export default function CompanyShareChart({
                                 />
                             </div>
                             <div className="relative" style={{ height: topH }}>
-                                <div className="absolute inset-y-0" style={{ left: padArea.left, right: padArea.right }}>
+                                {/* Верхний inset — в px (--chart-pad-top), не в процентах
+                                    высоты: только так верхняя грид-линия встаёт на том же
+                                    расстоянии от легенды, что в OI, на любой высоте панели. */}
+                                <div className="absolute" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, left: padArea.left, right: padArea.right }}>
                                     <svg ref={priceSvgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
                                         {priceTicks.map((p, i) => (
                                             <line key={`pg-${i}`} x1="0" y1={priceY(p)} x2="1000" y2={priceY(p)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -515,8 +521,9 @@ export default function CompanyShareChart({
                                         {hoveredMi !== null && crosshair(hoveredMi)}
                                     </svg>
                                 </div>
-                                {/* Ось Y цены — справа. */}
-                                <div className="absolute inset-y-0 pointer-events-none" style={{ right: 0, width: padArea.right }}>
+                                {/* Ось Y цены — справа. Тот же верхний inset, что у
+                                    плота, иначе подписи разъедутся с грид-линиями. */}
+                                <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, right: 0, width: padArea.right }}>
                                     {priceTicks.map((p, i) => (
                                         <div key={`pl-${i}`} className="absolute" style={{ top: `${priceY(p) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
                                             <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
