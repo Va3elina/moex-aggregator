@@ -17,7 +17,7 @@
  * сообщала, а само число уже читается как кратность.
  *
  * Тулбар: Физлица/Юрлица (SegmentedControl — паритет с вкладкой графика),
- * Категории — Dropdown, ★ Избранные со счётчиком, справа — свежесть данных.
+ * Категории — Dropdown, ★ Избранные со счётчиком.
  * Порога ≥2×/3×/5× нет: лента всегда отсортирована по силе (резкие сверху,
  * тихие приглушены). Сортировки по перекосу тоже нет — «где стоят» это не
  * повод для ранжирования ленты СОБЫТИЙ, для этого есть вкладка графика.
@@ -135,8 +135,6 @@ interface Props {
 
 export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
-  const [signalDate, setSignalDate] = useState<string | null>(null);
-  const [intradayDate, setIntradayDate] = useState<string | null>(null);  // свежайший интрадей-бар
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
@@ -161,7 +159,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     setRows(null);
     setError(false);
     getOiScreener(clgroup, horizon)
-      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setIntradayDate(r.intraday_date); setMinPart(r.min_part); } })
+      .then((r) => { if (!cancelled) { setRows(r.rows); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [clgroup, horizon]);
@@ -223,16 +221,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       ratioHi: sharpRatios.length ? Math.max(...sharpRatios) : null,
     };
   }, [visible]);
-
-  const _fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-  // Честная свежесть: дневные данные T+1 (signal_date) + свежий интрадей-бар
-  // (intraday_date, если новее дневной свечи). Раньше метка = только дневная
-  // («3 июля»), а значения — интрадей (6-е) → это вводило в заблуждение.
-  const dateLabel = signalDate
-    ? (intradayDate && intradayDate > signalDate
-        ? `дневные за ${_fmtD(signalDate)} · интрадей за ${_fmtD(intradayDate)}`
-        : `по данным за ${_fmtD(signalDate)}`)
-    : null;
 
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
@@ -475,8 +463,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </div>
       )}
 
-      {/* Тулбар: группа · Категории ▾ · ★ Избранные, справа — свежесть данных
-          (перенесена из футера: это первое, что нужно знать про ленту).
+      {/* Тулбар: группа · Категории ▾ · ★ Избранные.
           Порога ≥N× и выбора сортировки нет — лента всегда по силе. */}
       <div data-tour="screener-toolbar" className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
         <SegmentedControl<Clgroup>
@@ -532,13 +519,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             </span>
           )}
         </button>
-        {/* Свежесть данных — честная метка (дневные T+1 + интрадей, если новее) */}
-        {dateLabel && (
-          <span className="ml-auto inline-flex items-center" style={{ gap: 7, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--oi-green)', flexShrink: 0 }} />
-            {dateLabel}
-          </span>
-        )}
       </div>
 
       {/* Таблица */}
@@ -579,7 +559,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 {onlyFav ? 'Среди избранных активов пусто' : 'Нет активов по фильтру'}
               </div>
               <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                Попробуйте снять фильтры{dateLabel ? ` · ${dateLabel}` : ''}
+                Попробуйте снять фильтры
               </div>
             </div>
           )}
