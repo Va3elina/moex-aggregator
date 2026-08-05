@@ -366,9 +366,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
               onChange={(v) => setViewMode(v)}
             />
             <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} />
+            <ToolbarButton label="Фонды" icon={<ListFilter size={14} />} onClick={() => {}} />
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
             <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} />
-            <ToolbarButton label="Фонды" icon={<ListFilter size={14} />} onClick={() => {}} />
           </div>
           <PillGroup<ViewMode>
             value={viewMode}
@@ -377,13 +377,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             compact={toolbarCompact}
           />
           <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} compact={toolbarCompact} />
+          {/* «Фонды» стоит сразу за категорией: это уточнение того же выбора —
+              сначала какая категория, потом какие из её фондов. Шаг столбца и
+              период — про ось времени, они правее. */}
+          {fundsFilter}
           {viewMode === 'flows' && (
             <>
               <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} compact={toolbarCompact} />
               <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} compact={toolbarCompact} />
             </>
           )}
-          {fundsFilter}
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={showChart} />}
