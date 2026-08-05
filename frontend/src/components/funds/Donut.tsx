@@ -12,6 +12,10 @@ interface DonutProps {
     // Реальное число позиций фонда для центра (а не число отрисованных слайсов).
     // Тайл передаёт [топ-10, Прочее] → segmentCount был бы 11; centerCount фиксит это.
     centerCount?: number;
+    // Кастомный центр вместо «N позиций»: подпись + значение (напр. «СЧА» / «12,3 млрд ₽»).
+    // Показывается, когда никакой сектор не наведён.
+    centerLabel?: string;
+    centerValue?: string;
     colors?: string[];      // default DONUT_COLORS из fundConfig
     // Опц. клик по сектору. index — позиция отрисованного слайса (= holdings, если
     // maxSlices >= holdings.length). Включает cursor:pointer.
@@ -37,6 +41,8 @@ export default function Donut({
     maxSlices = 10,
     showCenterText = true,
     centerCount,
+    centerLabel,
+    centerValue,
     colors = DONUT_COLORS,
     onSliceClick,
     highlightIndex = null,
@@ -122,7 +128,19 @@ export default function Donut({
                     );
                 })}
             </g>
-            {showCenterText && active == null && (
+            {showCenterText && active == null && centerValue && (
+                <>
+                    <text x="100" y="95" textAnchor="middle" fill="var(--text-muted)" fontSize={cf(11)}
+                        fontWeight="700" letterSpacing={cf(0.6)}>
+                        {(centerLabel ?? '').toUpperCase()}
+                    </text>
+                    <text x="100" y="116" textAnchor="middle" fill="var(--text-primary)" fontSize={cf(18)} fontWeight="bold"
+                        style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {centerValue}
+                    </text>
+                </>
+            )}
+            {showCenterText && active == null && !centerValue && (
                 <>
                     <text x="100" y="95" textAnchor="middle" fill="var(--text-primary)" fontSize={cf(19)} fontWeight="bold">
                         {centerCount ?? segmentCount}

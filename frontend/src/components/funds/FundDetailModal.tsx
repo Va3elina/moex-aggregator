@@ -103,13 +103,6 @@ function fmtVolShort(v: number): string {
     return `${Math.round(v / 1e3)} тыс`;
 }
 
-// Δ доли в процентных пунктах: «+0.42 п.п.» / «−1.10 п.п.».
-function fmtDeltaPp(v: number | null): string {
-    if (v == null) return '—';
-    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    return `${sign}${Math.abs(v).toFixed(2)} п.п.`;
-}
-
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру; ОФЗ — иконка RB;
 // иначе цветной круг (тот же фолбэк, что в таблице состава раньше).
 function HoldingLogo({ name, isin, idx, size }: { name: string; isin: string | null; idx: number; size: number }) {
@@ -124,35 +117,14 @@ function HoldingLogo({ name, isin, idx, size }: { name: string; isin: string | n
     );
 }
 
-// Бейджи изменений состава: «новая/продана» — залитые (событие), «докупили/
-// сократили» — контурные (продолжение позиции). Цвет = знак движения.
-const CHANGE_META: Record<string, { label: string; color: string; filled?: boolean }> = {
-    new:         { label: 'Новая',     color: 'var(--funds-flow-positive)', filled: true },
-    accumulated: { label: 'Докупили',  color: 'var(--funds-flow-positive)' },
-    reduced:     { label: 'Сократили', color: 'var(--funds-flow-negative)' },
-    sold_out:    { label: 'Продана',   color: 'var(--funds-flow-negative)', filled: true },
+// Тип изменения состава — теперь только подпись в тултипе строки (бейджи ушли
+// вместе с редизайном раздела под «Сделки» из «Общего портфеля»).
+const CHANGE_META: Record<string, { label: string }> = {
+    new:         { label: 'Новая' },
+    accumulated: { label: 'Докупили' },
+    reduced:     { label: 'Сократили' },
+    sold_out:    { label: 'Продана' },
 };
-
-function ChangeBadge({ type }: { type: string }) {
-    const meta = CHANGE_META[type];
-    if (!meta) return null;
-    return (
-        <span style={{
-            display: 'inline-block',
-            padding: '2px 8px',
-            borderRadius: 999,
-            fontSize: 'var(--fs-2xs)',
-            fontWeight: 800,
-            letterSpacing: '0.02em',
-            whiteSpace: 'nowrap',
-            border: `1.5px solid ${meta.color}`,
-            background: meta.filled ? meta.color : 'transparent',
-            color: meta.filled ? '#fff' : meta.color,
-        }}>
-            {meta.label}
-        </span>
-    );
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Сплит-коррекция позиций (используется AssetHistoryContent)
@@ -330,6 +302,9 @@ export default function FundDetailModal({
         | (FundTradesDetail['fund'] & { nav_rub?: number | null; has_distributions?: boolean })
         | undefined;
     const navValue = detailFund?.nav_rub ?? navRub ?? null;
+    // СЧА показываем в центре пончика состава, если пончик вообще есть. Иначе
+    // (базовая карточка / состав не публикуется) — блоком в шапке карточки.
+    const navInDonut = enableDrilldown && navValue != null && (data?.current_holdings.length ?? 0) > 0;
     // Мобильная адаптация. Модал шарится с десктопом («Деньги в фондах»),
     // поэтому размеры реактивные: на мобиле пончик ужимаем под ширину экрана
     // (иначе size:380 вылезал за правый край), график ниже, паддинги меньше,
@@ -425,8 +400,12 @@ export default function FundDetailModal({
                     {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
                     {data && !loading && (
                         <>
-                            {/* (2) Объём — полная СЧА (AUM) крупно */}
+                            {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
+                                значение переехало в его центр, здесь остаётся только
+                                дата состава. */}
                             <div style={{ marginBottom: 20 }}>
+                                {!navInDonut && (
+                                <>
                                 <div
                                     style={{
                                         fontSize: 'var(--fs-2xs)',
@@ -450,6 +429,8 @@ export default function FundDetailModal({
                                 >
                                     {navValue != null ? formatRubShort(navValue) : '—'}
                                 </div>
+                                </>
+                                )}
                                 {data.current_snapshot_date && (
                                     <div
                                         style={{
@@ -680,6 +661,8 @@ export default function FundDetailModal({
                                                     colors={donutColors}
                                                     maxSlices={donutHoldings.length}
                                                     centerCount={data.current_holdings.length}
+                                                    centerLabel={navInDonut ? 'Объём (СЧА)' : undefined}
+                                                    centerValue={navInDonut ? formatRubShort(navValue) : undefined}
                                                     size={isMobile ? Math.min(330, vw - 80) : 380}
                                                     outerRadius={90}
                                                     innerRadius={56}
@@ -793,17 +776,84 @@ export default function FundDetailModal({
                                         accumulated/reduced — контурные. Клик по строке —
                                         тот же drill-down в бумагу. */}
                                     {data.diff.length > 0 && data.previous_snapshot_date && data.current_snapshot_date && (() => {
-                                        const DIFF_PREVIEW = 10;
-                                        const shownDiff = showAllDiff ? data.diff : data.diff.slice(0, DIFF_PREVIEW);
-                                        const chips = [
-                                            { key: 'new', label: 'Новые', color: 'var(--funds-flow-positive)' },
-                                            { key: 'accumulated', label: 'Докупили', color: 'var(--funds-flow-positive)' },
-                                            { key: 'reduced', label: 'Сократили', color: 'var(--funds-flow-negative)' },
-                                            { key: 'sold_out', label: 'Вышли', color: 'var(--funds-flow-negative)' },
-                                        ].filter((c) => (data.summary as Record<string, number>)[c.key] > 0);
-                                        const diffGrid = isMobile
-                                            ? '24px minmax(0, 1fr) 88px 78px'
-                                            : '30px minmax(140px, 1fr) 110px 96px';
+                                        // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
+                                        // две секции с нейтральными полосами и величиной справа, единица
+                                        // (п.п.) — в подписи секции. Отличие: секции стоят не стопкой,
+                                        // а колонками — покупки слева, продажи справа. Масштаб полос общий
+                                        // по обеим колонкам, чтобы покупки и продажи сравнивались.
+                                        const DIFF_PREVIEW = 8;
+                                        const dw = (d: typeof data.diff[number]) => d.delta_weight ?? 0;
+                                        const byAbs = (a: typeof data.diff[number], b: typeof data.diff[number]) => Math.abs(dw(b)) - Math.abs(dw(a));
+                                        const buys = data.diff.filter((d) => dw(d) > 0 || d.change_type === 'new').sort(byAbs);
+                                        const sells = data.diff.filter((d) => dw(d) < 0 || d.change_type === 'sold_out').sort(byAbs);
+                                        const maxAbs = Math.max(0.0001, ...data.diff.map((d) => Math.abs(dw(d))));
+                                        const rowGrid = isMobile
+                                            ? '24px minmax(40px, 1fr) minmax(24px, 0.7fr) max-content'
+                                            : '30px minmax(60px, 1fr) minmax(28px, 0.9fr) max-content';
+                                        const sectionLabel = (text: string, up: boolean) => (
+                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: '0 0 4px' }}>
+                                                {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
+                                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>(п.п.)</span>
+                                            </div>
+                                        );
+                                        const diffRow = (d: typeof data.diff[number], i: number, last: boolean) => {
+                                            const delta = d.delta_weight;
+                                            const pct = Math.max(2, (Math.abs(delta ?? 0) / maxAbs) * 100);
+                                            const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
+                                            const meta = CHANGE_META[d.change_type];
+                                            const isEvent = d.change_type === 'new' || d.change_type === 'sold_out';
+                                            return (
+                                                <div
+                                                    key={`${d.asset_name}|${d.isin ?? ''}`}
+                                                    onClick={openDiffAsset}
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
+                                                    title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}${meta ? ` · ${meta.label}` : ''}`}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: rowGrid,
+                                                        gap: 10,
+                                                        alignItems: 'center',
+                                                        padding: '7px 6px',
+                                                        margin: '0 -6px',
+                                                        borderRadius: 8,
+                                                        cursor: 'pointer',
+                                                        borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                        transition: 'background 0.12s ease',
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                                >
+                                                    <HoldingLogo name={d.asset_name} isin={d.isin ?? null} idx={i} size={isMobile ? 24 : 30} />
+                                                    <span style={{ minWidth: 0, fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
+                                                        {fundAssetName(d.asset_name, d.isin ?? null)}
+                                                    </span>
+                                                    {/* Полоса нейтральная — направление задаёт колонка. Вход/выход
+                                                        из бумаги (событие) заливаем плотнее, чем докупку/сокращение. */}
+                                                    <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                                                        <div style={{ width: `${pct}%`, height: '100%', background: `color-mix(in srgb, var(--text-primary) ${isEvent ? 55 : 32}%, transparent)`, borderRadius: 5 }} />
+                                                    </div>
+                                                    <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                        {delta == null ? '—' : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`}
+                                                    </span>
+                                                </div>
+                                            );
+                                        };
+                                        const column = (items: typeof data.diff, label: string, up: boolean) => {
+                                            const shown = showAllDiff ? items : items.slice(0, DIFF_PREVIEW);
+                                            return (
+                                                <div style={{ minWidth: 0 }}>
+                                                    {sectionLabel(label, up)}
+                                                    {shown.length === 0 ? (
+                                                        <div style={{ padding: '10px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+                                                            Ничего {up ? 'не купили' : 'не продали'}
+                                                        </div>
+                                                    ) : shown.map((d, i) => diffRow(d, i, i === shown.length - 1))}
+                                                </div>
+                                            );
+                                        };
+                                        const hiddenCount = Math.max(0, buys.length - DIFF_PREVIEW) + Math.max(0, sells.length - DIFF_PREVIEW);
                                         return (
                                             <div style={{ marginTop: 28 }}>
                                                 <h3
@@ -816,70 +866,20 @@ export default function FundDetailModal({
                                                 >
                                                     Что купили и продали
                                                 </h3>
-                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
                                                     Изменения состава: {formatSnapshotDate(data.previous_snapshot_date)} → {formatSnapshotDate(data.current_snapshot_date)} (месячные срезы)
                                                 </div>
-                                                {chips.length > 0 && (
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                                                        {chips.map((c) => (
-                                                            <span key={c.key} style={{
-                                                                display: 'inline-flex', alignItems: 'center', gap: 6,
-                                                                padding: '4px 10px', borderRadius: 999,
-                                                                border: '1.5px solid var(--text-primary)',
-                                                                fontSize: 'var(--fs-2xs)', fontWeight: 700,
-                                                                color: 'var(--text-primary)', whiteSpace: 'nowrap',
-                                                                fontVariantNumeric: 'tabular-nums',
-                                                            }}>
-                                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                                                                {c.label} · {(data.summary as Record<string, number>)[c.key]}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {shownDiff.map((d, i) => {
-                                                    const delta = d.delta_weight;
-                                                    const dColor = delta == null || delta === 0
-                                                        ? 'var(--text-muted)'
-                                                        : delta > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
-                                                    const last = i === shownDiff.length - 1;
-                                                    const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
-                                                    return (
-                                                        <div
-                                                            key={`${d.asset_name}|${d.isin ?? ''}`}
-                                                            onClick={openDiffAsset}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
-                                                            title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}`}
-                                                            style={{
-                                                                display: 'grid',
-                                                                gridTemplateColumns: diffGrid,
-                                                                gap: 10,
-                                                                alignItems: 'center',
-                                                                padding: '6px 8px',
-                                                                margin: '0 -8px',
-                                                                borderRadius: 8,
-                                                                cursor: 'pointer',
-                                                                borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                                                transition: 'background 0.12s ease',
-                                                            }}
-                                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; }}
-                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                                                        >
-                                                            <HoldingLogo name={d.asset_name} isin={d.isin ?? null} idx={i} size={isMobile ? 24 : 30} />
-                                                            <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>
-                                                                {fundAssetName(d.asset_name, d.isin ?? null)}
-                                                            </span>
-                                                            <span style={{ textAlign: 'right' }}>
-                                                                <ChangeBadge type={d.change_type} />
-                                                            </span>
-                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: dColor, whiteSpace: 'nowrap' }}>
-                                                                {fmtDeltaPp(delta)}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {data.diff.length > DIFF_PREVIEW && (
+                                                {/* Покупки слева, продажи справа. На мобиле — стопкой. */}
+                                                <div style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                                                    gap: isMobile ? 18 : 28,
+                                                    alignItems: 'start',
+                                                }}>
+                                                    {column(buys, 'Покупки', true)}
+                                                    {column(sells, 'Продажи', false)}
+                                                </div>
+                                                {hiddenCount > 0 && (
                                                     <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
                                                         <button
                                                             onClick={() => setShowAllDiff((v) => !v)}
@@ -889,7 +889,7 @@ export default function FundDetailModal({
                                                         >
                                                             {showAllDiff
                                                                 ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
-                                                                : <>Все изменения · ещё {data.diff.length - DIFF_PREVIEW} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                                : <>Все изменения · ещё {hiddenCount} <span style={{ fontSize: '0.85em' }}>↓</span></>}
                                                         </button>
                                                     </div>
                                                 )}
