@@ -594,7 +594,11 @@ export default function CompanyFlowsPriceMap({
                             const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                             const extra = hoverBreakdown.rows.length - shown.length;
                             return (
-                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
+                                // Вертикальный padding поднят до --sp-2: у карточки
+                                // с шапкой дефолтный --sp-1 прижимал строку цены к
+                                // верхней грани, и она читалась криво — снизу от неё
+                                // до разделителя было вдвое больше воздуха.
+                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)} cardStyle={{ padding: 'var(--sp-2)' }}>
                                     {price != null && (
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}

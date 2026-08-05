@@ -615,12 +615,16 @@ export default function CompanyShareChart({
                         const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                         const extra = hoverBreakdown.rows.length - shown.length;
                         const net = hoverBreakdown.net;
+                        // cardStyle: вертикальный padding поднят до --sp-2 — у
+                        // карточки с шапкой-ценой дефолтный --sp-1 прижимал первую
+                        // строку к верхней грани.
                         return (
                             <ChartTooltip
                                 x={tooltipPos.x}
                                 y={tooltipPos.y}
                                 clampTop={overlayGeom?.topLineY ?? cssVar('--chart-pad-top', 14)}
                                 clampBottom={XLABEL_H}
+                                cardStyle={{ padding: 'var(--sp-2)' }}
                             >
                                 {/* Цена — первой строкой, с точкой цвета линии:
                                     это единственная строка про бумагу, всё
