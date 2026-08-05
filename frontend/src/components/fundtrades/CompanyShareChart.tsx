@@ -70,8 +70,6 @@ interface CompanyShareChartProps {
     months: string[];
     /** Серии по фондам (уже отфильтрованные пикером), выровнено с months. */
     funds: CompanyShareFundSeries[];
-    /** Нетто-сделки месяца по тем же фондам, млн ₽ (для строки тултипа). */
-    netFlowMln: (number | null)[];
     /** ISO-даты понедельников недель, ASC — вся история цены. */
     weeks: string[];
     /** Недельные закрытия, выровнено с weeks. */
@@ -95,15 +93,6 @@ function fmtPct(v: number): string {
     return `${v.toLocaleString('ru-RU', { maximumFractionDigits: d })}%`;
 }
 
-function fmtMlnNumber(abs: number): string {
-    return abs >= 10 ? Math.round(abs).toLocaleString('ru-RU') : abs.toFixed(1);
-}
-
-function fmtFlow(v: number): string {
-    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    return `${sign}${fmtMlnNumber(Math.abs(v))} млн ₽`;
-}
-
 function fmtPrice(v: number): string {
     if (v >= 1000) return Math.round(v).toLocaleString('ru-RU');
     if (v >= 100) return v.toFixed(1);
@@ -118,7 +107,6 @@ function monthLabel(m: string): string {
 export default function CompanyShareChart({
     months: monthsAll,
     funds: fundsAll,
-    netFlowMln: netAll,
     weeks: weeksAll,
     closes: closesAll,
     shareMode,
@@ -164,7 +152,6 @@ export default function CompanyShareChart({
 
     const months = useMemo(() => monthsAll.slice(trimStart), [monthsAll, trimStart]);
     const shareVals = useMemo(() => shareValsAll.slice(trimStart), [shareValsAll, trimStart]);
-    const netFlow = useMemo(() => netAll.slice(trimStart), [netAll, trimStart]);
     const funds = useMemo(
         () => fundsAll.map(f => ({
             ...f,
@@ -389,8 +376,8 @@ export default function CompanyShareChart({
             })
             .filter((r): r is { label: string; color: string; w: number } => r != null)
             .sort((a, b) => b.w - a.w);
-        return { rows, share: shareVals[hoveredMi], net: netFlow[hoveredMi] };
-    }, [hoveredMi, funds, shareVals, netFlow]);
+        return { rows, share: shareVals[hoveredMi] };
+    }, [hoveredMi, funds, shareVals]);
 
     // Цена hovered месяца — последнее закрытие месяца, то же значение, что
     // рисует превью навигатора. Первой строкой тултипа: доля без ценового
@@ -618,7 +605,6 @@ export default function CompanyShareChart({
                         const MAX_ROWS = 6;
                         const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                         const extra = hoverBreakdown.rows.length - shown.length;
-                        const net = hoverBreakdown.net;
                         // cardStyle: вертикальный padding поднят до --sp-2 — у
                         // карточки с шапкой-ценой дефолтный --sp-1 прижимал первую
                         // строку к верхней грани.
@@ -630,11 +616,12 @@ export default function CompanyShareChart({
                                 clampBottom={XLABEL_H}
                                 cardStyle={{ padding: 'var(--sp-2)' }}
                             >
-                                {/* Цена — первой строкой, с точкой цвета линии:
-                                    это единственная строка про бумагу, всё
-                                    остальное ниже разделителя про фонды. */}
-                                {hoverPrice != null && (
-                                    <div style={{ marginBottom: 'var(--sp-1)', paddingBottom: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)' }}>
+                                {/* Шапка: цена бумаги и итоговая доля — две строки
+                                    одного веса, каждая со своей точкой цвета своей
+                                    серии (линия цены / бары долей). Ниже разделителя
+                                    всё про отдельные фонды. */}
+                                <div style={{ marginBottom: 'var(--sp-1)', paddingBottom: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)' }}>
+                                    {hoverPrice != null && (
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
                                             label={assetName || 'Цена'}
@@ -643,29 +630,20 @@ export default function CompanyShareChart({
                                             labelColor="var(--text-primary)"
                                             valueColor="var(--text-primary)"
                                         />
-                                    </div>
-                                )}
-                                <TooltipRow
-                                    hideDot
-                                    color={BAR_COLOR}
-                                    label={shareModeLabel}
-                                    value={fmtPct(hoverBreakdown.share)}
-                                    labelClass="font-bold"
-                                    labelColor="var(--text-primary)"
-                                />
-                                {net != null && Math.abs(net) >= 0.05 && (
+                                    )}
                                     <TooltipRow
-                                        hideDot
-                                        color={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
-                                        label="Сделки за месяц"
-                                        value={fmtFlow(net)}
-                                        labelClass="font-semibold"
-                                        labelColor="var(--axis-color, #9CA3B8)"
-                                        valueColor={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
+                                        color={BAR_COLOR}
+                                        label={shareModeLabel}
+                                        value={fmtPct(hoverBreakdown.share)}
+                                        labelClass="font-bold"
+                                        labelColor="var(--text-primary)"
+                                        valueColor="var(--text-primary)"
                                     />
-                                )}
+                                </div>
                                 {shown.length > 0 && (
-                                    <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
+                                    // Своего разделителя у блока фондов нет — его
+                                    // отрезает разделитель шапки прямо над ним.
+                                    <div>
                                         {shown.map((r, i) => (
                                             <TooltipRow
                                                 key={i}
