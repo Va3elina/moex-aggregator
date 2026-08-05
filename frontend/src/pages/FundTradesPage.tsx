@@ -53,13 +53,12 @@ import ChartTabs from '../components/ChartTabs';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../config/fundConfig';
+import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import InstrumentIcon from '../components/InstrumentIcon';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
-import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import PortfolioFundPicker, { defaultPortfolioTickers } from '../components/fundtrades/PortfolioFundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
@@ -260,8 +259,6 @@ export default function FundTradesPage() {
         if ((portfolioMoversPeriod as string) === '3y') setPortfolioMoversPeriod('1y');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
-    const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
     // Hover-связь пончик↔список на плитке. Ключуем по fund_id (карточки в map, своего
     // state у каждой нет) + индекс слайса. Наведение на сектор/строку подсвечивает обоих.
     const [tileHover, setTileHover] = useState<{ fund: number; idx: number } | null>(null);
@@ -445,30 +442,6 @@ export default function FundTradesPage() {
             .finally(() => setPortfolioMoversLoading(false));
     }, [tab, portfolioFundsParam, portfolioMoversPeriod, portfolioMoversRange?.from, portfolioMoversRange?.to, funds.length, common.fund_trades_access]);
 
-    // Уникальные УК из загруженных фондов — список для UkMultiSelect на вкладке
-    // «Состав фондов». Ключ — uk_id (стабильнее имени), name — uk-имя из
-    // UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
-    const ukOptions = useMemo<UkOption[]>(() => {
-        const map = new Map<string, UkOption>();
-        const count = new Map<string, number>();
-        for (const f of funds) {
-            const key = ukKey(f);
-            if (!key) continue;
-            count.set(key, (count.get(key) ?? 0) + 1);
-            if (map.has(key)) continue;
-            map.set(key, {
-                key,
-                name: UK_LOGOS[key]?.name || f.uk || key,
-                uk_id: f.uk_id ?? key,
-            });
-        }
-        // Порядок: УК с наибольшим числом фондов сверху, при равенстве — по имени.
-        return Array.from(map.values()).sort((a, b) => {
-            const d = (count.get(b.key) ?? 0) - (count.get(a.key) ?? 0);
-            return d !== 0 ? d : a.name.localeCompare(b.name);
-        });
-    }, [funds]);
-
     // Все whitelist-фонды для FundPicker (multi) — вкладки «Сделки фондов» и
     // «Общий портфель». FundPicker сам группирует по УК; передаём минимум полей
     // ({ticker, name, uk, uk_id}).
@@ -478,13 +451,8 @@ export default function FundTradesPage() {
     );
 
     const fundsByCategory = useMemo(() => {
-        // E: combinable AND-фильтры — сначала фильтр по УК, потом группировка+сортировка.
-        const filtered = selectedUks.size > 0
-            ? funds.filter((f) => selectedUks.has(ukKey(f)))
-            : funds;
-
         const groups: Record<string, FundWithHistory[]> = {};
-        for (const f of filtered) {
+        for (const f of funds) {
             // Авторские (блогерские) фонды — отдельной группой, остальные по категории
             const key = f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
             if (!groups[key]) groups[key] = [];
@@ -502,7 +470,7 @@ export default function FundTradesPage() {
         };
         for (const k of Object.keys(groups)) groups[k] = [...groups[k]].sort(cmp);
         return groups;
-    }, [funds, fundSort, returnPeriod, selectedUks]);
+    }, [funds, fundSort, returnPeriod]);
 
     // (A) Колонки сетки плиток по ширине вьюпорта: ≥1024 → 3, ≥640 → 2, иначе 1.
     const vw = useViewportWidth();
@@ -596,14 +564,6 @@ export default function FundTradesPage() {
                                 value={returnPeriod}
                                 onChange={setReturnPeriod}
                             />
-                            {ukOptions.length > 1 && (
-                                <UkMultiSelect
-                                    options={ukOptions}
-                                    selected={selectedUks}
-                                    onChange={setSelectedUks}
-                                    size="md"
-                                />
-                            )}
                         </div>
                     )}
                     {/* Сетка карточек лежит прямо на editorial-frame — без

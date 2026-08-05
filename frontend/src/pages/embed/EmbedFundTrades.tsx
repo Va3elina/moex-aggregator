@@ -33,7 +33,6 @@ import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
-import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import Donut from '../../components/funds/Donut';
@@ -43,7 +42,7 @@ import {
   formatReturnPct,
   returnColor,
 } from '../../components/funds/FundDetailModal';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
+import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type EmbedTab = 'movers' | 'snapshots' | 'funds' | 'company';
@@ -67,12 +66,6 @@ function formatMonthYear(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return `${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-// Стабильный ключ УК: uk_id, иначе имя.
-function ukKey(f: { uk_id?: number | string | null; uk?: string | null }): string {
-  if (f.uk_id != null && f.uk_id !== '') return String(f.uk_id);
-  return f.uk || '';
 }
 
 // ─────────────────────────────── shared bits ───────────────────────────────
@@ -290,21 +283,9 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
 
   // ── funds tab state ──
   const [fundSort, setFundSort] = useState<'return' | 'volume' | 'name'>(() => rd('frame:embed:fundtrades:fundSort', 'return') as 'return' | 'volume' | 'name');
-  const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
   useEffect(() => { wr('frame:embed:fundtrades:fundSort', fundSort); }, [fundSort]);
 
-  const ukOptions = useMemo<UkOption[]>(() => {
-    const map = new Map<string, UkOption>();
-    for (const f of funds) {
-      const key = ukKey(f);
-      if (!key || map.has(key)) continue;
-      map.set(key, { key, name: UK_LOGOS[key]?.name || f.uk || key, uk_id: f.uk_id ?? key });
-    }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [funds]);
-
   const sortedFunds = useMemo(() => {
-    const filtered = selectedUks.size > 0 ? funds.filter((f) => selectedUks.has(ukKey(f))) : funds;
     const cmp = (a: FundWithHistory, b: FundWithHistory): number => {
       if (fundSort === 'name') return a.ticker.localeCompare(b.ticker);
       const av = fundSort === 'return' ? (a.returns?.y1 ?? null) : a.nav_rub;
@@ -314,8 +295,8 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       if (bv == null) return -1;
       return bv - av;
     };
-    return [...filtered].sort(cmp);
-  }, [funds, fundSort, selectedUks]);
+    return [...funds].sort(cmp);
+  }, [funds, fundSort]);
 
   // ── «ещё» (⚙) для movers: период 1М/6М/1Г теперь в шапке самой панели
   // (её onPeriodChange) — как на сайте; в ⚙ остаётся только фильтр фондов. ──
@@ -333,11 +314,6 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
           onChange={setFundSort}
         />
       </DrawerSection>
-      {ukOptions.length > 1 && (
-        <DrawerSection label="Управляющая компания">
-          <UkMultiSelect options={ukOptions} selected={selectedUks} onChange={setSelectedUks} size="md" />
-        </DrawerSection>
-      )}
     </>
   );
   const more: ReactNode =
