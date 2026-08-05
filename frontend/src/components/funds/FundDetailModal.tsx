@@ -330,6 +330,9 @@ export default function FundDetailModal({
         | (FundTradesDetail['fund'] & { nav_rub?: number | null; has_distributions?: boolean })
         | undefined;
     const navValue = detailFund?.nav_rub ?? navRub ?? null;
+    // СЧА показываем в центре пончика состава, если пончик вообще есть. Иначе
+    // (базовая карточка / состав не публикуется) — блоком в шапке карточки.
+    const navInDonut = enableDrilldown && navValue != null && (data?.current_holdings.length ?? 0) > 0;
     // Мобильная адаптация. Модал шарится с десктопом («Деньги в фондах»),
     // поэтому размеры реактивные: на мобиле пончик ужимаем под ширину экрана
     // (иначе size:380 вылезал за правый край), график ниже, паддинги меньше,
@@ -425,8 +428,12 @@ export default function FundDetailModal({
                     {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
                     {data && !loading && (
                         <>
-                            {/* (2) Объём — полная СЧА (AUM) крупно */}
+                            {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
+                                значение переехало в его центр, здесь остаётся только
+                                дата состава. */}
                             <div style={{ marginBottom: 20 }}>
+                                {!navInDonut && (
+                                <>
                                 <div
                                     style={{
                                         fontSize: 'var(--fs-2xs)',
@@ -450,6 +457,8 @@ export default function FundDetailModal({
                                 >
                                     {navValue != null ? formatRubShort(navValue) : '—'}
                                 </div>
+                                </>
+                                )}
                                 {data.current_snapshot_date && (
                                     <div
                                         style={{
@@ -680,6 +689,8 @@ export default function FundDetailModal({
                                                     colors={donutColors}
                                                     maxSlices={donutHoldings.length}
                                                     centerCount={data.current_holdings.length}
+                                                    centerLabel={navInDonut ? 'Объём (СЧА)' : undefined}
+                                                    centerValue={navInDonut ? formatRubShort(navValue) : undefined}
                                                     size={isMobile ? Math.min(330, vw - 80) : 380}
                                                     outerRadius={90}
                                                     innerRadius={56}
