@@ -43,7 +43,6 @@ import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill } from '../chart';
-import { computeChartTopLineY } from '../chart/datePillLayout';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -356,6 +355,30 @@ export default function CompanyShareChart({
         setTooltipPos(null);
     };
 
+    // ── Геометрия оверлеев (пилюля даты + тултип) ──
+    // Оба живут ВНУТРИ wrapRef, значит их offsetParent — сам wrapRef, и
+    // координаты считаются от его верхнего левого угла. Прибавлять offsetTop/
+    // offsetLeft обёртки (как это делает StrengthPage, где пилюля лежит на
+    // уровне карточки, а обёртка — вложенный .chart-reveal) здесь НЕЛЬЗЯ:
+    // это двойной учёт, из-за него пилюля уезжала вниз и вправо от курсора.
+    //
+    // topLineY — верхняя грид-линия ПЕРВОЙ панели (цена 5% высоты своего
+    // viewBox; без цены — верхний тик доли 10.7%). Контракт тот же, что в
+    // «Силе рынка»: низ пилюли = topLineY + PILL_GAP_ABOVE_LINE, а тултип
+    // клампится в коридор от этой линии до полосы X-подписей.
+    const overlayGeom = (() => {
+        const wrap = wrapRef.current;
+        const topSvg = priceSvgRef.current ?? shareSvgRef.current;
+        if (!wrap || !topSvg) return null;
+        const wrapRect = wrap.getBoundingClientRect();
+        const svgRect = topSvg.getBoundingClientRect();
+        return {
+            plotLeft: svgRect.left - wrapRect.left,
+            plotWidth: svgRect.width,
+            topLineY: (svgRect.top - wrapRect.top) + (hasPrice ? 0.05 : 0.107) * svgRect.height,
+        };
+    })();
+
     // Разбивка тултипа: доля по каждому фонду (top-6 по убыванию).
     const hoverBreakdown = useMemo(() => {
         if (hoveredMi == null) return null;
@@ -593,7 +616,12 @@ export default function CompanyShareChart({
                         const extra = hoverBreakdown.rows.length - shown.length;
                         const net = hoverBreakdown.net;
                         return (
-                            <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={XLABEL_H}>
+                            <ChartTooltip
+                                x={tooltipPos.x}
+                                y={tooltipPos.y}
+                                clampTop={overlayGeom?.topLineY ?? cssVar('--chart-pad-top', 14)}
+                                clampBottom={XLABEL_H}
+                            >
                                 {/* Цена — первой строкой, с точкой цвета линии:
                                     это единственная строка про бумагу, всё
                                     остальное ниже разделителя про фонды. */}
@@ -654,34 +682,15 @@ export default function CompanyShareChart({
                     })()}
 
                     {/* Плавающая пилюля даты — hovered месяц, над верхней панелью. */}
-                    {hoveredMi !== null && (() => {
-                        const m = months[hoveredMi];
-                        if (!m) return null;
-                        const wrap = wrapRef.current;
-                        const topSvg = priceSvgRef.current ?? shareSvgRef.current;
-                        if (!wrap || !topSvg) return null;
-                        const wrapRect = wrap.getBoundingClientRect();
-                        const svgRect = topSvg.getBoundingClientRect();
-                        const padTop = svgRect.top - wrapRect.top;
-                        const chartW = svgRect.width;
-                        const centerX = wrap.offsetLeft + (svgRect.left - wrapRect.left) + (slotX(hoveredMi) / 1000) * chartW;
-                        const topLineY = computeChartTopLineY({
-                            wrapper: wrap,
-                            paddingTop: padTop,
-                            gridOffsetFrac: 0.05,
-                            chartAreaHeight: svgRect.height,
-                        });
-                        const plotLeft = wrap.offsetLeft + (svgRect.left - wrapRect.left);
-                        return (
-                            <ChartDatePill
-                                date={monthLabel(m)}
-                                x={centerX}
-                                topLineY={topLineY}
-                                minX={plotLeft}
-                                maxX={plotLeft + chartW}
-                            />
-                        );
-                    })()}
+                    {hoveredMi !== null && overlayGeom && months[hoveredMi] && (
+                        <ChartDatePill
+                            date={monthLabel(months[hoveredMi])}
+                            x={overlayGeom.plotLeft + (slotX(hoveredMi) / 1000) * overlayGeom.plotWidth}
+                            topLineY={overlayGeom.topLineY}
+                            minX={overlayGeom.plotLeft}
+                            maxX={overlayGeom.plotLeft + overlayGeom.plotWidth}
+                        />
+                    )}
                 </div>
 
                 {/* Навигатор: превью — линия цены (или доли, если цены нет). */}
