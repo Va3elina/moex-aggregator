@@ -140,6 +140,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // то есть floor даёт блок ~514px — ровно фиксированный размер блока в «Силе рынка»
     // (--strength-chart-top-height 300 + --strength-chart-bottom-height 150 + chrome).
     // Ниже этого блок не ужимается даже на низком окне.
+    const chartAnchorRef = useRef<HTMLDivElement>(null);
     const chartHeight = useFitToViewport(chartAnchorRef, { min: 475, max: 720, bottomBuffer: 64 });
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
