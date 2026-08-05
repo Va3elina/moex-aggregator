@@ -681,15 +681,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 )}
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё).
-                    Всегда крайний справа: marginLeft auto прижимает блок к правому
-                    краю ряда, а не приклеивает его к соседнему тумблеру режимов. */}
-                <div style={{ marginLeft: 'auto' }}>
-                    <SegmentedControl<Period>
-                        options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
-                        value={period}
-                        onChange={setPeriod}
-                    />
-                </div>
+                    Последний в левой группе контролов: идёт после тумблеров, но
+                    к правому краю ряда НЕ прижимается. */}
+                <SegmentedControl<Period>
+                    options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
+                    value={period}
+                    onChange={setPeriod}
+                />
 
                 {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
                     фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
