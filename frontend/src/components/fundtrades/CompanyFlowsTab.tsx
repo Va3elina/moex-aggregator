@@ -516,25 +516,6 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         [shareFundSeries, sharePeriodStart],
     );
 
-    // Нетто-сделки месяца (млн ₽) по выбранным фондам — строка «Сделки за
-    // месяц» в тултипе доли: подсказка, двигали долю сделки или переоценка.
-    const netByMonth = useMemo(() => {
-        const m = new Map<string, number>();
-        if (!flows) return m;
-        flows.funds.forEach(f => {
-            if (!effectiveFunds.has(f.ticker)) return;
-            f.values.forEach((v, i) => {
-                if (v == null) return;
-                m.set(flows.months[i], (m.get(flows.months[i]) ?? 0) + v / 1e6);
-            });
-        });
-        return m;
-    }, [flows, effectiveFunds]);
-    const visibleShareNet = useMemo(
-        () => visibleShareMonths.map(mm => netByMonth.get(mm) ?? null),
-        [visibleShareMonths, netByMonth],
-    );
-
     // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
     // набора фондов, периода, режима ИЛИ веса доли — окно проигрывает каскад заново.
     const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}|${shareMode}`;
@@ -794,7 +775,6 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     <CompanyShareChart
                         months={visibleShareMonths}
                         funds={visibleShareFunds}
-                        netFlowMln={visibleShareNet}
                         weeks={price && price.ticker === selectedTicker ? price.weeks : []}
                         closes={price && price.ticker === selectedTicker ? price.closes : []}
                         shareMode={shareMode}
