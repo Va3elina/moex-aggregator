@@ -24,20 +24,13 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
+import PortfolioTreemap, { TREEMAP_TOP, TM_H_BUDGET, type TreemapItem } from './PortfolioTreemap';
 import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y3';
 
-// Карта «Структура» (slice-and-dice треемап): топ-11 бумаг раскладываются рядами
-// 2·3·3·3, «Прочие» — отдельной полосой снизу. ПЛОЩАДЬ плитки пропорциональна её
-// весу: высота ряда ∝ сумме весов ряда, ширина плитки внутри ряда ∝ её весу →
-// area = rowH × width ∝ вес. Строки отсортированы по убыванию, поэтому верхние
-// ряды крупнее. TM_H_BUDGET — суммарная высота рядов (px), TM_ROW_MIN — минимум
-// на ряд для читаемости мелких строк.
-const TREEMAP_TOP = 10;
-const TM_CHUNKS = [2, 3, 3, 2];
-const TM_H_BUDGET = 300;
-const TM_ROW_MIN = 46;
+// Карта «Структура» — общий компонент PortfolioTreemap (тот же блок в карточке
+// фонда): топ-10 бумаг плитками, площадь ∝ весу, «Прочие» — полосой снизу.
 
 // Мобилка (пончик): слайсы и превью списка держим равными, наведение на любой
 // сектор подсвечивает строку и наоборот, без «слепых» секторов.
@@ -240,13 +233,6 @@ function fmtVolBln(v: number): string {
 function fmtTotalRub(v: number): string {
     if (v >= 1e9) return `${(v / 1e9).toFixed(1).replace('.', ',')} млрд ₽`;
     return `${(v / 1e6).toFixed(0)} млн ₽`;
-}
-
-// Тёмный текст на светлых брендовых заливках (золото Полюса и т.п.).
-function isLightHex(color: string): boolean {
-    if (!/^#[0-9a-fA-F]{6}$/.test(color)) return false;
-    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 160;
 }
 
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру (внутри свой фолбэк-круг),
@@ -473,71 +459,26 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         );
     }
 
-    // ── Десктоп: карта «Структура» (slice-and-dice, площадь ∝ весу) ──
-    // Ряды 2·3·3·3 из топ-11; «Прочие» — отдельной полосой снизу. Высота ряда ∝
-    // сумме весов ряда, ширина плитки ∝ её весу → площадь ∝ вес (мелкие бумаги
-    // видимо меньше крупных, а не наравне, как было при равных рядах).
+    // ── Десктоп: карта «Структура» (общий PortfolioTreemap, площадь ∝ весу) ──
     const tmTop = sorted.slice(0, TREEMAP_TOP);
     const tmRestW = sorted.slice(TREEMAP_TOP).reduce((s, h) => s + wOf(h), 0);
-    const tmTopSum = Math.max(tmTop.reduce((s, h) => s + wOf(h), 0), 0.0001);
-    const tmRows: { h: FundPortfolioHolding; idx: number }[][] = [];
-    let cursor = 0;
-    for (const size of TM_CHUNKS) {
-        if (cursor >= tmTop.length) break;
-        tmRows.push(tmTop.slice(cursor, cursor + size).map((h, j) => ({ h, idx: cursor + j })));
-        cursor += size;
-    }
+    const tmItems: TreemapItem[] = tmTop.map((h, idx) => ({
+        key: h.akey,
+        label: resolveFundTicker(h.asset_name, h.isin) ?? fundAssetName(h.asset_name, h.isin).split(' ')[0],
+        name: fundAssetName(h.asset_name, h.isin),
+        weight: wOf(h),
+        color: fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length],
+    }));
 
     const treemap = (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {tmRows.map((row, ri) => {
-                const rowSum = row.reduce((s, { h }) => s + wOf(h), 0);
-                // Высота ряда ∝ его суммарному весу (доля от бюджета высоты), но не
-                // ниже минимума — иначе нижние лёгкие ряды становятся нечитаемыми.
-                const rowH = Math.max(TM_ROW_MIN, Math.round(TM_H_BUDGET * rowSum / tmTopSum));
-                return (
-                    <div key={ri} style={{ display: 'flex', gap: 6, height: rowH }}>
-                        {row.map(({ h, idx }) => {
-                            const w = wOf(h);
-                            const color = fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length];
-                            const dark = isLightHex(color);
-                            const label = resolveFundTicker(h.asset_name, h.isin) ?? fundAssetName(h.asset_name, h.isin).split(' ')[0];
-                            const click = onAssetClick ? () => onAssetClick(h) : undefined;
-                            return (
-                                <div
-                                    key={h.akey}
-                                    onMouseEnter={() => setHoverIdx(idx)}
-                                    onMouseLeave={() => setHoverIdx(null)}
-                                    onClick={click}
-                                    role={click ? 'button' : undefined}
-                                    tabIndex={click ? 0 : undefined}
-                                    onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
-                                    title={`${fundAssetName(h.asset_name, h.isin)} · ${w.toFixed(2)}%${click ? ' — потоки по компании' : ''}`}
-                                    // Ширина ∝ весу (flex). minWidth — мягкий пол, чтобы очень
-                                    // мелкая плитка сохранила подпись; ряды отсортированы, поэтому
-                                    // соседи близки по весу и пол почти не искажает пропорции.
-                                    // Подпись прижата к верхнему левому углу (justify-start),
-                                    // padding симметричный со всех сторон (отступ сверху = слева).
-                                    // lineHeight:1 + gap дают гарантированный зазор: при
-                                    // минимальной высоте ряда (46px) 8+14+2+11+8=43 < 46, тикер
-                                    // и % не наезжают.
-                                    style={{ flex: Math.max(w, 0.1), minWidth: 44, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: 8, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 2, overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
-                                >
-                                    <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-                                    <div style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, lineHeight: 1, opacity: 0.92, fontVariantNumeric: 'tabular-nums' }}>{w.toFixed(1).replace('.', ',')}%</div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                );
-            })}
-            {tmRestW > 0.5 && (
-                <div style={{ height: 42, borderRadius: 10, background: 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-primary))', color: 'var(--text-primary)', padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)' }}>Прочие бумаги</span>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', fontVariantNumeric: 'tabular-nums' }}>{tmRestW.toFixed(1).replace('.', ',')}%</span>
-                </div>
-            )}
-        </div>
+        <PortfolioTreemap
+            items={tmItems}
+            restWeight={tmRestW}
+            hoverIdx={hoverIdx}
+            onHoverChange={setHoverIdx}
+            onItemClick={onAssetClick ? (i) => onAssetClick(tmTop[i]) : undefined}
+            clickHint="потоки по компании"
+        />
     );
 
     // Свежесть среза: freshestMonth — самый свежий ДОСТУПНЫЙ месяц (не locked).
