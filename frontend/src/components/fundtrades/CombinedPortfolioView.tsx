@@ -426,8 +426,13 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                     <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800 }}>Полный состав · {portfolio.num_assets} {plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}</span>
                     <button onClick={() => setModalOpen(false)} aria-label="Закрыть" style={{ width: 32, height: 32, flexShrink: 0, border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)', borderRadius: 8, cursor: 'pointer', fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>✕</button>
                 </div>
-                <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 14px' }}>
-                    <div style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)' }}>{listHeader}</div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 14px' }}>
+                    {/* Шапка списка липкая: z-index — чтобы строки уходили ПОД неё, а не
+                        поверх; full-bleed (margin/padding ∓16) — потому что строки шире
+                        контентной колонки (margin: 0 -8px) и вылезали по бокам шапки.
+                        paddingTop 2px внутри, а не на скролл-контейнере, иначе строки
+                        просвечивали в зазоре над шапкой. */}
+                    <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-secondary)', margin: '0 -16px', padding: '2px 16px 0' }}>{listHeader}</div>
                     {sorted.map((h, i) => deskRow(h, i, i === sorted.length - 1, false))}
                 </div>
             </div>
