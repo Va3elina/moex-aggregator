@@ -178,10 +178,11 @@ export default function CompanyShareChart({
     const hasPrice = !priceMissing && weeksAll.length > 1;
 
     // Высоты секций: из общего бюджета высоты вычитаем легенды/разделитель
-    // (~64px) и полосу подписей X; остальное делим 55/45 в пользу цены — как
-    // соотношение верх/низ в «Силе рынка». Без цены гистограмма берёт всё.
+    // (~64px) и полосу подписей X; остальное делим 2:1 в пользу цены — ровно
+    // как в «Силе рынка» (--strength-chart-top-height 300 / bottom 150).
+    // Без цены гистограмма забирает всё (там же — solo-height).
     const inner = Math.max(height - 64 - XLABEL_H, 240);
-    const topH = hasPrice ? Math.round(inner * 0.55) : 0;
+    const topH = hasPrice ? Math.round(inner * (2 / 3)) : 0;
     const botH = inner - topH;
 
     // ── Недели цены, разложенные по слотам месяцев. ──
