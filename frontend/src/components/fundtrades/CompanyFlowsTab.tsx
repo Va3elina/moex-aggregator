@@ -60,7 +60,7 @@ const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all'
 
 // Режим отображения: сделки на графике цены / доля в фондах.
 type ChartMode = 'map' | 'share';
-const MODE_LABELS: Record<ChartMode, string> = { map: 'Карта сделок', share: 'Доля' };
+const MODE_LABELS: Record<ChartMode, string> = { map: 'Сделки', share: 'Позиция' };
 const CF_MODES: ChartMode[] = ['map', 'share'];
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
