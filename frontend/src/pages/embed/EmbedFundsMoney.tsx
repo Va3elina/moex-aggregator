@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange } from 'lucide-react';
+import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange, ListFilter } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
@@ -23,9 +23,9 @@ import {
   type CbrFlowsPeriod,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { DrawerSection, ToggleRow } from './EmbedSettings';
+import { DrawerSection, ToggleRow, Checklist } from './EmbedSettings';
 import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
-import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
@@ -36,12 +36,14 @@ type ViewMode = 'aum' | 'flows';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type FundsResp = Awaited<ReturnType<typeof getFundsChartData>>;
 
-const CATS: { id: Category; label: string; icon: ReactNode }[] = [
-  { id: 'money_market', label: 'Денежный', icon: <Wallet size={14} /> },
-  { id: 'stocks', label: 'Акции', icon: <TrendingUp size={14} /> },
-  { id: 'bonds', label: 'Облигации', icon: <Landmark size={14} /> },
-  { id: 'gold', label: 'Золото', icon: <Coins size={14} /> },
-  { id: 'yuan', label: 'Юань', icon: <Banknote size={14} /> },
+// `genitive` — родительный падеж для заголовка легенды «…из фондов <чего>»,
+// один в один со страницей (FundsMoneyPage.CATEGORIES).
+const CATS: { id: Category; label: string; genitive: string; icon: ReactNode }[] = [
+  { id: 'money_market', label: 'Денежный', genitive: 'денежного рынка', icon: <Wallet size={14} /> },
+  { id: 'stocks', label: 'Акции', genitive: 'акций', icon: <TrendingUp size={14} /> },
+  { id: 'bonds', label: 'Облигации', genitive: 'облигаций', icon: <Landmark size={14} /> },
+  { id: 'gold', label: 'Золото', genitive: 'золота', icon: <Coins size={14} /> },
+  { id: 'yuan', label: 'Юань', genitive: 'юаня', icon: <Banknote size={14} /> },
 ];
 // Категория рендерится через Dropdown (не PillGroup) — иконка там одна, по
 // текущему значению (см. CAT_ICONS), а не per-option как в PillGroup.
@@ -128,6 +130,19 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     : (['3y', '1y', '1m', '1w'] as FundPeriod[]).find((p) => fundsAccess.canUsePeriod(p)) ?? '1y';
   const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
 
+  // Скрытые фонды — персист ПО КАТЕГОРИИ, как на сайте (frame:funds:hidden:<cat>):
+  // наборы фондов в категориях не пересекаются, общий список бессмыслен.
+  // Храним именно СКРЫТЫЕ, а не выбранные: новый фонд в категории должен
+  // появляться включённым, а не молча выпадать из расчёта (тот же урок, что в
+  // фильтре фондов у /fund-trades, #966).
+  const hiddenKey = `frame:embed:funds:hidden:${category}`;
+  const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    const raw = rd(hiddenKey, '');
+    setHiddenFunds(new Set(raw ? raw.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category]);
+
   // Загруженные данные держим ВМЕСТЕ с ключом запроса, которым они получены.
   // Волна появления столбцов и фит графика должны перезапускаться, когда новые
   // данные ПРИЕХАЛИ, а не когда пользователь нажал кнопку: иначе анимация
@@ -162,14 +177,34 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return () => { cancelled = true; };
   }, [category, period]);
 
+  // Список фондов категории приезжает вместе с данными СЧА — отдельного
+  // запроса не нужно (AUM-эффект выше идёт в обоих режимах).
+  const funds = useMemo(() => data?.res.funds ?? [], [data]);
+  const visibleFundIds = useMemo(
+    () => funds.filter((f) => !hiddenFunds.has(f.fund_id)).map((f) => f.fund_id),
+    [funds, hiddenFunds],
+  );
+  // Пока ничего не скрыто — параметр НЕ шлём вовсе: бэкенд сам берёт категорию
+  // целиком (и не надо ждать, пока приедет список фондов, чтобы начать грузить
+  // потоки). Строка-ключ, а не массив — стабильная зависимость эффекта.
+  const fundIdsKey = hiddenFunds.size > 0 ? visibleFundIds.join(',') : '';
+  useEffect(() => {
+    if (hiddenFunds.size > 0) wr(hiddenKey, [...hiddenFunds].join(','));
+    else wr(hiddenKey, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenFunds, hiddenKey]);
+
   // ── Flows load (только в режиме flows) ──
   useEffect(() => {
     if (viewMode !== 'flows') return;
     let cancelled = false;
     setFlowsStatus('loading');
-    getFundsFlows(category, flowTimeframe, period)
+    const ids = fundIdsKey ? fundIdsKey.split(',').map(Number) : undefined;
+    getFundsFlows(category, flowTimeframe, period, ids)
       .then((res) => {
         if (cancelled) return;
+        // ⚠️ Фильтр фондов в ключ НЕ входит: волна не должна переигрываться на
+        // каждый чекбокс — ровно как toggle категорий у потоков ЦБ.
         setFlowsLoaded({ res, key: `${category}|${flowTimeframe}|${period}`, tf: flowTimeframe });
         setFlowsStatus((res?.flows?.length ?? 0) > 0 ? 'ok' : 'empty');
       })
@@ -179,7 +214,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         setFlowsStatus('error');
       });
     return () => { cancelled = true; };
-  }, [viewMode, category, flowTimeframe, period]);
+  }, [viewMode, category, flowTimeframe, period, fundIdsKey]);
 
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
@@ -199,12 +234,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // Движку ЦБ нужна ЯВНАЯ высота в пикселях (он рисует SVG в фиксированный
   // бокс, а не тянется по родителю) — меряем контейнер, как в потоках ЦБ.
   const [chartH, setChartH] = useState(300);
+  // Ширину меряем ради заголовка легенды: на сайте он сокращается по viewport,
+  // а в панели песочницы viewport — это окно браузера, а не панель.
+  const [containerW, setContainerW] = useState(0);
   useEffect(() => {
     const el = chartBoxRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setChartH(Math.round(h));
+      const r = entries[0]?.contentRect;
+      if (r?.height) setChartH(Math.round(r.height));
+      if (r?.width) setContainerW(Math.round(r.width));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -262,6 +301,56 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return out;
   }, [viewMode, data, showIndex, fmt]);
 
+  // Легенда потоков — как на сайте (FundsMoneyPage): ОДИН заголовок вместо двух
+  // записей «Приток»/«Отток». Маркер 'split' — кружок из двух половин,
+  // зелёная/красная: направление кодируется цветом одной серии, а два отдельных
+  // пункта читались как две разные серии. Короткий вариант в узкой панели — там
+  // же порог, что на сайте по viewport (540px).
+  const flowsLegend = useMemo(() => {
+    const gen = CATS.find((c) => c.id === category)?.genitive ?? '';
+    const label = toolbarCompact || (containerW > 0 && containerW < 540)
+      ? 'Чистые притоки и оттоки (млрд ₽)'
+      : `Чистые притоки и оттоки из фондов ${gen} (млрд ₽)`;
+    return [{ label, color: 'var(--oi-green)', colorRight: 'var(--oi-red)', marker: 'split' as const }];
+  }, [category, toolbarCompact, containerW]);
+
+  // Фильтр фондов — кнопка тулбара с чек-листом (тот же приём, что «Участники»
+  // у потоков ЦБ). ⚠️ Только для режима потоков: /api/funds/flows принимает
+  // fund_ids, а /api/funds/chart отдаёт СЧА уже просуммированной по категории —
+  // фильтровать её на клиенте нечем, и контрол в режиме СЧА молча ничего бы
+  // не делал.
+  const toggleFund = (id: number) => {
+    setHiddenFunds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      // Последний видимый фонд выключить нельзя — иначе считать нечего.
+      else if (visibleFundIds.length > 1) next.add(id);
+      return next;
+    });
+  };
+  const fundsFilter = viewMode === 'flows' && funds.length > 1 ? (
+    <ToolbarMenuButton label="Фонды" title="Какие фонды учитывать" icon={<ListFilter size={14} />} compact={toolbarCompact}>
+      {() => (
+        <div style={{ maxWidth: 280 }}>
+          <Checklist
+            items={funds.map((f) => {
+              const on = !hiddenFunds.has(f.fund_id);
+              return {
+                id: String(f.fund_id),
+                label: f.ticker,
+                on,
+                desc: f.name,
+                // Последний видимый не выключаем; фонд вне тарифа и так без данных.
+                disabled: f.tier_locked || (on && visibleFundIds.length <= 1),
+                onToggle: () => toggleFund(f.fund_id),
+              };
+            })}
+          />
+        </div>
+      )}
+    </ToolbarMenuButton>
+  ) : null;
+
   const st = viewMode === 'flows' ? flowsStatus : status;
   // Что уже нарисовано ПРЯМО СЕЙЧАС. Пока едет новый запрос, прежняя картинка
   // остаётся на экране — как у потоков ЦБ, где смена периода это клиентская
@@ -286,6 +375,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" icon={CAT_ICONS[category]} />
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
             <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} />
+            <ToolbarMenuButton label="Фонды" icon={<ListFilter size={14} />}>{() => null}</ToolbarMenuButton>
           </div>
           <PillGroup<ViewMode>
             value={viewMode}
@@ -300,6 +390,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
               <Dropdown value={flowPeriod} options={FLOW_PERIODS} onChange={(v) => setFlowPeriod(v)} title="Период" icon={<CalendarRange size={14} />} compact={toolbarCompact} />
             </>
           )}
+          {fundsFilter}
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={showChart} />}
@@ -320,6 +411,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             unit="млрд ₽"
             height={chartH}
             animTrigger={flowsLoaded?.key ?? ''}
+            legendOverride={flowsLegend}
             valuePill
           />
         )}
