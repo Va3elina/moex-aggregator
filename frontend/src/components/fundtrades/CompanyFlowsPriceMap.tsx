@@ -417,8 +417,8 @@ export default function CompanyFlowsPriceMap({
                         Нет истории цены по этой бумаге
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 380 }}>
-                        Карта сделок доступна для акций, торгующихся на МосБирже.
-                        Потоки по этой бумаге смотрите в режиме «Столбцы».
+                        Режим «Сделки» доступен для акций, торгующихся на МосБирже.
+                        Потоки по этой бумаге смотрите в режиме «Позиция».
                     </div>
                 </div>
             ) : loading && !hasData ? (
