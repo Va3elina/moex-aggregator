@@ -261,9 +261,11 @@ export default function CompanyFlowsPriceMap({
     }, [visMarkers]);
 
     // Координаты в долях области графика: x — центр слота недели (как бары
-    // гистограммы), y — положение цены между priceLo..priceHi (3..97%).
+    // гистограммы), y — положение цены между priceLo..priceHi (0..97%: сверху
+    // без inset'а, чтобы верхняя грид-линия стояла ровно на --chart-pad-top,
+    // как в OI; запас от клиппинга даёт ±6% pad в priceLo/priceHi).
     const xFrac = (wi: number) => (wi - visStart + 0.5) / visCount;
-    const yFrac = (close: number) => 0.03 + (1 - (close - priceLo) / (priceHi - priceLo)) * 0.94;
+    const yFrac = (close: number) => (1 - (close - priceLo) / (priceHi - priceLo)) * 0.97;
 
     // Потолок под плотность видимого окна (см. REF_MARKERS).
     const rMax = useMemo(() => {
@@ -712,7 +714,7 @@ export default function CompanyFlowsPriceMap({
                     const topLineY = computeChartTopLineY({
                         wrapper: cont,
                         paddingTop: padTop,
-                        gridOffsetFrac: 0.03,
+                        gridOffsetFrac: 0,
                         chartAreaHeight: chartAreaH,
                     });
                     const plotLeft = cont.offsetLeft + (svgRect.left - containerRect.left);
