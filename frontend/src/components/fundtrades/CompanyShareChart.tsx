@@ -495,7 +495,11 @@ export default function CompanyShareChart({
                 >
                     {/* ── Верхняя секция: цена (как IMOEX в «Силе рынка»). ── */}
                     {hasPrice && (
-                        <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ paddingTop: 'var(--chart-legend-top-gap, 8px)' }}>
+                        {/* paddingTop с вычетом 20px — та же компенсация паддинга
+                            карточки (p-5), что в «Столбцах» и «Карте сделок»
+                            (marginTop: calc(--chart-legend-top-gap - 20px)). Без неё
+                            легенда цены стояла на 20px ниже и прыгала при смене режима. */}
+                        <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ paddingTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
                                     items={[{ color: PRICE_LINE_COLOR, label: assetName || 'Цена' }]}
@@ -630,7 +634,7 @@ export default function CompanyShareChart({
                                     это единственная строка про бумагу, всё
                                     остальное ниже разделителя про фонды. */}
                                 {hoverPrice != null && (
-                                    <div style={{ marginBottom: 'var(--sp-2)', paddingBottom: 'var(--sp-2)', borderBottom: '1px solid var(--border-color)' }}>
+                                    <div style={{ marginBottom: 'var(--sp-1)', paddingBottom: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)' }}>
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
                                             label={assetName || 'Цена'}
