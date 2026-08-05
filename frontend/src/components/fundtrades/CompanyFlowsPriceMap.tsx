@@ -303,44 +303,38 @@ export default function CompanyFlowsPriceMap({
         return easeOutCubic(t);
     };
 
-    // ── Hover: ближайшая видимая НЕДЕЛЯ по X. ──
-    // Раньше хит-тест снапился к кругляшам, и между ними тултипа не было
-    // вовсе. Но линия цены идёт по всем неделям, и уровень цены — такая же
-    // часть этого графика, как сделки: снап по неделям отдаёт цену везде, а
-    // сделки показывает там, где они есть.
-    const [hoveredWi, setHoveredWi] = useState<number | null>(null); // индекс в weeks
+    // ── Hover: ближайший видимый кругляш по X. ──
+    // Снап именно к кругляшам, а не к неделям: и потоки, и цена в тултипе
+    // месячные, поэтому останавливаться курсору есть смысл только там, где
+    // месяц действительно есть. Кругляш стоит на последней неделе месяца, так
+    // что его закрытие и есть месячная цена.
+    const [hoveredIdx, setHoveredIdx] = useState<number | null>(null); // индекс в visMarkers
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
-    // Неделя-якорь кругляша → его индекс в visMarkers.
-    const markerByWeek = useMemo(() => {
-        const map = new Map<number, number>();
-        visMarkers.forEach((m, i) => map.set(m.wi, i));
-        return map;
-    }, [visMarkers]);
-
-    const hoveredMarkerIdx = hoveredWi == null ? null : markerByWeek.get(hoveredWi) ?? null;
-
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!containerRef.current || !svgRef.current || !weeks.length) return;
+        if (!visMarkers.length || !containerRef.current || !svgRef.current) return;
         const containerRect = containerRef.current.getBoundingClientRect();
         const svgRect = svgRef.current.getBoundingClientRect();
         const xInChart = e.clientX - svgRect.left;
         if (xInChart < 0 || xInChart > svgRect.width) return;
-        // Обратная xFrac: центр слота недели → индекс.
-        const raw = Math.round((xInChart / svgRect.width) * visCount - 0.5) + visStart;
-        const wi = Math.min(Math.max(raw, navRange[0]), navRange[1]);
-        setHoveredWi(wi);
-        const snapX = (svgRect.left - containerRect.left) + xFrac(wi) * svgRect.width;
+        let best = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < visMarkers.length; i++) {
+            const mx = xFrac(visMarkers[i].wi) * svgRect.width;
+            const d = Math.abs(mx - xInChart);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        setHoveredIdx(best);
+        const snapX = (svgRect.left - containerRect.left) + xFrac(visMarkers[best].wi) * svgRect.width;
         setTooltipPos({ x: snapX, y: e.clientY - containerRect.top });
     };
     const handleMouseLeave = () => {
-        setHoveredWi(null);
+        setHoveredIdx(null);
         setTooltipPos(null);
     };
 
     // Разбивка по фондам для hovered месяца — 1-в-1 логика гистограммы.
     const hoverBreakdown = useMemo(() => {
-        const hoveredIdx = hoveredMarkerIdx;
         if (hoveredIdx == null || !visMarkers[hoveredIdx]) return null;
         const mi = visMarkers[hoveredIdx].mi;
         const rows = series
@@ -354,7 +348,7 @@ export default function CompanyFlowsPriceMap({
             .sort((a, b) => Math.abs(b.mln) - Math.abs(a.mln));
         const net = rows.reduce((acc, r) => acc + r.mln, 0);
         return { rows, net };
-    }, [hoveredMarkerIdx, visMarkers, series]);
+    }, [hoveredIdx, visMarkers, series]);
 
     // Линия цены: path в нормированных координатах 0..1000 (non-scaling-stroke).
     const linePath = useMemo(() => {
@@ -510,12 +504,12 @@ export default function CompanyFlowsPriceMap({
                                     />
                                 )}
 
-                                {/* Вертикальный курсор — снап к hovered неделе. */}
-                                {hoveredWi !== null && (
+                                {/* Вертикальный курсор — снап к hovered кругляшу. */}
+                                {hoveredIdx !== null && visMarkers[hoveredIdx] && (
                                     <line
-                                        x1={xFrac(hoveredWi) * 1000}
+                                        x1={xFrac(visMarkers[hoveredIdx].wi) * 1000}
                                         y1="30"
-                                        x2={xFrac(hoveredWi) * 1000}
+                                        x2={xFrac(visMarkers[hoveredIdx].wi) * 1000}
                                         y2="970"
                                         stroke={CROSSHAIR.accentColor}
                                         strokeWidth="1"
@@ -533,7 +527,7 @@ export default function CompanyFlowsPriceMap({
                                 const close = closes[m.wi];
                                 const r = rFor(m.net) * popFor(i, visMarkers.length);
                                 if (r <= 0.2) return null;
-                                const dim = hoveredMarkerIdx !== null && hoveredMarkerIdx !== i;
+                                const dim = hoveredIdx !== null && hoveredIdx !== i;
                                 const color = m.net > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
                                 const left = `${xFrac(m.wi) * 100}%`;
                                 const top = `${yFrac(close) * 100}%`;
@@ -588,18 +582,17 @@ export default function CompanyFlowsPriceMap({
                             bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 420px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
                         />
 
-                        {/* Тултип: цена недели, ниже разделителя — сделки месяца
-                            с разбивкой (контент 1-в-1 с гистограммой). На неделях
-                            без кругляша остаётся только цена и явная строка, что
-                            сделок не было — иначе молчание тултипа читалось бы как
-                            «данные не подгрузились». */}
-                        {hoveredWi !== null && tooltipPos && (() => {
-                            const price = closes[hoveredWi];
-                            const net = hoverBreakdown?.net;
-                            const netColor = net == null ? '' : net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+                        {/* Тултип: цена месяца, ниже разделителя — сделки месяца
+                            с разбивкой (контент 1-в-1 с гистограммой). Цена берётся
+                            на неделе-якоре кругляша, то есть на последней неделе
+                            месяца — как в режиме «Доля». */}
+                        {hoveredIdx !== null && tooltipPos && hoverBreakdown && (() => {
+                            const price = closes[visMarkers[hoveredIdx].wi];
+                            const net = hoverBreakdown.net;
+                            const netColor = net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
                             const MAX_ROWS = 6;
-                            const shown = hoverBreakdown?.rows.slice(0, MAX_ROWS) ?? [];
-                            const extra = (hoverBreakdown?.rows.length ?? 0) - shown.length;
+                            const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
+                            const extra = hoverBreakdown.rows.length - shown.length;
                             return (
                                 <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
                                     {price != null && (
@@ -613,11 +606,6 @@ export default function CompanyFlowsPriceMap({
                                         />
                                     )}
                                     <div style={{ marginTop: 'var(--sp-2)', paddingTop: 'var(--sp-2)', borderTop: '1px solid var(--border-color)' }}>
-                                    {net == null ? (
-                                        <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                            Сделок фондов на этой неделе нет
-                                        </div>
-                                    ) : (<>
                                     <TooltipRow
                                         hideDot
                                         color={netColor}
@@ -650,7 +638,6 @@ export default function CompanyFlowsPriceMap({
                                             )}
                                         </div>
                                     )}
-                                    </>)}
                                     </div>
                                 </ChartTooltip>
                             );
@@ -701,11 +688,9 @@ export default function CompanyFlowsPriceMap({
                     )}
                 </div>
 
-                {/* Плавающая пилюля даты — МЕСЯЦ hovered недели, а не сама неделя:
-                    потоки под курсором всё равно месячные, а точная дата недели
-                    ничего не добавляет к цене, которая уже в тултипе. */}
-                {hoveredWi !== null && (() => {
-                    const m = weeks[hoveredWi]?.slice(0, 7);
+                {/* Плавающая пилюля даты — месяц hovered кругляша. */}
+                {hoveredIdx !== null && visMarkers[hoveredIdx] && (() => {
+                    const m = months[visMarkers[hoveredIdx].mi];
                     if (!m) return null;
                     const cont = containerRef.current;
                     const svg = svgRef.current;
@@ -715,7 +700,7 @@ export default function CompanyFlowsPriceMap({
                     const padTop = svgRect.top - containerRect.top;
                     const chartW = svgRect.width;
                     const chartAreaH = svgRect.height;
-                    const centerX = cont.offsetLeft + (svgRect.left - containerRect.left) + xFrac(hoveredWi) * chartW;
+                    const centerX = cont.offsetLeft + (svgRect.left - containerRect.left) + xFrac(visMarkers[hoveredIdx].wi) * chartW;
                     const topLineY = computeChartTopLineY({
                         wrapper: cont,
                         paddingTop: padTop,
