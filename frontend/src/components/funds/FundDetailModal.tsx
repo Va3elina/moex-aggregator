@@ -24,6 +24,7 @@ import {
     getAssetHistory,
     getFundsFlows,
     type FundTradesDetail,
+    type FundTradesPeriod,
     type FundReturns,
     type AssetHistory,
     type FundsFlowsResponse,
@@ -31,6 +32,7 @@ import {
     type FundPeriod,
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
+import SegmentedControl from '../SegmentedControl';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
 import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
@@ -195,9 +197,15 @@ function splitAdjustPositions(
 // Fund Detail Modal — объём + график доходности + (опц.) donut состава
 // ════════════════════════════════════════════════════════════════════
 
+// Пресеты периода diff'а — как у «Сделок» в «Общем портфеле» (1М/6М/1Г).
+type MoversDiffPeriod = Extract<FundTradesPeriod, '1m' | '6m' | '1y'>;
+
 interface FundDetailModalProps {
     ticker: string;
-    loadDetail: () => Promise<FundTradesDetail>;   // лоадер от родителя (замыкает ticker/period/id)
+    // Лоадер от родителя (замыкает ticker/id). Период diff'а («Что купили и
+    // продали») выбирается ВНУТРИ модалки (1М/6М/1Г) и передаётся аргументом;
+    // лоадеры без периодов (напр. getFundsDetail) аргумент просто игнорируют.
+    loadDetail: (period: FundTradesPeriod) => Promise<FundTradesDetail>;
     navRub?: number | null;        // fallback для СЧА (если нет в detail.fund)
     returns?: FundReturns | null;  // fallback для плашек (если нет в detail.performance)
     hasDistributions?: boolean;    // фонд платит доход → пояснение под графиком
@@ -226,6 +234,10 @@ export default function FundDetailModal({
     // Развороты списков: состав (топ-10 → все) и изменения (топ-10 → все).
     const [showAllHoldings, setShowAllHoldings] = useState(false);
     const [showAllDiff, setShowAllDiff] = useState(false);
+    // Период diff'а «Что купили и продали» — сегменты 1М/6М/1Г в шапке раздела
+    // (те же пресеты, что у «Сделок» в «Общем портфеле»). Смена периода
+    // перезагружает detail; старый контент остаётся на экране (см. эффект ниже).
+    const [diffPeriod, setDiffPeriod] = useState<MoversDiffPeriod>('1m');
 
     // График цены пая — номинал в рублях по всей истории. Проценты пробовали
     // (нормировка к первой точке), но шкала доходности здесь не нужна: движение
@@ -280,20 +292,27 @@ export default function FundDetailModal({
 
     // loadDetail обычно — inline-замыкание от родителя (новая ссылка на каждый
     // ре-рендер). Держим его в ref и перезапускаем загрузку ТОЛЬКО при смене
-    // ticker — иначе любой ре-рендер родителя ресетил бы loading + сбрасывал зум
-    // навигатора графика (полированное поведение «Покупок фондов»).
+    // ticker/diffPeriod — иначе любой ре-рендер родителя ресетил бы loading +
+    // сбрасывал зум навигатора графика (полированное поведение «Покупок фондов»).
+    // Смена периода diff'а НЕ прячет контент (data остаётся до прихода нового
+    // ответа — только раздел изменений слегка тускнеет); смена тикера — прячет.
     const loadDetailRef = useRef(loadDetail);
     loadDetailRef.current = loadDetail;
+    const prevTickerRef = useRef(ticker);
     useEffect(() => {
         let cancelled = false;
+        if (prevTickerRef.current !== ticker) {
+            prevTickerRef.current = ticker;
+            setData(null);
+        }
         setLoading(true);
         setError(null);
-        loadDetailRef.current()
+        loadDetailRef.current(diffPeriod)
             .then((d) => { if (!cancelled) setData(d); })
             .catch((e: Error) => { if (!cancelled) setError(e.message); })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [ticker]);
+    }, [ticker, diffPeriod]);
 
     // СЧА/returns/has_distributions: из ответа detail если есть, иначе из пропов.
     // detail.fund в текущем типе не несёт nav_rub/has_distributions — читаем мягко
@@ -356,19 +375,27 @@ export default function FundDetailModal({
                         zIndex: 1,
                     }}
                 >
+                    {/* Флекс по базовой линии: имя, тикер и дата среза сидят на одной
+                        строке текста, а не «прыгают» по вертикали из-за разных кеглей
+                        и иконки календаря. */}
                     <h2
                         style={{
                             margin: 0,
+                            display: 'flex',
+                            alignItems: 'baseline',
+                            flexWrap: 'wrap',
+                            columnGap: 10,
+                            rowGap: 2,
+                            minWidth: 0,
                             fontSize: 'var(--fs-lg)',
                             fontWeight: 800,
                             color: 'var(--text-primary)',
                         }}
                     >
-                        {data?.fund.name || data?.fund.ticker || ticker}
+                        <span style={{ minWidth: 0 }}>{data?.fund.name || data?.fund.ticker || ticker}</span>
                         {data?.fund.name && (data?.fund.ticker || ticker) && (
                             <span
                                 style={{
-                                    marginLeft: 10,
                                     fontWeight: 400,
                                     fontSize: 'var(--fs-sm)',
                                     fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
@@ -378,22 +405,18 @@ export default function FundDetailModal({
                                 {data?.fund.ticker || ticker}
                             </span>
                         )}
-                        {/* Дата среза состава — здесь же, в шапке-легенде после тикера
-                            (раньше висела отдельной строкой под блоком СЧА). */}
+                        {/* Дата среза состава — здесь же, в шапке-легенде после тикера.
+                            Иконка выровнена по тексту (translateY), сам спан — по baseline. */}
                         {data?.current_snapshot_date && (
                             <span
                                 style={{
-                                    marginLeft: 10,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 5,
                                     fontWeight: 600,
                                     fontSize: 'var(--fs-2xs)',
                                     color: 'var(--text-muted)',
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                <Calendar size={12} style={{ flexShrink: 0 }} />
+                                <Calendar size={12} style={{ display: 'inline-block', verticalAlign: '-0.15em', marginRight: 5 }} />
                                 Состав на {formatSnapshotDate(data.current_snapshot_date)}
                             </span>
                         )}
@@ -415,9 +438,9 @@ export default function FundDetailModal({
                 </div>
 
                 <div style={{ padding: isMobile ? 12 : 20 }}>
-                    {loading && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
+                    {loading && !data && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
                     {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
-                    {data && !loading && (
+                    {data && !error && (
                         <>
                             {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
                                 значение живёт в его центре и блок не рендерится вовсе
@@ -465,6 +488,7 @@ export default function FundDetailModal({
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
+                                                bare
                                                 title="Цена пая и доходность"
                                                 height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
                                                 primaryLabel="Цена пая, ₽"
@@ -774,10 +798,14 @@ export default function FundDetailModal({
 
                                     {/* (5) Что купили и продали — diff текущего и предыдущего
                                         месячных снапшотов (уже приходит в ответе detail).
-                                        new/sold_out — залитые бейджи (событие),
-                                        accumulated/reduced — контурные. Клик по строке —
-                                        тот же drill-down в бумагу. */}
-                                    {data.diff.length > 0 && data.previous_snapshot_date && data.current_snapshot_date && (() => {
+                                        Период сравнения (1М/6М/1Г) выбирается сегментами в
+                                        шапке раздела — кнопки периодов переехали сюда из
+                                        «Сделок» Общего портфеля. Клик по строке —
+                                        тот же drill-down в бумагу.
+                                        Раздел виден, когда есть что показать ИЛИ юзер уже
+                                        трогал период (иначе после пустого 6М он бы исчез
+                                        вместе с кнопками). */}
+                                    {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m') && (() => {
                                         // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
                                         // две секции с нейтральными полосами и величиной справа, единица
                                         // (п.п.) — в подписи секции. Отличие: секции стоят не стопкой,
@@ -856,27 +884,54 @@ export default function FundDetailModal({
                                             );
                                         };
                                         const hiddenCount = Math.max(0, buys.length - DIFF_PREVIEW) + Math.max(0, sells.length - DIFF_PREVIEW);
+                                        const hasDiff = data.diff.length > 0 && data.previous_snapshot_date != null;
                                         return (
                                             <div style={{ marginTop: 28 }}>
-                                                <h3
-                                                    style={{
-                                                        fontSize: 'var(--fs-md)',
-                                                        fontWeight: 700,
-                                                        color: 'var(--text-primary)',
-                                                        marginBottom: 4,
-                                                    }}
-                                                >
-                                                    Что купили и продали
-                                                </h3>
-                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
-                                                    Изменения состава: {formatSnapshotDate(data.previous_snapshot_date)} → {formatSnapshotDate(data.current_snapshot_date)} (месячные срезы)
+                                                {/* Шапка как у «Сделок» Общего портфеля: заголовок +
+                                                    подзаголовок-диапазон слева, сегменты периода справа. */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                        <h3
+                                                            style={{
+                                                                fontSize: 'var(--fs-md)',
+                                                                fontWeight: 700,
+                                                                color: 'var(--text-primary)',
+                                                                margin: 0,
+                                                            }}
+                                                        >
+                                                            Что купили и продали
+                                                        </h3>
+                                                        <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
+                                                            {hasDiff
+                                                                ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
+                                                                : <>Месячные срезы состава</>}
+                                                        </span>
+                                                    </div>
+                                                    <SegmentedControl<string>
+                                                        options={[
+                                                            { key: '1m', label: '1М' },
+                                                            { key: '6m', label: '6М' },
+                                                            { key: '1y', label: '1Г' },
+                                                        ]}
+                                                        value={diffPeriod}
+                                                        onChange={(k) => setDiffPeriod(k as MoversDiffPeriod)}
+                                                    />
                                                 </div>
-                                                {/* Покупки слева, продажи справа. На мобиле — стопкой. */}
+                                                {!hasDiff ? (
+                                                    <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
+                                                        {loading ? 'Загружаем…' : 'Нет более раннего среза за выбранный период.'}
+                                                    </div>
+                                                ) : (
+                                                <>
+                                                {/* Покупки слева, продажи справа. На мобиле — стопкой.
+                                                    При перезагрузке периода — слегка тускнеет. */}
                                                 <div style={{
                                                     display: 'grid',
                                                     gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
                                                     gap: isMobile ? 18 : 28,
                                                     alignItems: 'start',
+                                                    opacity: loading ? 0.5 : 1,
+                                                    transition: 'opacity 0.15s ease',
                                                 }}>
                                                     {column(buys, 'Покупки', true)}
                                                     {column(sells, 'Продажи', false)}
@@ -894,6 +949,8 @@ export default function FundDetailModal({
                                                                 : <>Все изменения · ещё {hiddenCount} <span style={{ fontSize: '0.85em' }}>↓</span></>}
                                                         </button>
                                                     </div>
+                                                )}
+                                                </>
                                                 )}
                                             </div>
                                         );

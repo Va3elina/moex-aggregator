@@ -1203,7 +1203,9 @@ export default function SimpleChart({
       {title && (
         <div
           style={{
-            marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)',
+            // Negative margin компенсирует p-5 карточки; в bare-режиме паддинга
+            // нет — подтягивать нечего.
+            marginTop: bare ? 0 : 'calc(var(--chart-legend-top-gap, 8px) - 20px)',
             marginBottom: 8,
             fontSize: 'var(--fs-md)',
             fontWeight: 700,
@@ -1215,7 +1217,7 @@ export default function SimpleChart({
         </div>
       )}
       {legendPosition === 'top' && (
-        <div className="flex justify-center" style={{ marginTop: title ? 0 : 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
+        <div className="flex justify-center" style={{ marginTop: (title || bare) ? 0 : 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
       )}
 
       {/* Заголовок с текущим значением */}
