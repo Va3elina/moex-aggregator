@@ -3,9 +3,6 @@
  *
  * Выбор бумаги (таблетка-поиск в стиле «Сезонности») → её помесячные потоки
  * (Δ стоимости позиции) по фондам, что её держат. Два режима (SegmentedControl):
- *  - «Гистограмма» — CompanyFlowsHistogram, оформленный 1-в-1 как «Деньги в
- *    фондах»: бары рисуют ЧИСТЫЙ поток (сумму по выбранным фондам, приток
- *    зелёный / отток красный), тултип раскрывает разбивку по фондам.
  *  - «Карта сделок» — CompanyFlowsPriceMap: недельная линия цены акции с
  *    кругляшами месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких
  *    уровнях цены фонды покупали и продавали. Цена — /price-weekly по тикеру
@@ -16,7 +13,7 @@
  *    «Общем портфеле». Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
- * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млн (÷1e6).
+ * Значения приходят в ₽ → чарты переводят в млн (÷1e6).
  *
  * Контрактные импорты из services/api: listFundTradeAssets, getCompanyFlows,
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
@@ -39,7 +36,7 @@ import {
 } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import Skeleton from '../Skeleton';
-import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
+import { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import CompanyFlowsPriceMap from './CompanyFlowsPriceMap';
 import CompanyShareChart, { type CompanyShareFundSeries, type ShareMode } from './CompanyShareChart';
 import HelpTooltip from '../HelpTooltip';
@@ -55,16 +52,16 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 type Metric = 'amount' | 'weight';
 
 // Период графика — окно последних N месяцев. «Всё» = вся доступная история
-// (левый пустой хвост всё равно обрезает сам CompanyFlowsHistogram).
+// (левый пустой хвост всё равно обрезает сам чарт).
 type Period = '1y' | '3y' | 'all';
 const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 года', 'all': 'Всё' };
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
 
-// Режим отображения: гистограмма потоков / сделки на графике цены / доля.
-type ChartMode = 'hist' | 'map' | 'share';
-const MODE_LABELS: Record<ChartMode, string> = { hist: 'Столбцы', map: 'Карта сделок', share: 'Доля' };
-const CF_MODES: ChartMode[] = ['hist', 'map', 'share'];
+// Режим отображения: сделки на графике цены / доля в фондах.
+type ChartMode = 'map' | 'share';
+const MODE_LABELS: Record<ChartMode, string> = { map: 'Карта сделок', share: 'Доля' };
+const CF_MODES: ChartMode[] = ['map', 'share'];
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
 // Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
@@ -171,8 +168,14 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // дефолт «Всё» — сохраняем прежнее поведение (показывали всю историю).
     const [period, setPeriod] = usePersistedState<Period>('frame:companyflows:period', 'all');
 
-    // Режим отображения (гистограмма / карта сделок / доля). Персист между сессиями.
-    const [mode, setMode] = usePersistedState<ChartMode>('frame:companyflows:mode', 'hist');
+    // Режим отображения (карта сделок / доля). Персист между сессиями.
+    // Режим «Столбцы» удалён — у кого он лежит в localStorage, переводим на
+    // «Карту сделок», иначе восстановился бы несуществующий режим.
+    const [modeRaw, setMode] = usePersistedState<ChartMode>('frame:companyflows:mode', 'map');
+    const mode: ChartMode = modeRaw === 'share' ? 'share' : 'map';
+    useEffect(() => {
+        if (modeRaw !== 'map' && modeRaw !== 'share') setMode('map');
+    }, [modeRaw, setMode]);
 
     // Вес доли в режиме «Доля» — как в «Общем портфеле»: по капиталу / по доле.
     const [shareMode, setShareMode] = usePersistedState<ShareMode>('frame:companyflows:sharemode', 'rub');
@@ -292,7 +295,6 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // Кэш — сам price (тикер совпал → не перезапрашиваем). Нет тикера (облигация,
     // ОФЗ, денежный рынок) → сразу «нет истории», без похода на бэкенд.
     useEffect(() => {
-        if (mode === 'hist') return;
         if (!selectedTicker) {
             setPrice(null);
             setPriceError('NO_PRICE_HISTORY');
@@ -652,7 +654,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     onChange={setPeriod}
                 />
 
-                {/* Режим: гистограмма потоков / сделки на цене / доля в фондах. */}
+                {/* Режим: сделки на цене / доля в фондах. */}
                 <SegmentedControl<ChartMode>
                     options={CF_MODES.map(m => ({ key: m, label: MODE_LABELS[m] }))}
                     value={mode}
@@ -734,7 +736,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             )}
             {/* Сетевая ошибка загрузки цены (NO_PRICE_HISTORY — не ошибка, а
                 empty-state внутри чарта: карта — заглушка, доля — без линии). */}
-            {mode !== 'hist' && priceError && priceError !== 'NO_PRICE_HISTORY' && (
+            {priceError && priceError !== 'NO_PRICE_HISTORY' && (
                 <div
                     className="rounded-2xl border border-theme"
                     style={{ padding: 'var(--sp-4)', background: 'var(--bg-secondary)', color: 'var(--funds-flow-negative)' }}
@@ -743,22 +745,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 </div>
             )}
 
-            {/* Гистограмма: чистый поток по бумаге 1-в-1 как «Деньги в фондах».
-                Карта сделок: недельная цена + кругляши месячных нетто. Оба чарта
-                получают одинаковые months/series — режимы синхронны по окну. */}
+            {/* Карта сделок: недельная цена + кругляши месячных нетто.
+                Доля: та же цена сверху + гистограмма доли снизу. Оба чарта
+                получают одинаковое окно месяцев — режимы синхронны. */}
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
             <div ref={chartAnchorRef} style={{ position: 'relative' }}>
-                {mode === 'hist' ? (
-                    <CompanyFlowsHistogram
-                        months={visibleMonths}
-                        series={visibleSeries}
-                        height={chartHeight}
-                        loading={flowsLoading}
-                        noFundsSelected={noFundsSelected}
-                        animTrigger={animTrigger}
-                    />
-                ) : mode === 'map' ? (
+                {mode === 'map' ? (
                     <CompanyFlowsPriceMap
                         months={visibleMonths}
                         series={visibleSeries}
