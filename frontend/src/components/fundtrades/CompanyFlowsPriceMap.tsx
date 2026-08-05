@@ -3,9 +3,10 @@
  *
  * Недельная линия цены акции (закрытия), на которую посажены кругляши
  * месячных ЧИСТЫХ сделок фондов: зелёный = нетто-покупка, красный =
- * нетто-продажа, площадь ∝ |нетто ₽| (нормировка по максимуму видимого
- * окна навигатора). Идея режима: увидеть, НА КАКИХ уровнях цены фонды
- * покупали и продавали — а не только величину потока, как в гистограмме.
+ * нетто-продажа, площадь ∝ |нетто ₽| (нормировка по 95-му процентилю видимого
+ * окна навигатора, хвост выше — кольцо-«зашкал»). Идея режима: увидеть, НА
+ * КАКИХ уровнях цены фонды покупали и продавали — а не только величину потока,
+ * как в гистограмме.
  *
  * Оформление и механика 1-в-1 с CompanyFlowsHistogram: та же карточка,
  * ChartLegend-заголовок, навигатор-брашер, watermark, пилюля даты и ТОТ ЖЕ
@@ -20,6 +21,7 @@
  * разрежены — примерно каждая 4-я неделя), курсор-линия снапится к нему.
  */
 import {
+    Fragment,
     useEffect,
     useMemo,
     useLayoutEffect,
@@ -42,9 +44,36 @@ const easeOutCubic = ANIMATION.easing;
 // левый хвост истории по первому месяцу с |нетто| ≥ 1 млн ₽.
 const MIN_VISIBLE_FLOW_MLN = 1;
 
-// Радиусы кругляшей, px. Площадь ∝ |нетто| → r ∝ sqrt(|нетто|/max по окну).
-const R_MIN = 4;
-const R_MAX = 16;
+// ── Размер кругляша ──
+// Площадь ∝ |нетто|, поэтому r ∝ sqrt(доли). Важно: БЕЗ слагаемого-пола вида
+// R_MIN + (R_MAX − R_MIN)·sqrt(x) — оно ломает пропорциональность площади
+// (кругляш вдвое меньшего потока переставал быть вдвое меньшим по площади) и
+// схлопывало весь низ диапазона в одинаковые точки.
+//
+// R_MAX поднят с 16 до 24: по площади это 64x против прежних 16x, то есть
+// вчетверо больше разрешения между «мало» и «много». Ниже R_DOT кругляш
+// вырождается в точку — так «почти ничего» видно отличается от «мало», а не
+// упирается в общий пол.
+const R_MAX = 24;
+const R_DOT = 2;
+
+// Потолок зависит от плотности окна: месяцы стоят примерно каждую 4-ю неделю, и
+// на «Всё» (десятки месяцев в кадре) кругляш в 48 px перекрыл бы соседей. При
+// ≤ REF_MARKERS месяцев в кадре потолок полный, дальше плавно ужимается, но не
+// ниже R_MAX_DENSE — иначе на длинных окнах потеряется как раз то разрешение,
+// ради которого потолок поднимали.
+const REF_MARKERS = 36;
+const R_MAX_DENSE = 14;
+
+// Нормировка размера — не по максимуму окна, а по 95-му процентилю |нетто|.
+// По максимуму один аномальный месяц придавливал всю остальную шкалу: в
+// типичном ряду с одним выбросом большинство месяцев уезжало в пол. Хвост выше
+// нормы упирается в R_MAX и получает кольцо-«зашкал», чтобы потолок не читался
+// как «тут ровно столько же, сколько там».
+const NORM_QUANTILE = 0.95;
+
+// Зазор между кругляшом и кольцом-«зашкалом», px.
+const RING_OUTSET = 4.5;
 
 // Цвет линии цены — deep indigo, первый цвет FUND_PALETTE: им же красится первый
 // период на «Сезонности». Раньше линия шла акцентным рыжим, но он спорил с
@@ -213,18 +242,42 @@ export default function CompanyFlowsPriceMap({
         return [lo - pad, hi + pad];
     }, [visCloses]);
 
-    // Нормировка размера: максимум |нетто| среди ВИДИМЫХ кругляшей.
-    const maxAbsNet = useMemo(
-        () => Math.max(...visMarkers.map(m => Math.abs(m.net)), 0.001),
-        [visMarkers],
-    );
+    // Нормировка размера: 95-й процентиль |нетто| среди ВИДИМЫХ кругляшей
+    // (линейная интерполяция между соседними значениями). На коротких окнах
+    // квантиль вырождается в максимум — «зашкала» там не возникает, и это
+    // правильно: без десятка точек выброс не от чего отличать.
+    //
+    // Нормировка осталась ОКОННОЙ, а не на весь период: при зуме в спокойный
+    // участок фиксированная шкала схлопнула бы все кругляши в точки — ровно
+    // там, куда пользователь зумился, чтобы разглядеть детали.
+    const normAbsNet = useMemo(() => {
+        const sorted = visMarkers.map(m => Math.abs(m.net)).sort((a, b) => a - b);
+        if (!sorted.length) return 0.001;
+        const pos = NORM_QUANTILE * (sorted.length - 1);
+        const lo = Math.floor(pos);
+        const hi = Math.ceil(pos);
+        const q = sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+        return Math.max(q, 0.001);
+    }, [visMarkers]);
 
     // Координаты в долях области графика: x — центр слота недели (как бары
     // гистограммы), y — положение цены между priceLo..priceHi (3..97%).
     const xFrac = (wi: number) => (wi - visStart + 0.5) / visCount;
     const yFrac = (close: number) => 0.03 + (1 - (close - priceLo) / (priceHi - priceLo)) * 0.94;
 
-    const rFor = (net: number) => R_MIN + (R_MAX - R_MIN) * Math.sqrt(Math.abs(net) / maxAbsNet);
+    // Потолок под плотность видимого окна (см. REF_MARKERS).
+    const rMax = useMemo(() => {
+        const n = visMarkers.length;
+        if (n <= REF_MARKERS) return R_MAX;
+        return Math.max(R_MAX_DENSE, R_MAX * Math.sqrt(REF_MARKERS / n));
+    }, [visMarkers.length]);
+
+    // Площадь ∝ |нетто| до нормы, дальше потолок. Ниже R_DOT — точка.
+    const rFor = (net: number) =>
+        Math.max(rMax * Math.sqrt(Math.min(Math.abs(net) / normAbsNet, 1)), R_DOT);
+
+    // Выше нормы — кругляш упёрся в потолок, рисуем внешнее кольцо.
+    const isOverflow = (net: number) => Math.abs(net) > normAbsNet;
 
     // ── Каскадное появление кругляшей (масштаб 0→1, слева направо). ──
     const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
@@ -471,24 +524,50 @@ export default function CompanyFlowsPriceMap({
                                 const r = rFor(m.net) * popFor(i, visMarkers.length);
                                 if (r <= 0.2) return null;
                                 const dim = hoveredIdx !== null && hoveredIdx !== i;
+                                const color = m.net > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+                                const left = `${xFrac(m.wi) * 100}%`;
+                                const top = `${yFrac(close) * 100}%`;
                                 return (
-                                    <div
-                                        key={m.mi}
-                                        style={{
-                                            position: 'absolute',
-                                            left: `${xFrac(m.wi) * 100}%`,
-                                            top: `${yFrac(close) * 100}%`,
-                                            width: r * 2,
-                                            height: r * 2,
-                                            transform: 'translate(-50%, -50%)',
-                                            borderRadius: '50%',
-                                            background: m.net > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)',
-                                            border: '1.5px solid var(--bg-primary)',
-                                            boxSizing: 'border-box',
-                                            opacity: dim ? 0.45 : 1,
-                                            pointerEvents: 'none',
-                                        }}
-                                    />
+                                    <Fragment key={m.mi}>
+                                        {/* Кольцо-«зашкал»: месяц крупнее нормы окна, кругляш
+                                            упёрся в потолок. Отдельным див-кольцом, а не
+                                            box-shadow — тень не доезжает до PNG-экспорта. */}
+                                        {isOverflow(m.net) && (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    left,
+                                                    top,
+                                                    width: r * 2 + RING_OUTSET * 2,
+                                                    height: r * 2 + RING_OUTSET * 2,
+                                                    transform: 'translate(-50%, -50%)',
+                                                    borderRadius: '50%',
+                                                    border: `1.5px solid ${color}`,
+                                                    boxSizing: 'border-box',
+                                                    opacity: dim ? 0.25 : 0.55,
+                                                    pointerEvents: 'none',
+                                                }}
+                                            />
+                                        )}
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                left,
+                                                top,
+                                                width: r * 2,
+                                                height: r * 2,
+                                                transform: 'translate(-50%, -50%)',
+                                                borderRadius: '50%',
+                                                background: color,
+                                                // У точек ниже ~8 px обводка-разделитель съела бы
+                                                // почти весь кругляш — там её нет.
+                                                border: r >= 4 ? '1.5px solid var(--bg-primary)' : 'none',
+                                                boxSizing: 'border-box',
+                                                opacity: dim ? 0.45 : 1,
+                                                pointerEvents: 'none',
+                                            }}
+                                        />
+                                    </Fragment>
                                 );
                             })}
                         </div>
