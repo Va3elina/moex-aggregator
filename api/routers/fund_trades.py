@@ -2475,6 +2475,160 @@ def company_flows(
     }
 
 
+@router.get("/company-weights")
+def company_weights(
+    isin: Optional[str] = Query(None, description="ISIN бумаги (предпочтительно)"),
+    asset_name: Optional[str] = Query(None, description="Имя бумаги — если нет ISIN"),
+    user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """
+    Помесячная ИСТОРИЯ ДОЛИ бумаги в портфелях whitelist-фондов — режим «Доля»
+    в «Потоках по компании». В отличие от /company-flows (дельты-сделки), здесь
+    УРОВНИ: доля позиции в % от СЧА фонда на каждый месячный снапшот.
+
+    Семантика значений per fund per month (weights[i]):
+      - число  — доля в % на последний ПОЛНЫЙ снапшот фонда в этом месяце;
+                 0.0 = фонд отчитался, бумаги в отчёте нет (продана / ещё не
+                 куплена) — честный ноль;
+      - null   — у фонда нет полного снапшота в месяце (дыра данных или
+                 частичный импорт SCHA, Σweight < FT_COMPLETE_WSUM_MIN) —
+                 фронт рвёт ряд, а не рисует ложный ноль.
+
+    Частичные снапшоты игнорируются целиком: на уровнях они дают ложный провал
+    доли (у дельт это гасилось соседним месяцем, здесь — нет).
+
+    navs[i] — полная СЧА фонда на тот же снапшот, выведенная ИЗ САМОГО снапшота:
+    Σ amount_rub / (Σ weight / 100). Нужна фронту для веса «по капиталу»
+    (Σ nav×доля / Σ nav). Не берём fund_data.nav (Cbonds): источник другой,
+    даты не совпадают со снапшотами, а внутри одного снапшота числитель и
+    знаменатель обязаны быть из одного отчёта.
+
+    ISIN-алиасы (редомициль-пары, ГДР + акция в переходный месяц) суммируются
+    в одну долю — как /company-flows склеивает потоки по canonical_isin.
+
+    Ось месяцев — непрерывный ряд от первого появления бумаги до последнего
+    полного снапшота держателей (с учётом тирной задержки, как везде).
+    """
+    if not isin and not asset_name:
+        raise HTTPException(status_code=400, detail="isin or asset_name required")
+
+    if isin:
+        match_sql = ("(h.isin = :isin OR h.isin IN "
+                     "(SELECT isin FROM securities_ref WHERE canonical_isin = :isin))")
+        match_params = {"isin": isin}
+    else:
+        match_sql = "h.asset_name = :aname"
+        match_params = {"aname": asset_name}
+
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+
+    # Строки бумаги: per fund per snapshot_date, доля и стоимость СУММОЙ по всем
+    # ISIN-алиасам (ГДР + акция одновременно → складываем, не выбираем одну).
+    rows = db.execute(text(f"""
+        SELECT f.fund_id, f.ticker, f.name AS fund_name, f.uk_id,
+               h.snapshot_date,
+               SUM(h.weight) AS weight,
+               (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1] AS aname,
+               MAX(h.isin) AS isin
+        FROM fund_holdings_history h
+        JOIN funds f ON f.fund_id = h.fund_id
+        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+          AND h.source = ANY(:sources)
+          AND h.snapshot_date <= :cutoff AND h.snapshot_date >= :floor
+          AND {match_sql}
+        GROUP BY f.fund_id, f.ticker, f.name, f.uk_id, h.snapshot_date
+        ORDER BY f.fund_id, h.snapshot_date ASC
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff,
+           "floor": FT_HISTORY_FLOOR, **match_params}).mappings().all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Asset not found in any whitelist fund")
+
+    resolved_name = rows[-1]["aname"]
+    resolved_isin = isin or next((r["isin"] for r in reversed(rows) if r["isin"]), None)
+
+    fund_meta = {}
+    # (fund_id, snapshot_date) -> доля бумаги в % на этот снапшот.
+    asset_w: dict = {}
+    for r in rows:
+        fund_meta[r["fund_id"]] = {"ticker": r["ticker"], "fund_name": r["fund_name"], "uk_id": r["uk_id"]}
+        if r["weight"] is not None:
+            asset_w[(r["fund_id"], r["snapshot_date"])] = float(r["weight"])
+
+    # Полные снапшоты держателей (гейт FT_COMPLETE_WSUM_MIN) + implied СЧА.
+    snaps = db.execute(text("""
+        SELECT fund_id, snapshot_date,
+               COALESCE(SUM(weight), 0) AS wsum,
+               COALESCE(SUM(amount_rub), 0) AS asum
+        FROM fund_holdings_history
+        WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
+          AND snapshot_date <= :cutoff AND snapshot_date >= :floor
+        GROUP BY fund_id, snapshot_date
+        HAVING COALESCE(SUM(weight), 0) >= :wmin
+    """), {"fids": list(fund_meta.keys()), "sources": list(MONTHLY_SOURCES),
+           "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN,
+           "floor": FT_HISTORY_FLOOR}).fetchall()
+
+    # fund_id -> { "YYYY-MM": (snapshot_date, nav|None) } — последний полный
+    # снапшот месяца (два отчёта в одном месяце → берём поздний).
+    from collections import defaultdict
+    fund_month_snap: dict = defaultdict(dict)
+    for fid, d, wsum, asum in snaps:
+        m = d.strftime("%Y-%m")
+        prev = fund_month_snap[fid].get(m)
+        if prev is None or d > prev[0]:
+            nav = float(asum) / (float(wsum) / 100.0) if asum and wsum else None
+            fund_month_snap[fid][m] = (d, nav)
+
+    if not fund_month_snap:
+        raise HTTPException(status_code=404, detail="No complete snapshots for holders")
+
+    # Ось: от первого месяца, где бумага есть на ПОЛНОМ снапшоте, до последнего
+    # полного месяца держателей (правее данных всё равно нет).
+    appear_months = [
+        m for fid, by_month in fund_month_snap.items()
+        for m, (d, _nav) in by_month.items() if asset_w.get((fid, d))
+    ]
+    if not appear_months:
+        raise HTTPException(status_code=404, detail="Asset only in partial snapshots")
+    first_month = min(appear_months)
+    last_month = max(m for by_month in fund_month_snap.values() for m in by_month)
+    months = _month_range(first_month, last_month)
+
+    funds_out = []
+    for fid in sorted(fund_meta.keys(), key=lambda i: fund_meta[i]["ticker"]):
+        by_month = fund_month_snap.get(fid, {})
+        weights: list = []
+        navs: list = []
+        for m in months:
+            snap = by_month.get(m)
+            if snap is None:
+                weights.append(None)
+                navs.append(None)
+            else:
+                d, nav = snap
+                weights.append(round(asset_w.get((fid, d), 0.0), 4))
+                navs.append(nav)
+        # Фонд без единого полного снапшота на оси — не отдаём пустышку.
+        if any(w is not None for w in weights):
+            funds_out.append({
+                "ticker": fund_meta[fid]["ticker"],
+                "fund_name": fund_meta[fid]["fund_name"],
+                "uk_id": fund_meta[fid]["uk_id"],
+                "weights": weights,
+                "navs": navs,
+            })
+
+    return {
+        "asset_name": resolved_name,
+        "isin": resolved_isin,
+        "funds_count": len(funds_out),
+        "months": months,
+        "funds": funds_out,
+    }
+
+
 # Коэффициент конвертации при редомициляции: сколько НОВЫХ акций дали за одну
 # СТАРУЮ бумагу (расписку). Цены старой серии умножаем на 1/k, чтобы склеенная
 # линия была в масштабе текущей акции.
