@@ -493,12 +493,12 @@ export default function CompanyShareChart({
                     }}
                     onTouchEnd={handleMouseLeave}
                 >
-                    {/* ── Верхняя секция: цена (как IMOEX в «Силе рынка»). ── */}
+                    {/* ── Верхняя секция: цена (как IMOEX в «Силе рынка»). ──
+                        paddingTop с вычетом 20px — та же компенсация паддинга
+                        карточки (p-5), что в «Столбцах» и «Карте сделок»
+                        (marginTop: calc(--chart-legend-top-gap - 20px)). Без неё
+                        легенда цены стояла на 20px ниже и прыгала при смене режима. */}
                     {hasPrice && (
-                        {/* paddingTop с вычетом 20px — та же компенсация паддинга
-                            карточки (p-5), что в «Столбцах» и «Карте сделок»
-                            (marginTop: calc(--chart-legend-top-gap - 20px)). Без неё
-                            легенда цены стояла на 20px ниже и прыгала при смене режима. */}
                         <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ paddingTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
