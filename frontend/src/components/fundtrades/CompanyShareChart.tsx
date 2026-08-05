@@ -46,10 +46,11 @@ import { ChartTooltip, TooltipRow, ChartDatePill } from '../chart';
 
 const easeOutCubic = ANIMATION.easing;
 
-// Цвет линии цены — как в «Карте сделок» (deep indigo, холодный).
-const PRICE_LINE_COLOR = FUND_PALETTE[0];
-// Бары доли — акцентный: доля не несёт знака, зелёный/красный тут были бы ложью.
-const BAR_COLOR = 'var(--accent)';
+// Цвет линии цены — акцентный оранжевый: цена главная, тянет взгляд на себя.
+const PRICE_LINE_COLOR = 'var(--accent)';
+// Бары доли — deep indigo (холодный фон под линией): доля не несёт знака,
+// зелёный/красный тут были бы ложью.
+const BAR_COLOR = FUND_PALETTE[0];
 
 // Полоса подписей оси X внутри нижней секции, px.
 const XLABEL_H = 40;
