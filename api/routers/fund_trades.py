@@ -802,7 +802,16 @@ def fund_trades_detail(
                 WHEN prev.mkey IS NULL THEN curr.weight
                 WHEN curr.mkey IS NULL THEN -prev.weight
                 ELSE curr.weight - prev.weight
-            END AS delta_weight
+            END AS delta_weight,
+            -- Изменение позиции в рублях — та же величина, что в «Сделках»
+            -- Общего портфеля (там total_delta_amount): вход/выход целиком,
+            -- иначе разница объёмов. amount_rub есть у обоих MONTHLY_SOURCES
+            -- (vim_sdr, interfax_manual), поэтому NULL тут — редкий край.
+            CASE
+                WHEN prev.mkey IS NULL THEN curr.amount_rub
+                WHEN curr.mkey IS NULL THEN -prev.amount_rub
+                ELSE curr.amount_rub - prev.amount_rub
+            END AS delta_amount
         FROM curr
         FULL OUTER JOIN prev USING (mkey)
         LEFT JOIN names n ON n.isin = COALESCE(curr.isin, prev.isin)
@@ -831,6 +840,9 @@ def fund_trades_detail(
             "previous_weight": float(r["prev_weight"]) if r["prev_weight"] is not None else None,
             "current_positions": int(r["curr_positions"]) if r["curr_positions"] else None,
             "previous_positions": int(r["prev_positions"]) if r["prev_positions"] else None,
+            "delta_amount_rub": float(r["delta_amount"]) if r["delta_amount"] is not None else None,
+            "current_amount_rub": float(r["curr_amount"]) if r["curr_amount"] is not None else None,
+            "previous_amount_rub": float(r["prev_amount"]) if r["prev_amount"] is not None else None,
         })
 
     return {

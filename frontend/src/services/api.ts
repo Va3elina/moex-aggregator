@@ -1466,6 +1466,11 @@ export interface FundTradeDiff {
     previous_weight: number | null;
     current_positions: number | null;
     previous_positions: number | null;
+    // Изменение позиции в рублях (та же величина, что total_delta_amount в
+    // «Сделках» Общего портфеля). null — если у снапшота нет объёмов.
+    delta_amount_rub?: number | null;
+    current_amount_rub?: number | null;
+    previous_amount_rub?: number | null;
 }
 
 export interface FundPerformancePoint {

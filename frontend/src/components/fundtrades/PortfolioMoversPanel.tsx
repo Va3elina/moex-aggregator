@@ -53,14 +53,14 @@ const isIsin = (s?: string | null): s is string => !!s && /^[A-Z]{2}[A-Z0-9]{10}
 
 // Единица одна на весь блок (по максимуму) и вынесена в подзаголовок — не в
 // каждую строку. Масштаб задаёт делитель и число знаков: млрд 2, млн 1, тыс 0.
-function scaleOf(maxAbs: number): { unit: string; div: number; dec: number } {
+export function scaleOf(maxAbs: number): { unit: string; div: number; dec: number } {
     if (maxAbs >= 1e9) return { unit: 'млрд ₽', div: 1e9, dec: 2 };
     if (maxAbs >= 1e6) return { unit: 'млн ₽', div: 1e6, dec: 1 };
     return { unit: 'тыс ₽', div: 1e3, dec: 0 };
 }
 
 // Величина со знаком в общей единице блока: «+9.02», «−4.39».
-function fmtSignedNum(v: number, div: number, dec: number): string {
+export function fmtSignedNum(v: number, div: number, dec: number): string {
     return `${v > 0 ? '+' : '−'}${(Math.abs(v) / div).toFixed(dec)}`;
 }
 
