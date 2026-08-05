@@ -2,12 +2,13 @@
  * FundDetailModal — детальная карточка фонда, собранная композицией уже
  * существующих на сайте блоков:
  *   - СЧА крупно + график «Цена пая, ₽» (SimpleChart) + плашки returns;
- *   - «Приток и отток денег» — гистограмма CompanyFlowsHistogram (та же, что
- *     в «Потоках по компании») поверх /funds/flows с fund_ids по одному фонду;
  *   - «Состав фонда» — Donut + список бумаг в стиле «Обзора портфеля»
  *     (логотип · имя · полоса · доля · объём, топ-10 + разворот);
  *   - «Что купили и продали» — diff месячных снапшотов (new/accumulated/
- *     reduced/sold_out) из того же ответа detail.
+ *     reduced/sold_out) из того же ответа detail;
+ *   - «Приток и отток денег» — гистограмма CompanyFlowsHistogram (та же, что
+ *     в «Потоках по компании») поверх /funds/flows с fund_ids по одному фонду;
+ *     последний блок карточки.
  *
  * Контракт обобщён: карточка принимает `loadDetail()` от родителя (замыкает
  * ticker/period/id), а СЧА/returns/has_distributions берутся из ответа detail,
@@ -602,41 +603,6 @@ export default function FundDetailModal({
                                 );
                             })()}
 
-                            {/* (3b) Приток и отток денег инвесторов — /funds/flows по одному
-                                фонду. Гистограмма — тот же самодостаточный
-                                CompanyFlowsHistogram, что в «Потоках по компании». Это
-                                принципиально другая метрика, чем доходность: чистый поток
-                                денег, очищенный от роста рынка. */}
-                            {(flowsLoading || flowMonths.length > 1) && (
-                                <div style={{ marginBottom: 24 }}>
-                                    <h3
-                                        style={{
-                                            fontSize: 'var(--fs-md)',
-                                            fontWeight: 700,
-                                            color: 'var(--text-primary)',
-                                            marginBottom: 4,
-                                        }}
-                                    >
-                                        Приток и отток денег
-                                    </h3>
-                                    <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
-                                        Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
-                                        Рост рынка вычтен — это не доходность, а именно движение денег.
-                                    </div>
-                                    <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
-                                        <CompanyFlowsHistogram
-                                            months={flowMonths}
-                                            series={flowSeries}
-                                            title="Чистый приток и отток денег (млн ₽)"
-                                            height={isMobile ? 260 : 320}
-                                            loading={flowsLoading}
-                                            animTrigger={ticker}
-                                            tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
                             {/* (4) Donut состава + список топ-позиций — только при enableDrilldown */}
                             {enableDrilldown && (
                                 <>
@@ -1064,6 +1030,42 @@ export default function FundDetailModal({
                                         );
                                     })()}
                                 </>
+                            )}
+
+                            {/* (6) Приток и отток денег инвесторов — /funds/flows по одному
+                                фонду. Гистограмма — тот же самодостаточный
+                                CompanyFlowsHistogram, что в «Потоках по компании». Это
+                                принципиально другая метрика, чем доходность: чистый поток
+                                денег, очищенный от роста рынка. Стоит последней — сначала
+                                состав и сделки фонда, потом деньги пайщиков. */}
+                            {(flowsLoading || flowMonths.length > 1) && (
+                                <div style={{ marginTop: 28 }}>
+                                    <h3
+                                        style={{
+                                            fontSize: 'var(--fs-md)',
+                                            fontWeight: 700,
+                                            color: 'var(--text-primary)',
+                                            marginBottom: 4,
+                                        }}
+                                    >
+                                        Приток и отток денег
+                                    </h3>
+                                    <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+                                        Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
+                                        Рост рынка вычтен — это не доходность, а именно движение денег.
+                                    </div>
+                                    <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
+                                        <CompanyFlowsHistogram
+                                            months={flowMonths}
+                                            series={flowSeries}
+                                            title="Чистый приток и отток денег (млн ₽)"
+                                            height={isMobile ? 260 : 320}
+                                            loading={flowsLoading}
+                                            animTrigger={ticker}
+                                            tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
+                                        />
+                                    </div>
+                                </div>
                             )}
                         </>
                     )}
