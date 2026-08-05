@@ -1,10 +1,12 @@
 /**
  * CompanyShareChart — режим «Доля» в «Потоках по компании».
  *
- * Две синхронные панели (по образцу «Силы рынка»: сверху цена, снизу
- * гистограмма): верх — недельная линия цены акции (контекст), низ —
- * помесячная гистограмма ДОЛИ бумаги в портфелях выбранных фондов.
- * Видно, как менялась ставка фондов на бумагу против движения цены.
+ * Оформление — по макету «Силы рынка» (StrengthPage): ДВЕ визуально
+ * разделённые секции в одной карточке, у каждой своя центрированная легенда,
+ * между ними разделитель border-b. Верхняя — недельная линия цены акции
+ * (контекст), нижняя — помесячная гистограмма ДОЛИ бумаги в портфелях
+ * выбранных фондов. Курсор общий: вертикаль идёт сквозь обе панели, тултип
+ * один на обе.
  *
  * Доля месяца — два веса (тумблер «По капиталу / По доле», как в «Общем
  * портфеле»):
@@ -16,15 +18,16 @@
  * 0 — честный ноль (фонд отчитался без бумаги), null — дыра данных → месяц
  * без бара (разрыв), а не ложный ноль.
  *
- * Ось X — МЕСЯЦЫ (слоты). Недели цены раскладываются внутри слота своего
- * месяца дробно ((k+0.5)/K), поэтому линия остаётся гладкой, а бар месяца
- * геометрически совпадает со своим участком линии. Нет истории цены
- * (облигация/ОФЗ) → гистограмма занимает всю высоту, режим живёт без линии.
+ * Ось X — МЕСЯЦЫ (слоты), общая для обеих панелей. Недели цены раскладываются
+ * внутри слота своего месяца дробно ((k+0.5)/K): линия остаётся гладкой, а бар
+ * месяца геометрически совпадает со своим участком линии — таймфреймы разные,
+ * сетка одна. Нет истории цены (облигация/ОФЗ) → верхней секции нет,
+ * гистограмма забирает всю высоту.
  *
- * Оформление и механика — 1-в-1 с CompanyFlowsPriceMap: та же карточка,
- * ChartLegend, навигатор-брашер, watermark, пилюля даты, тултип. В тултипе —
- * доля + «Сделки за месяц» (нетто из /company-flows: подсказка, двигали долю
- * сделки или переоценка) + разбивка долей по фондам.
+ * Механика (навигатор-брашер, watermark, пилюля даты, тултип с разбивкой по
+ * фондам) — 1-в-1 с CompanyFlowsPriceMap. В тултипе дополнительно «Сделки за
+ * месяц» (нетто из /company-flows): подсказка, двигали долю сделки или
+ * переоценка.
  */
 import {
     useEffect,
@@ -44,16 +47,13 @@ import { computeChartTopLineY } from '../chart/datePillLayout';
 
 const easeOutCubic = ANIMATION.easing;
 
-// Цвет линии цены — как в «Карте сделок» (deep indigo, холодный, не спорит
-// с акцентными барами доли).
+// Цвет линии цены — как в «Карте сделок» (deep indigo, холодный).
 const PRICE_LINE_COLOR = FUND_PALETTE[0];
 // Бары доли — акцентный: доля не несёт знака, зелёный/красный тут были бы ложью.
 const BAR_COLOR = 'var(--accent)';
 
-// Раскладка панелей в viewBox 0..1000: верх — цена, низ — доля.
-const PRICE_BOT = 560;   // низ ценовой панели
-const SHARE_TOP = 640;   // верх панели доли (между ними — визуальный зазор)
-const SHARE_BOT = 1000;  // базовая линия баров
+// Полоса подписей оси X внутри нижней секции, px.
+const XLABEL_H = 40;
 
 export type ShareMode = 'rub' | 'share';
 
@@ -84,7 +84,7 @@ interface CompanyShareChartProps {
     loading?: boolean;
     /** Все фонды сняты пользователем — empty-state. */
     noFundsSelected?: boolean;
-    /** Нет истории цены (не акция) → гистограмма во всю высоту. */
+    /** Нет истории цены (не акция) → верхней секции нет. */
     priceMissing?: boolean;
     /** Перезапуск анимации: меняй при смене бумаги / фондов / периода / веса. */
     animTrigger?: string;
@@ -131,8 +131,10 @@ export default function CompanyShareChart({
     animTrigger,
 }: CompanyShareChartProps) {
     const isMobile = useIsMobile();
-    const containerRef = useRef<HTMLDivElement>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
+    // Обёртка обеих панелей — общая система координат для курсора и тултипа.
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const priceSvgRef = useRef<SVGSVGElement>(null);
+    const shareSvgRef = useRef<SVGSVGElement>(null);
 
     // ── Доля месяца по выбранному весу (по ПОЛНОМУ набору месяцев). ──
     const shareValsAll = useMemo(() => {
@@ -174,6 +176,13 @@ export default function CompanyShareChart({
     );
 
     const hasPrice = !priceMissing && weeksAll.length > 1;
+
+    // Высоты секций: из общего бюджета высоты вычитаем легенды/разделитель
+    // (~64px) и полосу подписей X; остальное делим 55/45 в пользу цены — как
+    // соотношение верх/низ в «Силе рынка». Без цены гистограмма берёт всё.
+    const inner = Math.max(height - 64 - XLABEL_H, 240);
+    const topH = hasPrice ? Math.round(inner * 0.55) : 0;
+    const botH = inner - topH;
 
     // ── Недели цены, разложенные по слотам месяцев. ──
     // Для каждого месяца — список [weekIdx...]; неделя k из K сидит на дробной
@@ -256,14 +265,11 @@ export default function CompanyShareChart({
         return (mx || 0.0001) * 1.12;
     }, [visMonthIdx, shareVals]);
 
-    // Границы панелей: без цены гистограмма забирает всю высоту.
-    const shareTop = hasPrice ? SHARE_TOP : 40;
-
-    // Координаты (viewBox 0..1000).
+    // Координаты в СВОЁМ viewBox 0..1000 каждой панели.
     const slotX = (mi: number, frac = 0.5) => ((mi - visStart + frac) / visCount) * 1000;
     const priceY = (close: number) =>
-        PRICE_BOT * (0.05 + (1 - (close - priceLo) / (priceHi - priceLo)) * 0.9);
-    const shareY = (v: number) => shareTop + (1 - v / shareMax) * (SHARE_BOT - shareTop);
+        (0.05 + (1 - (close - priceLo) / (priceHi - priceLo)) * 0.9) * 1000;
+    const shareY = (v: number) => (1 - v / shareMax) * 1000;
 
     // Линия цены: недели видимых месяцев, дробно внутри слотов.
     const linePath = useMemo(() => {
@@ -282,7 +288,7 @@ export default function CompanyShareChart({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasPrice, visMonthIdx, months, weeksByMonth, closesAll, priceLo, priceHi, visStart, visCount]);
 
-    // Тики цены (4) и доли (0 / середина / максимум).
+    // Тики цены (4) и доли (максимум / середина / 0).
     const priceTicks = useMemo(
         () => (hasPrice
             ? Array.from({ length: 4 }, (_, i) => priceLo + ((3 - i) / 3) * (priceHi - priceLo))
@@ -317,7 +323,7 @@ export default function CompanyShareChart({
         return easeOutCubic(t);
     };
 
-    // ── Hover: ближайший месяц с данными по X. ──
+    // ── Hover: ближайший месяц с данными по X (общий на обе панели). ──
     const [hoveredMi, setHoveredMi] = useState<number | null>(null); // индекс в months
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -327,9 +333,10 @@ export default function CompanyShareChart({
     );
 
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!hoverableIdx.length || !containerRef.current || !svgRef.current) return;
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const svgRect = svgRef.current.getBoundingClientRect();
+        const geomSvg = shareSvgRef.current;
+        if (!hoverableIdx.length || !wrapRef.current || !geomSvg) return;
+        const wrapRect = wrapRef.current.getBoundingClientRect();
+        const svgRect = geomSvg.getBoundingClientRect();
         const xInChart = e.clientX - svgRect.left;
         if (xInChart < 0 || xInChart > svgRect.width) return;
         let best = hoverableIdx[0];
@@ -340,8 +347,8 @@ export default function CompanyShareChart({
             if (d < bestDist) { bestDist = d; best = mi; }
         }
         setHoveredMi(best);
-        const snapX = (svgRect.left - containerRect.left) + (slotX(best) / 1000) * svgRect.width;
-        setTooltipPos({ x: snapX, y: e.clientY - containerRect.top });
+        const snapX = (svgRect.left - wrapRect.left) + (slotX(best) / 1000) * svgRect.width;
+        setTooltipPos({ x: snapX, y: e.clientY - wrapRect.top });
     };
     const handleMouseLeave = () => {
         setHoveredMi(null);
@@ -363,8 +370,30 @@ export default function CompanyShareChart({
 
     const shareModeLabel = shareMode === 'rub' ? 'Доля в общем портфеле' : 'Средняя доля в фондах';
 
-    // Ширина бара: 66% слота, но не тоньше 2px-эквивалента (узкое окно → шире).
+    // Ширина бара: 66% слота, но не шире 22 (узкое окно → бары не распухают).
     const barHalf = Math.min((0.33 / visCount) * 1000, 22);
+
+    // Общие CSS-отступы области графика (выравнивание с навигатором).
+    const padArea = {
+        left: 'var(--chart-pad-left, 100px)',
+        right: 'var(--chart-pad-right-single, 95px)',
+    } as const;
+
+    // Вертикальный курсор — свой <line> в каждой панели на одном slotX.
+    const crosshair = (mi: number) => (
+        <line
+            x1={slotX(mi)}
+            y1="0"
+            x2={slotX(mi)}
+            y2="1000"
+            stroke={CROSSHAIR.accentColor}
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+            strokeDasharray={CROSSHAIR.accentDashArray}
+            opacity={CROSSHAIR.accentOpacity}
+            style={{ pointerEvents: 'none' }}
+        />
+    );
 
     // ─────────────────────────────────────────────────────────────────────
     return (
@@ -411,245 +440,237 @@ export default function CompanyShareChart({
                     </div>
                 )}
 
-                <div>
-                    {/* Легенда: линия цены (если есть) + бары доли. */}
-                    <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
-                        <ChartLegend
-                            items={[
-                                ...(hasPrice
-                                    ? [{ color: PRICE_LINE_COLOR, label: assetName || 'Цена', marker: 'dot' as const }]
-                                    : []),
-                                { color: BAR_COLOR, label: `${shareModeLabel} (%)`, marker: 'dot' as const },
-                            ]}
-                            fontWeight={600}
-                            itemGap={6}
-                            gap="clamp(6px, 1vw, 16px)"
-                            style={{ color: 'var(--text-primary)' }}
-                        />
-                    </div>
-
-                    {/* График с тултипом */}
-                    <div
-                        ref={containerRef}
-                        className="relative cursor-crosshair chart-reveal"
-                        style={{ height: 'var(--chart-height, 420px)', display: 'flow-root', touchAction: 'none' }}
-                        onMouseMove={handleMouseMove}
-                        onMouseLeave={handleMouseLeave}
-                        onTouchStart={(e) => {
-                            if (!e.touches[0]) return;
-                            const t = e.touches[0];
-                            handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
-                        }}
-                        onTouchMove={(e) => {
-                            if (!e.touches[0]) return;
-                            const t = e.touches[0];
-                            handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
-                        }}
-                        onTouchEnd={handleMouseLeave}
-                    >
-                        {/* Область графика — те же CSS-отступы, что в гистограмме. */}
-                        <div className="absolute" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)' }}>
-                            <svg ref={svgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
-                                {/* Сетка панели цены */}
-                                {priceTicks.map((p, i) => (
-                                    <line key={`pg-${i}`} x1="0" y1={priceY(p)} x2="1000" y2={priceY(p)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                                ))}
-                                {/* Сетка панели доли */}
-                                {shareTicks.map((v, i) => (
-                                    <line key={`sg-${i}`} x1="0" y1={shareY(v)} x2="1000" y2={shareY(v)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                                ))}
-
-                                {/* Бары доли: null → пропуск (разрыв данных), 0 → пустой слот. */}
-                                {visMonthIdx.map((mi, order) => {
-                                    const v = shareVals[mi];
-                                    if (v == null || v <= 0) return null;
-                                    const grow = popFor(order, visMonthIdx.length);
-                                    if (grow <= 0.01) return null;
-                                    const x = slotX(mi);
-                                    const yTop = SHARE_BOT - (SHARE_BOT - shareY(v)) * grow;
-                                    const dim = hoveredMi !== null && hoveredMi !== mi;
-                                    return (
-                                        <rect
-                                            key={mi}
-                                            x={x - barHalf}
-                                            y={yTop}
-                                            width={barHalf * 2}
-                                            height={SHARE_BOT - yTop}
-                                            fill={BAR_COLOR}
-                                            opacity={dim ? 0.45 : 0.92}
-                                        />
-                                    );
-                                })}
-
-                                {/* Линия цены поверх сетки. */}
-                                {linePath && (
-                                    <path
-                                        d={linePath}
-                                        fill="none"
-                                        stroke={PRICE_LINE_COLOR}
-                                        strokeWidth="2"
-                                        vectorEffect="non-scaling-stroke"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    />
-                                )}
-
-                                {/* Вертикальный курсор — снап к hovered месяцу. */}
-                                {hoveredMi !== null && (
-                                    <line
-                                        x1={slotX(hoveredMi)}
-                                        y1="30"
-                                        x2={slotX(hoveredMi)}
-                                        y2="985"
-                                        stroke={CROSSHAIR.accentColor}
-                                        strokeWidth="1"
-                                        vectorEffect="non-scaling-stroke"
-                                        strokeDasharray={CROSSHAIR.accentDashArray}
-                                        opacity={CROSSHAIR.accentOpacity}
-                                        style={{ pointerEvents: 'none' }}
-                                    />
-                                )}
-                            </svg>
-                        </div>
-
-                        {/* Watermark — как в гистограмме. */}
-                        <ChartWatermark
-                            left="calc(var(--chart-pad-left, 100px) + 5px)"
-                            bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 420px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
-                        />
-
-                        {/* Тултип: доля + сделки месяца + разбивка по фондам. */}
-                        {hoveredMi !== null && tooltipPos && hoverBreakdown && hoverBreakdown.share != null && (() => {
-                            const MAX_ROWS = 6;
-                            const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
-                            const extra = hoverBreakdown.rows.length - shown.length;
-                            const net = hoverBreakdown.net;
-                            return (
-                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
-                                    <TooltipRow
-                                        hideDot
-                                        color={BAR_COLOR}
-                                        label={shareModeLabel}
-                                        value={fmtPct(hoverBreakdown.share)}
-                                        labelClass="font-bold"
-                                        labelColor="var(--text-primary)"
-                                    />
-                                    {net != null && Math.abs(net) >= 0.05 && (
-                                        <TooltipRow
-                                            hideDot
-                                            color={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
-                                            label="Сделки за месяц"
-                                            value={fmtFlow(net)}
-                                            labelClass="font-semibold"
-                                            labelColor="var(--axis-color, #9CA3B8)"
-                                            valueColor={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
-                                        />
-                                    )}
-                                    {shown.length > 0 && (
-                                        <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
-                                            {shown.map((r, i) => (
-                                                <TooltipRow
-                                                    key={i}
-                                                    hideDot
-                                                    color={r.color}
-                                                    label={r.label}
-                                                    value={fmtPct(r.w)}
-                                                    labelClass="font-semibold"
-                                                    labelColor="var(--axis-color, #9CA3B8)"
-                                                    valueColor="var(--axis-color, #9CA3B8)"
-                                                />
-                                            ))}
-                                            {extra > 0 && (
-                                                <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
-                                                    и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
-                                                </div>
-                                            )}
+                {/* Обёртка обеих секций — общий курсор, тултип и пилюля даты. */}
+                <div
+                    ref={wrapRef}
+                    className="relative cursor-crosshair chart-reveal"
+                    style={{ touchAction: 'none' }}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                    onTouchStart={(e) => {
+                        if (!e.touches[0]) return;
+                        const t = e.touches[0];
+                        handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                    }}
+                    onTouchMove={(e) => {
+                        if (!e.touches[0]) return;
+                        const t = e.touches[0];
+                        handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                    }}
+                    onTouchEnd={handleMouseLeave}
+                >
+                    {/* ── Верхняя секция: цена (как IMOEX в «Силе рынка»). ── */}
+                    {hasPrice && (
+                        <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ paddingTop: 'var(--chart-legend-top-gap, 8px)' }}>
+                            <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
+                                <ChartLegend
+                                    items={[{ color: PRICE_LINE_COLOR, label: assetName || 'Цена' }]}
+                                    fontWeight={600}
+                                    style={{ color: 'var(--text-primary)' }}
+                                />
+                            </div>
+                            <div className="relative" style={{ height: topH }}>
+                                <div className="absolute inset-y-0" style={{ left: padArea.left, right: padArea.right }}>
+                                    <svg ref={priceSvgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                                        {priceTicks.map((p, i) => (
+                                            <line key={`pg-${i}`} x1="0" y1={priceY(p)} x2="1000" y2={priceY(p)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                        ))}
+                                        {linePath && (
+                                            <path
+                                                d={linePath}
+                                                fill="none"
+                                                stroke={PRICE_LINE_COLOR}
+                                                strokeWidth="2"
+                                                vectorEffect="non-scaling-stroke"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        )}
+                                        {hoveredMi !== null && crosshair(hoveredMi)}
+                                    </svg>
+                                </div>
+                                {/* Ось Y цены — справа. */}
+                                <div className="absolute inset-y-0 pointer-events-none" style={{ right: 0, width: padArea.right }}>
+                                    {priceTicks.map((p, i) => (
+                                        <div key={`pl-${i}`} className="absolute" style={{ top: `${priceY(p) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
+                                            <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
+                                                {fmtPrice(p)}
+                                            </span>
                                         </div>
-                                    )}
-                                </ChartTooltip>
-                            );
-                        })()}
-
-                        {/* Ось Y справа: цена (верхняя панель) + доля (нижняя). */}
-                        <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', right: 0, width: 'var(--chart-pad-right-single, 95px)' }}>
-                            {priceTicks.map((p, i) => (
-                                <div key={`pl-${i}`} className="absolute" style={{ top: `${priceY(p) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
-                                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                                        {fmtPrice(p)}
-                                    </span>
+                                    ))}
                                 </div>
-                            ))}
-                            {shareTicks.map((v, i) => (
-                                <div key={`sl-${i}`} className="absolute" style={{ top: `${shareY(v) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
-                                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                                        {fmtPct(v)}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Подписи оси X — по видимым месяцам. */}
-                        <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 'var(--chart-xlabel-bottom, 20px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                            {(() => {
-                                const vis = visMonthIdx.map(mi => months[mi]);
-                                if (!vis.length) return null;
-                                const tickCount = Math.min(isMobile ? 3 : 6, vis.length);
-                                return Array.from({ length: tickCount }, (_, i) => {
-                                    const idx = Math.min(Math.round(i * (vis.length - 1) / Math.max(tickCount - 1, 1)), vis.length - 1);
-                                    if (!vis[idx]) return null;
-                                    return (
-                                        <span key={i}>{new Date(`${vis[idx]}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
-                                    );
-                                });
-                            })()}
-                        </div>
-                    </div>
-
-                    {/* Навигатор: превью — линия цены (или доли, если цены нет). */}
-                    {navigatorData.length > 1 && (
-                        <div data-export-ignore="true">
-                            <ChartNavigator
-                                data={navigatorData}
-                                color={hasPrice ? PRICE_LINE_COLOR : BAR_COLOR}
-                                previewMode="line"
-                                onChange={(s, e) => setNavRange([s, e])}
-                                insetLeft="var(--chart-pad-left)"
-                                insetRight="var(--chart-pad-right-single)"
-                            />
+                            </div>
                         </div>
                     )}
+
+                    {/* ── Нижняя секция: гистограмма доли (как Breadth). ── */}
+                    <div className="relative overflow-hidden" style={{ paddingTop: hasPrice ? 'var(--sp-2)' : 'var(--chart-legend-top-gap, 8px)' }}>
+                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
+                            <ChartLegend
+                                items={[{ color: BAR_COLOR, label: `${shareModeLabel} (%)` }]}
+                                fontWeight={600}
+                                style={{ color: 'var(--text-primary)' }}
+                            />
+                        </div>
+                        <div className="relative" style={{ height: botH + XLABEL_H }}>
+                            <div className="absolute" style={{ top: 0, bottom: XLABEL_H, left: padArea.left, right: padArea.right }}>
+                                <svg ref={shareSvgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                                    {shareTicks.map((v, i) => (
+                                        <line key={`sg-${i}`} x1="0" y1={shareY(v)} x2="1000" y2={shareY(v)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                    ))}
+                                    {/* Бары: null → пропуск (разрыв данных), 0 → пустой слот. */}
+                                    {visMonthIdx.map((mi, order) => {
+                                        const v = shareVals[mi];
+                                        if (v == null || v <= 0) return null;
+                                        const grow = popFor(order, visMonthIdx.length);
+                                        if (grow <= 0.01) return null;
+                                        const x = slotX(mi);
+                                        const yTop = 1000 - (1000 - shareY(v)) * grow;
+                                        const dim = hoveredMi !== null && hoveredMi !== mi;
+                                        return (
+                                            <rect
+                                                key={mi}
+                                                x={x - barHalf}
+                                                y={yTop}
+                                                width={barHalf * 2}
+                                                height={1000 - yTop}
+                                                fill={BAR_COLOR}
+                                                opacity={dim ? 0.45 : 0.92}
+                                            />
+                                        );
+                                    })}
+                                    {hoveredMi !== null && crosshair(hoveredMi)}
+                                </svg>
+                            </div>
+                            {/* Ось Y доли — справа. */}
+                            <div className="absolute pointer-events-none" style={{ top: 0, bottom: XLABEL_H, right: 0, width: padArea.right }}>
+                                {shareTicks.map((v, i) => (
+                                    <div key={`sl-${i}`} className="absolute" style={{ top: `${shareY(v) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
+                                        <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
+                                            {fmtPct(v)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                            {/* Подписи оси X — по видимым месяцам. */}
+                            <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 8, left: padArea.left, right: padArea.right, fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
+                                {(() => {
+                                    const vis = visMonthIdx.map(mi => months[mi]);
+                                    if (!vis.length) return null;
+                                    const tickCount = Math.min(isMobile ? 3 : 6, vis.length);
+                                    return Array.from({ length: tickCount }, (_, i) => {
+                                        const idx = Math.min(Math.round(i * (vis.length - 1) / Math.max(tickCount - 1, 1)), vis.length - 1);
+                                        if (!vis[idx]) return null;
+                                        return (
+                                            <span key={i}>{new Date(`${vis[idx]}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                            {/* Watermark — в нижней панели, как в гистограммах. */}
+                            <ChartWatermark
+                                left={`calc(${padArea.left} + 5px)`}
+                                bottom={`${XLABEL_H + 5}px`}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Тултип: доля + сделки месяца + разбивка по фондам. */}
+                    {hoveredMi !== null && tooltipPos && hoverBreakdown && hoverBreakdown.share != null && (() => {
+                        const MAX_ROWS = 6;
+                        const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
+                        const extra = hoverBreakdown.rows.length - shown.length;
+                        const net = hoverBreakdown.net;
+                        return (
+                            <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={XLABEL_H}>
+                                <TooltipRow
+                                    hideDot
+                                    color={BAR_COLOR}
+                                    label={shareModeLabel}
+                                    value={fmtPct(hoverBreakdown.share)}
+                                    labelClass="font-bold"
+                                    labelColor="var(--text-primary)"
+                                />
+                                {net != null && Math.abs(net) >= 0.05 && (
+                                    <TooltipRow
+                                        hideDot
+                                        color={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
+                                        label="Сделки за месяц"
+                                        value={fmtFlow(net)}
+                                        labelClass="font-semibold"
+                                        labelColor="var(--axis-color, #9CA3B8)"
+                                        valueColor={net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)'}
+                                    />
+                                )}
+                                {shown.length > 0 && (
+                                    <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
+                                        {shown.map((r, i) => (
+                                            <TooltipRow
+                                                key={i}
+                                                hideDot
+                                                color={r.color}
+                                                label={r.label}
+                                                value={fmtPct(r.w)}
+                                                labelClass="font-semibold"
+                                                labelColor="var(--axis-color, #9CA3B8)"
+                                                valueColor="var(--axis-color, #9CA3B8)"
+                                            />
+                                        ))}
+                                        {extra > 0 && (
+                                            <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
+                                                и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </ChartTooltip>
+                        );
+                    })()}
+
+                    {/* Плавающая пилюля даты — hovered месяц, над верхней панелью. */}
+                    {hoveredMi !== null && (() => {
+                        const m = months[hoveredMi];
+                        if (!m) return null;
+                        const wrap = wrapRef.current;
+                        const topSvg = priceSvgRef.current ?? shareSvgRef.current;
+                        if (!wrap || !topSvg) return null;
+                        const wrapRect = wrap.getBoundingClientRect();
+                        const svgRect = topSvg.getBoundingClientRect();
+                        const padTop = svgRect.top - wrapRect.top;
+                        const chartW = svgRect.width;
+                        const centerX = wrap.offsetLeft + (svgRect.left - wrapRect.left) + (slotX(hoveredMi) / 1000) * chartW;
+                        const topLineY = computeChartTopLineY({
+                            wrapper: wrap,
+                            paddingTop: padTop,
+                            gridOffsetFrac: 0.05,
+                            chartAreaHeight: svgRect.height,
+                        });
+                        const plotLeft = wrap.offsetLeft + (svgRect.left - wrapRect.left);
+                        return (
+                            <ChartDatePill
+                                date={monthLabel(m)}
+                                x={centerX}
+                                topLineY={topLineY}
+                                minX={plotLeft}
+                                maxX={plotLeft + chartW}
+                            />
+                        );
+                    })()}
                 </div>
 
-                {/* Плавающая пилюля даты — hovered месяц. */}
-                {hoveredMi !== null && (() => {
-                    const m = months[hoveredMi];
-                    if (!m) return null;
-                    const cont = containerRef.current;
-                    const svg = svgRef.current;
-                    if (!cont || !svg) return null;
-                    const containerRect = cont.getBoundingClientRect();
-                    const svgRect = svg.getBoundingClientRect();
-                    const padTop = svgRect.top - containerRect.top;
-                    const chartW = svgRect.width;
-                    const chartAreaH = svgRect.height;
-                    const centerX = cont.offsetLeft + (svgRect.left - containerRect.left) + (slotX(hoveredMi) / 1000) * chartW;
-                    const topLineY = computeChartTopLineY({
-                        wrapper: cont,
-                        paddingTop: padTop,
-                        gridOffsetFrac: 0.03,
-                        chartAreaHeight: chartAreaH,
-                    });
-                    const plotLeft = cont.offsetLeft + (svgRect.left - containerRect.left);
-                    return (
-                        <ChartDatePill
-                            date={monthLabel(m)}
-                            x={centerX}
-                            topLineY={topLineY}
-                            minX={plotLeft}
-                            maxX={plotLeft + chartW}
+                {/* Навигатор: превью — линия цены (или доли, если цены нет). */}
+                {navigatorData.length > 1 && (
+                    <div data-export-ignore="true">
+                        <ChartNavigator
+                            data={navigatorData}
+                            color={hasPrice ? PRICE_LINE_COLOR : BAR_COLOR}
+                            previewMode="line"
+                            onChange={(s, e) => setNavRange([s, e])}
+                            insetLeft="var(--chart-pad-left)"
+                            insetRight="var(--chart-pad-right-single)"
                         />
-                    );
-                })()}
+                    </div>
+                )}
             </>)}
         </div>
     );
