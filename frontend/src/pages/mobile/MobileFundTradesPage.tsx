@@ -14,7 +14,7 @@
  * ветка оставлена на случай ре-гейтинга).
  *
  * Переиспользует весь data-слой (services/api), FundDetailModal, Donut,
- * FundPicker, UkMultiSelect, CompanyFlowsTab, usePersistedState с ТЕМИ ЖЕ
+ * FundPicker, CompanyFlowsTab, usePersistedState с ТЕМИ ЖЕ
  * ключами frame:fundtrades:* (синхрон с десктопом), useGrowReveal, onboarding.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -49,7 +49,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../../config/fundConfig';
+import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
@@ -61,7 +61,6 @@ import FundDetailModal, {
 } from '../../components/funds/FundDetailModal';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import PortfolioFundPicker, { defaultPortfolioTickers } from '../../components/fundtrades/PortfolioFundPicker';
-import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
@@ -326,7 +325,6 @@ export default function MobileFundTradesPage() {
     if ((portfolioMoversPeriod as string) === '3y') setPortfolioMoversPeriod('1y');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
   // Hover-связь пончик↔список на плитке (по fund_id + индекс слайса).
   const [tileHover, setTileHover] = useState<{ fund: number; idx: number } | null>(null);
 
@@ -480,28 +478,6 @@ export default function MobileFundTradesPage() {
       .finally(() => { if (!isStale()) setLoadingPortfolioMovers(false); });
   }, [tab, portfolioFundsParam, portfolioMoversPeriod, portfolioMoversRange?.from, portfolioMoversRange?.to, funds.length, common.fund_trades_access]);
 
-  // Уникальные УК для UkMultiSelect (Состав фондов).
-  const ukOptions = useMemo<UkOption[]>(() => {
-    const map = new Map<string, UkOption>();
-    const count = new Map<string, number>();
-    for (const f of funds) {
-      const key = ukKey(f);
-      if (!key) continue;
-      count.set(key, (count.get(key) ?? 0) + 1);
-      if (map.has(key)) continue;
-      map.set(key, {
-        key,
-        name: UK_LOGOS[key]?.name || f.uk || key,
-        uk_id: f.uk_id ?? key,
-      });
-    }
-    // Порядок: УК с наибольшим числом фондов сверху, при равенстве — по имени.
-    return Array.from(map.values()).sort((a, b) => {
-      const d = (count.get(b.key) ?? 0) - (count.get(a.key) ?? 0);
-      return d !== 0 ? d : a.name.localeCompare(b.name);
-    });
-  }, [funds]);
-
   // Все фонды для FundPicker (movers multi + актив-sheet single).
   const moverPickerFunds = useMemo<FundPickerFund[]>(
     () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
@@ -515,11 +491,8 @@ export default function MobileFundTradesPage() {
 
   // Группировка + сортировка карточек (Состав фондов).
   const fundsByCategory = useMemo(() => {
-    const filtered = selectedUks.size > 0
-      ? funds.filter((f) => selectedUks.has(ukKey(f)))
-      : funds;
     const groups: Record<string, FundWithHistory[]> = {};
-    for (const f of filtered) {
+    for (const f of funds) {
       const key = f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
       if (!groups[key]) groups[key] = [];
       groups[key].push(f);
@@ -534,7 +507,7 @@ export default function MobileFundTradesPage() {
     };
     for (const k of Object.keys(groups)) groups[k] = [...groups[k]].sort(cmp);
     return groups;
-  }, [funds, fundSort, returnPeriod, selectedUks]);
+  }, [funds, fundSort, returnPeriod]);
 
   // movers: клик по активу → Потоки по компании с предвыбором.
   const openCompanyFlows = (m: FundTradesMovers['top_accumulated'][number]) => {
@@ -963,17 +936,6 @@ export default function MobileFundTradesPage() {
                   </p>
                 )}
               </div>
-              {ukOptions.length > 1 && (
-                <div>
-                  <div style={SHEET_SECTION_LABEL}>Управляющая компания</div>
-                  <UkMultiSelect
-                    options={ukOptions}
-                    selected={selectedUks}
-                    onChange={setSelectedUks}
-                    size="md"
-                  />
-                </div>
-              )}
             </>
           )}
 
