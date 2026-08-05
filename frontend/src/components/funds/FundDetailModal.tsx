@@ -378,6 +378,25 @@ export default function FundDetailModal({
                                 {data?.fund.ticker || ticker}
                             </span>
                         )}
+                        {/* Дата среза состава — здесь же, в шапке-легенде после тикера
+                            (раньше висела отдельной строкой под блоком СЧА). */}
+                        {data?.current_snapshot_date && (
+                            <span
+                                style={{
+                                    marginLeft: 10,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    fontWeight: 600,
+                                    fontSize: 'var(--fs-2xs)',
+                                    color: 'var(--text-muted)',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                <Calendar size={12} style={{ flexShrink: 0 }} />
+                                Состав на {formatSnapshotDate(data.current_snapshot_date)}
+                            </span>
+                        )}
                     </h2>
                     <button
                         onClick={onClose}
@@ -401,11 +420,10 @@ export default function FundDetailModal({
                     {data && !loading && (
                         <>
                             {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
-                                значение переехало в его центр, здесь остаётся только
-                                дата состава. */}
+                                значение живёт в его центре и блок не рендерится вовсе
+                                (дата среза переехала в шапку карточки). */}
+                            {!navInDonut && (
                             <div style={{ marginBottom: 20 }}>
-                                {!navInDonut && (
-                                <>
                                 <div
                                     style={{
                                         fontSize: 'var(--fs-2xs)',
@@ -429,24 +447,8 @@ export default function FundDetailModal({
                                 >
                                     {navValue != null ? formatRubShort(navValue) : '—'}
                                 </div>
-                                </>
-                                )}
-                                {data.current_snapshot_date && (
-                                    <div
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 5,
-                                            marginTop: 6,
-                                            fontSize: 'var(--fs-2xs)',
-                                            color: 'var(--text-muted)',
-                                        }}
-                                    >
-                                        <Calendar size={12} style={{ flexShrink: 0 }} />
-                                        Состав на {data.current_snapshot_date}
-                                    </div>
-                                )}
                             </div>
+                            )}
 
                             {/* (3) График цены пая (₽) + плашки доходности по периодам */}
                             {(() => {
@@ -455,22 +457,15 @@ export default function FundDetailModal({
                                 const chartData = payChartData; // мемоизирован выше (стабильная ссылка)
                                 return (
                                     <div style={{ marginBottom: 24 }}>
-                                        <h3
-                                            style={{
-                                                fontSize: 'var(--fs-md)',
-                                                fontWeight: 700,
-                                                color: 'var(--text-primary)',
-                                                marginBottom: 10,
-                                            }}
-                                        >
-                                            Цена пая и доходность
-                                        </h3>
+                                        {/* Заголовок раздела уехал внутрь самого графика
+                                            (prop title у SimpleChart) — снаружи его нет. */}
                                         {/* Мобила: график во всю ширину карточки (компенсируем
                                             боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
                                         <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
+                                                title="Цена пая и доходность"
                                                 height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
                                                 primaryLabel="Цена пая, ₽"
                                                 legendPosition="top"
@@ -485,18 +480,25 @@ export default function FundDetailModal({
                                                 showNavigator={!isMobile}
                                             />
                                         ) : (
-                                            <div
-                                                style={{
-                                                    padding: '24px 16px',
-                                                    textAlign: 'center',
-                                                    color: 'var(--text-muted)',
-                                                    fontSize: 'var(--fs-sm)',
-                                                    border: '1px solid var(--border-color)',
-                                                    borderRadius: 10,
-                                                    background: 'var(--bg-secondary)',
-                                                }}
-                                            >
-                                                Недостаточно истории для графика цены пая
+                                            // Графика нет — заголовку жить негде, поэтому здесь
+                                            // он остаётся обычной строкой над заглушкой.
+                                            <div>
+                                                <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px' }}>
+                                                    Цена пая и доходность
+                                                </h3>
+                                                <div
+                                                    style={{
+                                                        padding: '24px 16px',
+                                                        textAlign: 'center',
+                                                        color: 'var(--text-muted)',
+                                                        fontSize: 'var(--fs-sm)',
+                                                        border: '1px solid var(--border-color)',
+                                                        borderRadius: 10,
+                                                        background: 'var(--bg-secondary)',
+                                                    }}
+                                                >
+                                                    Недостаточно истории для графика цены пая
+                                                </div>
                                             </div>
                                         )}
                                         </div>
