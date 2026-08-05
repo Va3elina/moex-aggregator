@@ -651,13 +651,6 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     allLabel="Все фонды"
                 />
 
-                {/* Период — окно последних N месяцев (1 год / 3 года / Всё). */}
-                <SegmentedControl<Period>
-                    options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
-                    value={period}
-                    onChange={setPeriod}
-                />
-
                 {/* Режим: сделки на цене / доля в фондах. */}
                 <SegmentedControl<ChartMode>
                     options={CF_MODES.map(m => ({ key: m, label: MODE_LABELS[m] }))}
@@ -686,6 +679,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         }
                     />
                 )}
+
+                {/* Период — окно последних N месяцев (1 год / 3 года / Всё).
+                    Всегда крайний справа: marginLeft auto прижимает блок к правому
+                    краю ряда, а не приклеивает его к соседнему тумблеру режимов. */}
+                <div style={{ marginLeft: 'auto' }}>
+                    <SegmentedControl<Period>
+                        options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
+                        value={period}
+                        onChange={setPeriod}
+                    />
+                </div>
 
                 {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
                     фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
