@@ -56,6 +56,42 @@ interface Props {
    *  правилом .sb-panel .chart-tooltip-root (мелкие панели), но у потоков ЦБ
    *  разбор по категориям — единственный способ прочитать числа. */
   tooltipInSandbox?: boolean;
+
+  // ─── Ниже — обобщение под НЕ-денежные плитки (сезонность). Все дефолты
+  //     повторяют прежнее поведение потоков ЦБ/фондов байт-в-байт. ───
+
+  /**
+   * Плитка БЕЗ реальных дат: подписи оси и плавающая пилюля берутся из
+   * `p.label`, год и сравнения м/м–г/г скрыты. Нужно сезонности, где бар —
+   * агрегат за много лет («Январь», «Пн», «10:00»), а `end_date`/`year`
+   * заполнить нечем.
+   */
+  dateless?: boolean;
+  /** Суффикс единиц у чисел на Y-оси и в тултипе. По умолчанию «млрд».
+   *  Пустая строка — не рисовать суффикс вовсе (его несёт сам формат). */
+  unitSuffix?: string;
+  /** Формат значения в тултипе и пилсе. По умолчанию — 2 знака после запятой. */
+  fmtValue?: (v: number) => string;
+  /** Формат подписи Y-оси. По умолчанию — целое. */
+  fmtAxis?: (v: number) => string;
+  /**
+   * Верхняя граница симметричной шкалы из максимума по модулю. Дефолт —
+   * округление вверх до десятков с минимумом 10, что зашито под МИЛЛИАРДЫ:
+   * ряд в процентах (сезонность даёт ~1–3%) при нём схлопнется в «минимум 10»
+   * и все столбцы станут высотой в пиксель.
+   * ⚠️ Ссылка должна быть стабильной (useCallback) — уходит в депсы мемо.
+   */
+  niceMax?: (maxAbs: number) => number;
+  /** Цвет столбца по ЗНАКУ значения (зелёный/красный), а не по палитре
+   *  категорий ЦБ. Для одиночного знакопеременного ряда категория одна и
+   *  цветом кодируется направление, а не «кто из участников». */
+  colorBySign?: boolean;
+  /** Своя легенда вместо списка категорий (у сезонности это «Рост/Падение»,
+   *  а не имена категорий). */
+  legendOverride?: ChartLegendItem[];
+  /** Линия поверх столбцов — у сезонности медиана «Без выбросов». Длина
+   *  values должна совпадать с periods; null = разрыв. */
+  overlay?: { label: string; color: string; values: (number | null)[] } | null;
 }
 
 /**
@@ -107,8 +143,22 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   valuePill,
   tooltipInSandbox,
   allPeriods,
+  dateless,
+  unitSuffix,
+  fmtValue,
+  fmtAxis,
+  niceMax,
+  colorBySign,
+  legendOverride,
+  overlay,
 }, ref) {
   const { theme } = useTheme();
+  const axisSuffix = unitSuffix ?? 'млрд';
+  const valueOf = fmtValue ?? ((v: number) => v.toFixed(2));
+  const axisOf = fmtAxis ?? ((v: number) => String(Math.round(v)));
+  // Цвет столбца: по знаку (одиночный ряд) либо по палитре категорий ЦБ.
+  const barColor = (cat: string, v: number) =>
+    colorBySign ? (v >= 0 ? 'var(--oi-green)' : 'var(--oi-red)') : getCategoryColor(cat, theme);
   const containerRef = useRef<HTMLDivElement>(null);
   // Chart-контейнер (зона ПОД легендой) — для клампа тултипа в plot-коридоре.
   const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -162,10 +212,14 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   // Теперь — как в «Деньги в фондах»: волна привязана к fetched-данным, а
   // навигатор лишь слайсит уже отрисованные бары. Fallback на periods для
   // вызовов без allPeriods (мобилка без навигатора) — поведение не меняется.
+  //   ⚠️ У плитки без дат (dateless) end_date пустой — сигнатуру берём из
+  //   label, иначе она вырождается в «длина|", и смена среза (дни недели →
+  //   месяцы) с тем же числом баров не перезапускала бы волну.
   const sigPeriods = allPeriods ?? periods;
+  const sigOf = (p: CbrFlowsPeriod | undefined) => p?.end_date || p?.label || '';
   const dataSig =
-    `${sigPeriods.length}|${sigPeriods[0]?.end_date ?? ''}` +
-    `|${sigPeriods[sigPeriods.length - 1]?.end_date ?? ''}`;
+    `${sigPeriods.length}|${sigOf(sigPeriods[0])}` +
+    `|${sigOf(sigPeriods[sigPeriods.length - 1])}`;
   const animKey = `${animTrigger ?? ''}|${dataSig}`;
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
@@ -232,7 +286,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   }), [periods.length]);
   // Y-axis симметричный max
   const yMax = useMemo(() => {
-    if (!periods.length) return 10;
+    if (!periods.length) return niceMax ? niceMax(0) : 10;
     let maxAbs = 0;
     for (const p of periods) {
       let pos = 0, neg = 0;
@@ -243,8 +297,16 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       }
       maxAbs = Math.max(maxAbs, pos, neg);
     }
-    return Math.max(10, Math.ceil((maxAbs * 1.12) / 10) * 10);
-  }, [periods, categories]);
+    // Линия-оверлей тоже должна помещаться в шкалу — иначе медиана уходит за
+    // верхнюю грид-линию там, где она больше самого столбца.
+    if (overlay) {
+      for (const v of overlay.values) {
+        if (v != null) maxAbs = Math.max(maxAbs, Math.abs(v));
+      }
+    }
+    // Дефолт — округление до десятков с минимумом 10: зашито под МИЛЛИАРДЫ.
+    return niceMax ? niceMax(maxAbs) : Math.max(10, Math.ceil((maxAbs * 1.12) / 10) * 10);
+  }, [periods, categories, overlay, niceMax]);
 
   // 5 уровней Y-axis: [-max, -max/2, 0, max/2, max]
   const yTicks = useMemo(
@@ -253,8 +315,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   );
 
   const legendItems = useMemo<ChartLegendItem[]>(
-    () => categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: getCategoryShortLabel(cat) })),
-    [categories, theme],
+    () => legendOverride
+      ?? categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: getCategoryShortLabel(cat) })),
+    [categories, theme, legendOverride],
   );
 
   // ─── Hover handler ───────────────────────────────────────────────────────
@@ -382,10 +445,12 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                   whiteSpace: 'nowrap',
                 }}
               >
-                {Math.round(v)}
-                <span className="font-bold" style={{ fontSize: '0.7em', opacity: 0.85, marginLeft: 3 }}>
-                  млрд
-                </span>
+                {axisOf(v)}
+                {axisSuffix && (
+                  <span className="font-bold" style={{ fontSize: '0.7em', opacity: 0.85, marginLeft: 3 }}>
+                    {axisSuffix}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -464,7 +529,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                           y={`${50 - stackUpPct - hPct}%`}
                           width={`${barW}%`}
                           height={`${hPct}%`}
-                          fill={getCategoryColor(cat, theme)}
+                          fill={barColor(cat, v)}
                           stroke="var(--bar-outline)" strokeWidth={outlineWidth}
                           vectorEffect="non-scaling-stroke"
                         />
@@ -480,7 +545,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                           y={`${50 + stackDownPct}%`}
                           width={`${barW}%`}
                           height={`${hPct}%`}
-                          fill={getCategoryColor(cat, theme)}
+                          fill={barColor(cat, v)}
                           stroke="var(--bar-outline)" strokeWidth={outlineWidth}
                           vectorEffect="non-scaling-stroke"
                         />
@@ -490,6 +555,39 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                 </g>
               );
             })}
+
+            {/* Линия-оверлей (медиана «Без выбросов» у сезонности).
+                ⚠️ Отдельный вложенный <svg> с viewBox 0 0 100 100: у родителя
+                viewBox'а нет, значит его пользовательские единицы — ПИКСЕЛИ, и
+                polyline пришлось бы считать через реальный размер бокса (а он
+                задан CSS-отступами и меняется с ресайзом). Внутри viewBox'а
+                координаты нормированы 0..100, как проценты у баров.
+                Растёт вместе с волной: точка i умножается на свой progress. */}
+            {overlay && overlay.values.length > 0 && (
+              <svg
+                x="0" y="0" width="100%" height="100%"
+                viewBox="0 0 100 100" preserveAspectRatio="none"
+                style={{ overflow: 'visible' }}
+              >
+                <polyline
+                  points={periods.map((_, i) => {
+                    const v = overlay.values[i];
+                    if (v == null) return '';
+                    const prog = animProgress[i] ?? 1;
+                    const x = i * barSlot + barSlot / 2;
+                    const y = 50 - (v / yMax) * 50 * prog;
+                    return `${x},${y}`;
+                  }).filter(Boolean).join(' ')}
+                  fill="none"
+                  stroke={overlay.color}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="none"
+                />
+              </svg>
+            )}
 
             {/* Crosshair при hover */}
             {hover && periods[hover.periodIdx] && (
@@ -512,7 +610,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             bottom: var(--chart-xlabel-bottom) — same CSS-var как у Притоки/Оттоки.
             Gap до bottom grid line ~13px (vs прежние 4px) — labels чуть ниже. */}
         <div
-          className="absolute flex justify-between font-semibold px-2"
+          className={`absolute font-semibold${dateless ? '' : ' flex justify-between px-2'}`}
           style={{
             left: `${pad.left}px`,
             right: `${pad.right}px`,
@@ -523,35 +621,53 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             pointerEvents: 'none',
           }}
         >
-          {(() => {
+          {/* dateless — подпись ПОД СВОИМ столбцом, по центру слота.
+              Даты можно раскидывать justify-between (важен ход времени, а не
+              привязка к конкретному бару), но срез читается только вместе со
+              своим столбцом: «какой месяц красный» по разъехавшимся подписям
+              не понять. Прореживаем, только если подписи физически не влезают. */}
+          {dateless && (() => {
+            const chartW = Math.max(1, (containerW || vw) - pad.left - pad.right);
+            const slotPx = chartW / periods.length;
+            const maxLen = periods.reduce((m, p) => Math.max(m, p.label.length), 1);
+            // ~0.62em на символ у полужирного шрифта + 6px воздуха по бокам.
+            const needPx = maxLen * axisFontPx * 0.62 + 6;
+            const step = Math.max(1, Math.ceil(needPx / slotPx));
+            return periods.map((p, i) => (
+              i % step === 0 ? (
+                <span
+                  key={`xlab-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: `${i * barSlot + barSlot / 2}%`,
+                    transform: 'translateX(-50%)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {p.label}
+                </span>
+              ) : null
+            ));
+          })()}
+          {!dateless && (() => {
             // Число X-меток по РЕАЛЬНОЙ ширине контейнера, не isMobile (viewport) —
             // на узкой панели песочницы (containerW ~300-500) 6 дат друг на друга
             // налезают; используем vw-fallback пока containerW не измерен.
             const cw = containerW || vw;
             const maxTicks = cw < 420 ? 3 : cw < 640 ? 4 : cw < 900 ? 5 : 6;
             const tickCount = Math.min(maxTicks, periods.length);
+            const labelOf = (p: CbrFlowsPeriod) =>
+              new Date(p.end_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
             if (tickCount < 2) {
               // Edge case: 1 period — single centered label
-              const p = periods[0];
-              const date = new Date(p.end_date);
-              return (
-                <span style={{ margin: '0 auto' }}>
-                  {date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                </span>
-              );
+              return <span style={{ margin: '0 auto' }}>{labelOf(periods[0])}</span>;
             }
             return Array.from({ length: tickCount }, (_, i) => {
               const idx = Math.min(
                 Math.round((i * (periods.length - 1)) / (tickCount - 1)),
                 periods.length - 1,
               );
-              const p = periods[idx];
-              const date = new Date(p.end_date);
-              return (
-                <span key={`xlab-${i}`}>
-                  {date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                </span>
-              );
+              return <span key={`xlab-${i}`}>{labelOf(periods[idx])}</span>;
             });
           })()}
         </div>
@@ -589,7 +705,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                 background: up ? 'var(--oi-green)' : 'var(--oi-red)', color: '#fff',
               }}
             >
-              {`${up ? '+' : '−'}${Math.abs(total).toFixed(Math.abs(total) >= 10 ? 0 : 1)}`}
+              {fmtValue
+                ? fmtValue(total)
+                : `${up ? '+' : '−'}${Math.abs(total).toFixed(Math.abs(total) >= 10 ? 0 : 1)}`}
             </div>
           );
         })()}
@@ -605,7 +723,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
           const p = periods[hover.periodIdx];
           return (
             <ChartDatePill
-              date={`${p.label} ${p.year}`}
+              date={dateless ? p.label : `${p.label} ${p.year}`}
               x={pad.left + (hover.periodIdx + 0.5) * slotW}
               topLineY={padTop}
               minX={pad.left}
@@ -631,7 +749,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
         // м/м и г/г — изменение объёма торгов к прошлому периоду и к тому же
         // периоду год назад. Считаем по allPeriods (полный список): при узком
         // фильтре («1Г») соседи для сравнения лежат за пределами `periods`.
-        const fullPeriods = allPeriods ?? periods;
+        // dateless — сравнивать не с чем: бар уже агрегат за всю историю, а не
+        // конкретный месяц конкретного года. Весь блок ниже пропускаем.
+        const fullPeriods = dateless ? [] : (allPeriods ?? periods);
         const curIdx = fullPeriods.findIndex((x) => x.end_date === p.end_date);
         const prevPeriod = curIdx > 0 ? fullPeriods[curIdx - 1] : undefined;
         const yoyPeriod = fullPeriods.find(
@@ -689,11 +809,11 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             {sortedPositive.map((e) => (
               <div key={e.cat} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: getCategoryColor(e.cat, theme) }} />
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: barColor(e.cat, e.val) }} />
                   <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{e.cat}</span>
                 </div>
                 <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-positive)' }}>
-                  +{e.val.toFixed(2)}
+                  {fmtValue ? fmtValue(e.val) : `+${e.val.toFixed(2)}`}
                 </span>
               </div>
             ))}
@@ -703,36 +823,56 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             {sortedNegative.map((e) => (
               <div key={e.cat} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: getCategoryColor(e.cat, theme) }} />
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: barColor(e.cat, e.val) }} />
                   <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{e.cat}</span>
                 </div>
                 <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-negative)' }}>
-                  {e.val.toFixed(2)}
+                  {valueOf(e.val)}
                 </span>
               </div>
             ))}
-            <div style={{ height: 1, background: 'var(--text-primary)', opacity: 0.35, margin: '4px 0' }} />
-            <div className="flex items-center justify-between font-bold" style={{ fontSize: 'var(--fs-xs)' }}>
-              <span>Объём торгов</span>
-              <span style={{ color: 'var(--text-primary)' }}>
-                {tradingVolume.toFixed(2)} млрд
-              </span>
-            </div>
-            {/* Изменение объёма: м/м (к прошлому периоду) и г/г (к тому же
-                периоду год назад). «—» если периода для сравнения нет. */}
-            <div
-              className="flex items-center justify-between"
-              style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
-            >
-              <span>
-                <span style={{ color: 'var(--text-muted)' }}>{momLabel} </span>
-                <span style={{ color: pctColor(momPct), fontWeight: 700 }}>{fmtPct(momPct)}</span>
-              </span>
-              <span>
-                <span style={{ color: 'var(--text-muted)' }}>г/г </span>
-                <span style={{ color: pctColor(yoyPct), fontWeight: 700 }}>{fmtPct(yoyPct)}</span>
-              </span>
-            </div>
+            {/* Линия-оверлей отдельной строкой — её значения в стек не входят,
+                но в тултипе нужны (сезонность: медиана «Без выбросов»). */}
+            {overlay && overlay.values[hover.periodIdx] != null && (
+              <div className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
+                <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: overlay.color }} />
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{overlay.label}</span>
+                </div>
+                <span className={TOOLTIP.valueClass} style={TOOLTIP.valueStyle}>
+                  {valueOf(overlay.values[hover.periodIdx] as number)}
+                </span>
+              </div>
+            )}
+            {/* Объём торгов и его изменение — метрики ПОТОКОВ. У плитки без дат
+                (сезонность) сравнивать не с чем, а «объём» бессмыслен: там бар
+                это среднее изменение цены, а не прокрутившиеся деньги. */}
+            {!dateless && (
+              <>
+                <div style={{ height: 1, background: 'var(--text-primary)', opacity: 0.35, margin: '4px 0' }} />
+                <div className="flex items-center justify-between font-bold" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <span>Объём торгов</span>
+                  <span style={{ color: 'var(--text-primary)' }}>
+                    {tradingVolume.toFixed(2)} {axisSuffix}
+                  </span>
+                </div>
+                {/* Изменение объёма: м/м (к прошлому периоду) и г/г (к тому же
+                    периоду год назад). «—» если периода для сравнения нет. */}
+                <div
+                  className="flex items-center justify-between"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
+                >
+                  <span>
+                    <span style={{ color: 'var(--text-muted)' }}>{momLabel} </span>
+                    <span style={{ color: pctColor(momPct), fontWeight: 700 }}>{fmtPct(momPct)}</span>
+                  </span>
+                  <span>
+                    <span style={{ color: 'var(--text-muted)' }}>г/г </span>
+                    <span style={{ color: pctColor(yoyPct), fontWeight: 700 }}>{fmtPct(yoyPct)}</span>
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         );
       })()}

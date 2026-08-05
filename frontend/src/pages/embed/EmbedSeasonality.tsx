@@ -16,16 +16,18 @@
  * Контролы: тип графика + разрез в тулбаре; дивиденды/медиана/текущий год — в ⚙.
  * Виджет целиком под PRO-токеном → тир-гейтинга/онбординга/экспорта нет.
  */
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, TrendingUp, Clock, Calendar, CalendarRange } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes from '../../components/LwChartPanes';
+import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getSeasonality,
   getSeasonalityYearly,
   getSeasonalityIntradayUnsupported,
+  type CbrFlowsPeriod,
   type SeasonalityResponse,
   type SeasonalityMode,
   type YearlySeasonalityResponse,
@@ -88,6 +90,12 @@ const FULL_HISTORY_ITERS = 9999;
 const DAY = 86400;
 const T0 = Math.floor(Date.UTC(2001, 0, 1) / 1000); // база вне реальных дат
 const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+// Единственная «категория» плитки Календаря: значение одно на бар, цвет несёт
+// направление (движок идёт с colorBySign), а не принадлежность к категории.
+const SEASON_CAT = 'Ср. изменение';
+// Стабильная ссылка: массив уходит в депсы мемо внутри движка (шкала, легенда).
+const SEASON_CATS = [SEASON_CAT];
 
 // Формат процентов: точность по величине ряда (<2 → 2 знака, <10 → 1, иначе 0).
 function pctDigits(maxAbs: number): number {
@@ -221,51 +229,59 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   const boxRef = useRef<HTMLDivElement>(null);
 
   const isHist = chartType === 'histogram';
-  const bars = histBase?.bars ?? [];
+  const bars = useMemo(() => histBase?.bars ?? [], [histBase]);
 
-  // ── Календарь: категориальная гистограмма ──
-  const histSeries = useMemo<LwSeries[]>(() => {
-    if (!isHist || bars.length === 0) return [];
-    const maxAbs = Math.max(...bars.map((b) => Math.abs(b.avg_change)), 0.01);
-    const digits = pctDigits(maxAbs);
-    const out: LwSeries[] = [{
-      id: 'season', type: 'histogram', scale: 'right', base: 0,
-      color: 'var(--oi-green)', label: 'Ср. изменение',
-      // Ось категориальная (срез, не время) — «последний бар» ничего не значит,
-      // пилюля last-value на оси только путает (не зависит от тумблера песочницы).
-      lastValueVisible: false,
-      data: bars.map((b, i) => ({
-        time: T0 + i * DAY,
-        value: b.avg_change,
-        color: b.avg_change >= 0 ? 'var(--oi-green)' : 'var(--oi-red)',
-      })),
-      axisFmt: (v) => fmtPct(v, digits, false),
-      tipFmt: (v) => fmtPct(v, Math.max(digits, 1)),
-      minMove: 0.01,
-    }];
+  // ── Календарь: плитка срезов на движке потоков ЦБ ──
+  // Тот же визуальный язык, что у потоков ЦБ и фондов: столбцы вверх/вниз от
+  // нуля, окантовка, волна появления, пилс значения. Дат у среза нет (бар —
+  // агрегат за всю историю), поэтому движок идёт в режиме dateless.
+  const histPeriods = useMemo<CbrFlowsPeriod[]>(
+    () => bars.map((b) => ({
+      year: 0,
+      label: b.label,
+      kind: 'month' as const,
+      end_date: '',
+      values: { [SEASON_CAT]: b.avg_change },
+    })),
+    [bars],
+  );
+
+  // Точность процентов — по размаху ряда, как раньше (<2% → 2 знака и т.д.).
+  const histDigits = useMemo(
+    () => pctDigits(Math.max(...bars.map((b) => Math.abs(b.avg_change)), 0.01)),
+    [bars],
+  );
+
+  // Медиана «Без выбросов» — линией поверх столбцов.
+  const histOverlay = useMemo(() => {
     const med = histMedian?.bars;
-    if (showNoOutliers && med?.length === bars.length) {
-      out.push({
-        id: 'median', type: 'line', scale: 'right', color: 'var(--chart-line-1)', lineWidth: 2,
-        label: 'Без выбросов', lastValueVisible: false,
-        data: med.map((b, i) => ({ time: T0 + i * DAY, value: b.avg_change })),
-        axisFmt: (v) => fmtPct(v, digits, false),
-        tipFmt: (v) => fmtPct(v, Math.max(digits, 1)),
-        minMove: 0.01,
-      });
-    }
-    return out;
-  }, [isHist, bars, histMedian, showNoOutliers]);
-
-  // tickFmt категориальной оси: синтетическое время → индекс бара → label среза.
-  const histTickFmt = useMemo(() => {
-    if (!isHist) return undefined;
-    const labels = bars.map((b) => b.label);
-    return (time: number) => {
-      const idx = Math.round((time - T0) / DAY);
-      return labels[idx] ?? '';
+    if (!showNoOutliers || !med || med.length !== bars.length || !bars.length) return null;
+    return {
+      label: 'Без выбросов',
+      color: 'var(--chart-line-1)',
+      values: med.map((b) => b.avg_change),
     };
-  }, [isHist, bars]);
+  }, [histMedian, bars, showNoOutliers]);
+
+  // Шкала под ПРОЦЕНТЫ: дефолт движка округляет до десятков с минимумом 10 —
+  // он рассчитан на миллиарды, и ряд в 1-3% схлопнулся бы в столбцы высотой
+  // в пиксель. Округляем вверх до «красивого» шага своего порядка величины.
+  const histNiceMax = useCallback((maxAbs: number) => {
+    if (!(maxAbs > 0)) return 1;
+    const target = maxAbs * 1.12;
+    const pow = Math.pow(10, Math.floor(Math.log10(target)));
+    const step = [1, 1.5, 2, 2.5, 3, 4, 5, 10].find((s) => s * pow >= target) ?? 10;
+    return step * pow;
+  }, []);
+
+  const histLegend = useMemo(() => [
+    { label: 'Рост', color: 'var(--oi-green)' },
+    { label: 'Падение', color: 'var(--oi-red)' },
+    ...(histOverlay ? [{ label: histOverlay.label, color: histOverlay.color }] : []),
+  ], [histOverlay]);
+
+  const histFmtValue = useCallback((v: number) => fmtPct(v, Math.max(histDigits, 1)), [histDigits]);
+  const histFmtAxis = useCallback((v: number) => fmtPct(v, histDigits, false), [histDigits]);
 
   // ── Годовая: кумулятивные линии на синтетическом годе ──
   const yearlySeries = useMemo<LwSeries[]>(() => {
@@ -310,26 +326,27 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     };
   }, [isHist]);
 
-  // Лейбл нативного кроссхэйра (полоска у оси времени под курсором): время у нас
-  // синтетическое (T0 + индекс), родной форматтер lightweight-charts показал бы
-  // случайную «реальную» дату 2001 года — вместо этого подставляем ту же
-  // категориальную подпись, что и на оси (Календарь), либо день+месяц без
-  // фиктивного года (Годовая).
-  const crosshairTimeFmt = useMemo(() => {
-    if (isHist) {
-      const labels = bars.map((b) => b.label);
-      return (time: number) => {
-        const idx = Math.round((time - T0) / DAY);
-        return labels[idx] ?? '';
-      };
-    }
-    return (time: number) => {
-      const d = new Date(time * 1000);
-      return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]}`;
-    };
-  }, [isHist, bars]);
+  // Лейбл нативного кроссхэйра «Годовой»: время синтетическое (T0 + индекс),
+  // родной форматтер lightweight-charts показал бы случайную «реальную» дату
+  // 2001 года — подставляем день+месяц без фиктивного года.
+  const crosshairTimeFmt = useMemo(() => (time: number) => {
+    const d = new Date(time * 1000);
+    return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]}`;
+  }, []);
 
-  const lwSeries = isHist ? histSeries : yearlySeries;
+  // Движку ЦБ нужна ЯВНАЯ высота в пикселях (он рисует SVG в фиксированный
+  // бокс, а не тянется по родителю) — меряем контейнер, как у потоков фондов.
+  const [chartH, setChartH] = useState(300);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h && h > 0) setChartH(Math.round(h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <EmbedFrame
@@ -378,24 +395,38 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        {status === 'ok' && lwSeries.length > 0 && (
+        {status === 'ok' && isHist && histPeriods.length > 0 && (
+          <StackedBidirectionalHistogram
+            periods={histPeriods}
+            categories={SEASON_CATS}
+            unit="%"
+            height={chartH}
+            animTrigger={`${stock}|${mode}|${effExcludeDividends}`}
+            // Срез — не датированный период: подписи оси и плавающая пилюля
+            // берутся из label, блок «Объём торгов / м-м / г-г» скрыт.
+            dateless
+            colorBySign
+            unitSuffix=""
+            fmtValue={histFmtValue}
+            fmtAxis={histFmtAxis}
+            niceMax={histNiceMax}
+            legendOverride={histLegend}
+            overlay={histOverlay}
+            valuePill
+            tooltipInSandbox
+          />
+        )}
+        {status === 'ok' && !isHist && yearlySeries.length > 0 && (
           <LwChartPanes
-            panes={[{ series: lwSeries }]}
+            panes={[{ series: yearlySeries }]}
             // Статичный вид (как у потоков капитала): пан и зум выключены,
             // график всегда показывает всю историю и подстраивается под панель.
             // Здесь смысл в картине целиком, а не в разглядывании участка.
             staticView
             dark={dark}
-            fitKey={`${chartType}|${stock}|${mode}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
-            tickFmt={isHist ? histTickFmt : yearlyTickFmt}
+            fitKey={`${chartType}|${stock}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
+            tickFmt={yearlyTickFmt}
             crosshairTimeFmt={crosshairTimeFmt}
-            legendItems={isHist
-              ? [
-                  { label: 'Рост', color: 'var(--oi-green)' },
-                  { label: 'Падение', color: 'var(--oi-red)' },
-                  ...(showNoOutliers && histMedian ? [{ label: 'Без выбросов', color: 'var(--chart-line-1)' }] : []),
-                ]
-              : undefined}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
