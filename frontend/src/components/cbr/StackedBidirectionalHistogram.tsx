@@ -48,10 +48,6 @@ interface Props {
    * за пределами видимых `periods`. Не передан → fallback на `periods`.
    */
   allPeriods?: CbrFlowsPeriod[];
-  /** Пилс суммы столбца на ценовой шкале. Уместен там, где значение ОДНО
-   *  (чистый поток фондов); для многокатегорийных потоков ЦБ одна цифра
-   *  бессмысленна — там подробный тултип. */
-  valuePill?: boolean;
   /** Показывать курсорный тултип и В ПЕСОЧНИЦЕ. По умолчанию он там скрыт
    *  правилом .sb-panel .chart-tooltip-root (мелкие панели), но у потоков ЦБ
    *  разбор по категориям — единственный способ прочитать числа. */
@@ -127,7 +123,6 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   height,
   loading,
   animTrigger,
-  valuePill,
   tooltipInSandbox,
   allPeriods,
   dateless,
@@ -151,7 +146,6 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const vw = useViewportWidth();
-  const isMobile = vw < 768;
 
   // Ширина СВОЕГО контейнера (не window.innerWidth) — на full-page /cbr-flows
   // это одно и то же (chart занимает почти весь viewport), но в узкой панели
@@ -664,41 +658,6 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             категориями у нулевой линии он перекрывал данные; на остальных
             графиках сайта ChartWatermark остаётся штатно. */}
 
-        {/* Пилс значения на ЦЕНОВОЙ ШКАЛЕ — сумма столбца под курсором.
-            Горизонтальной линии намеренно НЕТ: столбец и так подсвечен, а линия
-            через весь график в плитке периодов только мешает. Пилс закрывает
-            дыру «видно форму, не видно чисел»: курсорный тултип в песочнице
-            скрыт по правилу .sb-panel .chart-tooltip-root. */}
-        {valuePill && hover && periods[hover.periodIdx] && (() => {
-          const p = periods[hover.periodIdx];
-          const total = categories.reduce((acc, c) => acc + (p.values[c] ?? 0), 0);
-          if (!Number.isFinite(total)) return null;
-          const cs = getComputedStyle(document.documentElement);
-          const padTop = parseFloat(cs.getPropertyValue('--chart-pad-top')) || 14;
-          const h = (containerRef.current?.clientHeight ?? height) - padTop;
-          // Та же геометрия, что у столбцов: ноль по центру поля, полуразмах = yMax.
-          const y = padTop + h / 2 - (total / yMax) * (h / 2);
-          const up = total >= 0;
-          return (
-            <div
-              data-export-ignore="true"
-              style={{
-                // ⚠️ Прижимаем к КРОМКЕ ПОЛЯ (ширина оси = pad.right), иначе пилс
-                // уезжает за цифры шкалы и висит у самого края панели.
-                position: 'absolute', right: pad.right, top: Math.max(padTop, Math.min(padTop + h, y)),
-                transform: 'translateY(-50%)', zIndex: 6, pointerEvents: 'none',
-                padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap',
-                fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-                background: up ? 'var(--oi-green)' : 'var(--oi-red)', color: '#fff',
-              }}
-            >
-              {fmtValue
-                ? fmtValue(total)
-                : `${up ? '+' : '−'}${Math.abs(total).toFixed(Math.abs(total) >= 10 ? 0 : 1)}`}
-            </div>
-          );
-        })()}
-
         {/* Плавающая дата над графиком — единый стиль/позиция со всеми чартами
             (ChartDatePill: прозрачный текст, низ прижат к верхней грид-линии,
             кламп в границах chart-area чтобы не наезжать на Y-шкалу). */}
@@ -740,14 +699,25 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
         // сверху, не заезжает на подписи оси снизу. Координаты hover.mouseY —
         // от OUTER контейнера (включая зону легенды), поэтому границы коридора
         // считаем через offsetTop chart-контейнера.
-        const tooltipMaxH = isMobile ? 180 : 240;
+        // ⚠️ Высота карточки — ПО ЧИСЛУ СТРОК, а не константой. Раньше здесь
+        // стояли фиксированные 240px (180 на мобиле) — запас под старую версию
+        // тултипа с «Объёмом торгов» и сравнениями. Сейчас в карточке 1-3
+        // строки (~60px), и кламп по 240 схлопывал коридор [minTop, maxTop]
+        // почти в точку: тултип залипал у верхней грид-линии и переставал идти
+        // за курсором по вертикали.
+        const overlayRow = overlay && overlay.values[hover.periodIdx] != null ? 1 : 0;
+        const rowCount = sortedPositive.length + sortedNegative.length + overlayRow;
+        const hasDivider = sortedPositive.length > 0 && sortedNegative.length > 0;
+        const estH = rowCount * 20 + (hasDivider ? 9 : 0) + 10;
         const csDoc = getComputedStyle(document.documentElement);
         const padTopPx = parseFloat(csDoc.getPropertyValue('--chart-pad-top')) || 14;
         const padBottomPx = parseFloat(csDoc.getPropertyValue('--chart-pad-bottom')) || 50;
         const wrapTop = chartWrapRef.current?.offsetTop ?? 40;
         const wrapH = chartWrapRef.current?.clientHeight ?? (height - wrapTop);
         const minTop = wrapTop + padTopPx + 6;
-        const maxTop = wrapTop + wrapH - padBottomPx - 6 - tooltipMaxH;
+        // В низкой панели коридор может выродиться (maxTop < minTop) — тогда
+        // прижимаем к верху, а не улетаем выше поля.
+        const maxTop = Math.max(minTop, wrapTop + wrapH - padBottomPx - 6 - estH);
         const top = Math.max(minTop, Math.min(hover.mouseY - 20, maxTop));
 
         return (
@@ -799,7 +769,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             ))}
             {/* Линия-оверлей отдельной строкой — её значения в стек не входят,
                 но в тултипе нужны (сезонность: медиана «Без выбросов»). */}
-            {overlay && overlay.values[hover.periodIdx] != null && (
+            {overlayRow === 1 && overlay && (
               <div className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
                   <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: overlay.color }} />
