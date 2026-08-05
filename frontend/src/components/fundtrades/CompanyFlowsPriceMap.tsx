@@ -506,18 +506,19 @@ export default function CompanyFlowsPriceMap({
                                     />
                                 )}
 
-                                {/* Вертикальный курсор — снап к hovered кругляшу. */}
+                                {/* Вертикальный курсор — снап к hovered кругляшу.
+                                    Нейтральный серый, а не акцент: оранжевым он
+                                    спорил с кругляшами, у которых цвет несёт смысл. */}
                                 {hoveredIdx !== null && visMarkers[hoveredIdx] && (
                                     <line
                                         x1={xFrac(visMarkers[hoveredIdx].wi) * 1000}
                                         y1="30"
                                         x2={xFrac(visMarkers[hoveredIdx].wi) * 1000}
                                         y2="970"
-                                        stroke={CROSSHAIR.accentColor}
-                                        strokeWidth="1"
+                                        stroke={CROSSHAIR.color}
+                                        strokeWidth={CROSSHAIR.strokeWidth}
                                         vectorEffect="non-scaling-stroke"
-                                        strokeDasharray={CROSSHAIR.accentDashArray}
-                                        opacity={CROSSHAIR.accentOpacity}
+                                        strokeDasharray={CROSSHAIR.dashArray}
                                         style={{ pointerEvents: 'none' }}
                                     />
                                 )}

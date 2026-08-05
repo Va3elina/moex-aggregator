@@ -242,7 +242,8 @@ export default function CompanyShareChart({
         return [lo - pad, hi + pad];
     }, [hasPrice, visMonthIdx, months, weeksByMonth, closesAll]);
 
-    // Шкала доли: 0..max видимого окна ×1.12 (бар максимума не упирается в верх).
+    // Шкала доли: 0..max видимого окна ×1.12 (бар максимума не упирается в
+    // верхнюю грид-линию — она же потолок шкалы, см. shareTicks).
     const shareMax = useMemo(() => {
         let mx = 0;
         for (const mi of visMonthIdx) {
@@ -285,8 +286,11 @@ export default function CompanyShareChart({
             : []),
         [hasPrice, priceLo, priceHi],
     );
+    // Верхний тик — потолок шкалы (с headroom), а не максимум бара: только так
+    // верхняя грид-линия встаёт на самый верх плота и её зазор от легенды равен
+    // зазору легенды от разделителя. Бар максимума headroom'а не касается.
     const shareTicks = useMemo(
-        () => [shareMax / 1.12, shareMax / 2.24, 0],
+        () => [shareMax, shareMax / 2, 0],
         [shareMax],
     );
 
@@ -365,7 +369,7 @@ export default function CompanyShareChart({
         return {
             plotLeft: svgRect.left - wrapRect.left,
             plotWidth: svgRect.width,
-            topLineY: (svgRect.top - wrapRect.top) + (hasPrice ? 0 : 0.107) * svgRect.height,
+            topLineY: svgRect.top - wrapRect.top,
         };
     })();
 
@@ -404,17 +408,18 @@ export default function CompanyShareChart({
     } as const;
 
     // Вертикальный курсор — свой <line> в каждой панели на одном slotX.
+    // Нейтральный серый, а не акцент: оранжевым курсор спорил с барами доли и
+    // кругляшами сделок, у которых цвет несёт смысл.
     const crosshair = (mi: number) => (
         <line
             x1={slotX(mi)}
             y1="0"
             x2={slotX(mi)}
             y2="1000"
-            stroke={CROSSHAIR.accentColor}
-            strokeWidth="1"
+            stroke={CROSSHAIR.color}
+            strokeWidth={CROSSHAIR.strokeWidth}
             vectorEffect="non-scaling-stroke"
-            strokeDasharray={CROSSHAIR.accentDashArray}
-            opacity={CROSSHAIR.accentOpacity}
+            strokeDasharray={CROSSHAIR.dashArray}
             style={{ pointerEvents: 'none' }}
         />
     );
@@ -540,7 +545,9 @@ export default function CompanyShareChart({
                         Без цены секция первая в карточке — та же margin-компенсация
                         p-5, что у верхней, чтобы легенда стояла как в OI. */}
                     <div className="relative overflow-hidden" style={hasPrice ? { paddingTop: 'var(--sp-2)' } : { marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
-                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
+                        {/* Зазор под легендой = зазору над ней (--sp-2 от разделителя):
+                            легенда сидит ровно посередине между полосой и графиком. */}
+                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: hasPrice ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
                                 items={[{ color: BAR_COLOR, label: `${shareModeLabel} (%)` }]}
                                 fontWeight={600}
