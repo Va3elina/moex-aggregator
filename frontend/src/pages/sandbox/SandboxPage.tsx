@@ -184,8 +184,9 @@ const MINW = 300, MINH = 200;
 const MINW_BY_TYPE: Partial<Record<IndKind, number>> = {
   oi: 540,
   seasonality: 380,
-  // +период к таймфрейму и категории — прежних 420 уже не хватало.
-  'funds-money': 520,
+  // +период к таймфрейму и категории — прежних 420 уже не хватало;
+  // +«Фонды» (фильтр состава) — ещё одна кнопка в том же ряду.
+  'funds-money': 580,
   strength: 440,
   screener: 520,
   heatmap: 320,
