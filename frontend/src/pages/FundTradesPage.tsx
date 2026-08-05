@@ -1067,7 +1067,7 @@ export default function FundTradesPage() {
                 return (
                     <FundDetailModal
                         ticker={selectedTicker}
-                        loadDetail={(p) => getFundTradesDetail(selectedTicker, p)}
+                        loadDetail={(p, r) => getFundTradesDetail(selectedTicker, p, r ? { from: r.from, to: r.to } : {})}
                         navRub={listFund?.nav_rub}
                         returns={listFund?.returns}
                         hasDistributions={listFund?.has_distributions}

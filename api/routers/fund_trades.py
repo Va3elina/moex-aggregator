@@ -585,6 +585,14 @@ def list_funds_with_history(
 def fund_trades_detail(
     ticker: str = Path(..., min_length=1, max_length=20),
     period: str = Query("3m", description="1m | 3m | 6m | 1y"),
+    range_from: str | None = Query(
+        None, alias="from",
+        description="YYYY-MM(-DD) — БАЗОВЫЙ месяц произвольного диапазона; задаётся вместе с `to` и отменяет period",
+    ),
+    range_to: str | None = Query(
+        None, alias="to",
+        description="YYYY-MM(-DD) — ЦЕЛЕВОЙ месяц произвольного диапазона (сравнение from → to)",
+    ),
     user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -595,12 +603,37 @@ def fund_trades_detail(
       - diff: список изменений с типом (accumulated/reduced/new/sold_out)
 
     Если истории нет (только один snapshot) — diff пустой, current'ы заполнены.
+
+    Период сравнения задаётся либо пресетом (period=1m|3m|6m|1y), либо
+    произвольным диапазоном месяцев (from→to) — семантика та же, что у /movers:
+    сравниваем снапшот месяца `from` (база) со снапшотом месяца `to` (цель).
     """
     # Beta whitelist — другие фонды возвращают 404 (не светим что они в БД).
     if ticker.upper() not in {t.upper() for t in WHITELIST_TICKERS}:
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not available in beta")
 
     months = _parse_period_months(period)
+
+    # Произвольный диапазон (from → to) вместо пресета «N месяцев назад от свежего».
+    # prev_bound = начало месяца, следующего за `from`: последний снапшот СТРОГО
+    # раньше него = снапшот месяца `from` (или ближайший более ранний, как в пресетах).
+    # curr_bound = конец целевого месяца: якорь текущего снапшота.
+    prev_bound: date | None = None
+    curr_bound: date | None = None
+    range_from_norm: str | None = None
+    range_to_norm: str | None = None
+    if bool(range_from) != bool(range_to):
+        raise HTTPException(status_code=400, detail="from и to задаются только вместе")
+    if range_from and range_to:
+        _f = _month_start(range_from, "from")
+        _t = _month_start(range_to, "to")
+        if _f >= _t:
+            raise HTTPException(status_code=400, detail="from must be an earlier month than to")
+        if _f < FT_HISTORY_FLOOR:
+            raise HTTPException(status_code=400, detail=f"from earlier than {FT_HISTORY_FLOOR.isoformat()} is not available")
+        prev_bound = _next_month(_f)
+        curr_bound = _next_month(_t) - timedelta(days=1)
+        range_from_norm, range_to_norm = _f.isoformat(), _t.isoformat()
 
     # Найти fund_id по тикеру (case-insensitive).
     fund_row = db.execute(text("""
@@ -620,17 +653,34 @@ def fund_trades_detail(
 
     # Latest snapshot date. Free/гость — с задержкой (cutoff): свежий срез по подписке.
     cutoff = _snapshot_cutoff(db, user)
+    # Месяцы с данными по этому фонду — календарь произвольного диапазона на фронте
+    # (месяц-энд каждого месяца, свежие сверху; ограничены тем же cutoff и floor).
+    available_month_dates = db.execute(text("""
+        SELECT MAX(snapshot_date) AS d FROM fund_holdings_history
+        WHERE fund_id = :fid AND source = ANY(:sources)
+          AND snapshot_date <= :cutoff AND snapshot_date >= :floor
+        GROUP BY date_trunc('month', snapshot_date)
+        ORDER BY d DESC
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES),
+           "cutoff": cutoff, "floor": FT_HISTORY_FLOOR}).scalars().all()
+    available_months = [m.isoformat() for m in available_month_dates]
+
+    # Якорь текущего снапшота: конец целевого месяца диапазона, но не свежее cutoff.
+    curr_cap = cutoff if curr_bound is None else min(curr_bound, cutoff)
     latest_row = db.execute(text("""
         SELECT MAX(snapshot_date) AS d FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources)
           AND snapshot_date <= :cutoff
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).first()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": curr_cap}).first()
 
     if not latest_row or not latest_row[0]:
         # Нет истории вообще
         return {
             "fund": dict(fund_row),
             "period": period,
+            "range_from": range_from_norm,
+            "range_to": range_to_norm,
+            "available_months": available_months,
             "current_snapshot_date": None,
             "previous_snapshot_date": None,
             "current_holdings": [],
@@ -646,15 +696,21 @@ def fund_trades_detail(
     # дня месяца, см. _parse_period_months). Берём последний снапшот СТРОГО до
     # начала месяца, который на (N−1) месяцев младше текущего: для 1m это
     # «последний снапшот до текущего месяца» = прошлый месяц-энд.
+    # При произвольном диапазоне граница приходит готовой (prev_bound = начало
+    # месяца после `from`), COALESCE в SQL выбирает её вместо арифметики месяцев.
     prev_row = db.execute(text("""
         SELECT snapshot_date FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources)
-          AND snapshot_date < date_trunc('month', CAST(:curr AS date))
-                              - make_interval(months => CAST(:months AS integer) - 1)
+          AND snapshot_date < COALESCE(
+                  CAST(:prev_bound AS date),
+                  date_trunc('month', CAST(:curr AS date))
+                  - make_interval(months => CAST(:months AS integer) - 1)
+              )
           AND snapshot_date >= :floor
         ORDER BY snapshot_date DESC
         LIMIT 1
     """), {"fid": fund_id, "curr": current_date, "months": months,
+           "prev_bound": prev_bound.isoformat() if prev_bound else None,
            "sources": list(MONTHLY_SOURCES), "floor": FT_HISTORY_FLOOR}).first()
 
     previous_date = prev_row[0] if prev_row else None
@@ -690,6 +746,9 @@ def fund_trades_detail(
         return {
             "fund": dict(fund_row),
             "period": period,
+            "range_from": range_from_norm,
+            "range_to": range_to_norm,
+            "available_months": available_months,
             "current_snapshot_date": current_date.isoformat(),
             "previous_snapshot_date": None,
             "current_holdings": current_holdings,
@@ -777,6 +836,9 @@ def fund_trades_detail(
     return {
         "fund": dict(fund_row),
         "period": period,
+        "range_from": range_from_norm,
+        "range_to": range_to_norm,
+        "available_months": available_months,
         "current_snapshot_date": current_date.isoformat(),
         "previous_snapshot_date": previous_date.isoformat(),
         "current_holdings": current_holdings,

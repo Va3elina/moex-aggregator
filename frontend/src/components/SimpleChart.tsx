@@ -78,10 +78,6 @@ interface SimpleChartProps {
    *  open/high/low в data — иначе тихий откат на 'line'. */
   primaryType?: ChartSeriesType;
   showValueHeader?: boolean;
-  /** Заголовок раздела ВНУТРИ карточки графика (левый верхний угол, над
-   *  легендой). Нужен там, где заголовок не должен висеть отдельной строкой
-   *  снаружи (карточка фонда). Не задан → ничего не рендерится. */
-  title?: string;
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
   showNavigator?: boolean;
@@ -185,7 +181,6 @@ export default function SimpleChart({
   niceTicksSecondary = false,
   gridAxis = 'primary',
   showValueHeader = true,
-  title,
   legendPosition = 'bottom',
   showDownloadButton = true,
   showNavigator = false,
@@ -1198,26 +1193,8 @@ export default function SimpleChart({
       {/* Легенда — вверху, по центру. Negative margin-top компенсирует p-5 (20px)
           контейнера: легенда встаёт на --chart-legend-top-gap от верхней границы
           paper-card — почти вплотную, как в cbr-flows. */}
-      {/* Заголовок раздела внутри карточки — над легендой, слева. Тем же
-          negative margin подтянут к верхней границе, что и легенда. */}
-      {title && (
-        <div
-          style={{
-            // Negative margin компенсирует p-5 карточки; в bare-режиме паддинга
-            // нет — подтягивать нечего.
-            marginTop: bare ? 0 : 'calc(var(--chart-legend-top-gap, 8px) - 20px)',
-            marginBottom: 8,
-            fontSize: 'var(--fs-md)',
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            paddingRight: 96, // место под кнопки в правом верхнем углу карточки
-          }}
-        >
-          {title}
-        </div>
-      )}
       {legendPosition === 'top' && (
-        <div className="flex justify-center" style={{ marginTop: (title || bare) ? 0 : 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
+        <div className="flex justify-center" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
       )}
 
       {/* Заголовок с текущим значением */}
