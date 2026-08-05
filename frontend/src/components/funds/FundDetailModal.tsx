@@ -36,6 +36,7 @@ import SegmentedControl from '../SegmentedControl';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../fundtrades/MonthRangePicker';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
+import { scaleOf, fmtSignedNum } from '../fundtrades/PortfolioMoversPanel';
 import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
@@ -885,26 +886,34 @@ export default function FundDetailModal({
                                     {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m' || diffRange != null) && (() => {
                                         // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
                                         // две секции с нейтральными полосами и величиной справа, единица
-                                        // (п.п.) — в подписи секции. Отличие: секции стоят не стопкой,
+                                        // (млрд/млн ₽) — в подписи секции. Отличие: секции стоят не стопкой,
                                         // а колонками — покупки слева, продажи справа. Масштаб полос общий
                                         // по обеим колонкам, чтобы покупки и продажи сравнивались.
                                         const DIFF_PREVIEW = 8;
                                         const dw = (d: typeof data.diff[number]) => d.delta_weight ?? 0;
-                                        const byAbs = (a: typeof data.diff[number], b: typeof data.diff[number]) => Math.abs(dw(b)) - Math.abs(dw(a));
-                                        const buys = data.diff.filter((d) => dw(d) > 0 || d.change_type === 'new').sort(byAbs);
-                                        const sells = data.diff.filter((d) => dw(d) < 0 || d.change_type === 'sold_out').sort(byAbs);
-                                        const maxAbs = Math.max(0.0001, ...data.diff.map((d) => Math.abs(dw(d))));
+                                        // Величину показываем в рублях — как «Сделки» Общего портфеля.
+                                        // Если у снапшотов нет объёмов (старые импорты без amount_rub),
+                                        // откатываемся на п.п., чтобы раздел не опустел.
+                                        const moneyMode = data.diff.some((d) => d.delta_amount_rub != null);
+                                        const val = (d: typeof data.diff[number]) => (moneyMode ? (d.delta_amount_rub ?? 0) : dw(d));
+                                        const byAbs = (a: typeof data.diff[number], b: typeof data.diff[number]) => Math.abs(val(b)) - Math.abs(val(a));
+                                        // Колонку задаёт знак показанной величины (иначе строка с «+» уехала бы
+                                        // в продажи); нули разводим по типу изменения и знаку доли.
+                                        const buys = data.diff.filter((d) => val(d) > 0 || (val(d) === 0 && (d.change_type === 'new' || dw(d) > 0))).sort(byAbs);
+                                        const sells = data.diff.filter((d) => val(d) < 0 || (val(d) === 0 && (d.change_type === 'sold_out' || dw(d) < 0))).sort(byAbs);
+                                        const maxAbs = Math.max(0.0001, ...data.diff.map((d) => Math.abs(val(d))));
+                                        const scale = scaleOf(maxAbs);
                                         const rowGrid = isMobile
                                             ? '24px minmax(40px, 1fr) minmax(24px, 0.7fr) max-content'
                                             : '30px minmax(60px, 1fr) minmax(28px, 0.9fr) max-content';
                                         const sectionLabel = (text: string, up: boolean) => (
                                             <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: '0 0 4px' }}>
                                                 {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
-                                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>(п.п.)</span>
+                                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({moneyMode ? scale.unit : 'п.п.'})</span>
                                             </div>
                                         );
                                         const diffRow = (d: typeof data.diff[number], i: number, last: boolean) => {
-                                            const delta = d.delta_weight;
+                                            const delta = moneyMode ? d.delta_amount_rub : d.delta_weight;
                                             const pct = Math.max(2, (Math.abs(delta ?? 0) / maxAbs) * 100);
                                             const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
                                             const meta = CHANGE_META[d.change_type];
@@ -942,7 +951,11 @@ export default function FundDetailModal({
                                                         <div style={{ width: `${pct}%`, height: '100%', background: `color-mix(in srgb, var(--text-primary) ${isEvent ? 55 : 32}%, transparent)`, borderRadius: 5 }} />
                                                     </div>
                                                     <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                        {delta == null ? '—' : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`}
+                                                        {delta == null
+                                                            ? '—'
+                                                            : moneyMode
+                                                                ? fmtSignedNum(delta, scale.div, scale.dec)
+                                                                : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`}
                                                     </span>
                                                 </div>
                                             );
