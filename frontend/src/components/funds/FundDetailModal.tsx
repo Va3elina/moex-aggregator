@@ -99,6 +99,14 @@ const nameFade: CSSProperties = {
     maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK,
 };
 
+// «22 позиции» / «21 позиция» / «25 позиций» — склонение для центра пончика.
+function plural(n: number, one: string, few: string, many: string): string {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+    return many;
+}
+
 // Компактный объём: «12.7 млрд», «540 млн», «12 тыс» (без ₽ — единица в шапке).
 function fmtVolShort(v: number): string {
     if (v >= 1e9) return `${(v / 1e9).toFixed(1)} млрд`;
@@ -690,11 +698,77 @@ export default function FundDetailModal({
                                                     colors={donutColors}
                                                     maxSlices={donutHoldings.length}
                                                     centerCount={data.current_holdings.length}
-                                                    centerLabel={navInDonut ? 'Объём (СЧА)' : undefined}
-                                                    centerValue={navInDonut ? formatRubShort(navValue) : undefined}
                                                     size={isMobile ? Math.min(330, vw - 80) : 380}
                                                     outerRadius={90}
                                                     innerRadius={56}
+                                                    // Editorial-подача (макет «Состав фонда»): слайсы с зазором,
+                                                    // при наведении активный выезжает и получает контур чернилами,
+                                                    // соседи НЕ тускнеют, центр — HTML-карточка бумаги.
+                                                    gapDeg={2.2}
+                                                    dimOthers={false}
+                                                    activeOutline
+                                                    hoverPop={4}
+                                                    renderCenter={(active, holePx) => {
+                                                        // Кегль суммы — от диаметра дырки (как в макете),
+                                                        // чтобы «14,11 млрд ₽» не упиралось в кольцо.
+                                                        const navFont = Math.max(11, Math.min(24, Math.round(holePx / 7.4)));
+                                                        const h = active == null ? null : (active < topHolds.length ? topHolds[active] : null);
+                                                        // «Прочее» (последний слайс) своей карточки не имеет —
+                                                        // показываем только долю без имени бумаги.
+                                                        const restActive = active != null && h == null;
+                                                        return (
+                                                            <div style={{ width: holePx }}>
+                                                                {active == null ? (
+                                                                    <>
+                                                                        {navValue != null && (
+                                                                            <>
+                                                                                <p style={{ margin: '0 0 8px', fontSize: 9, letterSpacing: '0.16em', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                                                                                    Объём (СЧА)
+                                                                                </p>
+                                                                                <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: navFont, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                    {formatRubShort(navValue)}
+                                                                                </p>
+                                                                            </>
+                                                                        )}
+                                                                        <p style={{ margin: navValue != null ? '8px 0 0' : 0, fontSize: 11, color: 'var(--text-secondary)' }}>
+                                                                            {holds.length} {plural(holds.length, 'позиция', 'позиции', 'позиций')}
+                                                                        </p>
+                                                                    </>
+                                                                ) : restActive ? (
+                                                                    <>
+                                                                        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
+                                                                            Прочие ({Math.max(0, holds.length - topHolds.length)})
+                                                                        </p>
+                                                                        <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                            {restWeight.toFixed(1).replace('.', ',')}%
+                                                                        </p>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        {(() => {
+                                                                            const tk = resolveFundTicker(h!.asset_name, h!.isin);
+                                                                            return tk ? (
+                                                                                <p style={{ margin: '0 0 6px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                                                    {tk}
+                                                                                </p>
+                                                                            ) : null;
+                                                                        })()}
+                                                                        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
+                                                                            {fundAssetName(h!.asset_name, h!.isin)}
+                                                                        </p>
+                                                                        <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                            {h!.weight != null ? `${h!.weight.toFixed(1).replace('.', ',')}%` : '—'}
+                                                                        </p>
+                                                                        {h!.amount_rub != null && (
+                                                                            <p style={{ margin: '5px 0 0', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                {formatRubShort(h!.amount_rub)}
+                                                                            </p>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    }}
                                                     highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}
                                                     onHoverChange={(s) => setModalHover(s == null ? null : (s < topHolds.length ? s : null))}
                                                     onSliceClick={(i) => {
