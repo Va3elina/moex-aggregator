@@ -412,7 +412,6 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
             niceMax={histNiceMax}
             legendOverride={histLegend}
             overlay={histOverlay}
-            valuePill
             tooltipInSandbox
           />
         )}
