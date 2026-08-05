@@ -413,6 +413,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             animTrigger={flowsLoaded?.key ?? ''}
             legendOverride={flowsLegend}
             valuePill
+            // Пилс на шкале даёт число, но не даёт подписи — в песочнице
+            // тултип был скрыт правилом .sb-panel .chart-tooltip-root, и
+            // потоки оставались единственной плиткой из трёх без него.
+            tooltipInSandbox
           />
         )}
         {viewMode !== 'flows' && showChart && (

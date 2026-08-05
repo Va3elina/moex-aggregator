@@ -121,19 +121,6 @@ interface HoverState {
 // Match с pattern FlowsHistogram/SimpleChart.
 const MIN_BAR_H = 0.6;  // % минимум высоты сегмента
 
-// Объём торгов периода = max(сумма нетто-покупок, |сумма нетто-продаж|).
-// В balanced market покупки ≈ продажи, поэтому это «сколько денег
-// прокрутилось». Совпадает с метрикой «Объём торгов» в тултипе.
-function periodVolume(p: CbrFlowsPeriod, categories: string[]): number {
-  let pos = 0, neg = 0;
-  for (const cat of categories) {
-    const v = p.values[cat] ?? 0;
-    if (v > 0) pos += v;
-    else neg += -v;
-  }
-  return Math.max(pos, neg);
-}
-
 const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHandle, Props>(function StackedBidirectionalHistogram({
   periods,
   categories,
@@ -741,36 +728,6 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
           .filter(e => e.val !== 0);
         const sortedPositive = entries.filter(e => e.val > 0).sort((a, b) => b.val - a.val);
         const sortedNegative = entries.filter(e => e.val < 0).sort((a, b) => a.val - b.val);
-        // Объём торгов между категориями: в balanced market сумма покупок ≈
-        // сумме продаж (нетто всегда ~0). Полезная метрика — «сколько денег
-        // прокрутилось» в этом периоде = max(покупки, |продажи|).
-        const tradingVolume = periodVolume(p, categories);
-
-        // м/м и г/г — изменение объёма торгов к прошлому периоду и к тому же
-        // периоду год назад. Считаем по allPeriods (полный список): при узком
-        // фильтре («1Г») соседи для сравнения лежат за пределами `periods`.
-        // dateless — сравнивать не с чем: бар уже агрегат за всю историю, а не
-        // конкретный месяц конкретного года. Весь блок ниже пропускаем.
-        const fullPeriods = dateless ? [] : (allPeriods ?? periods);
-        const curIdx = fullPeriods.findIndex((x) => x.end_date === p.end_date);
-        const prevPeriod = curIdx > 0 ? fullPeriods[curIdx - 1] : undefined;
-        const yoyPeriod = fullPeriods.find(
-          (x) => x.label === p.label && x.year === p.year - 1,
-        );
-        const pctVs = (base: number): number | null =>
-          base > 0 ? ((tradingVolume - base) / base) * 100 : null;
-        const momPct = prevPeriod ? pctVs(periodVolume(prevPeriod, categories)) : null;
-        const yoyPct = yoyPeriod ? pctVs(periodVolume(yoyPeriod, categories)) : null;
-        const momLabel = p.kind === 'quarter' ? 'кв/кв' : 'м/м';
-        const fmtPct = (v: number | null) =>
-          v === null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
-        const pctColor = (v: number | null) =>
-          v === null
-            ? 'var(--text-muted)'
-            : v >= 0
-              ? 'var(--funds-flow-positive)'
-              : 'var(--funds-flow-negative)';
-
         const containerW = containerRef.current?.clientWidth ?? 800;
         // Adaptive tooltip width: 260px default, но не больше container-32
         // (gap 16px по бокам). На mobile 360-375px tooltip станет ~330-340px.
@@ -799,6 +756,15 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             className={`${TOOLTIP.containerClass} absolute z-20${tooltipInSandbox ? '' : ' chart-tooltip-root'}`}
             style={{
               ...TOOLTIP.containerStyle,
+              // Подложка — «приподнятая поверхность», а не --bg-primary из общего
+              // TOOLTIP: тот на тёмной теме почти чёрный и карточка читается как
+              // дыра в графике. --bg-elevated светлее фона на тёмной теме и
+              // светлее бумаги на светлой — тултип везде выглядит как слой НАД
+              // полотном, а не как вырез в нём. Рамка — от text-primary с малой
+              // альфой вместо сплошного --border-color (в editorial-dark он
+              // кремово-белый и бил в глаза сильнее самих данных).
+              background: 'var(--bg-elevated)',
+              border: '1px solid color-mix(in srgb, var(--text-primary) 16%, transparent)',
               left: `${left}px`,
               top: `${top}px`,
               width: `${tooltipW}px`,
@@ -843,35 +809,6 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                   {valueOf(overlay.values[hover.periodIdx] as number)}
                 </span>
               </div>
-            )}
-            {/* Объём торгов и его изменение — метрики ПОТОКОВ. У плитки без дат
-                (сезонность) сравнивать не с чем, а «объём» бессмыслен: там бар
-                это среднее изменение цены, а не прокрутившиеся деньги. */}
-            {!dateless && (
-              <>
-                <div style={{ height: 1, background: 'var(--text-primary)', opacity: 0.35, margin: '4px 0' }} />
-                <div className="flex items-center justify-between font-bold" style={{ fontSize: 'var(--fs-xs)' }}>
-                  <span>Объём торгов</span>
-                  <span style={{ color: 'var(--text-primary)' }}>
-                    {tradingVolume.toFixed(2)} {axisSuffix}
-                  </span>
-                </div>
-                {/* Изменение объёма: м/м (к прошлому периоду) и г/г (к тому же
-                    периоду год назад). «—» если периода для сравнения нет. */}
-                <div
-                  className="flex items-center justify-between"
-                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
-                >
-                  <span>
-                    <span style={{ color: 'var(--text-muted)' }}>{momLabel} </span>
-                    <span style={{ color: pctColor(momPct), fontWeight: 700 }}>{fmtPct(momPct)}</span>
-                  </span>
-                  <span>
-                    <span style={{ color: 'var(--text-muted)' }}>г/г </span>
-                    <span style={{ color: pctColor(yoyPct), fontWeight: 700 }}>{fmtPct(yoyPct)}</span>
-                  </span>
-                </div>
-              </>
             )}
           </div>
         );
