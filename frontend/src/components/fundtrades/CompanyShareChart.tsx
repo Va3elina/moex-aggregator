@@ -369,6 +369,16 @@ export default function CompanyShareChart({
         return { rows, share: shareVals[hoveredMi], net: netFlow[hoveredMi] };
     }, [hoveredMi, funds, shareVals, netFlow]);
 
+    // Цена hovered месяца — последнее закрытие месяца, то же значение, что
+    // рисует превью навигатора. Первой строкой тултипа: доля без ценового
+    // контекста не говорит, дорого ли фонды набирали.
+    const hoverPrice = useMemo(() => {
+        if (!hasPrice || hoveredMi == null) return null;
+        const wk = weeksByMonth.get(months[hoveredMi]);
+        if (!wk || !wk.length) return null;
+        return closesAll[wk[wk.length - 1]] ?? null;
+    }, [hasPrice, hoveredMi, months, weeksByMonth, closesAll]);
+
     const shareModeLabel = shareMode === 'rub' ? 'Доля в общем портфеле' : 'Средняя доля в фондах';
 
     // Ширина бара: 66% слота, но не шире 22 (узкое окно → бары не распухают).
@@ -584,6 +594,21 @@ export default function CompanyShareChart({
                         const net = hoverBreakdown.net;
                         return (
                             <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={XLABEL_H}>
+                                {/* Цена — первой строкой, с точкой цвета линии:
+                                    это единственная строка про бумагу, всё
+                                    остальное ниже разделителя про фонды. */}
+                                {hoverPrice != null && (
+                                    <div style={{ marginBottom: 'var(--sp-2)', paddingBottom: 'var(--sp-2)', borderBottom: '1px solid var(--border-color)' }}>
+                                        <TooltipRow
+                                            color={PRICE_LINE_COLOR}
+                                            label={assetName || 'Цена'}
+                                            value={`${fmtPrice(hoverPrice)} ₽`}
+                                            labelClass="font-bold"
+                                            labelColor="var(--text-primary)"
+                                            valueColor="var(--text-primary)"
+                                        />
+                                    </div>
+                                )}
                                 <TooltipRow
                                     hideDot
                                     color={BAR_COLOR}
