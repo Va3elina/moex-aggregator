@@ -609,7 +609,11 @@ export default function CompanyFlowsPriceMap({
                                             valueColor="var(--text-primary)"
                                         />
                                     )}
-                                    <div style={{ marginTop: 'var(--sp-2)', paddingTop: 'var(--sp-2)', borderTop: '1px solid var(--border-color)' }}>
+                                    {/* Зазор вокруг разделителя — --sp-1: на --sp-2
+                                        воздуха между ценой бумаги и итогом по фондам
+                                        было больше, чем между самими строками, и блок
+                                        распадался надвое. */}
+                                    <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
                                     <TooltipRow
                                         hideDot
                                         color={netColor}
