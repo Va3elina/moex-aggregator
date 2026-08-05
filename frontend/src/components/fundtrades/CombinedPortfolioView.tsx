@@ -24,7 +24,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
-import PortfolioTreemap, { TREEMAP_TOP, type TreemapItem } from './PortfolioTreemap';
+import PortfolioTreemap, { TREEMAP_TOP, TM_H_BUDGET, type TreemapItem } from './PortfolioTreemap';
 import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
 type PeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y3';

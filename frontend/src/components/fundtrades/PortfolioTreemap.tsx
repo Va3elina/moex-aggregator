@@ -15,7 +15,7 @@ import type { CSSProperties } from 'react';
 
 export const TREEMAP_TOP = 10;
 const TM_CHUNKS = [2, 3, 3, 2];
-const TM_H_BUDGET = 300;
+export const TM_H_BUDGET = 300;
 const TM_ROW_MIN = 46;
 
 export interface TreemapItem {
