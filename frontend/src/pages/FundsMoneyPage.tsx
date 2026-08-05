@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -24,7 +24,7 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
-import FundsTable from '../components/funds/FundsTable';
+import FundPickerModal from '../components/funds/FundPickerModal';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buildFundsMoneyTour } from '../data/tours/funds-money';
@@ -336,14 +336,6 @@ export default function FundsMoneyPage() {
         [accessibleFunds, hiddenFunds],
     );
 
-    // Счётчик для кнопки «Готово» в модалке выбора: сколько фондов отмечено.
-    // Считаем по всем строкам списка (включая locked — они тоже с чекбоксом),
-    // чтобы цифра совпадала с тем, что видно в окне.
-    const pickerSelectedCount = useMemo(
-        () => (data?.funds ?? []).filter(f => !hiddenFunds.has(f.fund_id)).length,
-        [data?.funds, hiddenFunds],
-    );
-    const pickerAllSelected = pickerSelectedCount === (data?.funds.length ?? 0);
 
     // Все доступные фонды выключены — нужен empty-state вместо ошибки.
     const noFundsSelected = data != null
@@ -606,7 +598,6 @@ export default function FundsMoneyPage() {
         if (f.tier_locked !== true && (!fundsLaggardDate || d < fundsLaggardDate)) fundsLaggardDate = d;
     }
     const fundsHasStale = !!(fundsLaggardDate && fundsMaxDate && fundsLaggardDate < fundsMaxDate);
-    const fmtFundsDate = (iso: string) => iso.split('-').reverse().join('.');
 
     // Обобщающий заголовок гистограммы притоков/оттоков. Единица — в скобках
     // «(млрд ₽)». На узких viewport'ах убираем подробности категории, чтобы
@@ -1060,107 +1051,21 @@ export default function FundsMoneyPage() {
                 Масштаб/шелл как у InstrumentSearchModal на ОИ: top-anchored,
                 max-w-xl, max-h-90vh, 2px border + hard shadow, скролл внутри. */}
             {fundPickerOpen && (
-                <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
-                    <div
-                        className="absolute inset-0"
-                        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-                        onClick={() => setFundPickerOpen(false)}
-                    />
-                    <div
-                        className="relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
-                        style={{
-                            backgroundColor: 'var(--bg-secondary)',
-                            border: '2px solid var(--text-primary)',
-                            boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-                            color: 'var(--text-primary)',
-                            // max-w-xl (576px) не хватало колонке «Название» у длинных имён
-                            // облигационных фондов («Фонд Долгосрочные гособлигации» и т.п.) —
-                            // они фейдились почти целиком. Ширина 816 = прежние 680 +20%;
-                            // лишние px уходят авто-колонке Название
-                            // (Тикер/СЧА/Доходность — фиксированные px в colgroup).
-                            maxWidth: 816,
-                        }}
-                    >
-                        {/* Заголовок + дата данных в ОДНОМ ряду (заголовок, затем
-                            «На DD.MM.YYYY • [!] часть фондов запаздывает», справа —
-                            крестик). Список фонды начинается сразу под этим рядом. */}
-                        <div
-                            className="flex items-center flex-shrink-0 flex-wrap"
-                            style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
-                        >
-                            <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
-                                Фонды {currentCategory?.genitive ?? ''}
-                            </span>
-                            {fundsMaxDate && (
-                                <span className="inline-flex items-center" style={{ gap: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                                    <span>На {fmtFundsDate(fundsMaxDate)}</span>
-                                    {fundsHasStale && (
-                                        <>
-                                            <span style={{ opacity: 0.45 }}>•</span>
-                                            <span className="inline-flex items-center" style={{ gap: 5 }}>
-                                                <AlertCircle size={13} strokeWidth={2.2} style={{ opacity: 0.6, flexShrink: 0 }} />
-                                                часть фондов запаздывает
-                                            </span>
-                                        </>
-                                    )}
-                                </span>
-                            )}
-                            <button
-                                onClick={() => setFundPickerOpen(false)}
-                                className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
-                                style={{ color: 'var(--text-secondary)' }}
-                                aria-label="Закрыть"
-                            >
-                                <X size={22} />
-                            </button>
-                        </div>
-                        {/* Симметричные боковые отступы: padding одинаков слева/справа,
-                            а scrollbar-gutter both-edges резервирует место скроллбара
-                            С ОБЕИХ сторон — иначе вертикальный скроллбар (~11px справа)
-                            съедал правый отступ и строки стояли несимметрично. */}
-                        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}>
-                            <FundsTable
-                                bare
-                                data={data}
-                                hiddenFunds={hiddenFunds}
-                                collapsedSubcats={collapsedSubcats}
-                                navSortDir={navSortDir}
-                                aggregatedData={aggregatedData}
-                                onToggleFundVisibility={toggleFundVisibility}
-                                onSetHiddenFunds={setHiddenFunds}
-                                onSetCollapsedSubcats={setCollapsedSubcats}
-                                onSetNavSortDir={setNavSortDir}
-                            />
-                        </div>
-                        {/* «Готово» — как в пикере фондов «Сделок фондов»: выбор
-                            применяется сразу по клику, кнопка лишь закрывает окно,
-                            но даёт очевидный выход и счётчик выбранных. */}
-                        <div
-                            className="px-6 py-4 flex-shrink-0"
-                            style={{ borderTop: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
-                        >
-                            <button
-                                type="button"
-                                onClick={() => setFundPickerOpen(false)}
-                                className="editorial-press"
-                                style={{
-                                    width: '100%',
-                                    padding: '12px 18px',
-                                    background: 'var(--accent)',
-                                    color: 'var(--text-inverse)',
-                                    border: '2px solid var(--text-primary)',
-                                    borderRadius: 12,
-                                    fontSize: 'var(--fs-sm)',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    boxShadow: '3px 3px 0 var(--text-primary)',
-                                }}
-                            >
-                                Готово{pickerAllSelected ? '' : ` · ${pickerSelectedCount}`}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <FundPickerModal
+                    data={data}
+                    hiddenFunds={hiddenFunds}
+                    onSetHiddenFunds={setHiddenFunds}
+                    onToggleFundVisibility={toggleFundVisibility}
+                    onClose={() => setFundPickerOpen(false)}
+                    categoryGenitive={currentCategory?.genitive}
+                    maxDate={fundsMaxDate || undefined}
+                    hasStale={fundsHasStale}
+                    aggregatedData={aggregatedData}
+                    collapsedSubcats={collapsedSubcats}
+                    onSetCollapsedSubcats={setCollapsedSubcats}
+                    navSortDir={navSortDir}
+                    onSetNavSortDir={setNavSortDir}
+                />
             )}
 
             {/* Карточки фонда здесь нет: список фондов — это выбор того, что

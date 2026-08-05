@@ -568,6 +568,33 @@ export function Dropdown<T extends string | number>({
  * Dropdown). Схлопывается в иконку на узкой панели тем же правилом, что и
  * остальные контролы: лейбл уходит в title.
  */
+/** Кнопка тулбара БЕЗ поповера — оформление как у ToolbarMenuButton, но по
+ *  клику вызывает действие (у потоков фондов — модалку выбора фондов, она
+ *  рендерится порталом и не может жить внутри поповера). */
+export function ToolbarButton({ label, icon, title, compact, active, onClick }: {
+  label: string;
+  icon: ReactNode;
+  title?: string;
+  compact?: boolean;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}>
+      <button
+        type="button"
+        title={title ?? label}
+        aria-label={compact ? label : undefined}
+        style={{ ...ddBtnStyle(!!active), ...(compact ? { padding: 'var(--emb-dd-pad-icon, 4px 8px)' } : {}) }}
+        onClick={onClick}
+      >
+        <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+        {!compact && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{label}</span>}
+      </button>
+    </div>
+  );
+}
+
 export function ToolbarMenuButton({ label, icon, title, compact, children }: {
   label: string;
   icon: ReactNode;
