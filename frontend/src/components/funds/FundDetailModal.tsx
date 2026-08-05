@@ -33,6 +33,7 @@ import {
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import SegmentedControl from '../SegmentedControl';
+import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../fundtrades/MonthRangePicker';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
 import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
@@ -205,7 +206,7 @@ interface FundDetailModalProps {
     // Лоадер от родителя (замыкает ticker/id). Период diff'а («Что купили и
     // продали») выбирается ВНУТРИ модалки (1М/6М/1Г) и передаётся аргументом;
     // лоадеры без периодов (напр. getFundsDetail) аргумент просто игнорируют.
-    loadDetail: (period: FundTradesPeriod) => Promise<FundTradesDetail>;
+    loadDetail: (period: FundTradesPeriod, range: MonthRange | null) => Promise<FundTradesDetail>;
     navRub?: number | null;        // fallback для СЧА (если нет в detail.fund)
     returns?: FundReturns | null;  // fallback для плашек (если нет в detail.performance)
     hasDistributions?: boolean;    // фонд платит доход → пояснение под графиком
@@ -238,6 +239,9 @@ export default function FundDetailModal({
     // (те же пресеты, что у «Сделок» в «Общем портфеле»). Смена периода
     // перезагружает detail; старый контент остаётся на экране (см. эффект ниже).
     const [diffPeriod, setDiffPeriod] = useState<MoversDiffPeriod>('1m');
+    // Произвольный диапазон месяцев (кнопка-календарь справа от пресетов) — тот же
+    // MonthRangePicker, что в «Сделках» Общего портфеля. Задан → пресет игнорируется.
+    const [diffRange, setDiffRange] = useState<MonthRange | null>(null);
 
     // График цены пая — номинал в рублях по всей истории. Проценты пробовали
     // (нормировка к первой точке), но шкала доходности здесь не нужна: движение
@@ -292,7 +296,7 @@ export default function FundDetailModal({
 
     // loadDetail обычно — inline-замыкание от родителя (новая ссылка на каждый
     // ре-рендер). Держим его в ref и перезапускаем загрузку ТОЛЬКО при смене
-    // ticker/diffPeriod — иначе любой ре-рендер родителя ресетил бы loading +
+    // ticker/периода diff'а — иначе любой ре-рендер родителя ресетил бы loading +
     // сбрасывал зум навигатора графика (полированное поведение «Покупок фондов»).
     // Смена периода diff'а НЕ прячет контент (data остаётся до прихода нового
     // ответа — только раздел изменений слегка тускнеет); смена тикера — прячет.
@@ -307,12 +311,18 @@ export default function FundDetailModal({
         }
         setLoading(true);
         setError(null);
-        loadDetailRef.current(diffPeriod)
+        loadDetailRef.current(diffPeriod, diffRange)
             .then((d) => { if (!cancelled) setData(d); })
             .catch((e: Error) => { if (!cancelled) setError(e.message); })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [ticker, diffPeriod]);
+    }, [ticker, diffPeriod, diffRange]);
+
+    // Календарь диапазона живёт на месяцах последнего успешного ответа: пока
+    // грузится новый период, список не должен схлопываться.
+    const diffMonthsRef = useRef<string[]>([]);
+    if (data?.available_months?.length) diffMonthsRef.current = data.available_months;
+    const diffMonths = diffMonthsRef.current;
 
     // СЧА/returns/has_distributions: из ответа detail если есть, иначе из пропов.
     // detail.fund в текущем типе не несёт nav_rub/has_distributions — читаем мягко
@@ -480,16 +490,14 @@ export default function FundDetailModal({
                                 const chartData = payChartData; // мемоизирован выше (стабильная ссылка)
                                 return (
                                     <div style={{ marginBottom: 24 }}>
-                                        {/* Заголовок раздела уехал внутрь самого графика
-                                            (prop title у SimpleChart) — снаружи его нет. */}
+                                        {/* Заголовка у раздела нет: график читается сам —
+                                            легенда «Цена пая, ₽» + плашки доходности под ним. */}
                                         {/* Мобила: график во всю ширину карточки (компенсируем
                                             боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
                                         <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
-                                                bare
-                                                title="Цена пая и доходность"
                                                 height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
                                                 primaryLabel="Цена пая, ₽"
                                                 legendPosition="top"
@@ -504,12 +512,7 @@ export default function FundDetailModal({
                                                 showNavigator={!isMobile}
                                             />
                                         ) : (
-                                            // Графика нет — заголовку жить негде, поэтому здесь
-                                            // он остаётся обычной строкой над заглушкой.
                                             <div>
-                                                <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px' }}>
-                                                    Цена пая и доходность
-                                                </h3>
                                                 <div
                                                     style={{
                                                         padding: '24px 16px',
@@ -798,14 +801,14 @@ export default function FundDetailModal({
 
                                     {/* (5) Что купили и продали — diff текущего и предыдущего
                                         месячных снапшотов (уже приходит в ответе detail).
-                                        Период сравнения (1М/6М/1Г) выбирается сегментами в
-                                        шапке раздела — кнопки периодов переехали сюда из
-                                        «Сделок» Общего портфеля. Клик по строке —
-                                        тот же drill-down в бумагу.
+                                        Период сравнения (1М/6М/1Г + произвольный диапазон
+                                        месяцев через календарь) выбирается в шапке раздела —
+                                        кнопки периодов переехали сюда из «Сделок» Общего
+                                        портфеля. Клик по строке — тот же drill-down в бумагу.
                                         Раздел виден, когда есть что показать ИЛИ юзер уже
                                         трогал период (иначе после пустого 6М он бы исчез
                                         вместе с кнопками). */}
-                                    {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m') && (() => {
+                                    {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m' || diffRange != null) && (() => {
                                         // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
                                         // две секции с нейтральными полосами и величиной справа, единица
                                         // (п.п.) — в подписи секции. Отличие: секции стоят не стопкой,
@@ -902,24 +905,42 @@ export default function FundDetailModal({
                                                             Что купили и продали
                                                         </h3>
                                                         <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
-                                                            {hasDiff
-                                                                ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
-                                                                : <>Месячные срезы состава</>}
+                                                            {diffRange
+                                                                ? <>{monthRangeLabel(diffRange.from, diffRange.to)} · свой диапазон</>
+                                                                : hasDiff
+                                                                    ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
+                                                                    : <>Месячные срезы состава</>}
                                                         </span>
                                                     </div>
-                                                    <SegmentedControl<string>
-                                                        options={[
-                                                            { key: '1m', label: '1М' },
-                                                            { key: '6m', label: '6М' },
-                                                            { key: '1y', label: '1Г' },
-                                                        ]}
-                                                        value={diffPeriod}
-                                                        onChange={(k) => setDiffPeriod(k as MoversDiffPeriod)}
-                                                    />
+                                                    {/* align-items: stretch — кнопка-календарь тянется в высоту сегментов. */}
+                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+                                                        <SegmentedControl<string>
+                                                            options={[
+                                                                { key: '1m', label: '1М' },
+                                                                { key: '6m', label: '6М' },
+                                                                { key: '1y', label: '1Г' },
+                                                            ]}
+                                                            // Свой диапазон — активной пилюли нет (период показывает календарь).
+                                                            value={diffRange ? 'custom' : diffPeriod}
+                                                            onChange={(k) => { setDiffRange(null); setDiffPeriod(k as MoversDiffPeriod); }}
+                                                        />
+                                                        {diffMonths.length > 1 && (
+                                                            <MonthRangePicker
+                                                                availableMonths={diffMonths}
+                                                                value={diffRange}
+                                                                onChange={(r) => setDiffRange(r)}
+                                                                onReset={() => setDiffRange(null)}
+                                                            />
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 {!hasDiff ? (
                                                     <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-                                                        {loading ? 'Загружаем…' : 'Нет более раннего среза за выбранный период.'}
+                                                        {loading
+                                                            ? 'Загружаем…'
+                                                            : diffRange
+                                                                ? 'Нет среза состава на начало выбранного диапазона.'
+                                                                : 'Нет более раннего среза за выбранный период.'}
                                                     </div>
                                                 ) : (
                                                 <>

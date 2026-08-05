@@ -1480,6 +1480,13 @@ export interface FundPerformance {
 }
 
 export interface FundTradesDetail {
+    // Границы произвольного диапазона (нормализованы к первому числу месяца);
+    // null = период задан пресетом. available_months — месяц-энды снапшотов
+    // этого фонда (календарь диапазона в карточке). Оба поля есть только у
+    // /fund-trades/fund/{ticker}; у /funds/detail их нет.
+    range_from?: string | null;
+    range_to?: string | null;
+    available_months?: string[];
     fund: {
         fund_id: number;
         ticker: string;
@@ -1616,9 +1623,17 @@ export async function listFundsWithHistory(): Promise<{ funds: FundWithHistory[]
 export async function getFundTradesDetail(
     ticker: string,
     period: FundTradesPeriod = '1m',
+    // `from`/`to` — произвольный диапазон месяцев (база → цель). Задаются ТОЛЬКО
+    // парой и отменяют period: бэкенд сравнивает снапшот месяца from со снапшотом to.
+    opts: { from?: string; to?: string } = {},
 ): Promise<FundTradesDetail> {
+    const params = new URLSearchParams({ period });
+    if (opts.from && opts.to) {
+        params.set('from', opts.from);
+        params.set('to', opts.to);
+    }
     const resp = await apiFetch(
-        `${API_BASE}/api/fund-trades/fund/${encodeURIComponent(ticker)}?period=${period}`,
+        `${API_BASE}/api/fund-trades/fund/${encodeURIComponent(ticker)}?${params}`,
     );
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
     if (resp.status === 404) throw new Error(`Фонд ${ticker} не найден`);

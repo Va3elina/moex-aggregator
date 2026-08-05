@@ -1065,7 +1065,7 @@ export default function MobileFundTradesPage() {
       {selectedTicker && (
         <FundDetailModal
           ticker={selectedTicker}
-          loadDetail={(p) => getFundTradesDetail(selectedTicker, p)}
+          loadDetail={(p, r) => getFundTradesDetail(selectedTicker, p, r ? { from: r.from, to: r.to } : {})}
           navRub={selectedFund?.nav_rub}
           returns={selectedFund?.returns}
           hasDistributions={selectedFund?.has_distributions}
