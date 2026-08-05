@@ -1830,6 +1830,40 @@ export async function getCompanyFlows(
     return resp.json();
 }
 
+// История доли бумаги в портфелях фондов — режим «Доля» в «Потоках по компании».
+// weights: УРОВНИ в % от СЧА фонда (0 = фонд отчитался без бумаги, null = нет
+// полного снапшота в месяце — рвём ряд). navs: полная СЧА фонда на тот же
+// снапшот — для веса «по капиталу» (Σ nav×доля / Σ nav).
+export interface CompanyWeightFund {
+    ticker: string;
+    fund_name: string;
+    uk_id: number | null;
+    weights: (number | null)[];
+    navs: (number | null)[];
+}
+
+export interface CompanyWeightsResponse {
+    asset_name: string;
+    isin: string | null;
+    funds_count: number;
+    months: string[];
+    funds: CompanyWeightFund[];
+}
+
+export async function getCompanyWeights(
+    opts: { isin?: string; assetName?: string },
+): Promise<CompanyWeightsResponse> {
+    const params = new URLSearchParams();
+    if (opts.isin) params.set('isin', opts.isin);
+    else if (opts.assetName) params.set('asset_name', opts.assetName);
+    else throw new Error('isin or asset_name required');
+
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/company-weights?${params}`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить историю доли');
+    return resp.json();
+}
+
 // Недельные закрытия акции — фон режима «Карта сделок» в «Потоках по компании».
 // 404 (не акция / нет истории в candles) пробрасываем отдельной ошибкой: фронт
 // показывает empty-state, а не тост сетевой ошибки.

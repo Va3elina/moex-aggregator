@@ -10,6 +10,10 @@
  *    кругляшами месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких
  *    уровнях цены фонды покупали и продавали. Цена — /price-weekly по тикеру
  *    (resolveFundTicker); нет тикера или истории → empty-state внутри чарта.
+ *  - «Доля» — CompanyShareChart: сверху та же линия цены (контекст), снизу
+ *    гистограмма ДОЛИ бумаги в портфелях выбранных фондов (/company-weights,
+ *    уровни в % от СЧА). Свой субтумблер «По капиталу / По доле» — как в
+ *    «Общем портфеле». Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
  * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млн (÷1e6).
@@ -26,15 +30,19 @@ import {
     listFundsWithHistory,
     getCompanyFlows,
     getCompanyPriceWeekly,
+    getCompanyWeights,
     type FundTradeAsset,
     type CompanyFlowsResponse,
     type CompanyPriceWeeklyResponse,
+    type CompanyWeightsResponse,
     type FundWithHistory,
 } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import Skeleton from '../Skeleton';
 import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import CompanyFlowsPriceMap from './CompanyFlowsPriceMap';
+import CompanyShareChart, { type CompanyShareFundSeries, type ShareMode } from './CompanyShareChart';
+import HelpTooltip from '../HelpTooltip';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import PortfolioFundPicker, { indexFundTickers } from './PortfolioFundPicker';
@@ -53,10 +61,10 @@ const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 го�
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
 
-// Режим отображения: гистограмма потоков / сделки на графике цены.
-type ChartMode = 'hist' | 'map';
-const MODE_LABELS: Record<ChartMode, string> = { hist: 'Столбцы', map: 'Карта сделок' };
-const CF_MODES: ChartMode[] = ['hist', 'map'];
+// Режим отображения: гистограмма потоков / сделки на графике цены / доля.
+type ChartMode = 'hist' | 'map' | 'share';
+const MODE_LABELS: Record<ChartMode, string> = { hist: 'Столбцы', map: 'Карта сделок', share: 'Доля' };
+const CF_MODES: ChartMode[] = ['hist', 'map', 'share'];
 
 // ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
 // Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
@@ -163,8 +171,18 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
     // дефолт «Всё» — сохраняем прежнее поведение (показывали всю историю).
     const [period, setPeriod] = usePersistedState<Period>('frame:companyflows:period', 'all');
 
-    // Режим отображения (гистограмма / карта сделок). Персист между сессиями.
+    // Режим отображения (гистограмма / карта сделок / доля). Персист между сессиями.
     const [mode, setMode] = usePersistedState<ChartMode>('frame:companyflows:mode', 'hist');
+
+    // Вес доли в режиме «Доля» — как в «Общем портфеле»: по капиталу / по доле.
+    const [shareMode, setShareMode] = usePersistedState<ShareMode>('frame:companyflows:sharemode', 'rub');
+
+    // История доли (/company-weights) — лениво, только в режиме «Доля».
+    // Кэш по ключу бумаги: смена режимов туда-сюда не перезапрашивает.
+    const [weightsData, setWeightsData] = useState<CompanyWeightsResponse | null>(null);
+    const [weightsKey, setWeightsKey] = useState<string | null>(null);
+    const [weightsLoading, setWeightsLoading] = useState(false);
+    const [weightsError, setWeightsError] = useState<string | null>(null);
 
     // Недельная цена для «Карты сделок» — грузим лениво, только в режиме map.
     // priceError: NO_PRICE_HISTORY (404 / нет тикера) → empty-state в чарте,
@@ -270,11 +288,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         };
     }, [selectedAsset, metric]);
 
-    // Цена для «Карты сделок»: грузим при входе в режим / смене бумаги. Кэш —
-    // сам price (тикер совпал → не перезапрашиваем). Нет тикера (облигация,
+    // Цена для «Карты сделок» и «Доли»: грузим при входе в режим / смене бумаги.
+    // Кэш — сам price (тикер совпал → не перезапрашиваем). Нет тикера (облигация,
     // ОФЗ, денежный рынок) → сразу «нет истории», без похода на бэкенд.
     useEffect(() => {
-        if (mode !== 'map') return;
+        if (mode === 'hist') return;
         if (!selectedTicker) {
             setPrice(null);
             setPriceError('NO_PRICE_HISTORY');
@@ -301,6 +319,36 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
             cancelled = true;
         };
     }, [mode, selectedTicker, price]);
+
+    // История доли: грузим при входе в режим «Доля» / смене бумаги.
+    useEffect(() => {
+        if (mode !== 'share' || !selectedAsset) return;
+        if (weightsData && weightsKey === selectedAsset.key) return;
+        let cancelled = false;
+        setWeightsLoading(true);
+        setWeightsError(null);
+        getCompanyWeights({
+            isin: selectedAsset.isin ?? undefined,
+            assetName: selectedAsset.isin ? undefined : selectedAsset.asset_name,
+        })
+            .then(resp => {
+                if (cancelled) return;
+                setWeightsData(resp);
+                setWeightsKey(selectedAsset.key);
+            })
+            .catch(err => {
+                if (cancelled) return;
+                setWeightsData(null);
+                setWeightsKey(null);
+                setWeightsError(err instanceof Error ? err.message : 'Не удалось загрузить историю доли');
+            })
+            .finally(() => {
+                if (!cancelled) setWeightsLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [mode, selectedAsset, weightsData, weightsKey]);
 
     // Фонды для пикера — только держатели этой бумаги (flows.funds), но карточкой
     // из /funds: СЧА, доходность, подкатегория, дата последнего состава. Пока
@@ -427,9 +475,69 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         [fundSeries, periodStart],
     );
 
+    // ── Режим «Доля»: производные от /company-weights ──
+    // Серии фондов: цвет тем же правилом (UK_LOGOS → DONUT_COLORS по индексу в
+    // ПОЛНОМ списке), фильтр — те же effectiveFunds, что у остальных режимов.
+    const shareFundSeries = useMemo(() => {
+        if (!weightsData) return [] as (CompanyShareFundSeries & { ticker: string })[];
+        return weightsData.funds
+            .map((f, idx) => {
+                const ukColor = f.uk_id != null ? UK_LOGOS[String(f.uk_id)]?.bg : undefined;
+                return {
+                    ticker: f.ticker,
+                    label: f.fund_name,
+                    color: ukColor ?? DONUT_COLORS[idx % DONUT_COLORS.length],
+                    weights: f.weights,
+                    navs: f.navs,
+                };
+            })
+            .filter(f => effectiveFunds.has(f.ticker));
+    }, [weightsData, effectiveFunds]);
+
+    const noFundsSelectedShare = !!weightsData && weightsData.funds.length > 0 && shareFundSeries.length === 0;
+
+    // Окно периода для оси /company-weights (она своя, не равна flows.months).
+    const sharePeriodStart = useMemo(() => {
+        const total = weightsData?.months.length ?? 0;
+        const n = PERIOD_MONTHS[period];
+        return n == null || total <= n ? 0 : total - n;
+    }, [weightsData, period]);
+    const visibleShareMonths = useMemo(
+        () => (weightsData?.months ?? []).slice(sharePeriodStart),
+        [weightsData, sharePeriodStart],
+    );
+    const visibleShareFunds = useMemo<CompanyShareFundSeries[]>(
+        () => shareFundSeries.map(f => ({
+            label: f.label,
+            color: f.color,
+            weights: f.weights.slice(sharePeriodStart),
+            navs: f.navs.slice(sharePeriodStart),
+        })),
+        [shareFundSeries, sharePeriodStart],
+    );
+
+    // Нетто-сделки месяца (млн ₽) по выбранным фондам — строка «Сделки за
+    // месяц» в тултипе доли: подсказка, двигали долю сделки или переоценка.
+    const netByMonth = useMemo(() => {
+        const m = new Map<string, number>();
+        if (!flows) return m;
+        flows.funds.forEach(f => {
+            if (!effectiveFunds.has(f.ticker)) return;
+            f.values.forEach((v, i) => {
+                if (v == null) return;
+                m.set(flows.months[i], (m.get(flows.months[i]) ?? 0) + v / 1e6);
+            });
+        });
+        return m;
+    }, [flows, effectiveFunds]);
+    const visibleShareNet = useMemo(
+        () => visibleShareMonths.map(mm => netByMonth.get(mm) ?? null),
+        [visibleShareMonths, netByMonth],
+    );
+
     // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
-    // набора фондов, периода ИЛИ режима — новое окно проигрывает каскад заново.
-    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}`;
+    // набора фондов, периода, режима ИЛИ веса доли — окно проигрывает каскад заново.
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}|${shareMode}`;
 
     // ── Рендер ──
     if (assetsLoading) {
@@ -563,12 +671,35 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     onChange={setPeriod}
                 />
 
-                {/* Режим: гистограмма потоков / сделки на графике цены. */}
+                {/* Режим: гистограмма потоков / сделки на цене / доля в фондах. */}
                 <SegmentedControl<ChartMode>
                     options={CF_MODES.map(m => ({ key: m, label: MODE_LABELS[m] }))}
                     value={mode}
                     onChange={setMode}
                 />
+
+                {/* Вес доли — только в режиме «Доля», термины как в «Общем портфеле». */}
+                {mode === 'share' && (
+                    <SegmentedControl<ShareMode>
+                        options={[
+                            { key: 'rub', label: 'По капиталу' },
+                            { key: 'share', label: 'По доле' },
+                        ]}
+                        value={shareMode}
+                        onChange={setShareMode}
+                        trailing={
+                            <HelpTooltip
+                                align="right"
+                                title="Как считается доля"
+                                sections={[
+                                    { heading: 'По капиталу', body: 'Доля бумаги от суммарной СЧА выбранных фондов: крупные фонды влияют сильнее — буквально один общий портфель.' },
+                                    { heading: 'По доле', body: 'Средняя доля бумаги по фондам, каждый фонд с равным весом — виден консенсус управляющих без перекоса на гигантов.' },
+                                    { heading: 'Важно', body: 'Доля меняется и без сделок — от переоценки: строка «Сделки за месяц» в подсказке показывает, торговали ли фонды на самом деле.' },
+                                ]}
+                            />
+                        }
+                    />
+                )}
 
                 {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
                     фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
@@ -612,9 +743,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     {flowsError}
                 </div>
             )}
+            {mode === 'share' && weightsError && (
+                <div
+                    className="rounded-2xl border border-theme"
+                    style={{ padding: 'var(--sp-4)', background: 'var(--bg-secondary)', color: 'var(--funds-flow-negative)' }}
+                >
+                    {weightsError}
+                </div>
+            )}
             {/* Сетевая ошибка загрузки цены (NO_PRICE_HISTORY — не ошибка, а
-                empty-state внутри самого чарта карты). */}
-            {mode === 'map' && priceError && priceError !== 'NO_PRICE_HISTORY' && (
+                empty-state внутри чарта: карта — заглушка, доля — без линии). */}
+            {mode !== 'hist' && priceError && priceError !== 'NO_PRICE_HISTORY' && (
                 <div
                     className="rounded-2xl border border-theme"
                     style={{ padding: 'var(--sp-4)', background: 'var(--bg-secondary)', color: 'var(--funds-flow-negative)' }}
@@ -638,7 +777,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         noFundsSelected={noFundsSelected}
                         animTrigger={animTrigger}
                     />
-                ) : (
+                ) : mode === 'map' ? (
                     <CompanyFlowsPriceMap
                         months={visibleMonths}
                         series={visibleSeries}
@@ -648,6 +787,21 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         height={chartHeight}
                         loading={flowsLoading || priceLoading}
                         noFundsSelected={noFundsSelected}
+                        priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
+                        animTrigger={animTrigger}
+                    />
+                ) : (
+                    <CompanyShareChart
+                        months={visibleShareMonths}
+                        funds={visibleShareFunds}
+                        netFlowMln={visibleShareNet}
+                        weeks={price && price.ticker === selectedTicker ? price.weeks : []}
+                        closes={price && price.ticker === selectedTicker ? price.closes : []}
+                        shareMode={shareMode}
+                        assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
+                        height={chartHeight}
+                        loading={weightsLoading || priceLoading || flowsLoading}
+                        noFundsSelected={noFundsSelectedShare}
                         priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
                         animTrigger={animTrigger}
                     />
