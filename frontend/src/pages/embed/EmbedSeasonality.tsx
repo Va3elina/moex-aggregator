@@ -47,6 +47,8 @@ type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 // (5 дней недели vs 31 день месяца vs 8 часовых баров intraday), годовой
 // траектории — больше и ширины (252 торг. дня), и высоты (непрерывная линия,
 // не бары). Работает только внутри песочницы — onResize там, дальше не задан.
+// ⚠️ Применяется ОДИН РАЗ, при спавне панели (см. sizedRef ниже): дальше размер
+// окна принадлежит пользователю.
 const SIZE_BY_VIEW: Record<string, { w: number; h: number }> = {
   'histogram|intraday': { w: 480, h: 340 },
   'histogram|weekday': { w: 420, h: 340 },
@@ -138,15 +140,23 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     }
   }, [mode, stock, intradayUnsupported]);
 
-  // §6.11: панель песочницы принимает размер под текущий срез при каждой смене
-  // типа графика/режима (не только при спавне) — 31 бар «внутри месяца» не
-  // помещается в размер под 5 баров «по дням недели», и наоборот жаль места.
+  // §6.11: панель песочницы принимает размер под срез — но ТОЛЬКО при спавне.
+  // ⚠️ Раньше эффект висел на [chartType, mode] и бил по размеру при каждом
+  // переключении, а resizePanel не «расширяет до», а ЗАДАЁТ размер жёстко:
+  // растянутое пользователем окно схлопывалось обратно после любого клика по
+  // тулбару. Сезонность была единственным виджетом, который вообще трогает
+  // onResize, поэтому так вело себя только это окно.
+  // Читаемость широких срезов при этом не страдает: подписи оси прореживаются
+  // по фактической ширине панели (см. dateless в StackedBidirectionalHistogram).
   const windowCtx = useContext(SandboxWindowCtx);
+  const sizedRef = useRef(false);
   useEffect(() => {
+    if (sizedRef.current) return;
+    sizedRef.current = true;
     const sz = SIZE_BY_VIEW[chartType === 'histogram' ? `histogram|${mode}` : 'yearly'];
     if (sz) windowCtx?.onResize?.(sz.w, sz.h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartType, mode]);
+  }, []);
 
   // Данные: база + опциональная медиана, отдельно для histogram и yearly.
   const [histBase, setHistBase] = useState<SeasonalityResponse | null>(null);
