@@ -20,8 +20,8 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSS
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, TrendingUp, Clock, Calendar, CalendarRange, Layers, X } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import LwChartPanes from '../../components/LwChartPanes';
-import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
+import StackedBidirectionalHistogram, { type StackedBidirectionalHistogramHandle } from '../../components/cbr/StackedBidirectionalHistogram';
 import { useTheme } from '../../contexts/ThemeContext';
 import { FUND_PALETTE } from '../../config/chartTheme';
 import { type PeriodConfig, makePeriodId } from '../../components/seasonality/periodConfig';
@@ -41,6 +41,7 @@ import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown, ToolbarMenuButton, SandboxWindowCtx } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -288,8 +289,13 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   }, []);
 
   // Данные: по ОДНОМУ ответу на серию периода (порядок ответов = порядок periods).
-  const [histSeries, setHistSeries] = useState<SeasonalityResponse[]>([]);
-  const [yearSeries, setYearSeries] = useState<YearlySeasonalityResponse[]>([]);
+  // ⚠️ Ответы храним ВМЕСТЕ с ключом запроса: пока едет новый, на экране
+  // остаётся прежняя картинка (stale-while-revalidate), и волна/фит обязаны
+  // перезапускаться по ПРИЕХАВШИМ данным, а не по нажатой кнопке — иначе
+  // анимация проиграет сначала на старом наборе. Тот же приём, что у потоков
+  // фондов (#970).
+  const [histLoaded, setHistLoaded] = useState<{ res: SeasonalityResponse[]; key: string } | null>(null);
+  const [yearLoaded, setYearLoaded] = useState<{ res: YearlySeasonalityResponse[]; key: string } | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   // Стале-гард для отбрасывания устаревших ответов при быстром переключении.
@@ -322,6 +328,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     const reqId = ++reqIdRef.current;
     let cancelled = false;
     setStatus('loading');
+    const viewKey = `${stock}|${mode}|${periodsKey}`;
     const done = () => cancelled || reqId !== reqIdRef.current;
 
     if (chartType === 'histogram') {
@@ -331,7 +338,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
       )))
         .then((res) => {
           if (done()) return;
-          setHistSeries(res);
+          setHistLoaded({ res, key: viewKey });
           setStatus((res[0]?.bars?.length ?? 0) > 0 ? 'ok' : 'empty');
         })
         .catch((err) => {
@@ -346,7 +353,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
       )))
         .then((res) => {
           if (done()) return;
-          setYearSeries(res);
+          setYearLoaded({ res, key: viewKey });
           setStatus((res[0]?.average?.length ?? 0) > 0 ? 'ok' : 'empty');
         })
         .catch((err) => {
@@ -359,6 +366,19 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stock, chartType, mode, periodsKey, hasDividends]);
 
+  // Рисование + экспорт (см. useDrawTools.tsx). Персист per тикер+тип графика:
+  // у «Календаря» и «Годовой» разные оси, рисунок с одной на другой бессмыслен.
+  // ⚠️ Слой рисования есть только у LwChartPanes («Годовая»); «Календарь» — SVG
+  // движка плиток, там доступен только экспорт (drawable={false}).
+  const draw = useDrawTools(`frame:embed:seasonality:draw:${stock}|${chartType}`);
+  const lwChartRef = useRef<LwChartPanesHandle>(null);
+  // У «Календаря» свой движок со своим хэндлом: settleForCapture обрывает
+  // reveal-волну и перемеряет ширину, иначе в PNG попадают недокрашенные бары
+  // и подписи, посчитанные под старую ширину (см. EmbedCbrFlows). Сигнатуры
+  // разные (settleForCapture() vs syncBeforeCapture(w,h)) — адаптируем.
+  const histRef = useRef<StackedBidirectionalHistogramHandle>(null);
+  const histCaptureRef = useRef({ syncBeforeCapture: () => histRef.current?.settleForCapture() });
+
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
 
@@ -370,6 +390,8 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   const isHist = chartType === 'histogram';
   // Первая серия рисуется СТОЛБЦАМИ, остальные — линиями поверх (движок
   // складывает категории в стек, см. overlays в StackedBidirectionalHistogram).
+  const histSeries = useMemo(() => histLoaded?.res ?? [], [histLoaded]);
+  const yearSeriesData = useMemo(() => yearLoaded?.res ?? [], [yearLoaded]);
   const bars = useMemo(() => histSeries[0]?.bars ?? [], [histSeries]);
 
   // Подписи и цвета серий — как на сайте (SeasonalityPage.seriesMeta):
@@ -455,14 +477,14 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   // ── Годовая: кумулятивные линии на синтетическом годе ──
   // По линии на каждую серию периода + опционально текущий год.
   const yearlyLwSeries = useMemo<LwSeries[]>(() => {
-    if (isHist || !yearSeries[0]?.average?.length) return [];
-    const base = yearSeries[0];
+    if (isHist || !yearSeriesData[0]?.average?.length) return [];
+    const base = yearSeriesData[0];
     const maxTD = Math.max(1, base.max_trading_days - 1);
     // td → день синтетического года (растяжка на 364 дня, чтобы ось = янв..дек).
     const tOf = (td: number) => T0 + Math.round((td / maxTD) * 364) * DAY;
     const tip = (v: number) => fmtPct(v, 1);
     const axis = (v: number) => fmtPct(v, 0, false);
-    const out: LwSeries[] = yearSeries.flatMap((r, i) => {
+    const out: LwSeries[] = yearSeriesData.flatMap((r, i) => {
       const meta = seriesMeta[i];
       if (!meta || !r.average?.length) return [];
       return [{
@@ -481,7 +503,13 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
       });
     }
     return out;
-  }, [isHist, yearSeries, seriesMeta, showCurrentYear]);
+  }, [isHist, yearSeriesData, seriesMeta, showCurrentYear]);
+
+  // Что уже нарисовано ПРЯМО СЕЙЧАС. Пока едет новый запрос, прежняя картинка
+  // остаётся: раньше рендер висел на status === 'ok', и график гас на КАЖДОЕ
+  // переключение разреза или периода — панель заметно моргала.
+  const hasView = isHist ? histPeriods.length > 0 : yearlyLwSeries.length > 0;
+  const showChart = hasView && status !== 'error';
 
   // Ось годовой: только месяцы (год синтетический — прячем «2001»).
   const yearlyTickFmt = useMemo(() => {
@@ -558,6 +586,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
           </ToolbarMenuButton>
         </div>
       }
+      actions={<DrawExportActions draw={draw} visible={showChart} drawable={!isHist} />}
       more={
         <>
           {!isHist && (
@@ -569,13 +598,14 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        {status === 'ok' && isHist && histPeriods.length > 0 && (
+        {isHist && showChart && (
           <StackedBidirectionalHistogram
+            ref={histRef}
             periods={histPeriods}
             categories={baseCats}
             unit="%"
             height={chartH}
-            animTrigger={`${stock}|${mode}|${periodsKey}`}
+            animTrigger={histLoaded?.key ?? ''}
             // Срез — не датированный период: подписи оси и плавающая пилюля
             // берутся из label, блок «Объём торгов / м-м / г-г» скрыт.
             dateless
@@ -590,7 +620,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
             tooltipInSandbox
           />
         )}
-        {status === 'ok' && !isHist && yearlyLwSeries.length > 0 && (
+        {!isHist && showChart && (
           <LwChartPanes
             panes={[{ series: yearlyLwSeries }]}
             // Статичный вид (как у потоков капитала): пан и зум выключены,
@@ -598,14 +628,46 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
             // Здесь смысл в картине целиком, а не в разглядывании участка.
             staticView
             dark={dark}
-            fitKey={`${chartType}|${stock}|${periodsKey}|${showCurrentYear}`}
+            fitKey={`${yearLoaded?.key ?? ''}|${showCurrentYear}`}
             tickFmt={yearlyTickFmt}
             crosshairTimeFmt={crosshairTimeFmt}
+            ref={lwChartRef}
+            drawPaneIndex={0}
+            drawActive={draw.drawMode}
+            drawTool={draw.drawTool}
+            drawings={draw.drawings}
+            onDrawingsChange={draw.setDrawings}
+            drawColor={draw.drawColor}
+            drawWidth={draw.drawWidth}
+            drawDash={draw.drawDash}
+            drawOpacity={draw.drawOpacity}
+            selectedDrawId={draw.selectedDrawId}
+            onSelectDraw={draw.setSelectedDrawId}
+            onSelectionRect={draw.setSelRect}
+            onToolReset={draw.onToolReset}
+            drawHidden={draw.drawHidden}
+            drawLocked={draw.drawLocked}
           />
         )}
-        {status === 'loading' && <EmbedMsg text="Загрузка…" />}
+        <DrawToolsOverlay draw={draw} visible={showChart && !isHist} />
+        {status === 'loading' && !hasView && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text={stock ? 'Нет данных' : 'Акция не выбрана'} />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        <ChartExportModal
+          draw={draw}
+          targetElement={boxRef.current}
+          lwChartRef={isHist ? histCaptureRef : lwChartRef}
+          filename={`frame-seasonality-${stock}-${chartType}`}
+          metadata={{
+            title: 'Сезонность',
+            details: [
+              displayTicker(stock),
+              CHART_TYPES.find((c) => c.id === chartType)?.label,
+              isHist ? MODES.find((m) => m.id === mode)?.label : undefined,
+              seriesMeta.map((m) => m.label).join('; ') || undefined,
+            ].filter((x): x is string => !!x),
+          }}
+        />
       </div>
     </EmbedFrame>
   );

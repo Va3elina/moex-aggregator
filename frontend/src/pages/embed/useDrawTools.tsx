@@ -315,10 +315,18 @@ export function useDrawTools(persistKey: string): DrawTools {
 }
 
 /** Кнопки ✎ рисование / 📷 экспорт — для `actions` пропа EmbedFrame. */
-export function DrawExportActions({ draw, visible }: { draw: DrawTools; visible: boolean }): ReactNode {
+export function DrawExportActions({ draw, visible, drawable = true }: {
+  draw: DrawTools;
+  visible: boolean;
+  /** Есть ли на графике слой рисования. У SVG-движков (плитка периодов
+   *  StackedBidirectionalHistogram) его нет — там доступен только экспорт,
+   *  и карандаш был бы кнопкой в никуда. */
+  drawable?: boolean;
+}): ReactNode {
   if (!visible) return undefined;
   return (
     <>
+      {drawable && (
       <button
         type="button"
         onClick={() => { draw.setDrawMode(!draw.drawMode); draw.setSelectedDrawId(null); }}
@@ -333,6 +341,7 @@ export function DrawExportActions({ draw, visible }: { draw: DrawTools; visible:
       >
         <Pencil size={15} />
       </button>
+      )}
       <button
         type="button"
         onClick={() => draw.setExportOpen(true)}
