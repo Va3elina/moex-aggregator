@@ -39,12 +39,13 @@ type FundsResp = Awaited<ReturnType<typeof getFundsChartData>>;
 
 // `genitive` — родительный падеж для заголовка легенды «…из фондов <чего>»,
 // один в один со страницей (FundsMoneyPage.CATEGORIES).
-const CATS: { id: Category; label: string; genitive: string; icon: ReactNode }[] = [
-  { id: 'money_market', label: 'Денежный', genitive: 'денежного рынка', icon: <Wallet size={14} /> },
-  { id: 'stocks', label: 'Акции', genitive: 'акций', icon: <TrendingUp size={14} /> },
-  { id: 'bonds', label: 'Облигации', genitive: 'облигаций', icon: <Landmark size={14} /> },
-  { id: 'gold', label: 'Золото', genitive: 'золота', icon: <Coins size={14} /> },
-  { id: 'yuan', label: 'Юань', genitive: 'юаня', icon: <Banknote size={14} /> },
+// `index` — тикер бенчмарка, им подписана линия индекса на сайте.
+const CATS: { id: Category; label: string; genitive: string; index: string; icon: ReactNode }[] = [
+  { id: 'money_market', label: 'Денежный', genitive: 'денежного рынка', index: 'RUSFAR3M', icon: <Wallet size={14} /> },
+  { id: 'stocks', label: 'Акции', genitive: 'акций', index: 'IMOEX', icon: <TrendingUp size={14} /> },
+  { id: 'bonds', label: 'Облигации', genitive: 'облигаций', index: 'RGBITR', icon: <Landmark size={14} /> },
+  { id: 'gold', label: 'Золото', genitive: 'золота', index: 'GLDRUB_TOM', icon: <Coins size={14} /> },
+  { id: 'yuan', label: 'Юань', genitive: 'юаня', index: 'RUSFARCNY', icon: <Banknote size={14} /> },
 ];
 // Категория рендерится через Dropdown (не PillGroup) — иконка там одна, по
 // текущему значению (см. CAT_ICONS), а не per-option как в PillGroup.
@@ -286,35 +287,43 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     const nav = data?.res.total_nav ?? [];
     if (!nav.length) return [];
     const out: LwSeries[] = [];
+    const cat = CATS.find((c) => c.id === category);
+    // Подписи — как на сайте (FundsMoneyPage): индекс назван своим тикером
+    // (IMOEX/RGBITR/…), СЧА — с категорией в родительном падеже. Единицу СЧА
+    // в подпись не выносим: ось здесь адаптивная (млрд/млн/тыс), в отличие от
+    // сайта, где она всегда в млрд. СЧА идёт ПЕРВОЙ (site reverseLegend).
+    out.push(applyFormat({
+      id: 'scha', type: 'area', scale: 'right', color: 'var(--chart-line-3)',
+      areaTop: 'color-mix(in srgb, var(--chart-line-3) 22%, transparent)', lineWidth: 2,
+      label: `СЧА фондов ${cat?.genitive ?? ''}`.trim(),
+      data: nav.flatMap((p) => (p.nav != null ? [{ time: toSec(p.date), value: p.nav }] : [])),
+      axisFmt: fmtAbs, tipFmt: (v) => fmtAbs(v) + ' ₽',
+    }, fmt));
     const idx = data?.res.index?.data;
     if (showIndex && idx?.length) {
       out.push({
-        id: 'idx', type: 'line', scale: 'left', color: 'var(--chart-line-1)', lineWidth: 2, label: 'Индекс',
+        id: 'idx', type: 'line', scale: 'left', color: 'var(--chart-line-1)', lineWidth: 2,
+        label: cat?.index ?? 'Индекс',
         data: idx.flatMap((d) => (d.close != null ? [{ time: toSec(d.date), value: d.close }] : [])),
         axisFmt: fmtInt, tipFmt: (v) => Math.round(v).toLocaleString('ru-RU'),
       });
     }
-    out.push(applyFormat({
-      id: 'scha', type: 'area', scale: 'right', color: 'var(--chart-line-3)',
-      areaTop: 'color-mix(in srgb, var(--chart-line-3) 22%, transparent)', lineWidth: 2, label: 'СЧА',
-      data: nav.flatMap((p) => (p.nav != null ? [{ time: toSec(p.date), value: p.nav }] : [])),
-      axisFmt: fmtAbs, tipFmt: (v) => fmtAbs(v) + ' ₽',
-    }, fmt));
     return out;
-  }, [viewMode, data, showIndex, fmt]);
+  }, [viewMode, data, showIndex, fmt, category]);
 
   // Легенда потоков — как на сайте (FundsMoneyPage): ОДИН заголовок вместо двух
   // записей «Приток»/«Отток». Маркер 'split' — кружок из двух половин,
   // зелёная/красная: направление кодируется цветом одной серии, а два отдельных
-  // пункта читались как две разные серии. Короткий вариант в узкой панели — там
-  // же порог, что на сайте по viewport (540px).
+  // пункта читались как две разные серии. Короткий вариант — только когда полный
+  // заголовок реально не влезает: порог сайта (540px по viewport) в песочнице
+  // срабатывал почти всегда, хотя шрифт легенды тут мельче и строка помещалась.
   const flowsLegend = useMemo(() => {
     const gen = CATS.find((c) => c.id === category)?.genitive ?? '';
-    const label = toolbarCompact || (containerW > 0 && containerW < 540)
+    const label = (containerW > 0 && containerW < 420)
       ? 'Чистые притоки и оттоки (млрд ₽)'
       : `Чистые притоки и оттоки из фондов ${gen} (млрд ₽)`;
     return [{ label, color: 'var(--oi-green)', colorRight: 'var(--oi-red)', marker: 'split' as const }];
-  }, [category, toolbarCompact, containerW]);
+  }, [category, containerW]);
 
   // Фильтр фондов — кнопка тулбара с чек-листом (тот же приём, что «Участники»
   // у потоков ЦБ). ⚠️ Только для режима потоков: /api/funds/flows принимает
