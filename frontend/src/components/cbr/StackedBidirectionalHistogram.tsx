@@ -85,9 +85,20 @@ interface Props {
   /** Своя легенда вместо списка категорий (у сезонности это «Рост/Падение»,
    *  а не имена категорий). */
   legendOverride?: ChartLegendItem[];
-  /** Линия поверх столбцов — у сезонности медиана «Без выбросов». Длина
-   *  values должна совпадать с periods; null = разрыв. */
-  overlay?: { label: string; color: string; values: (number | null)[] } | null;
+  /**
+   * Линии поверх столбцов. У сезонности так рисуются ДОПОЛНИТЕЛЬНЫЕ серии
+   * «Период с YYYY»: движок складывает категории в СТЕК, поэтому вторую серию
+   * нельзя подать значениями бара — она бы прибавилась к первой, а не встала
+   * рядом. Линия поверх читается и в узкой панели, где сгруппированные бары
+   * (12 месяцев × N серий) превратились бы в кашу.
+   * Длина values должна совпадать с periods; null = разрыв.
+   * ⚠️ Ссылка должна быть стабильной (useMemo) — уходит в депсы мемо шкалы.
+   */
+  overlays?: Array<{ label: string; color: string; values: (number | null)[] }> | null;
+  /** Дополнительная строка в тултипе под значениями (у сезонности — сколько
+   *  наблюдений в срезе: без выборки «+3,2%» ничего не говорит).
+   *  ⚠️ Ссылка должна быть стабильной (useCallback). */
+  tooltipNote?: (periodIdx: number) => string | null;
 }
 
 /**
@@ -132,7 +143,8 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   niceMax,
   colorBySign,
   legendOverride,
-  overlay,
+  overlays,
+  tooltipNote,
 }, ref) {
   const { theme } = useTheme();
   const axisSuffix = unitSuffix ?? 'млрд';
@@ -280,14 +292,14 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
     }
     // Линия-оверлей тоже должна помещаться в шкалу — иначе медиана уходит за
     // верхнюю грид-линию там, где она больше самого столбца.
-    if (overlay) {
-      for (const v of overlay.values) {
+    for (const ov of overlays ?? []) {
+      for (const v of ov.values) {
         if (v != null) maxAbs = Math.max(maxAbs, Math.abs(v));
       }
     }
     // Дефолт — округление до десятков с минимумом 10: зашито под МИЛЛИАРДЫ.
     return niceMax ? niceMax(maxAbs) : Math.max(10, Math.ceil((maxAbs * 1.12) / 10) * 10);
-  }, [periods, categories, overlay, niceMax]);
+  }, [periods, categories, overlays, niceMax]);
 
   // 5 уровней Y-axis: [-max, -max/2, 0, max/2, max]
   const yTicks = useMemo(
@@ -544,29 +556,32 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                 задан CSS-отступами и меняется с ресайзом). Внутри viewBox'а
                 координаты нормированы 0..100, как проценты у баров.
                 Растёт вместе с волной: точка i умножается на свой progress. */}
-            {overlay && overlay.values.length > 0 && (
+            {(overlays ?? []).some((o) => o.values.length > 0) && (
               <svg
                 x="0" y="0" width="100%" height="100%"
                 viewBox="0 0 100 100" preserveAspectRatio="none"
                 style={{ overflow: 'visible' }}
               >
-                <polyline
-                  points={periods.map((_, i) => {
-                    const v = overlay.values[i];
-                    if (v == null) return '';
-                    const prog = animProgress[i] ?? 1;
-                    const x = i * barSlot + barSlot / 2;
-                    const y = 50 - (v / yMax) * 50 * prog;
-                    return `${x},${y}`;
-                  }).filter(Boolean).join(' ')}
-                  fill="none"
-                  stroke={overlay.color}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                  pointerEvents="none"
-                />
+                {(overlays ?? []).map((ov, oi) => (
+                  <polyline
+                    key={`ov-${oi}`}
+                    points={periods.map((_, i) => {
+                      const v = ov.values[i];
+                      if (v == null) return '';
+                      const prog = animProgress[i] ?? 1;
+                      const x = i * barSlot + barSlot / 2;
+                      const y = 50 - (v / yMax) * 50 * prog;
+                      return `${x},${y}`;
+                    }).filter(Boolean).join(' ')}
+                    fill="none"
+                    stroke={ov.color}
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                ))}
               </svg>
             )}
 
@@ -705,8 +720,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
         // строки (~60px), и кламп по 240 схлопывал коридор [minTop, maxTop]
         // почти в точку: тултип залипал у верхней грид-линии и переставал идти
         // за курсором по вертикали.
-        const overlayRow = overlay && overlay.values[hover.periodIdx] != null ? 1 : 0;
-        const rowCount = sortedPositive.length + sortedNegative.length + overlayRow;
+        const overlayRows = (overlays ?? []).filter((o) => o.values[hover.periodIdx] != null);
+        const note = tooltipNote?.(hover.periodIdx) ?? null;
+        const rowCount = sortedPositive.length + sortedNegative.length + overlayRows.length + (note ? 1 : 0);
         const hasDivider = sortedPositive.length > 0 && sortedNegative.length > 0;
         const estH = rowCount * 20 + (hasDivider ? 9 : 0) + 10;
         const csDoc = getComputedStyle(document.documentElement);
@@ -769,15 +785,21 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             ))}
             {/* Линия-оверлей отдельной строкой — её значения в стек не входят,
                 но в тултипе нужны (сезонность: медиана «Без выбросов»). */}
-            {overlayRow === 1 && overlay && (
-              <div className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
+            {overlayRows.map((ov) => (
+              <div key={ov.label} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: overlay.color }} />
-                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{overlay.label}</span>
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: ov.color }} />
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{ov.label}</span>
                 </div>
                 <span className={TOOLTIP.valueClass} style={TOOLTIP.valueStyle}>
-                  {valueOf(overlay.values[hover.periodIdx] as number)}
+                  {valueOf(ov.values[hover.periodIdx] as number)}
                 </span>
+              </div>
+            ))}
+            {/* Примечание под значениями — у сезонности размер выборки. */}
+            {note && (
+              <div style={{ marginTop: 2, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                {note}
               </div>
             )}
           </div>
