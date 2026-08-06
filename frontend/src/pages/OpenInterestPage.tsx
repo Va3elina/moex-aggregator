@@ -44,7 +44,7 @@ import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContex
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
-type Period = '1w' | '1m' | '1y' | '5y' | 'all';
+type Period = '1w' | '1m' | '6m' | '1y' | '5y' | 'all';
 
 // Подписи «ног» величины ОИ (что показано на правой оси в текущем режиме).
 const OI_LEG_LABEL: Record<'net' | 'long' | 'short' | 'oi' | 'npart', string> = {
@@ -134,6 +134,7 @@ const OI_ALERT_METRICS: AlertMetricOption[] = [
 const PERIOD_LABELS: Record<Period, string> = {
   '1w':  ALL_PERIOD_LABELS['1w'],
   '1m':  ALL_PERIOD_LABELS['1m'],
+  '6m':  ALL_PERIOD_LABELS['6m'],
   '1y':  ALL_PERIOD_LABELS['1y'],
   '5y':  ALL_PERIOD_LABELS['5y'],
   'all': ALL_PERIOD_LABELS['all'],
@@ -487,12 +488,16 @@ export default function OpenInterestPage() {
   const availableIntervals = filteredData?.available_intervals || [24];
   const hasInterval = (int: number) => availableIntervals.includes(int);
 
-  // Ограничения периодов для интервалов (для производительности)
-  // 5мин: макс 1 месяц, 1час: макс 6 месяцев, 1день: все
+  // Глубина интрадей-истории. Задаётся ЗДЕСЬ, а не тарифной сеткой: у
+  // open_interest max_history_days на всех тарифах ≥ 5 лет, то есть тариф
+  // интрадей вообще не ограничивает — упирались в этот фронтовый список.
+  // Границы выбраны по фактическому объёму данных на проде (open_interest):
+  // interval=5 живёт с 2026-02 (≈полгода), interval=60 — с 2020.
+  // 1день — как было, вся история.
   const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
-    5: ['1w', '1m'],
-    60: ['1w', '1m'],
-    24: ['1w', '1m', '1y', '5y', 'all']
+    5: ['1w', '1m', '6m'],
+    60: ['1w', '1m', '6m', '1y'],
+    24: ['1w', '1m', '6m', '1y', '5y', 'all']
   };
 
   const isPeriodAvailable = (p: Period): boolean => {
