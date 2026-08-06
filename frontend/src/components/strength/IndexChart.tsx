@@ -54,7 +54,13 @@ export default function IndexChart({
     }, []);
 
     const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    // padding.bottom (общий с BreadthChart) резервирует место под X-подписи дат,
+    // но у верхнего графика цены их нет — подписи рисует только нижний график.
+    // Из-за этого внизу оставался пустой зазор до разделителя с гистограммой.
+    // Тянем область данных до низа SVG, оставляя 1px чтобы нижняя gridline
+    // не обрезалась по краю.
+    const padBottom = 1;
+    const chartHeight = height - padding.top - padBottom;
 
     const chartData = useMemo(() => {
         if (!syncedData.length || chartWidth <= 0) return null;
@@ -254,11 +260,9 @@ export default function IndexChart({
                     </svg>
                 )}
                 {/* Watermark — привязан к data area, как в SimpleChart.
-                    Gridlines IndexChart как у SimpleChart: нижняя на padding.bottom
-                    от низа SVG → bottom=padding.bottom+5 даёт 5px зазор.
-                    padding обновляется в StrengthPage через resize listener,
-                    значит watermark адаптивен к mobile/tablet/desktop. */}
-                <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
+                    Нижняя gridline теперь на padBottom от низа SVG →
+                    bottom=padBottom+5 даёт тот же 5px зазор над ней. */}
+                <ChartWatermark left={padding.left + 5} bottom={padBottom + 5} />
 
                 {/* Legacy HTML pill убран — новый SVG pill рисуется внутри
                     chart svg (см. "Current value pill" блок выше). HTML версия
