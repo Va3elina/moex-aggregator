@@ -72,12 +72,14 @@ function fmtDate(d: string): string {
 
 const MONO = { fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' as const };
 
-// Актив · комета (тянется) · сила · сигнал · ★. Влезает от ~520px ширины
-// панели; на дефолтных 640 всё видно без растягивания.
+// Актив · комета (тянется) · сила · сигнал · ★. Минимум сетки ~415px —
+// звезда и сигнал видны даже на MINW панели; сумма minmax-минимумов + gap +
+// падинги строк ОБЯЗАНА оставаться меньше стартовой ширины панели
+// (SIZES.screener в SandboxPage), иначе правая колонка уезжает за край.
 const GRID: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'minmax(118px, 150px) minmax(130px, 1fr) 54px minmax(92px, 118px) 26px',
-  gap: 8,
+  gridTemplateColumns: 'minmax(106px, 150px) minmax(110px, 1fr) 50px minmax(86px, 118px) 22px',
+  gap: 6,
   alignItems: 'center',
 };
 
