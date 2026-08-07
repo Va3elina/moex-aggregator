@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, CalendarDays, CalendarRange, ListFilter } from 'lucide-react';
+import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, Columns3, Grid3x3, CalendarRange, ListFilter } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
@@ -29,6 +29,7 @@ import { FormatSection, applyFormat, useChartFormat } from './EmbedFormat';
 import { EmbedFrame, PillGroup, Dropdown, ToolbarButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 
@@ -64,10 +65,15 @@ const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
 // Стабильная ссылка: массив уходит в депсы мемо внутри гистограммы (yMax,
 // легенда) — инлайновый литерал пересоздавал их на каждый рендер embed'а.
 const FLOW_CATEGORIES = ['Приток', 'Отток'];
+// Иконки шага столбца НАРОЧНО без календарей: в компакт-режиме тулбара
+// подписи скрыты, и CalendarDays/CalendarRange на 14px были близнецами —
+// и между собой, и с календарём соседнего дропдауна «Период» (он остаётся
+// единственным календарём тулбара). Метафора — шаг агрегации: часы →
+// столбцы недель → сетка месяца.
 const FLOW_TFS: { id: FlowTimeframe; label: string; icon: ReactNode }[] = [
   { id: '1d', label: 'День', icon: <Clock size={14} /> },
-  { id: '1w', label: 'Неделя', icon: <CalendarDays size={14} /> },
-  { id: '1m', label: 'Месяц', icon: <CalendarRange size={14} /> },
+  { id: '1w', label: 'Неделя', icon: <Columns3 size={14} /> },
+  { id: '1m', label: 'Месяц', icon: <Grid3x3 size={14} /> },
 ];
 
 // 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart (даты дневные/агрегированные).
@@ -162,10 +168,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   useEffect(() => { wr('frame:embed:funds:flowPeriod', flowPeriod); }, [flowPeriod]);
   useEffect(() => { wr('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
 
+  // Реалтайм: ингест фондов обновил данные (SSE 'funds'/'daily') → тихий
+  // рефетч обоих режимов. Тихий = без setStatus('loading'), панель не мигает.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['funds', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   // ── AUM load ──
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
     getFundsChartData(category, period)
       .then((res) => {
         if (cancelled) return;
@@ -178,7 +190,8 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [category, period]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, period, refreshTick]);
 
   // Список фондов категории приезжает вместе с данными СЧА — отдельного
   // запроса не нужно (AUM-эффект выше идёт в обоих режимах).
@@ -201,7 +214,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   useEffect(() => {
     if (viewMode !== 'flows') return;
     let cancelled = false;
-    setFlowsStatus('loading');
+    if (!silentRef.current) setFlowsStatus('loading');
     const ids = fundIdsKey ? fundIdsKey.split(',').map(Number) : undefined;
     getFundsFlows(category, flowTimeframe, period, ids)
       .then((res) => {
@@ -217,7 +230,12 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         setFlowsStatus('error');
       });
     return () => { cancelled = true; };
-  }, [viewMode, category, flowTimeframe, period, fundIdsKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, category, flowTimeframe, period, fundIdsKey, refreshTick]);
+
+  // Сброс «тихого» флага ПОСЛЕ обоих load-эффектов (они читают его в порядке
+  // объявления в этом же коммите): сбрось его первый — второй бы мигнул.
+  useEffect(() => { silentRef.current = false; }, [refreshTick]);
 
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();

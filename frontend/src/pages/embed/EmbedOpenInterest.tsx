@@ -24,6 +24,7 @@ import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../s
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
@@ -236,6 +237,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return () => { cancelled = true; };
   }, [instrument]);
 
+  // Реалтайм: ингест обновил данные (SSE '5min'/'hourly') → тихий рефетч.
+  // Тихий = без setStatus('loading'): панель не мигает плашкой, старый график
+  // висит до прихода свежего. SSE-соединение одно на вкладку (синглтон в
+  // useSSE), сколько бы панелей ни было открыто.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['5min', 'hourly'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
     if (!instrument) { setStatus('empty'); return; }
@@ -250,7 +259,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       ? (oiAccess.isLoading ? '1y' : bestDailyPeriod(oiAccess.canUsePeriod))
       : interval === 60 ? '1y' : '6m';
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     getChartData(instrument, instrument, 'futures', interval, clgroup, true, period)
       .then((res) => {
         if (cancelled) return;
@@ -280,7 +290,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // примитивы, стабильны между рендерами и меняются ровно тогда, когда реально
   // должен пересчитаться разрешённый период.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instrument, clgroup, interval, oiAccess.isLoading, oiAccess.tier]);
+  }, [instrument, clgroup, interval, oiAccess.isLoading, oiAccess.tier, refreshTick]);
 
   // Список ТФ в дропдауне — только те, где у ЭТОГО актива реально есть OI-данные
   // (available_intervals из ответа /api/chart, независим от запрошенного interval).

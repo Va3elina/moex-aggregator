@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, lazy, Suspense, type ReactNode } 
 import { Camera, Landmark, Grid3x3, Percent, BarChart3 } from 'lucide-react';
 import { getHeatmapData, getHeatmapImoex, type HeatmapResponse, type HeatmapStock } from '../../services/api';
 import { squarify, type SquarifyRect } from '../../utils/squarify';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
@@ -114,9 +115,15 @@ export default function EmbedHeatmap() {
   useEffect(() => { wr('frame:embed:heatmap:universe', universe); }, [universe]);
   useEffect(() => { wr('frame:embed:heatmap:metric', metric); }, [metric]);
 
+  // Реалтайм: пересчёт matview/капитализации (SSE) → тихий рефетч без плашки.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['mv_refresh', 'market_cap', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     const load = universe === 'imoex'
       ? getHeatmapImoex('change_1d', 'sector')
       : getHeatmapData('value_1d', 'change_1d', 'sector');
@@ -132,7 +139,8 @@ export default function EmbedHeatmap() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [universe]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [universe, refreshTick]);
 
   // Резиновый размер контейнера — squarify заново раскладывает плитки под
   // текущие width/height панели (нет фиксированной высоты и прокрутки).
