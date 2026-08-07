@@ -154,14 +154,33 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     } catch { return []; }
   });
 
-  // Перезагрузка ленты (физ/юр, горизонт) схлопывала контейнер до плашки
-  // «Загрузка…» и тут же растягивала обратно — страница прыгала. Перед сбросом
-  // строк запоминаем фактическую высоту таблицы и держим её как minHeight,
-  // пока rows === null. Состав инструментов у обеих лент один и тот же,
-  // поэтому после загрузки высота совпадает и отпускание замка не дёргает.
-  const tableRef = useRef<HTMLDivElement>(null);
+  // ── Стабилизация высоты. Два разных источника «прыжков» — два механизма.
+  //
+  // 1) Перезагрузка ленты (физ/юр, горизонт): rows → null схлопывал контейнер
+  //    до плашки «Загрузка…» и тут же растягивал обратно. Перед сбросом строк
+  //    запоминаем высоту ВСЕГО блока [таблица + футер-легенда] и держим её как
+  //    minHeight, пока rows === null. Замок именно на общей обёртке: легенда
+  //    при загрузке скрыта (ей нужен счётчик строк), и замок только на таблице
+  //    оставлял просадку ~100px — низ страницы всё равно дёргался.
+  const contentRef = useRef<HTMLDivElement>(null);
   const [holdHeight, setHoldHeight] = useState<number | undefined>(undefined);
-  const lockHeight = () => setHoldHeight(tableRef.current?.offsetHeight || undefined);
+  const lockHeight = () => setHoldHeight(contentRef.current?.offsetHeight || undefined);
+
+  // 2) Фильтры без перезагрузки (категория, ★ избранные): список мгновенно
+  //    схлопывался с ~70 строк до 2–3 (замер на проде: 6038px → 855px за один
+  //    кадр) — футер сайта «подпрыгивал» к тулбару. Само изменение высоты тут
+  //    честное, убрать его нельзя — можно убрать рывок: высота обёртки задаётся
+  //    явным числом (замер контента через ResizeObserver) и анимируется CSS
+  //    transition. Пока animHeight не измерен (первый рендер) — auto, без
+  //    анимации появления.
+  const [animHeight, setAnimHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAnimHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -530,15 +549,27 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </button>
       </div>
 
-      {/* Таблица */}
+      {/* Анимируемая обёртка [таблица + легенда]: явная высота от
+          ResizeObserver + transition — изменение размера скользит, а не
+          прыгает. overflow hidden прячет контент на время «пере-высоты»;
+          подсказки не пострадают — они нативные title. */}
       <div
-        data-tour="screener-table"
-        ref={tableRef}
+        style={{
+          height: animHeight ?? 'auto',
+          overflow: animHeight != null ? 'hidden' : undefined,
+          transition: 'height 280ms ease',
+        }}
+      >
+      <div
+        ref={contentRef}
         // Замок высоты действует только пока строки перезагружаются — после
         // загрузки высота снова естественная (фильтры категорий/избранных
-        // меняют её честно, без прыжка через «Загрузку»).
-        style={{ overflowX: 'auto', minHeight: rows === null ? holdHeight : undefined }}
+        // меняют её честно, плавной анимацией обёртки выше).
+        style={{ minHeight: rows === null ? holdHeight : undefined }}
       >
+
+      {/* Таблица */}
+      <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: 1000 }}>
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 8px 12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
@@ -688,6 +719,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? '2 недели' : 'день'}</span>
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 }
