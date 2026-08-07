@@ -18,7 +18,7 @@
  * Избранное — общий ключ localStorage с сайтом (favoriteInstruments).
  */
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { User, Building2, Star } from 'lucide-react';
+import { User, Building2, Star, Clock, Columns3 } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import PositionComet from '../../components/oi/PositionComet';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
@@ -38,9 +38,12 @@ const CLGROUP_OPTS: { id: Clgroup; label: string; icon: ReactNode }[] = [
 
 // Подписи как на сайте («Дни»/«Недели», не «1 день»): дневной срез приходит
 // T+1, точная цифра на кнопке обещала бы свежесть, которой у ленты нет.
-const HORIZON_OPTS: { id: OiScreenerHorizon; label: string; title: string }[] = [
-  { id: 'short', label: 'Дни', title: 'Движение позиции за день против обычного дневного размаха (ATR-14)' },
-  { id: 'medium', label: 'Недели', title: 'Сдвиг за 14 торговых дней против нормы за такой же срок' },
+// Иконки — та же пара, что у шага столбца в «Деньгах в фондах» (Clock=день,
+// Columns3=неделя): на дефолтной ширине панели 440 полная подпись «Недели»
+// не влезала, compact-режим сворачивает пилюли до иконок.
+const HORIZON_OPTS: { id: OiScreenerHorizon; label: string; title: string; icon: ReactNode }[] = [
+  { id: 'short', label: 'Дни', title: 'Движение позиции за день против обычного дневного размаха (ATR-14)', icon: <Clock size={14} /> },
+  { id: 'medium', label: 'Недели', title: 'Сдвиг за 14 торговых дней против нормы за такой же срок', icon: <Columns3 size={14} /> },
 ];
 
 const GROUP_OPTS: { id: string; label: string }[] = [
@@ -271,7 +274,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
             <ToolbarButton label="Избранные" icon={<Star size={14} />} onClick={() => {}} />
           </div>
           <PillGroup<Clgroup> value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
-          <PillGroup<OiScreenerHorizon> value={horizon} options={HORIZON_OPTS} onChange={setHorizon} />
+          <PillGroup<OiScreenerHorizon> value={horizon} options={HORIZON_OPTS} onChange={setHorizon} compact={toolbarCompact} />
           <ToolbarButton
             label="Избранные"
             icon={<Star size={14} fill={onlyFav ? 'currentColor' : 'none'} />}
