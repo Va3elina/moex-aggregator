@@ -39,6 +39,10 @@ interface Props {
    *  «вчера», а от точки 14 торговых дней назад — врать в тексте нельзя. */
   prevLabel?: string;            // 'вчера' | '2 недели назад'
   deltaLabel?: string;           // 'за день' | 'за 2 недели'
+  /** Явный масштаб вместо viewport-авто (cometScale): компактный скринер в
+   *  панели песочницы живёт в узком контейнере на большом мониторе — вьюпортный
+   *  ×1,5 раздувал бы комету выше его строк. */
+  scaleOverride?: number;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -75,8 +79,10 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
 export default function PositionComet({
   netPct, netPctPrev, ratio, ratioLo, ratioHi,
   prevLabel = 'вчера', deltaLabel = 'за день',
+  scaleOverride,
 }: Props) {
-  const s = cometScale(useViewportWidth());
+  const vw = useViewportWidth();
+  const s = scaleOverride ?? cometScale(vw);
   const H = Math.round(32 * s);   // высота контейнера, px
   const CY = Math.round(H / 2);   // вертикальный центр оси
 
