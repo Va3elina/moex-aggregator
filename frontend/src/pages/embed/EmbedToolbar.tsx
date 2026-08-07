@@ -669,15 +669,22 @@ export function PeriodReadout({ label, title }: { label: string; title?: string 
 }
 
 /** Подсказка про жесты колеса — в подвале ⚙-поповера. */
-export function WheelHint({ children }: { children: ReactNode }) {
+export function WheelHint({ children, divider = true }: {
+  children: ReactNode;
+  /** Отчёркивать сверху. Разделитель уместен, когда подсказка идёт ПОДВАЛОМ под
+   *  секциями; если она единственное содержимое дровера — линия висит в воздухе. */
+  divider?: boolean;
+}) {
   return (
     <div
       style={{
         fontSize: 11,
         color: 'var(--text-secondary)',
         lineHeight: 1.5,
-        borderTop: '1px solid var(--border-color, rgba(128,128,128,0.18))',
-        paddingTop: 10,
+        ...(divider ? {
+          borderTop: '1px solid var(--border-color, rgba(128,128,128,0.18))',
+          paddingTop: 10,
+        } : {}),
       }}
     >
       {children}

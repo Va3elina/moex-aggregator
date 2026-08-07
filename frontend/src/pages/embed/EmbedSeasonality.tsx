@@ -38,7 +38,7 @@ import {
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, AssetButton, PillGroup, Dropdown, ToolbarMenuButton, SandboxWindowCtx } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, PillGroup, Dropdown, ToolbarMenuButton, WheelHint, SandboxWindowCtx } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
@@ -91,6 +91,9 @@ const NON_DIVIDEND_TICKERS = new Set([
 
 // Полная история — как FULL_HISTORY_ITERS на странице.
 const FULL_HISTORY_ITERS = 9999;
+
+// Ссылки из iframe ведут на сайт (внутри embed'а роутера сайта нет).
+const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
 
 // Синтетическая временная база категориальной оси и годовой траектории.
 const DAY = 86400;
@@ -297,6 +300,10 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   const [histLoaded, setHistLoaded] = useState<{ res: SeasonalityResponse[]; key: string } | null>(null);
   const [yearLoaded, setYearLoaded] = useState<{ res: YearlySeasonalityResponse[]; key: string } | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
+  // Текст ошибки с бэка. Общее «Ошибка загрузки» скрывало осмысленные ответы:
+  // tier-отказ («Режим 'histogram' недоступен на тарифе …») и 404 «нет интрадей
+  // данных» выглядели как поломка виджета.
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   // Стале-гард для отбрасывания устаревших ответов при быстром переключении.
   const reqIdRef = useRef(0);
@@ -328,6 +335,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     const reqId = ++reqIdRef.current;
     let cancelled = false;
     setStatus('loading');
+    setErrMsg(null);
     const viewKey = `${stock}|${mode}|${periodsKey}`;
     const done = () => cancelled || reqId !== reqIdRef.current;
 
@@ -344,6 +352,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
         .catch((err) => {
           if (done()) return;
           console.error('embed/seasonality histogram load failed:', err);
+          setErrMsg(err instanceof Error ? err.message : null);
           setStatus('error');
         });
     } else {
@@ -359,6 +368,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
         .catch((err) => {
           if (done()) return;
           console.error('embed/seasonality yearly load failed:', err);
+          setErrMsg(err instanceof Error ? err.message : null);
           setStatus('error');
         });
     }
@@ -594,6 +604,32 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
               <ToggleRow label="Линия текущего года" checked={showCurrentYear} onChange={setShowCurrentYear} />
             </DrawerSection>
           )}
+          {/* Методичка — как подпись под графиком на сайте (SeasonalityPage).
+              В песочнице места под ней нет, поэтому она в ⚙ подвалом, тем же
+              приёмом, что пояснения у ОИ. */}
+          <WheelHint divider={!isHist}>
+            {isHist ? (
+              <>
+                Среднее изменение ({mode === 'intraday' ? 'open-to-close по часам' : 'close-to-close'})
+                {' '}{MODES.find((m) => m.id === mode)?.label.toLowerCase()}.
+                {mode === 'monthday' && ' Выходные привязаны к понедельнику.'}
+                {periods.some((p) => p.excludeDividends) && (
+                  mode === 'intraday' ? ' Экс-дивидендные дни исключены.' : ' Дивидендные гэпы убраны.'
+                )}
+              </>
+            ) : (
+              <>Кумулятивная траектория среднего года: накопленное изменение от начала года по торговым дням.</>
+            )}
+            {' '}
+            <a
+              href={`${SITE}/methodology/seasonality`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              Методология ↗
+            </a>
+          </WheelHint>
         </>
       }
     >
@@ -652,7 +688,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
         <DrawToolsOverlay draw={draw} visible={showChart && !isHist} />
         {status === 'loading' && !hasView && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && <EmbedMsg text={stock ? 'Нет данных' : 'Акция не выбрана'} />}
-        {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+        {status === 'error' && <EmbedMsg text={errMsg || 'Ошибка загрузки'} />}
         <ChartExportModal
           draw={draw}
           targetElement={boxRef.current}
