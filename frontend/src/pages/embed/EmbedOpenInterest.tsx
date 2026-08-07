@@ -242,9 +242,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     // Пока тариф не разрешился — безопасный '1y' (прежнее поведение, никого не
     // ломает); как только oiAccess.isLoading станет false, эффект перезапустится
     // (он в deps) и для admin/pro/pro-эквивалентных тарифов подтянется вся история.
+    // Интрадей-глубина фиксирована по ТФ и НЕ выводится из тарифа: у
+    // open_interest max_history_days на всех тарифах ≥ 5 лет, так что и год
+    // часовых, и полгода 5-минуток проходят проверку везде. Границы — по
+    // фактическому объёму данных на проде (5м живёт с 2026-02, 60м с 2020).
     const period = interval === 24
       ? (oiAccess.isLoading ? '1y' : bestDailyPeriod(oiAccess.canUsePeriod))
-      : '1m';
+      : interval === 60 ? '1y' : '6m';
     let cancelled = false;
     setStatus('loading');
     getChartData(instrument, instrument, 'futures', interval, clgroup, true, period)
