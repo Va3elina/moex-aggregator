@@ -4,6 +4,7 @@ import { ChevronDown, BarChart3, ListFilter, Globe2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import ChartTabs from '../components/ChartTabs';
 import OiScreenerTable from '../components/oi/OiScreenerTable';
+import AnimatedHeight from '../components/AnimatedHeight';
 import OiIntlPanel from '../components/oi/OiIntlPanel';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
@@ -765,6 +766,10 @@ export default function OpenInterestPage() {
           В non-editorial темах класс не имеет стилей — структура остаётся
           плоской, как раньше. */}
       <div className="editorial-frame has-tabs">
+      {/* AnimatedHeight сглаживает смену высоты панели: переход график ⇄
+          скринер (~1000px ⇄ ~6000px) и фильтры скринера едут плавно, а не
+          прыжком. В покое высота auto — дропдауны/тултипы не клипаются. */}
+      <AnimatedHeight>
 
       {activeTab === 'screener' && (
         <OiScreenerTable
@@ -1123,6 +1128,7 @@ export default function OpenInterestPage() {
 
       </>)}{/* /activeTab === 'chart' */}
 
+      </AnimatedHeight>
       </div>{/* /editorial-frame */}
       </div>{/* /tabbed-card */}
 

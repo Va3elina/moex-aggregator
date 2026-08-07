@@ -183,21 +183,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     }
   });
 
-  // 2) Фильтры без перезагрузки (категория, ★ избранные): список мгновенно
-  //    схлопывался с ~70 строк до 2–3 (замер на проде: 6038px → 855px за один
-  //    кадр) — футер сайта «подпрыгивал» к тулбару. Само изменение высоты тут
-  //    честное, убрать его нельзя — можно убрать рывок: высота обёртки задаётся
-  //    явным числом (замер контента через ResizeObserver) и анимируется CSS
-  //    transition. Пока animHeight не измерен (первый рендер) — auto, без
-  //    анимации появления.
-  const [animHeight, setAnimHeight] = useState<number | undefined>(undefined);
-  useLayoutEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setAnimHeight(el.offsetHeight));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // 2) Фильтры без перезагрузки (категория, ★ избранные) меняют высоту
+  //    честно и резко (замер на проде: 6038px → 855px за кадр). Плавность
+  //    даёт AnimatedHeight на уровне страницы (/oi оборачивает весь таб-
+  //    контейнер) — он же сглаживает переход график ⇄ скринер. Своя
+  //    обёртка здесь была бы двойной анимацией.
 
   useEffect(() => {
     let cancelled = false;
@@ -566,17 +556,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         </button>
       </div>
 
-      {/* Анимируемая обёртка [таблица + легенда]: явная высота от
-          ResizeObserver + transition — изменение размера скользит, а не
-          прыгает. overflow hidden прячет контент на время «пере-высоты»;
-          подсказки не пострадают — они нативные title. */}
-      <div
-        style={{
-          height: animHeight ?? 'auto',
-          overflow: animHeight != null ? 'hidden' : undefined,
-          transition: 'height 280ms ease',
-        }}
-      >
+      {/* Обёртка [таблица + легенда] — носитель замка высоты на время
+          перезагрузки ленты. Плавность изменений — AnimatedHeight на /oi. */}
       <div
         ref={contentRef}
         // Замок высоты действует только пока строки перезагружаются — после
@@ -737,7 +718,6 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? '2 недели' : 'день'}</span>
         </div>
       )}
-      </div>
       </div>
     </div>
   );
