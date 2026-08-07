@@ -34,13 +34,18 @@ export function useRealtimeData(
     if (!lastEvent) return;
     if (!sourcesRef.current.includes(lastEvent.source)) return;
 
-    // Debounce — если несколько событий приходят быстро, refetch один раз
+    // Debounce — если несколько СОВПАВШИХ событий приходят быстро, refetch один раз.
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       refetchRef.current();
     }, debounceMs);
 
-    return () => clearTimeout(timerRef.current);
+    // ⚠️ Cleanup здесь НЕ возвращаем: он выполнялся и когда СЛЕДУЮЩЕЕ событие
+    // не совпадает с подпиской (ранний return выше), гася уже запланированный
+    // рефетч. Пачка NOTIFY разных источников подряд (5min+breadth+buffett за
+    // секунду) оставляла рефетч только панелям ПОСЛЕДНЕГО события — остальные
+    // молча теряли обновление (замер на проде 2026-08-07). Таймер на unmount
+    // гасит отдельный эффект ниже.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
 
