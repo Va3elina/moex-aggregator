@@ -24,6 +24,7 @@ import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 import {
@@ -150,13 +151,19 @@ export default function EmbedStrength() {
   // (IMOEX в ₽ / RTSI в $) и НЕ зависит от вселенной breadth-метрики.
   const indexLegend = currency === 'usd' ? 'Индекс РТС (RTSI)' : 'Индекс МосБиржи (IMOEX)';
 
+  // Реалтайм: обновление данных (SSE ['breadth', 'daily']) → тихий рефетч без плашки.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['breadth', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     // Пока тариф не разрешился — безопасный минимум (365), чтобы никогда не
     // словить 403 на первом запросе; как только isLoading спадёт, эффект
     // перезапустится (isLoading/tier в deps) и подтянет полную историю.
     const days = strengthAccess.isLoading ? 365 : bestHistoryDays(strengthAccess.canUsePeriod);
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     getBreadthHistory(ema, days, universe)
       .then((res) => {
         if (cancelled) return;
@@ -178,7 +185,7 @@ export default function EmbedStrength() {
     // canUsePeriod — не мемоизированная функция (новый reference каждый рендер),
     // в deps нельзя — будет бесконечный рефетч. tier/isLoading — примитивы.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ema, universe, strengthAccess.isLoading, strengthAccess.tier]);
+  }, [ema, universe, strengthAccess.isLoading, strengthAccess.tier, refreshTick]);
 
   // Индикаторы считаются по ИНДЕКСУ: это единственный ценовой ряд панели.
   // Свечей нет — только close, поэтому источник цены у всех индикаторов

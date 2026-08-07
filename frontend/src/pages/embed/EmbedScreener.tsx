@@ -17,7 +17,7 @@
  * зеркалит OiScreenerTable; при изменении методологии там — синхронизировать.
  * Избранное — общий ключ localStorage с сайтом (favoriteInstruments).
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { User, Building2, Star, Clock, Columns3 } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import PositionComet from '../../components/oi/PositionComet';
@@ -26,6 +26,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame, PillGroup, ToolbarButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useToolbarCompact } from './useToolbarCompact';
 
 type Clgroup = 'FIZ' | 'YUR';
@@ -110,10 +111,15 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
   useEffect(() => { wr('frame:embed:screener:group', group); }, [group]);
   useEffect(() => { wr('frame:embed:screener:onlyfav', onlyFav ? '1' : '0'); }, [onlyFav]);
 
+  // Реалтайм: дневной пересчёт (SSE 'daily') → тихий рефетч, лента не гаснет.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
-    setRows(null);
+    if (!silentRef.current) { setStatus('loading'); setRows(null); }
+    silentRef.current = false;
     getOiScreener(clgroup, horizon)
       .then((r) => {
         if (cancelled) return;
@@ -124,7 +130,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
       })
       .catch(() => { if (!cancelled) setStatus('error'); });
     return () => { cancelled = true; };
-  }, [clgroup, horizon]);
+  }, [clgroup, horizon, refreshTick]);
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();

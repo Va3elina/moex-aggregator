@@ -21,6 +21,7 @@ import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai';
 const POLL_MS = 90_000;
@@ -68,6 +69,12 @@ export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink
 
   useEffect(() => { wr('frame:embed:signals:source', source); }, [source]);
 
+  // Реалтайм: новая аномалия (SSE 'anomaly') → немедленный рефетч ленты, не
+  // дожидаясь 90с поллинга. Тик в депсах перезапускает эффект (и его таймер —
+  // безвредно). Ошибку статусом не показываем — load и так тихий.
+  const [refreshTick, setRefreshTick] = useState(0);
+  useRealtimeData(['anomaly'], () => setRefreshTick((t) => t + 1));
+
   // Поллинг ленты: старт + каждые 90с + на возврат фокуса. Транзиентную ошибку
   // поллинга не показываем, если данные уже есть (оставляем последнюю ленту).
   useEffect(() => {
@@ -82,7 +89,7 @@ export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink
     const onVis = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVis); };
-  }, []);
+  }, [refreshTick]);
 
   const visible = useMemo(() => {
     if (!items) return [];

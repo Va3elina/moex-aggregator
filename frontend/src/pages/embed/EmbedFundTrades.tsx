@@ -16,7 +16,7 @@
  *
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   listFundsWithHistory,
   getFundTradesMovers,
@@ -32,6 +32,7 @@ import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { EmbedFrame } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
@@ -256,10 +257,17 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
 
   const fundsParam = useMemo(() => Array.from(selectedMoverFunds).join(','), [selectedMoverFunds]);
 
+  // Реалтайм: ингест раскрытий фондов (SSE 'funds'/'daily') → тихий рефетч
+  // движителей. Вкладки снапшотов/состава грузятся по действию пользователя.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['funds', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     if (tab !== 'movers') return;
     let cancelled = false;
-    setMoversStatus('loading');
+    if (!silentRef.current) setMoversStatus('loading');
+    silentRef.current = false;
     // sort:'amount' — как на сайте (вкладка «Общий портфель»); отдельного
     // тумблера «% веса» больше нет, редизайн #493/#571 его убрал.
     getFundTradesMovers(moversPeriod, { funds: fundsParam || undefined, sort: 'amount' })
@@ -274,7 +282,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
         setMoversStatus('error');
       });
     return () => { cancelled = true; };
-  }, [tab, moversPeriod, fundsParam]);
+  }, [tab, moversPeriod, fundsParam, refreshTick]);
 
   const moverPickerFunds = useMemo<FundPickerFund[]>(
     () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),

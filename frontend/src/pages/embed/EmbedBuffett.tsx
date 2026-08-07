@@ -23,6 +23,7 @@ import { FormatSection, applyFormat, useChartFormat, type ChartFormat } from './
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
@@ -102,9 +103,15 @@ export default function EmbedBuffett() {
   useEffect(() => { wr('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); }, [forecastTarget]);
   useEffect(() => { wr('frame:embed:buffett:showCap', String(showCap)); }, [showCap]);
 
+  // Реалтайм: обновление данных (SSE ['buffett', 'daily']) → тихий рефетч без плашки.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['buffett', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     // Грузим ВСЮ историю: время меняется перетаскиванием/зумом оси дат (LwChart),
     // дискретного периода больше нет (фидбэк Вадима — как в TradingView).
     const load =
@@ -136,7 +143,7 @@ export default function EmbedBuffett() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [viewMode, timeframe]);
+  }, [viewMode, timeframe, refreshTick]);
 
   // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
   const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();

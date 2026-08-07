@@ -41,6 +41,7 @@ import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, AssetButton, PillGroup, Dropdown, ToolbarMenuButton, WheelHint, SandboxWindowCtx } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ChartType = 'histogram' | 'yearly';
@@ -328,13 +329,19 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     [periods],
   );
 
+  // Реалтайм: дневной пересчёт данных (SSE 'daily') → тихий рефетч без плашки.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   // Фетч: по запросу на серию, параллельно. Стале-ответы отбрасываем по reqId.
   useEffect(() => {
     if (!stock) { setStatus('empty'); return; }
     if (periods.length === 0) return;  // ждём available-years
     const reqId = ++reqIdRef.current;
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     setErrMsg(null);
     const viewKey = `${stock}|${mode}|${periodsKey}`;
     const done = () => cancelled || reqId !== reqIdRef.current;
@@ -374,7 +381,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
     }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stock, chartType, mode, periodsKey, hasDividends]);
+  }, [stock, chartType, mode, periodsKey, hasDividends, refreshTick]);
 
   // Рисование + экспорт (см. useDrawTools.tsx). Персист per тикер+тип графика:
   // у «Календаря» и «Годовой» разные оси, рисунок с одной на другой бессмыслен.
