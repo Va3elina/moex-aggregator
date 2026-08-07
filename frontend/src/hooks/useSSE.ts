@@ -29,6 +29,7 @@ interface SSEState { lastEvent: SSEEvent | null; connected: boolean }
 type Listener = (s: SSEState) => void;
 
 const listeners = new Set<Listener>();
+const eventListeners = new Set<(e: SSEEvent) => void>();
 let state: SSEState = { lastEvent: null, connected: false };
 let es: EventSource | null = null;
 let retryDelay = 1000;
@@ -54,6 +55,12 @@ function connect() {
       // Пропускаем служебное событие подключения
       if (data.type === 'connected') return;
       emit({ lastEvent: data });
+      // Прямая доставка КАЖДОГО события. Через lastEvent-стейт пачка фреймов
+      // подряд (три NOTIFY за миллисекунды) схлопывалась React-батчем в одно
+      // последнее событие — панели, ждавшие промежуточные источники, теряли
+      // рефетч (замер на проде 2026-08-07). Подписчикам событий батчинг не
+      // страшен: колбэк зовётся на каждый фрейм.
+      eventListeners.forEach((l) => l(data));
     } catch {
       // Игнорируем невалидный JSON
     }
@@ -74,20 +81,32 @@ function connect() {
   };
 }
 
-function subscribe(l: Listener): () => void {
-  listeners.add(l);
-  if (listeners.size === 1 && !es) {
+function ensureConnection() {
+  if (!es && listeners.size + eventListeners.size > 0) {
     retryDelay = 1000;
     connect();
   }
-  return () => {
-    listeners.delete(l);
-    if (listeners.size === 0) {
-      clearTimeout(retryTimer);
-      es?.close();
-      es = null;
-    }
-  };
+}
+function maybeClose() {
+  if (listeners.size + eventListeners.size === 0) {
+    clearTimeout(retryTimer);
+    es?.close();
+    es = null;
+  }
+}
+
+function subscribe(l: Listener): () => void {
+  listeners.add(l);
+  ensureConnection();
+  return () => { listeners.delete(l); maybeClose(); };
+}
+
+/** Подписка на КАЖДОЕ SSE-событие (не снапшот lastEvent): для рефетч-логики,
+ *  которой нельзя терять события при React-батчинге пачки фреймов. */
+export function subscribeSSEEvents(l: (e: SSEEvent) => void): () => void {
+  eventListeners.add(l);
+  ensureConnection();
+  return () => { eventListeners.delete(l); maybeClose(); };
 }
 
 export function useSSE() {
