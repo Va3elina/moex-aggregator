@@ -22,6 +22,7 @@ import { EmbedMsg } from './embedUi';
 import { Checklist } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useToolbarCompact } from './useToolbarCompact';
 
 const ExportModal = lazy(() => import('../../components/export/ExportModal'));
@@ -62,9 +63,15 @@ export default function EmbedCbrFlows() {
 
   useEffect(() => { wr('frame:embed:cbr:period', period); }, [period]);
 
+  // Реалтайм: ингест ОРФР ручной и редкий, но 'daily'-флаш кэша ловим — тихий рефетч.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
+    if (!silentRef.current) setStatus('loading');
+    silentRef.current = false;
     getCbrFlows(type)
       .then((res) => {
         if (cancelled) return;
@@ -77,7 +84,7 @@ export default function EmbedCbrFlows() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [type]);
+  }, [type, refreshTick]);
 
   // Сброс скрытых категорий на дефолт при смене типа актива.
   useEffect(() => { setHiddenCategories(getDefaultHiddenCategories(type)); }, [type]);

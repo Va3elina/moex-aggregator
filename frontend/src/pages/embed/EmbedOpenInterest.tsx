@@ -281,6 +281,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       })
       .catch((err) => {
         if (cancelled) return;
+        // Персистентный интрадей-ТФ может быть недоступен ТЕКУЩЕМУ тарифу
+        // (Pro настроил 5м → гость на той же машине ловил вечную «Ошибку
+        // загрузки», 403 «Таймфрейм недоступен на тарифе»). Откатываемся на
+        // дневной — он открыт всем; available_intervals такой случай не
+        // ловит (это про наличие данных, а не про тариф).
+        if (interval !== 24 && /таймфрейм|тариф/i.test(String(err?.message ?? ''))) {
+          setIntervalValue(24);
+          return;
+        }
         console.error('embed/oi load failed:', err);
         setStatus('error');
       });
