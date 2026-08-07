@@ -7,17 +7,22 @@
  *
  * Когда SSE-событие с matching source приходит — вызывается refetch с debounce.
  * Если SSE недоступен — страница работает как раньше (pull-based).
+ *
+ * Доставка — через subscribeSSEEvents (каждый фрейм), НЕ через lastEvent-стейт
+ * useSSE: пачка NOTIFY разных источников за миллисекунды схлопывалась
+ * React-батчем в одно последнее событие, и панели промежуточных источников
+ * теряли рефетч (замер на проде 2026-08-07: из 5min+breadth+buffett доезжал
+ * только buffett). Бонус: компонент больше не рендерится на каждое SSE-событие.
  */
 
 import { useEffect, useRef } from 'react';
-import { useSSE } from './useSSE';
+import { subscribeSSEEvents } from './useSSE';
 
 export function useRealtimeData(
   sources: string[],
   refetch: () => void,
   debounceMs: number = 2000,
 ) {
-  const { lastEvent } = useSSE();
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Всегда держим АКТУАЛЬНЫЙ refetch/sources в ref. Без этого debounced-таймер от
@@ -31,24 +36,16 @@ export function useRealtimeData(
   sourcesRef.current = sources;
 
   useEffect(() => {
-    if (!lastEvent) return;
-    if (!sourcesRef.current.includes(lastEvent.source)) return;
-
-    // Debounce — если несколько СОВПАВШИХ событий приходят быстро, refetch один раз.
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      refetchRef.current();
-    }, debounceMs);
-
-    // ⚠️ Cleanup здесь НЕ возвращаем: он выполнялся и когда СЛЕДУЮЩЕЕ событие
-    // не совпадает с подпиской (ранний return выше), гася уже запланированный
-    // рефетч. Пачка NOTIFY разных источников подряд (5min+breadth+buffett за
-    // секунду) оставляла рефетч только панелям ПОСЛЕДНЕГО события — остальные
-    // молча теряли обновление (замер на проде 2026-08-07). Таймер на unmount
-    // гасит отдельный эффект ниже.
+    const off = subscribeSSEEvents((e) => {
+      if (!sourcesRef.current.includes(e.source)) return;
+      // Debounce — несколько СОВПАВШИХ событий подряд → один refetch.
+      // Несовпадающие события таймер не трогают.
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        refetchRef.current();
+      }, debounceMs);
+    });
+    return () => { off(); clearTimeout(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastEvent]);
-
-  // Гарантированно гасим pending-таймер при unmount.
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  }, []);
 }
