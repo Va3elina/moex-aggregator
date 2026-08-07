@@ -12,13 +12,15 @@
  * (apiFetch читает access_token, выставленный EmbedPage после обмена ext-токена).
  * Поллинг 90с + рефетч на возврат фокуса вкладки.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Sparkles, BarChart3, Wallet, Star } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import { getAnomalyFeed, type AnomalyDeepLink, type AnomalyItem } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
+import { useToolbarCompact } from './useToolbarCompact';
 
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai';
 const POLL_MS = 90_000;
@@ -26,11 +28,13 @@ const POLL_MS = 90_000;
 type SourceKey = 'all' | 'oi' | 'funds' | 'mine';
 type LoadStatus = 'loading' | 'ok' | 'error';
 
-const SOURCE_OPTS: { id: SourceKey; label: string; title: string }[] = [
-  { id: 'all', label: 'Все', title: 'Все сигналы' },
-  { id: 'oi', label: 'ОИ', title: 'Резкие сдвиги открытого интереса' },
-  { id: 'funds', label: 'Фонды', title: 'Притоки/оттоки фондов' },
-  { id: 'mine', label: 'Мои', title: 'Мои сработавшие алерты' },
+// Иконки нужны для compact-режима: на дефолтной ширине панели 380 полный ряд
+// «Все·ОИ·Фонды·Мои» не влезал — последняя пилюля обрезалась тулбаром.
+const SOURCE_OPTS: { id: SourceKey; label: string; title: string; icon: ReactNode }[] = [
+  { id: 'all', label: 'Все', title: 'Все сигналы', icon: <Sparkles size={14} /> },
+  { id: 'oi', label: 'ОИ', title: 'Резкие сдвиги открытого интереса', icon: <BarChart3 size={14} /> },
+  { id: 'funds', label: 'Фонды', title: 'Притоки/оттоки фондов', icon: <Wallet size={14} /> },
+  { id: 'mine', label: 'Мои', title: 'Мои сработавшие алерты', icon: <Star size={14} /> },
 ];
 
 const MONO = { fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' as const };
@@ -57,6 +61,8 @@ function ago(iso: string | null): string {
 export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink) => void }) {
   const { rd, wr } = useEmbedPersist();
   const [source, setSource] = useState<SourceKey>(() => rd('frame:embed:signals:source', 'all') as SourceKey);
+  // Compact-режим тулбара (узкая панель sandbox — см. useToolbarCompact.ts).
+  const { wrapRef: toolbarWrapRef, measureRef: toolbarMeasureRef, compact: toolbarCompact } = useToolbarCompact();
   const [items, setItems] = useState<AnomalyItem[] | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
 
@@ -110,7 +116,15 @@ export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink
           Сигналы
         </span>
       }
-      toolbar={<PillGroup<SourceKey> value={source} options={SOURCE_OPTS} onChange={setSource} />}
+      toolbar={
+        <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
+          <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <PillGroup<SourceKey> value={source} options={SOURCE_OPTS} onChange={setSource} />
+          </div>
+          <PillGroup<SourceKey> value={source} options={SOURCE_OPTS} onChange={setSource} compact={toolbarCompact} />
+        </div>
+      }
       more={
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           Лента резких движений: сдвиги <b style={{ color: 'var(--text-primary)' }}>открытого интереса</b> (z-score),
