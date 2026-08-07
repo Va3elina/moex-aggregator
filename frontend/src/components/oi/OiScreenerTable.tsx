@@ -154,6 +154,15 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     } catch { return []; }
   });
 
+  // Перезагрузка ленты (физ/юр, горизонт) схлопывала контейнер до плашки
+  // «Загрузка…» и тут же растягивала обратно — страница прыгала. Перед сбросом
+  // строк запоминаем фактическую высоту таблицы и держим её как minHeight,
+  // пока rows === null. Состав инструментов у обеих лент один и тот же,
+  // поэтому после загрузки высота совпадает и отпускание замка не дёргает.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [holdHeight, setHoldHeight] = useState<number | undefined>(undefined);
+  const lockHeight = () => setHoldHeight(tableRef.current?.offsetHeight || undefined);
+
   useEffect(() => {
     let cancelled = false;
     setRows(null);
@@ -472,7 +481,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             { key: 'YUR', label: 'Юрлица', title: 'Сигналы юрлиц зеркальны физлицам по кратности, но проценты и ликвидность — свои' },
           ]}
           value={clgroup}
-          onChange={setClgroup}
+          onChange={(g) => { lockHeight(); setClgroup(g); }}
         />
         {/* Горизонт: дневная лента / недельная (14 дней). Стоит сразу за
             группой — это второй «срез» тех же данных, а не фильтр: он меняет
@@ -485,7 +494,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           // Строки гасим сразу, в том же рендере, что и смену горизонта: иначе
           // один кадр старая лента рисуется уже новыми порогами (среднесрочный
           // 7× против дневного порога 4×) и бейджи успевают мигнуть заливкой.
-          onChange={(h) => { setRows(null); setHorizon(h); }}
+          onChange={(h) => { lockHeight(); setRows(null); setHorizon(h); }}
           trailing={<HelpTooltip sections={HORIZON_HELP} size={18} />}
         />
         <Dropdown<string>
@@ -522,7 +531,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       </div>
 
       {/* Таблица */}
-      <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
+      <div
+        data-tour="screener-table"
+        ref={tableRef}
+        // Замок высоты действует только пока строки перезагружаются — после
+        // загрузки высота снова естественная (фильтры категорий/избранных
+        // меняют её честно, без прыжка через «Загрузку»).
+        style={{ overflowX: 'auto', minHeight: rows === null ? holdHeight : undefined }}
+      >
         <div style={{ minWidth: 1000 }}>
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 8px 12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
