@@ -162,9 +162,26 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   //    minHeight, пока rows === null. Замок именно на общей обёртке: легенда
   //    при загрузке скрыта (ей нужен счётчик строк), и замок только на таблице
   //    оставлял просадку ~100px — низ страницы всё равно дёргался.
+  //    Первое открытие вкладки — тот же прыжок, но замку не от чего
+  //    оттолкнуться: высоты ещё не было. Поэтому фактическую высоту блока
+  //    запоминаем в localStorage и резервируем сразу при маунте. Режимы
+  //    тулбара тоже персистятся, так что сохранённая высота соответствует
+  //    тому виду, который откроется. Для самого первого визита — 60vh:
+  //    неточно, но убирает «родилась плашка → распрыгалась на весь экран».
+  const HEIGHT_KEY = 'frame:oi-screener:lastHeight';
   const contentRef = useRef<HTMLDivElement>(null);
-  const [holdHeight, setHoldHeight] = useState<number | undefined>(undefined);
+  const [holdHeight, setHoldHeight] = useState<number | undefined>(() => {
+    const saved = Number(localStorage.getItem(HEIGHT_KEY));
+    return Number.isFinite(saved) && saved > 0 ? saved : undefined;
+  });
   const lockHeight = () => setHoldHeight(contentRef.current?.offsetHeight || undefined);
+  // Сохраняем высоту после каждого рендера с данными (лента, фильтры, ресайз
+  // окна — всё уже учтено в фактическом offsetHeight).
+  useEffect(() => {
+    if (rows !== null && contentRef.current) {
+      localStorage.setItem(HEIGHT_KEY, String(contentRef.current.offsetHeight));
+    }
+  });
 
   // 2) Фильтры без перезагрузки (категория, ★ избранные): список мгновенно
   //    схлопывался с ~70 строк до 2–3 (замер на проде: 6038px → 855px за один
@@ -564,8 +581,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         ref={contentRef}
         // Замок высоты действует только пока строки перезагружаются — после
         // загрузки высота снова естественная (фильтры категорий/избранных
-        // меняют её честно, плавной анимацией обёртки выше).
-        style={{ minHeight: rows === null ? holdHeight : undefined }}
+        // меняют её честно, плавной анимацией обёртки выше). Первый-в-жизни
+        // визит (localStorage пуст) резервирует 60vh.
+        style={{ minHeight: rows === null ? holdHeight ?? '60vh' : undefined }}
       >
 
       {/* Таблица */}
