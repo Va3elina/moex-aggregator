@@ -241,8 +241,10 @@ async def _warmup_cache():
         "/api/breadth/history?ema_period=200&days=365&universe=imoex",
         "/api/chart/SR?sectype=SR&inst_type=futures&interval=24&clgroup=FIZ&show_oi=true&period=6m",
         "/api/buffett/cap-gdp?period=10y&smooth=false",
-        "/api/oi/screener?clgroup=FIZ",
-        "/api/oi/screener?clgroup=YUR",
+        "/api/oi/screener?clgroup=FIZ&horizon=short",
+        "/api/oi/screener?clgroup=FIZ&horizon=medium",
+        "/api/oi/screener?clgroup=YUR&horizon=short",
+        "/api/oi/screener?clgroup=YUR&horizon=medium",
     ]
     try:
         async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=30) as client:
@@ -263,9 +265,14 @@ async def _periodic_warm():
     поток запроса. Компонент идемпотентен и per-container (лишний прогрев безвреден)."""
     import httpx
     await asyncio.sleep(45)  # после стартового прогрева
+    # ⚠️ Все 4 комбинации clgroup × horizon: кэш-ключи раздельные, и без
+    # явного horizon тёплым держался только дневной (short) — лента «Недели»
+    # ловила холодный пересчёт каждые 5 минут (замер: 0.9–1.1с против 0.2с).
     warm_urls = [
-        "/api/oi/screener?clgroup=FIZ",
-        "/api/oi/screener?clgroup=YUR",
+        "/api/oi/screener?clgroup=FIZ&horizon=short",
+        "/api/oi/screener?clgroup=FIZ&horizon=medium",
+        "/api/oi/screener?clgroup=YUR&horizon=short",
+        "/api/oi/screener?clgroup=YUR&horizon=medium",
     ]
     while True:
         try:
