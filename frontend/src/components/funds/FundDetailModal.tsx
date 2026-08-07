@@ -37,7 +37,6 @@ import SegmentedControl from '../SegmentedControl';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../fundtrades/MonthRangePicker';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
-import PortfolioTreemap, { type TreemapItem } from '../fundtrades/PortfolioTreemap';
 import { scaleOf, fmtSignedNum } from '../fundtrades/PortfolioMoversPanel';
 import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
@@ -342,6 +341,9 @@ export default function FundDetailModal({
         | (FundTradesDetail['fund'] & { nav_rub?: number | null; has_distributions?: boolean })
         | undefined;
     const navValue = detailFund?.nav_rub ?? navRub ?? null;
+    // СЧА показываем в центре пончика состава, если пончик вообще есть. Иначе
+    // (базовая карточка / состав не публикуется) — блоком в шапке карточки.
+    const navInDonut = enableDrilldown && navValue != null && (data?.current_holdings.length ?? 0) > 0;
     // Мобильная адаптация. Модал шарится с десктопом («Деньги в фондах»),
     // поэтому размеры реактивные: на мобиле пончик ужимаем под ширину экрана
     // (иначе size:380 вылезал за правый край), график ниже, паддинги меньше,
@@ -349,10 +351,6 @@ export default function FundDetailModal({
     const vw = useViewportWidth();
     const vh = useViewportHeight();
     const isMobile = vw < 768;
-    // СЧА показываем в центре пончика состава, если пончик вообще есть. Пончик
-    // остался только на мобилке: на десктопе состав рисуется картой «Структура»
-    // (макет «Общего портфеля»), поэтому там СЧА живёт блоком в шапке карточки.
-    const navInDonut = enableDrilldown && isMobile && navValue != null && (data?.current_holdings.length ?? 0) > 0;
     const hasDist = detailFund?.has_distributions ?? hasDistributions ?? false;
 
     return (
@@ -608,28 +606,16 @@ export default function FundDetailModal({
                             {/* (4) Donut состава + список топ-позиций — только при enableDrilldown */}
                             {enableDrilldown && (
                                 <>
-                                    {/* Шапка раздела — как «Состав портфеля» в «Общем портфеле»:
-                                        заголовок и под ним счётчики (позиции + вес топ-10). */}
-                                    <div style={{ marginBottom: 14 }}>
-                                        <h3
-                                            style={{
-                                                fontSize: isMobile ? 'var(--fs-md)' : 'var(--fs-lg)',
-                                                fontWeight: 800,
-                                                letterSpacing: '-0.01em',
-                                                lineHeight: 1.1,
-                                                color: 'var(--text-primary)',
-                                                margin: 0,
-                                            }}
-                                        >
-                                            Состав фонда
-                                        </h3>
-                                        {data.current_holdings.length > 0 && (
-                                            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                                                {data.current_holdings.length} {plural(data.current_holdings.length, 'позиция', 'позиции', 'позиций')} · топ-10 занимают{' '}
-                                                {Math.min(data.current_holdings.slice(0, 10).reduce((s, h) => s + (h.weight ?? 0), 0), 100).toFixed(1).replace('.', ',')}%
-                                            </div>
-                                        )}
-                                    </div>
+                                    <h3
+                                        style={{
+                                            fontSize: 'var(--fs-md)',
+                                            fontWeight: 700,
+                                            color: 'var(--text-primary)',
+                                            marginBottom: 12,
+                                        }}
+                                    >
+                                        Состав фонда
+                                    </h3>
                                     {data.current_holdings.length > 0 ? (() => {
                                         // (G) holdings пончика = топ-10 + «Прочее»; colors — параллельный
                                         // массив (фирменный/индекс, «Прочее» серый). maxSlices = длине →
@@ -658,24 +644,21 @@ export default function FundDetailModal({
                                             setDrillDown({ asset_name: h.asset_name, isin: h.isin ?? null });
                                         // Список в стиле «Обзора портфеля»: логотип · имя (fade) ·
                                         // нейтральная полоса · доля · объём. Цвет несёт пончик.
+                                        const top10W = topHolds.reduce((s, h) => s + (h.weight ?? 0), 0);
                                         const maxW = Math.max(...holds.map((h) => h.weight ?? 0), 0.0001);
                                         const shownHolds = showAllHoldings ? holds : topHolds;
                                         const listGrid = isMobile
                                             ? '24px minmax(0, 1fr) 56px'
                                             : '30px minmax(110px, 1.1fr) minmax(60px, 1fr) 60px 84px';
-                                        // Карта «Структура» (десктоп) — тот же PortfolioTreemap, что в
-                                        // «Общем портфеле»: топ-10 плитками, площадь ∝ весу.
-                                        const tmItems: TreemapItem[] = topHolds.map((h, i) => ({
-                                            key: `${h.asset_name}|${h.isin ?? ''}`,
-                                            label: resolveFundTicker(h.asset_name, h.isin) ?? fundAssetName(h.asset_name, h.isin).split(' ')[0],
-                                            name: fundAssetName(h.asset_name, h.isin),
-                                            weight: h.weight ?? 0,
-                                            color: fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
-                                        }));
-                                        // Подпись карты — стоимость самих позиций (не СЧА: та включает
-                                        // кэш, и доли складываются в ~98-99%, см. состав фондов).
-                                        const holdingsSum = holds.reduce((s, h) => s + (h.amount_rub ?? 0), 0);
-                                        const donutBlock = (
+                                        return (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                gap: isMobile ? 14 : 24,
+                                                flexWrap: 'wrap',
+                                                alignItems: 'flex-start',
+                                            }}
+                                        >
                                             <div style={{ flexShrink: 0, margin: '0 auto', lineHeight: 0 }}>
                                                 <Donut
                                                     holdings={donutHoldings}
@@ -761,9 +744,12 @@ export default function FundDetailModal({
                                                     }}
                                                 />
                                             </div>
-                                        );
-                                        const listBlock = (
-                                            <div style={{ flex: 1, minWidth: isMobile ? 220 : 0 }}>
+                                            <div style={{ flex: 1, minWidth: isMobile ? 220 : 320 }}>
+                                                {/* Концентрация: сколько позиций и сколько весит топ-10 —
+                                                    отличает индексный фонд от концентрированного. */}
+                                                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
+                                                    {holds.length} позиций · топ-10 занимают {Math.min(top10W, 100).toFixed(1).replace('.', ',')}%
+                                                </div>
                                                 {/* Шапка списка — как в «Обзоре портфеля». */}
                                                 <div style={{ display: 'grid', gridTemplateColumns: listGrid, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
                                                     <span /><span>Бумага</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>Доля</span>{!isMobile && <span style={{ textAlign: 'right' }}>Объём</span>}
@@ -789,7 +775,7 @@ export default function FundDetailModal({
                                                                 gridTemplateColumns: listGrid,
                                                                 gap: 10,
                                                                 alignItems: 'center',
-                                                                padding: '6px 8px',
+                                                                padding: '7px 8px',
                                                                 margin: '0 -8px',
                                                                 borderRadius: 8,
                                                                 cursor: 'pointer',
@@ -801,7 +787,10 @@ export default function FundDetailModal({
                                                             }}
                                                         >
                                                             <HoldingLogo name={h.asset_name} isin={h.isin} idx={i} size={isMobile ? 24 : 30} />
-                                                            <span style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', ...nameFade }}>
+                                                            {/* Кегли строки — 1:1 как deskRow «Состава портфеля» в «Общем
+                                                                портфеле»: имя fs-md/600, цифры fs-sm/600. На мобилке кегли
+                                                                мельче — как в mobRow того же блока. */}
+                                                            <span style={{ minWidth: 0, fontSize: isMobile ? 'var(--fs-sm)' : 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
                                                                 {fundAssetName(h.asset_name, h.isin)}
                                                             </span>
                                                             {/* Полоса нейтральная — цвет несёт пончик слева. */}
@@ -810,11 +799,11 @@ export default function FundDetailModal({
                                                                     <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                                                                 </div>
                                                             )}
-                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: isMobile ? 'var(--fs-xs)' : 'var(--fs-sm)', fontWeight: isMobile ? 800 : 600, color: 'var(--text-primary)' }}>
                                                                 {h.weight !== null ? `${w.toFixed(2)}%` : '—'}
                                                             </span>
                                                             {!isMobile && (
-                                                                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                                                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
                                                                     {h.amount_rub != null ? fmtVolShort(h.amount_rub) : '—'}
                                                                 </span>
                                                             )}
@@ -839,32 +828,7 @@ export default function FundDetailModal({
                                                     </div>
                                                 )}
                                             </div>
-                                        );
-                                        // Мобилка — прежний стек: пончик, под ним список. Десктоп —
-                                        // макет «Общего портфеля»: таблица бумаг слева, колонка
-                                        // «Структура» с картой справа.
-                                        return isMobile ? (
-                                            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                                                {donutBlock}
-                                                {listBlock}
-                                            </div>
-                                        ) : (
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 264px', gap: 26, alignItems: 'start' }}>
-                                                {listBlock}
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '2px 0 10px' }}>
-                                                        Структура{holdingsSum > 0 && <> · <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatRubShort(holdingsSum)}</span></>}
-                                                    </div>
-                                                    <PortfolioTreemap
-                                                        items={tmItems}
-                                                        restWeight={restWeight}
-                                                        hoverIdx={modalHover}
-                                                        onHoverChange={setModalHover}
-                                                        onItemClick={(i) => openAsset(topHolds[i])}
-                                                        clickHint="как фонд покупал бумагу"
-                                                    />
-                                                </div>
-                                            </div>
+                                        </div>
                                         );
                                     })() : (
                                         <div
