@@ -8,7 +8,7 @@
  *   - Инфографика — встроенный SVG в стиле OI-методологии (currentColor + GREEN/RED/ACCENT).
  */
 import { LayoutGrid } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 import { Figure, GREEN, RED, ACCENT } from './infographics';
 
 // ────────────────────────────────────────────────────────────────────
@@ -461,6 +461,16 @@ export default function FundsCatalogMethodologyPage() {
                         },
                     ]}
                 />
+            </Section>
+
+            <Section title="Вводный тур">
+                <p className="mb-4">
+                    Хотите ещё раз пройти пошаговый гайд по трём разделам —
+                    общему портфелю, разбору отдельной бумаги и витрине фондов,
+                    — который показывался при первом открытии страницы, нажмите
+                    кнопку ниже.
+                </p>
+                <ReplayTourButton tourKey="fund-trades" indicatorPath="/fund-trades" label="Показать вводный тур ещё раз" />
             </Section>
         </MethodologyWrapper>
     );

@@ -150,7 +150,8 @@ def enforce_tier_limits(
 def get_effective_end_date(user, indicator: str) -> Optional[date]:
     """Эффективная end_date с учётом задержки tier'а.
 
-    Free для OI и cbr_flows получает данные с задержкой 24 часа.
+    Free для OI получает данные с задержкой 24 часа (у cbr_flows задержку
+    сняли 2026-08 — там теперь data_delay_hours=0 на всех тирах).
     Backend подменяет `end_date = today() - delay` ПЕРЕД запросом в БД.
     Не доверять параметрам из фронта — он может прислать today().
 

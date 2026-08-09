@@ -746,6 +746,7 @@ export default function OpenInterestPage() {
       {/* Нудж «данные с задержкой» — Free/гость видят ОИ по вчерашний день
           (data_delay_hours=24 в features.py → get_effective_end_date). */}
       <DelayedDataBadge
+        indicator="open_interest"
         message="— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке."
         cta="Открыть свежие данные →"
       />

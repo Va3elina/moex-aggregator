@@ -521,6 +521,9 @@ export default function MobileFundTradesPage() {
 
   // ── Onboarding tour (shared key с десктопом fund-trades) ──
   const tour = useOnboardingTour('fund-trades');
+  // Три режима — ровно те, что видны в «Опциях» (движения/снапшот скрыты).
+  // Якоря ft-time / ft-options приходят из MobileLayout (timeTourId /
+  // settingsTourId), .fm-page-actions — вся нижняя панель кнопок.
   const tourSteps: TourStep[] = [
     {
       selector: null,
@@ -528,11 +531,11 @@ export default function MobileFundTradesPage() {
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
-            Состав портфелей крупных БПИФ акций: что управляющие компании
-            накапливают, а что распродают. Данные — из официальных Справок о
-            СЧА (форма ЦБ № 0420502).
+            Что крупные фонды акций держат в портфелях и что за месяц докупили
+            или продали. Данные — из официальных справок о стоимости чистых
+            активов, которые управляющие публикуют раз в месяц.
           </p>
-          <p>Разберём управление и режимы.</p>
+          <p>Разберём кнопки и три раздела.</p>
         </>
       ),
       onEnter: () => { setAssetSheetOpen(false); setTimeSheetOpen(false); setOptionsSheetOpen(false); },
@@ -542,14 +545,14 @@ export default function MobileFundTradesPage() {
       title: 'Кнопки управления',
       body: (
         <>
-          <p style={{ marginBottom: 6 }}>Снизу — 2 кнопки:</p>
+          <p style={{ marginBottom: 6 }}>Снизу — две кнопки:</p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Время</strong> — период доходности, месяц снапшота
+            <strong>Время</strong> — за какой срок считать (период доходности,
+            месяц среза)
           </p>
           <p>
-            <strong>Опции</strong> — режим (Состав / Движения / Снапшот /
-            Потоки), метрика, сортировка, выбор УК. Карточка фонда —
-            тап по плитке в списке.
+            <strong>Опции</strong> — раздел и его настройки: сортировка, выбор
+            фондов, режим показа. Карточка фонда открывается тапом по плитке.
           </p>
         </>
       ),
@@ -557,22 +560,45 @@ export default function MobileFundTradesPage() {
       spotlightPadding: 4,
     },
     {
+      selector: '[data-tour="ft-time"]',
+      title: 'Время',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            В «Витрине» задаёт срок доходности на карточках: месяц, год или
+            пять лет.
+          </p>
+          <p>
+            В «Общем портфеле» — за какой период смотреть покупки и продажи:
+            месяц, полгода, год.
+          </p>
+        </>
+      ),
+      position: 'top',
+      spotlightPadding: 4,
+      onEnter: () => { setTimeSheetOpen(false); setOptionsSheetOpen(false); setAssetSheetOpen(false); },
+    },
+    {
       selector: null,
-      title: '4 режима',
+      title: 'Три раздела',
       align: 'top',
       body: (
         <>
           <p style={{ marginBottom: 4 }}>
-            Открыл кнопку <strong>«Опции»</strong>. Вверху — переключатель режимов:
+            Открыл кнопку <strong>«Опции»</strong>. Вверху — переключатель
+            разделов:
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Витрина</strong> — пончик портфеля каждого БПИФ
+            <strong>Портфель</strong> — все выбранные фонды как один портфель:
+            его состав и что за период купили и продали
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Общий портфель</strong> — все фонды слиты в один портфель
+            <strong>По бумаге</strong> — одна акция: кто её держит и как
+            менялась позиция
           </p>
           <p>
-            <strong>По бумаге</strong> — притоки/оттоки по одной бумаге
+            <strong>Витрина</strong> — каталог фондов с составом, доходностью
+            и размером
           </p>
         </>
       ),
@@ -684,7 +710,7 @@ export default function MobileFundTradesPage() {
           фонда», обрезанный снапшот/потоки) и затекает в щель над нижним
           рейлом. */}
       <div className="fm-ft-scroll">
-      <DelayedDataBadge />
+      <DelayedDataBadge indicator="fund_trades" />
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}

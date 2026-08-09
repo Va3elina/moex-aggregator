@@ -21,7 +21,7 @@
  * ДЕМОНТИРУЮТСЯ React'ом → LwChart внутри embed'а сам зовёт chart.remove() в
  * cleanup (иначе течёт память, §2). Персист в localStorage (v2).
  *
- * TODO (следующие куски порта): ◐ тема панели (нужна прокидка темы в embed),
+ * TODO (следующие куски порта):
  * ⚙ общий Формат, per-panel cfg, клик по сигналу → spawn индикатора, общие
  * настройки §9, листы (переименование/дубль/удаление/reorder).
  */
@@ -167,7 +167,7 @@ const TOPBAR_H = 56;
 const DRAG_STRIP = 44;       // «шапка-хват» — верхняя полоса панели (= тулбар embed'а)
 const MINW = 300, MINH = 200;
 // Пер-индикаторный пол ширины — для ОИ глобальных 300px не хватает: тулбар
-// (грип + ассет + 4 compact-иконки контролов + рисование + экспорт + ⚙ + ⤢ + ◐ + ×)
+// (грип + ассет + 4 compact-иконки контролов + рисование + экспорт + ⚙ + ⤢ + ×)
 // уже не скроллится горизонтально (toolbarUnified в EmbedFrame, PR #805) — при
 // недостатке места контент молча обрежется overflow:hidden (см. toolbarWrapRef
 // в EmbedOpenInterest), а не уедет в скролл. 340 (прошлый коммит) оказалось
@@ -216,7 +216,7 @@ const uid = (p: string): string => p + Date.now().toString(36) + Math.random().t
 
 /**
  * SandboxThemeScope — вложенный ThemeContext.Provider с ЭФФЕКТИВНОЙ темой панели
- * (◐ per-panel override или тема оболочки). Embed внутри читает её через
+ * (themeOverride панели или тема оболочки). Embed внутри читает её через
  * useTheme() → LwChart получает верный `dark`, series-цвета резолвятся probe'ом
  * в поддереве панели (CSS-vars от data-theme на .sb-panel). §4.3 спеки.
  */
@@ -246,6 +246,15 @@ function loadState(): Persisted {
     if (!s.bySheet[s.activeSheet]) s.activeSheet = s.sheets[0].id;
     if (s.sbTheme !== 'light') s.sbTheme = 'dark';
     s.prefs = { ...DEF_PREFS, ...(s.prefs ?? {}) };
+    // Одноразовая миграция: кнопку «Тема панели» (◐) из тулбара окна убрали —
+    // тему задаёт только шапка оболочки. У тех, кто успел её нажать, панель
+    // осталась бы в чужой теме НАВСЕГДА: поставить оверрайд больше нечем, и
+    // снять его — тоже (единственный сброс живёт в toggleTheme, до которого
+    // ещё надо додуматься). Обнуляем оверрайды на загрузке. Само поле в модели
+    // и персисте оставлено: механика per-panel темы цела и ждёт своего UI.
+    for (const arr of Object.values(s.bySheet)) {
+      for (const p of arr || []) p.themeOverride = null;
+    }
     return s;
   } catch { return defaultState(); }
 }
@@ -260,7 +269,7 @@ function loadState(): Persisted {
    верхнем padding тулбара (padding-top:5px + доп. отступ до глифов кнопок,
    ~12px запаса) — реальные иконки ниже этой полосы, клики по ним не задеты.
    Верхние углы (nw/ne) НЕ добавлены: там 14×14 неизбежно наехал бы на грип-
-   хват/ассет-кнопку (nw) или кнопки окна ⤢◐× (ne) — тот же конфликт, но
+   хват/ассет-кнопку (nw) или кнопки окна ⤢× (ne) — тот же конфликт, но
    уже не решаемый утончением полосы. */
 const HANDLES: { dir: string; style: CSSProperties }[] = [
   { dir: 'e', style: { top: 14, bottom: 14, right: 0, width: 6, cursor: 'ew-resize' } },
@@ -521,12 +530,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   }, [st, bringFront, setActivePanels]);
 
-  // Тема ОБОЛОЧКИ ведёт за собой ВСЕ окна — на всех листах. Раньше менялся только
-  // sbTheme, а панель, у которой хоть раз нажали ◐, оставалась со своим
-  // themeOverride навсегда и переставала реагировать на смену фона (Вадим:
-  // «должны менять цвет все окна»). Сбрасываем оверрайды: смена глобальной темы —
-  // это явное «хочу вот такой фон везде», индивидуальные флипы после неё
-  // ставятся заново.
+  // Тема ОБОЛОЧКИ ведёт за собой ВСЕ окна — на всех листах. Сброс themeOverride
+  // здесь оставлен НАРОЧНО, хотя ставить оверрайд из UI больше нечем (кнопку
+  // «Тема панели» убрали): это страховка на случай раскладки, приехавшей из
+  // старого персиста в обход миграции в loadState.
   const toggleTheme = useCallback(() => setSt((s) => {
     const bySheet = Object.fromEntries(
       Object.entries(s.bySheet).map(([sheet, ps]) => [
@@ -536,20 +543,6 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     );
     return { ...s, sbTheme: s.sbTheme === 'dark' ? 'light' : 'dark', bySheet };
   }), []);
-  // ◐ панели (§4.3): флип themeOverride относительно эффективной темы.
-  const setPanelTheme = useCallback((id: string) => {
-    setSt((s) => ({
-      ...s,
-      bySheet: {
-        ...s.bySheet,
-        [s.activeSheet]: (s.bySheet[s.activeSheet] || []).map((p) => {
-          if (p.id !== id) return p;
-          const cur = p.themeOverride || s.sbTheme;
-          return { ...p, themeOverride: cur === 'dark' ? 'light' : 'dark' };
-        }),
-      },
-    }));
-  }, []);
   const addSheet = useCallback(() => setSt((s) => {
     const id = uid('s');
     return { ...s, sheets: [...s.sheets, { id, name: 'Лист ' + (s.sheets.length + 1) }], bySheet: { ...s.bySheet, [id]: [] }, activeSheet: id };
@@ -614,10 +607,9 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
         // собственный тулбар индикатора (ассет/таймфрейм/… + кнопка «Свернуть» на
         // месте «Развернуть», см. SandboxWindowCtx.maximized в EmbedToolbar).
         // data-sbtheme/data-theme ОБЯЗАТЕЛЬНЫ и здесь: без них CSS-переменные
-        // наследовались от .sb-root (тема ОБОЛОЧКИ), и кнопка ◐ в развёрнутом
-        // окне не меняла цвет — SandboxThemeScope обновлял только React-контекст
-        // (LwChart.dark), а фон/токены оставались прежними. У обычной панели эти
-        // атрибуты есть (см. ниже), у развёрнутой их забыли.
+        // наследовались бы от .sb-root, а SandboxThemeScope обновляет только
+        // React-контекст (LwChart.dark) — фон/токены разъехались бы с графиком.
+        // У обычной панели эти атрибуты есть (см. ниже), у развёрнутой их забыли.
         <div
           className="sb-max"
           data-sbtheme={maximizedPanel.themeOverride || st.sbTheme}
@@ -629,8 +621,6 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               onExpand: () => toggleMaximize(maximizedPanel.id),
               maximized: true,
               onClose: () => close(maximizedPanel.id),
-              onToggleTheme: () => setPanelTheme(maximizedPanel.id),
-              panelDark: (maximizedPanel.themeOverride || st.sbTheme) === 'dark',
               onResize: (w, h) => resizePanel(maximizedPanel.id, w, h),
             }}
           >
@@ -726,7 +716,12 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           <LayoutGrid size={14} /> Выстроить
         </button>
 
-        {/* Правая группа */}
+        {/* Правая группа. Ряд выровнен ОПТИЧЕСКИ, а не только по gap: у всех
+            элементов одна коробка 34×34/radius 8 (включая аватар, см.
+            avatarStyle), глифы одного кегля 16 и одного веса обводки 1.8 (у
+            ThemeGlyph свои 1.75 — разницы на глаз нет), бейдж колокола не
+            вылезает вбок (badgeStyle). Меняешь один элемент — проверь эти
+            четыре условия, иначе зазоры снова «поплывут». */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button type="button" className="sb-hoverable" onClick={() => setSignalsOpen(true)} title="Центр сигналов" style={chromeBtn}>
@@ -740,15 +735,15 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             <ThemeGlyph dark={st.sbTheme === 'dark'} size={16} />
           </button>
           <button type="button" className="sb-hoverable" onClick={() => setPrefsOpen(true)} title="Настройки песочницы" style={chromeBtn}>
-            <SlidersHorizontal size={15} />
+            <SlidersHorizontal size={16} strokeWidth={1.8} />
           </button>
           {/* Реальный аватар юзера: картинка (avatar_url) или инициал. PRO-чип убран (Вадим). */}
           {user?.avatar_url
-            ? <img src={user.avatar_url} alt="" style={{ ...avatarStyle, objectFit: 'cover' }} />
+            ? <img src={user.avatar_url} alt="" title={user?.display_name || user?.email || ''} style={{ ...avatarStyle, objectFit: 'cover' }} />
             : <div style={avatarStyle} title={user?.display_name || user?.email || ''}>{avatarInitial}</div>}
           {/* Выход на главный сайт (входа в песочницу с сайта пока нет — по решению Вадима). */}
           <a href="/" className="sb-hoverable" title="Выйти на сайт" aria-label="Выйти на сайт" style={{ ...chromeBtn, textDecoration: 'none', color: 'var(--muted)' }}>
-            <LogOut size={16} />
+            <LogOut size={16} strokeWidth={1.8} />
           </a>
         </div>
       </div>
@@ -784,7 +779,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), panelDark: eff === 'dark', onResize: (w, h) => resizePanel(p.id, w, h) }}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
                 {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
                     две панели одного индикатора живут независимо (§2 мокапа). */}
                 <EmbedPidCtx.Provider value={p.id}>
@@ -1067,14 +1062,26 @@ const chromeBtn: CSSProperties = {
   width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8,
   border: '1.5px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
 };
+// Бейдж колокола. ⚠️ Вылет ТОЛЬКО ВВЕРХ (right:0): раньше было right:-5, и
+// бейдж съедал 5 из 8px зазора до соседней кнопки — при signalCount > 0 ряд
+// «поджимался» справа от колокола, а без сигналов был ровным. По вертикали
+// вылезать можно свободно: кнопка 34 в полосе 56, сверху ~11px воздуха.
+// Габариты ужаты (было 16/4px), чтобы бейдж, потерявший боковой вылет, не
+// наползал на сам глиф колокола сильнее прежнего. Кольцо в цвет топбара
+// отделяет его от рамки кнопки, на угол которой он теперь заходит целиком.
 const badgeStyle: CSSProperties = {
-  position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9,
-  background: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: '16px',
-  textAlign: 'center', pointerEvents: 'none',
+  position: 'absolute', top: -6, right: 0, minWidth: 14, height: 15, padding: '0 3px', borderRadius: 8,
+  background: 'var(--accent)', color: '#fff', fontSize: 9.5, fontWeight: 700, lineHeight: '15px',
+  textAlign: 'center', pointerEvents: 'none', border: '1.5px solid var(--panel)', boxSizing: 'content-box',
 };
+// Аватар — ТА ЖЕ коробка, что у chromeBtn (34×34, radius 8, та же рамка), а не
+// круг 30×30: при общем gap:8 меньший круг между квадратными кнопками читался
+// как «стоит с бо́льшим отступом» — оптический зазор у круга шире физического,
+// а недобор 4px по стороне добавлял ещё по 2px с каждой стороны. Единая коробка
+// снимает обе поправки разом, ряд становится ровным без ручных отступов.
 const avatarStyle: CSSProperties = {
-  width: 30, height: 30, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: '0 0 auto',
+  ...chromeBtn, background: 'var(--bg2)', overflow: 'hidden',
+  fontSize: 13, fontWeight: 700, cursor: 'default',
 };
 const canvasStyle: CSSProperties = { position: 'absolute', top: TOPBAR_H, left: 0, right: 0, bottom: 0, overflow: 'hidden', background: 'var(--bg)' };
 // Подложка холста (§3.2, gridStyle дизайнера): точки / линии / чисто.

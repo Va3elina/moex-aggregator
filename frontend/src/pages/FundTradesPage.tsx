@@ -67,6 +67,9 @@ import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { buildFundTradesTour } from '../data/tours/fund-trades';
 import FundDetailModal, {
     AssetHistoryModal,
     formatRubShort,
@@ -485,6 +488,12 @@ export default function FundTradesPage() {
         setTab('company');
     };
 
+    // ── Onboarding tour (ключ 'fund-trades' общий с мобильной страницей) ──
+    // Тур сам переключает вкладки через setTab — шаги описывают три раздела
+    // по очереди, и подсвечиваемый блок должен реально быть на экране.
+    const tour = useOnboardingTour('fund-trades');
+    const tourSteps = useMemo(() => buildFundTradesTour(setTab), [setTab]);
+
     if (!common.fund_trades_access) {
         return <LockedView />;
     }
@@ -497,10 +506,11 @@ export default function FundTradesPage() {
                 icon={Wallet}
                 title="Сделки фондов"
                 subtitle="Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают"
+                helpLink="/methodology/funds-catalog"
             />
 
             {/* Постоянный нудж «данные с задержкой» — виден на всех табах (Free/гость) */}
-            <DelayedDataBadge />
+            <DelayedDataBadge indicator="fund_trades" />
 
             {/* Ошибка загрузки — НАД карточкой: между вкладками и панелью не должно
                 быть ничего, иначе язычок папки оторвётся от панели (см. .has-tabs). */}
@@ -527,6 +537,7 @@ export default function FundTradesPage() {
             {/* Вкладки — editorial folder-tabs (ChartTabs). Movers/snapshots скрыты
                 с сайта по просьбе Вадима: вернуть = дописать сюда строки обратно. */}
             <ChartTabs<Tab>
+                tourId="ft-tabs"
                 value={tab}
                 onChange={setTab}
                 items={[
@@ -547,7 +558,7 @@ export default function FundTradesPage() {
                         Период влияет и на сортировку по доходности, и на число, которое
                         показывает карточка («Доходность · …»). Combinable AND-фильтры. */}
                     {funds.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
+                        <div data-tour="ft-funds-controls" className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
                             <SegmentedControl<FundSortKey>
                                 options={[
                                     { key: 'return', label: 'Доходность' },
@@ -568,7 +579,7 @@ export default function FundTradesPage() {
                     )}
                     {/* Сетка карточек лежит прямо на editorial-frame — без
                         дополнительной бежевой подложки и внутренней рамки. */}
-                    <div>
+                    <div data-tour="ft-funds-grid">
                     {loading && funds.length === 0 && (
                         <div
                             style={{
@@ -873,7 +884,7 @@ export default function FundTradesPage() {
                         со своими отступами (как было у прежней карточки портфеля). */}
                     <div className="editorial-frame has-tabs" style={{ padding: 0 }}>
                         {funds.length > 1 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
+                            <div data-tour="ft-portfolio-funds" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
                                 {/* Выбор КОНКРЕТНЫХ фондов — таблица с СЧА/доходностью и
                                     группами по УК, дизайн-код виджета фондов из «Денег в
                                     фондах». Чекбокс на заголовке УК выбирает всю УК. */}
@@ -887,7 +898,7 @@ export default function FundTradesPage() {
                             </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: vw >= 1120 ? 'minmax(0, 1fr) minmax(0, 1.85fr)' : '1fr', alignItems: 'stretch' }}>
-                            <div style={{ padding: '10px 16px 16px', minWidth: 0 }}>
+                            <div data-tour="ft-portfolio-movers" style={{ padding: '10px 16px 16px', minWidth: 0 }}>
                                 <PortfolioMoversPanel
                                     movers={portfolioMovers}
                                     loading={portfolioMoversLoading}
@@ -902,7 +913,7 @@ export default function FundTradesPage() {
                                     onAssetClick={openCompanyFlows}
                                 />
                             </div>
-                            <div style={{ padding: '10px 16px 16px', minWidth: 0, borderLeft: vw >= 1120 ? '1.5px solid var(--border-color)' : 'none', borderTop: vw >= 1120 ? 'none' : '1.5px solid var(--border-color)' }}>
+                            <div data-tour="ft-portfolio-holdings" style={{ padding: '10px 16px 16px', minWidth: 0, borderLeft: vw >= 1120 ? '1.5px solid var(--border-color)' : 'none', borderTop: vw >= 1120 ? 'none' : '1.5px solid var(--border-color)' }}>
                                 <CombinedPortfolioView
                                     portfolio={portfolio}
                                     loading={portfolioLoading}
@@ -1036,6 +1047,12 @@ export default function FundTradesPage() {
                     />
                 );
             })()}
+
+            <OnboardingTour
+                steps={tourSteps}
+                open={tour.open}
+                onClose={tour.close}
+            />
         </div>
     );
 }

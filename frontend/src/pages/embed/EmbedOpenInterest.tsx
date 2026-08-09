@@ -611,12 +611,25 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const hasVolume = useMemo(() => chartData.some((p) => p.volume != null), [chartData]);
   // Базисы, доступные в этом окне. Цена — пока показана; ОИ — пока есть ряд.
   // Больше одного → при добавлении индикатора спрашиваем, к чему его применить.
+  //
+  // Подпись и цвет берём ИЗ САМИХ lwSeries, а не собираем заново: ряд в диалоге
+  // должен выглядеть ровно так, как он подписан и покрашен в левом верхнем углу
+  // графика (строка легенды nativeRows строится из того же массива). Собери
+  // здесь свою пару displayName + sf.get('price').color — и она разойдётся с
+  // легендой на первом же месте, где applyFormat решит иначе.
+  //
+  // Условия наличия базисов при этом НЕ меняются: цена попадает в lwSeries ровно
+  // при `showPrice && chartData.length > 0`, а единый ряд ОИ с id 'oi' есть
+  // только вне режима «Покупки + Продажи» — там же, где непуст oiCandles
+  // (страховка `oiCandles &&` держит эти два условия связанными явно).
   const indBases = useMemo<BasisOption[]>(() => {
     const out: BasisOption[] = [];
-    if (showPrice && chartData.length > 0) out.push({ id: 'price', label: 'Цена' });
-    if (oiCandles) out.push({ id: 'oi', label: labels.secondary });
+    const px = lwSeries.find((d) => d.id === 'price');
+    if (px) out.push({ id: 'price', label: px.label, color: px.color });
+    const oi = oiCandles ? lwSeries.find((d) => d.id === 'oi') : undefined;
+    if (oi) out.push({ id: 'oi', label: oi.label, color: oi.color });
     return out;
-  }, [showPrice, chartData.length, oiCandles, labels.secondary]);
+  }, [lwSeries, oiCandles]);
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
   const allSeries = useMemo(

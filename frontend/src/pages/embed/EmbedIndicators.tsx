@@ -45,9 +45,18 @@ export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp
  */
 export type IndBasis = 'price' | 'oi';
 
-/** Один доступный базис в конкретном окне: id + подпись из самого окна («Чистая
- *  позиция», «Покупки» — она зависит от режима и показателя ОИ). */
-export interface BasisOption { id: IndBasis; label: string }
+/** Один доступный базис в конкретном окне: id + подпись из самого окна (у цены —
+ *  название актива, у ОИ — «Чистая позиция»/«Покупки», зависит от режима и
+ *  показателя). */
+export interface BasisOption {
+  id: IndBasis;
+  label: string;
+  /** Цвет ряда — тот же, что у линии на графике и у квадратика в строке легенды.
+   *  Окно обязано брать его из СВОЕЙ сборки серий, иначе выбор базиса и легенда
+   *  разъедутся. Необязательный: у окон с единственным базисом (Сила рынка,
+   *  ChartLab) выбора нет и рисовать маркер негде — см. PRICE_ONLY. */
+  color?: string;
+}
 
 export interface IndicatorInst {
   id: string;
@@ -934,6 +943,29 @@ export function IndicatorsButton({ api, hasVolume, bases = PRICE_ONLY, compact }
 }
 
 /**
+ * Квадратик цвета ряда — тот же маркер, что стоит перед названием в строке
+ * легенды. Вынесен общим, чтобы легенда, окно выбора базиса и подменю «Считать
+ * от» показывали один и тот же ряд ОДИНАКОВО: пользователь узнаёт ряд по цвету,
+ * и три слегка разных квадратика читались бы как три разные сущности.
+ *
+ * Цвет — сырым значением: это CSS-переменная либо литерал, и внутри поддерева
+ * панели переменная разрешится сама (тема живёт на data-theme).
+ */
+function SeriesSwatch({ color }: { color: string }) {
+  return <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />;
+}
+
+/** Содержимое пункта «ряд окна» для меню: маркер цвета + подпись ряда. */
+function basisItemLabel(b: BasisOption): ReactNode {
+  return (
+    <>
+      {b.color && <SeriesSwatch color={b.color} />}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.label}</span>
+    </>
+  );
+}
+
+/**
  * «Применить к: …» — окно выбора базиса при добавлении.
  *
  * Показывается только там, где базисов реально больше одного (окно ОИ с живым
@@ -960,7 +992,7 @@ function BasisDialog({ kind, bases, onPick, onClose }: {
           </div>
           {/* menuItem отдаёт голый <button> без key — в списке его надо обернуть,
               иначе React ругается на отсутствие ключа. */}
-          {bases.map((b) => <Fragment key={b.id}>{menuItem(b.label, () => onPick(b.id))}</Fragment>)}
+          {bases.map((b) => <Fragment key={b.id}>{menuItem(basisItemLabel(b), () => onPick(b.id))}</Fragment>)}
         </div>
       </div>
     </div>,
@@ -1077,9 +1109,7 @@ function Row({ color, label, badge, value, valueId, visible, onToggle, onSetting
         opacity: visible ? 1 : 0.5,
       }}
     >
-      {/* Цвет — сырым значением: это CSS-переменная либо литерал, и внутри
-          поддерева панели переменная разрешится сама (тема живёт на data-theme). */}
-      <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+      <SeriesSwatch color={color} />
       <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{label}</span>
       {/* Бейдж базиса — сразу за названием, до значения: он часть имени строки
           («MA 20 ОИ»), а не её показание. Рамка вместо заливки, чтобы не спорить
@@ -1155,7 +1185,7 @@ function RowMenu({ inst, api, bases, onSettings }: {
                         место на экране. */}
                     {basisOpts.map((b) => (
                       <Fragment key={b.id}>{menuItem(
-                        b.label,
+                        basisItemLabel(b),
                         () => { api.patch(inst.id, { basis: b.id === 'oi' ? 'oi' : undefined }); setSub(null); close(); },
                         false,
                         b.id === basisOf(inst),
@@ -1256,13 +1286,16 @@ function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }
   );
 }
 
-/** Пункт всплывающего меню строки — общий для индикаторов и нативных рядов. */
-function menuItem(label: string, onClick: () => void, disabled = false, active = false): ReactNode {
+/** Пункт всплывающего меню строки — общий для индикаторов и нативных рядов.
+ *  label — ReactNode, а не строка: пункты выбора ряда несут ещё и квадратик
+ *  цвета (basisItemLabel). Для голого текста flex-раскладка неотличима от
+ *  прежней block: единственный текстовый ребёнок так же прижат влево. */
+function menuItem(label: ReactNode, onClick: () => void, disabled = false, active = false): ReactNode {
   return (
     <button
       type="button" disabled={disabled} onClick={onClick}
       style={{
-        display: 'block', width: '100%', textAlign: 'left', padding: '5px 9px', borderRadius: 6,
+        display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '5px 9px', borderRadius: 6,
         border: 'none', fontSize: 11.5, cursor: disabled ? 'default' : 'pointer',
         background: active ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
         color: disabled ? 'var(--text-secondary)' : active ? 'var(--accent)' : 'var(--text-primary)',

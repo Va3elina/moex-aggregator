@@ -22,7 +22,6 @@
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical } from 'lucide-react';
-import ThemeGlyph from '../../components/ThemeGlyph';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -31,12 +30,7 @@ import ThemeGlyph from '../../components/ThemeGlyph';
  * по §4.1 спеки. В расширении/на сайте контекст пуст → ничего лишнего.
  */
 export interface SandboxWindowControls {
-  onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void;
-  /** Эффективная тема ЭТОЙ панели (themeOverride || тема оболочки) — нужна кнопке
-   *  «Тема панели», чтобы рисовать анимированный глиф Sun/Moon по состоянию, а не
-   *  статичный «полумесяц». Опционально: у кнопки раньше был только колбэк, и
-   *  сторонние места сборки контекста не обязаны его знать. */
-  panelDark?: boolean;
+  onExpand?: () => void; onClose?: () => void;
   /** true — эта панель СЕЙЧАС развёрнута на весь sb-root (SandboxPage рендерит
    *  ТОЛЬКО её вместо шапки+холста). Переключает иконку/подпись кнопки ⤢ на
    *  обратную (⤡ «Свернуть»), onExpand у обеих — один и тот же toggle. */
@@ -84,7 +78,7 @@ const toolbarRow: CSSProperties = {
   zIndex: 20,
 };
 
-// Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ◐ ×) — §4.3: 24×24, без бордера, radius 5,
+// Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ×) — §4.3: 24×24, без бордера, radius 5,
 // приглушённый глиф. Ховер — через класс .sb-winbtn (в sandbox.css; на сайте/
 // расширении класс без стилей, а сами кнопки гейтятся наличием SandboxWindowCtx).
 const sbWinBtn: CSSProperties = {
@@ -191,14 +185,8 @@ export function EmbedFrame({
                 {win.maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
             )}
-            {win.onToggleTheme && (
-              <button type="button" onClick={win.onToggleTheme} title="Тема панели" aria-label="Тема панели" className="sb-winbtn" style={sbWinBtn}>
-                {/* 16, а не 13 как у соседних lucide-глифов: у солнца рисунок
-                    прижат к периферии виюбокса, на 13px восемь лучей сливались.
-                    Оптический вес при 16 совпадает с соседями. */}
-                <ThemeGlyph dark={!!win.panelDark} size={16} />
-              </button>
-            )}
+            {/* Кнопки «Тема панели» здесь больше нет: тему задаёт ТОЛЬКО шапка
+                оболочки, персональной темы у окна не бывает. */}
             {win.onClose && (
               <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" className="sb-winbtn sb-winbtn-close" style={sbWinBtn}>
                 <XIcon size={16} />
