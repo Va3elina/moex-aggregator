@@ -4,7 +4,7 @@
  * СПИСОК индикаторов (2 группы) → выбрал → открылась отдельная панель. Панелей
  * может быть несколько одновременно; их набор + позиции persist'ятся.
  *
- * Скин — editorial Фрейма. Содержимое панели — iframe на таймфрейм.рф/embed/<id>
+ * Скин — editorial Фрейма. Содержимое панели — iframe на framedata.ru/embed/<id>
  * с ?token= (PRO-токен из popup; нет токена → внутри iframe замок). Vanilla JS,
  * Shadow DOM, без innerHTML.
  */
@@ -13,7 +13,7 @@
   if (window.__frameWidgetLoaded) return;
   window.__frameWidgetLoaded = true;
 
-  var EMBED_BASE = window.FRAME_WIDGET_EMBED_BASE || 'https://xn--80aklbnczmv.xn--p1ai';
+  var EMBED_BASE = window.FRAME_WIDGET_EMBED_BASE || 'https://framedata.ru';
 
   var INDICATORS = [
     { id: 'signals', label: '🔔 Сигналы', group: 'signals' },
@@ -160,7 +160,7 @@
     function persist() { lsSet(KEY_PANELS, panels.map(function (p) { return p.state; })); }
     function embedUrl(id, theme, pid, extra) {
       // Токен — во fragment (#token=), НЕ в query: fragment не уходит на сервер
-      // (нет в access-логах таймфрейм.рф) и не попадает в Referer. embed читает
+      // (нет в access-логах framedata.ru) и не попадает в Referer. embed читает
       // его из location.hash (EmbedPage.tsx).
       // pid — стабильный id панели: embed неймспейсит по нему настройки, чтобы
       // каждое окно (в т.ч. два одного индикатора) держало свою конфигурацию.
