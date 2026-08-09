@@ -19,7 +19,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, X } from 'lucide-react';
 import FundsTable from './FundsTable';
-import { useTheme } from '../../contexts/ThemeContext';
+import { usePortalTheme } from '../../hooks/usePortalTheme';
 import type { FundsChartResponse } from '../../services/api';
 
 interface Props {
@@ -60,8 +60,9 @@ export default function FundPickerModal({
 }: Props) {
   // Портал в body лежит вне .sb-panel, где в песочнице висит data-theme панели:
   // без явного атрибута окно красилось бы темой оболочки (светлый список фондов
-  // поверх тёмной панели). Вне песочницы значение равно корневому.
-  const { theme } = useTheme();
+  // поверх тёмной панели). Вне песочницы значение равно корневому — хук отдаёт
+  // пустой объект, и на сайте у корня портала нет ни атрибута, ни style.
+  const portalTheme = usePortalTheme();
   const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());
   const [ownSortDir, setOwnSortDir] = useState<'desc' | 'asc'>('desc');
 
@@ -91,7 +92,7 @@ export default function FundPickerModal({
   return createPortal(
     // Масштаб/шелл как у InstrumentSearchModal на ОИ: top-anchored, max-h-90vh,
     // 2px border + hard shadow, скролл внутри.
-    <div data-theme={theme} style={{ color: 'var(--text-primary)' }} className="fixed inset-0 z-[100000] flex items-start justify-center p-4 pt-8 sm:pt-10">
+    <div {...portalTheme} className="fixed inset-0 z-[100000] flex items-start justify-center p-4 pt-8 sm:pt-10">
       <div
         className="absolute inset-0"
         style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}

@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom';
 import { HelpCircle, Info, X, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { MethodologyEntry } from '../data/methodology';
-import { useTheme } from '../contexts/ThemeContext';
+import { usePortalTheme } from '../hooks/usePortalTheme';
 
 interface HelpTooltipProps {
   /** Готовая запись из METHODOLOGY. */
@@ -55,9 +55,9 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
   const triggerRef = useRef<HTMLElement>(null);
   // В float-режиме поповер уезжает порталом в body и теряет data-theme панели
   // песочницы (у каждой панели она своя) — фон/рамка резолвились бы от <html>,
-  // то есть темой оболочки. Ставим атрибут всегда: в обычном (не портальном)
-  // режиме и вне песочницы значение совпадает с тем, что и так наследуется.
-  const { theme } = useTheme();
+  // то есть темой оболочки. Хук отдаёт атрибут ТОЛЬКО когда темы разошлись,
+  // поэтому на сайте разметка подсказки остаётся прежней.
+  const portalTheme = usePortalTheme();
 
   useEffect(() => {
     const check = () => setIsMobile(window.matchMedia('(hover: none)').matches);
@@ -133,7 +133,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
   const popover = open && (
     <div
       ref={popoverRef}
-      data-theme={theme}
+      data-theme={portalTheme['data-theme']}
       role="tooltip"
       onMouseEnter={hoverOpen}
       onMouseLeave={hoverClose}
@@ -150,6 +150,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
         backgroundColor: 'var(--bg-secondary)',
         border: '1px solid var(--border-color)',
         boxShadow: 'var(--shadow-hard, 0 10px 40px -10px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3))',
+        // color хука не берём: подсказка и так задаёт свой цвет текста ниже.
         color: 'var(--text-secondary)',
         fontSize: 'var(--fs-xs)',
         lineHeight: 1.5,

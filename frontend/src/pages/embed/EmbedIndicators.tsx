@@ -29,7 +29,7 @@ import {
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
-import { useTheme } from '../../contexts/ThemeContext';
+import { usePortalTheme } from '../../hooks/usePortalTheme';
 import { ToolbarMenuButton } from './EmbedToolbar';
 import { ColorButton, type ElStyle } from './ColorPicker';
 
@@ -944,9 +944,9 @@ function BasisDialog({ kind, bases, onPick, onClose }: {
 }) {
   // Тема панели, а не оболочки: портал уходит в body, вне поддерева .sb-panel —
   // см. тот же приём в SettingsDialog/RowPopMenu.
-  const { theme } = useTheme();
+  const portalTheme = usePortalTheme();
   return createPortal(
-    <div data-theme={theme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div {...portalTheme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ ...DIALOG, width: 'min(300px, 92vw)' }} onPointerDown={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{KINDS[kind].label}</span>
@@ -1198,9 +1198,9 @@ function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }
   const [open, setOpen] = useState(false);
   // Тема панели, а не оболочки: в песочнице у каждой панели свой data-theme на
   // .sb-panel, а портал уходит в body — вне этого поддерева, и CSS-переменные
-  // резолвились бы от <html> (тема оболочки). На сайте и в обычных эмбедах
-  // useTheme().theme совпадает с корневой темой, поведение не меняется.
-  const { theme } = useTheme();
+  // резолвились бы от <html> (тема оболочки). Вне песочницы тема поддерева и
+  // корневая совпадают — хук молчит, и разметка меню остаётся прежней.
+  const portalTheme = usePortalTheme();
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -1238,11 +1238,12 @@ function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }
       {open && createPortal(
         <div
           ref={boxRef}
-          data-theme={theme}
+          {...portalTheme}
           style={{
             position: 'fixed', left: pos?.left ?? 0, top: pos?.top ?? 0,
             visibility: pos ? 'visible' : 'hidden',
             zIndex: 60, minWidth: 196, padding: 4, borderRadius: 9, ...SURFACE,
+            ...portalTheme.style,
           }}
         >
           {children(() => setOpen(false))}
@@ -1400,13 +1401,13 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
   const smooth = inst.smoothType ?? 'none';
   // Тема панели, а не оболочки — см. RowPopMenu: портал в body теряет data-theme
   // с .sb-panel, и светлое окно настроек всплывало над тёмной панелью.
-  const { theme } = useTheme();
+  const portalTheme = usePortalTheme();
 
   // Порталом в body: строка индикатора живёт внутри своей панели, а та в
   // песочнице сидит в панели с backdrop-filter — предок с фильтром становится
   // точкой отсчёта для fixed, и окно уехало бы вместе с ней.
   return createPortal(
-    <div data-theme={theme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div {...portalTheme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={DIALOG} onPointerDown={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{indTitle(inst)}</span>

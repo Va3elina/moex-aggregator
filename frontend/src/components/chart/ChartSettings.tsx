@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Settings2, X, LineChart, AreaChart, ChartCandlestick, ChartColumnBig } from 'lucide-react';
 import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
 import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../../hooks/useChartSettings';
-import { useTheme } from '../../contexts/ThemeContext';
+import { usePortalTheme } from '../../hooks/usePortalTheme';
 
 interface Props {
   /** Показывать секцию «Тип графика». false — для страниц, где основной чарт
@@ -25,7 +25,7 @@ interface Props {
 // Editorial-модалка: overlay + карточка с «жёсткой» тенью 5px 5px 0 (как
 // CreateFundAlertModal / UpgradeModal). Стили-константы держим тут же.
 const overlay: CSSProperties = {
-  position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)', color: 'var(--text-primary)',
+  position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-4)',
 };
 const card: CSSProperties = {
@@ -115,7 +115,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
   const [open, setOpen] = useState(false);
   // Модалка идёт порталом в body (см. ниже), а в песочнице тема живёт на
   // .sb-panel каждой панели — без явного атрибута окно взяло бы тему оболочки.
-  const { theme } = useTheme();
+  // На сайте темы совпадают, хук отдаёт пустой объект и разметка не меняется.
+  const portalTheme = usePortalTheme();
   const [palette, setPalette] = useChartPalette();
   const { type, dash, scope, setType, setDash, setScope } = useChartSettings();
   const sl = {
@@ -155,8 +156,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
           карточки — табы категорий (Деньги в фондах) рисовались ПОВЕРХ модалки. */}
       {open && createPortal(
         <div
-          data-theme={theme}
-          style={overlay}
+          {...portalTheme}
+          style={{ ...overlay, ...portalTheme.style }}
           onClick={() => setOpen(false)}
           role="dialog"
           aria-modal="true"
