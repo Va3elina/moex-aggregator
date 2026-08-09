@@ -26,14 +26,10 @@ export default function ThemeGlyph({
   /** Сторона глифа. Число = px; строку принимаем ради clamp()-размера в шапке сайта. */
   size: number | string;
 }) {
-  // На маленьких размерах «полный» рисунок солнца превращается в кашу: при 13px
-  // луч из 24-виюбокса даёт ~1.1px длины при ~0.95px обводки, а восемь лучей
-  // (4 диагональных вплотную к 4 прямым) сливаются в серый ореол вокруг круга.
-  // Поэтому < 16px рисуем упрощённый глиф: только 4 прямых луча, они длиннее,
-  // толще и дальше отодвинуты от ядра — на 13px читается как солнце, а не как
-  // клякса. Строковый (clamp) размер считаем «большим» — вид сайта не меняется.
-  const compact = typeof size === 'number' && size < 16;
-
+  // ⚠️ Упрощённый глиф для мелких размеров (4 толстых прямых луча вместо 8)
+  // ОТКАЗАЛИ: на 13px он читался не как солнце, а как прицел — крест с точкой
+  // (Вадим). Рисуем всегда полный набор из 8 лучей, как на сайте; чтобы они не
+  // сливались, кнопке тулбара окна дан размер побольше (см. EmbedToolbar).
   const iconStyle = { width: size, height: size } as const;
 
   return (
@@ -53,7 +49,7 @@ export default function ThemeGlyph({
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth={compact ? 2.6 : 1.75}
+        strokeWidth={1.75}
         strokeLinecap="round"
         strokeLinejoin="round"
         className="absolute transition-all duration-500 ease-out"
@@ -63,27 +59,15 @@ export default function ThemeGlyph({
           transform: dark ? 'rotate(-90deg) scale(0.4)' : 'rotate(0) scale(1)',
         }}
       >
-        {compact ? (
-          <>
-            <circle cx="12" cy="12" r="5" fill="var(--accent)" stroke="var(--accent)" />
-            <path d="M12 1.5v3" />
-            <path d="M12 19.5v3" />
-            <path d="M1.5 12h3" />
-            <path d="M19.5 12h3" />
-          </>
-        ) : (
-          <>
-            <circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="var(--accent)" />
-            <path d="M12 2v2" />
-            <path d="M12 20v2" />
-            <path d="M4.93 4.93l1.41 1.41" />
-            <path d="M17.66 17.66l1.41 1.41" />
-            <path d="M2 12h2" />
-            <path d="M20 12h2" />
-            <path d="M4.93 19.07l1.41-1.41" />
-            <path d="M17.66 6.34l1.41-1.41" />
-          </>
-        )}
+        <circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="var(--accent)" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="M4.93 4.93l1.41 1.41" />
+        <path d="M17.66 17.66l1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="M4.93 19.07l1.41-1.41" />
+        <path d="M17.66 6.34l1.41-1.41" />
       </svg>
 
       {/* Moon — видна в dark. Acccent-fill, плавно влетает. */}
