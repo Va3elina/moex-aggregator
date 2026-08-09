@@ -200,7 +200,7 @@ export default function SignalExportPage() {
           fontSize: 13,
         }}
       >
-        <div>таймфрейм.рф</div>
+        <div>framedata.ru</div>
         <div>{formattedDate}</div>
       </div>
     </div>

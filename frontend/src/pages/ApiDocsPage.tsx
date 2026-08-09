@@ -37,7 +37,7 @@ import { useAuth } from '../contexts/AuthContext';
 const BASE_URL =
     typeof window !== 'undefined'
         ? window.location.origin
-        : 'https://xn--80aklbnczmv.xn--p1ai';
+        : 'https://framedata.ru';
 
 const API_KEY_STORAGE_KEY = 'frame_api_docs_key';
 

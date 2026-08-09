@@ -41,7 +41,7 @@ export default function RecurringPage() {
         </Link>
         . Актуальная редакция — на странице{' '}
         <Link to="/recurring" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-          таймфрейм.рф/recurring
+          framedata.ru/recurring
         </Link>.
       </p>
 
@@ -87,8 +87,8 @@ export default function RecurringPage() {
         оказания услуг.
       </p>
       <p style={PARAGRAPH}>
-        <b>1.6. Сайт</b> — https://таймфрейм.рф (а также его punycode-зеркало
-        https://xn--80aklbnczmv.xn--p1ai).
+        <b>1.6. Сайт</b> — https://framedata.ru (а также прежний адрес
+        https://таймфрейм.рф и его punycode-форма https://xn--80aklbnczmv.xn--p1ai).
       </p>
       <p style={PARAGRAPH}>
         <b>1.7. Банк-эмитент</b> — банковская организация, счетами и/или картами

@@ -49,7 +49,7 @@ TBANK_PASSWORD=<password_from_lk>
 
 В ЛК эквайринга → **Магазин → Уведомления**:
 
-- Notification URL: `https://xn--80aklbnczmv.xn--p1ai/api/billing/webhook`
+- Notification URL: `https://framedata.ru/api/billing/webhook`
 - Метод: `POST`
 - Тип: `JSON`
 - Включить статусы: `CONFIRMED`, `REJECTED`, `REFUNDED`, `CANCELED`,
@@ -70,7 +70,7 @@ docker restart frame-api-1
 docker logs frame-api-1 2>&1 | grep -i billing | tail -5
 
 # 2. Запрос /api/billing/plans должен работать (он не зависит от провайдера)
-curl https://xn--80aklbnczmv.xn--p1ai/api/billing/plans
+curl https://framedata.ru/api/billing/plans
 
 # 3. На /pricing → "Оформить" → должен открыться PaymentURL вида
 #    https://securepay.tinkoff.ru/Cz5GZAOd (а не /billing/stub).

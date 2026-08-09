@@ -37,7 +37,7 @@ from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
 from signals.email_notify import send_email          # noqa: E402
 
-SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
+SITE = "https://framedata.ru"
 
 _OP_PRICE = {"cross": "пересекла", "cross_up": "↑ пересекла",
              "cross_down": "↓ пересекла", "gt": "выше", "lt": "ниже"}

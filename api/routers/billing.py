@@ -613,7 +613,7 @@ async def trial_start(
 
     Гейтится TRIAL_ENABLED + check_trial_eligibility (анти-абуз). Требует consent=true.
     """
-    origin = request.headers.get("origin") or request.headers.get("referer") or "https://xn--80aklbnczmv.xn--p1ai"
+    origin = request.headers.get("origin") or request.headers.get("referer") or "https://framedata.ru"
     ip = request.client.host if request.client else None
     try:
         return trial_service.start_trial(

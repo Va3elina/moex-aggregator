@@ -144,7 +144,7 @@ export default function ContactsPage() {
           color: 'var(--text-muted)',
         }}
       >
-        Сервис «Frame» (домен <strong>таймфрейм.рф</strong>) — аналитическая
+        Сервис «Frame» (домен <strong>framedata.ru</strong>) — аналитическая
         платформа по российскому фондовому рынку. По вопросам сотрудничества и
         технической поддержки используйте контакты выше.
       </div>

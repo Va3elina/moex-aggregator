@@ -73,7 +73,7 @@ jobs:
       - name: Health + SW check
         run: |
           sleep 12   # даём resolver-фиксу nginx ре-резолвить новый IP api
-          code=$(curl -s -o /dev/null -w "%{http_code}" https://xn--80aklbnczmv.xn--p1ai/api/health)
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://framedata.ru/api/health)
           echo "health: HTTP $code"
           test "$code" = "200" || { echo "health failed"; exit 1; }
-          curl -s https://xn--80aklbnczmv.xn--p1ai/sw.js | grep -m1 frame- || true
+          curl -s https://framedata.ru/sw.js | grep -m1 frame- || true

@@ -670,7 +670,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
           </div>
         )}
         {status === 'ok' && review && !review.totals && (
-          <EmbedMsg text="Свежий срез — по подписке · таймфрейм.рф" />
+          <EmbedMsg text="Свежий срез — по подписке · framedata.ru" />
         )}
       </div>
     </div>

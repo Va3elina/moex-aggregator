@@ -2,7 +2,7 @@
  * EmbedPage — chromeless обёртка для встраивания индикаторов FRAME в iframe.
  *
  * Назначение: расширение для терминала Т-Инвестиций вставляет
- *   <iframe src="таймфрейм.рф/embed/oi?instrument=SR&theme=editorial-dark&token=ext_…">
+ *   <iframe src="framedata.ru/embed/oi?instrument=SR&theme=editorial-dark&token=ext_…">
  *
  * Гейтинг (только PRO): ?token=ext_… обменивается на короткий JWT через
  * /api/extension/exchange (PRO проверяется вживую). JWT кладётся в localStorage,
@@ -30,7 +30,7 @@ import EmbedSignals from './EmbedSignals';
 import EmbedHeatmap from './EmbedHeatmap';
 
 const DEFAULT_THEME = 'editorial-dark';
-const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
+const SITE = 'https://framedata.ru';
 
 type AuthState = 'loading' | 'ok' | 'locked' | 'expired';
 
@@ -199,7 +199,7 @@ function EmbedLocked() {
       </div>
       <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 300, lineHeight: 1.5 }}>
         Вставьте PRO-токен в popup расширения «Фрейм». Сгенерировать токен можно в личном
-        кабинете на таймфрейм.рф — нужен тариф&nbsp;Pro.
+        кабинете на framedata.ru — нужен тариф&nbsp;Pro.
       </div>
       <a
         href={`${SITE}/profile`}

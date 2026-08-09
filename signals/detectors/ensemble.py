@@ -36,7 +36,7 @@ log = logging.getLogger("signals.detectors.ensemble")
 # Config (синхронизировано с production cron)
 # ───────────────────────────────────────────────────────────────
 API_BASE = "https://localhost"
-API_HOST_HEADER = "xn--80aklbnczmv.xn--p1ai"
+API_HOST_HEADER = "framedata.ru"
 CHART_PERIOD = "2y"  # данных хватает на warmup + текущий день
 
 

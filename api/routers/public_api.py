@@ -334,7 +334,7 @@ def public_openapi(request: Request):
             "version": "1.0.0",
             "contact": {"email": "frameinfo@mail.ru"},
         },
-        "servers": [{"url": "https://xn--80aklbnczmv.xn--p1ai", "description": "Production"}],
+        "servers": [{"url": "https://framedata.ru", "description": "Production"}],
         "paths": public_paths,
         "components": {
             **full.get("components", {}),

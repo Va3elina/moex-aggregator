@@ -34,7 +34,7 @@ CHANNELS = [
 ]
 MAX_POSTS_PER_CHANNEL = 12
 HTTP_TIMEOUT = 20
-_UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://xn--80aklbnczmv.xn--p1ai)"
+_UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://framedata.ru)"
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")

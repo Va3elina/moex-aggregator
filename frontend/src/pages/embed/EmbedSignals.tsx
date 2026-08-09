@@ -23,7 +23,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 
-const SITE = 'https://xn--80aklbnczmv.xn--p1ai';
+const SITE = 'https://framedata.ru';
 const POLL_MS = 90_000;
 
 type SourceKey = 'all' | 'oi' | 'funds' | 'mine';

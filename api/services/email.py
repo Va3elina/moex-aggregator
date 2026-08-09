@@ -34,7 +34,7 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Фрейм")
 
-SITE_URL = "https://таймфрейм.рф"
+SITE_URL = "https://framedata.ru"
 
 
 def is_configured() -> bool:
@@ -107,11 +107,11 @@ def send_verification_email(to_email: str, code: str, display_name: str | None =
           </div>
         </td></tr>
         <tr><td style="padding:20px 32px 0;">
-          <p style="font-size:13px;color:#6B6357;margin:0;">Код действует 30&nbsp;минут. Если вы не регистрировались на таймфрейм.рф — просто проигнорируйте это письмо.</p>
+          <p style="font-size:13px;color:#6B6357;margin:0;">Код действует 30&nbsp;минут. Если вы не регистрировались на framedata.ru — просто проигнорируйте это письмо.</p>
         </td></tr>
         <tr><td style="padding:24px 32px 32px;">
           <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
-          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">таймфрейм.рф</a>
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">framedata.ru</a>
         </td></tr>
       </table>
     </td></tr>
@@ -183,7 +183,7 @@ def send_trial_ending_email(
         </td></tr>
         <tr><td style="padding:24px 32px 32px;">
           <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
-          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">таймфрейм.рф</a>
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">framedata.ru</a>
         </td></tr>
       </table>
     </td></tr>

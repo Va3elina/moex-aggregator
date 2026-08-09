@@ -96,7 +96,7 @@ MAX_DISPATCH_ATTEMPTS = 3    # сколько раз ЭТОТ бэкстоп п�
 # поднять cloud-контейнер — конкуренция за мощность аккаунта роняет часть
 # попыток на этапе провижининга, ещё до старта самой Routine-сессии.
 FIRE_STAGGER_SEC = 8
-INTERNAL_API_HOST = "https://xn--80aklbnczmv.xn--p1ai"  # ⚠️ punycode: кириллица ломает curl внутри Routine
+INTERNAL_API_HOST = "https://framedata.ru"  # ⚠️ punycode: кириллица ломает curl внутри Routine
 
 _ANTHROPIC_HEADERS_BASE = {
     "anthropic-version": "2023-06-01",

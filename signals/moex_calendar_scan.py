@@ -43,7 +43,7 @@ from signals import config             # noqa: E402
 
 CSV_URL = ("https://web.moex.com/moex-web-icdb-api/api/v1/export/"
            "register-closing-dates/csv?separator=2&language=1")
-_UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://xn--80aklbnczmv.xn--p1ai)"
+_UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://framedata.ru)"
 _TICKER_RE = re.compile(r",\s*([A-Z]{2,10})\s*\[")
 HTTP_TIMEOUT = 20
 

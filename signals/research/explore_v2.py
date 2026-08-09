@@ -57,7 +57,7 @@ WARMUP_DAYS = 60
 TRAIN_FRACTION = 0.70  # 70% train, 30% test holdout
 
 API_BASE = "https://localhost"
-API_HOST_HEADER = "xn--80aklbnczmv.xn--p1ai"
+API_HOST_HEADER = "framedata.ru"
 
 
 # ───────────────────────────────────────────────────────────────
