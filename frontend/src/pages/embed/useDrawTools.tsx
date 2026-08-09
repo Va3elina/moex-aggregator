@@ -476,7 +476,7 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
       // Панель не должна отдавать клики слою рисования под ней (иначе выделение слетает).
       onPointerDown={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute', left: pos?.left ?? -9999, top: pos?.top ?? -9999, zIndex: 11,
+        position: 'absolute', left: pos?.left ?? -9999, top: pos?.top ?? -9999, zIndex: 16,
         display: 'flex', alignItems: 'center', gap: 2, padding: '3px 4px', borderRadius: 9,
         visibility: pos ? 'visible' : 'hidden', ...SURFACE,
       }}
@@ -615,7 +615,7 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
     <div
       data-export-ignore="true"
       onPointerDown={(e) => e.stopPropagation()}
-      style={{ position: 'absolute', inset: 0, zIndex: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.34)' }}
+      style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.34)' }}
     >
       <div style={{ width: 'min(340px, calc(100% - 24px))', maxHeight: 'calc(100% - 24px)', overflowY: 'auto', borderRadius: 11, padding: 12, ...SURFACE }} className="sb-scroll">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }}>
@@ -834,7 +834,10 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
         // Класс делает его тонким и тема-независимым (см. index.css).
         className="draw-scroll"
         style={{
-          position: 'absolute', left: railLeft, top: railTop, zIndex: 8,
+          // z:14 — ВЫШЕ списка серий (z:10, EmbedIndicators.listBoxStyle): в
+          // невысоких панелях рейл упирается в верх и его первые иконки уходили
+          // под плашку легенды, становясь некликабельными.
+          position: 'absolute', left: railLeft, top: railTop, zIndex: 14,
           display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 10,
           background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 88%, transparent)',
           border: '1px solid var(--border-color, rgba(128,128,128,0.35))', backdropFilter: 'blur(3px)',
@@ -908,7 +911,7 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
           // оставлял бы список слоёв в старом месте. Рейл ушёл вправо — раскрываем
           // список влево от него, чтобы не уехать за границу панели.
           style={{
-            position: 'absolute', zIndex: 9,
+            position: 'absolute', zIndex: 15,   // над рейлом (14)
             left: railLeft > 240 ? Math.max(4, railLeft - 200) : railLeft + 42,
             top: railTop,
             width: 194, maxHeight: 'calc(100% - 20px)', overflowY: 'auto', padding: 6, borderRadius: 10,

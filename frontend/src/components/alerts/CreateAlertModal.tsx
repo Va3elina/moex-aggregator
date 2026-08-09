@@ -16,6 +16,7 @@ import {
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
 import InstrumentSearchModal from '../InstrumentSearchModal';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // Каналы доставки. E-mail пока за флагом (SMTP noreply настраивается — см. план):
 // пилюля рендерится, но выбрать нельзя, пока EMAIL_CHANNEL_ENABLED=false.
@@ -49,7 +50,7 @@ interface Props {
 }
 
 const overlay: CSSProperties = {
-    position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
+    position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)', color: 'var(--text-primary)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-4)',
 };
 const card: CSSProperties = {
@@ -116,6 +117,10 @@ const pill = (active: boolean): CSSProperties => ({
 });
 
 export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose, prefill }: Props) {
+    // Тема ПАНЕЛИ, а не оболочки: модалка уходит порталом в body, вне .sb-panel
+    // с её собственным data-theme, поэтому CSS-переменные брались бы от <html>.
+    // Вне песочницы контекстная тема и корневая — одно и то же.
+    const { theme } = useTheme();
     const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [metricKey, setMetricKey] = useState(
@@ -397,7 +402,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     // на странице) → верхний край модалки прятался под шапкой. Портал выносит
     // оверлей из контекста, и z честно перекрывает шапку.
     return createPortal(
-        <div style={overlay} onClick={onClose}>
+        <div data-theme={theme} style={overlay} onClick={onClose}>
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>

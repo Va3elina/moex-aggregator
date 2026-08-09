@@ -6,7 +6,7 @@
  *   • aum   → суммарная СЧА (area, правая ось) + индекс (line, левая ось).
  * Категория / период / таймфрейм / тоглы — в тулбаре и ⚙.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, Columns3, Grid3x3, CalendarRange, ListFilter } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
@@ -343,6 +343,32 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return [{ label, color: 'var(--oi-green)', colorRight: 'var(--oi-red)', marker: 'split' as const }];
   }, [category, containerW]);
 
+  // Шкала потоков под ЛЮБУЮ категорию. Дефолт движка — округление вверх до
+  // десятков с полом 10 (млрд ₽): он списан с потоков ЦБ, где сотни миллиардов
+  // и есть натуральный масштаб. У фондов акций/золота/юаня недельный поток —
+  // единицы и доли млрд, шкала залипала на 10, и столбцы схлопывались в пиксель
+  // (money_market с его сотнями это скрывал). Берём «красивый» шаг СВОЕГО
+  // порядка величины: мантиссы 1 / 2 / 2.5 / 5 / 10 — все делятся пополам без
+  // мусора, а движок рисует именно половинки (yTicks = ±max, ±max/2).
+  // Пол — 0,02 млрд: у совсем пустой недели иначе log10(0) = -Infinity.
+  // ⚠️ useCallback обязателен: ссылка уходит в депсы useMemo шкалы внутри
+  // гистограммы, инлайновая стрелка пересчитывала бы её каждый рендер.
+  const flowsNiceMax = useCallback((maxAbs: number) => {
+    const target = Math.max(maxAbs, 0.02) * 1.12;
+    const pow = Math.pow(10, Math.floor(Math.log10(target)));
+    const step = [1, 2, 2.5, 5, 10].find((s) => s * pow >= target) ?? 10;
+    return step * pow;
+  }, []);
+
+  // Подпись оси. Дефолт движка — Math.round, он рассчитан на те же миллиарды:
+  // на шкале в единицах и долях млрд «2,5» превращалось бы в «3», а «0,025» —
+  // в «0», и все пять тиков читались одинаково. Даём минимум знаков, при
+  // котором число НЕ округляется (шаг всегда 1/2/2.5/5×10^n → хватает трёх).
+  const flowsFmtAxis = useCallback((v: number) => {
+    const d = [0, 1, 2, 3].find((n) => Number(v.toFixed(n)) === v) ?? 3;
+    return v.toFixed(d).replace('.', ',');
+  }, []);
+
   // Фильтр фондов — кнопка тулбара с чек-листом (тот же приём, что «Участники»
   // у потоков ЦБ). ⚠️ Только для режима потоков: /api/funds/flows принимает
   // fund_ids, а /api/funds/chart отдаёт СЧА уже просуммированной по категории —
@@ -435,6 +461,8 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             height={chartH}
             animTrigger={flowsLoaded?.key ?? ''}
             legendOverride={flowsLegend}
+            niceMax={flowsNiceMax}
+            fmtAxis={flowsFmtAxis}
             // Пилс на шкале даёт число, но не даёт подписи — в песочнице
             // тултип был скрыт правилом .sb-panel .chart-tooltip-root, и
             // потоки оставались единственной плиткой из трёх без него.

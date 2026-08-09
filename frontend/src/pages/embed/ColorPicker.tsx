@@ -14,6 +14,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
+import { useTheme } from '../../contexts/ThemeContext';
 
 /** Стиль одного элемента индикатора. */
 export interface ElStyle {
@@ -67,6 +68,11 @@ export function ColorButton({ value, onChange, showLine = true }: {
   // Поповер живёт в body, поэтому «клик мимо» обязан проверять И его: иначе
   // первый же выбор цвета закрывал бы палитру как клик снаружи.
   const popRef = useRef<HTMLDivElement | null>(null);
+  // Портал в body лежит ВНЕ .sb-panel, где в песочнице висит собственный
+  // data-theme панели, поэтому фон/рамка поповера (var(--bg-*)/--text-primary)
+  // резолвились бы от <html> — темой оболочки. Тему берём из контекста: в
+  // песочнице её подменяет SandboxThemeScope, везде ещё она равна корневой.
+  const { theme } = useTheme();
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -107,7 +113,7 @@ export function ColorButton({ value, onChange, showLine = true }: {
         {showLine && <LinePreview color={color} width={value.width ?? 2} dash={value.dash ?? 'solid'} w={26} />}
       </button>
       {open && anchor && createPortal(
-        <div ref={popRef} style={{ ...POPOVER, top: anchor.top, left: anchor.left }}>
+        <div ref={popRef} data-theme={theme} style={{ ...POPOVER, top: anchor.top, left: anchor.left }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${HUES.length}, 1fr)`, gap: 3 }}>
             {GRID.flat().map((c) => (
               <button
@@ -197,6 +203,8 @@ const optionBtn = (active: boolean): CSSProperties => ({
 
 const POPOVER: CSSProperties = {
   position: 'fixed', zIndex: 100001, width: 232, padding: 9,
+  // см. DIALOG_BACKDROP в EmbedIndicators: портал не наследует тему панели
+  color: 'var(--text-primary)',
   borderRadius: 9,
   background: 'var(--bg-secondary, #17161A)',
   border: '1px solid var(--border-color, rgba(128,128,128,0.35))',

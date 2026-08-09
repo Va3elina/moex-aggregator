@@ -18,7 +18,7 @@
  * сгруппированным по панелям, а embed уже собирает из этого panes для
  * LwChartPanes.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Eye, EyeOff, Settings2, X as XIcon, Trash2, MoreHorizontal, ChevronRight, LineChart } from 'lucide-react';
 import type { LwSeries } from '../../components/chart/lwTypes';
@@ -29,11 +29,25 @@ import {
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
+import { useTheme } from '../../contexts/ThemeContext';
 import { ToolbarMenuButton } from './EmbedToolbar';
 import { ColorButton, type ElStyle } from './ColorPicker';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
 export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp';
+
+/**
+ * От какого РЯДА считается индикатор. 'price' — свечи цены (единственный вариант
+ * на большинстве графиков), 'oi' — ряд открытого интереса в окне ОИ.
+ *
+ * Отсутствие поля = 'price': так наборы, сохранённые до появления базиса, читаются
+ * без миграции.
+ */
+export type IndBasis = 'price' | 'oi';
+
+/** Один доступный базис в конкретном окне: id + подпись из самого окна («Чистая
+ *  позиция», «Покупки» — она зависит от режима и показателя ОИ). */
+export interface BasisOption { id: IndBasis; label: string }
 
 export interface IndicatorInst {
   id: string;
@@ -45,8 +59,14 @@ export interface IndicatorInst {
   color: string | null;
   width: 1 | 2 | 3 | 4;
   visible: boolean;
-  /** 0 = поверх графика, 1+ — отдельная панель. */
+  /** 0 = поверх графика, 1+ — отдельная панель.
+   *  ⚠️ У наложений по базису 'oi' номер панели В СОСТОЯНИИ остаётся нулём:
+   *  фактическая панель считается из текущего положения ряда ОИ (см.
+   *  effectivePane). Иначе перенос ОИ вниз пришлось бы сопровождать миграцией
+   *  всех навешенных на него индикаторов. */
   pane: number;
+  /** От какого ряда считаем. undefined = 'price' (см. IndBasis). */
+  basis?: IndBasis;
   /** К какому краю прижат профиль объёма. Только для kind='vp'. */
   side?: 'left' | 'right';
   /** Границы зон осциллятора (RSI: перекупленность/перепроданность). */
@@ -127,28 +147,35 @@ interface KindDef {
   hasVolumeStyle?: boolean;
   /** Выбор сглаживания (ATR: RMA/SMA/EMA/WMA). */
   hasAtrSmoothing?: boolean;
-  /** Временно убран из меню добавления. Код и рендер живы: уже добавленные
-   *  экземпляры продолжают работать и настраиваться, новые не создать. */
+  /** Временно убран из меню добавления ДЛЯ БАЗИСА ЦЕНЫ. Код и рендер живы: уже
+   *  добавленные экземпляры продолжают работать и настраиваться, новые не
+   *  создать. На других базисах вид может быть открыт (см. oiOk у Боллинджера). */
   hiddenFromMenu?: boolean;
+  /** Можно ли считать вид от ряда ОИ. false у объёмов и профиля объёма: у ряда
+   *  ОИ объёма нет в принципе, строка появилась бы, а линия — нет. */
+  oiOk?: boolean;
 }
 
 export const KINDS: Record<IndicatorKind, KindDef> = {
-  ma: { label: 'Скользящая средняя (MA)', shortName: 'MA', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
-  ema: { label: 'Экспоненциальная средняя (EMA)', shortName: 'EMA', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина' },
+  ma: { label: 'Скользящая средняя (MA)', shortName: 'MA', title: (i) => `MA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', oiOk: true },
+  ema: { label: 'Экспоненциальная средняя (EMA)', shortName: 'EMA', title: (i) => `EMA ${i.length}`, defLength: 20, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', oiOk: true },
   // Боллинджер и профиль объёма временно скрыты из меню (Вадим, 04.08.2026).
   // hiddenFromMenu, а не удаление: у кого они уже добавлены — продолжают
   // рисоваться и настраиваться, вернуть в меню = снять один флаг.
-  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', hiddenFromMenu: true },
+  // ⚠️ Скрытие относится ТОЛЬКО к базису цены: на ряде ОИ полосы Боллинджера
+  // открыты (решение владельца) — там они и полезнее, потому что показывают,
+  // насколько позиция ушла от своего обычного коридора.
+  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', hiddenFromMenu: true, oiOk: true },
   // 30/70 — канон Уайлдера, тот же дефолт в TradingView и любом терминале.
   // Середина 50 отделяет бычью половину диапазона от медвежьей.
   rsi: {
     label: 'RSI', shortName: 'RSI', title: (i) => `RSI ${i.length}`, defLength: 14, defaultPane: 1, overlayOk: false,
     bands: { upper: 70, lower: 30, middle: 50 },
-    hasSource: true, hasSmoothing: true, lengthLabel: 'Длина RSI',
+    hasSource: true, hasSmoothing: true, lengthLabel: 'Длина RSI', oiOk: true,
   },
   atr: {
     label: 'ATR', shortName: 'ATR', title: (i) => (i.statusArgs === false ? 'ATR' : `ATR ${i.length}`),
-    defLength: 14, defaultPane: 1, overlayOk: false, lengthLabel: 'Длина',
+    defLength: 14, defaultPane: 1, overlayOk: false, lengthLabel: 'Длина', oiOk: true,
     // Сглаживание ATR: канон Уайлдера — RMA, но в терминале это выбор.
     hasAtrSmoothing: true,
   },
@@ -164,6 +191,47 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
     hiddenFromMenu: true,
   },
 };
+
+/** Базис экземпляра с учётом дефолта. Отдельной функцией, потому что читается он
+ *  из десятка мест, и `i.basis ?? 'price'` россыпью легко разъезжается. */
+const basisOf = (i: IndicatorInst): IndBasis => i.basis ?? 'price';
+
+/**
+ * Виды, доступные для данного базиса. Скрытие из меню (hiddenFromMenu) относится
+ * только к цене, доступность на ОИ — к флагу oiOk.
+ */
+function kindAllowedOn(kind: IndicatorKind, basis: IndBasis): boolean {
+  const d = KINDS[kind];
+  return basis === 'oi' ? !!d.oiOk : !d.hiddenFromMenu;
+}
+
+/**
+ * ATR по ряду ОИ — это НЕ ATR. У точки ОИ одно значение (high=low=close), и
+ * истинный диапазон вырождается в модуль дневного приращения позиции: получается
+ * средняя амплитуда изменения позиции, метрика осмысленная, но к «истинному
+ * диапазону» отношения не имеющая. Называть её ATR — врать пользователю, поэтому
+ * подпись своя.
+ *
+ * «Ср. изменение», а не «Амплитуда ОИ»: величина — среднее (сглаженное) значение
+ * модуля изменения, а «амплитуда» читается как размах за период, то есть другая
+ * математика.
+ */
+const OI_ATR_NAME = 'Ср. изменение';
+
+/** Подпись строки с учётом базиса. */
+function indTitle(i: IndicatorInst): string {
+  if (i.kind === 'atr' && basisOf(i) === 'oi') {
+    return i.statusArgs === false ? OI_ATR_NAME : `${OI_ATR_NAME} ${i.length}`;
+  }
+  return KINDS[i.kind].title(i);
+}
+
+/** Короткое имя для заголовков секций окна настроек — с той же поправкой. */
+function indShortName(i: IndicatorInst): string {
+  if (i.kind === 'atr' && basisOf(i) === 'oi') return OI_ATR_NAME;
+  const d = KINDS[i.kind];
+  return d.shortName ?? d.label;
+}
 
 /** Виды сглаживающей поверх индикатора (вкладка «Аргументы» → СГЛАЖИВАНИЕ). */
 export type SmoothType = 'none' | 'sma' | 'sma_bb' | 'ema' | 'rma' | 'wma';
@@ -223,6 +291,9 @@ function parseList(raw: string): IndicatorInst[] {
         width,
         visible: x.visible !== false,
         pane: Number.isFinite(x.pane) ? x.pane : 0,
+        // Базис: только 'oi' пишем явно — undefined и есть 'price', и лишнее поле
+        // в каждой строке персиста ни к чему.
+        basis: x.basis === 'oi' ? 'oi' : undefined,
         side: x.side === 'left' || x.side === 'right' ? x.side : undefined,
         upper: Number.isFinite(x.upper) ? x.upper : undefined,
         lower: Number.isFinite(x.lower) ? x.lower : undefined,
@@ -276,7 +347,9 @@ export function styleColor(st: ElStyle | undefined, fallback: string): string {
 
 export interface IndicatorsApi {
   list: IndicatorInst[];
-  add: (kind: IndicatorKind) => void;
+  /** basis по умолчанию 'price' — окнам с единственным рядом (Сила рынка,
+   *  ChartLab) второй аргумент передавать не нужно. */
+  add: (kind: IndicatorKind, basis?: IndBasis) => void;
   remove: (id: string) => void;
   patch: (id: string, p: Partial<IndicatorInst>) => void;
   /** Правка стиля ОДНОГО элемента индикатора (линия, сглаживающая, граница…). */
@@ -324,13 +397,13 @@ export function useIndicators(lsKey: string, opts?: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list]);
 
-  const add = useCallback((kind: IndicatorKind) => {
+  const add = useCallback((kind: IndicatorKind, basis: IndBasis = 'price') => {
     const d = KINDS[kind];
     setList((l) => {
       // Индикаторы со своей шкалой садятся каждый в СВОЮ панель: RSI и ATR на
       // одной оси были бы нечитаемы (0..100 против абсолютных значений цены).
       const pane = d.defaultPane === 0 ? 0 : nextFreePane(l, reservedRef.current);
-      return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane }];
+      return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane, basis: basis === 'oi' ? basis : undefined }];
     });
   }, []);
   /** Перенос строки: на график ⇄ в свою панель. */
@@ -407,6 +480,34 @@ function hash(s: string): number {
 }
 
 /**
+ * Ряды-основания по базисам. Массив — сокращение для окон с ЕДИНСТВЕННЫМ рядом
+ * (Сила рынка, ChartLab): им незачем знать про базисы вообще, и их вызов
+ * `useIndicatorSeries(list, bars, …)` остался прежним. Окно ОИ передаёт объект.
+ *
+ * Почему не Map: набор базисов фиксирован типом IndBasis, а объект-литерал
+ * проверяется компилятором и легко мемоизируется на стороне вызывающего.
+ */
+export type IndCandleSet = IndCandle<string>[] | { price: IndCandle<string>[]; oi?: IndCandle<string>[] | null };
+
+const asSet = (c: IndCandleSet): Record<IndBasis, IndCandle<string>[]> =>
+  (Array.isArray(c) ? { price: c, oi: [] } : { price: c.price, oi: c.oi ?? [] });
+
+/**
+ * Фактическая панель индикатора.
+ *
+ * ⚠️ Наложение по базису ОИ (pane === 0) живёт ТАМ, ГДЕ СЕЙЧАС РЯД ОИ: на графике
+ * цены, если ОИ наверху, и в панели ОИ, если он уехал вниз. Номер вычисляется,
+ * а не хранится, — иначе перенос ОИ через ⋯-меню требовал бы миграции состояния
+ * всех навешенных на него индикаторов, а любой её пропуск оставлял бы линию в
+ * пустой панели.
+ *
+ * `oiPane` = 0 для окон без ряда ОИ, там функция вырождается в `i.pane`.
+ */
+function effectivePane(i: IndicatorInst, oiPane = 0): number {
+  return i.pane === 0 && basisOf(i) === 'oi' ? oiPane : i.pane;
+}
+
+/**
  * Индикаторы → серии, СГРУППИРОВАННЫЕ ПО ПАНЕЛЯМ. Индекс массива = номер панели,
  * 0 — основной график. Пустые панели схлопываются вызывающим.
  *
@@ -418,7 +519,7 @@ function hash(s: string): number {
  */
 export function indicatorSeriesByPane(
   list: IndicatorInst[],
-  candles: IndCandle<string>[],
+  candles: IndCandleSet,
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
   /** Ось ОСНОВНОГО ряда панели 0 — на неё ложатся наложения (MA/EMA/Боллинджер).
@@ -427,9 +528,13 @@ export function indicatorSeriesByPane(
    *  наложения уходили на ПУСТУЮ левую ось: она автомасштабировалась сама по
    *  себе, и линии «прыгали» относительно кривой, поверх которой нарисованы. */
   overlayScale: 'left' | 'right' = 'left',
+  /** Где сейчас ряд ОИ (см. effectivePane). Число, а не объект опций, —
+   *  мемоизация useIndicatorSeries держится на сравнении по ссылке. */
+  oiPane = 0,
 ): LwSeries[][] {
   const out: LwSeries[][] = [[]];
-  if (!candles.length) return out;
+  const bySeries = asSet(candles);
+  if (!bySeries.price.length && !bySeries.oi.length) return out;
   // «Точность» + «Метки на ценовой шкале» — общие для линейных индикаторов
   // (в TV это блок ВЫХОДНЫЕ ЗНАЧЕНИЯ).
   const axisOpts = (i: IndicatorInst): Partial<LwSeries> => {
@@ -447,36 +552,49 @@ export function indicatorSeriesByPane(
 
   for (const i of list) {
     if (!i.visible) continue;
+    const basis = basisOf(i);
+    const cnd = bySeries[basis];
+    // Базиса нет или он пуст (цена выключена тумблером, ОИ не пришёл, режим
+    // «Покупки + Продажи») — серию не строим вовсе. Строка в легенде остаётся:
+    // по ней индикатор и возвращают, когда ряд появится снова.
+    if (!cnd.length) continue;
     const color = colorOf(i);
-    const onMain = i.pane === 0;
+    // Наложение (pane === 0 в состоянии) против собственной панели. Именно это
+    // различает ось и пилс, а НЕ фактический номер панели: наложение по ОИ,
+    // уехавшее вместе с ним вниз, остаётся наложением.
+    const overlay = i.pane === 0;
+    const pane = effectivePane(i, oiPane);
     // Источник — общий для всех расчётных индикаторов: RSI по максимумам и RSI
     // по закрытиям это разные ряды, и настройка обязана влиять на математику,
     // а не только на подпись.
-    const src = withSource(candles, i.source ?? 'close');
+    const src = withSource(cnd, i.source ?? 'close');
     // На основном графике индикатор садится на ЦЕНОВУЮ (левую) ось; в своей
     // панели — на правую, там она единственная.
     const elStyle = (el: string): ElStyle | undefined => i.styles?.[el];
     const line = elStyle('line');
     const base = {
-      // В своей панели ось всегда правая — она там единственная.
-      scale: (onMain ? overlayScale : 'right') as 'left' | 'right',
+      // В своей панели ось всегда правая — она там единственная. Ряд ОИ живёт на
+      // ПРАВОЙ оси в любой панели (на графике цены левая занята ценой), поэтому
+      // его наложения всегда справа: на левой они масштабировались бы по цене и
+      // «плавали» относительно кривой, поверх которой нарисованы.
+      scale: (basis === 'oi' ? 'right' : overlay ? overlayScale : 'right') as 'left' | 'right',
       color: styleColor(line, color),
       lineWidth: line?.width ?? i.width,
       dashed: line?.dash === 'dashed' || line?.dash === 'dotted',
       type: 'line' as const,
-      lastValueVisible: !onMain,
+      lastValueVisible: !overlay,
     };
     if (i.kind === 'ma' || i.kind === 'ema') {
       const pts = (i.kind === 'ma' ? sma : ema)(src, i.length);
-      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS[i.kind].title(i), data: conv(pts) }]);
+      if (pts.length) put(pane, [{ ...base, id: i.id, label: indTitle(i), data: conv(pts) }]);
     } else if (i.kind === 'bb') {
       const { mid, upper, lower } = bollinger(src, i.length, i.mult ?? 2);
       if (mid.length) {
         // Полосы тоньше середины и пунктиром — иначе три линии сливаются.
-        put(i.pane, [
-          { ...base, id: i.id + ':u', label: `${KINDS.bb.title(i)} ↑`, data: conv(upper), dashed: true, lineWidth: 1 },
-          { ...base, id: i.id, label: KINDS.bb.title(i), data: conv(mid) },
-          { ...base, id: i.id + ':l', label: `${KINDS.bb.title(i)} ↓`, data: conv(lower), dashed: true, lineWidth: 1 },
+        put(pane, [
+          { ...base, id: i.id + ':u', label: `${indTitle(i)} ↑`, data: conv(upper), dashed: true, lineWidth: 1 },
+          { ...base, id: i.id, label: indTitle(i), data: conv(mid) },
+          { ...base, id: i.id + ':l', label: `${indTitle(i)} ↓`, data: conv(lower), dashed: true, lineWidth: 1 },
         ]);
       }
     } else if (i.kind === 'rsi') {
@@ -489,7 +607,7 @@ export function indicatorSeriesByPane(
         const out: LwSeries[] = [];
         if (i.lineOn !== false) {
           out.push({
-            ...base, id: i.id, label: KINDS.rsi.title(i), data: conv(pts), minMove: mm,
+            ...base, id: i.id, label: indTitle(i), data: conv(pts), minMove: mm,
             ...(i.bandsOn === false ? {} : {
               bands: {
                 upper: i.upper ?? b.upper, lower: i.lower ?? b.lower, middle: b.middle,
@@ -527,14 +645,14 @@ export function indicatorSeriesByPane(
             }
           }
         }
-        if (out.length) put(i.pane, out);
+        if (out.length) put(pane, out);
       }
     } else if (i.kind === 'atr') {
       // Сглаживание: RMA — канон Уайлдера и наш дефолт; остальные считаем от
       // ряда истинных диапазонов, как это делает TradingView.
       const sm = i.smooth ?? 'rma';
-      const pts = sm === 'rma' ? atr(candles, i.length) : smoothOf(trueRange(candles), sm, i.length);
-      if (pts.length) put(i.pane, [{ ...base, id: i.id, label: KINDS.atr.title(i), data: conv(pts), ...axisOpts(i) }]);
+      const pts = sm === 'rma' ? atr(cnd, i.length) : smoothOf(trueRange(cnd), sm, i.length);
+      if (pts.length) put(pane, [{ ...base, id: i.id, label: indTitle(i), data: conv(pts), ...axisOpts(i) }]);
     } else if (i.kind === 'volume') {
       // Цвета столбцов раздельные (TV: «Растущий»/«Нисходящий»); дефолт — наши
       // токены зелёного/красного.
@@ -544,21 +662,21 @@ export function indicatorSeriesByPane(
         i.precision != null ? v.toFixed(i.precision)
           : v >= 1e6 ? (v / 1e6).toFixed(1) + 'М' : v >= 1e3 ? Math.round(v / 1e3) + 'т' : String(Math.round(v))
       );
-      const pts = volumeBars(candles, upC, dnC);
+      const pts = volumeBars(cnd, upC, dnC);
       const sers: LwSeries[] = [];
       if (pts.length) {
         sers.push({
           // Пилс последнего бара у гистограммы объёма по умолчанию не нужен —
           // это объём одного дня, а не уровень (в TV так же). Включается
           // «Метки на ценовой шкале».
-          ...base, type: 'histogram', id: i.id, label: KINDS.volume.title(i), data: conv(pts), base: 0,
+          ...base, type: 'histogram', id: i.id, label: indTitle(i), data: conv(pts), base: 0,
           lastValueVisible: i.axisLabel === true,
           axisFmt: volFmt, tipFmt: volFmt,
         });
       }
       // Volume MA — вторая линия поверх столбцов.
       if (i.volMaOn) {
-        const ma = volumeMa(candles, i.volMaLength ?? 20) as { time: string; value: number }[];
+        const ma = volumeMa(cnd, i.volMaLength ?? 20) as { time: string; value: number }[];
         if (ma.length) {
           const st = elStyle('volMa');
           sers.push({
@@ -569,7 +687,7 @@ export function indicatorSeriesByPane(
           });
         }
       }
-      if (sers.length) put(i.pane, sers);
+      if (sers.length) put(pane, sers);
     }
   }
   return out;
@@ -652,6 +770,7 @@ export function indicatorValues(
 // ─────────────────────────────── UI ───────────────────────────────
 
 const SURFACE: CSSProperties = {
+  color: 'var(--text-primary)',
   background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 92%, transparent)',
   border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
   backdropFilter: 'blur(3px)',
@@ -693,15 +812,24 @@ export interface NativeRow {
 /**
  * Список индикаторов — React-оверлей ВНУТРИ области графика.
  *
- * z-index 10: выше слоя рисования (7), хит-слоя (8) и панели слоёв (9), ниже
- * тулбара (20). data-export-ignore обязателен — иначе список попадёт в PNG.
+ * z-index 10: выше слоя рисования (7) и хит-слоя (8), ниже рейла инструментов
+ * рисования (14) и тулбара (20) — рейл в невысоких панелях упирается в верх и
+ * должен оставаться кликабельным поверх списка.
+ * data-export-ignore обязателен — иначе список попадёт в PNG.
  */
-export function IndicatorList({ api, native, visible, values }: {
+export function IndicatorList({ api, native, visible, values, oiPane = 0, bases }: {
   api: IndicatorsApi;
   native: NativeRow[];
   visible: boolean;
   /** id серии → последнее значение. Показывается в строке, справа от названия. */
   values?: Record<string, IndValue>;
+  /** Где сейчас ряд ОИ — тем же числом, что ушло в useIndicatorSeries.
+   *  ⚠️ Строка обязана считать панель ТАК ЖЕ, как сборка серий, иначе подпись
+   *  окажется не в том углу, где линия. */
+  oiPane?: number;
+  /** Доступные базисы окна. Есть больше одного → в ⋯ строки появляется
+   *  «Считать от», а у строк не-ценового базиса — бейдж. */
+  bases?: BasisOption[];
 }) {
   if (!visible) return null;
 
@@ -713,26 +841,51 @@ export function IndicatorList({ api, native, visible, values }: {
       {native.filter((r) => (r.pane ?? 0) === 0).map((r) => <NativeRowView key={r.id} row={r} />)}
       {/* Только наложения. Индикаторы своих панелей рисуют строку САМИ, над
           своим графиком — см. PaneIndicatorList. */}
-      {api.list.filter((i) => i.pane === 0).map((i) => (
-        <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />
+      {api.list.filter((i) => effectivePane(i, oiPane) === 0).map((i) => (
+        <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} bases={bases} />
       ))}
     </div>
   );
 }
 
+/** Базисы, на которых вид имеет смысл (см. kindAllowedOn). */
+function allowedBases(kind: IndicatorKind, bases: BasisOption[]): BasisOption[] {
+  return bases.filter((b) => kindAllowedOn(kind, b.id));
+}
+
+/** Базисы окна по умолчанию — только цена: столько их у Силы рынка и ChartLab. */
+const PRICE_ONLY: BasisOption[] = [{ id: 'price', label: 'Цена' }];
+
 /** Список видов индикаторов — общий для кнопки в графике и кнопки в тулбаре. */
-export function AddIndicatorMenu({ api, hasVolume, onDone }: {
-  api: IndicatorsApi; hasVolume: boolean; onDone: () => void;
+export function AddIndicatorMenu({ api, hasVolume, bases = PRICE_ONLY, onPickBasis, onDone }: {
+  api: IndicatorsApi; hasVolume: boolean;
+  bases?: BasisOption[];
+  /** Базисов больше одного → вид не добавляется сразу, а уходит наверх, в окно
+   *  выбора. Само окно живёт в IndicatorsButton: меню закрывается по клику мимо,
+   *  и модалка, отрисованная изнутри него, схлопнулась бы вместе с ним. */
+  onPickBasis?: (kind: IndicatorKind) => void;
+  onDone: () => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 222 }}>
-      {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => !KINDS[k].hiddenFromMenu && (hasVolume || !KINDS[k].needsVolume)).map((k) => {
+      {/* Вид показываем, если он доступен ХОТЯ БЫ на одном базисе окна: так
+          Боллинджер, скрытый на цене, появляется в окне ОИ, а объёмы исчезают
+          из меню, когда цена выключена (считать их не от чего). */}
+      {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => {
+        const ok = allowedBases(k, bases);
+        return ok.length > 0 && (hasVolume || !KINDS[k].needsVolume);
+      }).map((k) => {
         const d = KINDS[k];
+        const ok = allowedBases(k, bases);
         return (
           <button
             key={k}
             type="button"
-            onClick={() => { api.add(k); onDone(); }}
+            onClick={() => {
+              if (ok.length > 1 && onPickBasis) { onPickBasis(k); return; }
+              api.add(k, ok[0].id);
+              onDone();
+            }}
             style={{
               display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6,
               border: 'none', background: 'transparent', fontSize: 11.5,
@@ -748,13 +901,68 @@ export function AddIndicatorMenu({ api, hasVolume, onDone }: {
 }
 
 /** Кнопка «Индикаторы» для тулбара виджета — тот же список, что и в графике. */
-export function IndicatorsButton({ api, hasVolume, compact }: {
-  api: IndicatorsApi; hasVolume: boolean; compact?: boolean;
+export function IndicatorsButton({ api, hasVolume, bases = PRICE_ONLY, compact }: {
+  api: IndicatorsApi; hasVolume: boolean; bases?: BasisOption[]; compact?: boolean;
 }) {
+  // Вид, выбранный в меню и ждущий ответа «к чему применить». Держим ЗДЕСЬ, а не
+  // в меню: ToolbarMenuButton закрывает содержимое по клику мимо, и окно выбора
+  // умерло бы на первом же нажатии внутри себя.
+  const [pick, setPick] = useState<IndicatorKind | null>(null);
   return (
-    <ToolbarMenuButton label="Индикаторы" title="Добавить индикатор" icon={<LineChart size={14} />} compact={compact}>
-      {(close) => <AddIndicatorMenu api={api} hasVolume={hasVolume} onDone={close} />}
-    </ToolbarMenuButton>
+    <>
+      <ToolbarMenuButton label="Индикаторы" title="Добавить индикатор" icon={<LineChart size={14} />} compact={compact}>
+        {(close) => (
+          <AddIndicatorMenu
+            api={api} hasVolume={hasVolume} bases={bases}
+            onPickBasis={(k) => { setPick(k); close(); }}
+            onDone={close}
+          />
+        )}
+      </ToolbarMenuButton>
+      {pick && (
+        <BasisDialog
+          kind={pick}
+          bases={allowedBases(pick, bases)}
+          onPick={(b) => { api.add(pick, b); setPick(null); }}
+          onClose={() => setPick(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * «Применить к: …» — окно выбора базиса при добавлении.
+ *
+ * Показывается только там, где базисов реально больше одного (окно ОИ с живым
+ * рядом ОИ и включённой ценой). На остальных графиках выбора нет, и вид, как и
+ * раньше, добавляется одним кликом.
+ */
+function BasisDialog({ kind, bases, onPick, onClose }: {
+  kind: IndicatorKind; bases: BasisOption[];
+  onPick: (b: IndBasis) => void; onClose: () => void;
+}) {
+  // Тема панели, а не оболочки: портал уходит в body, вне поддерева .sb-panel —
+  // см. тот же приём в SettingsDialog/RowPopMenu.
+  const { theme } = useTheme();
+  return createPortal(
+    <div data-theme={theme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ ...DIALOG, width: 'min(300px, 92vw)' }} onPointerDown={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{KINDS[kind].label}</span>
+          <button type="button" onClick={onClose} style={ICON_BTN}><XIcon size={13} /></button>
+        </div>
+        <div style={{ padding: '4px 8px 10px' }}>
+          <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', opacity: 0.75, padding: '4px 4px 7px' }}>
+            Применить к
+          </div>
+          {/* menuItem отдаёт голый <button> без key — в списке его надо обернуть,
+              иначе React ругается на отсутствие ключа. */}
+          {bases.map((b) => <Fragment key={b.id}>{menuItem(b.label, () => onPick(b.id))}</Fragment>)}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -765,18 +973,21 @@ export function IndicatorsButton({ api, hasVolume, compact }: {
  * Why: индикатор в своей панели и его строка в общем списке наверху — это два
  * разных места для одной сущности. Пользователь ищет подпись там, где линия.
  */
-export function PaneIndicatorList({ api, pane, values, native }: {
+export function PaneIndicatorList({ api, pane, values, native, oiPane = 0, bases }: {
   api: IndicatorsApi; pane: number; values?: Record<string, IndValue>;
   /** Нативные ряды embed'а, съехавшие в эту панель (ОИ). */
   native?: NativeRow[];
+  /** Где сейчас ряд ОИ — см. одноимённый проп IndicatorList. */
+  oiPane?: number;
+  bases?: BasisOption[];
 }) {
-  const rows = api.list.filter((i) => i.pane === pane);
+  const rows = api.list.filter((i) => effectivePane(i, oiPane) === pane);
   const nat = (native ?? []).filter((r) => (r.pane ?? 0) === pane);
   if (!rows.length && !nat.length) return null;
   return (
     <div data-export-ignore="true" style={listBoxStyle}>
       {nat.map((r) => <NativeRowView key={r.id} row={r} />)}
-      {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} />)}
+      {rows.map((i) => <IndicatorRow key={i.id} inst={i} api={api} value={values?.[i.id]} bases={bases} />)}
     </div>
   );
 }
@@ -796,7 +1007,7 @@ function NativeRowView({ row }: { row: NativeRow }) {
 
 /** Общая посадка списков: отступ слева = ширина ценовой оси (её публикует
  *  LwChartPanes), иначе список ложится на цифры шкалы. z 10 — выше слоя
- *  рисования (7) и хит-слоя (8), ниже тулбара (20). */
+ *  рисования (7) и хит-слоя (8), ниже рейла рисования (14) и тулбара (20). */
 const listBoxStyle: CSSProperties = {
   // Отступ 4px и сверху, и слева (слева — от кромки ценовой оси, не от кромки
   // виджета): было 8, и список висел заметно ниже и правее угла поля.
@@ -807,8 +1018,18 @@ const listBoxStyle: CSSProperties = {
 /** Строка индикатора вместе со своей шестерёнкой: попап живёт рядом со строкой,
  *  а не в корне списка — иначе для панельных строк его пришлось бы отдельно
  *  позиционировать через всю иерархию. */
-function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: IndicatorsApi; value?: IndValue }) {
+function IndicatorRow({ inst, api, value, bases }: {
+  inst: IndicatorInst; api: IndicatorsApi; value?: IndValue; bases?: BasisOption[];
+}) {
   const [open, setOpen] = useState(false);
+  const basis = basisOf(inst);
+  // Бейдж различает «MA 20» по цене и «MA 20» по ОИ — без него две одинаковые
+  // строки в одном углу неотличимы. В строке места нет, поэтому короткий код
+  // базиса, а полная подпись ряда («Чистая позиция») уходит в тултип.
+  const badge = basis === 'price' ? undefined : {
+    text: BASIS_BADGE[basis],
+    title: bases?.find((b) => b.id === basis)?.label,
+  };
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
   // принимал бы за клик мимо любое нажатие внутри самого окна — оно закрывалось
@@ -817,22 +1038,29 @@ function IndicatorRow({ inst, api, value }: { inst: IndicatorInst; api: Indicato
     <div style={{ position: 'relative' }}>
       <Row
         color={api.colorOf(inst)}
-        label={KINDS[inst.kind].title(inst)}
+        label={indTitle(inst)}
+        badge={badge}
         value={inst.statusValue === false ? undefined : value}
         valueId={inst.id}
         visible={inst.visible}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
         onRemove={() => api.remove(inst.id)}
-        menu={<RowMenu inst={inst} api={api} onSettings={() => setOpen(true)} />}
+        menu={<RowMenu inst={inst} api={api} bases={bases} onSettings={() => setOpen(true)} />}
       />
       {open && <SettingsDialog inst={inst} api={api} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRemove, menu }: {
+/** Короткий код базиса в строке легенды. Цена своего бейджа не имеет: она
+ *  подразумевается, и метка на каждой строке была бы шумом. */
+const BASIS_BADGE: Record<IndBasis, string> = { price: '', oi: 'ОИ' };
+
+function Row({ color, label, badge, value, valueId, visible, onToggle, onSettings, onRemove, menu }: {
   color: string; label: string; value?: IndValue; valueId?: string; visible: boolean;
+  /** Метка базиса расчёта — см. BASIS_BADGE. */
+  badge?: { text: string; title?: string };
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
   /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
    *  перенос живёт в меню, как в терминалах: на строке и так тесно, а
@@ -851,6 +1079,22 @@ function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRe
           поддерева панели переменная разрешится сама (тема живёт на data-theme). */}
       <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
       <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{label}</span>
+      {/* Бейдж базиса — сразу за названием, до значения: он часть имени строки
+          («MA 20 ОИ»), а не её показание. Рамка вместо заливки, чтобы не спорить
+          с квадратиком цвета ряда слева. */}
+      {badge?.text && (
+        <span
+          title={badge.title}
+          style={{
+            fontSize: 8.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: '0.04em',
+            padding: '1px 3px', borderRadius: 3, whiteSpace: 'nowrap', flexShrink: 0,
+            color: 'var(--text-secondary)',
+            border: '1px solid color-mix(in srgb, var(--text-secondary) 45%, transparent)',
+          }}
+        >
+          {badge.text}
+        </span>
+      )}
       {/* Значение справа от названия: серым и на пункт мельче подписи — цифра
           подчинена названию, а не спорит с ним. Моноширинные цифры, чтобы не
           пляшли при смене бара под курсором. */}
@@ -879,23 +1123,49 @@ function Row({ color, label, value, valueId, visible, onToggle, onSettings, onRe
  * слоёв, видимость по интервалам, «о скрипте»/«исходный код»/«дерево объектов» —
  * всё это про пользовательские Pine-скрипты, которых у нас нет.
  */
-function RowMenu({ inst, api, onSettings }: { inst: IndicatorInst; api: IndicatorsApi; onSettings: () => void }) {
-  const [sub, setSub] = useState(false);
+function RowMenu({ inst, api, bases, onSettings }: {
+  inst: IndicatorInst; api: IndicatorsApi; bases?: BasisOption[]; onSettings: () => void;
+}) {
+  const [sub, setSub] = useState<'move' | 'basis' | null>(null);
   const d = KINDS[inst.kind];
   const own = inst.pane > 0;
-  const side = useSubmenuSide(sub);
+  const side = useSubmenuSide(!!sub);
+  // Смена базиса уже добавленному индикатору. Пункт есть, только если в окне
+  // реально больше одного подходящего ряда: на цене Боллинджер, например, скрыт,
+  // и перевести его туда с ОИ нельзя (allowedBases это учитывает).
+  const basisOpts = (bases ?? []).filter((b) => kindAllowedOn(inst.kind, b.id));
 
   return (
     <RowPopMenu>
       {(close) => {
         const item = (label: string, onClick: () => void, disabled = false): ReactNode =>
-          menuItem(label, () => { onClick(); setSub(false); close(); }, disabled);
+          menuItem(label, () => { onClick(); setSub(null); close(); }, disabled);
         return (
           <>
             {item('Настройки…', onSettings)}
+            {basisOpts.length > 1 && (
+              <div style={{ position: 'relative' }}>
+                {subTrigger('Считать от', () => setSub((v) => (v === 'basis' ? null : 'basis')))}
+                {sub === 'basis' && (
+                  <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
+                    {/* Панель НЕ трогаем: у наложения она и так вычисляемая, а
+                        свою панель индикатор сохраняет — менялся базис, а не
+                        место на экране. */}
+                    {basisOpts.map((b) => (
+                      <Fragment key={b.id}>{menuItem(
+                        b.label,
+                        () => { api.patch(inst.id, { basis: b.id === 'oi' ? 'oi' : undefined }); setSub(null); close(); },
+                        false,
+                        b.id === basisOf(inst),
+                      )}</Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ position: 'relative' }}>
-              {subTrigger('Переместить', () => setSub((v) => !v))}
-              {sub && (
+              {subTrigger('Переместить', () => setSub((v) => (v === 'move' ? null : 'move')))}
+              {sub === 'move' && (
                 <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
                   {item('Выше', () => api.movePane(inst.id, -1), !own)}
                   {item('Ниже', () => api.movePane(inst.id, 1), !own)}
@@ -926,6 +1196,11 @@ function RowMenu({ inst, api, onSettings }: { inst: IndicatorInst; api: Indicato
  */
 function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
+  // Тема панели, а не оболочки: в песочнице у каждой панели свой data-theme на
+  // .sb-panel, а портал уходит в body — вне этого поддерева, и CSS-переменные
+  // резолвились бы от <html> (тема оболочки). На сайте и в обычных эмбедах
+  // useTheme().theme совпадает с корневой темой, поведение не меняется.
+  const { theme } = useTheme();
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -963,6 +1238,7 @@ function RowPopMenu({ children }: { children: (close: () => void) => ReactNode }
       {open && createPortal(
         <div
           ref={boxRef}
+          data-theme={theme}
           style={{
             position: 'fixed', left: pos?.left ?? 0, top: pos?.top ?? 0,
             visibility: pos ? 'visible' : 'hidden',
@@ -1060,7 +1336,7 @@ function NativeRowMenu({ row }: { row: NativeRow }) {
                 {subTrigger(c.label, () => setSub((s) => (s === c.label ? null : c.label)))}
                 {sub === c.label && (
                   <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
-                    {c.options.map((o) => menuItem(o.label, () => pick(() => c.onChange(o.id)), false, o.id === c.value))}
+                    {c.options.map((o) => <Fragment key={o.id}>{menuItem(o.label, () => pick(() => c.onChange(o.id)), false, o.id === c.value)}</Fragment>)}
                   </div>
                 )}
               </div>
@@ -1116,20 +1392,24 @@ function clampBand(raw: string, min: number, max: number, def: number): number {
  */
 function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: IndicatorsApi; onClose: () => void }) {
   const d = KINDS[inst.kind];
+  const basis = basisOf(inst);
   const [tab, setTab] = useState<'args' | 'style'>('args');
   // Снимок на открытии — для «Отмены». Правки идут в реальном времени.
   const snapshot = useRef<IndicatorInst>(inst);
   const set = (p: Partial<IndicatorInst>) => api.patch(inst.id, p);
   const smooth = inst.smoothType ?? 'none';
+  // Тема панели, а не оболочки — см. RowPopMenu: портал в body теряет data-theme
+  // с .sb-panel, и светлое окно настроек всплывало над тёмной панелью.
+  const { theme } = useTheme();
 
   // Порталом в body: строка индикатора живёт внутри своей панели, а та в
   // песочнице сидит в панели с backdrop-filter — предок с фильтром становится
   // точкой отсчёта для fixed, и окно уехало бы вместе с ней.
   return createPortal(
-    <div style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div data-theme={theme} style={DIALOG_BACKDROP} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={DIALOG} onPointerDown={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 6px' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{d.title(inst)}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{indTitle(inst)}</span>
           <button type="button" onClick={onClose} style={ICON_BTN}><XIcon size={13} /></button>
         </div>
 
@@ -1152,7 +1432,7 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
         <div style={{ padding: '10px 12px', overflowY: 'auto', flex: 1 }}>
           {tab === 'args' ? (
             <>
-              <Section label={`Настройки ${d.shortName ?? d.label}`}>
+              <Section label={`Настройки ${indShortName(inst)}`}>
                 <Field label={d.lengthLabel ?? 'Длина'}>
                   <input
                     type="number" min={2} max={500} value={inst.length}
@@ -1160,7 +1440,10 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     style={numInput(78)}
                   />
                 </Field>
-                {d.hasSource && (
+                {/* Выбор источника только на цене: у точки ОИ одно значение,
+                    и open/high/low/close там совпадают — селект предлагал бы
+                    восемь вариантов, дающих один и тот же ряд. */}
+                {d.hasSource && basis === 'price' && (
                   <Field label="Данные">
                     <Select
                       value={inst.source ?? 'close'}
@@ -1186,6 +1469,15 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                       onChange={(v) => set({ side: v as 'left' | 'right' })}
                     />
                   </Field>
+                )}
+                {/* Почему у ATR по ОИ другое имя — объясняем прямо здесь, иначе
+                    расхождение с привычным «ATR» выглядит как ошибка. */}
+                {inst.kind === 'atr' && basis === 'oi' && (
+                  <Note>
+                    У ряда позиций нет максимума и минимума внутри бара, поэтому истинный
+                    диапазон равен модулю изменения позиции. Показатель — средняя величина,
+                    на которую позиция меняется за бар; это не ATR цены.
+                  </Note>
                 )}
               </Section>
 
@@ -1286,7 +1578,7 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                 </>
               ) : (
                 <StyleRow
-                  label={d.shortName ?? d.label}
+                  label={indShortName(inst)}
                   on={inst.lineOn !== false}
                   onToggle={() => set({ lineOn: inst.lineOn === false })}
                   style={inst.styles?.line ?? { color: api.colorOf(inst), width: inst.width }}
@@ -1399,8 +1691,12 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
 // RSI высотой ~180px: absolute-оверлей зажимался в неё, и окно обрезалось по
 // «Отмена/Ок». Модалка обязана вставать над всем окном. z 100000 — конвенция
 // песочницы для оверлеев (меню и шторки живут там же).
+// color: портал уходит в document.body, поэтому наследует цвет текста от
+// <body> (тема ОБОЛОЧКИ). data-theme на корне чинит фон и переменные, но не
+// унаследованное значение — без явного color светлая панель в тёмной оболочке
+// давала бы светлый текст на светлой карточке. То же во всех порталах ниже.
 const DIALOG_BACKDROP: CSSProperties = {
-  position: 'fixed', inset: 0, zIndex: 100000, display: 'flex',
+  position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', color: 'var(--text-primary)',
   alignItems: 'center', justifyContent: 'center',
   background: 'color-mix(in srgb, #000 45%, transparent)',
 };
@@ -1415,6 +1711,16 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
       <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', opacity: 0.75, marginBottom: 7 }}>
         {label}
       </div>
+      {children}
+    </div>
+  );
+}
+
+/** Пояснение под полями секции — там, где настройка требует не подписи, а
+ *  объяснения смысла (сейчас это ATR по ряду ОИ). */
+function Note({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ fontSize: 10.5, lineHeight: 1.45, color: 'var(--text-secondary)', marginTop: 2 }}>
       {children}
     </div>
   );
@@ -1487,13 +1793,16 @@ const btn = (primary: boolean): CSSProperties => ({
  *  серии графика (эффект серий зависит от массива), а это уже сотня миллисекунд. */
 export function useIndicatorSeries(
   list: IndicatorInst[],
-  candles: IndCandle<string>[],
+  /** ⚠️ Объект-набор рядов вызывающий обязан мемоизировать: новый литерал на
+   *  каждый рендер обнуляет этот мемо и пересоздаёт все серии графика. */
+  candles: IndCandleSet,
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
   overlayScale: 'left' | 'right' = 'left',
+  oiPane = 0,
 ): LwSeries[][] {
   return useMemo(
-    () => indicatorSeriesByPane(list, candles, toSec, colorOf, overlayScale),
-    [list, candles, toSec, colorOf, overlayScale],
+    () => indicatorSeriesByPane(list, candles, toSec, colorOf, overlayScale, oiPane),
+    [list, candles, toSec, colorOf, overlayScale, oiPane],
   );
 }

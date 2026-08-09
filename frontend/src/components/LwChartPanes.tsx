@@ -1779,9 +1779,12 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
             ? chart.addSeries(CandlestickSeries, { ...co, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat })
             : chart.addSeries(BarSeries, { ...co, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, priceFormat });
         } else if (def.type === 'line') {
-          s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          // crosshairMarkerVisible:false — нативный кружок на точке под курсором
+          // не нужен: значение и так показывают тултип и список серий, а на
+          // тесных панелях он только шумит (Вадим).
+          s = chart.addSeries(LineSeries, { color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, crosshairMarkerVisible: false, priceFormat });
         } else if (def.type === 'area') {
-          s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, priceFormat });
+          s = chart.addSeries(AreaSeries, { lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastLine, crosshairMarkerVisible: false, priceFormat });
         } else {
           s = chart.addSeries(HistogramSeries, { color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: lastHist, priceFormat });
         }
