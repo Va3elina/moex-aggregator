@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import DelayedDataBadge from '../components/DelayedDataBadge';
 import { METHODOLOGY } from '../data/methodology';
 import {
   getCbrFlows,
@@ -216,6 +217,13 @@ export default function CbrFlowsPage() {
         help={METHODOLOGY.cbrFlows}
         helpLink="/methodology/cbr-flows"
         sourceNote="Источник: Банк России (ОРФР)"
+      />
+
+      {/* Нудж «данные с задержкой» — Free/гость видят поток по вчерашний день
+          (data_delay_hours=24 в features.py → get_effective_end_date). */}
+      <DelayedDataBadge
+        message="— вы видите данные по вчерашний день, свежий срез открыт по подписке."
+        cta="Открыть свежие данные →"
       />
 
       {/* Карточка с вкладками: обёртка несёт единую editorial-тень. */}

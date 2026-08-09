@@ -17,6 +17,7 @@ import { useSearchParams } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import DelayedDataBadge from '../../components/DelayedDataBadge';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
@@ -510,6 +511,17 @@ export default function MobileOpenInterestPage() {
         subtitle={`${instrumentName} · ${optionsLabel} · ${timeLabel}`}
         helpLink="/methodology/oi"
       />
+
+      {/* Нудж «данные с задержкой» (Free/гость, data_delay_hours=24). Компакт —
+          чтобы не отъедать высоту у full-bleed графика; padding зеркалит
+          .fm-pageheader, иначе плашка липнет к краям экрана. */}
+      <div style={{ padding: '0 clamp(10px, 3.4vw, 14px)', flexShrink: 0 }}>
+        <DelayedDataBadge
+          variant="compact"
+          compactMessage="— без сегодняшнего дня."
+          compactCta="Свежие данные →"
+        />
+      </div>
 
       {/* Full-bleed chart — без рамки/padding'а, как в TradingView mobile.
           Absolute positioning гарантирует что chart заполнит весь parent —

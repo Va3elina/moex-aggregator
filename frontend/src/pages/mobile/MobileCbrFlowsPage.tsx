@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, Landmark, DollarSign, Building2, Lock } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import DelayedDataBadge from '../../components/DelayedDataBadge';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { axisFontSize } from '../../components/chart/chartTypography';
@@ -267,6 +268,17 @@ export default function MobileCbrFlowsPage() {
         helpLink="/methodology/cbr-flows"
         sourceNote="Источник: Банк России (ОРФР)"
       />
+
+      {/* Нудж «данные с задержкой» (Free/гость, data_delay_hours=24). Компакт —
+          чтобы не отъедать высоту у full-bleed графика; padding зеркалит
+          .fm-pageheader, иначе плашка липнет к краям экрана. */}
+      <div style={{ padding: '0 clamp(10px, 3.4vw, 14px)', flexShrink: 0 }}>
+        <DelayedDataBadge
+          variant="compact"
+          compactMessage="— без сегодняшнего дня."
+          compactCta="Свежие данные →"
+        />
+      </div>
 
       {/* Mobile-optimized stacked histogram — pixel coords, touch handlers,
           vibrate tick, compact tooltip, year в датах. */}
