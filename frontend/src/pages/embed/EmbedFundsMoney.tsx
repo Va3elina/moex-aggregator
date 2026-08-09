@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, Columns3, Grid3x3, CalendarRange, ListFilter } from 'lucide-react';
+import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, Columns3, Grid3x3, CalendarRange, ListFilter, Lock } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
@@ -32,6 +32,7 @@ import { useToolbarCompact } from './useToolbarCompact';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -146,11 +147,20 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const hiddenKey = `frame:embed:funds:hidden:${category}`;
   const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
   const [fundPickerOpen, setFundPickerOpen] = useState(false);
+  // Выбор ПОДМНОЖЕСТВА фондов — с Basic (матрица funds_money.fund_picker).
+  const { showUpgrade } = useUpgradePrompt();
+  const canPickFunds = fundsAccess.isLoading || fundsAccess.canUseFlag('fund_picker');
   useEffect(() => {
     const raw = rd(hiddenKey, '');
     setHiddenFunds(new Set(raw ? raw.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category]);
+  // Санитайз слетевшего с тарифа: сохранённый в панели набор скрытых фондов
+  // (переживает перезагрузку песочницы) больше не должен применяться.
+  useEffect(() => {
+    if (fundsAccess.isLoading || canPickFunds) return;
+    setHiddenFunds((prev) => (prev.size > 0 ? new Set() : prev));
+  }, [fundsAccess.isLoading, canPickFunds]);
 
   // Загруженные данные держим ВМЕСТЕ с ключом запроса, которым они получены.
   // Волна появления столбцов и фит графика должны перезапускаться, когда новые
@@ -387,13 +397,22 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // FundsTable — тикер, название, СЧА, доходность), а не свой чек-лист: одно
   // действие не должно иметь два разных вида. Модалка идёт порталом в body,
   // поэтому не обрезается панелью песочницы.
+  // Гость/free: модалку не открываем вовсе (funds_money.fund_picker, 2026-08-09)
+  // — тот же гейт, что на сайте и в мобилке; бэкенд у таких тиров игнорирует
+  // fund_ids, так что открытый пикер всё равно ничего бы не менял.
   const fundsFilter = viewMode === 'flows' && funds.length > 1 ? (
     <ToolbarButton
       label="Фонды"
-      title="Какие фонды учитывать"
-      icon={<ListFilter size={14} />}
+      title={canPickFunds ? 'Какие фонды учитывать' : 'Выбор фондов — на тарифе Basic и выше'}
+      icon={canPickFunds ? <ListFilter size={14} /> : <Lock size={14} />}
       compact={toolbarCompact}
-      onClick={() => setFundPickerOpen(true)}
+      onClick={() => {
+        if (!canPickFunds) {
+          showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
+          return;
+        }
+        setFundPickerOpen(true);
+      }}
     />
   ) : null;
 

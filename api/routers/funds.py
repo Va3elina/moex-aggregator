@@ -700,6 +700,13 @@ async def get_funds_flows(
             if cat_config["funds"].get(fid, {}).get("ticker") in wl_set
         ]
 
+    # Выбор ПОДМНОЖЕСТВА фондов — с Basic (матрица, funds_money.fund_picker).
+    # Гейт ровно тут, у параметра: на фронте таблетка выбора заперта замком, но
+    # `fund_ids` руками подставляется в URL за секунду — как и tickers_whitelist
+    # выше, ограничение обязано жить на бэке, иначе оно декоративное.
+    if not limits.get("fund_picker", True):
+        fund_ids_filter = None
+
     # Фильтр по выбранным фондам (UI-уровень — фронтенд может убрать какие-то
     # из видимых; пересекаем с уже-tier-filtered all_fund_ids).
     if fund_ids_filter:

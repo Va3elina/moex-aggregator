@@ -81,11 +81,11 @@ export default function MobileSeasonalityPage() {
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
-  // Smart default: для Free histogram-режимы недоступны → 'yearly'
-  const defaultSwitchedRef = useRef(false);
   const seasonAccess = useTierAccess('seasonality');
   const { showUpgrade } = useUpgradePrompt();
-  // Для Free yearly — единственный доступный режим
+  // Сейчас всегда false: с 2026-08 сезонность бесплатна целиком (features.py:
+  // allowed_modes=None на всех тирах). Проверка оставлена осознанно — она
+  // обобщённая, читает матрицу и сама оживёт, если гейт вернут.
   const histogramLocked = !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram');
   // Настройки «Без выбросов» (медиана) и «Без дивидендных гэпов» теперь живут
   // у каждого периода (PeriodConfig), а не глобально. Базовая серия «Вся история»
@@ -348,14 +348,8 @@ export default function MobileSeasonalityPage() {
     void loadData();
   }, [loadData]);
 
-  // Smart default — переключение на yearly если histogram-режимы недоступны.
-  useEffect(() => {
-    if (seasonAccess.isLoading || defaultSwitchedRef.current) return;
-    defaultSwitchedRef.current = true;
-    if (histogramLocked && mode !== 'yearly') {
-      setMode('yearly');
-    }
-  }, [seasonAccess.isLoading, histogramLocked, mode]);
+  // NB: убран smart default «histogram недоступен → yearly» — с 2026-08
+  // ограничений у сезонности нет, и авто-переключение только ломало бы выбор.
 
   // Helper: маппинг b.key → label по mode
   const labelFor = (key: number): string => {

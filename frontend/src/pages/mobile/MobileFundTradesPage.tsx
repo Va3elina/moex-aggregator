@@ -374,7 +374,11 @@ export default function MobileFundTradesPage() {
   const [moversRangeOpen, setMoversRangeOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
 
-  // Месяцы свежее тир-отсечки (Free/гость) в календаре — с замочком, не выбираются.
+  // Месяцы свежее тир-отсечки в календаре — с замочком, не выбираются.
+  // NB: календарь живёт на вкладке «Общий портфель», а она с 2026-08-09 выведена
+  // из-под задержки раздела (features.py: portfolio_snapshot_delay=0) → бэкенд
+  // отдаёт snapshot_cutoff=null и замков нет. Проверка оставлена осознанно:
+  // обобщённая, читает ответ бэка и сама оживёт, если гейт вернут.
   const isMoversRangeMonthLocked = (m: string) => {
     const c = portfolioMovers?.snapshot_cutoff ?? null;
     return c != null && m > c;
@@ -469,6 +473,8 @@ export default function MobileFundTradesPage() {
     getFundTradesMovers(portfolioMoversPeriod, {
       funds: portfolioFundsParam || undefined,
       sort: 'amount',
+      // Вкладка «Общий портфель» — своя (нулевая) задержка в матрице.
+      scope: 'portfolio',
       // Свой диапазон приоритетнее пресета (бэкенд игнорирует period при from+to).
       from: portfolioMoversRange?.from,
       to: portfolioMoversRange?.to,
@@ -661,7 +667,7 @@ export default function MobileFundTradesPage() {
           const reqId = ++portfolioReqRef.current;
           const [p, m] = await Promise.all([
             getFundPortfolio({ funds: portfolioFundsParam || undefined }).catch(() => null),
-            getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' }).catch(() => null),
+            getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount', scope: 'portfolio' }).catch(() => null),
           ]);
           if (reqId !== portfolioReqRef.current) return;
           if (p) setPortfolio(p);
@@ -710,7 +716,10 @@ export default function MobileFundTradesPage() {
           фонда», обрезанный снапшот/потоки) и затекает в щель над нижним
           рейлом. */}
       <div className="fm-ft-scroll">
-      <DelayedDataBadge indicator="fund_trades" />
+      {/* Плашка одна на страницу и читает общий snapshot_delay раздела. На
+          «Общем портфеле» задержки больше нет (portfolio_snapshot_delay=0) —
+          там плашка врала бы, поэтому не рисуем; остальные вкладки как были. */}
+      {tab !== 'portfolio' && <DelayedDataBadge indicator="fund_trades" />}
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}
@@ -1026,6 +1035,9 @@ export default function MobileFundTradesPage() {
                     onChange={setPortfolioFunds}
                     targetMonth={portfolio?.resolved_month ?? null}
                     excludedTickers={portfolioExcludedTickers}
+                    // Персистится и уезжает в API параметром `funds` — при слёте
+                    // с тарифа сбрасываем (см. PortfolioFundPicker).
+                    resetWhenLocked
                   />
                 </div>
               )}

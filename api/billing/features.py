@@ -37,7 +37,9 @@ FREE_OI_ASSETS: list[str] = [
     "BR",        # Brent
 ]
 
-# Сезонность — 10 крупных акций (spot тикеры, не фьючерсные)
+# Сезонность — 10 крупных акций (spot тикеры, не фьючерсные).
+# NB: с 2026-08 Free-тариф открыт для ВСЕХ активов сезонности (assets_whitelist=None),
+# этот список больше не гейтит доступ. Оставлен для справки.
 FREE_SEASONALITY_ASSETS: list[str] = [
     "SBER",         # Сбербанк
     "GAZP",         # Газпром
@@ -112,23 +114,47 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     },
 
     # ───────────────────────────────────────────────────────────────
+    # 2b. Скринер сигналов ОИ (/oi, вкладка «Скринер сигналов» + embed)
+    # ───────────────────────────────────────────────────────────────
+    # ⚠️ РАЗВОРОТ РЕШЕНИЯ 2026-08-09 (владелец). Раньше лента была открыта всем
+    # как «публичная агрегированная статистика, не премиум-данные» — эта логика
+    # записана в docstring GET /api/oi/screener и намеренно там оставлена, чтобы
+    # видеть, почему открывали. Теперь скринер закрыт для гостя и free: это
+    # готовый торговый вывод (что именно и насколько резко сдвинулось сегодня по
+    # всему рынку разом), а не сырой ряд, — и он же ядро Telegram-алертов.
+    # Гейт булевый (`open`), а не whitelist/задержка: половина ленты бессмысленна,
+    # а лента вчерашним днём — это уже не сигнал.
+    "oi_screener": {
+        "free":  {"open": False},
+        "basic": {"open": True},
+        "pro":   {"open": True},
+    },
+
+    # ───────────────────────────────────────────────────────────────
     # 3. Деньги в фондах (/funds-money)
     # ───────────────────────────────────────────────────────────────
+    # fund_picker (2026-08-09) — выбор КОНКРЕТНЫХ фондов внутри категории
+    # (таблетка «Фонды: …» → модалка со списком). Free/гость видит категорию
+    # целиком, но собрать из неё свою подвыборку не может. Бэкенд игнорирует
+    # `fund_ids` у таких тиров — иначе гейт обходится подстановкой параметра.
     "funds_money": {
         "free": {
             "tickers_whitelist": None,                 # все фонды открыты на Free (без whitelist'а)
             "allowed_timeframes": None,                # все ТФ, включая дневной (притоки-оттоки открыты)
             "max_history_days": 365 * 3,               # 3 года (период «Всё» → Basic/Pro)
+            "fund_picker": False,                      # выбор подмножества фондов — с Basic
         },
         "basic": {
             "tickers_whitelist": None,
             "allowed_timeframes": None,                # все
             "max_history_days": None,
+            "fund_picker": True,
         },
         "pro": {
             "tickers_whitelist": None,
             "allowed_timeframes": None,
             "max_history_days": None,
+            "fund_picker": True,
         },
     },
 
@@ -139,10 +165,21 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # подписке); любой платный тир (Basic/Pro) = realtime. Первый раздел, на
     # котором обкатываем модель «видно всё, но с задержкой»; дальше — на весь проект.
     # ───────────────────────────────────────────────────────────────
+    # portfolio_snapshot_delay (2026-08-09) — ОТДЕЛЬНАЯ задержка для вкладки
+    # «Общий портфель»: там свежесть не режем никому (решение владельца), = 0.
+    # Одним числом на индикатор разные ручки не различить, поэтому ключ второй,
+    # а не общий: /portfolio и портфельный вызов /movers (scope=portfolio) читают
+    # его, все остальные ручки раздела продолжают читать snapshot_delay. Оба
+    # ключа энфорсит бэкенд (api/routers/fund_trades.py: _snapshot_cutoff(key=…)) —
+    # фронт задержку не вычисляет, только рисует по возвращённому snapshot_cutoff.
+    #
+    # fund_picker (2026-08-09) — выбор КОНКРЕТНЫХ фондов в «Общем портфеле» и
+    # «По бумаге». Free/гость смотрит набор целиком; собрать свой пул (одна УК,
+    # только крупные, без индексных) — с Basic. Витрины гейт не касается.
     "fund_trades": {
-        "free":  {"snapshot_delay": 1},
-        "basic": {"snapshot_delay": 0},
-        "pro":   {"snapshot_delay": 0},
+        "free":  {"snapshot_delay": 1, "portfolio_snapshot_delay": 0, "fund_picker": False},
+        "basic": {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "fund_picker": True},
+        "pro":   {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "fund_picker": True},
     },
 
     # ───────────────────────────────────────────────────────────────
@@ -191,11 +228,15 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     # 6. Сезонность (/seasonality)
     # ───────────────────────────────────────────────────────────────
-    # canUseMode на фронте проверяется для chartType 'histogram' и для 4
-    # режимов гистограммы: intraday / weekday / monthday / monthly.
-    #   Free  — только «Годовая» (histogram закрыт целиком).
-    #   Basic — histogram + weekday/monthday/monthly (без intraday).
-    #   Pro   — без ограничений (allowed_modes=None ⇒ canUseMode всегда true).
+    # NB: с 2026-08 индикатор полностью бесплатен — все активы, все режимы
+    # (включая intraday) и оба фильтра рядов на всех тирах (гость мапится на
+    # free). Раньше free видел только «Годовую» по 10 крупным тикерам, а
+    # intraday и фильтры были Pro-only. Сняли: сезонность — верхняя воронка и
+    # SEO-вход, а не то, за что платят. Тиры оставлены отдельными строками
+    # (не схлопнуты), чтобы можно было вернуть разграничение без перекройки
+    # структуры матрицы. canUseMode на фронте проверяется для chartType
+    # 'histogram' и для 4 режимов гистограммы: intraday / weekday / monthday /
+    # monthly — при allowed_modes=None он всегда true.
     #
     # Глубина истории у сезонности НЕ ограничена ни на одном тарифе — все видят
     # всю доступную историю (у бесплатных тикеров это ~19 лет, с 2007). Раньше
@@ -207,20 +248,20 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # решить продуктовый вопрос, а не просто вернуть строчку в конфиг.
     "seasonality": {
         "free": {
-            "assets_whitelist": FREE_SEASONALITY_ASSETS,   # 10 крупных
-            "allowed_modes": ["yearly"],
-            "filter_no_outliers": False,
-            "filter_no_dividends": False,
+            "assets_whitelist": None,   # все активы
+            "allowed_modes": None,      # без ограничений — все режимы сезонности
+            "filter_no_outliers": True,
+            "filter_no_dividends": True,
         },
         "basic": {
             "assets_whitelist": None,
-            "allowed_modes": ["histogram", "weekday", "monthday", "monthly", "yearly"],  # без intraday
-            "filter_no_outliers": False,
-            "filter_no_dividends": False,
+            "allowed_modes": None,
+            "filter_no_outliers": True,
+            "filter_no_dividends": True,
         },
         "pro": {
             "assets_whitelist": None,
-            "allowed_modes": None,   # без ограничений — все режимы сезонности
+            "allowed_modes": None,
             "filter_no_outliers": True,
             "filter_no_dividends": True,
         },

@@ -385,8 +385,12 @@ export default function FundTradesPage() {
         [portfolio],
     );
 
-    // Месяц-срез портфеля: месяцы > snapshot_cutoff заблокированы (Free/гость —
-    // свежий срез по подписке), дефолт = последний ДОСТУПНЫЙ, как в «Покупках фондов».
+    // Месяц-срез портфеля: месяцы > snapshot_cutoff заблокированы, дефолт =
+    // последний ДОСТУПНЫЙ, как в «Покупках фондов».
+    // NB: с 2026-08-09 «Общий портфель» выведен из-под задержки раздела
+    // (features.py: portfolio_snapshot_delay=0), бэкенд отдаёт snapshot_cutoff=null
+    // всем тирам → замков тут больше нет. Проверка оставлена осознанно: она
+    // обобщённая, читает ответ бэка и сама оживёт, если гейт вернут.
     const isPortfolioMonthLocked = (m: string) => {
         const c = portfolio?.snapshot_cutoff ?? null;
         return c != null && m > c;
@@ -405,8 +409,10 @@ export default function FundTradesPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [portfolio, portfolioAsOfSaved]);
 
-    // Календарь своего периода в «Сделках фондов»: отсечка своя (из /movers), не из
-    // /portfolio — гейтится именно свежий консенсус сделок.
+    // Календарь своего периода в блоке сделок на «Общем портфеле»: отсечка своя
+    // (из портфельного /movers), не из /portfolio. Обе ручки на этой вкладке
+    // ходят со scope=portfolio → cutoff=null, замков нет; проверка оставлена
+    // осознанно на случай возврата гейта в матрицу.
     const isMoversRangeMonthLocked = (m: string) => {
         const c = portfolioMovers?.snapshot_cutoff ?? null;
         return c != null && m > c;
@@ -436,6 +442,8 @@ export default function FundTradesPage() {
         getFundTradesMovers(portfolioMoversPeriod, {
             funds: portfolioFundsParam || undefined,
             sort: 'amount',
+            // Вкладка «Общий портфель» — своя (нулевая) задержка в матрице.
+            scope: 'portfolio',
             // Свой диапазон приоритетнее пресета (бэкенд игнорирует period при from+to).
             from: portfolioMoversRange?.from,
             to: portfolioMoversRange?.to,
@@ -509,8 +517,11 @@ export default function FundTradesPage() {
                 helpLink="/methodology/funds-catalog"
             />
 
-            {/* Постоянный нудж «данные с задержкой» — виден на всех табах (Free/гость) */}
-            <DelayedDataBadge indicator="fund_trades" />
+            {/* Постоянный нудж «данные с задержкой» (Free/гость). Плашка одна на
+                страницу и читает общий snapshot_delay раздела, а «Общий портфель»
+                с 2026-08-09 отдаёт свежий срез всем — там она бы врала, поэтому на
+                этой вкладке не рисуем. Остальные вкладки по-прежнему с задержкой. */}
+            {tab !== 'portfolio' && <DelayedDataBadge indicator="fund_trades" />}
 
             {/* Ошибка загрузки — НАД карточкой: между вкладками и панелью не должно
                 быть ничего, иначе язычок папки оторвётся от панели (см. .has-tabs). */}
@@ -894,6 +905,10 @@ export default function FundTradesPage() {
                                     onChange={setPortfolioFunds}
                                     targetMonth={portfolio?.resolved_month ?? portfolioAsOf ?? null}
                                     excludedTickers={portfolioExcludedTickers}
+                                    // Набор персистится и уезжает в API параметром
+                                    // `funds` — слетел тариф, сбрасываем (бэкенд его
+                                    // всё равно игнорирует, см. fund_trades.py).
+                                    resetWhenLocked
                                 />
                             </div>
                         )}

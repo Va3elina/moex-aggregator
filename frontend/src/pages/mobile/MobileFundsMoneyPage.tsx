@@ -115,6 +115,16 @@ export default function MobileFundsMoneyPage() {
   // не сбрасывается на новой сессии и хранится отдельно для каждой категории;
   // смена категории перечитывает набор под новый ключ (заменяет прежний reset).
   const [hiddenFunds, setHiddenFunds] = usePersistedSet<number>(`frame:funds:hidden:${category}`);
+  // Выбор ПОДМНОЖЕСТВА фондов — с Basic (funds_money.fund_picker, 2026-08-09).
+  // Пока тариф не резолвнут — не запираем (как везде).
+  const canPickFunds = fundsAccess.isLoading || fundsAccess.canUseFlag('fund_picker');
+  // Санитайз слетевшего с тарифа: ключ hiddenFunds общий с десктопом и
+  // переживает окончание подписки — иначе free-юзер остался бы с подвыборкой,
+  // которую бэкенд уже игнорирует.
+  useEffect(() => {
+    if (fundsAccess.isLoading || canPickFunds) return;
+    if (hiddenFunds.size > 0) setHiddenFunds(new Set());
+  }, [fundsAccess.isLoading, canPickFunds, hiddenFunds, setHiddenFunds]);
   // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
   const fundsFilterAppliedRef = useRef(false);
   const toggleFundVisibility = (fundId: number) =>
@@ -671,12 +681,21 @@ export default function MobileFundsMoneyPage() {
             <button
               className="fm-chip"
               onClick={() => {
+                // Гость/free: sheet не открываем вовсе — заперт сам инструмент
+                // подвыборки, а не цифры (они те же, что на графике).
+                if (!canPickFunds) {
+                  showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
+                  return;
+                }
                 setOptionsSheetOpen(false);
                 setFundsSheetOpen(true);
               }}
-              style={{ justifyContent: 'space-between', padding: '14px 16px' }}
+              style={{ justifyContent: 'space-between', padding: '14px 16px', opacity: canPickFunds ? 1 : 0.78 }}
             >
-              <span>Фонды</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                Фонды
+                {!canPickFunds && <Lock size={11} strokeWidth={2.2} />}
+              </span>
               <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
                 {accessibleFunds.length - hiddenFunds.size}/{accessibleFunds.length}
               </span>

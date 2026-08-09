@@ -315,6 +315,12 @@ export interface OiScreenerRow {
 export type OiScreenerHorizon = 'short' | 'medium';
 
 export interface OiScreenerResponse {
+  // Пейволл ленты (гость/free, 2026-08-09). true → бэкенд отдал МАРКЕР без
+  // строк: rows пуст ВСЕГДА, настоящих цифр в ответе нет. Фронт рисует
+  // фейковый размытый скелетон + CTA (OiScreenerLocked) — под блюром нечего
+  // «снять инспектором», потому что данные не покидали сервер.
+  locked?: boolean;
+  required_tier?: string;
   signal_date: string | null;
   intraday_date: string | null;   // свежайший интрадей-бар (5-мин), если новее дневной; для честной подписи
   clgroup: 'FIZ' | 'YUR';
@@ -329,7 +335,9 @@ export async function getOiScreener(
   clgroup: 'FIZ' | 'YUR' = 'FIZ',
   horizon: OiScreenerHorizon = 'short',
 ): Promise<OiScreenerResponse> {
-  const response = await fetch(`${API_BASE}/api/oi/screener?clgroup=${clgroup}&horizon=${horizon}`);
+  // apiFetch, а не голый fetch: с 2026-08-09 лента гейтится по тарифу, и без
+  // Authorization бэкенд видел бы платника как гостя и отдавал locked-маркер.
+  const response = await apiFetch(`${API_BASE}/api/oi/screener?clgroup=${clgroup}&horizon=${horizon}`);
   if (!response.ok) throw new Error('Failed to fetch OI screener');
   return response.json();
 }
@@ -1654,10 +1662,15 @@ export async function getFundTradesMovers(
     // `manager` оставлен для обратной совместимости (single uk_id / имя). Пусто = все УК.
     // `from`/`to` — произвольный диапазон месяцев (база → цель). Задаются ТОЛЬКО парой
     //   и отменяют period/asOf: бэкенд сравнивает снапшот месяца from со снапшотом to.
-    opts: { asOf?: string; from?: string; to?: string; funds?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
+    // `scope` — какой раздел спрашивает: 'movers' (вкладка «Сделки фондов») или
+    //   'portfolio' (панель сделок на вкладке «Общий портфель»). Задержку свежести
+    //   по-прежнему считает бэкенд по матрице — scope лишь выбирает, КАКОЙ ключ
+    //   матрицы читать (у портфеля он свой и нулевой, см. features.py).
+    opts: { asOf?: string; from?: string; to?: string; funds?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number; scope?: 'movers' | 'portfolio' } = {},
 ): Promise<FundTradesMovers> {
-    const { asOf, from, to, funds, manager, managers, sort = 'weight', limit = 20 } = opts;
+    const { asOf, from, to, funds, manager, managers, sort = 'weight', limit = 20, scope } = opts;
     const params = new URLSearchParams({ period, sort, limit: String(limit) });
+    if (scope) params.set('scope', scope);
     if (from && to) {
         params.set('from', from);
         params.set('to', to);

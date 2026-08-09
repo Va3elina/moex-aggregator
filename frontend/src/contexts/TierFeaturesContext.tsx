@@ -48,6 +48,8 @@ export interface IndicatorLimits {
     filter_no_dividends?: boolean;
     category_filters_enabled?: boolean;
     settings_customizable?: boolean;
+    // funds_money / fund_trades: выбор ПОДМНОЖЕСТВА фондов (пикер) — с Basic.
+    fund_picker?: boolean;
     open?: boolean;
 }
 

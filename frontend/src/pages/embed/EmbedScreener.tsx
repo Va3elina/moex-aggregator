@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { User, Building2, Star, Clock, Columns3 } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import PositionComet from '../../components/oi/PositionComet';
+import OiScreenerLocked from '../../components/oi/OiScreenerLocked';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
@@ -105,6 +106,9 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
   const [minPart, setMinPart] = useState<number>(50);
   const [signalDate, setSignalDate] = useState<string | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
+  // Пейволл ленты (гость/free, 2026-08-09): бэкенд отдал маркер без строк.
+  // Ровно тот же признак, что на сайте — заглушка одна на обе поверхности.
+  const [locked, setLocked] = useState(false);
 
   useEffect(() => { wr('frame:embed:screener:clgroup', clgroup); }, [clgroup]);
   useEffect(() => { wr('frame:embed:screener:horizon', horizon); }, [horizon]);
@@ -123,6 +127,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
     getOiScreener(clgroup, horizon)
       .then((r) => {
         if (cancelled) return;
+        setLocked(!!r.locked);
         setRows(r.rows);
         setMinPart(r.min_part);
         setSignalDate(r.signal_date);
@@ -311,10 +316,15 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
         <div className="styled-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
           {status === 'loading' && <EmbedMsg text="Загрузка…" />}
           {status === 'error' && <EmbedMsg text="Не удалось загрузить сигналы" />}
-          {status === 'ok' && visible.length === 0 && (
+          {/* Пейволл — раньше «Нет активов по фильтру»: у locked-тира rows пуст
+              всегда, и обычный empty-state врал бы про фильтры. */}
+          {status === 'ok' && locked && (
+            <div style={{ padding: 8 }}><OiScreenerLocked compact /></div>
+          )}
+          {status === 'ok' && !locked && visible.length === 0 && (
             <EmbedMsg text={onlyFav ? 'Среди избранных активов пусто' : 'Нет активов по фильтру'} />
           )}
-          {status === 'ok' && visible.length > 0 && (
+          {status === 'ok' && !locked && visible.length > 0 && (
             <>
               {/* Шапка — прилипает при скролле ленты */}
               <div style={{ ...GRID, position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-secondary)', padding: '6px 8px 6px 12px', borderBottom: '1.5px solid var(--text-primary)' }}>

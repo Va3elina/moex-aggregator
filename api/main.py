@@ -241,11 +241,13 @@ async def _warmup_cache():
         "/api/breadth/history?ema_period=200&days=365&universe=imoex",
         "/api/chart/SR?sectype=SR&inst_type=futures&interval=24&clgroup=FIZ&show_oi=true&period=6m",
         "/api/buffett/cap-gdp?period=10y&smooth=false",
-        "/api/oi/screener?clgroup=FIZ&horizon=short",
-        "/api/oi/screener?clgroup=FIZ&horizon=medium",
-        "/api/oi/screener?clgroup=YUR&horizon=short",
-        "/api/oi/screener?clgroup=YUR&horizon=medium",
     ]
+
+    # Скринер ОИ — tier-gated (Basic+) с 2026-08-09, поэтому греть его через
+    # HTTP guest-клиентом нельзя: роут вернул бы locked-маркер, не тронув кеш.
+    # Наполняем напрямую через build_oi_screener (минует tier-проверку) — тот же
+    # приём, что с картой «Все акции» выше.
+    await asyncio.to_thread(_warm_screener_cache)
     try:
         async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=30) as client:
             for url in urls:
@@ -258,30 +260,41 @@ async def _warmup_cache():
         logger.warning(f"Cache warmup failed: {e}")
 
 
+def _warm_screener_cache():
+    """Прогрев кеша скринера ОИ по всем 4 комбинациям clgroup × horizon.
+
+    Синхронная (SQLAlchemy-сессия) — вызывается через asyncio.to_thread.
+    Своя сессия, а не Depends(get_db): прогрев живёт вне цикла запросов.
+    """
+    from api.database import SessionLocal
+    from api.routers.open_interest import build_oi_screener
+    db = SessionLocal()
+    try:
+        for clgroup in ("FIZ", "YUR"):
+            for horizon in ("short", "medium"):
+                try:
+                    build_oi_screener(db, clgroup, horizon)
+                except Exception as e:
+                    logger.warning(f"OI screener warm failed ({clgroup}/{horizon}): {e}")
+    finally:
+        db.close()
+
+
 async def _periodic_warm():
     """Держит горячими кэши с коротким TTL, чтобы пользователи не платили за
     ленивый пересчёт. Скринер ОИ: TTL 300с → перегреваем каждые 240с (оба clgroup);
     тяжёлый скан истории (oi_extremes, TTL 30мин) при этом уезжает в фон, а не на
-    поток запроса. Компонент идемпотентен и per-container (лишний прогрев безвреден)."""
-    import httpx
+    поток запроса. Компонент идемпотентен и per-container (лишний прогрев безвреден).
+
+    ⚠️ Греем ВНУТРЕННИМ вызовом (_warm_screener_cache), а не HTTP-запросом к
+    себе: с 2026-08-09 скринер закрыт для гостя, а у прогрева токена нет —
+    роут отдал бы locked-маркер и кеш остался бы холодным. Все 4 комбинации
+    clgroup × horizon: кэш-ключи раздельные, и без явного horizon тёплым
+    держался только дневной (замер: 0.9–1.1с против 0.2с)."""
     await asyncio.sleep(45)  # после стартового прогрева
-    # ⚠️ Все 4 комбинации clgroup × horizon: кэш-ключи раздельные, и без
-    # явного horizon тёплым держался только дневной (short) — лента «Недели»
-    # ловила холодный пересчёт каждые 5 минут (замер: 0.9–1.1с против 0.2с).
-    warm_urls = [
-        "/api/oi/screener?clgroup=FIZ&horizon=short",
-        "/api/oi/screener?clgroup=FIZ&horizon=medium",
-        "/api/oi/screener?clgroup=YUR&horizon=short",
-        "/api/oi/screener?clgroup=YUR&horizon=medium",
-    ]
     while True:
         try:
-            async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=45) as client:
-                for url in warm_urls:
-                    try:
-                        await client.get(url)
-                    except Exception:
-                        pass
+            await asyncio.to_thread(_warm_screener_cache)
         except Exception as e:
             logger.warning(f"Periodic warm failed: {e}")
         await asyncio.sleep(240)

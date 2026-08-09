@@ -235,6 +235,20 @@ export default function FundsMoneyPage() {
     // категории; смена категории перечитывает набор под новый ключ (это заменяет
     // прежний reset в пустой Set).
     const [hiddenFunds, setHiddenFunds] = usePersistedSet<number>(`frame:funds:hidden:${category}`);
+
+    // Выбор ПОДМНОЖЕСТВА фондов — с Basic (матрица funds_money.fund_picker,
+    // 2026-08-09). `isLoading ||` — пока тариф не резолвнут, замок не вешаем
+    // (принцип «лучше на миг не запереть, чем запереть платника»).
+    const canPickFunds = fundsAccess.isLoading || fundsAccess.canUseFlag('fund_picker');
+    // Санитайз: набор скрытых фондов персистится по категории и переживает
+    // слёт с тарифа. Оставить его применённым — значит показывать free-юзеру
+    // подвыборку, которую он больше не имеет права собрать (и на бэке она всё
+    // равно игнорируется, т.е. график и таблица разошлись бы). Сбрасываем.
+    useEffect(() => {
+        if (fundsAccess.isLoading || canPickFunds) return;
+        if (hiddenFunds.size > 0) setHiddenFunds(new Set());
+    }, [fundsAccess.isLoading, canPickFunds, hiddenFunds, setHiddenFunds]);
+
     // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
     const fundsFilterAppliedRef = useRef(false);
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
@@ -653,8 +667,17 @@ export default function FundsMoneyPage() {
                     не все фонды — сигнал активного фильтра. */}
                 <div data-tour="funds-table" style={{ order: 0 }}>
                 <button
-                    onClick={() => setFundPickerOpen(true)}
-                    title="Выбрать фонды для графика"
+                    // Гость/free: модалку НЕ открываем вовсе — блюрить её
+                    // содержимое (список фондов со СЧА) незачем, эти же цифры
+                    // и так на графике; закрыт именно инструмент подвыборки.
+                    onClick={() => {
+                        if (!canPickFunds) {
+                            showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
+                            return;
+                        }
+                        setFundPickerOpen(true);
+                    }}
+                    title={canPickFunds ? 'Выбрать фонды для графика' : 'Выбор фондов — на тарифе Basic и выше'}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
                         color: 'var(--text-primary)',
@@ -692,7 +715,9 @@ export default function FundsMoneyPage() {
                             </span>
                         </div>
                     </div>
-                    <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
+                    {canPickFunds
+                        ? <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
+                        : <Lock size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />}
                 </button>
                 </div>
 
