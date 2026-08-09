@@ -16,10 +16,12 @@
 // промежуточное состояние «сняты все» не улетает в API (пусто = все фонды).
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
 
-import React, { useMemo, useState } from 'react';
-import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -753,13 +755,39 @@ export interface PortfolioFundPickerProps {
     title?: string;
     /** Подпись таблетки, когда выбран весь пул. */
     allLabel?: string;
+    /** Сбрасывать сохранённую подвыборку, если тариф больше не даёт пикер.
+     *  Включать там, где `selected` персистится и уезжает на бэкенд параметром
+     *  `funds` («Общий портфель»). НЕ включать во вкладке «По бумаге»: там
+     *  «выбрано» — это производная от дефолта «без индексных фондов», и сброс
+     *  в пусто не вернул бы состояние по умолчанию, а сломал бы его. */
+    resetWhenLocked?: boolean;
 }
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
     title = 'Фонды акций', allLabel = 'Все фонды акций',
+    resetWhenLocked = false,
 }: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
+
+    // Выбор своего пула фондов — с Basic (матрица fund_trades.fund_picker,
+    // решение владельца 2026-08-09). Гейт живёт ЗДЕСЬ, в самом пикере: он один
+    // на все три поверхности — «Общий портфель», «По бумаге» и мобильный sheet
+    // «Опции». «Витрины» это не касается — там пикера нет.
+    // `isLoading ||` — пока тариф не резолвнут, замок не вешаем.
+    const access = useTierAccess('fund_trades');
+    const { showUpgrade } = useUpgradePrompt();
+    const canPick = access.isLoading || access.canUseFlag('fund_picker');
+
+    // Санитайз слетевшего с тарифа: подвыборка «Общего портфеля» персистится
+    // (frame:fundtrades:portfolioFunds) и переживает окончание подписки. Бэкенд
+    // такой `funds` уже игнорирует — оставить набор применённым значило бы
+    // рисовать таблетку «15 из 19 фондов» под данными по всем 19.
+    useEffect(() => {
+        if (!resetWhenLocked || access.isLoading || canPick) return;
+        if (selected.size > 0) onChange(new Set());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [resetWhenLocked, access.isLoading, canPick, selected.size]);
     // Подпись таблетки читает тумблер «Без индексных фондов» тем же способом, что и
     // сама модалка (индексные сняты ⇔ тумблер прожат): пул выбора — только доступные
     // фонды. Взят весь пул целиком (в том числе дефолт «всё, кроме индексных») — это
@@ -769,14 +797,30 @@ export default function PortfolioFundPicker({
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
     const pool = funds.length - (indexOff ? idxTickers.length : 0);
     const allActive = selected.size === 0 || selected.size === pool;
-    const active = !allActive;
-    const label = allActive ? allLabel : `${selected.size} из ${pool} фондов`;
+    // Заперт → таблетка всегда в «нейтральном» виде: акцентная заливка означает
+    // «фильтр применён», а у locked-тира он не применён и применён быть не может.
+    const active = !allActive && canPick;
+    const label = allActive || !canPick ? allLabel : `${selected.size} из ${pool} фондов`;
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
             <button
                 type="button"
-                onClick={() => setOpen(true)}
+                // Locked: модалку не открываем вовсе (честнее блюра — под ним
+                // всё равно лежал бы обычный публичный список фондов, а платная
+                // тут не «таблица», а сама возможность собрать свой пул).
+                onClick={() => {
+                    if (!canPick) {
+                        showUpgrade({
+                            tier: access.requiredTierFor({ flag: 'fund_picker' }) ?? 'basic',
+                            featureName: 'выбор фондов',
+                            indicator: 'fund_trades',
+                        });
+                        return;
+                    }
+                    setOpen(true);
+                }}
+                title={canPick ? undefined : 'Выбор фондов — на тарифе Basic и выше'}
                 className="editorial-press"
                 style={{
                     display: 'inline-flex',
@@ -796,10 +840,12 @@ export default function PortfolioFundPicker({
                 }}
             >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                <span style={{ fontSize: '0.75em', opacity: 0.85, flexShrink: 0 }}>▾</span>
+                {canPick
+                    ? <span style={{ fontSize: '0.75em', opacity: 0.85, flexShrink: 0 }}>▾</span>
+                    : <Lock size={13} strokeWidth={2.4} style={{ flexShrink: 0, opacity: 0.85 }} />}
             </button>
 
-            {open && (
+            {open && canPick && (
                 <PickerModal
                     funds={funds}
                     selected={selected}

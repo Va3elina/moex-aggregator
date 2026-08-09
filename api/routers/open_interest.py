@@ -13,6 +13,8 @@ from api.schemas import OpenInterestResponse, OpenInterestListResponse
 from api.schemas.validators import ClgroupType, validate_safe_id
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
+from api.billing.features import get_indicator_limits
+from api.billing.tiers import user_tier
 
 router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 
@@ -21,24 +23,15 @@ router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
 
 
-@oi_router.get("/screener")
-def get_oi_screener(
-        clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
-        horizon: str = Query("short", pattern="^(short|medium)$", description="Горизонт: short (день) или medium (14 дней)"),
-        db: Session = Depends(get_db),
-):
-    """Скринер сигналов ОИ: чистая позиция группы + кратность движения по всем
-    фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+def build_oi_screener(db: Session, clgroup: str, horizon: str):
+    """Собирает (или достаёт из кеша) ленту скринера.
 
-    horizon short — движение за день против ATR(14) (как алерты); medium —
-    сдвиг за 14 торговых дней против нормы за 60 дней до окна. Это две разные
-    ленты, фронт переключает их тумблером; кэшируются раздельно.
-
-    Данные дневные (T+1), меняются раз в сутки → single-flight кэш 5 мин;
-    _periodic_warm в main.py перегревает все 4 комбинации каждые 240с, так
-    что живой пересчёт на потоке запроса — только сразу после деплоя/flush.
-    Открытый доступ (как публичная лента аномалий): дневная агрегированная
-    статистика, не премиум-данные.
+    Вынесено из роута, чтобы прогрев кеша (_warmup_cache/_periodic_warm в
+    main.py) наполнял его напрямую, минуя tier-проверку — ровно как
+    build_stocks_heatmap. Прогрев ходит по HTTP без токена, т.е. выглядит
+    гостем, и после закрытия скринера (2026-08-09) получал бы locked-маркер:
+    кэш не грелся бы вовсе, а первый платный запрос каждые 5 минут платил бы
+    за холодный пересчёт (0.9–1.1с против 0.2с). Tier-gating остаётся на роуте.
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
@@ -52,6 +45,56 @@ def get_oi_screener(
         lambda: compute_screener(db, clgroup, horizon),
         ttl=300,
     )
+
+
+@oi_router.get("/screener")
+def get_oi_screener(
+        clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
+        horizon: str = Query("short", pattern="^(short|medium)$", description="Горизонт: short (день) или medium (14 дней)"),
+        db: Session = Depends(get_db),
+        user = Depends(get_current_user_optional),
+):
+    """Скринер сигналов ОИ: чистая позиция группы + кратность движения по всем
+    фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+
+    horizon short — движение за день против ATR(14) (как алерты); medium —
+    сдвиг за 14 торговых дней против нормы за 60 дней до окна. Это две разные
+    ленты, фронт переключает их тумблером; кэшируются раздельно.
+
+    Данные дневные (T+1), меняются раз в сутки → single-flight кэш 5 мин;
+    _periodic_warm в main.py перегревает все 4 комбинации каждые 240с, так
+    что живой пересчёт на потоке запроса — только сразу после деплоя/flush.
+    Открытый доступ (как публичная лента аномалий): дневная агрегированная
+    статистика, не премиум-данные.
+
+    ⚠️ РАЗВОРОТ 2026-08-09 (решение владельца). Абзац выше оставлен как есть —
+    это ход рассуждения, по которому скринер когда-то открыли, и его полезно
+    видеть. Но решение изменено: лента закрыта для гостя и free (матрица,
+    ключ `oi_screener.open`). Аргумент против прежнего: агрегат тут и есть
+    продукт — это готовый вывод «что резко сдвинулось сегодня по всему рынку»,
+    тот же, что уходит в платные Telegram-алерты; «не сырые данные» перестаёт
+    быть доводом за бесплатность ровно в тот момент, когда за агрегат платят.
+
+    Locked-тиру отдаём МАРКЕР БЕЗ СТРОК (rows=[], locked=true) — как свежему
+    срезу в /fund-trades. Блюр рисует фронт по фейковому скелетону; настоящих
+    цифр под ним нет, снять их инспектором нечего.
+    """
+    limits = get_indicator_limits(user_tier(user), "oi_screener")
+    if not limits.get("open", True):
+        return {
+            "locked": True,
+            "required_tier": "basic",
+            "signal_date": None,
+            "intraday_date": None,
+            "clgroup": clgroup,
+            "horizon": horizon,
+            "window_days": 14 if horizon == "medium" else 1,
+            "sharp_ratio": 3 if horizon == "medium" else 2,
+            "min_part": 0,
+            "rows": [],
+        }
+
+    return build_oi_screener(db, clgroup, horizon)
 
 
 @oi_router.get("/intraday-assets")

@@ -35,6 +35,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import PositionComet from './PositionComet';
+import OiScreenerLocked from './OiScreenerLocked';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
 
@@ -137,6 +138,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
+  // Пейволл ленты (гость/free): бэкенд отдал маркер без строк. Читаем именно
+  // ответ, а не матрицу тарифов — пока матрица грузится, блюр не мигнёт у
+  // платника, а сам маркер приходит уже с учётом Authorization.
+  const [locked, setLocked] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
   // же виде, что оставил юзер (группа, категория, избранные, направление).
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
@@ -194,7 +199,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     setRows(null);
     setError(false);
     getOiScreener(clgroup, horizon)
-      .then((r) => { if (!cancelled) { setRows(r.rows); setMinPart(r.min_part); } })
+      .then((r) => { if (!cancelled) { setLocked(!!r.locked); setRows(r.rows); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [clgroup, horizon]);
@@ -455,6 +460,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // поля центрированного «Сигнала» (~20px). Из-за этого число выглядело
   // прижатым к комете. Отступ дорожки справа уравнивает зазоры на глаз.
   const COMET_RIGHT_INSET = 12;
+
+  // Пейволл. Заглушка ВМЕСТО всей вкладки, вместе с тулбаром: гонять физ/юр и
+  // категории по пустой ленте не над чем, а тулбар над блюром читался бы как
+  // «фильтры не работают». Все хуки объявлены выше — ранний return безопасен.
+  if (locked) {
+    return <OiScreenerLocked />;
+  }
 
   return (
     <div>

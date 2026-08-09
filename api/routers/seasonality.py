@@ -788,8 +788,12 @@ async def get_seasonality(
         except ValueError:
             raise HTTPException(400, "exclude_years must be comma-separated integers")
 
-    # Tier-ограничения: asset whitelist + mode whitelist
-    # Маппинг наших режимов на матрицу: intraday → intraday; weekday/monthday → histogram; monthly → yearly
+    # Tier-ограничения: asset whitelist + mode whitelist.
+    # Маппинг наших режимов на матрицу: intraday → intraday; weekday/monthday → histogram; monthly → yearly.
+    # NB: с 2026-08 у сезонности в матрице assets_whitelist=None и allowed_modes=None
+    # на всех тирах, т.е. проверка сейчас всегда проходит и ничего не подменяет.
+    # Вызов оставлен осознанно: он обобщённый, читает матрицу и сам оживёт, если
+    # ограничение когда-нибудь вернут.
     matrix_mode = "intraday" if mode == "intraday" else ("yearly" if mode == "monthly" else "histogram")
     enforce_tier_limits(user, "seasonality", asset=secid, mode=matrix_mode)
 

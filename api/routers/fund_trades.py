@@ -187,17 +187,27 @@ FT_HISTORY_FLOOR = date(2021, 9, 1)
 _FAR_FUTURE = date(9999, 12, 31)
 
 
-def _snapshot_offset(user) -> int:
-    """На сколько снапшотов свежести назад видит юзер (0 = свежий срез)."""
+# Ключ матрицы для «Общего портфеля» — своя задержка, независимая от остальных
+# разделов (features.py: fund_trades.portfolio_snapshot_delay, сейчас 0 на всех
+# тирах). Витрины портфеля обязаны ходить именно с ним, иначе вернётся общий гейт.
+PORTFOLIO_DELAY_KEY = "portfolio_snapshot_delay"
+
+
+def _snapshot_offset(user, key: str = "snapshot_delay") -> int:
+    """На сколько снапшотов свежести назад видит юзер (0 = свежий срез).
+
+    `key` выбирает поле матрицы: 'snapshot_delay' — общий гейт раздела,
+    PORTFOLIO_DELAY_KEY — отдельный (нулевой) гейт «Общего портфеля».
+    """
     limits = get_indicator_limits(user_tier(user), "fund_trades")
-    return int(limits.get("snapshot_delay", 0) or 0)
+    return int(limits.get(key, 0) or 0)
 
 
-def _snapshot_cutoff(db, user) -> date:
+def _snapshot_cutoff(db, user, key: str = "snapshot_delay") -> date:
     """Дата-отсечка свежести для тира. offset 0 → _FAR_FUTURE (без задержки).
     offset N → N-я по свежести дата месячной выборки среди whitelist-фондов
     (Free видит снапшоты `<= cutoff`). Если истории меньше — без задержки."""
-    offset = _snapshot_offset(user)
+    offset = _snapshot_offset(user, key)
     if offset <= 0:
         return _FAR_FUTURE
     cutoff = db.execute(text("""
@@ -877,6 +887,10 @@ def top_movers(
     funds: str | None = Query(None, description="фильтр по конкретным фондам: comma-separated тикеры (напр. 'TMOS,SBMX'); приоритет над manager; пусто=все"),
     sort: str = Query("weight", description="weight | amount — метрика ранжирования и знака"),
     limit: int = Query(20, ge=1, le=100),
+    scope: str = Query(
+        "movers",
+        description="movers | portfolio — какой раздел спрашивает; выбирает КЛЮЧ задержки в матрице (сам размер задержки решает бэкенд)",
+    ),
     user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -917,7 +931,11 @@ def top_movers(
 
     # Free/гость — задержка: целевой месяц-снапшот ограничиваем до cutoff (свежий
     # срез «что купили» — по подписке). ISO-даты сравниваются как строки = хронологически.
-    _cut = _snapshot_cutoff(db, user)
+    # scope=portfolio (панель сделок на вкладке «Общий портфель») читает отдельный
+    # ключ матрицы, у которого задержка нулевая. Фронт лишь называет раздел —
+    # СКОЛЬКО резать, по-прежнему решает матрица на бэке; при возврате гейта
+    # достаточно поправить features.py.
+    _cut = _snapshot_cutoff(db, user, PORTFOLIO_DELAY_KEY if scope == "portfolio" else "snapshot_delay")
     if _cut != _FAR_FUTURE:
         _cs = _cut.isoformat()
         as_of = _cs if not as_of else min(as_of, _cs)
@@ -925,6 +943,15 @@ def top_movers(
     # Параметр category игнорируется (всегда stocks).
     category_filter = "AND f.category = 'stocks'"
     whitelist_filter = "AND f.ticker = ANY(:tickers)"
+
+    # Своя подвыборка фондов — с Basic (матрица, fund_trades.fund_picker).
+    # Гасим ОБА параметра: manager — тот же выбор пула, только через УК, и
+    # оставленный открытым он был бы дырой в гейте. Фронт запирает таблетку
+    # пикера замком, но URL правится руками — ограничение живёт на бэке.
+    if not get_indicator_limits(user_tier(user), "fund_trades").get("fund_picker", True):
+        funds = None
+        manager = None
+
     # funds: comma-separated список ТИКЕРОВ фондов (напр. "TMOS,SBMX"). Фильтр на
     # уровне самого фонда (f.ticker), а НЕ его УК. Имеет приоритет над manager.
     # Пусто / не задан / только разделители → не применяется (падаем на manager/все).
@@ -1262,7 +1289,9 @@ def combined_portfolio(
     = total_value_rub (Σ amount_rub, «Объём в фондах»). Отдельную «Суммарную СЧА» НЕ
     показываем: nav (Cbonds) и amount_rub (SCHA) из разных источников и не всегда
     сходятся, из-за чего СЧА могла бы оказаться < стоимости акций (ложный «баг»).
-    Free/гость — с задержкой в 1 снапшот, как остальные разделы.
+    Срез САМЫЙ СВЕЖИЙ на всех тирах: с 2026-08-09 «Общий портфель» выведен
+    из-под задержки раздела (матрица: fund_trades.portfolio_snapshot_delay=0),
+    остальные разделы «Сделок фондов» продолжают резать по snapshot_delay.
 
     Отдаём ДВА веса per бумага:
       weight_rub — доля в общем портфеле ПО ДЕНЬГАМ (value-weighted; крупные фонды
@@ -1274,7 +1303,9 @@ def combined_portfolio(
     Фильтр фондов: funds (тикеры) приоритетнее manager (uk_id) — как в /movers; фронт
     резолвит выбранные УК в тикеры и шлёт их в `funds`.
     """
-    gate_cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    # «Общий портфель» свежесть не режет никому (матрица: portfolio_snapshot_delay=0).
+    # Вызов оставлен обобщённым — вернут гейт в матрице, ручка снова начнёт резать.
+    gate_cutoff = _snapshot_cutoff(db, user, PORTFOLIO_DELAY_KEY)
     # Эффективная граница выбора снапшота = min(выбранный месяц as_of, gate_cutoff).
     # as_of двигает портфель на исторический месяц; gate_cutoff не даёт Free/гостю
     # заглянуть в свежий срез. Каждый фонд внутри берёт свой снапшот <= bound.
@@ -1286,6 +1317,12 @@ def combined_portfolio(
             raise HTTPException(status_code=400, detail="as_of must be YYYY-MM-DD")
         bound = min(gate_cutoff, as_of_d)
     cutoff = bound  # ниже SQL выбирает снапшоты <= :cutoff
+
+    # Своя подвыборка фондов — с Basic (матрица, fund_trades.fund_picker); см.
+    # тот же гейт в /movers. Гасим и manager: это тот же выбор пула, но через УК.
+    if not get_indicator_limits(user_tier(user), "fund_trades").get("fund_picker", True):
+        funds = None
+        manager = None
 
     # funds (тикеры фондов) приоритетнее manager (uk_id). Пусто = все whitelist-акции.
     fund_tickers = [p.strip() for p in funds.split(",")] if funds else []

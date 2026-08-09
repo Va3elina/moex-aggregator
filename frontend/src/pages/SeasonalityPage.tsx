@@ -90,17 +90,10 @@ export default function SeasonalityPage() {
   const [chartType, setChartType] = usePersistedState<ChartType>('frame:seasonality:chartType', 'histogram');
   const [priceDays, setPriceDays] = usePersistedState('frame:seasonality:priceDays', 365);
 
-  // Smart default: для Free 'histogram' недоступен — переключаемся на 'yearly'.
-  // Только при ПЕРВОЙ загрузке матрицы, чтобы не сбрасывать пользовательский
-  // выбор когда tier меняется (apgrade/cancel). Используем ref-флаг.
-  const defaultSwitchedRef = useRef(false);
-  useEffect(() => {
-    if (seasonAccess.isLoading || defaultSwitchedRef.current) return;
-    defaultSwitchedRef.current = true;
-    if (!seasonAccess.canUseMode('histogram')) {
-      setChartType('yearly');
-    }
-  }, [seasonAccess.isLoading, seasonAccess]);
+  // NB: раньше здесь был smart default «на Free histogram недоступен →
+  // переключаем на yearly». С 2026-08 сезонность бесплатна целиком (features.py:
+  // allowed_modes=None на всех тирах), и такое авто-переключение только ломало бы
+  // выбор пользователя — убрано.
 
   // Clamp: если выбранный актив не поддерживает intraday (список пришёл ПОСЛЕ
   // того как пользователь уже стоял на 'intraday' — напр. вернулся на страницу
@@ -624,7 +617,9 @@ export default function SeasonalityPage() {
             {
               key: 'histogram',
               label: 'Календарь',
-              // На Free доступен только yearly. Histogram-режимы заблокированы.
+              // Сейчас всегда разрешено (features.py: allowed_modes=None на всех
+              // тирах) — замок не рисуется. Проверка оставлена осознанно: она
+              // обобщённая, читает матрицу и сама оживёт, если гейт вернут.
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram'),
             },
             { key: 'yearly', label: 'Годовая' },
@@ -658,7 +653,8 @@ export default function SeasonalityPage() {
             options={(Object.keys(MODE_LABELS) as SeasonalityMode[]).map((m): DropdownOption<SeasonalityMode> => ({
               key: m,
               label: MODE_LABELS[m],
-              // intraday — Pro-only по матрице
+              // Сейчас всегда разрешено (включая intraday, бывший Pro-only) —
+              // проверка по матрице оставлена осознанно, см. коммент выше.
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode(m),
               // intraday для этого конкретного актива физически нет данных —
               // прячем из списка совсем (не lock: это не тариф, апгрейд не поможет).
