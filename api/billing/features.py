@@ -290,7 +290,7 @@ PUBLIC_API_CSV_ENABLED = os.getenv("PUBLIC_API_CSV_ENABLED", "").lower() in ("1"
 
 COMMON_FEATURES: dict[str, dict] = {
     "free": {
-        "watermark_on_export": True,    # PNG с водяным знаком таймфрейм.рф
+        "watermark_on_export": True,    # PNG с водяным знаком framedata.ru
         "csv_export": False,            # Excel/CSV экспорт
         "api_access": False,            # /api/v1/public/* с ключами
         "fund_trades_access": True,     # /fund-trades — открыт для ВСЕХ тиров (что покупают/продают БПИФ)

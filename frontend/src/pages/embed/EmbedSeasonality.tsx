@@ -94,7 +94,7 @@ const NON_DIVIDEND_TICKERS = new Set([
 const FULL_HISTORY_ITERS = 9999;
 
 // Ссылки из iframe ведут на сайт (внутри embed'а роутера сайта нет).
-const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
+const SITE = 'https://framedata.ru';
 
 // Синтетическая временная база категориальной оси и годовой траектории.
 const DAY = 86400;

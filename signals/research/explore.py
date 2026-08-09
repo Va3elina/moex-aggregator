@@ -63,7 +63,7 @@ MOVE_THRESHOLD = 0.05  # ±5%
 WARMUP_DAYS = 60       # EMA50 нужно >= 50 дней warmup
 
 API_BASE = "https://localhost"
-API_HOST_HEADER = "xn--80aklbnczmv.xn--p1ai"
+API_HOST_HEADER = "framedata.ru"
 
 
 # ───────────────────────────────────────────────────────────────

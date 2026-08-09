@@ -196,7 +196,7 @@ class YooKassaProvider:
                 "type": "redirect",
                 # return_url в create_sbp_checkout не передаётся по Protocol —
                 # ведём на страницу успеха, поллинг статуса там уже есть.
-                "return_url": "https://xn--80aklbnczmv.xn--p1ai/billing/success",
+                "return_url": "https://framedata.ru/billing/success",
             },
             "description": description[:128],
             "metadata": metadata or {},

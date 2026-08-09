@@ -23,7 +23,7 @@ MIN_HISTORY_DAYS = 30        # минимум точек для статисти
 CHART_PERIOD_DAYS = 365      # период, отображаемый на графике
 CHART_WIDTH = 1280
 CHART_HEIGHT = 720
-SITE_URL = "таймфрейм.рф"
+SITE_URL = "framedata.ru"
 
 # editorial-dark палитра (синхронизировано с frontend/src/index.css)
 COLOR_BG = "#0a0a0a"         # paper-bg

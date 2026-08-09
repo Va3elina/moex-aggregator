@@ -122,7 +122,7 @@ def make_hero():
     tf = font(SERIF, int(34 * SS))
     d.text((pad + int(110 * SS), pad + int(38 * SS)), 'Фрейм · Открытые позиции', font=tf, fill=CREAM)
     sf = font(SANS_REG, int(22 * SS))
-    d.text((pad + int(30 * SS), H - pad - int(60 * SS)), 'таймфрейм.рф', font=sf, fill=DIM)
+    d.text((pad + int(30 * SS), H - pad - int(60 * SS)), 'framedata.ru', font=sf, fill=DIM)
     return img.resize((1280, 800), Image.LANCZOS)
 
 

@@ -330,7 +330,7 @@ _HYPE_LOGO_SIGNATURE_IDS = (
     "5456183761139961304",  # «FRA» (без белого фона)
     "5454037394183462308",  # «ME» (без белого фона)
 )
-_HYPE_KANBAN_URL = "https://xn--80aklbnczmv.xn--p1ai/admin/content-news"  # punycode таймфрейм.рф
+_HYPE_KANBAN_URL = "https://framedata.ru/admin/content-news"
 
 
 def _normalize_for_similarity(text_val: Optional[str]) -> str:

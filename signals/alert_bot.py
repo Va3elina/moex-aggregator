@@ -37,11 +37,11 @@ BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
 API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
 API_BASE = f"{API_ROOT}/bot{BOT_TOKEN}"
 
-SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
+SITE = "https://framedata.ru"
 
 HELP_TEXT = (
     "🔔 <b>Frame Signal</b> — алерты по рынку MOEX.\n\n"
-    "Новые алерты создаются на сайте таймфрейм.рф (Личный кабинет → Алерты),\n"
+    "Новые алерты создаются на сайте framedata.ru (Личный кабинет → Алерты),\n"
     "а уведомления приходят сюда. Управлять уже созданными можно прямо тут.\n\n"
     "Команды:\n"
     "/menu — меню · /alerts — список\n"

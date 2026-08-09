@@ -36,7 +36,7 @@ Disallow: /fund-trades
 Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&ref&fbclid&gclid&yclid
 
 # Главное зеркало (для Yandex)
-Host: xn--80aklbnczmv.xn--p1ai
+Host: framedata.ru
 
 # Sitemap (используют все поисковики)
-Sitemap: https://xn--80aklbnczmv.xn--p1ai/sitemap.xml
+Sitemap: https://framedata.ru/sitemap.xml

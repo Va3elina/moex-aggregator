@@ -530,7 +530,7 @@ export default function Layout() {
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-col gap-2">
         {/* Top row — основные ссылки */}
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
-          <span>© Frame · таймфрейм.рф</span>
+          <span>© Frame · framedata.ru</span>
           {/* Attribution к индексам MOEX (Strength + FundsMoney используют
               IMOEX/RTSI/RGBI как benchmark). License MOEX требует видимое
               упоминание сайтов отображающих их индексы. Свечи акций (Heatmap,

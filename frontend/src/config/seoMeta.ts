@@ -16,11 +16,11 @@
  *   - description: 1-2 предложения, ключевые слова естественно (под 160 chars)
  *   - keywords: устаревшее для Google, но Yandex до сих пор учитывает
  *
- * Канонический домен — punycode (xn--80aklbnczmv.xn--p1ai), потому что
- * это стандарт для всех поисковиков. Кириллица «таймфрейм.рф» — alias.
+ * Канонический домен — framedata.ru. Прежние адреса таймфрейм.рф и его
+ * punycode-форма xn--80aklbnczmv.xn--p1ai остаются алиасами и отдают 301.
  */
 
-export const CANONICAL_HOST = 'https://xn--80aklbnczmv.xn--p1ai'
+export const CANONICAL_HOST = 'https://framedata.ru'
 
 export interface SeoMeta {
     /** <title>; не длиннее ~60 chars (иначе обрезается в выдаче) */

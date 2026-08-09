@@ -7,7 +7,7 @@
  *   [Detail tags · separator · etc]
  *
  * Footer layout:
- *   [таймфрейм.рф]                                  [Дата захвата]
+ *   [framedata.ru]                                  [Дата захвата]
  *
  * Если metadata не передан — header/footer не рендерятся (compact mode).
  */
@@ -15,7 +15,7 @@
 import type { FrameOptions } from './types';
 
 const DEFAULT_PADDING = 18;
-const SITE_URL = 'таймфрейм.рф';
+const SITE_URL = 'framedata.ru';
 
 // Layout constants — БАЗОВЫЕ значения в LOGICAL pixels при chartW=REFERENCE_W
 // (умножаются на DPR и на layoutScale в конце, см. computeLayoutScale ниже).
@@ -116,7 +116,7 @@ export function composeFramedCanvas(
 
 /**
  * Watermark для Free tier — наклонная полупрозрачная надпись
- * "таймфрейм.рф" в центре chart area. Размер пропорционален chart width,
+ * "framedata.ru" в центре chart area. Размер пропорционален chart width,
  * чтобы читался на любых aspect ratios.
  */
 function drawWatermark(

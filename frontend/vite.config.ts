@@ -30,7 +30,7 @@ export default defineConfig({
         // прежний локальный бэкенд. ⚠️ Только чтение: писать (алерты, биллинг,
         // регистрация) через этот прокси в прод — нельзя.
         target: process.env.VITE_API_TARGET === 'prod'
-          ? 'https://xn--80aklbnczmv.xn--p1ai'
+          ? 'https://framedata.ru'
           : 'http://127.0.0.1:8000',
         changeOrigin: true,
       }

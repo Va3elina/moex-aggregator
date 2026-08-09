@@ -7,7 +7,7 @@
  *
  * Placeholders:
  *  - Оператор: «Администрация Frame» (можно заменить на ФИО / ИП / ООО)
- *  - Контактный email: «privacy@таймфрейм.рф»  (можно заменить)
+ *  - Контактный email: «privacy@framedata.ru»  (можно заменить)
  */
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Shield } from 'lucide-react';
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
 
       <Section title="Кто оператор">
         <p>
-          Сервис «Frame» (домен <strong>таймфрейм.рф</strong>) — аналитическая
+          Сервис «Frame» (домен <strong>framedata.ru</strong>) — аналитическая
           платформа по российскому фондовому рынку. Оператор обработки данных:{' '}
           <strong>ИП Тория Александр Роландович</strong> (ИНН 782627792630,
           ОГРНИП 325784700029296). Контакт для вопросов и запросов:{' '}
@@ -176,7 +176,7 @@ export default function PrivacyPage() {
             <strong>PRO-токен и раскладка панелей</strong> хранятся{' '}
             <strong>локально в браузере</strong> (chrome.storage), не передаются
             третьим лицам. Токен нужен только для загрузки индикаторов с
-            таймфрейм.рф.
+            framedata.ru.
           </li>
           <li>
             <strong>Расширение НЕ читает и НЕ сохраняет</strong> ваши сделки,

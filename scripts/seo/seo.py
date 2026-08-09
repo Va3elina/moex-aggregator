@@ -29,7 +29,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 HERE = Path(__file__).resolve().parent
-SITE = "https://xn--80aklbnczmv.xn--p1ai"
+SITE = "https://framedata.ru"
 SITEMAP = f"{SITE}/sitemap.xml"
 BRAND_HINTS = ("таймфрейм", "frame", "фрейм")
 

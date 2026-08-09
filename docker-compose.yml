@@ -181,10 +181,10 @@ services:
       - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aklbnczmv.xn--p1ai,https://framedata.ru,https://www.framedata.ru
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/google
+      - GOOGLE_REDIRECT_URI=https://framedata.ru/auth/callback/google
       - VK_CLIENT_ID=${VK_CLIENT_ID:-}
       - VK_CLIENT_SECRET=${VK_CLIENT_SECRET:-}
-      - VK_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/vk
+      - VK_REDIRECT_URI=https://framedata.ru/auth/callback/vk
       - YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID:-}
       - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
       - YANDEX_REDIRECT_URI=https://framedata.ru/auth/callback/yandex

@@ -39,7 +39,7 @@ export default function OfferPage() {
         (публичная оферта). Действует с момента публикации. Актуальная редакция —
         на странице{' '}
         <Link to="/offer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-          таймфрейм.рф/offer
+          framedata.ru/offer
         </Link>.
       </p>
 
@@ -92,8 +92,9 @@ export default function OfferPage() {
         услуг.
       </p>
       <p style={PARAGRAPH}>
-        <b>1.6. Сайт</b> — https://таймфрейм.рф (а также его punycode-зеркало
-        https://xn--80aklbnczmv.xn--p1ai), включая все страницы и поддомены.
+        <b>1.6. Сайт</b> — https://framedata.ru (а также прежний адрес
+        https://таймфрейм.рф и его punycode-форма https://xn--80aklbnczmv.xn--p1ai),
+        включая все страницы и поддомены.
       </p>
       <p style={PARAGRAPH}>
         <b>1.7. Личный кабинет</b> — программный интерфейс взаимодействия Заказчика
@@ -160,7 +161,7 @@ export default function OfferPage() {
       <p style={PARAGRAPH}>
         3.2. Состав услуг по каждому Тарифу определяется на странице{' '}
         <Link to="/pricing" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-          таймфрейм.рф/pricing
+          framedata.ru/pricing
         </Link>
         {' '}и может включать в себя:
       </p>
@@ -286,7 +287,7 @@ export default function OfferPage() {
       <p style={PARAGRAPH}>
         5.1. Стоимость услуг по каждому Тарифу указывается на странице{' '}
         <Link to="/pricing" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-          таймфрейм.рф/pricing
+          framedata.ru/pricing
         </Link>
         {' '}в российских рублях и является публичной офертой по смыслу ст. 437
         ГК РФ.
@@ -344,7 +345,7 @@ export default function OfferPage() {
         Исполнитель автоматически списывает стоимость выбранного Заказчиком Тарифа
         и периода (1 месяц или 1 год) согласно действующим ценам на странице{' '}
         <Link to="/pricing" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-          таймфрейм.рф/pricing
+          framedata.ru/pricing
         </Link>
         , и Подписка становится платной. В дальнейшем Подписка продлевается
         автоматически в порядке, предусмотренном Договором о рекуррентных платежах.
