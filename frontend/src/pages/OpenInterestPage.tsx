@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, ListFilter, Globe2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import DelayedDataBadge from '../components/DelayedDataBadge';
 import ChartTabs from '../components/ChartTabs';
 import OiScreenerTable from '../components/oi/OiScreenerTable';
 import AnimatedHeight from '../components/AnimatedHeight';
@@ -741,6 +742,13 @@ export default function OpenInterestPage() {
           helpLink="/methodology/oi"
         />
       </div>
+
+      {/* Нудж «данные с задержкой» — Free/гость видят ОИ по вчерашний день
+          (data_delay_hours=24 в features.py → get_effective_end_date). */}
+      <DelayedDataBadge
+        message="— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке."
+        cta="Открыть свежие данные →"
+      />
 
       {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
           [вкладки + панель] (как на «Деньгах в фондах»). */}

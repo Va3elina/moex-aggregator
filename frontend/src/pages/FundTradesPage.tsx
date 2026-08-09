@@ -57,7 +57,7 @@ import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFu
 import Donut from '../components/funds/Donut';
 import InstrumentIcon from '../components/InstrumentIcon';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
-import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
+import DelayedDataBadge from '../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import PortfolioFundPicker, { defaultPortfolioTickers } from '../components/fundtrades/PortfolioFundPicker';

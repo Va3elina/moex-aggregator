@@ -65,7 +65,7 @@ import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolio
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
-import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
+import DelayedDataBadge from '../../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
