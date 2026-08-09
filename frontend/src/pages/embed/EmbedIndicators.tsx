@@ -162,10 +162,10 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
   // Боллинджер и профиль объёма временно скрыты из меню (Вадим, 04.08.2026).
   // hiddenFromMenu, а не удаление: у кого они уже добавлены — продолжают
   // рисоваться и настраиваться, вернуть в меню = снять один флаг.
-  // ⚠️ Скрытие относится ТОЛЬКО к базису цены: на ряде ОИ полосы Боллинджера
-  // открыты (решение владельца) — там они и полезнее, потому что показывают,
-  // насколько позиция ушла от своего обычного коридора.
-  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', hiddenFromMenu: true, oiOk: true },
+  // ⚠️ Скрыт на ОБОИХ базисах: короткое время Боллинджер был открыт для ряда
+  // ОИ, но Вадим 09.08.2026 попросил убрать его из меню совсем. Поэтому у bb
+  // нет oiOk — «доступен хотя бы на одном базисе» не выполняется нигде.
+  bb: { label: 'Полосы Боллинджера', shortName: 'Боллинджер', title: (i) => `Боллинджер ${i.length}×${i.mult ?? 2}`, defLength: 20, defMult: 2, defaultPane: 0, overlayOk: true, hasSource: true, lengthLabel: 'Длина', hiddenFromMenu: true },
   // 30/70 — канон Уайлдера, тот же дефолт в TradingView и любом терминале.
   // Середина 50 отделяет бычью половину диапазона от медвежьей.
   rsi: {
@@ -197,8 +197,9 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
 const basisOf = (i: IndicatorInst): IndBasis => i.basis ?? 'price';
 
 /**
- * Виды, доступные для данного базиса. Скрытие из меню (hiddenFromMenu) относится
- * только к цене, доступность на ОИ — к флагу oiOk.
+ * Виды, доступные для данного базиса: на цене решает hiddenFromMenu, на ОИ —
+ * флаг oiOk. Вид без единого доступного базиса (Боллинджер, профиль объёма) не
+ * появляется в меню вообще, но уже добавленные экземпляры живут и настраиваются.
  */
 function kindAllowedOn(kind: IndicatorKind, basis: IndBasis): boolean {
   const d = KINDS[kind];
@@ -869,8 +870,9 @@ export function AddIndicatorMenu({ api, hasVolume, bases = PRICE_ONLY, onPickBas
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 222 }}>
       {/* Вид показываем, если он доступен ХОТЯ БЫ на одном базисе окна: так
-          Боллинджер, скрытый на цене, появляется в окне ОИ, а объёмы исчезают
-          из меню, когда цена выключена (считать их не от чего). */}
+          объёмы исчезают из меню, когда цена выключена (считать их не от чего),
+          а Боллинджер и профиль объёма не показываются нигде — у них не открыт
+          ни один базис. */}
       {(Object.keys(KINDS) as IndicatorKind[]).filter((k) => {
         const ok = allowedBases(k, bases);
         return ok.length > 0 && (hasVolume || !KINDS[k].needsVolume);
@@ -1131,8 +1133,8 @@ function RowMenu({ inst, api, bases, onSettings }: {
   const own = inst.pane > 0;
   const side = useSubmenuSide(!!sub);
   // Смена базиса уже добавленному индикатору. Пункт есть, только если в окне
-  // реально больше одного подходящего ряда: на цене Боллинджер, например, скрыт,
-  // и перевести его туда с ОИ нельзя (allowedBases это учитывает).
+  // реально больше одного подходящего ряда: у объёмов базис один (цена), а у
+  // скрытых видов вроде Боллинджера — ни одного, и пункт не появится.
   const basisOpts = (bases ?? []).filter((b) => kindAllowedOn(inst.kind, b.id));
 
   return (
