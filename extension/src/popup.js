@@ -4,7 +4,7 @@
   'use strict';
 
   // Адрес API (host_permission в manifest разрешает cross-origin fetch отсюда).
-  var API_BASE = 'https://xn--80aklbnczmv.xn--p1ai';
+  var API_BASE = 'https://framedata.ru';
 
   var input = document.getElementById('tok');
   var statusEl = document.getElementById('status');
