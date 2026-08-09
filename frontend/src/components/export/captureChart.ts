@@ -8,18 +8,24 @@
  *   - useCORS: true — для возможных внешних логотипов/изображений
  *   - logging: false — silence development noise
  *   - backgroundColor: null — наследовать через computed background
- *   - scale: window.devicePixelRatio — retina-quality export
+ *   - scale: exportPixelScale — плотность снимка не ниже 2x, независимо от экрана
  */
+
+import { exportPixelScale } from './exportScale';
 
 /**
  * Снимает HTMLElement в HTMLCanvasElement.
  * @param element DOM element для capture
  * @param signal AbortSignal для cancellation если modal закрылся до конца
+ * @param scale плотность снимка; по умолчанию exportPixelScale(element).
+ *              Вызывающий передаёт своё значение, если тем же множителем
+ *              масштабирует шапку кадра и аннотации (ExportModal).
  * @throws Error если capture не удался
  */
 export async function captureChart(
     element: HTMLElement,
     signal?: AbortSignal,
+    scale?: number,
 ): Promise<HTMLCanvasElement> {
     if (signal?.aborted) {
         throw new Error('Capture aborted');
@@ -39,9 +45,10 @@ export async function captureChart(
         useCORS: true,
         logging: false,
         backgroundColor: null,
-        // scale: devicePixelRatio даёт sharp output на retina screens.
-        // На 1x screens = 1, на 2x = 2 (canvas в 4 раза больше пикселей).
-        scale: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+        // Плотность снимка не привязана к плотности экрана: обычный монитор
+        // (dpr 1) раньше давал PNG ровно в размер элемента и заметное мыло,
+        // ретина при тех же данных — вдвое более чёткий файл. См. exportScale.
+        scale: scale ?? exportPixelScale(element),
         // Игнорируем элементы которые не должны попасть в snapshot:
         //   - сама кнопка ChartCaptureButton (data-export-ignore)
         //   - tooltip overlay'ы (если открыты при capture — не нужны)

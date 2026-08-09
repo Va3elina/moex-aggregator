@@ -106,14 +106,15 @@ function contrastColor(alpha = 1, host?: Element | null): string {
 }
 
 /**
- * DPR, с которым html2canvas снял фон (captureChart.ts: scale = devicePixelRatio) —
- * background на ретине физически крупнее в пикселях при том же визуальном размере
- * графика. Толщину штриха/размер шрифта аннотации (canvas-пиксельные константы)
- * нужно домножать на него — иначе на высоком DPR штрих того же preset выглядит
- * тоньше относительно картинки, чем на обычном экране. Тот же паттерн, что
- * dpr-scaling шрифтов рамки в composeFramedCanvas.ts.
+ * Плотность, с которой html2canvas снял фон (см. exportScale.ts) — background
+ * физически крупнее в пикселях, чем визуальный размер графика на экране.
+ * Толщину штриха/размер шрифта аннотации (canvas-пиксельные константы) нужно
+ * домножать на неё — иначе на плотном снимке штрих того же preset выглядит
+ * тоньше относительно картинки. Тот же паттерн, что dpr-scaling шрифтов рамки
+ * в composeFramedCanvas.ts. Значение приходит пропом от ExportModal, чтобы
+ * совпадать со снимком ровно; fallback — плотность экрана.
  */
-function canvasDpr(): number {
+function fallbackCanvasDpr(): number {
     return typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
 }
 
@@ -132,6 +133,8 @@ interface Props {
     tool: AnnotationTool;
     color: string;
     strokeWidth: number;
+    /** Плотность снимка-фона (exportPixelScale). По умолчанию — плотность экрана. */
+    pixelScale?: number;
     /** Callback при изменении истории (для toolbar disabled-state на Undo/Redo) */
     onHistoryChange?: () => void;
     /**
@@ -144,7 +147,11 @@ interface Props {
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
-    ({ background, tool, color, strokeWidth, onHistoryChange, onShapeCreated }, ref) => {
+    ({ background, tool, color, strokeWidth, pixelScale, onHistoryChange, onShapeCreated }, ref) => {
+        const canvasDpr = useCallback(
+            () => pixelScale ?? fallbackCanvasDpr(),
+            [pixelScale],
+        );
         const canvasRef = useRef<HTMLCanvasElement>(null);
         const containerRef = useRef<HTMLDivElement>(null);
         const fabricRef = useRef<FabricCanvas | null>(null);
@@ -588,7 +595,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 // dedup внутри saveSnapshot по равенству снимков.
                 saveSnapshot();
             }
-        }, [tool, color, strokeWidth, saveSnapshot, fabric]);
+        }, [tool, color, strokeWidth, saveSnapshot, fabric, canvasDpr]);
 
         // Scale-to-fit container: native canvas size остаётся = background
         // (drawing px-perfect), CSS scales display size. ResizeObserver реагирует
