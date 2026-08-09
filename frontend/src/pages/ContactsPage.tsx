@@ -6,18 +6,20 @@
  * службы поддержки клиентов Предприятия, включая адрес электронной
  * почты и номер телефона», «Адрес местонахождения Предприятия»).
  *
+ * Телефон намеренно не публикуется: поддержка ведётся по email и в
+ * Телеграме (SUPPORT_TELEGRAM).
+ *
  * Placeholders для заполнения перед подписанием договора с банком:
- *   - PHONE_PLACEHOLDER — рабочий номер телефона
  *   - LEGAL_NAME_PLACEHOLDER — ИП или ООО (полное наименование)
  *   - LEGAL_ADDRESS_PLACEHOLDER — юр. адрес как в ЕГРЮЛ/ЕГРИП
  *   - INN_PLACEHOLDER — ИНН
  *   - OGRN_PLACEHOLDER — ОГРНИП / ОГРН
  */
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, MapPin, Building2 } from 'lucide-react';
+import { ArrowLeft, Mail, Send, MapPin, Building2 } from 'lucide-react';
 
 const SUPPORT_EMAIL = 'frameinfo@mail.ru';
-const SUPPORT_PHONE = '+7 (960) 263-31-22';
+const SUPPORT_TELEGRAM = 'https://t.me/TorSasha';
 const LEGAL_NAME = 'ИП Тория Александр Роландович';
 const LEGAL_ADDRESS = '190020, г. Санкт-Петербург, ул. 8-я Красноармейская, д. 21А, кв. 5';
 const INN = '782627792630';
@@ -77,14 +79,16 @@ export default function ContactsPage() {
             hint="Среднее время ответа — в течение 1 рабочего дня."
           />
           <ContactRow
-            icon={<Phone size={18} />}
-            label="Телефон"
+            icon={<Send size={18} />}
+            label="Телеграм"
             value={
               <a
-                href={`tel:${SUPPORT_PHONE.replace(/[^+\d]/g, '')}`}
+                href={SUPPORT_TELEGRAM}
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{ color: 'var(--accent)' }}
               >
-                {SUPPORT_PHONE}
+                @TorSasha
               </a>
             }
             hint="Режим работы: понедельник–пятница, 10:00–19:00 МСК."
