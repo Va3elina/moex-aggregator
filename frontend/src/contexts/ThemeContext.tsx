@@ -41,7 +41,7 @@ export const ThemeContext = createContext<ThemeContextType | undefined>(undefine
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<ThemeId>(() => {
         const saved = localStorage.getItem('theme') as ThemeId;
-        return THEMES.some(t => t.id === saved) ? saved : 'editorial-dark';
+        return THEMES.some(t => t.id === saved) ? saved : 'editorial-light';
     });
 
     // Accent зафиксирован на pumpkin (рыжий — фирменный цвет Фрейма).
