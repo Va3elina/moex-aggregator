@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom';
 import { X, Download, Loader2, AlertCircle, Pencil, Copy, Check } from 'lucide-react';
 import type { ExportModalState, ExportMetadata } from './types';
 import { captureChart } from './captureChart';
+import { exportPixelScale } from './exportScale';
 import { composeFramedCanvas } from './composeFramedCanvas';
 import { downloadCanvas, copyCanvasToClipboard } from './downloadCanvas';
 import ChartPreview from './ChartPreview';
@@ -115,6 +116,10 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     );
     const [strokeWidth, setStrokeWidth] = useState<number>(STROKE_PRESETS[1].value);
     const annotationRef = useRef<AnnotationCanvasHandle>(null);
+    // Плотность снимка, с которой реально сняли график. Одно значение на весь
+    // pipeline: html2canvas, шрифты рамки и кисть аннотаций — иначе на экране
+    // с dpr 1 рамка считалась бы вдвое мельче графика.
+    const pixelScaleRef = useRef<number>(1);
     // Force-update toolbar disabled-state когда меняется history (undo/redo/clear).
     // Не используем object count прямо — fabric meняет его внутренне, реагируем
     // через onHistoryChange callback который бампает counter.
@@ -159,8 +164,12 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
 
             try {
                 let raw: HTMLCanvasElement;
+                // Считаем ДО capture и по тому же элементу, что снимаем: ниже
+                // exportStyles уже откатятся, и размер элемента может отличаться.
+                const pixelScale = exportPixelScale(targetElement);
+                pixelScaleRef.current = pixelScale;
                 try {
-                    raw = await captureChart(targetElement, ac.signal);
+                    raw = await captureChart(targetElement, ac.signal, pixelScale);
                 } finally {
                     // Откат ДО любых await ниже — живой график не должен ждать
                     // весь остаток pipeline с раздутым (под captureFontScale)
@@ -195,7 +204,9 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                 const textSecondary = computed.getPropertyValue('--text-secondary').trim() || '#6B6B6B';
                 const accent = computed.getPropertyValue('--accent').trim() || '#FF5C2B';
 
-                const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+                // dpr рамки = плотность снимка (не плотность экрана): шапка и
+                // подвал должны быть в том же масштабе, что растр графика.
+                const dpr = pixelScale;
 
                 const framed = composeFramedCanvas(raw, {
                     background: bgColor,
@@ -426,6 +437,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                         <AnnotationCanvas
                             ref={annotationRef}
                             background={state.canvas}
+                            pixelScale={pixelScaleRef.current}
                             tool={tool}
                             color={color}
                             strokeWidth={strokeWidth}
