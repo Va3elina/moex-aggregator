@@ -37,6 +37,8 @@ export interface IndicatorLimits {
     // max_history_years удалён 2026-07-30 вместе с мёртвым гейтом сезонности —
     // бэкенд его никогда не проверял (см. features.py, блок "seasonality").
     data_delay_hours?: number;
+    // fund_trades: задержка меряется не часами, а снапшотами свежести (0 = свежий).
+    snapshot_delay?: number;
     // Per-indicator flags:
     mode_imoex?: boolean;
     mode_all?: boolean;

@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Scale } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -20,8 +19,6 @@ import HelpTooltip from '../components/HelpTooltip';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import ChartSettings from '../components/chart/ChartSettings';
-import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
@@ -50,8 +47,6 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 };
 
 export default function BuffettPage() {
-    const { isAuthenticated } = useAuth();
-    const navigate = useNavigate();
     const isMobile = useIsMobile();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:buffett:viewMode', 'cap-gdp');
@@ -325,15 +320,15 @@ export default function BuffettPage() {
                     value={period}
                     onChange={setPeriod}
                     onLockedClick={(p) => {
-                        // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
-                        if (!buffAccess.canUsePeriod(p)) {
-                            const tier = buffAccess.requiredTierFor({ period: p });
-                            if (tier) {
-                                showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p] ?? p}»`, indicator: 'buffett' });
-                                return;
-                            }
+                        // Только tier-блокировка по матрице. Легаси-гейт гостя
+                        // (isPeriodAllowed → /login) убран 2026-08: индикатор
+                        // бесплатен целиком, и гость должен видеть все периоды,
+                        // а не упираться в общий guest-лимит '1y' из
+                        // config/accessControl (он остался у OI и фондов).
+                        const tier = buffAccess.requiredTierFor({ period: p });
+                        if (tier) {
+                            showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p] ?? p}»`, indicator: 'buffett' });
                         }
-                        if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
                     }}
                 />
                 </div>

@@ -517,6 +517,7 @@ export default function MobileOpenInterestPage() {
           .fm-pageheader, иначе плашка липнет к краям экрана. */}
       <div style={{ padding: '0 clamp(10px, 3.4vw, 14px)', flexShrink: 0 }}>
         <DelayedDataBadge
+          indicator="open_interest"
           variant="compact"
           compactMessage="— без сегодняшнего дня."
           compactCta="Свежие данные →"

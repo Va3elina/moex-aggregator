@@ -315,8 +315,12 @@ export default function MobileStrengthPage() {
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
-            // Глубокие периоды (5Л/Всё) для гостя/Free под замком —
-            // backend ответит 403. canUsePeriod читает матрицу тарифов.
+            // Замок по матрице тарифов (canUsePeriod), чтобы не слать
+            // обречённый запрос — backend ответил бы 403.
+            // С 2026-08 «Сила рынка» бесплатна целиком (все периоды, вселенные
+            // и USD на каждом тире), так что здесь и ниже allowed всегда true и
+            // замки не рисуются. Проверки оставлены: они обобщённые, читают
+            // матрицу и оживут сами, если ограничение вернут.
             const allowed = strengthAccess.isLoading || strengthAccess.canUsePeriod(p);
             return (
               <button

@@ -1,18 +1,22 @@
 import { Clock } from 'lucide-react';
-import { useCurrentTier } from '../contexts/TierFeaturesContext';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 /**
- * DelayedDataBadge — постоянное честное напоминание для Free/гостя, что данные
- * индикатора показываются С ЗАДЕРЖКОЙ, а realtime открывается по подписке.
+ * DelayedDataBadge — постоянное честное напоминание, что данные индикатора
+ * показываются С ЗАДЕРЖКОЙ, а realtime открывается по подписке.
  * Модель delayed-data freemium: видно всё, но не самое свежее — и об этом прямо
  * сообщаем + CTA на тарифы.
  *
- * Платные тиры (Basic/Pro/admin) видят свежий срез → бейдж скрыт.
- * Тиры с задержкой должны совпадать с features.py INDICATOR_FEATURES:
- *   fund_trades   — snapshot_delay=1 (free/guest)
- *   open_interest — data_delay_hours=24 (free/guest)
- *   cbr_flows     — data_delay_hours=24 (free/guest)
- * Если гейт в features.py снимут — убрать и бейдж, иначе врём пользователю.
+ * Показ РЕШАЕТ МАТРИЦА, а не тир (правка 2026-08). Раньше бейдж был захардкожен
+ * на `tier === 'guest' || 'free'`: когда задержку у cbr_flows сняли, плашка
+ * осталась бы висеть и врать. Теперь читаем реальный лимит текущего тира из
+ * features.py через useTierAccess(indicator):
+ *   data_delay_hours > 0  — open_interest, ...
+ *   snapshot_delay   > 0  — fund_trades (задержка меряется снапшотами)
+ * Снимают гейт в features.py → бейдж исчезает сам, без правок фронта.
+ *
+ * Пока матрица/роль не догрузились (isLoading) — бейдж скрыт: лучше не показать
+ * правдивую плашку на миг, чем мигнуть ложной платному юзеру.
  *
  * variant='banner' (дефолт) — крупный баннер под шапкой страницы.
  * variant='compact' — маленькая контекстная плашка рядом с самими цифрами
@@ -24,20 +28,25 @@ import { useCurrentTier } from '../contexts/TierFeaturesContext';
  * Значок — наш (lucide Clock в accent), НЕ эмодзи.
  */
 export default function DelayedDataBadge({
+  indicator = 'fund_trades',
   variant = 'banner',
   message = '— вы видите предыдущую выборку фондов, а не самую свежую.',
   compactMessage = '— это не самая свежая выборка.',
   cta = 'Открыть свежий срез →',
   compactCta = 'Свежий срез →',
 }: {
+  /** Ключ индикатора в INDICATOR_FEATURES — по нему берётся реальная задержка. */
+  indicator?: string;
   variant?: 'banner' | 'compact';
   message?: string;
   compactMessage?: string;
   cta?: string;
   compactCta?: string;
 }) {
-  const tier = useCurrentTier();
-  const delayed = tier === 'guest' || tier === 'free';
+  const { limits, isLoading } = useTierAccess(indicator);
+  const delayed =
+    !isLoading &&
+    ((limits.data_delay_hours ?? 0) > 0 || (limits.snapshot_delay ?? 0) > 0);
   if (!delayed) return null;
 
   const compact = variant === 'compact';

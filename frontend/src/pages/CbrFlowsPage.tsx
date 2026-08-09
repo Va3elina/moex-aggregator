@@ -17,7 +17,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-import DelayedDataBadge from '../components/DelayedDataBadge';
 import { METHODOLOGY } from '../data/methodology';
 import {
   getCbrFlows,
@@ -219,12 +218,11 @@ export default function CbrFlowsPage() {
         sourceNote="Источник: Банк России (ОРФР)"
       />
 
-      {/* Нудж «данные с задержкой» — Free/гость видят поток по вчерашний день
-          (data_delay_hours=24 в features.py → get_effective_end_date). */}
-      <DelayedDataBadge
-        message="— вы видите данные по вчерашний день, свежий срез открыт по подписке."
-        cta="Открыть свежие данные →"
-      />
+      {/* Нудж «данные с задержкой» убран 2026-08 вместе с самой задержкой
+          (cbr_flows.data_delay_hours=0 на всех тирах в features.py). Данные ЦБ
+          месячные и приезжают ручным ингестом — «минус сутки» ничего не значили.
+          Free по-прежнему ограничен составом участников, но это не про свежесть,
+          и отдельный бейдж тут не нужен: locked-категории видны в пикере. */}
 
       {/* Карточка с вкладками: обёртка несёт единую editorial-тень. */}
       <div className="tabbed-card">

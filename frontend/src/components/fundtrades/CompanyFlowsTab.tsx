@@ -604,6 +604,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     что и InstrumentSearchModal). */}
                 <button
                     type="button"
+                    data-tour="ft-company-asset"
                     onClick={() => setPickerOpen(true)}
                     title={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
@@ -755,7 +756,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 получают одинаковое окно месяцев — режимы синхронны. */}
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
-            <div ref={chartAnchorRef} style={{ position: 'relative' }}>
+            <div ref={chartAnchorRef} data-tour="ft-company-chart" style={{ position: 'relative' }}>
                 {mode === 'map' ? (
                     <CompanyFlowsPriceMap
                         months={visibleMonths}

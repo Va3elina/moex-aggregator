@@ -140,7 +140,7 @@
 /* лёгкий hover для кнопок-хрома топбара/панели */
 .sb-hoverable:hover { background: var(--hover) !important; color: var(--text) !important; }
 
-/* Кнопки окна панели (⤢ ◐ ×) — ховер по §4.3 */
+/* Кнопки окна панели (⤢ ×) — ховер по §4.3 */
 .sb-winbtn:hover { background: var(--hover); color: var(--text); }
 .sb-winbtn-close:hover { background: var(--c-down); color: #fff; }
 
