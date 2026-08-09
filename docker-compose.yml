@@ -187,7 +187,7 @@ services:
       - VK_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/vk
       - YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID:-}
       - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
-      - YANDEX_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/yandex
+      - YANDEX_REDIRECT_URI=https://framedata.ru/auth/callback/yandex
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Cbonds (ПИФ-данные: СЧА/пай/состав через fetch_funds_realtime.py).
       # Без этих vars демон шлёт пустые креды → Cbonds «limited rights» → данные встают.
