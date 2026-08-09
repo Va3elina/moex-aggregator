@@ -35,7 +35,7 @@ import AnnotationCanvas, {
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
-import { useTheme } from '../../contexts/ThemeContext';
+import { usePortalTheme } from '../../hooks/usePortalTheme';
 
 /** Ждать N кадров подряд (не N независимых rAF-промисов запущенных разом —
  *  каждый следующий rAF планируется ТОЛЬКО после того, как разрешился предыдущий).
@@ -94,9 +94,9 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
 
     // Модалка уходит порталом в body — вне .sb-panel, на которой в песочнице
     // висит собственный data-theme панели. Без явного атрибута окно красилось бы
-    // темой оболочки: светлая модалка поверх тёмной панели. Вне песочницы
-    // useTheme().theme = корневая тема, так что визуально ничего не меняется.
-    const { theme } = useTheme();
+    // темой оболочки: светлая модалка поверх тёмной панели. Вне песочницы тема
+    // поддерева и корневая совпадают, и хук ничего не добавляет.
+    const portalTheme = usePortalTheme();
 
     // Annotation state — изолировано от phase, чтобы tool/color не сбрасывались
     // при downloading → preview transitions.
@@ -320,10 +320,11 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
 
     return createPortal(
         <div
-            data-theme={theme}
+            {...portalTheme}
             className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
-            // color — портал в body наследовал бы текст темы ОБОЛОЧКИ, см. DIALOG_BACKDROP в EmbedIndicators
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)', color: 'var(--text-primary)' }}
+            // color из хука (портал в body наследовал бы текст темы ОБОЛОЧКИ)
+            // приезжает только в песочнице; свой backgroundColor держим всегда.
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)', ...portalTheme.style }}
             onClick={tryClose}
             role="dialog"
             aria-modal="true"

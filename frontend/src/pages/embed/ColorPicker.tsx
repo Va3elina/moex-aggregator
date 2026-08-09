@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { useTheme } from '../../contexts/ThemeContext';
+import { usePortalTheme } from '../../hooks/usePortalTheme';
 
 /** Стиль одного элемента индикатора. */
 export interface ElStyle {
@@ -70,9 +70,9 @@ export function ColorButton({ value, onChange, showLine = true }: {
   const popRef = useRef<HTMLDivElement | null>(null);
   // Портал в body лежит ВНЕ .sb-panel, где в песочнице висит собственный
   // data-theme панели, поэтому фон/рамка поповера (var(--bg-*)/--text-primary)
-  // резолвились бы от <html> — темой оболочки. Тему берём из контекста: в
-  // песочнице её подменяет SandboxThemeScope, везде ещё она равна корневой.
-  const { theme } = useTheme();
+  // резолвились бы от <html> — темой оболочки. Хук ставит атрибут только там,
+  // где тема поддерева разошлась с корневой, то есть только в песочнице.
+  const portalTheme = usePortalTheme();
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -113,7 +113,7 @@ export function ColorButton({ value, onChange, showLine = true }: {
         {showLine && <LinePreview color={color} width={value.width ?? 2} dash={value.dash ?? 'solid'} w={26} />}
       </button>
       {open && anchor && createPortal(
-        <div ref={popRef} data-theme={theme} style={{ ...POPOVER, top: anchor.top, left: anchor.left }}>
+        <div ref={popRef} {...portalTheme} style={{ ...POPOVER, top: anchor.top, left: anchor.left, ...portalTheme.style }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${HUES.length}, 1fr)`, gap: 3 }}>
             {GRID.flat().map((c) => (
               <button

@@ -1,6 +1,5 @@
 import { useTheme } from '../contexts/ThemeContext';
 import { useAnalytics } from '../contexts/AnalyticsContext';
-import ThemeGlyph from './ThemeGlyph';
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -30,8 +29,51 @@ export default function ThemeToggle() {
         height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
       }}
     >
-      {/* Пара Sun/Moon с кроссфейдом — общий компонент (та же анимация в песочнице). */}
-      <ThemeGlyph dark={isDark} size="clamp(13px, 1vw + 0.3rem, 17px)" />
+      {/* Sun — видна в light. Лучи разлетаются + центр пульсирует. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="absolute transition-all duration-500 ease-out"
+        style={{
+          width: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          height: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          opacity: isDark ? 0 : 1,
+          transform: isDark ? 'rotate(-90deg) scale(0.4)' : 'rotate(0) scale(1)',
+        }}
+      >
+        <circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="var(--accent)" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="M4.93 4.93l1.41 1.41" />
+        <path d="M17.66 17.66l1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="M4.93 19.07l1.41-1.41" />
+        <path d="M17.66 6.34l1.41-1.41" />
+      </svg>
+
+      {/* Moon — видна в dark. Acccent-fill, плавно влетает. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="absolute transition-all duration-500 ease-out"
+        style={{
+          width: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          height: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          opacity: isDark ? 1 : 0,
+          transform: isDark ? 'rotate(0) scale(1)' : 'rotate(90deg) scale(0.4)',
+        }}
+      >
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="var(--accent)" stroke="var(--accent)" />
+      </svg>
     </button>
   );
 }
