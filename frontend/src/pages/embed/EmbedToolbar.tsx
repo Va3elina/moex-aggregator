@@ -193,8 +193,10 @@ export function EmbedFrame({
             )}
             {win.onToggleTheme && (
               <button type="button" onClick={win.onToggleTheme} title="Тема панели" aria-label="Тема панели" className="sb-winbtn" style={sbWinBtn}>
-                {/* 13px — ниже порога компактного глифа: у солнца остаются 4 луча (см. ThemeGlyph). */}
-                <ThemeGlyph dark={!!win.panelDark} size={13} />
+                {/* 16, а не 13 как у соседних lucide-глифов: у солнца рисунок
+                    прижат к периферии виюбокса, на 13px восемь лучей сливались.
+                    Оптический вес при 16 совпадает с соседями. */}
+                <ThemeGlyph dark={!!win.panelDark} size={16} />
               </button>
             )}
             {win.onClose && (
