@@ -33,7 +33,7 @@ import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow, type BasisOption } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -553,7 +553,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       } else {
         out.push(applyFormat({
           id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
-          zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
         }, sf.get('oi')));
@@ -562,28 +561,64 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return out;
   }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get]);
 
-  // Индикаторы считаются от свечей и кладутся на ЛЕВУЮ (ценовую) ось. Порядок
-  // важен: наложения идут ПОСЛЕ нативных серий, чтобы первой в массиве осталась
-  // цена — от неё берут отсчёт магнит и линейка слоя рисования.
+  // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
+  // источник правды), у линий ОИ — поле visible в карте форматов.
+  const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
+  // Линии ОИ уезжают в свою панель целиком (их 1–2, и обе на одной шкале).
+  const oiOwn = useMemo(() => visibleNative.filter((d) => d.id !== 'price'), [visibleNative]);
+  const mainNative = useMemo(() => (oiPane > 0 ? visibleNative.filter((d) => d.id === 'price') : visibleNative), [visibleNative, oiPane]);
+  // ⚠️ Если после переезда на основной панели не осталось НИЧЕГО (цена скрыта) —
+  // возвращаем ОИ наверх: пустая ценовая панель это полоса пустоты во всю ширину
+  // и график без единой линии.
+  // Раньше в условие входила ещё и пустота indSeries[0] (нет наложений). Теперь
+  // это НЕЛЬЗЯ: наложения по базису ОИ сами садятся в панель oiPaneEff, то есть
+  // сборка серий зависит от него — считать его через результат сборки значило бы
+  // замкнуть цикл. Проверки по цене достаточно: наложения по цене без самой цены
+  // теперь тоже не строятся (базис пуст, см. indCandles ниже), так что «на
+  // основной панели пусто» и «цена скрыта» — одно и то же условие.
+  const oiPaneEff = mainNative.length === 0 ? 0 : oiPane;
+
+  // Псевдо-свечи ряда ОИ — основание для индикаторов по базису 'oi'. У точки ОИ
+  // одно значение, поэтому open=high=low=close=value, а volume отсутствует (его
+  // у позиций нет — объёмы и профиль объёма на этом базисе и не предлагаются).
+  //
+  // В режиме «Покупки + Продажи» базиса ОИ НЕТ намеренно: там две равноправные
+  // линии, и одна скользящая, посчитанная молча по одной из них, вводила бы в
+  // заблуждение. UI в этом режиме ОИ как цель не предлагает.
+  const oiCandles = useMemo<Series | null>(() => {
+    const src = oiVariant === 'both' ? undefined : oiSeries.secondary;
+    if (!src || src.length === 0) return null;
+    return src.map((p) => ({ time: p.time, value: p.value, open: p.value, high: p.value, low: p.value, close: p.value }));
+  }, [oiSeries.secondary, oiVariant]);
+
+  // Индикаторы считаются от РЯДОВ ПО БАЗИСАМ. Ценовые кладутся на ЛЕВУЮ (ценовую)
+  // ось, по ОИ — на правую, туда, где сейчас сам ОИ (oiPaneEff). Порядок важен:
+  // наложения идут ПОСЛЕ нативных серий, чтобы первой в массиве осталась цена —
+  // от неё берут отсчёт магнит и линейка слоя рисования.
+  // Цена выключена → базис 'price' пуст → ценовые индикаторы не строятся вовсе
+  // (тот же приём, что у профиля объёма ниже): рисовать MA цены, когда самой цены
+  // на графике нет, значит показывать линию, к которой нечего приложить.
   const toSecFn = useCallback((t: string) => toSec(t, interval !== 24), [interval]);
-  const indSeries = useIndicatorSeries(inds.list, chartData, toSecFn, inds.colorOf);
+  const indCandles = useMemo(
+    () => ({ price: showPrice ? chartData : EMPTY_CANDLES, oi: oiCandles }),
+    [showPrice, chartData, oiCandles],
+  );
+  const indSeries = useIndicatorSeries(inds.list, indCandles, toSecFn, inds.colorOf, 'left', oiPaneEff);
   // Профиль объёма — не серия, а примитив на ценовой серии (он гистограмма по
   // цене, а не по времени). Крепится к 'price': на линии ОИ он отрисовал бы
   // уровни по чужой шкале. Цена скрыта → серии нет → профиля тоже нет.
   const vpSpec = useVolumeProfileSpec(inds.list, showPrice ? chartData : EMPTY_CANDLES, 'price', inds.colorOf);
   const hasVolume = useMemo(() => chartData.some((p) => p.volume != null), [chartData]);
-  // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
-  // источник правды), у линий ОИ — поле visible в карте форматов.
-  const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
+  // Базисы, доступные в этом окне. Цена — пока показана; ОИ — пока есть ряд.
+  // Больше одного → при добавлении индикатора спрашиваем, к чему его применить.
+  const indBases = useMemo<BasisOption[]>(() => {
+    const out: BasisOption[] = [];
+    if (showPrice && chartData.length > 0) out.push({ id: 'price', label: 'Цена' });
+    if (oiCandles) out.push({ id: 'oi', label: labels.secondary });
+    return out;
+  }, [showPrice, chartData.length, oiCandles, labels.secondary]);
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
-  // Линии ОИ уезжают в свою панель целиком (их 1–2, и обе на одной шкале).
-  // ⚠️ Если после переезда на основной панели не осталось НИЧЕГО (цена скрыта,
-  // наложений нет) — возвращаем ОИ наверх: пустая ценовая панель это полоса
-  // пустоты во всю ширину и график без единой линии.
-  const oiOwn = useMemo(() => visibleNative.filter((d) => d.id !== 'price'), [visibleNative]);
-  const mainNative = useMemo(() => (oiPane > 0 ? visibleNative.filter((d) => d.id === 'price') : visibleNative), [visibleNative, oiPane]);
-  const oiPaneEff = mainNative.length === 0 && (indSeries[0] ?? []).length === 0 ? 0 : oiPane;
   const allSeries = useMemo(
     () => [...(oiPaneEff > 0 ? mainNative : visibleNative), ...(indSeries[0] ?? [])],
     [visibleNative, mainNative, oiPaneEff, indSeries],
@@ -594,6 +629,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // тот же тупик, что был при удалении. Заодно это и есть соответствие «панель
   // графика → панель индикатора»: номера панелей не подряд (после удалений
   // остаются дыры), и без него строка искалась бы не в той панели.
+  // ⚠️ Наложения по базису ОИ держат в состоянии pane === 0, а рисуются в панели
+  // oiPaneEff (см. effectivePane в движке) — отдельного номера они сюда не
+  // приносят: панель ОИ и так добавлена строкой ниже. Поэтому фильтр по
+  // «своим» панелям остаётся прежним, и множество номеров получается ровно то
+  // же, что у сборки серий.
   const extraPanes = useMemo(() => {
     const used = [...new Set([
       ...inds.list.filter((i) => i.pane > 0).map((i) => i.pane),
@@ -733,7 +773,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           >
             <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} />
             <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
-            <IndicatorsButton api={inds} hasVolume={hasVolume} />
+            <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} />
           </div>
           {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
               горизонтальные пилюли (2 пункта). Режим и показатель ОИ из тулбара УБРАНЫ:
@@ -748,7 +788,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               (toolbarCompact, см. измеритель выше); title сохраняет текст в тултипе. */}
           <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={toolbarCompact} />
           <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
-          <IndicatorsButton api={inds} hasVolume={hasVolume} compact={toolbarCompact} />
+          <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} compact={toolbarCompact} />
         </div>
       }
       actions={
@@ -794,7 +834,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
             paneOverlay={(i) => (i === 0 ? null : (
-              <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} />
+              <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} oiPane={oiPaneEff} bases={indBases} />
             ))}
             paneSizes={paneSizes}
             onPaneSizesChange={onPaneSizesChange}
@@ -824,7 +864,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
-        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} values={indValues} />
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} values={indValues} oiPane={oiPaneEff} bases={indBases} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}

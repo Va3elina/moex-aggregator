@@ -21,7 +21,8 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, Minimize2, X as XIcon, GripVertical } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical } from 'lucide-react';
+import ThemeGlyph from '../../components/ThemeGlyph';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -31,6 +32,11 @@ import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, Minimize2, X as
  */
 export interface SandboxWindowControls {
   onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void;
+  /** Эффективная тема ЭТОЙ панели (themeOverride || тема оболочки) — нужна кнопке
+   *  «Тема панели», чтобы рисовать анимированный глиф Sun/Moon по состоянию, а не
+   *  статичный «полумесяц». Опционально: у кнопки раньше был только колбэк, и
+   *  сторонние места сборки контекста не обязаны его знать. */
+  panelDark?: boolean;
   /** true — эта панель СЕЙЧАС развёрнута на весь sb-root (SandboxPage рендерит
    *  ТОЛЬКО её вместо шапки+холста). Переключает иконку/подпись кнопки ⤢ на
    *  обратную (⤡ «Свернуть»), onExpand у обеих — один и тот же toggle. */
@@ -187,7 +193,8 @@ export function EmbedFrame({
             )}
             {win.onToggleTheme && (
               <button type="button" onClick={win.onToggleTheme} title="Тема панели" aria-label="Тема панели" className="sb-winbtn" style={sbWinBtn}>
-                <Contrast size={13} />
+                {/* 13px — ниже порога компактного глифа: у солнца остаются 4 луча (см. ThemeGlyph). */}
+                <ThemeGlyph dark={!!win.panelDark} size={13} />
               </button>
             )}
             {win.onClose && (

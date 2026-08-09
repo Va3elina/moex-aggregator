@@ -31,13 +31,17 @@ export type AnnotationTool = 'select' | 'pen' | 'line' | 'arrow' | 'rectangle' |
  * strokeStyle/fillStyle — нужно явно вычислить computed style. Если value
  * не CSS var, возвращается как есть.
  */
-function resolveColor(value: string): string {
+function resolveColor(value: string, host?: Element | null): string {
     if (!value || !value.startsWith('var(')) return value;
     const match = value.match(/var\((--[^,)]+)/);
     if (!match) return value;
     const varName = match[1].trim();
     if (typeof window === 'undefined') return value;
-    const computed = getComputedStyle(document.documentElement)
+    // Считаем от САМОГО холста, а не от <html>: в песочнице у панели своя тема
+    // (data-theme на .sb-panel), и окно экспорта несёт её же — от корня мы взяли
+    // бы токены темы оболочки. Кастомные свойства наследуются, так что вне
+    // песочницы результат тот же, что и раньше.
+    const computed = getComputedStyle(host ?? document.documentElement)
         .getPropertyValue(varName).trim();
     return computed || value;
 }
@@ -78,9 +82,13 @@ function luminance(color: string): number {
  * холст лежит поверх скриншота текущей темы, поэтому контраст к теме читается
  * на обоих фонах.
  */
-function contrastColor(alpha = 1): string {
+function contrastColor(alpha = 1, host?: Element | null): string {
+    // Тема берётся с ближайшего предка холста с data-theme (окно экспорта его
+    // проставляет по теме панели) и лишь затем с корня — иначе на светлой панели
+    // внутри тёмной оболочки окантовка выделения оказывалась белой на белом.
     const t = typeof document !== 'undefined'
-        ? document.documentElement.getAttribute('data-theme')
+        ? (host?.closest('[data-theme]')?.getAttribute('data-theme')
+            ?? document.documentElement.getAttribute('data-theme'))
         : null;
     let light: boolean;
     if (t === 'editorial-light') light = true;
@@ -88,7 +96,7 @@ function contrastColor(alpha = 1): string {
     else {
         // Фоллбэк (нет/неизвестный data-theme) — по яркости фона.
         try {
-            const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary');
+            const bg = getComputedStyle(host ?? document.documentElement).getPropertyValue('--bg-primary');
             light = luminance(bg.trim()) > 0.5;
         } catch {
             light = false;
@@ -235,7 +243,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             // Init brush — sane defaults, потом обновляются через отдельный effect.
             const brush = new fabric.PencilBrush(fc);
             brush.width = strokeWidth * dpr;
-            brush.color = resolveColor(color);
+            brush.color = resolveColor(color, containerRef.current);
             fc.freeDrawingBrush = brush;
 
             // Стартовый снимок — пустой холст (фон в backgroundImage, не в objects).
@@ -264,7 +272,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             // Рамка/маркеры выделения — контраст к теме: дефолтный голубой fabric
             // почти не виден на светлой бумаге. Чёрные на светлой / белые на тёмной,
             // залитые непрозрачные маркеры + жирнее рамка → выделение хорошо видно.
-            const selColor = contrastColor(1);
+            const selColor = contrastColor(1, containerRef.current);
             fc.on('object:added', (e) => {
                 const o = e.target;
                 if (o) o.set({
@@ -317,7 +325,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     if (activeObj && activeObj.type === 'i-text') return;
                     const p = fcLocal.getViewportPoint(opt.e);
                     const fontSize = Math.max(14, strokeWidthRef.current * 6) * dpr;
-                    const c = resolveColor(colorRef.current);
+                    const c = resolveColor(colorRef.current, containerRef.current);
                     // Текст без обводки: пользователь просил убрать чёрную
                     // окантовку глифов. Рисуем чистой заливкой выбранного цвета —
                     // ни stroke-контура, ни shadow-гало.
@@ -346,7 +354,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
 
                 const p = fcLocal.getViewportPoint(opt.e);
                 startPoint = { x: p.x, y: p.y };
-                const c = resolveColor(colorRef.current);
+                const c = resolveColor(colorRef.current, containerRef.current);
                 const w = strokeWidthRef.current * dpr;
                 const common = {
                     stroke: c,
@@ -377,7 +385,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     (activeShape as InstanceType<typeof fabric.Line>).set({ x2: p.x, y2: p.y });
                 } else if (toolRef.current === 'arrow') {
                     fcLocal.remove(activeShape);
-                    const c = resolveColor(colorRef.current);
+                    const c = resolveColor(colorRef.current, containerRef.current);
                     const w = strokeWidthRef.current * dpr;
                     activeShape = new fabric.Path(arrowPath(startPoint.x, startPoint.y, p.x, p.y), {
                         stroke: c, strokeWidth: w, fill: 'transparent',
@@ -549,7 +557,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             fc.hoverCursor = tool === 'select' ? 'move' : 'crosshair';
             const brush = fc.freeDrawingBrush;
             if (brush && fabric) {
-                brush.color = resolveColor(color);
+                brush.color = resolveColor(color, containerRef.current);
                 brush.width = strokeWidth * dpr;
             }
 
@@ -560,7 +568,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             // Контур текста тоже пересобираем под новый цвет.
             const active = fc.getActiveObject();
             if (active && fabric) {
-                const c = resolveColor(color);
+                const c = resolveColor(color, containerRef.current);
                 if (active.type === 'i-text') {
                     const fontSize = Math.max(14, strokeWidth * 6) * dpr;
                     // Чистая заливка без обводки (см. создание текста выше).

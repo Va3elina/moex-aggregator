@@ -35,6 +35,7 @@ import AnnotationCanvas, {
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 /** Ждать N кадров подряд (не N независимых rAF-промисов запущенных разом —
  *  каждый следующий rAF планируется ТОЛЬКО после того, как разрешился предыдущий).
@@ -90,6 +91,12 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
 
     // Tier features — Free → watermark on export.
     const commonFeatures = useCommonFeatures();
+
+    // Модалка уходит порталом в body — вне .sb-panel, на которой в песочнице
+    // висит собственный data-theme панели. Без явного атрибута окно красилось бы
+    // темой оболочки: светлая модалка поверх тёмной панели. Вне песочницы
+    // useTheme().theme = корневая тема, так что визуально ничего не меняется.
+    const { theme } = useTheme();
 
     // Annotation state — изолировано от phase, чтобы tool/color не сбрасывались
     // при downloading → preview transitions.
@@ -168,7 +175,14 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     await document.fonts.ready;
                 }
 
-                const computed = getComputedStyle(document.documentElement);
+                // Цвета кадра снимаем с САМОГО снимаемого элемента, а не с <html>.
+                // В песочнице у каждой панели свой data-theme на .sb-panel, а
+                // корень несёт тему оболочки: читая переменные от корня, мы
+                // рисовали светлые поля/шапку/подвал вокруг тёмного графика (и
+                // наоборот). Кастомные свойства наследуются, поэтому обычного
+                // getComputedStyle(targetElement) достаточно — вне песочницы он
+                // вернёт ровно те же значения, что и корень.
+                const computed = getComputedStyle(targetElement ?? document.documentElement);
                 const bgColor = computed.getPropertyValue('--bg-primary').trim() || '#0E0E10';
                 const textColor = computed.getPropertyValue('--text-primary').trim() || '#0A0A0A';
                 const textSecondary = computed.getPropertyValue('--text-secondary').trim() || '#6B6B6B';
@@ -306,8 +320,10 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
 
     return createPortal(
         <div
+            data-theme={theme}
             className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+            // color — портал в body наследовал бы текст темы ОБОЛОЧКИ, см. DIALOG_BACKDROP в EmbedIndicators
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)', color: 'var(--text-primary)' }}
             onClick={tryClose}
             role="dialog"
             aria-modal="true"

@@ -27,11 +27,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  Activity, ArrowLeftRight, Bell, CalendarDays, Contrast, Grid3x3, Layers, LayoutGrid,
+  Activity, ArrowLeftRight, Bell, CalendarDays, Grid3x3, Layers, LayoutGrid,
   ListFilter, LogOut, Plus, PlusCircle, Scale, SlidersHorizontal, TrendingUp, Wallet, Waves, X as XIcon,
   type LucideIcon,
 } from 'lucide-react';
 import './sandbox.css';
+import ThemeGlyph from '../../components/ThemeGlyph';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { EmbedPidCtx } from '../embed/embedPersist';
 import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
@@ -420,17 +421,32 @@ export default function SandboxPage() {
     setMaximizedId((cur) => (cur === id ? null : id));
   }, []);
 
-  // «Выстроить» §4.4: 1–2 → ряд, 3–6 → 2 колонки, 7+ → 3; отступ 28, зазор 20.
+  // «Выстроить» §4.4: 1–2 → ряд, 3–6 → 2 колонки, 7+ → 3.
+  // Плитки укладываются встык — без полей по краям холста и без зазоров между
+  // окнами (Вадим: «свободное пространство между плитками убрать вообще»).
+  // Остаток от деления ширины/высоты раздаём последней колонке/строке, иначе
+  // накопленное округление вниз оставляло бы полоску холста справа и снизу.
   const arrange = useCallback(() => {
     const rc = canvasRef.current?.getBoundingClientRect(); if (!rc) return;
     setActivePanels((ps) => {
       const n = ps.length; if (!n) return ps;
       const cols = prefs.arrangeCols || (n <= 2 ? n : n <= 6 ? 2 : 3);
       const rows = Math.ceil(n / cols);
-      const M = 28, G = 20;
-      const w = Math.floor((rc.width - M * 2 - G * (cols - 1)) / cols);
-      const h = Math.floor((rc.height - M * 2 - G * (rows - 1)) / rows);
-      return ps.map((p, i) => ({ ...p, x: M + (i % cols) * (w + G), y: M + Math.floor(i / cols) * (h + G), w, h }));
+      const w = Math.floor(rc.width / cols);
+      const h = Math.floor(rc.height / rows);
+      return ps.map((p, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        // Последняя плитка в ряду тянется до правого края — так неполный
+        // последний ряд (n не кратно cols) тоже не оставляет дыры.
+        const lastInRow = c === cols - 1 || i === n - 1;
+        return {
+          ...p,
+          x: c * w,
+          y: r * h,
+          w: lastInRow ? Math.round(rc.width) - c * w : w,
+          h: r === rows - 1 ? Math.round(rc.height) - r * h : h,
+        };
+      });
     });
   }, [setActivePanels, prefs]);
 
@@ -614,6 +630,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               maximized: true,
               onClose: () => close(maximizedPanel.id),
               onToggleTheme: () => setPanelTheme(maximizedPanel.id),
+              panelDark: (maximizedPanel.themeOverride || st.sbTheme) === 'dark',
               onResize: (w, h) => resizePanel(maximizedPanel.id, w, h),
             }}
           >
@@ -720,7 +737,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             )}
           </div>
           <button type="button" className="sb-hoverable" onClick={toggleTheme} title="Тема оболочки" style={chromeBtn}>
-            <Contrast size={16} />
+            <ThemeGlyph dark={st.sbTheme === 'dark'} size={16} />
           </button>
           <button type="button" className="sb-hoverable" onClick={() => setPrefsOpen(true)} title="Настройки песочницы" style={chromeBtn}>
             <SlidersHorizontal size={15} />
@@ -767,7 +784,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id), panelDark: eff === 'dark', onResize: (w, h) => resizePanel(p.id, w, h) }}>
                 {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
                     две панели одного индикатора живут независимо (§2 мокапа). */}
                 <EmbedPidCtx.Provider value={p.id}>

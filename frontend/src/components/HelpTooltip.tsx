@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom';
 import { HelpCircle, Info, X, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { MethodologyEntry } from '../data/methodology';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface HelpTooltipProps {
   /** Готовая запись из METHODOLOGY. */
@@ -52,6 +53,11 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
   const [isMobile, setIsMobile] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement>(null);
+  // В float-режиме поповер уезжает порталом в body и теряет data-theme панели
+  // песочницы (у каждой панели она своя) — фон/рамка резолвились бы от <html>,
+  // то есть темой оболочки. Ставим атрибут всегда: в обычном (не портальном)
+  // режиме и вне песочницы значение совпадает с тем, что и так наследуется.
+  const { theme } = useTheme();
 
   useEffect(() => {
     const check = () => setIsMobile(window.matchMedia('(hover: none)').matches);
@@ -127,6 +133,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
   const popover = open && (
     <div
       ref={popoverRef}
+      data-theme={theme}
       role="tooltip"
       onMouseEnter={hoverOpen}
       onMouseLeave={hoverClose}
