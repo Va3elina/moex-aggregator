@@ -135,8 +135,18 @@ export function useOnboardingTour(
     // consent → таймер стартует сразу после закрытия баннера.
     if (consent === null) return;
     if (isFirstVisit && !autoOpenedRef.current) {
-      autoOpenedRef.current = true;
-      const t = setTimeout(() => setOpen(true), 800);
+      // Флаг поднимаем В МОМЕНТ открытия, а не при постановке таймера.
+      // Иначе связка «ref до таймера + clearTimeout в cleanup» самоблокируется:
+      // любой перезапуск эффекта в течение 800 мс гасит таймер, а поднятый флаг
+      // не даёт поставить новый — тур молча теряется до конца сессии.
+      // В dev это происходит ВСЕГДА: StrictMode прогоняет эффект дважды
+      // (mount → cleanup → mount), поэтому локально не открывался ни один тур.
+      // На проде эффект одиночный, но тот же сценарий возможен при смене
+      // consent/gatedBy сразу после mount.
+      const t = setTimeout(() => {
+        autoOpenedRef.current = true;
+        setOpen(true);
+      }, 800);
       return () => clearTimeout(t);
     }
   }, [isFirstVisit, options?.gatedBy, consent]);

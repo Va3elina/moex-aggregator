@@ -65,6 +65,8 @@ export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryBut
                 onClick={onClick}
                 title={title}
                 aria-label={title}
+                // Якорь анонс-тура «Новое: Терминал» (data/tours/terminal-intro).
+                data-tour="header-terminal"
                 // Размеры — классами, НЕ инлайном: инлайн-style бьёт любой
                 // xl:-класс по специфичности, и подпись не раскрывалась бы
                 // (кнопка оставалась кружком на любой ширине).

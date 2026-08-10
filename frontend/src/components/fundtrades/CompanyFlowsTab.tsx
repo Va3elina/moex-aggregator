@@ -702,7 +702,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 />
 
                 {/* Режим — один плоский ряд. «От капитализации» появляется
-                    только у бумаг с free-float капой (акции из MOEXBMI). */}
+                    только у бумаг с free-float капой (акции из MOEXBMI).
+                    Обёртка — якорь онбординг-тура (шаг «Три взгляда на бумагу»);
+                    display:flex, чтобы в flex-ряду контролов ничего не поехало. */}
+                <div data-tour="ft-company-modes" style={{ display: 'flex' }}>
                 <SegmentedControl<ChartMode>
                     options={visibleModes.map(m => ({ key: m, label: MODE_LABELS[m] }))}
                     value={effectiveMode}
@@ -719,6 +722,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         />
                     }
                 />
+                </div>
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё).
                     Последний в левой группе контролов: идёт после тумблеров, но
