@@ -171,9 +171,12 @@ export function EmbedFrame({
             )}
           </div>
         )}
-        {/* Кнопки окна песочницы — в ту же строку (единая шапка §4.1, §4.3). */}
+        {/* Кнопки окна песочницы — в ту же строку (единая шапка §4.1, §4.3).
+            marginLeft компенсирует gap:8 родителя, когда слева стоит блок
+            actions/⚙ (у того внутренний gap 2): между шестерёнкой и ⤢ был
+            видимый провал 8px против 2px у остальных иконок ряда. */}
         {win && (
-          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 2, flexShrink: 0, ...(actions || more ? { marginLeft: -6 } : {}) }}>
             {win.onExpand && (
               <button
                 type="button"
