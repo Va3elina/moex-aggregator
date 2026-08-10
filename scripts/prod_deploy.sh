@@ -87,8 +87,13 @@ deploy_api_rolling() {
 
 deploy_api_rolling
 
-# orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код
-if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
+# orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код.
+# ⚠️ Список ОБЯЗАН повторять COPY-строки Dockerfile (кроме frontend/ и api/,
+# которые едут в api-образ). Пропущенный путь = МОЛЧАЛИВЫЙ отказ: CI зелёный,
+# деплой «успешен», а оркестратор крутит старый код. Так CBR/ не доезжал до
+# прода — правка парсера ОРФР ушла в main, но ингест шёл старым кодом.
+# Меняешь COPY в Dockerfile → правь и этот regex.
+if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|CBR/|main_orchestrator\.py|pipeline_heartbeat\.py|moex_calendar\.py|tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
   echo "=== Orchestrator code changed -> rebuild ==="
   docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
   docker compose build orchestrator
