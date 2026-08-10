@@ -2,6 +2,7 @@
 import type {
   Instrument,
   ChartResponse,
+  ChartDeltaResponse,
   InstrumentGroup,
   StatsResponse,
   TopInstrumentsResponse
@@ -383,6 +384,34 @@ export async function getChartData(
 
   const response = await apiFetch(`${API_BASE}/api/chart/${secId}?${params}`);
   if (!response.ok) throw new Error('Failed to fetch chart data');
+  return response.json();
+}
+
+// Инкрементальный догруз графика по SSE-событию: только точки после since_*
+// (килобайты) вместо полного ряда (5м/6м = 6.2 МБ). since_* — time последней
+// ЗАКРЫТОЙ точки у клиента (live срезается перед вызовом).
+export async function getChartDelta(
+  secId: string,
+  sectype: string,
+  instType: string,
+  interval: number,
+  clgroup: string,
+  showOi: boolean,
+  sinceCandle: string,
+  sinceOi: string | null,
+): Promise<ChartDeltaResponse> {
+  const params = new URLSearchParams({
+    sectype,
+    inst_type: instType,
+    interval: interval.toString(),
+    clgroup,
+    show_oi: showOi.toString(),
+    since_candle: sinceCandle,
+  });
+  if (sinceOi) params.set('since_oi', sinceOi);
+
+  const response = await apiFetch(`${API_BASE}/api/chart/${secId}/delta?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch chart delta');
   return response.json();
 }
 

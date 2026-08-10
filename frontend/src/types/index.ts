@@ -27,6 +27,9 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  /** Синтетическая live-точка (текущее значение из 5-минуток, бэкенд
+   *  chart_live.py). При инкрементальном догрузе срезается и заменяется свежей. */
+  live?: boolean;
 }
 
 // ==================== ОТКРЫТЫЙ ИНТЕРЕС ====================
@@ -39,6 +42,18 @@ export interface OpenInterest {
   pos_long_num: number | null;
   pos_short_num: number | null;
   net_position: number | null;
+  /** Live-точка (см. Candle.live). */
+  live?: boolean;
+}
+
+/** Ответ /api/chart/{sec_id}/delta — инкрементальный догруз по SSE.
+ *  candles/open_interest — только НОВЫЕ точки строго после since_*;
+ *  live-точки помечены live=true. full_reload=true — клиент отстал сильнее
+ *  чем на пару дней, дельта не имеет смысла, нужен полный рефетч. */
+export interface ChartDeltaResponse {
+  full_reload: boolean;
+  candles: Candle[];
+  open_interest: OpenInterest[];
 }
 
 // ==================== ГРАФИК ====================
