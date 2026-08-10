@@ -58,3 +58,21 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oi_intraday_cover
     WHERE "interval" IN (5, 60);
 
 VACUUM (ANALYZE) open_interest;
+
+-- Дневной ТФ: тот же приём, отдельным индексом.
+--
+-- Изначально сюда его не включили — 852 тыс. строк против 24 млн выглядели
+-- безобидно. Замер показал обратное: «вся история» на дневном стоила 2.8 с
+-- (`[5] candles query: 2635 мс` на 4803 строки), потому что строки за 2007-2026
+-- размазаны по всей 11-гигабайтной таблице — их мало, но лежат они врозь, и
+-- каждая тянет свою страницу с диска. А дневная «вся история» это дефолт
+-- песочницы для Pro (bestDailyPeriod), то есть первый экран.
+--
+-- После индекса: 2.8 с → 0.5 с, пятилетний срез — 0.16-0.28 с. Стоит всего
+-- 65 МБ: строк мало, поэтому и индекс маленький.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_candles_daily_cover
+    ON candles (sec_id, "interval", begin_time)
+    INCLUDE (open, high, low, close, volume, secid)
+    WHERE "interval" = 24;
+
+VACUUM (ANALYZE) candles;
