@@ -239,13 +239,20 @@ def get_all_gzip_by_prefix(prefix: str) -> dict[str, Any]:
         while True:
             cursor, keys = r.scan(cursor, match=f"{prefix}*".encode(), count=200)
             for k in keys:
-                gz = r.get(k)
-                if gz is None:
-                    continue
+                # try ВНУТРИ цикла: один нечитаемый ключ не должен рвать обход.
+                # ⚠️ Так и случилось 2026-08-10: служебный счётчик спроса лежал
+                # под chart:demand, GET на ZSET дал WRONGTYPE (это RedisError,
+                # не ValueError), и внешний except обрывал скан — cache_updater
+                # видел 54 ключа из 257, остальные не обновлялись и тихо
+                # истекали по TTL. Счётчики с тех пор живут под chartmeta:,
+                # но защита остаётся: маска префикса — не гарантия типа.
                 try:
+                    gz = r.get(k)
+                    if gz is None:
+                        continue
                     result[k.decode()] = json.loads(gzip.decompress(gz))
-                except (OSError, ValueError, UnicodeDecodeError):
-                    continue      # чужой/битый формат — пропускаем молча
+                except (redis.RedisError, OSError, ValueError, UnicodeDecodeError):
+                    continue      # чужой тип/битый формат — пропускаем молча
             if cursor == 0:
                 break
     except (redis.RedisError, ConnectionError) as e:
@@ -293,13 +300,13 @@ def get_or_compute_gzip(key: str, compute_fn, ttl: int = DEFAULT_TTL, *,
     return set_gzip(key, json.dumps(compute_fn(), default=str), ttl)
 
 
-DEMAND_KEY = "chart:demand"
+DEMAND_KEY = "chartmeta:demand"
 # Счётчик активов, которым фоновый прогрев должен пересчитать график ПРИНУДИТЕЛЬНО
 # (даже если ключ тёплый). Ставится на daily-NOTIFY вместо стирания графиков.
-CHART_REFRESH_KEY = "chart:warm:force_left"
+CHART_REFRESH_KEY = "chartmeta:warm:force_left"
 
 
-CHART_REFRESH_PENDING = "chart:warm:refresh_pending"
+CHART_REFRESH_PENDING = "chartmeta:warm:refresh_pending"
 _CHART_REFRESH_TTL = 7200
 
 

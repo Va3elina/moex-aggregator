@@ -354,7 +354,7 @@ def _warm_chart_cache():
             logger.info(f"Chart refresh after daily: {len(order)} активов в очереди")
 
         # Продолжаем с места прошлого цикла, а не с начала списка.
-        start = int(get_or_set("chart:warm:cursor") or 0) % len(order)
+        start = int(get_or_set("chartmeta:warm:cursor") or 0) % len(order)
         idx = start
 
         for step in range(len(order)):
@@ -383,7 +383,7 @@ def _warm_chart_cache():
                     except Exception as e:
                         logger.warning(f"Chart warm failed ({sectype}/{interval}/{period}): {e}")
 
-        get_or_set("chart:warm:cursor", (idx + 1) % len(order), ttl=86400)
+        get_or_set("chartmeta:warm:cursor", (idx + 1) % len(order), ttl=86400)
     finally:
         db.close()
     if warmed:
