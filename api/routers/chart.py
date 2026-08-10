@@ -33,7 +33,8 @@ from api.schemas.validators import (
 )
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
-from api.services.chart_live import append_live_points
+from api.services.chart_live import append_live_points, append_stretched_price
+from api.services.market_delay import price_cutoff
 from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids, stable_runs
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
@@ -284,8 +285,12 @@ def get_chart_delta(
         FROM candles
         WHERE sec_id = ANY(:sec_ids) AND interval = :interval
           AND begin_time > :since
+          AND begin_time <= :cutoff
         ORDER BY begin_time
-    """), {"sec_ids": sec_ids, "interval": interval, "since": since_candle}).fetchall()
+    """), {"sec_ids": sec_ids, "interval": interval, "since": since_candle,
+            # Лицензия MOEX: дельта — третий путь наружу (после роутера и
+            # cache_updater), потолок цены обязателен и здесь.
+            "cutoff": price_cutoff()}).fetchall()
 
     if effective_end is not None:
         new_candles_raw = [c for c in new_candles_raw if c[0].date() <= effective_end]
@@ -499,7 +504,13 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
         "sec_ids": sec_ids,
         "interval": interval,
         "start_time": datetime.combine(work_start, dt_time.min),
-        "end_time": datetime.combine(work_end, dt_time.max)
+        # ⚠️ ЛИЦЕНЗИЯ MOEX: цена раздаётся с задержкой PRICE_DELAY_MINUTES.
+        # Режем ЗДЕСЬ, в самом запросе, а не после сборки ответа: так свежая
+        # свеча физически не попадает ни в ответ, ни в кеш, ни в производные
+        # (непрерывная серия, back-adjust). ОИ под ограничение не подпадает и
+        # остаётся актуальным — отсюда хвост без цены, который закрывает
+        # append_stretched_price при сборке ответа.
+        "end_time": min(datetime.combine(work_end, dt_time.max), price_cutoff()),
     }).fetchall()
     log.info(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
@@ -746,5 +757,11 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     # запросы (date_from/date_to заданы явно) тоже без live-точки.
     if date_from is None and date_to is None:
         append_live_points(db, response)
+
+    # Цена придержана на 15 минут, ОИ актуален → правее последней свечи висят
+    # точки ОИ без цены под ними. Продлеваем последнюю известную цену на этот
+    # отрезок (флаг stretched), иначе график выглядит оборванным. Когда свеча
+    # доедет, растянутая точка на том же времени заменится фактической.
+    append_stretched_price(response)
 
     return response

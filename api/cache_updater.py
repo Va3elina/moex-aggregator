@@ -16,7 +16,9 @@ import json
 
 from api.cache import get_all_gzip_by_prefix, set_gzip, touch, DEFAULT_TTL
 from api.database import SessionLocal
-from api.services.chart_live import append_live_points, strip_live_points
+from api.services.chart_live import (append_live_points, append_stretched_price,
+                                     strip_live_points, strip_stretched_points)
+from api.services.market_delay import price_cutoff
 from datetime import date, datetime, time as dt_time, timedelta
 
 log = logging.getLogger(__name__)
@@ -75,6 +77,11 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
             return False
 
     try:
+        # ⚠️ ПОРЯДОК ВАЖЕН: сперва снимаем «растянутую» цену (заполнение отрезка,
+        # где ОИ уже есть, а свеча по лицензии ещё не раздаётся), и только потом
+        # берём последнюю свечу. Иначе last_candle_time указывал бы на растянутую
+        # точку, и настоящие свечи за этот отрезок больше никогда не дописались бы.
+        had_stretched = strip_stretched_points(cached_response)
         # Срезаем прошлую live-точку: last_candle_time нужно считать по последней
         # ЗАКРЫТОЙ свече, а свежую live-точку пересоберём в конце (append_live_points).
         had_live = strip_live_points(cached_response)
@@ -104,11 +111,16 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                 FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
                   AND begin_time > :last_time
+                  AND begin_time <= :cutoff
                 ORDER BY begin_time
             """), {
                 "sec_ids": sec_ids,
                 "interval": interval,
                 "last_time": last_candle_time,
+                # Лицензия MOEX: цена с задержкой. cache_updater дописывает бары
+                # в кеш напрямую, минуя роутер, — потолок нужен и здесь, иначе
+                # свежая свеча утекла бы в обход задержки.
+                "cutoff": price_cutoff(),
             }).fetchall()
 
             # Потолок свежести (Free-задержка): бары СТРОГО после cap не наши.
@@ -214,9 +226,14 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
         # live-точка = сегодняшний реалтайм мимо tier-гейта.
         live_added = append_live_points(db, cached_response) if cap is None else False
 
+        # Заново продлеваем цену до конца ряда ОИ: часть прежнего хвоста могла
+        # стать настоящими свечами, а ОИ тем временем ушёл ещё дальше.
+        stretched_added = append_stretched_price(cached_response) if cap is None else False
+
         # Перезаписываем кеш только если что-то изменилось (новые свечи/OI, добавлена
         # или убрана live-точка) — иначе лишние записи в Redis на каждый NOTIFY.
-        changed = bool(appended_candles or appended_oi or live_added or had_live)
+        changed = bool(appended_candles or appended_oi or live_added or had_live
+                       or stretched_added or had_stretched)
         if changed:
             set_gzip(key, json.dumps(cached_response, default=str), ttl=DEFAULT_TTL)
         else:

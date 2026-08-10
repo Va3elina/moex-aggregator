@@ -26,6 +26,7 @@ from sqlalchemy import text
 
 from api.logger import get_logger
 from api.services.contract_calendar import front_sec_id
+from api.services.market_delay import price_cutoff
 
 log = get_logger()
 
@@ -47,6 +48,79 @@ def strip_live_points(response: dict) -> bool:
             arr.pop()
             removed = True
     return removed
+
+
+def strip_stretched_points(response: dict) -> bool:
+    """Снимает хвост «растянутой» цены из candles in-place.
+
+    Растянутые точки — не данные, а заполнение отрезка, где ОИ уже есть, а
+    свеча по лицензии ещё не раздаётся. Их обязательно срезать ПЕРЕД тем, как
+    дописывать настоящие свечи: иначе на одном и том же времени осталась бы
+    сначала растянутая точка, а следом фактическая.
+    """
+    removed = False
+    arr = response.get("candles")
+    if not arr:
+        return False
+    while arr and isinstance(arr[-1], dict) and arr[-1].get("stretched"):
+        arr.pop()
+        removed = True
+    if removed:
+        response["candles_count"] = len(arr)
+    return removed
+
+
+def append_stretched_price(response: dict) -> bool:
+    """Продлевает последнюю известную цену до конца ряда ОИ.
+
+    Зачем. По лицензии MOEX цена раздаётся с задержкой 15 минут, а ОИ приходит
+    актуальным (решение владельца: ОИ не придерживаем, чтобы его не терять).
+    В результате правее последней свечи висят точки ОИ, под которыми нет цены —
+    выглядит как обрыв графика. Достраиваем цену горизонтально: значение то же,
+    что у последней реальной свечи, флаг stretched=True.
+
+    Точки помечены, поэтому:
+      • при следующем обновлении они срезаются (strip_stretched_points) и на их
+        месте оказывается настоящая свеча, когда та доедет;
+      • фронт может отрисовать участок иначе, не выдавая заполнение за факт.
+
+    Возвращает True, если что-то дописали.
+    """
+    try:
+        candles = response.get("candles")
+        oi = response.get("open_interest")
+        if not candles or not oi:
+            return False
+
+        last_candle = candles[-1]
+        if last_candle.get("live") or last_candle.get("stretched"):
+            return False        # растягиваем только от РЕАЛЬНОЙ свечи
+
+        last_ct = datetime.fromisoformat(last_candle["time"])
+        close = float(last_candle.get("close") or 0)
+        if close <= 0:
+            return False
+
+        # Времена ОИ правее последней свечи — ровно тот отрезок, где цены нет.
+        gap = [p["time"] for p in oi
+               if not p.get("live") and datetime.fromisoformat(p["time"]) > last_ct]
+        if not gap:
+            return False
+
+        for t in gap:
+            candles.append({
+                "time": t,
+                "open": close, "high": close, "low": close, "close": close,
+                "volume": 0,
+                "stretched": True,
+            })
+
+        response["candles_count"] = len(candles)
+        return True
+
+    except Exception as e:
+        log.warning(f"append_stretched_price failed: {e}")
+        return False
 
 
 def _is_newer(candidate: datetime, last: datetime, daily: bool) -> bool:
@@ -102,6 +176,10 @@ def append_live_points(db, response: dict) -> bool:
         #    страницах). Спуск по индексу с конца на каждый контракт — мс.
         #    volume DESC внутри LATERAL: на один begin_time может быть две
         #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
+        #    ⚠️ begin_time <= :cutoff — лицензия MOEX (задержка цены). Без
+        #    этого live-точка тянула бы САМУЮ свежую 5-минутку и раздавала
+        #    реалтайм в обход задержки: она берётся из данных напрямую, мимо
+        #    основного запроса свечей, где потолок уже стоит.
         _LIVE_5M_SQL = text("""
             SELECT c.begin_time, c.close, c.volume
             FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
@@ -109,15 +187,16 @@ def append_live_points(db, response: dict) -> bool:
                 SELECT begin_time, close, volume
                 FROM candles
                 WHERE sec_id = s.sid AND interval = 5 AND close > 0 AND volume > 0
+                  AND begin_time <= :cutoff
                 ORDER BY begin_time DESC, volume DESC
                 LIMIT 1
             ) c
             ORDER BY c.begin_time DESC, c.volume DESC
             LIMIT 1
         """)
-        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids}).fetchone()
+        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids, "cutoff": price_cutoff()}).fetchone()
         if (not row or not row[0]) and live_sec_ids is not sec_ids:
-            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids}).fetchone()
+            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids, "cutoff": price_cutoff()}).fetchone()
 
         if not row or not row[0]:
             return False
