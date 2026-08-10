@@ -351,6 +351,18 @@ export default function OpenInterestPage() {
     deps: [selectedInstrument, interval, clgroup, showOi, period],
     enabled: !!selectedInstrument,
     channels: ['5min', 'hourly'],
+    // Сигнатура среза для SSE-рефетча: длины рядов + последние точки цены и ОИ.
+    // На тире с задержкой (Free: потолок = вчера) SSE-ответ ИДЕНТИЧЕН текущему —
+    // без этой проверки график каждые 5 минут заново морфил сам себя и ронял
+    // навигатор в дефолтное окно. Полное сравнение рядов не годится: 5м/6м —
+    // это 26 тыс. точек.
+    isSameData: (prev, next) => {
+      if (prev.candles_count !== next.candles_count || prev.oi_count !== next.oi_count) return false;
+      const pc = prev.candles.at(-1), nc = next.candles.at(-1);
+      if (pc?.time !== nc?.time || pc?.close !== nc?.close) return false;
+      const po = prev.open_interest.at(-1), no = next.open_interest.at(-1);
+      return po?.time === no?.time && po?.net_position === no?.net_position;
+    },
     tier: {
       showUpgrade,
       indicator: 'open_interest',

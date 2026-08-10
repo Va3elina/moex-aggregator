@@ -50,8 +50,17 @@ export interface UseIndicatorDataOptions<T> {
     errorMessage?: string | ((err: unknown) => string);
     /** СИНХРОННЫЙ колбэк сразу после setData (один batch). Для производных снимков. */
     onSuccess?: (data: T) => void;
-    /** Если задан — tier-403 в catch идёт через handleTierError (caller-агностичный util). */
+    /** Если задан — tier-403 в catch идёт через handleTierError (caller-агностичный util).
+     */
     tier?: TierConfig;
+    /** Дешёвый компаратор срезов, применяется ТОЛЬКО к realtime-рефетчу (SSE).
+     *  true → пришло ровно то же, что уже в state: не вызываем setData, значит нет
+     *  ре-рендера, сброса навигатора и перезапуска анимации графика. Нужен потому,
+     *  что у тира с задержкой данных (Free: потолок = вчера) ответ на SSE-рефетч
+     *  ИДЕНТИЧЕН предыдущему — график каждые 5 минут анимированно перерисовывал сам
+     *  себя. Обычную загрузку (смена периода/инструмента) не трогает: там срез
+     *  обязан доехать до state, даже если совпал по сигнатуре. */
+    isSameData?: (prev: T, next: T) => boolean;
 }
 
 export interface UseIndicatorDataResult<T> {
@@ -64,30 +73,41 @@ export interface UseIndicatorDataResult<T> {
 export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndicatorDataResult<T> {
     const {
         fetcher, deps, channels, debounceMs, enabled = true,
-        errorMessage, onSuccess, tier,
+        errorMessage, onSuccess, tier, isSameData,
     } = opts;
 
     const [data, setData] = useState<T | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const reqIdRef = useRef(0);
+    // Зеркало data для сравнения в reload (state там уже устарел бы на замыкание).
+    const dataRef = useRef<T | null>(null);
+    const isSameRef = useRef(isSameData);
+    isSameRef.current = isSameData;
 
     const resolveError = (err: unknown): string =>
         typeof errorMessage === 'function' ? errorMessage(err)
             : (errorMessage ?? 'Ошибка загрузки данных');
 
-    const reload = useCallback(async () => {
+    const reload = useCallback(async (opts?: { realtime?: boolean }) => {
         if (enabled === false) return;
+        const realtime = opts?.realtime === true;
         const myId = ++reqIdRef.current;
         // Reqid-guard БЕЗУСЛОВНЫЙ: устаревший (не последний) ответ не пишет state.
         // Дёшево и корректно для всех индикаторов — без него быстрый перебор
         // фильтра/типа давал гонку (медленный ранний ответ перезаписывал свежий).
         const isStale = () => myId !== reqIdRef.current;
         try {
-            setLoading(true);
+            // Realtime-рефетч — ТИХИЙ: спиннер «Обновление…» поверх графика на
+            // каждое SSE-событие мигал каждые 5 минут, хотя данные на экране всё
+            // это время валидны (ровно как silentRef в embed-панелях).
+            if (!realtime) setLoading(true);
             setError(null);
             const result = await fetcher();
             if (isStale()) return;
+            // Тот же срез по дешёвой сигнатуре → state не трогаем вовсе.
+            if (realtime && dataRef.current && isSameRef.current?.(dataRef.current, result)) return;
+            dataRef.current = result;
             setData(result);
             // СИНХРОННО в том же async-теле → один React-18 batch с setData.
             onSuccess?.(result);
@@ -112,7 +132,9 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
     useEffect(() => { reload(); }, [reload]);
 
     // SSE opt-in: пустой channels → no-op (useRealtimeData фильтрует по source).
-    useRealtimeData(channels ?? [], reload, debounceMs);
+    // realtime:true → тихий рефетч + сравнение среза (см. isSameData).
+    const reloadRealtime = useCallback(() => { void reload({ realtime: true }); }, [reload]);
+    useRealtimeData(channels ?? [], reloadRealtime, debounceMs);
 
     return { data, loading, error, reload };
 }

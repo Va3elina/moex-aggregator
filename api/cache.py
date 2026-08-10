@@ -152,6 +152,23 @@ def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL):
         logger.warning(f"Redis error on set_cache: {e}")
 
 
+def touch(key: str, ttl: int = DEFAULT_TTL) -> None:
+    """Продлить TTL записи, не переписывая её содержимое.
+
+    Нужен cache_updater'у для «замороженных» ключей (потолок свежести задан:
+    Free-задержка 24ч). Их контент за день не меняется, но без продления TTL они
+    протухают каждые 30 минут → холодный пересчёт 3–10 с на КАЖДОГО гостя (замер
+    2026-08-10: 5м/6м = 6.2 МБ, cold 6.1 с). Раньше прогрев случайно делал сам
+    set_cache внутри инкрементального апдейта; когда ветку закрыли ради tier-гейта
+    (#1068), вместе с ней ушёл и прогрев. EXPIRE вместо SETEX — не гоняем 7 МБ
+    JSON в Redis ради одного TTL.
+    """
+    try:
+        _get_redis().expire(key, ttl)
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on touch: {e}")
+
+
 def get_all_by_prefix(prefix: str) -> dict[str, Any]:
     """Вернуть все записи с данным префиксом. {key: data}"""
     result = {}
