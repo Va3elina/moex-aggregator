@@ -280,6 +280,64 @@ def _warm_screener_cache():
         db.close()
 
 
+# Активы, для которых держим тёплым интрадей-график ОИ. Холодный пересчёт 5м/6м
+# стоит 1.6-14 с (замер 2026-08-10: 40 тыс. строк свечей + 24 тыс. точек OI), и
+# платит его первый попавшийся пользователь. Список — самые запрашиваемые по
+# логам; расширять по факту трафика, а не «на всякий случай»: каждая пара тянет
+# отдельный ключ на ~900 КБ.
+_WARM_CHART_ASSETS = ("SR", "MX", "GZ", "Si", "BR", "USDRUBF")
+# (interval, period) — ровно то, что фронт запрашивает по умолчанию для ТФ:
+# при переключении интервала ставится максимальный доступный период (см.
+# MAX_PERIODS_BY_INTERVAL на странице ОИ).
+_WARM_CHART_COMBOS = ((5, "6m"), (60, "1y"), (24, "1y"))
+
+
+def _warm_chart_cache():
+    """Прогрев графика ОИ по популярным парам актив × ТФ.
+
+    Греем ДВА варианта ключа на каждую пару: date_to=None (тариф без задержки) и
+    date_to=вчера (Free/гость — роутер подменяет потолок в get_effective_end_date).
+    Ключи разные, и без второго гость платил бы за холодный пересчёт сам.
+
+    Считаем напрямую через _compute_chart_data + set_gzip, минуя HTTP: у прогрева
+    нет токена, а через себя по HTTP получился бы только гостевой вариант. Тот же
+    приём, что у карты «Все акции» и скринера выше.
+
+    Уже тёплые ключи пропускаем — проверка стоит одну команду Redis, а пересчёт
+    секунды. Синхронная: вызывается через asyncio.to_thread.
+    """
+    import json
+    from datetime import date, timedelta
+    from api.cache import get_gzip, set_gzip, DEFAULT_TTL
+    from api.database import SessionLocal
+    from api.routers.chart import _compute_chart_data
+
+    yesterday = date.today() - timedelta(days=1)
+    db = SessionLocal()
+    warmed = 0
+    try:
+        for sectype in _WARM_CHART_ASSETS:
+            for interval, period in _WARM_CHART_COMBOS:
+                for date_to in (None, yesterday):
+                    key = (f"chart:{sectype}:{sectype}:futures:{interval}:FIZ:True:"
+                           f"{period}:None:{date_to}")
+                    if get_gzip(key) is not None:
+                        continue
+                    try:
+                        data = _compute_chart_data(
+                            db, sectype, sectype, "futures", interval,
+                            "FIZ", True, period, None, date_to,
+                        )
+                        set_gzip(key, json.dumps(data, default=str), ttl=DEFAULT_TTL)
+                        warmed += 1
+                    except Exception as e:
+                        logger.warning(f"Chart warm failed ({sectype}/{interval}/{period}): {e}")
+    finally:
+        db.close()
+    if warmed:
+        logger.info(f"Chart cache warm: {warmed} keys computed")
+
+
 async def _periodic_warm():
     """Держит горячими кэши с коротким TTL, чтобы пользователи не платили за
     ленивый пересчёт. Скринер ОИ: TTL 300с → перегреваем каждые 240с (оба clgroup);
@@ -297,6 +355,18 @@ async def _periodic_warm():
             await asyncio.to_thread(_warm_screener_cache)
         except Exception as e:
             logger.warning(f"Periodic warm failed: {e}")
+
+        # График ОИ — под локом: этот хук крутится в КАЖДОМ из трёх воркеров, а
+        # холодный пересчёт 5м/6м стоит секунды CPU. Втроём они выели бы 4 ядра
+        # ровно на том, что и так лечим. Лок короче интервала цикла, поэтому
+        # следующий круг снова возьмёт кто-то один.
+        try:
+            from api.cache import try_lock
+            if try_lock("warm:chart", ttl=200):
+                await asyncio.to_thread(_warm_chart_cache)
+        except Exception as e:
+            logger.warning(f"Chart warm failed: {e}")
+
         await asyncio.sleep(240)
 
 @app.on_event("shutdown")
