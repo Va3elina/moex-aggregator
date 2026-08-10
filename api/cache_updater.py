@@ -48,16 +48,25 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
     interval = params["interval"]
     clgroup = params["clgroup"]
     show_oi = params["show_oi"]
-    # Live-точку обновляем только для актуальных (не задержанных, не исторических)
-    # записей кеша — у них date_from/date_to == None. Free-тариф (задержка 24ч) и
-    # шаринг-ссылки с явными датами кешируются с заданным date_to → их не трогаем,
-    # иначе реалтайм утечёт мимо tier-гейта (зеркалит гейт в chart.py).
-    live_eligible = params.get("date_from") == "None" and params.get("date_to") == "None"
+    # Инкрементально дописываем ТОЛЬКО актуальные записи кеша — у них
+    # date_from/date_to == None. У записи с заданным date_to потолок свежести
+    # фиксирован: это либо Free-тариф с задержкой 24ч (роутер подменяет date_to
+    # на today−1), либо шаринг-ссылка с явным диапазоном. Дописывать им новые
+    # точки нельзя — реалтайм утечёт мимо tier-гейта.
+    #
+    # ⚠️ Ровно этот баг чинили 2026-08-10: раньше проверка гейтила только
+    # live-точку, а новые ЗАКРЫТЫЕ свечи и OI дописывались всем записям подряд.
+    # Free получал корректный ответ с потолком «вчера», а спустя минуты NOTIFY
+    # дописывал в тот же кеш сегодняшние бары — задержка 24ч фактически не
+    # работала ни на одном таймфрейме. Такие записи просто ждут TTL и
+    # пересчитываются заново, уже с правильным потолком.
+    if params.get("date_from") != "None" or params.get("date_to") != "None":
+        return False
 
     try:
         # Срезаем прошлую live-точку: last_candle_time нужно считать по последней
         # ЗАКРЫТОЙ свече, а свежую live-точку пересоберём в конце (append_live_points).
-        had_live = strip_live_points(cached_response) if live_eligible else False
+        had_live = strip_live_points(cached_response)
 
         if not cached_response["candles"]:
             return False
@@ -179,8 +188,8 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
 
         # Пересобираем свежую live-точку (текущее значение). Делаем это КАЖДЫЙ цикл,
         # даже когда новых закрытых свечей не было — live-точку нужно обновлять
-        # каждые 5 минут. Только для актуальных записей (см. live_eligible).
-        live_added = append_live_points(db, cached_response) if live_eligible else False
+        # каждые 5 минут. Сюда доходят только актуальные записи (гейт выше).
+        live_added = append_live_points(db, cached_response)
 
         # Перезаписываем кеш только если что-то изменилось (новые свечи/OI, добавлена
         # или убрана live-точка) — иначе лишние записи в Redis на каждый NOTIFY.
