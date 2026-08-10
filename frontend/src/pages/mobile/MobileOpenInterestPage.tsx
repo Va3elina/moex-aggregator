@@ -30,7 +30,7 @@ import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { Lock } from 'lucide-react';
 import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
-import { useRealtimeData } from '../../hooks/useRealtimeData';
+import { useChartRealtimeDelta } from '../../hooks/useChartRealtimeDelta';
 import { getDefaultPeriod } from '../../config/accessControl';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
@@ -414,7 +414,15 @@ export default function MobileOpenInterestPage() {
   }, [selectedInstrument, intervalValue, clgroup, period, showUpgrade]);
 
   useEffect(() => { void loadData(); }, [loadData]);
-  useRealtimeData(['5min', 'hourly'], () => { void loadData(); });
+  // Реалтайм — инкрементальный догруз: тянем только новые точки вместо полного
+  // ряда (5м/6м = 6.2 МБ на каждое SSE-событие, и это на мобильной сети).
+  // Дельта не применима → обычный loadData, как раньше.
+  useChartRealtimeDelta({
+    data,
+    onMerged: setData,
+    onFallback: () => { void loadData(); },
+    controls: { sectype: selectedInstrument, interval: intervalValue, clgroup },
+  });
 
   // Преобразуем data в series для MobileChart с учётом выбранного варианта OI
   const chartSeries = useMemo(() => {

@@ -24,7 +24,7 @@ import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../s
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
-import { useRealtimeData } from '../../hooks/useRealtimeData';
+import { useChartRealtimeDelta } from '../../hooks/useChartRealtimeDelta';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
@@ -241,13 +241,21 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     return () => { cancelled = true; };
   }, [instrument]);
 
-  // Реалтайм: ингест обновил данные (SSE '5min'/'hourly') → тихий рефетч.
-  // Тихий = без setStatus('loading'): панель не мигает плашкой, старый график
-  // висит до прихода свежего. SSE-соединение одно на вкладку (синглтон в
-  // useSSE), сколько бы панелей ни было открыто.
+  // Реалтайм: ингест обновил данные (SSE '5min'/'hourly') → инкрементальный
+  // догруз. Тянем ТОЛЬКО новые точки (килобайты) вместо полного ряда: на 5м/6м
+  // это 6.2 МБ, и раньше их качала каждая открытая панель разом на каждое
+  // событие. Если дельта не применима — тихий полный рефетч, как раньше
+  // (тихий = без setStatus('loading'): панель не мигает, старый график висит
+  // до прихода свежего). SSE-соединение одно на вкладку (синглтон в useSSE),
+  // сколько бы панелей ни было открыто.
   const [refreshTick, setRefreshTick] = useState(0);
   const silentRef = useRef(false);
-  useRealtimeData(['5min', 'hourly'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+  useChartRealtimeDelta({
+    data,
+    onMerged: setData,
+    onFallback: () => { silentRef.current = true; setRefreshTick((t) => t + 1); },
+    controls: { sectype: instrument, interval, clgroup },
+  });
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {

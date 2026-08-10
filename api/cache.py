@@ -293,6 +293,20 @@ def get_or_compute_gzip(key: str, compute_fn, ttl: int = DEFAULT_TTL, *,
     return set_gzip(key, json.dumps(compute_fn(), default=str), ttl)
 
 
+def try_lock(name: str, ttl: int) -> bool:
+    """Взять распределённый лок на ttl секунд. True — лок наш.
+
+    Нужен фоновым задачам: startup-хук выполняется в КАЖДОМ gunicorn-воркере
+    (их три), и без лока прогрев кеша шёл бы втройне — три одинаковых тяжёлых
+    пересчёта одновременно на 4 ядрах. Лок сам истекает по ttl, поэтому упавший
+    воркер не блокирует прогрев навсегда.
+    """
+    try:
+        return bool(_get_redis().set(f"lock:{name}", "1", nx=True, ex=ttl))
+    except (redis.RedisError, ConnectionError):
+        return False      # Redis недоступен → прогрев пропускаем, это не критично
+
+
 def get_raw(key: str) -> str | None:
     """Сырая JSON-строка из кеша, без разбора в объекты.
 

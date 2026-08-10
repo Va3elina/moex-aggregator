@@ -11,7 +11,8 @@ import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { OI_VARIANT_HELP } from '../data/oiVariantHelp';
-import { getChartData, getChartDelta, getInstrument, listAlerts, type AlertInfo } from '../services/api';
+import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../services/api';
+import { fetchAndMergeChartDelta, matchesControls } from '../utils/chartDelta';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
@@ -364,45 +365,14 @@ export default function OpenInterestPage() {
       return po?.time === no?.time && po?.net_position === no?.net_position;
     },
     // Инкрементальный догруз по SSE: качаем дельту (килобайты) вместо полного
-    // ряда (5м/6м = 6.2 МБ на каждый NOTIFY). Свою live-точку срезаем, серверу
-    // шлём время последних ЗАКРЫТЫХ точек, ответ дописываем в хвост. throw →
-    // хук сам откатится на полный рефетч.
+    // ряда (5м/6м = 6.2 МБ на каждый NOTIFY). Логика общая с embed-панелями и
+    // мобильной страницей — utils/chartDelta. throw → хук откатится на полный
+    // рефетч (там сработает isSameData выше).
     realtimeMerge: async (prev) => {
       // Гонка смены контролов: SSE может стрельнуть, пока полный рефетч нового
-      // инструмента/среза ещё в полёте — prev тогда от СТАРЫХ контролов, и мердж
-      // склеил бы два разных ряда. Ответ несёт свои параметры — сверяем; не
-      // совпало → ничего не делаем, in-flight полный рефетч сам всё заменит.
-      if (prev.sectype !== selectedInstrument || prev.interval !== interval ||
-          prev.clgroup !== clgroup || prev.period !== period) return null;
-      const lastClosed = <P extends { time: string; live?: boolean }>(arr: P[]): string | null => {
-        for (let i = arr.length - 1; i >= 0; i--) if (!arr[i].live) return arr[i].time;
-        return null;
-      };
-      const sinceCandle = lastClosed(prev.candles);
-      if (!sinceCandle) throw new Error('delta: пустой ряд');   // → полный рефетч
-      const sinceOi = prev.open_interest.length ? lastClosed(prev.open_interest) : null;
-
-      const d = await getChartDelta(
-        selectedInstrument, selectedInstrument, 'futures',
-        interval, clgroup, showOi, sinceCandle, sinceOi,
-      );
-      if (d.full_reload) throw new Error('delta: клиент отстал');  // → полный рефетч
-
-      // Ничего нового и live не поменялась (сравниваем с НАШЕЙ live) → не трогаем state.
-      const prevLiveC = prev.candles.at(-1)?.live ? prev.candles.at(-1) : null;
-      const newLiveC = d.candles.at(-1)?.live ? d.candles.at(-1) : null;
-      const noNewClosed = d.candles.every((c) => c.live) && d.open_interest.every((o) => o.live);
-      if (noNewClosed && (!newLiveC || (prevLiveC?.time === newLiveC.time && prevLiveC?.close === newLiveC.close)))
-        return null;
-
-      const candles = [...prev.candles.filter((c) => !c.live), ...d.candles];
-      const open_interest = [...prev.open_interest.filter((o) => !o.live), ...d.open_interest];
-      const endDate = candles.at(-1)?.time.slice(0, 10) ?? prev.candles_end_date;
-      return {
-        ...prev, candles, open_interest,
-        candles_count: candles.length, oi_count: open_interest.length,
-        candles_end_date: endDate, data_end: endDate,
-      };
+      // инструмента/среза ещё в полёте — prev тогда от СТАРЫХ контролов.
+      if (!matchesControls(prev, { sectype: selectedInstrument, interval, clgroup })) return null;
+      return fetchAndMergeChartDelta(prev);
     },
     tier: {
       showUpgrade,
