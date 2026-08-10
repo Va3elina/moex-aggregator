@@ -275,7 +275,7 @@ export default function OpenInterestPage() {
   // Настройки (персистятся в localStorage по индикатору — не сбрасываются на новой сессии)
   const [interval, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
   // raw* — сохранённый пользовательский выбор среза. Для Free он переопределяется
-  // дефолтом ниже (settingsLocked), но остаётся в localStorage — после апгрейда
+  // дефолтом ниже (yurLocked/tradersLocked), но остаётся в localStorage — после апгрейда
   // на Basic вернётся то, что юзер выбирал. Дефолт clgroup = FIZ (физлица).
   const [rawClgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'FIZ');
   const [rawDisplayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:displayMode', 'positions');
@@ -291,21 +291,25 @@ export default function OpenInterestPage() {
     'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
     parseOiDeepLink(searchParams).period);
 
-  // ── Free-тариф: индикатор открыт всем и по всем активам, но СРЕЗ данных
-  // (категория участников / тип данных / показатель) залочен на дефолт —
-  // Физлица · Объём позиций · Чистая позиция. Попытка сменить любой → апселл на
-  // Basic. Basic/Pro (settings_customizable=true) — полная свобода. Лок чисто
-  // UI-шный: backend отдаёт все срезы (их читает и embed-виджет). Пока tier
-  // грузится, считаем НЕ кастомизируемым — не мигаем чужим сохранённым срезом
-  // до подтверждения тарифа.
-  const canCustomizeOi = !oiAccess.isLoading && oiAccess.canUseFlag('settings_customizable');
-  const settingsLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('settings_customizable');
-  const settingsUpgradeTier = oiAccess.requiredTierFor({ flag: 'settings_customizable' }) ?? 'basic';
-  const clgroup: 'FIZ' | 'YUR' = canCustomizeOi ? rawClgroup : 'FIZ';
-  const displayMode: DisplayMode = canCustomizeOi ? rawDisplayMode : 'positions';
-  const oiVariant: OIVariant = canCustomizeOi ? rawOiVariant : 'net';
-  const promptSettingsUpgrade = (featureName: string) =>
-    showUpgrade({ tier: settingsUpgradeTier, featureName, indicator: 'open_interest' });
+  // ── Free-тариф: срез в основном свободен (2026-08-10), под Basic остаются
+  // ровно два замка: категория «Юрлица» (clgroup_yur) и показатель «Число
+  // трейдеров» (metric_traders). Лок чисто UI-шный: backend отдаёт все срезы
+  // (их читает и embed-виджет). Пока tier грузится, считаем залоченным — не
+  // мигаем чужим сохранённым срезом до подтверждения тарифа.
+  const canUseYur = !oiAccess.isLoading && oiAccess.canUseFlag('clgroup_yur');
+  const canUseTraders = !oiAccess.isLoading && oiAccess.canUseFlag('metric_traders');
+  const yurLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('clgroup_yur');
+  const tradersLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('metric_traders');
+  const clgroup: 'FIZ' | 'YUR' = canUseYur ? rawClgroup : 'FIZ';
+  const displayMode: DisplayMode =
+    !canUseTraders && rawDisplayMode === 'participants' ? 'positions' : rawDisplayMode;
+  const oiVariant: OIVariant = rawOiVariant;
+  const promptSettingsUpgrade = (featureName: string, flag: 'clgroup_yur' | 'metric_traders') =>
+    showUpgrade({
+      tier: oiAccess.requiredTierFor({ flag }) ?? 'basic',
+      featureName,
+      indicator: 'open_interest',
+    });
 
   // Контекст сигнала из URL (Telegram deep-link ИЛИ in-app тост/колокол аномалии).
   // Применяем при КАЖДОЙ навигации, не только на маунте — иначе клик по второй
@@ -924,11 +928,11 @@ export default function OpenInterestPage() {
             <Dropdown<'FIZ' | 'YUR'>
               options={[
                 { key: 'FIZ', label: 'Физлица' },
-                { key: 'YUR', label: 'Юрлица', locked: settingsLocked },
+                { key: 'YUR', label: 'Юрлица', locked: yurLocked },
               ]}
               value={clgroup}
               onChange={setClgroup}
-              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('данные по юрлицам') : undefined}
+              onLockedClick={yurLocked ? () => promptSettingsUpgrade('данные по юрлицам', 'clgroup_yur') : undefined}
             />
             </div>
           )}
@@ -938,11 +942,11 @@ export default function OpenInterestPage() {
             <Dropdown<DisplayMode>
               options={[
                 { key: 'positions', label: 'Объём позиций' },
-                { key: 'participants', label: 'Число трейдеров', locked: settingsLocked },
+                { key: 'participants', label: 'Число трейдеров', locked: tradersLocked },
               ]}
               value={displayMode}
               onChange={setDisplayMode}
-              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('режим числа трейдеров') : undefined}
+              onLockedClick={tradersLocked ? () => promptSettingsUpgrade('режим числа трейдеров', 'metric_traders') : undefined}
             />
           </div>
 
@@ -951,15 +955,14 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi, locked: settingsLocked },
-                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)',  locked: settingsLocked },
-                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)',    locked: settingsLocked },
-                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)', locked: settingsLocked },
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi },
+                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
+                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
+                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
                 { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)', help: OI_VARIANT_HELP.net },
               ]}
               value={oiVariant}
               onChange={setOiVariant}
-              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('другие показатели открытого интереса') : undefined}
             />
             </div>
           )}

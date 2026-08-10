@@ -19,6 +19,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, X } from 'lucide-react';
 import FundsTable from './FundsTable';
+import TierUpsellOverlay, { BLURRED_STYLE } from '../tier/TierUpsellOverlay';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
 import type { FundsChartResponse } from '../../services/api';
 
@@ -28,6 +29,9 @@ interface Props {
   onSetHiddenFunds: React.Dispatch<React.SetStateAction<Set<number>>>;
   onToggleFundVisibility: (fundId: number) => void;
   onClose: () => void;
+  /** Тариф не даёт пикер (funds_money.fund_picker): список слегка заблюрен,
+   *  поверх — апселл на Basic (2026-08-10; раньше модалку не открывали вовсе). */
+  locked?: boolean;
   /** Родительный падеж категории для заголовка: «Фонды облигаций». */
   categoryGenitive?: string;
   /** Дата среза данных (ISO) и флаг «часть фондов запаздывает» — подпись в шапке. */
@@ -49,6 +53,7 @@ export default function FundPickerModal({
   onSetHiddenFunds,
   onToggleFundVisibility,
   onClose,
+  locked = false,
   categoryGenitive,
   maxDate,
   hasStale,
@@ -148,19 +153,34 @@ export default function FundPickerModal({
             scrollbar-gutter both-edges резервирует место скроллбара С ОБЕИХ
             сторон — иначе вертикальный скроллбар (~11px справа) съедал правый
             отступ и строки стояли несимметрично. */}
-        <div className="flex-1 min-h-0 overflow-y-auto styled-scrollbar" style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}>
-          <FundsTable
-            bare
-            data={data}
-            hiddenFunds={hiddenFunds}
-            collapsedSubcats={collapsedSubcats ?? ownCollapsed}
-            navSortDir={navSortDir ?? ownSortDir}
-            aggregatedData={aggregatedData ?? ownAggregated}
-            onToggleFundVisibility={onToggleFundVisibility}
-            onSetHiddenFunds={onSetHiddenFunds}
-            onSetCollapsedSubcats={onSetCollapsedSubcats ?? setOwnCollapsed}
-            onSetNavSortDir={onSetNavSortDir ?? setOwnSortDir}
-          />
+        {/* Locked-тир: список остаётся видимым, но слегка заблюрен и без
+            интерактива, поверх — апселл (relative-обёртка держит оверлей). */}
+        <div className="flex-1 min-h-0 flex flex-col" style={{ position: 'relative' }}>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto styled-scrollbar"
+            style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges', ...(locked ? BLURRED_STYLE : null) }}
+            aria-hidden={locked || undefined}
+          >
+            <FundsTable
+              bare
+              data={data}
+              hiddenFunds={hiddenFunds}
+              collapsedSubcats={collapsedSubcats ?? ownCollapsed}
+              navSortDir={navSortDir ?? ownSortDir}
+              aggregatedData={aggregatedData ?? ownAggregated}
+              onToggleFundVisibility={onToggleFundVisibility}
+              onSetHiddenFunds={onSetHiddenFunds}
+              onSetCollapsedSubcats={onSetCollapsedSubcats ?? setOwnCollapsed}
+              onSetNavSortDir={onSetNavSortDir ?? setOwnSortDir}
+            />
+          </div>
+          {locked && (
+            <TierUpsellOverlay
+              tier="basic"
+              featureName="Выбор фондов"
+              description="Соберите свою подвыборку фондов внутри категории — график и таблица пересчитаются по ней."
+            />
+          )}
         </div>
         {/* «Готово» — как в пикере фондов «Сделок фондов»: выбор применяется
             сразу по клику, кнопка лишь закрывает окно, но даёт очевидный выход

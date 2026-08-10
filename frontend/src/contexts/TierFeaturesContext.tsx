@@ -39,6 +39,8 @@ export interface IndicatorLimits {
     data_delay_hours?: number;
     // fund_trades: задержка меряется не часами, а снапшотами свежести (0 = свежий).
     snapshot_delay?: number;
+    portfolio_snapshot_delay?: number;
+    company_snapshot_delay?: number;
     // Per-indicator flags:
     mode_imoex?: boolean;
     mode_all?: boolean;
@@ -47,7 +49,11 @@ export interface IndicatorLimits {
     filter_no_outliers?: boolean;
     filter_no_dividends?: boolean;
     category_filters_enabled?: boolean;
-    settings_customizable?: boolean;
+    // open_interest: гранулярные замки среза (2026-08-10, вместо прежнего
+    // общего settings_customizable): срез «Юрлица» и показатель «Число
+    // трейдеров» — с Basic, остальные настройки среза свободны на всех тирах.
+    clgroup_yur?: boolean;
+    metric_traders?: boolean;
     // funds_money / fund_trades: выбор ПОДМНОЖЕСТВА фондов (пикер) — с Basic.
     fund_picker?: boolean;
     open?: boolean;

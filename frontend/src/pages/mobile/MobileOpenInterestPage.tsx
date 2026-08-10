@@ -117,23 +117,29 @@ export default function MobileOpenInterestPage() {
     parseOiDeepLink(searchParams).period);
   const [intervalValue, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
   // raw* — сохранённый выбор среза. Для Free переопределяется дефолтом ниже
-  // (settingsLocked), но в localStorage остаётся — вернётся после апгрейда на Basic.
+  // (yurLocked/tradersLocked), но в localStorage остаётся — вернётся после апгрейда на Basic.
   const [rawClgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'FIZ');
   const [rawOiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [rawDisplayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
 
-  // Free-тариф: срез (категория / тип данных / показатель) залочен на дефолт
-  // (Физлица · Объём позиций · Чистая позиция), смена → апселл на Basic. Лок
-  // чисто UI-шный (backend отдаёт все срезы). Пока tier грузится — НЕ
-  // кастомизируем. Паритет с desktop OpenInterestPage.
-  const canCustomizeOi = !oiAccess.isLoading && oiAccess.canUseFlag('settings_customizable');
-  const settingsLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('settings_customizable');
-  const settingsUpgradeTier = oiAccess.requiredTierFor({ flag: 'settings_customizable' }) ?? 'basic';
-  const clgroup: 'FIZ' | 'YUR' = canCustomizeOi ? rawClgroup : 'FIZ';
-  const displayMode: DisplayMode = canCustomizeOi ? rawDisplayMode : 'positions';
-  const oiVariant: OIVariant = canCustomizeOi ? rawOiVariant : 'net';
-  const promptSettingsUpgrade = (featureName: string) =>
-    showUpgrade({ tier: settingsUpgradeTier, featureName, indicator: 'open_interest' });
+  // Free-тариф: срез в основном свободен (2026-08-10), под Basic остаются два
+  // замка: категория «Юрлица» (clgroup_yur) и показатель «Число трейдеров»
+  // (metric_traders). Лок чисто UI-шный (backend отдаёт все срезы). Пока tier
+  // грузится — считаем залоченным. Паритет с desktop OpenInterestPage.
+  const canUseYur = !oiAccess.isLoading && oiAccess.canUseFlag('clgroup_yur');
+  const canUseTraders = !oiAccess.isLoading && oiAccess.canUseFlag('metric_traders');
+  const yurLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('clgroup_yur');
+  const tradersLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('metric_traders');
+  const clgroup: 'FIZ' | 'YUR' = canUseYur ? rawClgroup : 'FIZ';
+  const displayMode: DisplayMode =
+    !canUseTraders && rawDisplayMode === 'participants' ? 'positions' : rawDisplayMode;
+  const oiVariant: OIVariant = rawOiVariant;
+  const promptSettingsUpgrade = (featureName: string, flag: 'clgroup_yur' | 'metric_traders') =>
+    showUpgrade({
+      tier: oiAccess.requiredTierFor({ flag }) ?? 'basic',
+      featureName,
+      indicator: 'open_interest',
+    });
 
   // Актив пришёл из URL (?instrument=) → имя пустое, резолвим через API (как на
   // десктопе). Выбор из пикера ставит имя сам → guard `if (instrumentName)` не мешает.
@@ -697,13 +703,13 @@ export default function MobileOpenInterestPage() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
             {([['positions', 'Объём позиций'], ['participants', 'Число трейдеров']] as const).map(([m, label]) => {
-              const locked = settingsLocked && m !== 'positions';
+              const locked = tradersLocked && m !== 'positions';
               return (
               <button
                 key={m}
                 className={`fm-chip ${displayMode === m ? 'active' : ''}`}
                 onClick={() => {
-                  if (locked) { promptSettingsUpgrade('режим числа трейдеров'); return; }
+                  if (locked) { promptSettingsUpgrade('режим числа трейдеров', 'metric_traders'); return; }
                   setDisplayMode(m);
                   setOptionsSheetOpen(false);
                 }}
@@ -724,12 +730,12 @@ export default function MobileOpenInterestPage() {
             {OI_VARIANTS.map((v) => {
               // «?» с пояснением только у вариантов, где есть копирайт (ОИ и чистая позиция)
               const help = v === 'oi' ? OI_VARIANT_HELP.oi : v === 'net' ? OI_VARIANT_HELP.net : null;
-              const locked = settingsLocked && v !== 'net';
+              // Показатели ОИ свободны на всех тирах (2026-08-10).
+              const locked = false;
               return (
               <button
                 key={v}
                 onClick={() => {
-                  if (locked) { promptSettingsUpgrade('другие показатели открытого интереса'); return; }
                   setOiVariant(v);
                   setOptionsSheetOpen(false);
                 }}
@@ -760,13 +766,13 @@ export default function MobileOpenInterestPage() {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {(['YUR', 'FIZ'] as const).map((g) => {
-              const locked = settingsLocked && g !== 'FIZ';
+              const locked = yurLocked && g !== 'FIZ';
               return (
               <button
                 key={g}
                 className={`fm-chip ${clgroup === g ? 'active' : ''}`}
                 onClick={() => {
-                  if (locked) { promptSettingsUpgrade('данные по юрлицам'); return; }
+                  if (locked) { promptSettingsUpgrade('данные по юрлицам', 'clgroup_yur'); return; }
                   setClgroup(g);
                   setOptionsSheetOpen(false);
                 }}

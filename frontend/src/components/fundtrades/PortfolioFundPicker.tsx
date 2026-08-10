@@ -21,7 +21,7 @@ import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, L
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
-import { useUpgradePrompt } from '../tier/UpgradeModal';
+import TierUpsellOverlay, { BLURRED_STYLE } from '../tier/TierUpsellOverlay';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -199,6 +199,7 @@ function PickerModal({
     title,
     onApply,
     onClose,
+    locked = false,
 }: {
     funds: FundWithHistory[];
     selected: Set<string>;
@@ -207,6 +208,9 @@ function PickerModal({
     title: string;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
+    /** Тариф не даёт пикер (fund_trades.fund_picker): список слегка заблюрен,
+     *  поверх — апселл на Basic; закрытие ничего не применяет (2026-08-10). */
+    locked?: boolean;
 }) {
     const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
     // Черновик: пусто в persisted-наборе = все выбраны.
@@ -220,6 +224,8 @@ function PickerModal({
     // Применение при любом закрытии: полный набор (или пустой черновик, который
     // для API неотличим от «все») схлопываем в пусто = «все фонды».
     const applyAndClose = () => {
+        // Заперт: закрытие ничего не применяет — интерактив всё равно под блюром.
+        if (locked) { onClose(); return; }
         // Пустой черновик для API неотличим от «все фонды», поэтому сводим его к
         // пулу доступных: пока таблетка прожата, индексные не должны вернуться
         // «через ноль» (снял все → вернулись все 19, включая индексные).
@@ -431,7 +437,10 @@ function PickerModal({
                         <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6 }}>
                             <button
                                 type="button"
-                                onClick={toggleIndexOff}
+                                // Заперт: тумблер меняет draft, который всё равно
+                                // не применится — не даём его дёргать.
+                                onClick={locked ? undefined : toggleIndexOff}
+                                disabled={locked}
                                 className="editorial-press"
                                 aria-pressed={indexOff}
                                 title={indexOff
@@ -469,10 +478,21 @@ function PickerModal({
                 </div>
 
                 {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
-                    вертикальный скроллбар не съедает правый отступ). */}
+                    вертикальный скроллбар не съедает правый отступ).
+                    Locked-тир: список слегка заблюрен, поверх — апселл на Basic
+                    (обёртка ниже относительная, оверлей — absolute). */}
+                <div className="flex-1 min-h-0 flex flex-col" style={{ position: 'relative' }}>
+                {locked && (
+                    <TierUpsellOverlay
+                        tier="basic"
+                        featureName="Выбор фондов"
+                        description="Соберите свой пул фондов — одна УК, только крупные или без индексных — портфель пересчитается по нему."
+                    />
+                )}
                 <div
                     className="flex-1 min-h-0 overflow-y-auto styled-scrollbar"
-                    style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}
+                    style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges', ...(locked ? BLURRED_STYLE : null) }}
+                    aria-hidden={locked || undefined}
                 >
                     <table className="w-full" style={{ fontSize: 'var(--fs-sm)', tableLayout: 'fixed' }}>
                         {/* Раскладка колонок — как bare-FundsTable: чекбокс 40,
@@ -711,6 +731,7 @@ function PickerModal({
                         </tbody>
                     </table>
                 </div>
+                </div>{/* /relative-обёртка блюр-гейта */}
 
                 {/* Футер «Готово» — применяет и закрывает (как FundPicker multi). */}
                 <div
@@ -776,7 +797,6 @@ export default function PortfolioFundPicker({
     // «Опции». «Витрины» это не касается — там пикера нет.
     // `isLoading ||` — пока тариф не резолвнут, замок не вешаем.
     const access = useTierAccess('fund_trades');
-    const { showUpgrade } = useUpgradePrompt();
     const canPick = access.isLoading || access.canUseFlag('fund_picker');
 
     // Санитайз слетевшего с тарифа: подвыборка «Общего портфеля» персистится
@@ -806,20 +826,10 @@ export default function PortfolioFundPicker({
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
             <button
                 type="button"
-                // Locked: модалку не открываем вовсе (честнее блюра — под ним
-                // всё равно лежал бы обычный публичный список фондов, а платная
-                // тут не «таблица», а сама возможность собрать свой пул).
-                onClick={() => {
-                    if (!canPick) {
-                        showUpgrade({
-                            tier: access.requiredTierFor({ flag: 'fund_picker' }) ?? 'basic',
-                            featureName: 'выбор фондов',
-                            indicator: 'fund_trades',
-                        });
-                        return;
-                    }
-                    setOpen(true);
-                }}
+                // Locked: модалка открывается всё равно (2026-08-10) — список
+                // внутри слегка заблюрен, поверх апселл на Basic (как в пикере
+                // «Денег в фондах»). Так видно, что именно даёт тариф.
+                onClick={() => setOpen(true)}
                 title={canPick ? undefined : 'Выбор фондов — на тарифе Basic и выше'}
                 className="editorial-press"
                 style={{
@@ -845,13 +855,14 @@ export default function PortfolioFundPicker({
                     : <Lock size={13} strokeWidth={2.4} style={{ flexShrink: 0, opacity: 0.85 }} />}
             </button>
 
-            {open && canPick && (
+            {open && (
                 <PickerModal
                     funds={funds}
                     selected={selected}
                     targetMonth={targetMonth}
                     excludedTickers={excludedTickers}
                     title={title}
+                    locked={!canPick}
                     onApply={onChange}
                     onClose={() => setOpen(false)}
                 />
