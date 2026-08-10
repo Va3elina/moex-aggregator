@@ -115,10 +115,12 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
   useEffect(() => { wr('frame:embed:screener:group', group); }, [group]);
   useEffect(() => { wr('frame:embed:screener:onlyfav', onlyFav ? '1' : '0'); }, [onlyFav]);
 
-  // Реалтайм: дневной пересчёт (SSE 'daily') → тихий рефетч, лента не гаснет.
+  // Реалтайм: лента считается по 5-минутным срезам ОИ, поэтому источники те же,
+  // что у графика ('5min', 'hourly'); 'daily' оставлен под ночной пересчёт
+  // истории. Рефетч тихий — лента не гаснет.
   const [refreshTick, setRefreshTick] = useState(0);
   const silentRef = useRef(false);
-  useRealtimeData(['daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
+  useRealtimeData(['5min', 'hourly', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
 
   useEffect(() => {
     let cancelled = false;

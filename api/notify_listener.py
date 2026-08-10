@@ -15,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 # Маппинг: источник события → префиксы кеша для инвалидации
 SOURCE_CACHE_MAP = {
-    "5min": ["chart:", "candles:", "oi:"],
-    "hourly": ["chart:", "oi:"],
+    # oi_screener: — лента скринера. Префикс "oi:" её НЕ покрывает (там
+    # двоеточие сразу после oi), и без явной инвалидации лента жила по своему
+    # TTL=300с: SSE-рефетч фронта приходил на свежий NOTIFY, а бэкенд отдавал
+    # прежний срез. oi_extremes: (TTL 30 мин, тяжёлый пересчёт) намеренно не
+    # трогаем — исторические экстремумы за 5 минут не меняются.
+    "5min": ["chart:", "candles:", "oi:", "oi_screener:"],
+    "hourly": ["chart:", "oi:", "oi_screener:"],
     "daily": None,  # None = очистить весь кеш
     "mv_refresh": ["heatmap:", "stats:"],
     "funds": ["funds_chart:"],
