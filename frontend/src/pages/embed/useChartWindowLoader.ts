@@ -103,6 +103,16 @@ export function useChartWindowLoader({ instrument, interval, clgroup, data, onEx
                 const oi = (older.open_interest ?? []).filter((o) => o.time < edge);
                 if (!candles.length) { exhausted.current = true; return; }
 
+                // Метки экспираций бэкенд считает по дням, попавшим в ЗАПРОС:
+                // в окне на месяц смен контракта нет вовсе (они квартальные),
+                // поэтому склеиваем их из кусков — иначе значки на графике
+                // просто пропадают. Дедуп по дате: соседние куски могут
+                // сойтись на одной границе.
+                const byDate = new Map<string, NonNullable<ChartResponse['contract_switches']>[number]>();
+                for (const sw of older.contract_switches ?? []) byDate.set(sw.date, sw);
+                for (const sw of now.data.contract_switches ?? []) byDate.set(sw.date, sw);
+                const switches = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+
                 now.onExtended({
                     ...now.data,
                     candles: [...candles, ...now.data.candles],
@@ -111,6 +121,7 @@ export function useChartWindowLoader({ instrument, interval, clgroup, data, onEx
                     oi_count: oi.length + now.data.open_interest.length,
                     candles_start_date: candles[0].time.slice(0, 10),
                     data_start: candles[0].time.slice(0, 10),
+                    contract_switches: switches,
                 });
             })
             .catch(() => { exhausted.current = true; })   // нет данных/тариф — просто не тянем дальше
