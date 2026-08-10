@@ -84,13 +84,17 @@ function bestDailyPeriod(canUsePeriod: (p: string) => boolean): string {
   return '1m';
 }
 // Время → UNIX-секунды для LwChart. Дневной ТФ: UTC-полночь по дате (чтобы не было
-// сдвига даты из-за таймзоны); интрадей — полный timestamp.
+// сдвига даты из-за таймзоны); интрадей — часы/минуты тоже собираются через Date.UTC.
+// ВАЖНО: бэкенд отдаёт НАИВНУЮ московскую строку (datetime.isoformat() без зоны), а
+// lightweight-charts рисует ось и кросхейр в UTC (ruTickMark → getUTCHours). Прежний
+// new Date(t) парсил строку в зоне БРАУЗЕРА, поэтому у московского юзера весь интрадей
+// уезжал на −3ч: последняя 5-минутка 10:45 показывалась как 07:45 и график выглядел
+// «застрявшим». Покомпонентный Date.UTC отображает ровно то время, что пришло с бэка.
 const toSec = (t: string, intraday: boolean): number => {
-  if (!intraday) {
-    const [y, m, d] = t.slice(0, 10).split('-').map(Number);
-    return Math.floor(Date.UTC(y, m - 1, d) / 1000);
-  }
-  return Math.floor(new Date(t).getTime() / 1000);
+  const [y, m, d] = t.slice(0, 10).split('-').map(Number);
+  if (!intraday) return Math.floor(Date.UTC(y, m - 1, d) / 1000);
+  const [hh, mi, ss] = t.slice(11, 19).split(':').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d, hh || 0, mi || 0, ss || 0) / 1000);
 };
 
 // Цвета ОИ — все через CSS-var (адаптируются к теме внутри iframe).
