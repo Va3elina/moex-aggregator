@@ -371,7 +371,13 @@ export async function getChartData(
   interval: number,
   clgroup: string,
   showOi: boolean = true,
-  period: string = '1y'
+  period: string = '1y',
+  // Явный отрезок истории — для оконной подачи в песочнице: грузим видимый
+  // диапазон, а прошлое догружаем кусками при прокрутке влево. Оба конца
+  // обязательны вместе (бэкенд трактует одиночный date_to как потолок
+  // свежести тарифа, а не как границу окна).
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<ChartResponse> {
   const params = new URLSearchParams({
     sectype,
@@ -381,6 +387,10 @@ export async function getChartData(
     show_oi: showOi.toString(),
     period
   });
+  if (dateFrom && dateTo) {
+    params.set('date_from', dateFrom);
+    params.set('date_to', dateTo);
+  }
 
   const response = await apiFetch(`${API_BASE}/api/chart/${secId}?${params}`);
   if (!response.ok) throw new Error('Failed to fetch chart data');

@@ -70,6 +70,11 @@ interface LwChartPanesProps {
    *  отключает — легенда сверху панелей уже даёт статичные значения, курсорный
    *  тултип поверх узкого графика избыточен (Вадим). */
   showTooltip?: boolean;
+  /** Пользователь долистал до начала ряда — пора догрузить более раннюю
+   *  историю (оконная подача, модель TradingView). Владелец сам решает, что
+   *  грузить, и дописывает данные СЛЕВА; повторные вызовы во время загрузки
+   *  он же и гасит. Без пропа поведение прежнее — весь ряд грузится сразу. */
+  onReachStart?: () => void;
   /** Индекс панели, на которой доступно рисование (модель TradingView). Без
    *  этого пропа рисование не создаётся вообще — нулевой оверхед для панелей,
    *  которым оно не нужно. */
@@ -235,14 +240,24 @@ function paneBoxes(root: HTMLElement): HTMLElement[] {
 const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 
+// За сколько баров до начала ряда просить догрузку истории. Порог с запасом:
+// пока пользователь долистывает оставшиеся бары, следующий кусок уже едет, и
+// график не упирается в пустоту. Значение подобрано под ширину экрана — на
+// 1200px помещается ~200 свечей, то есть примерно половина запаса.
+const LOAD_MORE_BARS_AHEAD = 100;
+
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
-  panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true,
+  panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true, onReachStart,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
   paneOverlay, paneSizes, onPaneSizesChange, staticView,
   selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
+  // Колбэк догрузки держим в ref: подписка на диапазон живёт один раз, а
+  // проп пересоздаётся каждый рендер владельца.
+  const onReachStartRef = useRef(onReachStart);
+  onReachStartRef.current = onReachStart;
   const chartsRef = useRef<IChartApi[]>([]);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
   // ⚠️ Определения серий храним ПАРАЛЛЕЛЬНО apisRef, а не читаем из panesRef.
@@ -554,6 +569,17 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         const redrawExp = () => { drawExpRef.current?.(); };
         chart.timeScale().subscribeVisibleLogicalRangeChange(redrawExp);
         unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(redrawExp));
+
+        // Оконная подача (модель TradingView): доскроллили до начала ряда —
+        // просим владельца догрузить более раннюю историю. range.from идёт в
+        // МИНУС, когда слева от первого бара уже пустота, поэтому порог берём
+        // с запасом: успеть загрузить, пока пользователь ещё листает.
+        const edge = () => {
+          const r = chart.timeScale().getVisibleLogicalRange();
+          if (r && r.from < LOAD_MORE_BARS_AHEAD) onReachStartRef.current?.();
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(edge);
+        unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(edge));
       }
     });
 
