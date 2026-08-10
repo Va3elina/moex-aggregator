@@ -3,19 +3,22 @@
 Free-float капитализация акций по месяцам — знаменатель режима «От капитализации»
 в «Потоках по компании» (/fund-trades, ручка /company-weights).
 
-Источник — индекс МосБиржи широкого рынка (MOEXBMI) через ISS:
-  - /statistics/.../index/analytics/MOEXBMI?date=D — веса бумаг в индексе на дату D
-    (веса биржа считает по free-float капитализации: FF-капа бумаги / FF-капа корзины);
-  - /history/.../index/securities/MOEXBMI?from=D&till=D — CAPITALIZATION корзины
-    (суммарная free-float капитализация всех бумаг индекса, руб).
+Источник — состав индекса МосБиржи широкого рынка (MOEXBMI) через ISS:
+  - /statistics/.../index/analytics/MOEXBMI?date=D — СПИСОК бумаг корзины на дату D;
+  - /statistics/.../index/analytics/MOEXBMI/tickers/{T}?date=D — детали бумаги:
+    cap_total (полная капа на дату, руб) и ff_factor (официальный коэффициент
+    free-float МосБиржи).
 
-FF-капа бумаги = вес% / 100 × CAPITALIZATION. Биржа пересчитывает число акций
-в обращении на каждой ребалансировке, поэтому допэмиссии/байбэки учтены —
-в отличие от stock_market_cap, где ISSUESIZE на всю историю взят текущий.
+FF-капа бумаги = cap_total × ff_factor.
 
-Точность: вес в выдаче ISS округлён до 0.01% → по фишкам (вес ≥ 0.3%) ошибка
-≤ 1.7%, по хвосту индекса (вес 0.01-0.05%) — десятки процентов. Это оговорено
-в методологии; для «доли фондов от капитализации» хвостовая грубость терпима.
+НЕЛЬЗЯ считать «вес% × CAPITALIZATION корзины»: в весах сидят ограничивающие
+коэффициенты w_factor (у Сбера 0.28 — вес порезан вчетверо), т.е. произведение
+даёт FF-капу × w_factor, и у каждой бумаги искажение своё. Проверено на живых
+данных 2026-08-07: у SBER выходило 12.7% free-float против официальных 48%.
+
+cap_total биржа считает по ИСТОРИЧЕСКОМУ размеру выпуска — допэмиссии/байбэки
+учтены, в отличие от stock_market_cap с текущим ISSUESIZE на всю глубину.
+Точность ff_factor — 2 знака (0.48) → ошибка FF-капы ~±1%.
 
 Хранение: freefloat_cap(sec_id, month=1-е число, as_of=реальная дата среза,
 ffcap руб). Точка месяца — ПОСЛЕДНЯЯ дата месяца, на которую ISS отдаёт
@@ -55,17 +58,17 @@ BACKFILL_FROM = date(2021, 9, 1)
 INDEX_ID = "MOEXBMI"
 ISS_ANALYTICS = ("https://iss.moex.com/iss/statistics/engines/stock/markets/index/"
                  "analytics/{idx}.json?iss.meta=off&date={d}&limit=100&start={start}")
-ISS_INDEX_HIST = ("https://iss.moex.com/iss/history/engines/stock/markets/index/"
-                  "securities/{idx}.json?iss.meta=off&from={d}&till={d}")
+ISS_TICKER = ("https://iss.moex.com/iss/statistics/engines/stock/markets/index/"
+              "analytics/{idx}/tickers/{t}.json?iss.meta=off&date={d}")
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"}
-ISS_PAUSE = 0.2          # сек между запросами — не душить ISS
+ISS_PAUSE = 0.15         # сек между запросами — не душить ISS
 DATE_PROBE_BACK = 15     # сколько дней назад от конца месяца ищем дату среза
 
-# Санити: FF-капа корзины широкого рынка исторически 10-40 трлн руб.
-CAP_MIN_RUB = 3e12
-CAP_MAX_RUB = 300e12
-# Сумма весов корзины должна сходиться к 100% (округление до 0.01 даёт ±0.5).
-WSUM_MIN, WSUM_MAX = 95.0, 105.0
+# Санити: FF-капа корзины широкого рынка (Σ cap_total×ff) — единицы-десятки трлн.
+BASKET_MIN_RUB = 2e12
+BASKET_MAX_RUB = 300e12
+# Минимум бумаг с валидными cap_total/ff_factor, чтобы месяц считался полным.
+MIN_TICKERS = 60
 
 log = logging.getLogger("freefloat_cap")
 
@@ -113,9 +116,9 @@ def _iss_json(url: str) -> dict:
         return json.load(r)
 
 
-def fetch_weights(d: date) -> dict:
-    """Веса бумаг MOEXBMI на дату d: {secid: вес%}. Пусто = не торговый день."""
-    out: dict = {}
+def fetch_tickers(d: date) -> list:
+    """Список бумаг корзины MOEXBMI на дату d. Пусто = не торговый день."""
+    out: list = []
     start = 0
     while True:
         data = _iss_json(ISS_ANALYTICS.format(idx=INDEX_ID, d=d.isoformat(), start=start))
@@ -123,10 +126,8 @@ def fetch_weights(d: date) -> dict:
         rows = data["analytics"]["data"]
         if not rows:
             break
-        ti, wi = cols.index("ticker"), cols.index("weight")
-        for row in rows:
-            if row[ti] and row[wi] is not None:
-                out[row[ti]] = float(row[wi])
+        ti = cols.index("ticker")
+        out.extend(row[ti] for row in rows if row[ti])
         cur = data.get("analytics.cursor", {}).get("data")
         if cur:
             idx_pos, total, pagesize = cur[0][0], cur[0][1], cur[0][2]
@@ -139,16 +140,18 @@ def fetch_weights(d: date) -> dict:
     return out
 
 
-def fetch_index_cap(d: date) -> float | None:
-    """CAPITALIZATION корзины MOEXBMI на дату d, руб. None = нет строки."""
-    data = _iss_json(ISS_INDEX_HIST.format(idx=INDEX_ID, d=d.isoformat()))
-    cols = data["history"]["columns"]
-    rows = data["history"]["data"]
+def fetch_ticker_ffcap(t: str, d: date):
+    """FF-капа бумаги t на дату d: cap_total × ff_factor, руб. None = нет данных."""
+    data = _iss_json(ISS_TICKER.format(idx=INDEX_ID, t=t, d=d.isoformat()))
+    cols = data["ticker"]["columns"]
+    rows = data["ticker"]["data"]
     if not rows:
         return None
-    ci = cols.index("CAPITALIZATION")
-    v = rows[0][ci]
-    return float(v) if v else None
+    ci, fi = cols.index("cap_total"), cols.index("ff_factor")
+    cap, ff = rows[0][ci], rows[0][fi]
+    if not cap or not ff or float(cap) <= 0 or float(ff) <= 0:
+        return None
+    return float(cap) * float(ff)
 
 
 def month_end(m: date) -> date:
@@ -168,43 +171,53 @@ def load_month(engine, m: date) -> int:
 
     Возвращает число записанных бумаг (0 = данных нет / не прошли санити)."""
     probe = min(month_end(m), date.today())
-    weights: dict = {}
+    tickers: list = []
     as_of = None
     for _ in range(DATE_PROBE_BACK):
         if probe < m:
             break
-        weights = fetch_weights(probe)
+        tickers = fetch_tickers(probe)
         time.sleep(ISS_PAUSE)
-        if weights:
+        if tickers:
             as_of = probe
             break
         probe -= timedelta(days=1)
-    if not weights or as_of is None:
+    if not tickers or as_of is None:
         log.warning(f"  {m:%Y-%m}: нет analytics в пределах {DATE_PROBE_BACK} дней от конца месяца")
         return 0
 
-    wsum = sum(weights.values())
-    if not (WSUM_MIN <= wsum <= WSUM_MAX):
-        log.error(f"  {m:%Y-%m}: сумма весов {wsum:.2f}% вне [{WSUM_MIN}, {WSUM_MAX}] — пропуск")
-        return 0
+    # Детали по каждой бумаге корзины: cap_total × ff_factor.
+    ffcaps: dict = {}
+    for t in tickers:
+        try:
+            v = fetch_ticker_ffcap(t, as_of)
+        except Exception as e:
+            log.warning(f"  {m:%Y-%m}: {t} — ошибка ISS ({e}), пропуск бумаги")
+            v = None
+        if v is not None:
+            ffcaps[t] = v
+        time.sleep(ISS_PAUSE)
 
-    cap = fetch_index_cap(as_of)
-    time.sleep(ISS_PAUSE)
-    if cap is None or not (CAP_MIN_RUB <= cap <= CAP_MAX_RUB):
-        log.error(f"  {m:%Y-%m}: CAPITALIZATION={cap} вне санити-диапазона — пропуск")
+    if len(ffcaps) < MIN_TICKERS:
+        log.error(f"  {m:%Y-%m}: валидных бумаг {len(ffcaps)} < {MIN_TICKERS} — пропуск месяца")
+        return 0
+    basket = sum(ffcaps.values())
+    if not (BASKET_MIN_RUB <= basket <= BASKET_MAX_RUB):
+        log.error(f"  {m:%Y-%m}: Σ FF-кап {basket:.3e} вне санити-диапазона — пропуск")
         return 0
 
     # Перезапись месяца целиком: состав корзины меняется, и upsert без DELETE
     # оставлял бы бумаги, выбывшие из индекса между прогонами текущего месяца.
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM freefloat_cap WHERE month = :m"), {"m": m})
-        for secid, w in weights.items():
+        for secid, v in ffcaps.items():
             conn.execute(text("""
                 INSERT INTO freefloat_cap (sec_id, month, as_of, ffcap)
                 VALUES (:s, :m, :d, :c)
-            """), {"s": secid, "m": m, "d": as_of, "c": round(w / 100.0 * cap, 2)})
-    log.info(f"  {m:%Y-%m}: {len(weights)} бумаг, срез {as_of}, корзина {cap / 1e12:.2f} трлн ₽")
-    return len(weights)
+            """), {"s": secid, "m": m, "d": as_of, "c": round(v, 2)})
+    log.info(f"  {m:%Y-%m}: {len(ffcaps)}/{len(tickers)} бумаг, срез {as_of}, "
+             f"Σ FF-кап {basket / 1e12:.2f} трлн ₽")
+    return len(ffcaps)
 
 
 def run_once(engine, force: bool = False) -> int:
