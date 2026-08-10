@@ -104,6 +104,7 @@ function fmtPct(v: number): string {
 // «0,0» на половине бумаг. suffix=false — для оси (короче, ₽ и так ясен).
 function fmtRub(v: number, suffix = true): string {
     const sfx = suffix ? ' ₽' : '';
+    if (v === 0) return `0${sfx}`; // нулевой тик оси — «0», а не «0 тыс»
     if (v >= 1e9) {
         const b = v / 1e9;
         const d = b >= 100 ? 0 : b >= 10 ? 1 : 2;
