@@ -280,20 +280,38 @@ def _warm_screener_cache():
         db.close()
 
 
-# Активы, для которых держим тёплым интрадей-график ОИ. Холодный пересчёт 5м/6м
-# стоит 1.6-14 с (замер 2026-08-10: 40 тыс. строк свечей + 24 тыс. точек OI), и
-# платит его первый попавшийся пользователь. Список — самые запрашиваемые по
-# логам; расширять по факту трафика, а не «на всякий случай»: каждая пара тянет
-# отдельный ключ на ~900 КБ.
-_WARM_CHART_ASSETS = ("SR", "MX", "GZ", "Si", "BR", "USDRUBF")
 # (interval, period) — ровно то, что фронт запрашивает по умолчанию для ТФ:
 # при переключении интервала ставится максимальный доступный период (см.
 # MAX_PERIODS_BY_INTERVAL на странице ОИ).
 _WARM_CHART_COMBOS = ((5, "6m"), (60, "1y"), (24, "1y"))
 
+# Сколько секунд за один цикл тратим на прогрев графика. Все видимые активы
+# (91 шт на 2026-08-10) стоят ≈12 минут сплошного CPU — залпом их греть нельзя,
+# это ровно та нагрузка, от которой лечимся. Идём по кругу: за цикл успеваем
+# сколько успеваем, следующий продолжает с того же места. Активы отсортированы
+# по спросу, поэтому востребованные попадают в первые же циклы.
+_WARM_CHART_BUDGET_SEC = 60
+
+
+def _visible_oi_assets(db) -> list[str]:
+    """Активы ОИ, видимые пользователю: все минус скрытые по низкой активности.
+
+    Тот же принцип, что у пикера и скринера (services/oi_screener.low_activity_set),
+    поэтому прогрев покрывает ровно то, что человек может открыть.
+    """
+    from sqlalchemy import text
+    from api.services.oi_screener import low_activity_set
+    every = {r[0] for r in db.execute(text("SELECT DISTINCT sectype FROM open_interest")).fetchall()}
+    try:
+        hidden = set(low_activity_set(db))
+    except Exception as e:
+        logger.warning(f"low_activity_set failed, warming all assets: {e}")
+        hidden = set()
+    return sorted(every - hidden)
+
 
 def _warm_chart_cache():
-    """Прогрев графика ОИ по популярным парам актив × ТФ.
+    """Прогрев графика ОИ: все видимые активы, по кругу, в рамках бюджета.
 
     Греем ДВА варианта ключа на каждую пару: date_to=None (тариф без задержки) и
     date_to=вчера (Free/гость — роутер подменяет потолок в get_effective_end_date).
@@ -303,20 +321,41 @@ def _warm_chart_cache():
     нет токена, а через себя по HTTP получился бы только гостевой вариант. Тот же
     приём, что у карты «Все акции» и скринера выше.
 
-    Уже тёплые ключи пропускаем — проверка стоит одну команду Redis, а пересчёт
-    секунды. Синхронная: вызывается через asyncio.to_thread.
+    Порядок — по спросу (cache.record_demand на каждом запросе графика), хвост —
+    по алфавиту. Курсор круга живёт в Redis, поэтому перезапуск контейнера не
+    начинает обход заново с самых дорогих активов.
+
+    Уже тёплые ключи пропускаются по одной команде Redis — основная масса циклов
+    почти бесплатна. Синхронная: вызывается через asyncio.to_thread.
     """
     import json
+    import time as _time
     from datetime import date, timedelta
-    from api.cache import get_gzip, set_gzip, DEFAULT_TTL
+    from api.cache import get_gzip, set_gzip, get_or_set, top_demand, DEFAULT_TTL
     from api.database import SessionLocal
     from api.routers.chart import _compute_chart_data
 
     yesterday = date.today() - timedelta(days=1)
+    deadline = _time.monotonic() + _WARM_CHART_BUDGET_SEC
     db = SessionLocal()
     warmed = 0
     try:
-        for sectype in _WARM_CHART_ASSETS:
+        assets = _visible_oi_assets(db)
+        if not assets:
+            return
+        # Спрос вперёд, остальное — следом, в стабильном порядке.
+        hot = [a for a in top_demand() if a in assets]
+        order = hot + [a for a in assets if a not in set(hot)]
+
+        # Продолжаем с места прошлого цикла, а не с начала списка.
+        start = int(get_or_set("chart:warm:cursor") or 0) % len(order)
+        idx = start
+
+        for step in range(len(order)):
+            idx = (start + step) % len(order)
+            if _time.monotonic() > deadline:
+                break
+            sectype = order[idx]
             for interval, period in _WARM_CHART_COMBOS:
                 for date_to in (None, yesterday):
                     key = (f"chart:{sectype}:{sectype}:futures:{interval}:FIZ:True:"
@@ -332,10 +371,12 @@ def _warm_chart_cache():
                         warmed += 1
                     except Exception as e:
                         logger.warning(f"Chart warm failed ({sectype}/{interval}/{period}): {e}")
+
+        get_or_set("chart:warm:cursor", (idx + 1) % len(order), ttl=86400)
     finally:
         db.close()
     if warmed:
-        logger.info(f"Chart cache warm: {warmed} keys computed")
+        logger.info(f"Chart cache warm: {warmed} keys computed (cursor {idx + 1}/{len(assets)})")
 
 
 async def _periodic_warm():

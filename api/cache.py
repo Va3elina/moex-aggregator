@@ -293,6 +293,33 @@ def get_or_compute_gzip(key: str, compute_fn, ttl: int = DEFAULT_TTL, *,
     return set_gzip(key, json.dumps(compute_fn(), default=str), ttl)
 
 
+DEMAND_KEY = "chart:demand"
+
+
+def record_demand(member: str) -> None:
+    """Отметить обращение к активу — счётчик спроса для приоритета прогрева.
+
+    Прогреть все 91 видимый актив разом нельзя (≈12 минут CPU), поэтому греем
+    по кругу, начиная с тех, что реально смотрят. Список «популярного» ведёт
+    сам трафик, а не догадка в константе: замер 2026-08-10 показал 9 активов
+    за день при 91 доступном.
+
+    Fire-and-forget: ошибка Redis не должна ронять запрос за графиком.
+    """
+    try:
+        _get_redis().zincrby(DEMAND_KEY, 1, member)
+    except (redis.RedisError, ConnectionError):
+        pass
+
+
+def top_demand(limit: int = 200) -> list[str]:
+    """Активы по убыванию спроса."""
+    try:
+        return [m for m in _get_redis().zrevrange(DEMAND_KEY, 0, limit - 1)]
+    except (redis.RedisError, ConnectionError):
+        return []
+
+
 def try_lock(name: str, ttl: int) -> bool:
     """Взять распределённый лок на ttl секунд. True — лок наш.
 
