@@ -18,7 +18,7 @@ import { getHeatmapData, getHeatmapImoex, type HeatmapResponse, type HeatmapStoc
 import { squarify, type SquarifyRect } from '../../utils/squarify';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { EmbedMsg } from './embedUi';
-import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown, iconBtnStyle } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 
@@ -212,11 +212,8 @@ export default function EmbedHeatmap() {
             onClick={() => setExportOpen(true)}
             title="Экспорт графика"
             aria-label="Экспорт графика"
-            style={{
-              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
-              cursor: 'pointer', flexShrink: 0, padding: 0,
-            }}
+            className="emb-iconbtn"
+            style={iconBtnStyle(false)}
           >
             <Camera size={15} />
           </button>
