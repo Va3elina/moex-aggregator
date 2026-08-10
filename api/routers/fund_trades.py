@@ -2653,6 +2653,19 @@ _PREF_PAIRS_BASE = {
 PREF_PAIRS: dict[str, str] = {**_PREF_PAIRS_BASE,
                               **{v: k for k, v in _PREF_PAIRS_BASE.items()}}
 
+# Досклейка тикера предшественника, когда securities_ref отдаёт НЕ тот secid,
+# под которым бумага торговалась на основном режиме (и лежит в freefloat_cap).
+# У ГДР переехавших компаний ISS резолвит ISIN на строку «-ME» (сегмент МСФО-
+# расписок), а история капы у биржи — под основным тикером: TCS-ME vs TCSG.
+# Из-за этого Т-Технологии теряли 36 месяцев истории «От капитализации»
+# (данные с 2021-09 были, но лежали под TCSG и в группу не попадали).
+# Правим здесь, а не в securities_ref: тот справочник задаёт МАТЧИНГ холдингов
+# по ISIN, его secid для этого не используется, и трогать его рискованнее.
+FFCAP_SECID_ALIAS: dict[str, str] = {
+    "TCS-ME": "TCSG",   # TCS Group ГДР → Т-Технологии
+    "ETLN-ME": "ETLN",  # Etalon Group ГДР → Эталон
+}
+
 
 def _company_ffcap_by_month(db, resolved_isin: Optional[str],
                             months: list[str]) -> list[Optional[float]]:
@@ -2662,7 +2675,8 @@ def _company_ffcap_by_month(db, resolved_isin: Optional[str],
 
     Тикеры компании: все secid ISIN-группы канонической бумаги из securities_ref
     (склейка редомициляции: FIVE + X5 — историческая капа лежит под старым
-    тикером ГДР) + парный класс акций из PREF_PAIRS. FF-капы классов суммируются.
+    тикером ГДР) + предшественники из FFCAP_SECID_ALIAS + парный класс акций
+    из PREF_PAIRS. FF-капы классов суммируются.
     """
     if not resolved_isin or not months:
         return [None] * len(months)
@@ -2674,7 +2688,8 @@ def _company_ffcap_by_month(db, resolved_isin: Optional[str],
                 FROM securities_ref WHERE isin = :i)
         """), {"i": resolved_isin}).scalars().all()
         company = set(secids)
-        for s in secids:
+        company |= {FFCAP_SECID_ALIAS[s] for s in secids if s in FFCAP_SECID_ALIAS}
+        for s in list(company):
             pair = PREF_PAIRS.get(s)
             if pair:
                 company.add(pair)
