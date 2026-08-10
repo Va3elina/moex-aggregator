@@ -14,9 +14,12 @@
 import type { ChartResponse } from '../types';
 import { getChartDelta } from '../services/api';
 
-/** Время последней НЕ-live точки ряда (её и шлём как since). */
-function lastClosedTime<P extends { time: string; live?: boolean }>(arr: P[]): string | null {
-    for (let i = arr.length - 1; i >= 0; i--) if (!arr[i].live) return arr[i].time;
+/** Время последней НАСТОЯЩЕЙ точки ряда (её и шлём как since).
+ *  Пропускаем и live, и stretched: растянутая цена — это заполнение отрезка,
+ *  где свеча по лицензии MOEX ещё не раздаётся. Если принять её за since,
+ *  настоящие свечи за этот отрезок уже не догрузятся никогда. */
+function lastClosedTime<P extends { time: string; live?: boolean; stretched?: boolean }>(arr: P[]): string | null {
+    for (let i = arr.length - 1; i >= 0; i--) if (!arr[i].live && !arr[i].stretched) return arr[i].time;
     return null;
 }
 
@@ -51,7 +54,7 @@ export async function fetchAndMergeChartDelta(prev: ChartResponse): Promise<Char
         return null;
     }
 
-    const candles = [...prev.candles.filter((c) => !c.live), ...d.candles];
+    const candles = [...prev.candles.filter((c) => !c.live && !c.stretched), ...d.candles];
     const open_interest = [...prev.open_interest.filter((o) => !o.live), ...d.open_interest];
     const endDate = candles.at(-1)?.time.slice(0, 10) ?? prev.candles_end_date;
 
