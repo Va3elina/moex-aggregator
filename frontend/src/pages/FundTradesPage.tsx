@@ -60,7 +60,7 @@ import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
-import PortfolioFundPicker, { defaultPortfolioTickers } from '../components/fundtrades/PortfolioFundPicker';
+import PortfolioFundPicker, { defaultPortfolioTickers, indexFundTickers } from '../components/fundtrades/PortfolioFundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../components/fundtrades/PortfolioMoversPanel';
 import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
@@ -275,7 +275,10 @@ export default function FundTradesPage() {
     // Мультиселект КОНКРЕТНЫХ фондов (пусто = все). Ключ = ticker; бэкенд /movers
     // принимает comma-separated тикеры в параметре `funds` (приоритет над manager).
     // Раньше тут был мультиселект УК (uk_id) — заменён на выбор фондов через FundPicker.
-    const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
+    // Персистится (как набор «Общего портфеля»): при первом заходе применяется
+    // дефолт «без индексных фондов», дальше набор — за юзером.
+    const [selectedMoverFunds, setSelectedMoverFunds] = usePersistedSet<string>('frame:fundtrades:moverFunds');
+    const [moverDefaultApplied, setMoverDefaultApplied] = usePersistedState<boolean>('frame:fundtrades:moverDefaultApplied', false);
     const [metric, setMetric] = usePersistedState<'weight' | 'amount'>('frame:fundtrades:metric', 'weight'); // % веса | объём ₽
     // ITEM 2 — предвыбранная бумага для перехода movers → «Потоки по компании».
     const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
@@ -372,6 +375,17 @@ export default function FundTradesPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [funds.length, portfolioDefaultApplied]);
 
+    // Тот же дефолт на вкладке «Сделки фондов» (один раз на браузер): набор
+    // движений открывается без индексных фондов, тумблер в пикере их вернёт.
+    useEffect(() => {
+        if (funds.length === 0 || moverDefaultApplied) return;
+        if (selectedMoverFunds.size === 0) {
+            setSelectedMoverFunds(new Set(defaultPortfolioTickers(funds)));
+        }
+        setMoverDefaultApplied(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [funds.length, moverDefaultApplied]);
+
     // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
     const portfolioFundsParam = useMemo(
         () => Array.from(portfolioFunds).join(','),
@@ -460,6 +474,8 @@ export default function FundTradesPage() {
         () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
         [funds],
     );
+    // Индексные тикеры для таблетки «Без индексных фондов» в пикере движений.
+    const moverIndexTickers = useMemo(() => indexFundTickers(funds), [funds]);
 
     const fundsByCategory = useMemo(() => {
         const groups: Record<string, FundWithHistory[]> = {};
@@ -983,6 +999,7 @@ export default function FundTradesPage() {
                                 mode="multi"
                                 selected={selectedMoverFunds}
                                 onChange={setSelectedMoverFunds}
+                                indexTickers={moverIndexTickers}
                             />
                         )}
                         <SegmentedControl<'weight' | 'amount'>
