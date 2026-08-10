@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Wallet, Lock, AlarmClock } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import TierUpsellOverlay, { BLURRED_STYLE } from '../../components/tier/TierUpsellOverlay';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
@@ -681,12 +682,8 @@ export default function MobileFundsMoneyPage() {
             <button
               className="fm-chip"
               onClick={() => {
-                // Гость/free: sheet не открываем вовсе — заперт сам инструмент
-                // подвыборки, а не цифры (они те же, что на графике).
-                if (!canPickFunds) {
-                  showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
-                  return;
-                }
+                // Гость/free: sheet открывается всегда (2026-08-10) — запертому
+                // тиру список слегка заблюрен, поверх апселл на Basic.
                 setOptionsSheetOpen(false);
                 setFundsSheetOpen(true);
               }}
@@ -711,7 +708,23 @@ export default function MobileFundsMoneyPage() {
         onClose={() => setFundsSheetOpen(false)}
         title="Фонды в категории"
       >
-        <div style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {/* Locked-тир (funds_money.fund_picker): список слегка заблюрен и без
+            интерактива, поверх — апселл на Basic (2026-08-10; раньше sheet не
+            открывался вовсе). relative-обёртка держит оверлей. */}
+        <div style={{ position: 'relative' }}>
+        {!canPickFunds && (
+          <TierUpsellOverlay
+            tier="basic"
+            featureName="Выбор фондов"
+            description="Соберите свою подвыборку фондов внутри категории — график и цифры пересчитаются по ней."
+          />
+        )}
+        <div
+          // Заперт: список обрезаем по высоте (overflow hidden) — иначе на
+          // длинной категории оверлей отцентрируется за пределами экрана шита.
+          style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4, ...(canPickFunds ? null : { ...BLURRED_STYLE, maxHeight: '60vh', overflow: 'hidden' }) }}
+          aria-hidden={!canPickFunds || undefined}
+        >
           {/* Quick-actions: все / никто */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             <button
@@ -834,6 +847,7 @@ export default function MobileFundsMoneyPage() {
             );
           })}
         </div>
+        </div>{/* /relative-обёртка блюр-гейта */}
       </MobileSheet>
 
       {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ

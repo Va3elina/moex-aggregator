@@ -12,6 +12,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { API_CSV_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
 import TrialOfferCard from './TrialOfferCard';
 
 
@@ -28,15 +29,17 @@ interface UpgradeContextValue {
 const UpgradeContext = createContext<UpgradeContextValue | null>(null);
 
 
-const TIER_LABELS: Record<string, { ru: string; price: string; desc: string }> = {
+// Цена НЕ хардкодится: показываем годовую в пересчёте на месяц (yearly / 12),
+// как на карточках PricingPage — тянется из /api/billing/plans (useTierPrices).
+const TIER_LABELS: Record<string, { ru: string; desc: string }> = {
     basic: {
         ru: 'Basic',
-        price: '2 900 ₽/мес',
-        desc: 'Realtime данные, все инструменты, расширенная история (10 лет).',
+        // История/таймфреймы открыты всем с 2026-08-10 — продаём то, что
+        // реально за Basic: realtime, юрлица + число трейдеров, скринер, пикеры.
+        desc: 'Realtime данные, юрлица и число трейдеров в ОИ, скринер сигналов, выбор фондов.',
     },
     pro: {
         ru: 'Pro',
-        price: '5 900 ₽/мес',
         // API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка
         desc: API_CSV_ENABLED
             ? 'Всё из Basic + API, экспорт CSV, TradingView, индикаторы Т-терминала, безлимитные алерты.'
@@ -82,6 +85,7 @@ export function useUpgradePrompt(): UpgradeContextValue {
 
 function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { onClose: () => void }) {
     const label = TIER_LABELS[tier];
+    const prices = useTierPrices();
     const width = useViewportWidth();
     const isMobile = width < 768;
 
@@ -190,9 +194,15 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                 >
                     <div style={{
                         fontWeight: 700, fontSize: 'var(--fs-xl)',
-                        color: 'var(--accent, #FF5C2B)', marginBottom: 4,
+                        color: 'var(--accent, #FF5C2B)', marginBottom: 2,
                     }}>
-                        {label.price}
+                        {fmtRubMonthly(prices[tier].monthlyEquivalent)}
+                    </div>
+                    <div style={{
+                        color: 'var(--text-muted, #999)',
+                        fontSize: 'var(--fs-xs)', marginBottom: 6,
+                    }}>
+                        при оплате за год
                     </div>
                     <div style={{
                         color: 'var(--text-secondary, #666)',

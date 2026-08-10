@@ -77,8 +77,11 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     # 1. Карта рынка (/heatmap)
     # ───────────────────────────────────────────────────────────────
+    # NB: с 2026-08-10 карта полностью бесплатна — оба режима (IMOEX и «Все
+    # акции») на всех тирах. Тиры оставлены отдельными строками, чтобы можно
+    # было вернуть разграничение без перекройки структуры матрицы.
     "heatmap": {
-        "free":  {"allowed_modes": ["imoex"],         "max_history_days": None},
+        "free":  {"allowed_modes": ["imoex", "all"],  "max_history_days": None},
         "basic": {"allowed_modes": ["imoex", "all"],  "max_history_days": None},
         "pro":   {"allowed_modes": ["imoex", "all"],  "max_history_days": None},
     },
@@ -86,30 +89,38 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     # 2. Открытый интерес (/open-interest)
     # ───────────────────────────────────────────────────────────────
+    # Пересмотр 2026-08-10 (владелец): сняты лимиты по таймфреймам, глубине
+    # истории и настройкам среза — на всех тирах. За Basic остаются ровно два
+    # среза: категория «Юрлица» (clgroup_yur) и показатель «Число трейдеров»
+    # (metric_traders) + отсутствие задержки данных. Прежний булевый
+    # settings_customizable (весь срез целиком) заменён этими двумя флагами.
     "open_interest": {
         "free": {
             "assets_whitelist": None,                # все активы открыты на Free (без whitelist'а)
-            "allowed_intervals": [24, 60],          # daily + hourly; 5min только на Pro
-            "max_history_days": 365 * 5,            # 5 лет
+            "allowed_intervals": [5, 24, 60],        # все ТФ, включая 5min
+            "max_history_days": None,                # вся история
             "data_delay_hours": 24,                 # задержка 24 часа
             "clgroups": ["FIZ", "YUR"],              # backend отдаёт оба (нужно embed-виджету)
-            "settings_customizable": False,          # но в UI срез залочен на дефолт (FIZ · Объём · Чистая); смена → Basic
+            "clgroup_yur": False,                    # срез «Юрлица» в UI — с Basic
+            "metric_traders": False,                 # показатель «Число трейдеров» — с Basic
         },
         "basic": {
             "assets_whitelist": None,                # все 65
-            "allowed_intervals": [24, 60],
-            "max_history_days": 365 * 10,            # 10 лет
+            "allowed_intervals": [5, 24, 60],
+            "max_history_days": None,
             "data_delay_hours": 0,
             "clgroups": ["FIZ", "YUR"],
-            "settings_customizable": True,           # можно свободно менять срез
+            "clgroup_yur": True,
+            "metric_traders": True,
         },
         "pro": {
             "assets_whitelist": None,
-            "allowed_intervals": [5, 24, 60],        # + 5min
-            "max_history_days": None,                # вся история
+            "allowed_intervals": [5, 24, 60],
+            "max_history_days": None,
             "data_delay_hours": 0,
             "clgroups": ["FIZ", "YUR"],
-            "settings_customizable": True,
+            "clgroup_yur": True,
+            "metric_traders": True,
         },
     },
 
@@ -176,10 +187,15 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # fund_picker (2026-08-09) — выбор КОНКРЕТНЫХ фондов в «Общем портфеле» и
     # «По бумаге». Free/гость смотрит набор целиком; собрать свой пул (одна УК,
     # только крупные, без индексных) — с Basic. Витрины гейт не касается.
+    # company_snapshot_delay (2026-08-10) — ОТДЕЛЬНАЯ задержка для вкладки
+    # «По бумаге» (потоки по компании): свежесть не режем никому (решение
+    # владельца), = 0. Читают её /company-flows и /company-weights
+    # (api/routers/fund_trades.py: _snapshot_cutoff(key=COMPANY_DELAY_KEY)),
+    # остальные ручки раздела продолжают читать snapshot_delay.
     "fund_trades": {
-        "free":  {"snapshot_delay": 1, "portfolio_snapshot_delay": 0, "fund_picker": False},
-        "basic": {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "fund_picker": True},
-        "pro":   {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "fund_picker": True},
+        "free":  {"snapshot_delay": 1, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": False},
+        "basic": {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": True},
+        "pro":   {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": True},
     },
 
     # ───────────────────────────────────────────────────────────────
@@ -273,35 +289,19 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # NB: задержка данных снята для всех тиров 2026-08 (было 24ч на free/госте).
     # Данные ОРФР ЦБ — МЕСЯЧНЫЕ и приезжают ручным ингестом с лагом в недели,
     # так что «минус сутки» ничего не продавало, а бейдж «данные с задержкой»
-    # выглядел враньём. Гейт для free остался только на СОСТАВЕ участников
-    # (categories_whitelist) и ручном переключении категорий.
+    # выглядел враньём.
+    # 2026-08-10 (владелец): снят и гейт на СОСТАВ участников — free/гость может
+    # включать любые категории вручную (categories_whitelist=None,
+    # category_filters_enabled=True). При этом ДЕФОЛТНАЯ видимость для первого
+    # визита остаётся «розничным» срезом — это фронтовый дефолт
+    # (frontend cbrDefaultVisibility.ts), не тарифный гейт: расширенные
+    # категории не включаются сами, но доступны в пикере всем.
     "cbr_flows": {
         "free": {
             "data_delay_hours": 0,
             "max_history_days": None,            # период открыт полностью — все ТФ на free
-            "category_filters_enabled": False,   # категории нельзя скрывать вручную
-            # Free видит только «розничный» срез участников — per-type, т.к.
-            # набор категорий у акций/ОФЗ и валюты разный (напр. НФО закрыт на
-            # акциях, но открыт на валюте). Остальных участников бэкенд вырезает
-            # из данных и помечает locked → апселл на basic.
-            "categories_whitelist": {
-                "stocks": [
-                    "Физические лица",
-                    "Доверительное управление",
-                    "Нерезиденты",
-                ],
-                "ofz": [
-                    "Физические лица",
-                    "Доверительное управление",
-                    "Нерезиденты",
-                ],
-                "fx": [
-                    "Физические лица",
-                    "Клиенты российских кредитных организаций",
-                    "НФО",
-                    "Банк России",
-                ],
-            },
+            "category_filters_enabled": True,
+            "categories_whitelist": None,        # все категории
         },
         "basic": {
             "data_delay_hours": 0,

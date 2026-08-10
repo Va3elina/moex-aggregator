@@ -192,6 +192,12 @@ _FAR_FUTURE = date(9999, 12, 31)
 # тирах). Витрины портфеля обязаны ходить именно с ним, иначе вернётся общий гейт.
 PORTFOLIO_DELAY_KEY = "portfolio_snapshot_delay"
 
+# Ключ матрицы для вкладки «По бумаге» (потоки по компании) — свежесть там не
+# режем никому (решение владельца 2026-08-10, features.py:
+# fund_trades.company_snapshot_delay = 0). Читают его /company-flows и
+# /company-weights; остальные ручки раздела продолжают ходить с snapshot_delay.
+COMPANY_DELAY_KEY = "company_snapshot_delay"
+
 
 def _snapshot_offset(user, key: str = "snapshot_delay") -> int:
     """На сколько снапшотов свежести назад видит юзер (0 = свежий срез).
@@ -2338,7 +2344,8 @@ def company_flows(
     непрерывны через сплит, поэтому коррекция для них фактически нейтральна).
 
     Месячная ось = НЕПРЕРЫВНЫЙ ряд «YYYY-MM» от первого месяца бумаги до горизонта
-    данных (последний снапшот по whitelist-фондам, с учётом тирной задержки), ASC.
+    данных (последний снапшот по whitelist-фондам; тирной задержки тут нет —
+    company_snapshot_delay=0 на всех тирах), ASC.
     Не обрезаем справа по последнему месяцу владения: полностью проданная бумага
     иначе обрывала бы график на дате распродажи. Пропуски внутри и хвост после
     распродажи → values=None → нулевые (пустые) бары.
@@ -2363,7 +2370,7 @@ def company_flows(
         match_sql = "h.asset_name = :aname"
         match_params = {"aname": asset_name}
 
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    cutoff = _snapshot_cutoff(db, user, COMPANY_DELAY_KEY)  # «По бумаге» — без задержки на всех тирах
     rows = db.execute(text(f"""
         WITH names AS (
             SELECT h.isin, COALESCE(MAX(sr.short_name),
@@ -2619,7 +2626,8 @@ def company_weights(
     в одну долю — как /company-flows склеивает потоки по canonical_isin.
 
     Ось месяцев — непрерывный ряд от первого появления бумаги до последнего
-    полного снапшота держателей (с учётом тирной задержки, как везде).
+    полного снапшота держателей (без тирной задержки — company_snapshot_delay=0
+    на всех тирах).
     """
     if not isin and not asset_name:
         raise HTTPException(status_code=400, detail="isin or asset_name required")
@@ -2632,7 +2640,7 @@ def company_weights(
         match_sql = "h.asset_name = :aname"
         match_params = {"aname": asset_name}
 
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    cutoff = _snapshot_cutoff(db, user, COMPANY_DELAY_KEY)  # «По бумаге» — без задержки на всех тирах
 
     # Строки бумаги: per fund per snapshot_date, доля и стоимость СУММОЙ по всем
     # ISIN-алиасам (ГДР + акция одновременно → складываем, не выбираем одну).

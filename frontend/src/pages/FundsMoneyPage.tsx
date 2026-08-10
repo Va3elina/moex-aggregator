@@ -667,16 +667,11 @@ export default function FundsMoneyPage() {
                     не все фонды — сигнал активного фильтра. */}
                 <div data-tour="funds-table" style={{ order: 0 }}>
                 <button
-                    // Гость/free: модалку НЕ открываем вовсе — блюрить её
-                    // содержимое (список фондов со СЧА) незачем, эти же цифры
-                    // и так на графике; закрыт именно инструмент подвыборки.
-                    onClick={() => {
-                        if (!canPickFunds) {
-                            showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
-                            return;
-                        }
-                        setFundPickerOpen(true);
-                    }}
+                    // Гость/free: модалка открывается ВСЕГДА (2026-08-10) — для
+                    // запертого тира список внутри слегка заблюрен, поверх
+                    // апселл на Basic (FundPickerModal locked). Так видно, что
+                    // именно даёт тариф, вместо голого замка.
+                    onClick={() => setFundPickerOpen(true)}
                     title={canPickFunds ? 'Выбрать фонды для графика' : 'Выбор фондов — на тарифе Basic и выше'}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
@@ -1081,6 +1076,7 @@ export default function FundsMoneyPage() {
                     hiddenFunds={hiddenFunds}
                     onSetHiddenFunds={setHiddenFunds}
                     onToggleFundVisibility={toggleFundVisibility}
+                    locked={!canPickFunds}
                     onClose={() => setFundPickerOpen(false)}
                     categoryGenitive={currentCategory?.genitive}
                     maxDate={fundsMaxDate || undefined}

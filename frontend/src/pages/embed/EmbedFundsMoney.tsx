@@ -32,7 +32,6 @@ import { useToolbarCompact } from './useToolbarCompact';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
-import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -148,7 +147,6 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
   const [fundPickerOpen, setFundPickerOpen] = useState(false);
   // Выбор ПОДМНОЖЕСТВА фондов — с Basic (матрица funds_money.fund_picker).
-  const { showUpgrade } = useUpgradePrompt();
   const canPickFunds = fundsAccess.isLoading || fundsAccess.canUseFlag('fund_picker');
   useEffect(() => {
     const raw = rd(hiddenKey, '');
@@ -397,22 +395,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // FundsTable — тикер, название, СЧА, доходность), а не свой чек-лист: одно
   // действие не должно иметь два разных вида. Модалка идёт порталом в body,
   // поэтому не обрезается панелью песочницы.
-  // Гость/free: модалку не открываем вовсе (funds_money.fund_picker, 2026-08-09)
-  // — тот же гейт, что на сайте и в мобилке; бэкенд у таких тиров игнорирует
-  // fund_ids, так что открытый пикер всё равно ничего бы не менял.
+  // Гость/free: модалка открывается всегда (2026-08-10) — запертому тиру
+  // список слегка заблюрен, поверх апселл на Basic (FundPickerModal locked);
+  // бэкенд у таких тиров игнорирует fund_ids, так что данные не утекают.
   const fundsFilter = viewMode === 'flows' && funds.length > 1 ? (
     <ToolbarButton
       label="Фонды"
       title={canPickFunds ? 'Какие фонды учитывать' : 'Выбор фондов — на тарифе Basic и выше'}
       icon={canPickFunds ? <ListFilter size={14} /> : <Lock size={14} />}
       compact={toolbarCompact}
-      onClick={() => {
-        if (!canPickFunds) {
-          showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
-          return;
-        }
-        setFundPickerOpen(true);
-      }}
+      onClick={() => setFundPickerOpen(true)}
     />
   ) : null;
 
@@ -526,6 +518,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
             hiddenFunds={hiddenFunds}
             onSetHiddenFunds={setHiddenFunds}
             onToggleFundVisibility={toggleFund}
+            locked={!canPickFunds}
             onClose={() => setFundPickerOpen(false)}
             categoryGenitive={CATS.find((c) => c.id === category)?.genitive}
           />
