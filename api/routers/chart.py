@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import gzip
 from datetime import datetime, date, time as dt_time, timedelta
-from api.cache import get_or_set, get_or_compute, get_or_compute_gzip, DEFAULT_TTL
+from api.cache import get_or_set, get_or_compute, get_or_compute_gzip, record_demand, DEFAULT_TTL
 from typing import Optional
 from pydantic import BaseModel
 import time
@@ -174,6 +174,11 @@ def get_chart_data(
 
     if date_from and date_to and date_to < date_from:
         raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
+
+    # Спрос на актив — приоритет фонового прогрева (api/main.py). Держать
+    # тёплыми все 91 видимый актив разом нельзя (≈12 минут CPU), поэтому
+    # порядок задаёт трафик, а не константа в коде.
+    record_demand(sectype)
 
     # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
     cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"

@@ -101,7 +101,12 @@ services:
     # requirepass: defense-in-depth — Redis не торчит наружу (только docker-сеть),
     # но без пароля любой контейнер в сети имел бы полный доступ к кэшу/стейту.
     # Пароль из .env (REDIS_PASSWORD), не хардкод. Healthcheck аутентифицируется.
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
+    # maxmemory 512mb (было 256): прогрев графика ОИ держит тёплыми все видимые
+    # активы (91 шт × 3 ТФ × 2 варианта ключа ≈ 118 МБ в сжатом виде). На 256 МБ
+    # это вытесняло бы остальные кэши — evicted_keys уже рос до 240, а LRU бьёт
+    # именно по горячим ключам графика, они самые крупные. На машине 8 ГБ, Redis
+    # держал 18-66 МБ, у Postgres свои shared_buffers=2GB — запас есть.
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 10s
