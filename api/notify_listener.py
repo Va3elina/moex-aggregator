@@ -22,7 +22,34 @@ SOURCE_CACHE_MAP = {
     # трогаем — исторические экстремумы за 5 минут не меняются.
     "5min": ["chart:", "candles:", "oi:", "oi_screener:"],
     "hourly": ["chart:", "oi:", "oi_screener:"],
-    "daily": None,  # None = очистить весь кеш
+    # daily прилетает в 19:10 МСК торгового дня — ПОСРЕДИ вечерней сессии, а не
+    # ночью. Раньше здесь стоял None = flushdb, и раз в день сносился весь Redis
+    # целиком. Это стирало не только данные:
+    #   • api_usage:{user}:{дата} (TTL 32 дня) — счётчики квоты платного API:
+    #     пользователь получал полную квоту заново, а история потребления в
+    #     личном кабинете обнулялась;
+    #   • oauth:state:… — CSRF-состояние входа: кто в этот момент был на странице
+    #     провайдера, возвращался с «невалидным state»;
+    #   • ratelimit:/auth_iprl:/apikey:rate: — окна защиты от перебора.
+    # Плюс с 2026-08-10 в кеше лежит ~100 МБ прогретых графиков, и их полное
+    # стирание в 19:10 роняло всех в холодный пересчёт (5м/6м — до 14 с).
+    #
+    # Поэтому перечисляем префиксы ДАННЫХ явно. Пропустить что-то не страшно:
+    # у аналитических ключей TTL 30 минут, максимум полчаса на самовосстановление.
+    # Стереть лишнее — страшно, поэтому счётчиков, состояний и локов здесь нет.
+    #
+    # chart: сознательно НЕ в списке: вместо стирания 100 МБ помечаем их на
+    # постепенный пересчёт (_handle_notification ниже) — данные всё это время
+    # остаются доступными, а свежесть точек и так поддерживает cache_updater.
+    "daily": [
+        "breadth:", "buffett:", "candles:", "cbr_flows:", "ex_dates_db:",
+        "funds:", "funds_catalog:", "funds_chart:",
+        "heatmap:", "heatmap_imoex:", "imoex_tickers_set:", "imoex_weights:",
+        "index:", "instruments:", "macro:",
+        "oi:", "oi_extremes:", "oi_low_activity:", "oi_screener:",
+        "seasonality:", "seasonality_price:", "seasonality_yearly:", "seasonality_years:",
+        "stats:", "ticker:", "usd_rates:",
+    ],
     "mv_refresh": ["heatmap:", "stats:"],
     "funds": ["funds_chart:"],
     "breadth": ["breadth:"],
@@ -159,13 +186,23 @@ async def _handle_notification(payload: str):
                 else:
                     invalidate(prefix)
         else:
-            # daily и остальные — полная инвалидация (раз в день допустимо)
             prefixes = SOURCE_CACHE_MAP.get(source)
             if prefixes is None:
-                invalidate()
+                invalidate()      # неизвестный источник → перестраховка
             else:
                 for prefix in prefixes:
                     invalidate(prefix)
+
+            if source == "daily":
+                # Графики не стираем, а помечаем на постепенный пересчёт: их ~100 МБ
+                # и до 14 с холодного счёта на ключ, а нужны они ровно в 19:10, когда
+                # идёт вечерняя сессия. Фоновый прогрев (api/main._warm_chart_cache)
+                # перезапишет их по кругу за ~25 минут, отдавая пользователю прежний
+                # ответ до момента замены. Свежесть самих точек всё это время держит
+                # cache_updater (он дописывает бары по 5min/hourly), пересчёт нужен
+                # ради метаданных: ролловер контракта, available_intervals, склейка.
+                from api.cache import mark_chart_refresh
+                mark_chart_refresh()
 
         # SSE broadcast
         await sse_manager.broadcast(payload)

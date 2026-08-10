@@ -294,6 +294,68 @@ def get_or_compute_gzip(key: str, compute_fn, ttl: int = DEFAULT_TTL, *,
 
 
 DEMAND_KEY = "chart:demand"
+# Счётчик активов, которым фоновый прогрев должен пересчитать график ПРИНУДИТЕЛЬНО
+# (даже если ключ тёплый). Ставится на daily-NOTIFY вместо стирания графиков.
+CHART_REFRESH_KEY = "chart:warm:force_left"
+
+
+CHART_REFRESH_PENDING = "chart:warm:refresh_pending"
+_CHART_REFRESH_TTL = 7200
+
+
+def mark_chart_refresh(ttl: int = _CHART_REFRESH_TTL) -> None:
+    """Пометить графики на постепенный принудительный пересчёт.
+
+    Вместо стирания ~100 МБ прогретого кеша в 19:10 (посреди вечерней сессии)
+    прогрев обойдёт активы по кругу и перезапишет ключи. Пользователь до момента
+    замены получает прежний ответ, а не ждёт холодный пересчёт.
+
+    Ставим только флаг: сколько активов в круге, знает прогрев, а не отправитель
+    NOTIFY. Иначе пришлось бы зашивать число здесь — и при 91 активе счётчик на
+    «200 с запасом» гонял бы лишние два круга по 12 минут CPU.
+    """
+    try:
+        _get_redis().setex(CHART_REFRESH_PENDING, ttl, 1)
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on mark_chart_refresh: {e}")
+
+
+def start_chart_refresh(total: int) -> bool:
+    """Забрать флаг и открыть ровно `total` слотов пересчёта. True — режим начат.
+
+    Зовёт прогрев, когда знает размер круга. DELETE возвращает 1 только тому, кто
+    реально снял флаг, поэтому режим стартует один раз, даже если сюда зайдут
+    несколько воркеров.
+    """
+    try:
+        r = _get_redis()
+        if not r.delete(CHART_REFRESH_PENDING):
+            return False
+        r.setex(CHART_REFRESH_KEY, _CHART_REFRESH_TTL, total)
+        return True
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on start_chart_refresh: {e}")
+        return False
+
+
+def take_chart_refresh_slot() -> bool:
+    """Занять один слот принудительного пересчёта. True — этот актив пересчитываем.
+
+    Уменьшает счётчик на единицу; когда он исчерпан — режим выключается сам.
+    """
+    try:
+        r = _get_redis()
+        # EXISTS перед DECR: на несуществующем ключе DECR создал бы его со
+        # значением -1 и БЕЗ TTL — режим завис бы навсегда. Гонки тут нет:
+        # прогрев ходит под локом warm:chart, работает один воркер.
+        if not r.exists(CHART_REFRESH_KEY):
+            return False
+        left = r.decr(CHART_REFRESH_KEY)
+        if left is None or left <= 0:
+            r.delete(CHART_REFRESH_KEY)
+        return True
+    except (redis.RedisError, ConnectionError):
+        return False
 
 
 def record_demand(member: str) -> None:
