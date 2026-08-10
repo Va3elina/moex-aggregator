@@ -14,6 +14,9 @@ import SandboxEntryButton from './SandboxEntryButton';
 import { AnomalyBell } from './anomaly/AnomalyBell';
 import PageSEO from './PageSEO';
 import MobileFallbackChrome from './mobile/MobileFallbackChrome';
+import OnboardingTour from './onboarding/OnboardingTour';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
+import { terminalIntroTour } from '../data/tours/terminal-intro';
 
 /* Маршруты с собственной мобильной версией (ResponsiveRoute → Mobile*Page
    с MobileLayout): им chrome не нужен — рисуют свой. Остальные маршруты
@@ -23,6 +26,21 @@ const MOBILE_READY_PATHS = new Set([
   '/', '/oi', '/heatmap', '/funds-money', '/buffett', '/strength',
   '/seasonality', '/cbr-flows', '/profile', '/pricing', '/fund-trades',
 ]);
+
+/* Ключ onboarding-тура каждой страницы — нужен анонсу «Новое: Терминал»,
+   чтобы уступать очередь: пока тур страницы не просмотрен, анонс не
+   открывается (иначе на первом визите две модалки друг на друге).
+   Держать в синхроне с useOnboardingTour(...) на страницах. */
+const PAGE_TOUR_KEYS: Record<string, string> = {
+  '/heatmap': 'heatmap',
+  '/oi': 'oi',
+  '/funds-money': 'funds-money',
+  '/fund-trades': 'fund-trades-v2',
+  '/strength': 'strength',
+  '/seasonality': 'seasonality',
+  '/cbr-flows': 'cbr-flows',
+  '/buffett': 'buffett',
+};
 
 // Порядок задан Вадимом (04.07.2026): частые/продуктовые впереди,
 // Баффетт в конце. Мобильный rail (MobileBottomRail) — отдельный список.
@@ -55,6 +73,13 @@ export default function Layout() {
   // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
   // Первый hit отправляется автоматически через init() в index.html.
   useYandexMetrica();
+
+  // Анонс «Новое: Терминал» (разовый, на весь сайт — см. JSX ниже).
+  // ВАЖНО: хук здесь, ДО мобильного conditional return — правило хуков.
+  // На мобиле анонс не рендерится (терминал десктопный), ключ не пометится —
+  // тот же юзер увидит его, когда зайдёт с десктопа.
+  const pageTourKey = PAGE_TOUR_KEYS[location.pathname.replace(/\/+$/, '') || '/'];
+  const terminalTour = useOnboardingTour('terminal-intro', { gatedBy: pageTourKey });
 
   const isEditorial = theme.startsWith('editorial');
   // Compact header (laptop 1024-1280): уменьшенные logo + icons чтобы
@@ -519,6 +544,20 @@ export default function Layout() {
           </div>
         )}
       </nav>
+
+      {/* Анонс «Новое: Терминал» — разовый мини-тур для ВСЕХ, кто зашёл.
+          Живёт в Layout, а не на LandingPage: главная отдаётся только гостям на
+          десктопе (авторизованные с «/» уходят на /heatmap), поэтому на hero его
+          не увидели бы как раз Pro-юзеры. Здесь он покажется на первой же
+          десктопной странице.
+          gatedBy = ключ тура текущей страницы: пока свой тур страницы не
+          просмотрен, анонс молчит — иначе на первом визите две модалки
+          наложились бы. У страниц без тура gate не активен (undefined). */}
+      <OnboardingTour
+        steps={terminalIntroTour}
+        open={terminalTour.open}
+        onClose={terminalTour.close}
+      />
 
       {/* SEO: per-page <title>/<meta>/canonical/JSON-LD breadcrumbs.
           Один компонент на весь Layout — резолвит метаданные через

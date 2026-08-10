@@ -497,7 +497,11 @@ export default function FundsCatalogMethodologyPage() {
                     — который показывался при первом открытии страницы, нажмите
                     кнопку ниже.
                 </p>
-                <ReplayTourButton tourKey="fund-trades" indicatorPath="/fund-trades" label="Показать вводный тур ещё раз" />
+                {/* gitleaks:allow — tourKey это имя ключа онбординг-тура в
+                    localStorage, не секрет. Эвристика generic-api-key ловит
+                    связку «*Key=строка»; ср. тот же ложный хит на
+                    TRIAL_OFFER_SEEN_KEY в .gitleaksignore. */}
+                <ReplayTourButton tourKey="fund-trades-v2" indicatorPath="/fund-trades" label="Показать вводный тур ещё раз" /> {/* gitleaks:allow */}
             </Section>
         </MethodologyWrapper>
     );

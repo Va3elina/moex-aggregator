@@ -512,10 +512,16 @@ export default function FundTradesPage() {
         setTab('company');
     };
 
-    // ── Onboarding tour (ключ 'fund-trades' общий с мобильной страницей) ──
+    // ── Onboarding tour (ключ общий с мобильной страницей) ──
     // Тур сам переключает вкладки через setTab — шаги описывают три раздела
     // по очереди, и подсвечиваемый блок должен реально быть на экране.
-    const tour = useOnboardingTour('fund-trades');
+    // Суффикс `-v2` (2026-08-10) — точечный сброс «уже видел» ТОЛЬКО для этого
+    // тура: в «По бумаге» появились три режима (Сделки / По капиталу /
+    // От капитализации), а старый тур рассказывал про удалённый режим «Доля».
+    // Точечно, а не бампом STORAGE_PREFIX в useFirstVisit — иначе перезапустятся
+    // туры ВСЕХ индикаторов сразу. Ключ синхронно менять в трёх местах:
+    // здесь, в MobileFundTradesPage и в ReplayTourButton методологии.
+    const tour = useOnboardingTour('fund-trades-v2');
     const tourSteps = useMemo(() => buildFundTradesTour(setTab), [setTab]);
 
     if (!common.fund_trades_access) {

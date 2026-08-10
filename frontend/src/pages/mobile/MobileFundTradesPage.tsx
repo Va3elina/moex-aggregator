@@ -541,7 +541,9 @@ export default function MobileFundTradesPage() {
   };
 
   // ── Onboarding tour (shared key с десктопом fund-trades) ──
-  const tour = useOnboardingTour('fund-trades');
+  // `-v2` — точечный сброс «уже видел» после появления трёх режимов в «По
+  // бумаге» (см. комментарий в FundTradesPage). Ключ общий с десктопом.
+  const tour = useOnboardingTour('fund-trades-v2');
   // Три режима — ровно те, что видны в «Опциях» (движения/снапшот скрыты).
   // Якоря ft-time / ft-options приходят из MobileLayout (timeTourId /
   // settingsTourId), .fm-page-actions — вся нижняя панель кнопок.
@@ -624,6 +626,35 @@ export default function MobileFundTradesPage() {
         </>
       ),
       onEnter: () => { setOptionsSheetOpen(true); setTimeSheetOpen(false); setAssetSheetOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Три взгляда на бумагу',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 4 }}>
+            В разделе <strong>«По бумаге»</strong> тот же месячный ряд
+            показывается тремя способами — переключатель в «Опциях»:
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Сделки</strong> — что покупали и продавали за месяц,
+            кружками прямо на цене
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>По капиталу</strong> — сколько рублей фонды держат в бумаге
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>От капитализации</strong> — та же позиция в процентах от
+            акций в свободном обращении
+          </p>
+          <p style={{ opacity: 0.75, fontSize: 12 }}>
+            Третий появляется только у акций с free-float — у облигаций и ОФЗ
+            его в списке нет.
+          </p>
+        </>
+      ),
+      onEnter: () => { setOptionsSheetOpen(false); setTimeSheetOpen(false); setAssetSheetOpen(false); },
     },
     {
       selector: null,
