@@ -18,6 +18,7 @@ import SegmentedControl from '../components/SegmentedControl';
 import HelpTooltip from '../components/HelpTooltip';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -464,6 +465,12 @@ export default function BuffettPage() {
                     />
                 )}
                 </ChartActionsMenu>
+
+                {/* Вход в песочницу — крайняя справа в строке контролов
+                    (единая позиция на всех индикаторах). */}
+                <div style={{ marginLeft: 'auto', order: 99 }}>
+                    <SandboxEntryButton />
+                </div>
 
             </div>
 

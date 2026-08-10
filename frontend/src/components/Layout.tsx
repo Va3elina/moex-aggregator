@@ -10,6 +10,7 @@ import { Menu, X, LogIn, BarChart3, Newspaper, User } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
+import SandboxEntryButton from './SandboxEntryButton';
 import { AnomalyBell } from './anomaly/AnomalyBell';
 import PageSEO from './PageSEO';
 import MobileFallbackChrome from './mobile/MobileFallbackChrome';
@@ -239,6 +240,10 @@ export default function Layout() {
               className="flex flex-shrink-0 items-center"
               style={{ gap: 'clamp(6px, 0.5vw + 0.25rem, 12px)' }}
             >
+              {/* Вход в песочницу (/sandbox) — первая в правой зоне: это переход
+                  в продукт, а не служебная иконка. */}
+              <SandboxEntryButton variant="pill" />
+
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
 

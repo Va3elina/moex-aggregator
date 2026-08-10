@@ -7,6 +7,7 @@ import HelpTooltip from '../components/HelpTooltip';
 import ChartTabs from '../components/ChartTabs';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
@@ -993,6 +994,12 @@ export default function FundsMoneyPage() {
                     «Притоки-Оттоки» — гистограмма, там в модалке только палитра. */}
                 <ChartSettings showType={viewMode === 'aum'} scopeLabels={{ primary: 'СЧА', secondary: 'Индекс' }} />
                 </ChartActionsMenu>
+
+                {/* Вход в песочницу — крайняя справа в строке контролов
+                    (единая позиция на всех индикаторах). */}
+                <div style={{ marginLeft: 'auto', order: 99 }}>
+                    <SandboxEntryButton />
+                </div>
             </div>
 
             {/* График — стабильная обёртка (ref+position:relative+--chart-height

@@ -29,6 +29,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import { periodToQuery } from '../utils/csvPeriod';
 import StrengthControls from '../components/strength/StrengthControls';
@@ -389,6 +390,7 @@ export default function StrengthPage() {
                 emaPeriod={emaPeriod}
                 onEmaPeriodChange={setEmaPeriod}
                 trailingSlot={
+                    <>
                     <ChartActionsMenu containerRef={containerRef} tourId="strength-layers">
                     <LayersButton
                         tourId="strength-layers"
@@ -487,6 +489,14 @@ export default function StrengthPage() {
                         />
                     )}
                     </ChartActionsMenu>
+
+                    {/* Вход в песочницу — крайняя справа в строке контролов
+                        (единая позиция на всех индикаторах). ChartActionsMenu
+                        уходит порталом в угол графика и место здесь не занимает. */}
+                    <div style={{ marginLeft: 'auto', order: 99 }}>
+                        <SandboxEntryButton />
+                    </div>
+                    </>
                 }
             />
             </div>{/* /strength-controls */}

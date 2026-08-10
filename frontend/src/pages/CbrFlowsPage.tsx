@@ -32,6 +32,7 @@ import { getDefaultHiddenCategories } from '../components/cbr/cbrDefaultVisibili
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import ChartTabs from '../components/ChartTabs';
 import SegmentedControl from '../components/SegmentedControl';
@@ -536,6 +537,12 @@ export default function CbrFlowsPage() {
           />
           <ChartSettings showType={false} />
           </ChartActionsMenu>
+
+          {/* Вход в песочницу — крайняя справа в строке контролов
+              (единая позиция на всех индикаторах). */}
+          <div style={{ marginLeft: 'auto', order: 99 }}>
+            <SandboxEntryButton />
+          </div>
         </div>
 
         {/* === Inner paper-card вокруг графика ===
