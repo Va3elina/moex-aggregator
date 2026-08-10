@@ -80,6 +80,11 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
         had_live = strip_live_points(cached_response)
 
         if not cached_response["candles"]:
+            # Пустой ряд — дописывать нечего (у неликвидного актива на коротком
+            # периоде свечей просто нет), но TTL продлить НАДО. Без этого такие
+            # ключи истекали каждые 30 минут и пересчитывались заново — замер на
+            # проде: 80 из 632 ключей не получали touch именно здесь.
+            touch(key, ttl=DEFAULT_TTL)
             return False
 
         # Запрашиваем все sec_id для этого sectype
