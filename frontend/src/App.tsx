@@ -2,6 +2,8 @@ import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
 import { useIsPhone } from './hooks/useIsPhone';
+import { useViewportWidth } from './hooks/useViewportWidth';
+import SandboxMobileStub from './pages/sandbox/SandboxMobileStub';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
@@ -104,6 +106,21 @@ function HomeRoute() {
   return <LandingPage />;
 }
 
+/** Роут терминала: узкий экран → заглушка, иначе сам рабочий стол.
+ *
+ *  Порог 900px, а не useIsPhone: тулбар оболочки перестаёт помещаться задолго
+ *  до телефонных ширин (на 375px кнопка «Выстроить» уезжает за край и
+ *  недоступна — горизонтального скролла у оболочки нет), так что узкие планшеты
+ *  тоже отправляем на заглушку.
+ *
+ *  Проверка ДО Suspense: на телефоне тяжёлый SandboxPage (тянет за собой все
+ *  embed'ы индикаторов) тогда даже не скачивается. */
+function SandboxRoute() {
+  const vw = useViewportWidth();
+  if (vw > 0 && vw < 900) return <SandboxMobileStub />;
+  return <Suspense fallback={null}><SandboxPage /></Suspense>;
+}
+
 /** ErrorBoundary с автосбросом на смене URL.
     Если страница падает — навигация на другой роут восстановит boundary
     автоматически. Без этого hasError=true залипает навсегда. */
@@ -192,8 +209,9 @@ export default function App() {
           <Route path="/embed/:indicator" element={<EmbedPage />} />
 
           {/* Песочница/конструктор — приватная про-версия (плавающие панели с
-              нашими индикаторами). НЕ в навигации; прямой URL /sandbox. Без Layout. */}
-          <Route path="/sandbox" element={<Suspense fallback={null}><SandboxPage /></Suspense>} />
+              нашими индикаторами). НЕ в навигации; прямой URL /sandbox. Без Layout.
+              На узком экране вместо неё заглушка — см. SandboxRoute. */}
+          <Route path="/sandbox" element={<SandboxRoute />} />
 
           {/* Привязка реального email — обязательная страница для OAuth-юзеров
               с synthetic email (Telegram/VK без email). Без Layout — fullscreen
