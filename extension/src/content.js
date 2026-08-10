@@ -16,7 +16,7 @@
     var btn = document.createElement('button');
     btn.id = BTN_ID;
     btn.type = 'button';
-    btn.title = 'Фрейм — индикаторы';
+    btn.title = 'FRAME — индикаторы';
     // Минимал: квадрат с буквой «F» под сетку тулбара терминала (как «T+»).
     // Живёт в ИХ DOM, не в Shadow — стилизуем инлайном.
     var BORDER = 'rgba(245,241,232,0.28)';

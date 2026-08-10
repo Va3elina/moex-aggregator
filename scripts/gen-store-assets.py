@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Промо-графика для Chrome Web Store (и каталога Яндекса).
 
-Генерит на editorial-палитре Фрейма:
+Генерит на editorial-палитре FRAME:
   - tile-440x280.png    — малый промо-тайл (Small promo tile)
   - marquee-1400x560.png — широкий баннер (Marquee promo tile)
   - hero-1280x800.png   — пустой кадр-подложка под скриншот (рамка + лого),
@@ -22,14 +22,26 @@ DIM = (154, 149, 140, 255)    # #9A958C
 SERIF = [
     '/System/Library/Fonts/Supplemental/Georgia Bold.ttf',
     '/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf',
+    'C:/Windows/Fonts/georgiab.ttf',
+    'C:/Windows/Fonts/timesbd.ttf',
 ]
 SANS = [
     '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
     '/System/Library/Fonts/Helvetica.ttc',
+    'C:/Windows/Fonts/arialbd.ttf',
 ]
 SANS_REG = [
     '/System/Library/Fonts/Supplemental/Arial.ttf',
     '/System/Library/Fonts/Helvetica.ttc',
+    'C:/Windows/Fonts/arial.ttf',
+]
+
+# Фирменный знак «рамка»: четыре уголка в сетке 0..32 (см. frontend/public/icon-512.svg).
+MARK_CORNERS = [
+    [(3, 3), (13, 3), (13, 8), (8, 8), (8, 13), (3, 13)],
+    [(29, 3), (19, 3), (19, 8), (24, 8), (24, 13), (29, 13)],
+    [(3, 29), (13, 29), (13, 24), (8, 24), (8, 19), (3, 19)],
+    [(29, 29), (19, 29), (19, 24), (24, 24), (24, 19), (29, 19)],
 ]
 
 
@@ -44,12 +56,12 @@ def font(paths, sz):
 
 
 def logo(d, x, y, s):
-    """Рыжий скруглённый квадрат с засечной «F» (как иконка расширения)."""
-    d.rounded_rectangle([x, y, x + s, y + s], radius=int(s * 0.22), fill=PUMPKIN)
-    f = font(SERIF, int(s * 0.66))
-    bbox = d.textbbox((0, 0), 'F', font=f)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    d.text((x + (s - w) / 2 - bbox[0], y + (s - h) / 2 - bbox[1]), 'F', font=f, fill=CREAM)
+    """Фирменный знак: кремовый скруглённый квадрат с рыжими уголками (как иконка расширения)."""
+    d.rounded_rectangle([x, y, x + s, y + s], radius=int(s * 80 / 512), fill=CREAM)
+    pad = s * 56 / 512
+    unit = (s - 2 * pad) / 32
+    for poly in MARK_CORNERS:
+        d.polygon([(x + pad + px * unit, y + pad + py * unit) for px, py in poly], fill=PUMPKIN)
 
 
 def decorative_line(d, x0, y0, x1, baseline, amp, color, width, seed):
@@ -79,7 +91,7 @@ def make_tile():
     s = int(96 * SS)
     logo(d, int(40 * SS), int(44 * SS), s)
     tf = font(SERIF, int(40 * SS))
-    d.text((int(40 * SS), int(160 * SS)), 'Фрейм', font=tf, fill=CREAM)
+    d.text((int(40 * SS), int(160 * SS)), 'FRAME', font=tf, fill=CREAM)
     sf = font(SANS_REG, int(17 * SS))
     d.text((int(42 * SS), int(212 * SS)), 'Аналитика в терминале', font=sf, fill=DIM)
     d.text((int(42 * SS), int(236 * SS)), 'Т-Инвестиций', font=sf, fill=DIM)
@@ -98,12 +110,12 @@ def make_marquee():
     s = int(150 * SS)
     logo(d, int(90 * SS), int(120 * SS), s)
     tf = font(SERIF, int(86 * SS))
-    d.text((int(270 * SS), int(120 * SS)), 'Фрейм', font=tf, fill=CREAM)
+    d.text((int(270 * SS), int(120 * SS)), 'FRAME', font=tf, fill=CREAM)
     sf = font(SANS, int(34 * SS))
     d.text((int(274 * SS), int(238 * SS)), 'Индикаторы прямо в терминале', font=sf, fill=CREAM)
     sf2 = font(SANS_REG, int(28 * SS))
     d.text((int(274 * SS), int(290 * SS)), 'Т-Инвестиций — открытые позиции, сезонность,', font=sf2, fill=DIM)
-    d.text((int(274 * SS), int(326 * SS)), 'потоки фондов и ещё 4 индикатора', font=sf2, fill=DIM)
+    d.text((int(274 * SS), int(326 * SS)), 'потоки фондов и ещё 6 индикаторов', font=sf2, fill=DIM)
     # кромка снизу
     d.rectangle([0, H - 10 * SS, W, H], fill=PUMPKIN)
     return img.resize((1400, 560), Image.LANCZOS)
@@ -120,7 +132,7 @@ def make_hero():
     s = int(64 * SS)
     logo(d, pad + int(28 * SS), pad + int(24 * SS), s)
     tf = font(SERIF, int(34 * SS))
-    d.text((pad + int(110 * SS), pad + int(38 * SS)), 'Фрейм · Открытые позиции', font=tf, fill=CREAM)
+    d.text((pad + int(110 * SS), pad + int(38 * SS)), 'FRAME · Открытые позиции', font=tf, fill=CREAM)
     sf = font(SANS_REG, int(22 * SS))
     d.text((pad + int(30 * SS), H - pad - int(60 * SS)), 'framedata.ru', font=sf, fill=DIM)
     return img.resize((1280, 800), Image.LANCZOS)

@@ -1,8 +1,8 @@
-# Фрейм — расширение для терминала Т-Инвестиций
+# FRAME — расширение для терминала Т-Инвестиций
 
-Плавающее окно с индикаторами Фрейм (таймфрейм.рф) поверх веб-терминала
+Плавающее окно с индикаторами FRAME (framedata.ru) поверх веб-терминала
 Т-Инвестиций. Форма — клон Trading Tools (перетаскиваемая панель + вкладки),
-дизайн — editorial Фрейма. MV3, работает во всех Chromium-браузерах
+дизайн — editorial FRAME. MV3, работает во всех Chromium-браузерах
 (Chrome, **Яндекс.Браузер**, Edge, Opera, Brave).
 
 > Полный план: `../.claude/TERMINAL_EXTENSION_PLAN.md`
@@ -18,13 +18,13 @@ src/popup.html/js    — popup по клику на иконку (TODO: логи
 dev-preview.html     — локальный предпросмотр окна без терминала
 ```
 
-Содержимое вкладок — iframe на `таймфрейм.рф/embed/<indicator>` (роуты во фронте
-Фрейма: `frontend/src/pages/embed/`).
+Содержимое вкладок — iframe на `framedata.ru/embed/<indicator>` (роуты во фронте
+FRAME: `frontend/src/pages/embed/`).
 
 ## Локальная разработка
 
 ```bash
-# 1) подними фронт Фрейма (embed-роуты)
+# 1) подними фронт FRAME (embed-роуты)
 cd frontend && npm run dev            # :5173
 
 # 2) предпросмотр окна
@@ -41,17 +41,17 @@ cd extension && python3 -m http.server 8910
 ## Статус (v1)
 
 - ✅ Плавающее окно: drag, resize, collapse, close + launcher, persist позиции/темы/вкладки.
-- ✅ 7 вкладок (2 группы), editorial-light/dark. (Карта рынка исключена из расширения.)
-- ✅ Все 7 embed-роутов **задеплоены на прод** (`таймфрейм.рф/embed/*`), работают с реальными данными.
+- ✅ 9 вкладок (3 группы), editorial-light/dark. (Карта рынка исключена из расширения.)
+- ✅ Все embed-роуты **задеплоены на прод** (`framedata.ru/embed/*`), работают с реальными данными.
 - ✅ **CSP терминала снимается через `declarativeNetRequest`** (rules.json) — frame-src tbank.ru
-  не содержит таймфрейм.рф (проверено чтением заголовка), без этого iframe блокируется.
+  не содержит framedata.ru (проверено чтением заголовка), без этого iframe блокируется.
 - ⏳ Реальный тест на залогиненном `tbank.ru/terminal` (load unpacked) + embed-auth для платных.
 
 ## TODO
 
 - **CSP терминала** — ✅ РЕШЕНО: `declarativeNetRequest` (permission + `rules.json`) снимает
   `Content-Security-Policy` на главном документе `/terminal/` (скоуп — только терминал). Нужно,
-  т.к. `frame-src` tbank.ru — строгий whitelist без таймфрейм.рф (проверено чтением заголовка
+  т.к. `frame-src` tbank.ru — строгий whitelist без framedata.ru (проверено чтением заголовка
   2026-06-04). Trade-off: на странице терминала CSP отключается целиком (хирургически править
   одну директиву DNR не умеет) — приемлемо для opt-in расширения. Финальная проверка — на
   живом залогиненном терминале.
