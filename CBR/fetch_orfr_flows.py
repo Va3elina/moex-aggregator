@@ -92,6 +92,54 @@ EXCLUDED_BY_TYPE: dict[str, set[str]] = {
     },
 }
 
+# Канон написания категорий. ЦБ дрейфует РЕГИСТРОМ: ORFR_2026-7 приехал с
+# «Прочие банки» вместо исторического «Прочие Банки».
+# КРИТИЧНО: имя категории — не подпись, а КЛЮЧ. Оно входит в PK
+# (instrument_type, period_end_date, category) и одновременно является ключом
+# в cbrPalette.ts / cbrCategoryInfo.ts / cbrDefaultVisibility.ts на фронте.
+# Поэтому смена регистра не «переименовывает» линию, а РАЗДВАИВАЕТ её: история
+# обрывается на прошлом месяце, а новая точка уходит в категорию без цвета и
+# описания — при полностью зелёном логе ингеста. Канонизируем по lower()-ключу.
+CATEGORY_CANON: dict[str, str] = {
+    c.lower(): c
+    for c in (
+        "Нерезиденты",
+        "НФО",
+        "Прочие Банки",
+        "СЗКО",
+        "Физические лица",
+        "Доверительное управление",
+        "Нефинансовые организации",
+        "Минфин",
+        "Минфин России",
+        "Банк России",
+        "Банк России (ЦБ РФ)",
+        "Дочерние иностранные организации",
+        "Российские кредитные организации",
+        "Клиенты российских кредитных организаций",
+    )
+}
+
+
+def canon_category(name: str) -> str:
+    """Приводит имя категории к каноническому написанию (см. CATEGORY_CANON).
+
+    Незнакомое имя возвращаем как есть, но с WARNING: новая категория ЦБ должна
+    доехать до БД (данные важнее), но при этом громко сообщить о себе — ей нужен
+    цвет в cbrPalette.ts и описание в cbrCategoryInfo.ts.
+    """
+    stripped = name.strip()
+    canon = CATEGORY_CANON.get(stripped.lower())
+    if canon is None:
+        log.warning(
+            f"Неизвестная категория {stripped!r} — сохраняю как есть. "
+            f"Проверь палитру/описания на фронте (cbrPalette.ts, cbrCategoryInfo.ts)"
+        )
+        return stripped
+    if canon != stripped:
+        log.info(f"Категория {stripped!r} → канон {canon!r}")
+    return canon
+
 # Конфиг листов: какие парсим и под каким instrument_type сохраняем.
 #   sheet     — точное имя листа (актуальное на момент правки)
 #   title_re  — regex по заголовку листа (row 0); fallback если ЦБ переименует
@@ -254,9 +302,11 @@ def parse_sheet(wb, sheet_name: str, source_file: str, instrument_type: str) -> 
     header = rows[header_idx]
     # Категории — колонки начиная с index 2 (0=Год, 1=Период, 2+=категории)
     categories = []
+    # Канонизируем ДО всего остального: имена сравниваются с EXCLUDED_BY_TYPE
+    # и уходят в PK — оба места ждут каноническое написание.
     for i, cell in enumerate(header[2:], start=2):
         if cell and isinstance(cell, str) and cell.strip():
-            categories.append((i, cell.strip()))
+            categories.append((i, canon_category(cell)))
 
     log.info(f"{sheet_name}: {len(categories)} категорий: {[c for _, c in categories]}")
 
