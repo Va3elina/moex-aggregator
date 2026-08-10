@@ -1881,6 +1881,10 @@ export interface CompanyWeightsResponse {
     funds_count: number;
     months: string[];
     funds: CompanyWeightFund[];
+    /** Free-float капа компании (руб) по месяцам — знаменатель режима «От
+     *  капитализации». null = бумаги нет в MOEXBMI в этом месяце; все null →
+     *  режим скрыт (облигация/ОФЗ/не в индексе широкого рынка). */
+    ffcap?: (number | null)[];
 }
 
 export async function getCompanyWeights(

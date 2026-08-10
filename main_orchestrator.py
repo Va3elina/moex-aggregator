@@ -144,6 +144,9 @@ SCRIPTS = {
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
     # Market Cap (полная капитализация рынка)
     'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
+    # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
+    # знаменатель режима «От капитализации» в «Потоках по компании»
+    'freefloat_cap_daily': BASE_DIR / 'Macro' / 'fetch_freefloat_cap.py',
     # Market Breadth (% акций выше EMA — предвычисление)
     'breadth_daily': BASE_DIR / 'Candles' / 'compute_breadth_history.py',
     # Дивиденды (загрузка с ISS + определение экс-дат)
@@ -223,6 +226,7 @@ TIMEOUTS = {
     'index_intraday': 60,  # 1 минута (2 HTTP-запроса ISS marketdata + upsert)
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
+    'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
     'commodity_daily': 600,  # 10 минут (9 тикеров × Yahoo HTTP, обычно <1 мин)
@@ -381,7 +385,7 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 RETRYABLE_DAILY = {
     'oi_daily', 'funds_daily', 'indices_daily', 'contract_calendar',
     'index_candles_hourly', 'macro_daily', 'market_cap_daily',
-    'breadth_daily', 'dividends_daily', 'commodity_daily',
+    'freefloat_cap_daily', 'breadth_daily', 'dividends_daily', 'commodity_daily',
 }
 RETRY_BACKOFF = [30, 120]  # сек между попытками (итого до 3 попыток)
 
@@ -526,6 +530,9 @@ class MainOrchestrator:
             # Market Cap
             'market_cap_daily_runs': 0,
             'market_cap_daily_success': 0,
+            # Free-float Cap
+            'freefloat_cap_daily_runs': 0,
+            'freefloat_cap_daily_success': 0,
             # Breadth
             'breadth_daily_runs': 0,
             'breadth_daily_success': 0,
@@ -1211,6 +1218,23 @@ class MainOrchestrator:
 
         return success
 
+    async def run_freefloat_cap_update(self) -> bool:
+        """Free-float капитализация по бумагам (MOEXBMI). Скрипт идемпотентен:
+        дозаполняет пропущенные месяцы и освежает текущий, --force не нужен."""
+        log.info("  📊 Free-float Cap...")
+        self.stats['freefloat_cap_daily_runs'] += 1
+
+        success, msg, dur = await run_script('freefloat_cap_daily', ['--once'])
+
+        if success:
+            self.stats['freefloat_cap_daily_success'] += 1
+            log.info(f"    ✓ Free-float Cap ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Free-float Cap: {msg}")
+
+        return success
+
     def print_stats(self):
         """Выводит статистику"""
         uptime = datetime.now() - self.stats['start_time']
@@ -1235,6 +1259,8 @@ class MainOrchestrator:
         log.info(f"    Daily: {self.stats['macro_daily_success']}/{self.stats['macro_daily_runs']}")
         log.info("  --- Market Cap ---")
         log.info(f"    Daily: {self.stats['market_cap_daily_success']}/{self.stats['market_cap_daily_runs']}")
+        log.info("  --- Free-float Cap ---")
+        log.info(f"    Daily: {self.stats['freefloat_cap_daily_success']}/{self.stats['freefloat_cap_daily_runs']}")
         log.info("  --- Breadth ---")
         log.info(f"    Daily: {self.stats['breadth_daily_success']}/{self.stats['breadth_daily_runs']}")
         log.info("  --- Dividends ---")
@@ -1306,6 +1332,7 @@ class MainOrchestrator:
             await self.run_index_candles_hourly_update()
             await self.run_macro_update()
             await self.run_market_cap_update()
+            await self.run_freefloat_cap_update()
             await self.run_breadth_update()
             await self.run_dividends_update()
             await self.run_commodity_update()
@@ -1456,6 +1483,7 @@ class MainOrchestrator:
                     await self.run_index_candles_hourly_update()
                     await self.run_macro_update()
                     await self.run_market_cap_update()
+                    await self.run_freefloat_cap_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
                     await self.run_analytics_cleanup()
