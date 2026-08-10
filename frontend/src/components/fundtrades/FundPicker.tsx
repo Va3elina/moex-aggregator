@@ -17,6 +17,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { UK_LOGOS, stripUkName } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import HelpTooltip from '../HelpTooltip';
+import { INDEX_FUNDS_HELP } from './PortfolioFundPicker';
 
 export interface FundPickerFund {
     ticker: string;
@@ -32,6 +34,10 @@ export interface FundPickerProps {
     onChange: (next: Set<string>) => void;
     buttonLabel?: (n: number, total: number) => string; // текст кнопки
     minWidth?: number;
+    /** Тикеры индексных фондов. Заданы (multi) → в шапке модалки появляется
+     *  таблетка-тумблер «Без индексных фондов» (зеркало PortfolioFundPicker):
+     *  прожата ⇔ ни один индексный тикер не отмечен. */
+    indexTickers?: string[];
 }
 
 // Аватар УК: круг ~size px. Картинка из UK_LOGOS[uk_id].img либо буква на цветном
@@ -120,12 +126,14 @@ function FundPickerModal({
     selected,
     onChange,
     onClose,
+    indexTickers = [],
 }: {
     funds: FundPickerFund[];
     mode: 'multi' | 'single';
     selected: Set<string>;
     onChange: (next: Set<string>) => void;
     onClose: () => void;
+    indexTickers?: string[];
 }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [hover, setHover] = useState<string | null>(null);
@@ -154,6 +162,30 @@ function FundPickerModal({
     }, [onClose]);
 
     const allActive = mode === 'multi' && selected.size === 0;
+
+    // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
+    // прожат ⇔ ни один индексный фонд не отмечен (зеркало PortfolioFundPicker).
+    // «Пусто = все фонды», поэтому пустой набор разворачиваем в полный: иначе
+    // индексные считались бы снятыми там, где на деле выбраны все.
+    const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
+    const idxTickers = useMemo(
+        () => indexTickers.filter((t) => allTickers.includes(t)),
+        [indexTickers, allTickers],
+    );
+    const effective = useMemo(
+        () => (selected.size > 0 ? selected : new Set(allTickers)),
+        [selected, allTickers],
+    );
+    const indexOff = mode === 'multi' && idxTickers.length > 0
+        && idxTickers.every((t) => !effective.has(t));
+    const toggleIndexOff = () => {
+        const next = new Set(effective);
+        if (indexOff) idxTickers.forEach((t) => next.add(t));
+        else idxTickers.forEach((t) => next.delete(t));
+        // Полный набор канонически схлопываем в пусто = «все фонды».
+        const covered = allTickers.every((t) => next.has(t));
+        onChange(covered ? new Set() : next);
+    };
 
     // Фильтр по тикеру/имени (нечувствителен к регистру). Группировка — после
     // фильтрации, чтобы пустые УК не показывались.
@@ -251,6 +283,39 @@ function FundPickerModal({
                             }}
                         />
                     </div>
+
+                    {/* Таблетка-тумблер «Без индексных фондов» под поиском: прожата —
+                        индексные фонды сняты с выбора, рядом «?» с объяснением. */}
+                    {mode === 'multi' && idxTickers.length > 0 && (
+                        <div className="flex items-center mt-4" style={{ gap: 6 }}>
+                            <button
+                                type="button"
+                                onClick={toggleIndexOff}
+                                className="editorial-press"
+                                aria-pressed={indexOff}
+                                title={indexOff
+                                    ? `Индексные фонды выключены (${idxTickers.length})`
+                                    : `Выключить индексные фонды (${idxTickers.length})`}
+                                style={{
+                                    padding: '4px 14px',
+                                    borderRadius: 999,
+                                    border: '2px solid var(--text-primary)',
+                                    background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
+                                    color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                    fontSize: 'var(--fs-xs)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
+                                    transition: 'background-color 0.12s ease, color 0.12s ease',
+                                }}
+                            >
+                                Без индексных фондов
+                            </button>
+                            {/* float — окно с overflow:hidden обрезало бы поповер. */}
+                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
+                        </div>
+                    )}
                 </div>
 
                 {/* Results */}
@@ -513,6 +578,7 @@ export default function FundPicker({
     onChange,
     buttonLabel,
     minWidth = 220,
+    indexTickers,
 }: FundPickerProps) {
     const [open, setOpen] = useState(false);
 
@@ -584,6 +650,7 @@ export default function FundPicker({
                     selected={selected}
                     onChange={onChange}
                     onClose={() => setOpen(false)}
+                    indexTickers={indexTickers}
                 />
             )}
         </div>

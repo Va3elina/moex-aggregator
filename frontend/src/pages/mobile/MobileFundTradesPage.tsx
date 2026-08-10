@@ -60,7 +60,7 @@ import FundDetailModal, {
   formatShares,
 } from '../../components/funds/FundDetailModal';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
-import PortfolioFundPicker, { defaultPortfolioTickers } from '../../components/fundtrades/PortfolioFundPicker';
+import PortfolioFundPicker, { defaultPortfolioTickers, indexFundTickers } from '../../components/fundtrades/PortfolioFundPicker';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
@@ -341,7 +341,10 @@ export default function MobileFundTradesPage() {
 
   // Движения: месяц снапшота + конкретные фонды + метрика.
   const [asOf, setAsOf] = useState<string | undefined>(undefined);
-  const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
+  // Персистится (ключи общие с десктопом): при первом заходе — дефолт «без
+  // индексных фондов», дальше набор за юзером.
+  const [selectedMoverFunds, setSelectedMoverFunds] = usePersistedSet<string>('frame:fundtrades:moverFunds');
+  const [moverDefaultApplied, setMoverDefaultApplied] = usePersistedState<boolean>('frame:fundtrades:moverDefaultApplied', false);
   const [metric, setMetric] = usePersistedState<'weight' | 'amount'>('frame:fundtrades:metric', 'weight');
   // cross-tab: предвыбор бумаги для перехода movers → Потоки по компании.
   const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
@@ -438,6 +441,16 @@ export default function MobileFundTradesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [funds.length, portfolioDefaultApplied]);
 
+  // Тот же дефолт на вкладке «Сделки фондов» (зеркало десктопа).
+  useEffect(() => {
+    if (funds.length === 0 || moverDefaultApplied) return;
+    if (selectedMoverFunds.size === 0) {
+      setSelectedMoverFunds(new Set(defaultPortfolioTickers(funds)));
+    }
+    setMoverDefaultApplied(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funds.length, moverDefaultApplied]);
+
   // Общий портфель: выбранные фонды → comma-separated тикеры (пусто = все whitelist-акции).
   const portfolioFundsParam = useMemo(
     () => Array.from(portfolioFunds).join(','),
@@ -489,6 +502,8 @@ export default function MobileFundTradesPage() {
     () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
     [funds],
   );
+  // Индексные тикеры для таблетки «Без индексных фондов» в пикере движений.
+  const moverIndexTickers = useMemo(() => indexFundTickers(funds), [funds]);
   // Выбранный фонд для актив-sheet (FundPicker single). Хук — до early return.
   const assetSheetSelected = useMemo(
     () => new Set(selectedTicker ? [selectedTicker] : []),
@@ -1005,6 +1020,7 @@ export default function MobileFundTradesPage() {
                     mode="multi"
                     selected={selectedMoverFunds}
                     onChange={setSelectedMoverFunds}
+                    indexTickers={moverIndexTickers}
                   />
                 </div>
               )}
