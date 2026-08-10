@@ -521,12 +521,17 @@ export default function OpenInterestPage() {
   // Глубина интрадей-истории. Задаётся ЗДЕСЬ, а не тарифной сеткой: у
   // open_interest max_history_days на всех тарифах ≥ 5 лет, то есть тариф
   // интрадей вообще не ограничивает — упирались в этот фронтовый список.
-  // Границы выбраны по фактическому объёму данных на проде (open_interest):
-  // interval=5 живёт с 2026-02 (≈полгода), interval=60 — с 2020.
-  // 1день — как было, вся история.
+  //
+  // 2026-08-10: 5м вернули к месяцу, 1ч — к полугоду (в #1019 их подняли до
+  // полугода и года). Причина — цена одного ответа: 5м за полгода это 26.7 тыс.
+  // свечей и 6.2 МБ, за месяц — 4.4 тыс. и ~1 МБ. Даже с covering-индексами и
+  // сжатым кешем первый заход на непрогретый актив стоил 1.5-3 с, а на сайте
+  // человек листает тикеры один за другим и платит эту секунду каждый раз.
+  // Глубже смотрят в песочнице — там глубина осталась прежней, но подача
+  // свечей оконная (грузим видимый диапазон, остальное догружаем прокруткой).
   const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
-    5: ['1w', '1m', '6m'],
-    60: ['1w', '1m', '6m', '1y'],
+    5: ['1w', '1m'],
+    60: ['1w', '1m', '6m'],
     24: ['1w', '1m', '6m', '1y', '5y', 'all']
   };
 
@@ -559,6 +564,16 @@ export default function OpenInterestPage() {
     if (allowed.length) setPeriod(allowed[allowed.length - 1]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oiAccess.isLoading, period, interval]);
+
+  // Период мог остаться в localStorage от прежних границ (до 2026-08-10 на 5м
+  // разрешалось полгода, на 1ч — год). Без этой коррекции постоянный читатель
+  // при заходе снова запрашивал бы 26 тыс. свечей: handleIntervalChange правит
+  // период только в момент КЛИКА по таймфрейму, а тут ТФ уже восстановлен.
+  useEffect(() => {
+    const allowed = MAX_PERIODS_BY_INTERVAL[interval] || MAX_PERIODS_BY_INTERVAL[24];
+    if (!allowed.includes(period)) setPeriod(allowed[allowed.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interval, period]);
 
 
   // Выбор инструмента из модалки
