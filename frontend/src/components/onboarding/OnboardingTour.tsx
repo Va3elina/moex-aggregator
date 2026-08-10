@@ -45,6 +45,11 @@ export interface TourStep {
    *  'center' — по центру экрана (default).
    *  'top' — у верхнего края (чтобы не перекрывать open'нутый снизу sheet). */
   align?: 'center' | 'top';
+  /** Ширина карточки на десктопе, px. По умолчанию 360 (TOOLTIP_WIDTH).
+   *  Нужна шагам, где основное — картинка/видео: в 360px запись терминала
+   *  нечитаема. Значение клампится по вьюпорту, на мобиле игнорируется
+   *  (там карточка всегда во всю ширину минус отступы). */
+  width?: number;
 }
 
 export interface OnboardingTourProps {
@@ -73,6 +78,14 @@ export default function OnboardingTour({
   const step = steps[stepIndex];
   const isLastStep = stepIndex === steps.length - 1;
   const isFirstStep = stepIndex === 0;
+
+  // Ширина карточки шага: по умолчанию 360, но шаг может попросить шире
+  // (например, чтобы запись терминала было видно). Кламп по вьюпорту —
+  // иначе широкая карточка вылезет за экран на ноутбуке.
+  const stepWidth = Math.min(
+    step?.width ?? TOOLTIP_WIDTH,
+    Math.max(TOOLTIP_WIDTH, viewport.w - VIEWPORT_PADDING * 2),
+  );
 
   // ЛЮБОЕ закрытие = mark as seen (after v620).
   // Юзер запросил: «X должен = больше не показывать». Раньше был чекбокс,
@@ -196,6 +209,7 @@ export default function OnboardingTour({
     preferred: step.position,
     isMobile,
     align: step.align,
+    width: stepWidth,
   });
 
   // Spotlight rect with padding
@@ -272,8 +286,8 @@ export default function OnboardingTour({
         style={{
           left: tooltipPos.x,
           top: tooltipPos.y,
-          width: isMobile ? `calc(100vw - ${TOOLTIP_MOBILE_PADDING * 2}px)` : TOOLTIP_WIDTH,
-          maxWidth: TOOLTIP_WIDTH,
+          width: isMobile ? `calc(100vw - ${TOOLTIP_MOBILE_PADDING * 2}px)` : stepWidth,
+          maxWidth: stepWidth,
           zIndex: 10002,
           background: 'var(--bg-primary)',
           border: '2px solid var(--text-primary)',
@@ -394,14 +408,17 @@ function calculateTooltipPosition({
   preferred = 'bottom',
   isMobile,
   align = 'center',
+  width = TOOLTIP_WIDTH,
 }: {
   rect: DOMRect | null;
   viewport: { w: number; h: number };
   preferred?: 'top' | 'bottom' | 'left' | 'right';
   isMobile: boolean;
   align?: 'center' | 'top';
+  /** Фактическая ширина карточки (шаг мог попросить шире стандартных 360). */
+  width?: number;
 }): { x: number; y: number } {
-  const w = isMobile ? viewport.w - TOOLTIP_MOBILE_PADDING * 2 : TOOLTIP_WIDTH;
+  const w = isMobile ? viewport.w - TOOLTIP_MOBILE_PADDING * 2 : width;
   const estimatedHeight = 280; // rough estimate, ok для positioning
   const gap = 16;
 
@@ -413,6 +430,12 @@ function calculateTooltipPosition({
     if (align === 'top') {
       // Прижимаем к верху, с небольшим отступом от safe-area
       return { x, y: VIEWPORT_PADDING + 8 };
+    }
+    // Широкая карточка = медиа-шаг: она заметно выше estimatedHeight (280),
+    // и центрирование по этой оценке уводило низ с кнопками за экран.
+    // Прижимаем к верхней части — низ тогда гарантированно виден.
+    if (w > TOOLTIP_WIDTH) {
+      return { x, y: Math.max(VIEWPORT_PADDING, Math.round(viewport.h * 0.05)) };
     }
     return { x, y: (viewport.h - estimatedHeight) / 2 };
   }
