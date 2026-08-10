@@ -742,15 +742,10 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             className={`${TOOLTIP.containerClass} absolute z-20${tooltipInSandbox ? '' : ' chart-tooltip-root'}`}
             style={{
               ...TOOLTIP.containerStyle,
-              // Подложка — «приподнятая поверхность», а не --bg-primary из общего
-              // TOOLTIP: тот на тёмной теме почти чёрный и карточка читается как
-              // дыра в графике. --bg-elevated светлее фона на тёмной теме и
-              // светлее бумаги на светлой — тултип везде выглядит как слой НАД
-              // полотном, а не как вырез в нём. Рамка — от text-primary с малой
-              // альфой вместо сплошного --border-color (в editorial-dark он
-              // кремово-белый и бил в глаза сильнее самих данных).
-              background: 'var(--bg-elevated)',
-              border: '1px solid color-mix(in srgb, var(--text-primary) 16%, transparent)',
+              // Подложка и рамка — из общего TOOLTIP (--bg-primary + border-theme),
+              // как во всех остальных индикаторах (ОИ, фонды, потоки по компании).
+              // Локальный override на --bg-elevated делал карточку светлее
+              // полотна и выбивал её из общего стиля.
               left: `${left}px`,
               top: `${top}px`,
               width: `${tooltipW}px`,
