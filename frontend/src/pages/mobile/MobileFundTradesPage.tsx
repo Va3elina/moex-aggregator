@@ -717,10 +717,14 @@ export default function MobileFundTradesPage() {
           рейлом. */}
       <div className="fm-ft-scroll">
       {/* Плашка одна на страницу и читает общий snapshot_delay раздела. На
-          «Общем портфеле» (portfolio_snapshot_delay=0) и «По бумаге»
-          (company_snapshot_delay=0, 2026-08-10) задержки больше нет — там
-          плашка врала бы, поэтому не рисуем; остальные вкладки как были. */}
-      {tab !== 'portfolio' && tab !== 'company' && <DelayedDataBadge indicator="fund_trades" />}
+          «Общем портфеле» (portfolio_snapshot_delay=0), «По бумаге»
+          (company_snapshot_delay=0) и «Витрине» вместе с карточкой фонда
+          (showcase_snapshot_delay=0, 2026-08-10) задержки больше нет — там
+          плашка врала бы, поэтому не рисуем. Задержка осталась только у
+          скрытых вкладок «Движения»/«Снапшот». */}
+      {tab !== 'portfolio' && tab !== 'company' && tab !== 'funds' && (
+        <DelayedDataBadge indicator="fund_trades" />
+      )}
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}

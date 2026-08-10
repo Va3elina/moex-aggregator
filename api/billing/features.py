@@ -192,10 +192,28 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # владельца), = 0. Читают её /company-flows и /company-weights
     # (api/routers/fund_trades.py: _snapshot_cutoff(key=COMPANY_DELAY_KEY)),
     # остальные ручки раздела продолжают читать snapshot_delay.
+    #
+    # showcase_snapshot_delay (2026-08-10) — задержка ВИТРИНЫ (вкладка «Витрина»:
+    # каталог фондов со СЧА, доходностью, составом + карточка фонда, которая
+    # открывается кликом из него, и её drill-down по бумаге). Тоже 0 всем:
+    # витрина — верхняя воронка раздела. Ключ читают /funds, /fund/{ticker},
+    # /asset/{name}, /asset-history/{ticker} (SHOWCASE_DELAY_KEY). Карточку
+    # включили в витрину сознательно: иначе список и карточка разъезжались бы
+    # по датам снапшота. Общий snapshot_delay остался только у скрытых вкладок
+    # «Движения»/«Снапшот» (/movers scope=movers, /snapshot(s)/{ticker}).
+    #
+    # custom_range (2026-08-10) — кнопка-календарь «свой период» (произвольный
+    # диапазон месяцев вместо пресетов 1М/6М/1Г) в «Сделках» Общего портфеля и в
+    # карточке фонда. Free/гость считает по пресетам; произвольный диапазон — с
+    # Basic. Бэкенд гасит параметры from/to у таких тиров (/movers, /fund/{ticker}),
+    # иначе гейт обходится правкой URL.
     "fund_trades": {
-        "free":  {"snapshot_delay": 1, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": False},
-        "basic": {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": True},
-        "pro":   {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0, "fund_picker": True},
+        "free":  {"snapshot_delay": 1, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0,
+                  "showcase_snapshot_delay": 0, "fund_picker": False, "custom_range": False},
+        "basic": {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0,
+                  "showcase_snapshot_delay": 0, "fund_picker": True, "custom_range": True},
+        "pro":   {"snapshot_delay": 0, "portfolio_snapshot_delay": 0, "company_snapshot_delay": 0,
+                  "showcase_snapshot_delay": 0, "fund_picker": True, "custom_range": True},
     },
 
     # ───────────────────────────────────────────────────────────────

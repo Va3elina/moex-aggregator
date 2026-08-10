@@ -198,6 +198,13 @@ PORTFOLIO_DELAY_KEY = "portfolio_snapshot_delay"
 # /company-weights; остальные ручки раздела продолжают ходить с snapshot_delay.
 COMPANY_DELAY_KEY = "company_snapshot_delay"
 
+# Ключ матрицы для ВИТРИНЫ (вкладка «Витрина» — каталог фондов со СЧА,
+# доходностью и датой последнего отчёта): свежесть там не режем никому
+# (решение владельца 2026-08-10, features.py: fund_trades.showcase_snapshot_delay
+# = 0). Читает его /funds. Карточка фонда («что купили и продали») — уже НЕ
+# витрина, её ручки продолжают ходить с общим snapshot_delay.
+SHOWCASE_DELAY_KEY = "showcase_snapshot_delay"
+
 
 def _default_nonindex_funds(db) -> str | None:
     """Продуктовый дефолт набора «Общего портфеля»: все фонды, КРОМЕ индексных.
@@ -467,7 +474,7 @@ def list_funds_with_history(
     по fund_data.pay, КАЛЕНДАРНЫЕ месяцы от последней даты — совпадает с investfunds),
     top_holdings (топ-10 позиций последнего snapshot, weight 0..1, короткое имя).
     """
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка: свежий срез по подписке
+    cutoff = _snapshot_cutoff(db, user, SHOWCASE_DELAY_KEY)  # витрина — без задержки на всех тирах
     rows = db.execute(text("""
         SELECT
             f.fund_id,
@@ -652,6 +659,13 @@ def fund_trades_detail(
 
     months = _parse_period_months(period)
 
+    # Произвольный диапазон — с Basic (матрица, fund_trades.custom_range).
+    # Гасим оба параметра → тир считает по пресету period. Фронт запирает
+    # кнопку-календарь, но URL правится руками — гейт живёт на бэке.
+    if not get_indicator_limits(user_tier(user), "fund_trades").get("custom_range", True):
+        range_from = None
+        range_to = None
+
     # Произвольный диапазон (from → to) вместо пресета «N месяцев назад от свежего».
     # prev_bound = начало месяца, следующего за `from`: последний снапшот СТРОГО
     # раньше него = снапшот месяца `from` (или ближайший более ранний, как в пресетах).
@@ -689,8 +703,10 @@ def fund_trades_detail(
     # Доходность по nav_per_share — нужна для нового layout модалки (редизайн).
     performance = _fund_performance(db, fund_id)
 
-    # Latest snapshot date. Free/гость — с задержкой (cutoff): свежий срез по подписке.
-    cutoff = _snapshot_cutoff(db, user)
+    # Карточка фонда открывается КЛИКОМ ИЗ ВИТРИНЫ и показывает тот же каталог
+    # (состав, доходность) → ходит с витринным ключом, без задержки на всех тирах.
+    # Иначе список и карточка разъезжались бы по датам снапшота.
+    cutoff = _snapshot_cutoff(db, user, SHOWCASE_DELAY_KEY)
     # Месяцы с данными по этому фонду — календарь произвольного диапазона на фронте
     # (месяц-энд каждого месяца, свежие сверху; ограничены тем же cutoff и floor).
     available_month_dates = db.execute(text("""
@@ -942,6 +958,11 @@ def top_movers(
     prev_bound: date | None = None
     range_from_norm: str | None = None
     range_to_norm: str | None = None
+    # Произвольный диапазон — с Basic (матрица, fund_trades.custom_range); тот же
+    # гейт в /fund/{ticker}. Гасим оба параметра → тир считает по пресету period.
+    if not get_indicator_limits(user_tier(user), "fund_trades").get("custom_range", True):
+        range_from = None
+        range_to = None
     if bool(range_from) != bool(range_to):
         raise HTTPException(status_code=400, detail="from и to задаются только вместе")
     if range_from and range_to:
@@ -1671,7 +1692,7 @@ def asset_buyers(
     Use case: "Я держу Сбер — какие БПИФ его аккумулируют, какие распродают?"
     """
     months = _parse_period_months(period)
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+    cutoff = _snapshot_cutoff(db, user, SHOWCASE_DELAY_KEY)  # drill-down витрины — без задержки
 
     rows = db.execute(text("""
         WITH anchor AS (
@@ -2144,7 +2165,7 @@ def asset_position_history(
         filter_sql = "AND asset_name = :name"
         filter_params = {"name": asset_name}
 
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — история до предыдущего среза
+    cutoff = _snapshot_cutoff(db, user, SHOWCASE_DELAY_KEY)  # drill-down карточки фонда — без задержки
     rows = db.execute(text(f"""
         SELECT snapshot_date, asset_name, isin, positions, amount_rub, weight
         FROM fund_holdings_history

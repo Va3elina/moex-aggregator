@@ -20,6 +20,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 
 /** Границы диапазона — ISO-даты снапшотов из available_months (месяц-энды). */
 export interface MonthRange { from: string; to: string }
@@ -76,6 +78,19 @@ export default function MonthRangePicker({
 }: Props) {
     const inline = variant === 'inline';
     const [open, setOpen] = useState(false);
+
+    // Свой период — с Basic (матрица, fund_trades.custom_range). Гейт живёт
+    // ЗДЕСЬ, в самом пикере: он один на все поверхности — «Сделки» Общего
+    // портфеля, карточка фонда и мобильный sheet (variant='inline').
+    // `isLoading ||` — пока тариф не резолвнут, замок не вешаем.
+    const access = useTierAccess('fund_trades');
+    const { showUpgrade } = useUpgradePrompt();
+    const canUseRange = access.isLoading || access.canUseFlag('custom_range');
+    const promptRangeUpgrade = () => showUpgrade({
+        tier: access.requiredTierFor({ flag: 'custom_range' }) ?? 'basic',
+        featureName: 'свой период',
+        indicator: 'fund_trades',
+    });
     // pending — первый выбранный месяц (база), ждём второй клик.
     const [pending, setPending] = useState<string | null>(null);
     const [hover, setHover] = useState<string | null>(null);
@@ -113,6 +128,9 @@ export default function MonthRangePicker({
     }, [availableMonths]);
 
     const pick = (iso: string) => {
+        // Заперт тарифом: сетка открыта и читаема, но выбор месяца ведёт в
+        // апселл (в inline-варианте кнопки нет — это единственный вход).
+        if (!canUseRange) { promptRangeUpgrade(); return; }
         if (monthLocked?.(iso)) { onLockedClick?.(iso); return; }
         if (!pending) { setPending(iso); return; }
         if (iso === pending) { setPending(null); return; }
@@ -215,12 +233,16 @@ export default function MonthRangePicker({
         <div ref={wrapRef} style={{ position: 'relative', display: 'inline-flex' }}>
             <button
                 type="button"
-                onClick={() => setOpen((o) => !o)}
+                // Заперт: поповер не открываем — сразу апселл. Кнопка при этом
+                // выглядит обычной (без затемнения), платность выдаёт замочек.
+                onClick={() => { if (!canUseRange) { promptRangeUpgrade(); return; } setOpen((o) => !o); }}
                 aria-label="Свой период"
                 aria-pressed={!!value}
-                title={value ? `Свой период: ${monthRangeLabel(value.from, value.to)}` : 'Свой период — выбрать месяцы'}
+                title={canUseRange
+                    ? (value ? `Свой период: ${monthRangeLabel(value.from, value.to)}` : 'Свой период — выбрать месяцы')
+                    : 'Свой период — на тарифе Basic или Pro'}
                 style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3,
                     padding: '0 10px', borderRadius: 999,
                     border: '2px solid var(--text-primary)',
                     backgroundColor: value ? 'var(--accent)' : 'var(--bg-secondary)',
@@ -230,6 +252,7 @@ export default function MonthRangePicker({
                 }}
             >
                 <CalendarRange size={16} />
+                {!canUseRange && <Lock size={11} strokeWidth={2.4} />}
             </button>
             {open && (
                 <div
