@@ -6,11 +6,11 @@ API endpoint для получения свечей и данных OI
 (pos_short в БД уже отрицательный, поэтому используем ПЛЮС)
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, date, time as dt_time, timedelta
-from api.cache import get_or_set, get_or_compute, DEFAULT_TTL
+from api.cache import get_or_set, get_or_compute, get_raw, DEFAULT_TTL
 from typing import Optional
 from pydantic import BaseModel
 import time
@@ -175,6 +175,15 @@ def get_chart_data(
 
     # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
     cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"
+    # Тёплый путь — отдаём сырую строку из Redis, минуя json.loads → dict →
+    # повторный json.dumps в FastAPI. На 5м/6м (6.5 МБ) это 151 мс CPU впустую
+    # на КАЖДОМ хите при Redis GET в 25 мс (замер 2026-08-10). При 4 ядрах и
+    # пачке открытых вкладок такие миллисекунды и складываются в очередь.
+    # Контент байт-в-байт тот же — сериализовал его тот же json.dumps.
+    raw = get_raw(cache_key)
+    if raw is not None:
+        return Response(content=raw, media_type="application/json")
+
     # single-flight: при истечении ключа считает только один воркер, остальные
     # ждут его результат (защита от cache-stampede). Tier-логика выше — на роуте,
     # date_to уже учитывает effective_end → у Free/Paid разные cache_key, не течёт.

@@ -152,6 +152,22 @@ def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL):
         logger.warning(f"Redis error on set_cache: {e}")
 
 
+def get_raw(key: str) -> str | None:
+    """Сырая JSON-строка из кеша, без разбора в объекты.
+
+    Для больших ответов (график 5м/6м — 6.5 МБ) обычный путь тратит ~150 мс CPU
+    впустую: get_or_set делает json.loads, а FastAPI тут же сериализует dict
+    обратно в те же байты (замер на проде 2026-08-10: loads 71 мс + dumps 80 мс
+    при Redis GET 25 мс). Роутер отдаёт эту строку как Response(media_type=
+    'application/json') — контент байт-в-байт тот же.
+    """
+    try:
+        return _get_redis().get(key)
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on get_raw: {e}")
+        return None
+
+
 def touch(key: str, ttl: int = DEFAULT_TTL) -> None:
     """Продлить TTL записи, не переписывая её содержимое.
 
