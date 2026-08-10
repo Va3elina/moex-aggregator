@@ -160,10 +160,10 @@ export default function Layout() {
                   onClick={(e) => item.disabled && e.preventDefault()}
                   className={({ isActive }) =>
                     isEditorial
-                      ? `relative px-1 lg:px-2 2xl:px-3 py-2 whitespace-nowrap transition-all
+                      ? `relative px-1 xl:px-1.5 2xl:px-2 py-2 whitespace-nowrap transition-all
                          ${item.disabled ? 'cursor-not-allowed' : ''}
                          ${isActive ? 'font-bold' : 'font-medium'}`
-                      : `px-1 lg:px-2 2xl:px-3 py-2 rounded-xl font-medium
+                      : `px-1 xl:px-1.5 2xl:px-2 py-2 rounded-xl font-medium
                          whitespace-nowrap transition-all border
                          ${item.disabled
                            ? 'cursor-not-allowed border-transparent'
@@ -201,7 +201,7 @@ export default function Layout() {
                       {item.label}
                       {item.badge && (
                         <span
-                          className="ml-1.5 uppercase font-bold hidden xl:inline-block align-middle"
+                          className="ml-1.5 uppercase font-bold hidden 2xl:inline-block align-middle"
                           style={{
                             fontSize: '0.62rem',
                             letterSpacing: '0.06em',
@@ -324,16 +324,24 @@ export default function Layout() {
                   />
                 </button>
               ) : (
+                /* Подпись «Войти» — только с 1700px, не с xl (1280).
+                   Причина: на xl правый кластер разом прыгал 113→266px (подпись
+                   + Plus + бейдж NEW включались ОДНИМ брейкпоинтом), а места слева
+                   при этом не прибавлялось — nav переполнялся на 46px и последний
+                   пункт («Индикатор Баффетта») уезжал под кнопку терминала.
+                   Пороги теперь разведены: бейдж с 2xl, подпись с 1700.
+                   Иконка входа понятна и без подписи; Plus не трогаем — это CTA
+                   на тарифы. Проверено на 1024/1280/1366/1440/1536/1700. */
                 <button
                   onClick={() => navigate('/login')}
-                  className="grid place-items-center w-5 h-5 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  className="grid place-items-center w-5 h-5 min-[1700px]:w-auto min-[1700px]:h-auto min-[1700px]:flex min-[1700px]:items-center min-[1700px]:gap-1.5 min-[1700px]:px-3 min-[1700px]:py-2 rounded-xl text-xs min-[1700px]:text-sm font-medium transition-opacity hover:opacity-70"
                   style={{
                     color: 'var(--text-secondary)',
                   }}
                   aria-label="Войти"
                 >
                   <LogIn style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }} />
-                  <span className="hidden xl:inline">Войти</span>
+                  <span className="hidden min-[1700px]:inline">Войти</span>
                 </button>
               )}
 
