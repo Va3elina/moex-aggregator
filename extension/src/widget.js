@@ -114,8 +114,22 @@
     '.fw-btn:hover{border-color:var(--w-border)}',
     '.fw-body{flex:1 1 auto;position:relative;background:var(--w-bg);min-height:0}',
     '.fw-iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-    '.fw-resize{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:2}',
-    '.fw-resize::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--w-dim);border-bottom:2px solid var(--w-dim)}'
+    // Ресайз со ВСЕХ сторон и углов (фидбек Вадима: тянулся только правый нижний
+    // угол). Ручки — прозрачные полосы внутри панели (у неё overflow:hidden, поэтому
+    // никаких отрицательных офсетов), углы шире и лежат поверх сторон.
+    '.fw-rz{position:absolute;z-index:3;touch-action:none}',
+    '.fw-rz-n{top:0;left:12px;right:12px;height:6px;cursor:ns-resize}',
+    '.fw-rz-s{bottom:0;left:12px;right:12px;height:6px;cursor:ns-resize}',
+    '.fw-rz-w{left:0;top:12px;bottom:12px;width:6px;cursor:ew-resize}',
+    '.fw-rz-e{right:0;top:12px;bottom:12px;width:6px;cursor:ew-resize}',
+    '.fw-rz-nw{left:0;top:0;width:14px;height:14px;cursor:nwse-resize}',
+    '.fw-rz-ne{right:0;top:0;width:14px;height:14px;cursor:nesw-resize}',
+    '.fw-rz-sw{left:0;bottom:0;width:14px;height:14px;cursor:nesw-resize}',
+    '.fw-rz-se{right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize}',
+    '.fw-rz-se::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--w-dim);border-bottom:2px solid var(--w-dim)}',
+    // развёрнутая на всё поле терминала панель не тянется и не таскается
+    '.fw-panel[data-max="1"] .fw-rz{display:none}',
+    '.fw-panel[data-max="1"] .fw-head{cursor:default}'
   ].join('');
 
   function groupLabel(g) { return g === 'signals' ? 'Центр сигналов' : g === 'instrument' ? 'По инструменту' : 'По рынку'; }
@@ -241,20 +255,61 @@
       if (by !== null) st.y = by;
     }
 
-    // Магнит при ресайзе: правый край → стенка поля + края виджетов/панелей;
-    // нижний край → только виджеты/панели (низ поля = статус-бар, к нему не липнем).
-    function snapResize(st, env) {
+    // Магнит при ресайзе — липнут ТОЛЬКО тянущиеся края (dir: n/s/e/w и их пары).
+    // По горизонтали цели — стенки поля + края виджетов/панелей; по вертикали только
+    // виджеты/панели (верх/низ поля = тулбар и статус-бар, к ним не липнем).
+    function snapResize(st, env, dir) {
       env = env || getSnapEnv();
       var f = env.field;
-      var xs = [f.right], ys = [];
+      var xs = [f.left, f.right], ys = [];
       env.widgets.forEach(function (w) { xs.push(w.left, w.right); ys.push(w.top, w.bottom); });
       panels.forEach(function (p) { if (p.state !== st) { var s = p.state; xs.push(s.x, s.x + s.w); ys.push(s.y, s.y + s.h); } });
-      var br = null, bdr = SNAP + 1;
-      xs.forEach(function (v) { var d = Math.abs((st.x + st.w) - v); if (d <= SNAP && d < bdr) { br = v; bdr = d; } });
-      if (br !== null) st.w = br - st.x;
-      var bb = null, bdb = SNAP + 1;
-      ys.forEach(function (v) { var d = Math.abs((st.y + st.h) - v); if (d <= SNAP && d < bdb) { bb = v; bdb = d; } });
-      if (bb !== null) st.h = bb - st.y;
+      function nearest(list, val) {
+        var best = null, bd = SNAP + 1;
+        list.forEach(function (v) { var d = Math.abs(val - v); if (d <= SNAP && d < bd) { best = v; bd = d; } });
+        return best;
+      }
+      var v;
+      if (dir.indexOf('e') >= 0) { v = nearest(xs, st.x + st.w); if (v !== null) st.w = v - st.x; }
+      if (dir.indexOf('w') >= 0) { v = nearest(xs, st.x); if (v !== null) { var right = st.x + st.w; st.x = v; st.w = right - v; } }
+      if (dir.indexOf('s') >= 0) { v = nearest(ys, st.y + st.h); if (v !== null) st.h = v - st.y; }
+      if (dir.indexOf('n') >= 0) { v = nearest(ys, st.y); if (v !== null) { var bottom = st.y + st.h; st.y = v; st.h = bottom - v; } }
+    }
+
+    // Границы при ресайзе: минимальный размер и вьюпорт, но с УДЕРЖАНИЕМ
+    // противоположного (неподвижного) края — иначе тяга за левый/верхний край
+    // «уползает» вместе с панелью.
+    var MIN_W = 300, MIN_H = 200;
+    function clampResize(st, dir, o) {
+      var vw = window.innerWidth, vh = window.innerHeight;
+      if (dir.indexOf('w') >= 0) {
+        var right = o.x + o.w;
+        if (st.x < MARGIN) st.x = MARGIN;
+        if (right - st.x < MIN_W) st.x = right - MIN_W;
+        st.w = right - st.x;
+      } else {
+        if (st.w < MIN_W) st.w = MIN_W;
+        if (st.x + st.w > vw - MARGIN) st.w = vw - MARGIN - st.x;
+      }
+      if (dir.indexOf('n') >= 0) {
+        var bottom = o.y + o.h;
+        if (st.y < MARGIN) st.y = MARGIN;
+        if (bottom - st.y < MIN_H) st.y = bottom - MIN_H;
+        st.h = bottom - st.y;
+      } else {
+        if (st.h < MIN_H) st.h = MIN_H;
+        if (st.y + st.h > vh - MARGIN) st.h = vh - MARGIN - st.y;
+      }
+    }
+
+    // Прямоугольник «поля» терминала (контейнер виджетов) — цель для разворота
+    // панели на весь терминал.
+    function fieldRect() {
+      var f = getSnapEnv().field;
+      return {
+        x: Math.max(0, f.left), y: Math.max(0, f.top),
+        w: Math.max(MIN_W, f.right - f.left), h: Math.max(MIN_H, f.bottom - f.top)
+      };
     }
 
     function spawnPanel(id, saved, opts) {
@@ -273,15 +328,16 @@
       var title = h('span', { class: 'fw-title', text: ind.label });
       var beta = h('span', { class: 'fw-beta', title: 'Расширение в бете', text: 'BETA' });
       // Настройки (⚙) переехали в тулбар ВНУТРИ iframe — в шапке только кнопки окна.
-      var bPop = h('button', { class: 'fw-btn', 'data-a': 'pop', title: 'Открыть в новом окне', text: '⤢' });
+      var bMax = h('button', { class: 'fw-btn', 'data-a': 'max', title: 'Развернуть на весь терминал', text: '⤢' });
       var bTheme = h('button', { class: 'fw-btn', 'data-a': 'theme', title: 'Тема', text: '◐' });
       var bClose = h('button', { class: 'fw-btn', 'data-a': 'close', title: 'Закрыть', text: '×' });
-      var ctrls = h('span', { class: 'fw-ctrls' }, [bPop, bTheme, bClose]);
+      var ctrls = h('span', { class: 'fw-ctrls' }, [bMax, bTheme, bClose]);
       var head = h('div', { class: 'fw-head' }, [dot, title, beta, ctrls]);
       var iframe = h('iframe', { class: 'fw-iframe', title: 'FRAME · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
-      var resize = h('div', { class: 'fw-resize' });
-      var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body, resize]);
+      var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body]);
+      var DIRS = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'];
+      DIRS.forEach(function (d) { el.appendChild(h('div', { class: 'fw-rz fw-rz-' + d, 'data-dir': d })); });
 
       function applyLayout() { el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
       // extra шлём только на ПЕРВЫЙ рендер (opts из сигнала); reload() на смене
@@ -289,7 +345,32 @@
       function reload(extra) { iframe.src = embedUrl(st.id, st.theme, st.pid, extra); }
       function toFront() { zTop += 1; el.style.zIndex = zTop; }
 
+      // Разворот НА ВЕСЬ ТЕРМИНАЛ (не новая вкладка): панель растягивается на поле
+      // виджетов терминала, повторный клик возвращает прежнюю геометрию.
+      function applyMax() { var r = fieldRect(); st.x = r.x; st.y = r.y; st.w = r.w; st.h = r.h; applyLayout(); }
+      function syncMaxBtn() {
+        el.setAttribute('data-max', st.max ? '1' : '0');
+        bMax.textContent = st.max ? '⤡' : '⤢';
+        bMax.title = st.max ? 'Свернуть к прежнему размеру' : 'Развернуть на весь терминал';
+      }
+      function toggleMax() {
+        if (st.max) {
+          st.max = false;
+          var p = st.prev;
+          if (p) { st.x = p.x; st.y = p.y; st.w = p.w; st.h = p.h; }
+          st.prev = null;
+          clampPanel(st); applyLayout();
+        } else {
+          st.prev = { x: st.x, y: st.y, w: st.w, h: st.h };
+          st.max = true;
+          applyMax(); toFront();
+        }
+        syncMaxBtn(); persist();
+      }
+
       applyLayout(); el.style.zIndex = ++zTop; reload(opts);
+      if (st.max) applyMax();
+      syncMaxBtn();
       el.addEventListener('pointerdown', toFront, true);
 
       ctrls.addEventListener('click', function (e) {
@@ -297,11 +378,13 @@
         var a = b.getAttribute('data-a');
         if (a === 'close') { removePanel(panel); }
         else if (a === 'theme') { st.theme = st.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark'; el.setAttribute('data-theme', st.theme); reload(); persist(); }
-        else if (a === 'pop') { window.open(embedUrl(st.id, st.theme, st.pid), '_blank', 'width=560,height=460'); }
+        else if (a === 'max') { toggleMax(); }
       });
+      // двойной клик по шапке — тот же разворот/сворот, как у окон терминала
+      head.addEventListener('dblclick', function (e) { if (e.target.closest('.fw-btn')) return; toggleMax(); });
 
       head.addEventListener('pointerdown', function (e) {
-        if (e.target.closest('.fw-btn')) return;
+        if (e.target.closest('.fw-btn') || st.max) return;
         var sx = e.clientX, sy = e.clientY, ox = st.x, oy = st.y;
         var env = getSnapEnv(); // снимок виджетов/поля терминала на старте drag
         try { head.setPointerCapture(e.pointerId); } catch (er) {}
@@ -309,18 +392,34 @@
         function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); persist(); }
         head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
       });
-      resize.addEventListener('pointerdown', function (e) {
-        e.preventDefault();
-        var sx = e.clientX, sy = e.clientY, ow = st.w, oh = st.h;
+      // Ресайз за любую сторону/угол. Тянущиеся края берутся из data-dir ручки;
+      // противоположный край стоит на месте (см. clampResize).
+      el.addEventListener('pointerdown', function (e) {
+        var hEl = e.target.closest ? e.target.closest('.fw-rz') : null;
+        if (!hEl || st.max) return;
+        e.preventDefault(); e.stopPropagation();
+        var dir = hEl.getAttribute('data-dir');
+        var sx = e.clientX, sy = e.clientY;
+        var o = { x: st.x, y: st.y, w: st.w, h: st.h };
         var env = getSnapEnv(); // снимок виджетов/поля терминала на старте resize
-        try { resize.setPointerCapture(e.pointerId); } catch (er) {}
-        function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); snapResize(st, env); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
-        function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); resize.removeEventListener('pointercancel', up); persist(); }
-        resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up); resize.addEventListener('pointercancel', up);
+        try { hEl.setPointerCapture(e.pointerId); } catch (er) {}
+        function mv(ev) {
+          var dx = ev.clientX - sx, dy = ev.clientY - sy;
+          if (dir.indexOf('e') >= 0) st.w = o.w + dx;
+          if (dir.indexOf('s') >= 0) st.h = o.h + dy;
+          if (dir.indexOf('w') >= 0) { st.x = o.x + dx; st.w = o.w - dx; }
+          if (dir.indexOf('n') >= 0) { st.y = o.y + dy; st.h = o.h - dy; }
+          clampResize(st, dir, o);
+          snapResize(st, env, dir);
+          clampResize(st, dir, o); // магнит мог вылезти за минимум/вьюпорт
+          applyLayout();
+        }
+        function up() { hEl.removeEventListener('pointermove', mv); hEl.removeEventListener('pointerup', up); hEl.removeEventListener('pointercancel', up); persist(); }
+        hEl.addEventListener('pointermove', mv); hEl.addEventListener('pointerup', up); hEl.addEventListener('pointercancel', up);
       });
 
       shadow.appendChild(el);
-      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout, iframe: iframe };
+      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout, applyMax: applyMax, iframe: iframe };
       panels.push(panel);
       return panel;
     }
@@ -365,7 +464,12 @@
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
         resizeTimer = null;
-        panels.forEach(function (p) { clampPanel(p.state); p.applyLayout(); });
+        // развёрнутые панели пересчитываем по новому полю терминала, остальные
+        // просто возвращаем во вьюпорт
+        panels.forEach(function (p) {
+          if (p.state.max) { p.applyMax(); return; }
+          clampPanel(p.state); p.applyLayout();
+        });
       }, 150);
     });
 
