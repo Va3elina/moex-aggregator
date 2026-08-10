@@ -1,5 +1,5 @@
 /**
- * terminal-intro — короткий анонс-тур «у нас появился Терминал» (2 шага).
+ * terminal-intro — короткий анонс «у нас появился Терминал» (2 шага).
  *
  * Не индикаторный тур, а разовое уведомление о новом функционале: показывается
  * ОДИН раз всем, кто зашёл на сайт, и живёт в Layout (десктопная шапка), а не на
@@ -12,10 +12,104 @@
  * все, включая не-Pro: по клику вместо перехода открывается UpgradeModal, так что
  * анонс уместен и для гостя.
  *
+ * ФОРМАТ: показываем, а не рассказываем — как видео-демо индикаторов на лендинге.
+ * Текста минимум (одна строка на шаг), основную работу делает запись экрана.
+ * Файлы кладутся по конвенции лендинга (см. MediaArea в IndicatorGroup):
+ *   /videos/terminal.webm + /videos/terminal.mp4 + /videos/terminal-poster.jpg
+ * Пока записи нет, <video> падает по onError в схематичный мокап — анонс не
+ * пустует. Появится файл — код менять НЕ нужно.
+ *
  * Закрытие крестиком = пропустить: OnboardingTour при любом закрытии помечает
  * тур просмотренным (см. его docstring), поэтому повторно он не появится.
  */
+import { useState } from 'react';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
+
+/** Видео-демо терминала; при отсутствии файла — схематичный мокап. */
+function TerminalDemo() {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) return <TerminalMock />;
+
+  return (
+    <video
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      poster="/videos/terminal-poster.jpg"
+      onError={() => setFailed(true)}
+      style={{
+        width: '100%',
+        aspectRatio: '16 / 10',
+        objectFit: 'cover',
+        borderRadius: 10,
+        border: '1.5px solid var(--border-color)',
+        display: 'block',
+      }}
+    >
+      <source src="/videos/terminal.webm" type="video/webm" />
+      <source src="/videos/terminal.mp4" type="video/mp4" />
+    </video>
+  );
+}
+
+/**
+ * Заглушка на время, пока нет записи: схема рабочего стола — три окна-панели
+ * с мини-графиками. Рисуем токенами темы, чтобы жило в обеих темах.
+ */
+function TerminalMock() {
+  const pane = {
+    fill: 'var(--bg-secondary)',
+    stroke: 'var(--border-color)',
+    strokeWidth: 1.5,
+    rx: 4,
+  };
+  return (
+    <svg
+      viewBox="0 0 320 200"
+      role="img"
+      aria-label="Схема рабочего стола: три окна с индикаторами"
+      style={{
+        width: '100%',
+        aspectRatio: '16 / 10',
+        borderRadius: 10,
+        border: '1.5px solid var(--border-color)',
+        background: 'var(--bg-primary)',
+        display: 'block',
+      }}
+    >
+      {/* Полоса листов сверху — «рабочие пространства» */}
+      <rect x={10} y={10} width={40} height={10} rx={3} fill="var(--accent)" />
+      <rect x={56} y={10} width={30} height={10} {...pane} />
+      <rect x={92} y={10} width={30} height={10} {...pane} />
+
+      {/* Окно 1 — линия */}
+      <rect x={10} y={30} width={150} height={75} {...pane} />
+      <polyline
+        points="20,90 40,72 60,80 80,55 100,64 120,44 150,50"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={2}
+      />
+
+      {/* Окно 2 — столбики */}
+      <rect x={170} y={30} width={140} height={110} {...pane} />
+      <rect x={182} y={95} width={12} height={30} fill="var(--accent)" opacity={0.75} />
+      <rect x={200} y={75} width={12} height={50} fill="var(--accent)" opacity={0.75} />
+      <rect x={218} y={85} width={12} height={40} fill="var(--accent)" opacity={0.75} />
+      <rect x={236} y={60} width={12} height={65} fill="var(--accent)" opacity={0.75} />
+      <rect x={254} y={80} width={12} height={45} fill="var(--accent)" opacity={0.75} />
+
+      {/* Окно 3 — таблица/список */}
+      <rect x={10} y={115} width={150} height={75} {...pane} />
+      {[128, 141, 154, 167].map((y) => (
+        <rect key={y} x={20} y={y} width={110} height={5} rx={2.5} fill="var(--text-muted)" opacity={0.5} />
+      ))}
+    </svg>
+  );
+}
 
 export const terminalIntroTour: TourStep[] = [
   {
@@ -23,37 +117,21 @@ export const terminalIntroTour: TourStep[] = [
     title: 'Новое: Терминал',
     body: (
       <>
-        <p style={{ marginBottom: 8 }}>
-          У Фрейма появился <strong>терминал</strong> — рабочий стол, где
-          индикаторы открываются плавающими окнами на одном экране: слева
-          открытые позиции, справа поток капитала, снизу сила рынка.
-        </p>
-        <p style={{ marginBottom: 8 }}>
-          Окна двигаются и меняют размер с примагничиванием, а раскладки
-          сохраняются по <strong>листам</strong> — как рабочие пространства
-          в биржевом терминале. Внутри окон — те же живые данные, что на сайте.
-        </p>
-        <p style={{ opacity: 0.7, fontSize: 12 }}>
-          Один короткий шаг — и закончим. Крестик закроет анонс насовсем.
+        <TerminalDemo />
+        <p style={{ marginTop: 10 }}>
+          Индикаторы плавающими окнами на одном экране — рабочий стол, как в
+          биржевом терминале.
         </p>
       </>
     ),
   },
   {
     selector: '[data-tour="header-terminal"]',
-    title: 'Вход — вот эта кнопка',
+    title: 'Открывается отсюда',
     body: (
-      <>
-        <p style={{ marginBottom: 8 }}>
-          Кнопка со знаком Фрейма в шапке открывает терминал с любой страницы.
-          На широком экране рядом с ней видна подпись «Терминал».
-        </p>
-        <p>
-          Терминал входит в тариф <strong>Pro</strong>. Если тарифа нет, кнопка
-          покажет, что в него входит — посмотреть, как устроен рабочий стол,
-          можно и без подписки.
-        </p>
-      </>
+      <p>
+        Кнопка в шапке — с любой страницы. Входит в тариф <strong>Pro</strong>.
+      </p>
     ),
     position: 'bottom',
     spotlightPadding: 10,
