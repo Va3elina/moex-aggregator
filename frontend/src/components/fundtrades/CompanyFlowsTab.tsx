@@ -7,10 +7,12 @@
  *    кругляшами месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких
  *    уровнях цены фонды покупали и продавали. Цена — /price-weekly по тикеру
  *    (resolveFundTicker); нет тикера или истории → empty-state внутри чарта.
- *  - «Доля» — CompanyShareChart: сверху та же линия цены (контекст), снизу
- *    гистограмма ДОЛИ бумаги в портфелях выбранных фондов (/company-weights,
- *    уровни в % от СЧА). Свой субтумблер «По капиталу / По доле» — как в
- *    «Общем портфеле». Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
+ *  - «Позиция» — CompanyShareChart: сверху та же линия цены (контекст), снизу
+ *    гистограмма ПОЗИЦИИ бумаги у выбранных фондов (/company-weights). Свой
+ *    субтумблер трёх весов: «По капиталу» (абсолют, ₽), «По доле» (среднее
+ *    долей, %), «От капитализации» (Σ позиций / free-float капа компании, %).
+ *    Третий пункт скрыт, если ffcap пуст (облигация/ОФЗ/нет в MOEXBMI).
+ *    Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
  * Значения приходят в ₽ → чарты переводят в млн (÷1e6).
@@ -181,7 +183,8 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         if (modeRaw !== 'map' && modeRaw !== 'share') setMode('map');
     }, [modeRaw, setMode]);
 
-    // Вес доли в режиме «Доля» — как в «Общем портфеле»: по капиталу / по доле.
+    // Вес в режиме «Позиция»: по капиталу (₽) / по доле (%) / от капитализации
+    // (% free-float, скрыт для бумаг вне MOEXBMI — см. capAvailable ниже).
     const [shareMode, setShareMode] = usePersistedState<ShareMode>('frame:companyflows:sharemode', 'rub');
 
     // История доли (/company-weights) — лениво, только в режиме «Доля».
@@ -521,10 +524,25 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         })),
         [shareFundSeries, sharePeriodStart],
     );
+    const visibleFfcap = useMemo(
+        () => (weightsData?.ffcap ?? []).slice(sharePeriodStart),
+        [weightsData, sharePeriodStart],
+    );
+
+    // «От капитализации» доступен, только если у бумаги вообще есть free-float
+    // капа (акция из MOEXBMI). Облигации/ОФЗ/внеиндексные — пункт скрыт, а
+    // персистнутый выбор 'cap' на такой бумаге тихо падает на «По капиталу»
+    // (не пишем в localStorage: вернёшься на акцию — режим восстановится).
+    const capAvailable = useMemo(
+        () => (weightsData?.ffcap ?? []).some(v => v != null),
+        [weightsData],
+    );
+    const effectiveShareMode: ShareMode =
+        shareMode === 'cap' && !capAvailable ? 'rub' : shareMode;
 
     // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
     // набора фондов, периода, режима ИЛИ веса доли — окно проигрывает каскад заново.
-    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}|${shareMode}`;
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${mode}|${effectiveShareMode}`;
 
     // ── Рендер ──
     if (assetsLoading) {
@@ -659,22 +677,25 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     onChange={setMode}
                 />
 
-                {/* Вес доли — только в режиме «Доля», термины как в «Общем портфеле». */}
+                {/* Вес — только в режиме «Позиция». «От капитализации» доступен
+                    лишь бумагам с free-float капой (акции из MOEXBMI). */}
                 {mode === 'share' && (
                     <SegmentedControl<ShareMode>
                         options={[
                             { key: 'rub', label: 'По капиталу' },
                             { key: 'share', label: 'По доле' },
+                            ...(capAvailable ? [{ key: 'cap' as ShareMode, label: 'От капитализации' }] : []),
                         ]}
-                        value={shareMode}
+                        value={effectiveShareMode}
                         onChange={setShareMode}
                         trailing={
                             <HelpTooltip
                                 align="right"
-                                title="Как считается доля"
+                                title="Как считается позиция"
                                 sections={[
-                                    { heading: 'По капиталу', body: 'Доля бумаги от суммарной СЧА выбранных фондов: крупные фонды влияют сильнее — буквально один общий портфель.' },
+                                    { heading: 'По капиталу', body: 'Сколько рублей выбранные фонды держат в бумаге: доля в портфеле × СЧА фонда, суммой по фондам.' },
                                     { heading: 'По доле', body: 'Средняя доля бумаги по фондам, каждый фонд с равным весом — виден консенсус управляющих без перекоса на гигантов.' },
+                                    ...(capAvailable ? [{ heading: 'От капитализации', body: 'Позиция фондов в процентах от стоимости акций компании в свободном обращении (free-float, данные МосБиржи). Показывает, какая часть торгуемых акций лежит в этих фондах.' }] : []),
                                 ]}
                             />
                         }
@@ -774,9 +795,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     <CompanyShareChart
                         months={visibleShareMonths}
                         funds={visibleShareFunds}
+                        ffcap={visibleFfcap}
                         weeks={price && price.ticker === selectedTicker ? price.weeks : []}
                         closes={price && price.ticker === selectedTicker ? price.closes : []}
-                        shareMode={shareMode}
+                        shareMode={effectiveShareMode}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
                         loading={weightsLoading || priceLoading || flowsLoading}

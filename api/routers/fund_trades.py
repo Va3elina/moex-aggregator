@@ -2638,6 +2638,64 @@ def company_flows(
     }
 
 
+# Пары «обыкновенная ↔ привилегированная» для режима «От капитализации»:
+# знаменатель — free-float капа ВСЕЙ компании (решение владельца 2026-08-10),
+# а в freefloat_cap (индекс широкого рынка MOEXBMI) классы акций лежат
+# отдельными тикерами. Курируемый список вместо срезания хвостовой «P»:
+# GAZP−P=GAZ (ГАЗ) — эвристика склеила бы РАЗНЫЕ компании.
+_PREF_PAIRS_BASE = {
+    "SBERP": "SBER", "SNGSP": "SNGS", "TATNP": "TATN", "RTKMP": "RTKM",
+    "BANEP": "BANE", "MTLRP": "MTLR", "NKNCP": "NKNC", "LSNGP": "LSNG",
+    "KAZTP": "KAZT", "PMSBP": "PMSB", "KRKNP": "KRKN", "MGTSP": "MGTS",
+    "CNTLP": "CNTL", "VRSBP": "VRSB",
+}
+# Оба направления: держат преф → добавить обычку, держат обычку → добавить преф.
+PREF_PAIRS: dict[str, str] = {**_PREF_PAIRS_BASE,
+                              **{v: k for k, v in _PREF_PAIRS_BASE.items()}}
+
+
+def _company_ffcap_by_month(db, resolved_isin: Optional[str],
+                            months: list[str]) -> list[Optional[float]]:
+    """Free-float капитализация компании (руб) по месяцам оси — знаменатель
+    режима «От капитализации». null = бумаги нет в MOEXBMI в этом месяце
+    (или это облигация/ОФЗ без ISIN-акции — фронт скрывает режим).
+
+    Тикеры компании: все secid ISIN-группы канонической бумаги из securities_ref
+    (склейка редомициляции: FIVE + X5 — историческая капа лежит под старым
+    тикером ГДР) + парный класс акций из PREF_PAIRS. FF-капы классов суммируются.
+    """
+    if not resolved_isin or not months:
+        return [None] * len(months)
+    try:
+        secids = db.execute(text("""
+            SELECT DISTINCT secid FROM securities_ref
+            WHERE secid IS NOT NULL AND canonical_isin = (
+                SELECT COALESCE(MAX(canonical_isin), :i)
+                FROM securities_ref WHERE isin = :i)
+        """), {"i": resolved_isin}).scalars().all()
+        company = set(secids)
+        for s in secids:
+            pair = PREF_PAIRS.get(s)
+            if pair:
+                company.add(pair)
+        if not company:
+            return [None] * len(months)
+        rows = db.execute(text("""
+            SELECT to_char(month, 'YYYY-MM') AS m, SUM(ffcap) AS cap
+            FROM freefloat_cap
+            WHERE sec_id = ANY(:secids)
+              AND month >= to_date(:lo, 'YYYY-MM') AND month <= to_date(:hi, 'YYYY-MM')
+            GROUP BY 1
+        """), {"secids": list(company), "lo": months[0], "hi": months[-1]}).fetchall()
+        by_month = {m: float(cap) for m, cap in rows}
+        return [by_month.get(m) for m in months]
+    except Exception:
+        # Таблицы freefloat_cap может не быть (свежий dev) — режим просто
+        # недоступен, остальная ручка живёт. Rollback, чтобы не отравить сессию.
+        db.rollback()
+        return [None] * len(months)
+
+
 @router.get("/company-weights")
 def company_weights(
     isin: Optional[str] = Query(None, description="ISIN бумаги (предпочтительно)"),
@@ -2673,6 +2731,10 @@ def company_weights(
     Ось месяцев — непрерывный ряд от первого появления бумаги до последнего
     полного снапшота держателей (без тирной задержки — company_snapshot_delay=0
     на всех тирах).
+
+    ffcap[i] — free-float капитализация компании (руб) на месяц, знаменатель
+    режима «От капитализации» (см. _company_ffcap_by_month). null = бумаги нет
+    в MOEXBMI в этом месяце — фронт скрывает режим целиком, если null'ы все.
     """
     if not isin and not asset_name:
         raise HTTPException(status_code=400, detail="isin or asset_name required")
@@ -2790,6 +2852,9 @@ def company_weights(
         "funds_count": len(funds_out),
         "months": months,
         "funds": funds_out,
+        # Free-float капа компании (руб) по месяцам — знаменатель режима
+        # «От капитализации» (Σ позиций фондов / ffcap). null = нет в MOEXBMI.
+        "ffcap": _company_ffcap_by_month(db, resolved_isin, months),
     }
 
 
