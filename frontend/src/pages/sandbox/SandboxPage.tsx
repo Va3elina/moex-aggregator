@@ -229,9 +229,21 @@ function SandboxThemeScope({ eff, children }: { eff: SbTheme; children: ReactNod
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+/** Тема сайта на момент ПЕРВОГО входа в терминал — чтобы переход не выглядел
+ *  сменой продукта. Дальше у терминала своя тема (переключатель в его шапке),
+ *  она живёт в LS_KEY и сайтом уже не перетирается.
+ *  Ключ 'theme' пишет ThemeProvider; дефолт сайта — editorial-light. */
+function siteTheme(): SbTheme {
+  try {
+    return localStorage.getItem('theme') === 'editorial-dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';   // localStorage недоступен (private mode) — как на сайте
+  }
+}
+
 function defaultState(): Persisted {
   return {
-    sbTheme: 'dark',
+    sbTheme: siteTheme(),
     sheets: [{ id: 's1', name: 'Лист 1' }],
     activeSheet: 's1',
     bySheet: { s1: [{ id: 'pseed', type: 'oi', x: 28, y: 20, w: 640, h: 440, z: 11, themeOverride: null }] },
