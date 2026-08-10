@@ -12,7 +12,9 @@ import time
 
 from sqlalchemy import text
 
-from api.cache import get_all_by_prefix, set_cache, touch, DEFAULT_TTL
+import json
+
+from api.cache import get_all_gzip_by_prefix, set_gzip, touch, DEFAULT_TTL
 from api.database import SessionLocal
 from api.services.chart_live import append_live_points, strip_live_points
 from datetime import date, datetime, time as dt_time, timedelta
@@ -211,7 +213,7 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
         # или убрана live-точка) — иначе лишние записи в Redis на каждый NOTIFY.
         changed = bool(appended_candles or appended_oi or live_added or had_live)
         if changed:
-            set_cache(key, cached_response, ttl=DEFAULT_TTL)
+            set_gzip(key, json.dumps(cached_response, default=str), ttl=DEFAULT_TTL)
         else:
             # Контент не изменился — но TTL продлить НАДО. Иначе запись протухает
             # каждые 30 минут и следующий гость платит за холодный пересчёт (замер
@@ -236,7 +238,7 @@ def update_chart_caches(source: str = "5min"):
     Sync-функция — вызывается из async обёртки через run_in_executor.
     """
     t0 = time.time()
-    entries = get_all_by_prefix("chart:")
+    entries = get_all_gzip_by_prefix("chart:")
 
     if not entries:
         return
