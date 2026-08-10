@@ -38,6 +38,7 @@ import PositionComet from './PositionComet';
 import OiScreenerLocked from './OiScreenerLocked';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useRealtimeData } from '../../hooks/useRealtimeData';
 
 type Clgroup = 'FIZ' | 'YUR';
 
@@ -194,15 +195,27 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   //    контейнер) — он же сглаживает переход график ⇄ скринер. Своя
   //    обёртка здесь была бы двойной анимацией.
 
+  // Онлайн-обновление: лента считается по тем же 5-минутным срезам ОИ, что и
+  // график — поэтому источники те же ('5min', 'hourly'), а не 'daily'. Рефетч
+  // тихий: строки не гасим (иначе лента мигала бы каждые 5 минут и сбрасывала
+  // прокрутку), новые данные просто заменяют старые в кадре.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const silentRef = useRef(false);
+  useRealtimeData(['5min', 'hourly'], () => {
+    silentRef.current = true;
+    setRefreshTick((t) => t + 1);
+  });
+
   useEffect(() => {
     let cancelled = false;
-    setRows(null);
+    if (!silentRef.current) setRows(null);
+    silentRef.current = false;
     setError(false);
     getOiScreener(clgroup, horizon)
       .then((r) => { if (!cancelled) { setLocked(!!r.locked); setRows(r.rows); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [clgroup, horizon]);
+  }, [clgroup, horizon, refreshTick]);
 
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
