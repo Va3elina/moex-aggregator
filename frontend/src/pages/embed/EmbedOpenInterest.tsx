@@ -259,11 +259,23 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   });
 
   // Оконная подача: прошлое догружаем, когда пользователь долистал к началу.
-  const { loadMore, loadingMore, reset: resetWindow } = useChartWindowLoader({
+  const { loadMore, reset: resetWindow } = useChartWindowLoader({
     instrument, interval, clgroup, data, onExtended: setData,
   });
   // Смена актива/ТФ/среза — окно считается заново (счётчик кусков, край).
   useEffect(() => { resetWindow(); }, [instrument, interval, clgroup, resetWindow]);
+  // Запас истории тянем СРАЗУ после первой отрисовки, не дожидаясь прокрутки:
+  // тогда к моменту, когда пользователь доведёт график до края, данные там уже
+  // есть и перехода не видно вовсе. Стартовое окно при этом остаётся лёгким —
+  // запас едет фоном и на первый показ не влияет.
+  const prefetchedFor = useRef('');
+  useEffect(() => {
+    if (status !== 'ok' || !data?.candles?.length) return;
+    const key = `${instrument}:${interval}:${clgroup}`;
+    if (prefetchedFor.current === key) return;
+    prefetchedFor.current = key;
+    loadMore();
+  }, [status, data, instrument, interval, clgroup, loadMore]);
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
@@ -861,23 +873,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {/* Догрузка истории при прокрутке влево: маленький маркер, чтобы пустота
-            у левого края читалась как «сейчас доедет», а не как конец данных. */}
-        {loadingMore && (
-          <div style={{
-            position: 'absolute', top: 8, left: 8, zIndex: 5,
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 8px', borderRadius: 6,
-            background: 'var(--bg-primary)', border: '1px solid var(--border)',
-            fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)',
-          }}>
-            <span
-              className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
-              style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-            />
-            История…
-          </div>
-        )}
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChartPanes
             ref={panesRef}

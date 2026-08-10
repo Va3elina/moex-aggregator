@@ -44,6 +44,8 @@ interface Params {
 }
 
 export function useChartWindowLoader({ instrument, interval, clgroup, data, onExtended }: Params) {
+    // Индикатора загрузки наружу не отдаём: подгрузка должна быть незаметной.
+    // Флаг нужен только внутри — чтобы не слать второй запрос поверх первого.
     const [loadingMore, setLoadingMore] = useState(false);
     // Всё через ref: колбэк уезжает в подписку графика, которая живёт один раз.
     const ref = useRef({ instrument, interval, clgroup, data, onExtended });
