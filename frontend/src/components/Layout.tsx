@@ -30,9 +30,9 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   // NEW — внутри появилась вкладка «Скринер сигналов» (04.07.2026).
   { path: '/oi', label: 'Открытые позиции', badge: 'New' },
   { path: '/funds-money', label: 'Деньги в фондах' },
-  { path: '/strength', label: 'Сила рынка' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
   { path: '/fund-trades', label: 'Сделки фондов' },
+  { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },
   { path: '/cbr-flows', label: 'Поток капитала' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
