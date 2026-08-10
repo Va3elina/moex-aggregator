@@ -1,5 +1,6 @@
 /**
- * CompanyShareChart — режим «Позиция» в «Потоках по компании».
+ * CompanyShareChart — режимы «По капиталу» и «От капитализации» в «Потоках
+ * по компании» (пункты общего ряда режимов, см. CompanyFlowsTab).
  *
  * Оформление — по макету «Силы рынка» (StrengthPage): ДВЕ визуально
  * разделённые секции в одной карточке, у каждой своя центрированная легенда,
@@ -7,19 +8,16 @@
  * (контекст), нижняя — помесячная гистограмма ПОЗИЦИИ бумаги у выбранных
  * фондов. Курсор общий: вертикаль идёт сквозь обе панели, тултип один на обе.
  *
- * Значение месяца — три веса (тумблер «По капиталу / По доле / От
- * капитализации»):
+ * Значение месяца — два режима (пункты общего ряда в CompanyFlowsTab):
  *   rub   — Σ(СЧА_фонда × доля_%/100): АБСОЛЮТНАЯ позиция фондов в бумаге,
  *           в рублях (ось — адаптивно млн/млрд ₽);
- *   share — простое среднее долей по фондам, %: консенсус управляющих без
- *           перекоса на гигантов;
  *   cap   — Σ позиций / free-float капа компании (ffcap из /company-weights,
  *           источник MOEXBMI), %: сколько торгуемой части компании лежит
  *           в выбранных фондах.
  * В расчёт месяца входят только фонды с ПОЛНЫМ снапшотом (weights[i] != null);
  * 0 — честный ноль (фонд отчитался без бумаги), null — дыра данных → месяц
- * без бара (разрыв), а не ложный ноль. В rub/cap месяц без единой СЧА тоже
- * null: без СЧА рубли не восстановить, ложный ноль хуже дыры.
+ * без бара (разрыв), а не ложный ноль. Месяц без единой СЧА тоже null: без
+ * СЧА рубли не восстановить, ложный ноль хуже дыры.
  *
  * Ось X — МЕСЯЦЫ (слоты), общая для обеих панелей. Недели цены раскладываются
  * внутри слота своего месяца дробно ((k+0.5)/K): линия остаётся гладкой, а бар
@@ -58,7 +56,7 @@ const BAR_COLOR = FUND_PALETTE[0];
 // Полоса подписей оси X внутри нижней секции, px.
 const XLABEL_H = 40;
 
-export type ShareMode = 'rub' | 'share' | 'cap';
+export type ShareMode = 'rub' | 'cap';
 
 export interface CompanyShareFundSeries {
     label: string;
@@ -153,19 +151,17 @@ export default function CompanyShareChart({
     // cap — Σ позиций / free-float капа компании, %.
     const shareValsAll = useMemo(() => {
         return monthsAll.map((_, i) => {
-            let rub = 0, hasNav = false, sum = 0, cnt = 0;
+            let rub = 0, hasNav = false, cnt = 0;
             for (const f of fundsAll) {
                 const w = f.weights[i];
                 if (w == null) continue;
                 cnt++;
-                sum += w;
                 const nav = f.navs[i];
                 if (nav != null && nav > 0) { rub += nav * (w / 100); hasNav = true; }
             }
-            if (cnt === 0) return null;
-            if (shareMode === 'share') return sum / cnt;
-            // Рублёвые режимы без единой СЧА в месяце — дыра, а не ложный ноль.
-            if (!hasNav) return null;
+            // Нет ни одного полного снапшота или ни одной СЧА — дыра, а не
+            // ложный ноль: без СЧА рубли позиции не восстановить.
+            if (cnt === 0 || !hasNav) return null;
             if (shareMode === 'rub') return rub;
             const cap = ffcapAll?.[i];
             return cap != null && cap > 0 ? (rub / cap) * 100 : null;
@@ -412,8 +408,8 @@ export default function CompanyShareChart({
     })();
 
     // Разбивка тултипа: вклад каждого фонда В ЕДИНИЦАХ РЕЖИМА (top-6 по
-    // убыванию): share — его доля %, rub — его позиция ₽, cap — его % от
-    // free-float капы. В rub/cap фонд без СЧА показать нечем — строка выпадает.
+    // убыванию): rub — его позиция ₽, cap — его % от free-float капы.
+    // Фонд без СЧА показать нечем — строка выпадает.
     const hoverBreakdown = useMemo(() => {
         if (hoveredMi == null) return null;
         const cap = ffcap?.[hoveredMi];
@@ -421,7 +417,6 @@ export default function CompanyShareChart({
             .map(f => {
                 const w = f.weights[hoveredMi];
                 if (w == null || w === 0) return null;
-                if (shareMode === 'share') return { label: f.label, color: f.color, v: w };
                 const nav = f.navs[hoveredMi];
                 if (nav == null || nav <= 0) return null;
                 const rub = nav * (w / 100);
@@ -445,9 +440,7 @@ export default function CompanyShareChart({
         return closesAll[wk[wk.length - 1]] ?? null;
     }, [hasPrice, hoveredMi, months, weeksByMonth, closesAll]);
 
-    const shareModeLabel = shareMode === 'rub'
-        ? 'Позиция фондов'
-        : shareMode === 'cap' ? 'Доля от капитализации' : 'Средняя доля в фондах';
+    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов' : 'Доля от капитализации';
     // Значения режима: rub — рубли (адаптив млн/млрд), share/cap — проценты.
     const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v) : fmtPct(v));
     const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false) : fmtPct(v));
