@@ -24,6 +24,7 @@ import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -1083,6 +1084,13 @@ export default function OpenInterestPage() {
           />
           )}
           </ChartActionsMenu>
+
+          {/* Вход в песочницу — крайняя справа в строке контролов (единая
+              позиция на всех индикаторах). ChartActionsMenu выше рисуется
+              порталом в углу графика и в этой строке места не занимает. */}
+          <div style={{ marginLeft: 'auto', order: 99 }}>
+            <SandboxEntryButton />
+          </div>
         </div>
       </div>
 

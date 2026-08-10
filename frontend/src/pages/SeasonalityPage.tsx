@@ -18,6 +18,7 @@ import { type PeriodConfig, makePeriodId } from '../components/seasonality/perio
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import LayersButton from '../components/LayersButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
@@ -785,6 +786,13 @@ export default function SeasonalityPage() {
           <ChartSettings showType={false} />
           </ChartActionsMenu>
         )}
+
+        {/* Вход в песочницу — крайняя справа в строке контролов (единая
+            позиция на всех индикаторах). Показываем и в test mode: kebab там
+            скрыт, а вход в песочницу от режима графика не зависит. */}
+        <div style={{ marginLeft: 'auto', order: 99 }}>
+          <SandboxEntryButton />
+        </div>
       </div>
 
       {/* TEST MODE — Seasonax-style dashboard (yearly + 2×2 histograms) */}
