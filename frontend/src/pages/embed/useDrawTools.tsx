@@ -27,6 +27,7 @@ import {
 } from '../../components/chart/drawToolIcons';
 import type { ExportMetadata } from '../../components/export/types';
 import { useEmbedPersist } from './embedPersist';
+import { iconBtnStyle } from './EmbedToolbar';
 
 const ExportModal = lazy(() => import('../../components/export/ExportModal'));
 
@@ -332,12 +333,8 @@ export function DrawExportActions({ draw, visible, drawable = true }: {
         onClick={() => { draw.setDrawMode(!draw.drawMode); draw.setSelectedDrawId(null); }}
         title="Рисование на графике"
         aria-label="Рисование на графике"
-        style={{
-          width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          border: 'none', borderRadius: 7, cursor: 'pointer', flexShrink: 0, padding: 0,
-          background: draw.drawMode ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'transparent',
-          color: draw.drawMode ? 'var(--accent)' : 'var(--text-secondary)',
-        }}
+        className="emb-iconbtn"
+        style={iconBtnStyle(draw.drawMode)}
       >
         <Pencil size={15} />
       </button>
@@ -347,11 +344,8 @@ export function DrawExportActions({ draw, visible, drawable = true }: {
         onClick={() => draw.setExportOpen(true)}
         title="Экспорт графика"
         aria-label="Экспорт графика"
-        style={{
-          width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
-          cursor: 'pointer', flexShrink: 0, padding: 0,
-        }}
+        className="emb-iconbtn"
+        style={iconBtnStyle(false)}
       >
         <Camera size={15} />
       </button>

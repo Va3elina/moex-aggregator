@@ -78,13 +78,13 @@ const toolbarRow: CSSProperties = {
   zIndex: 20,
 };
 
-// Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ×) — §4.3: 24×24, без бордера, radius 5,
-// приглушённый глиф. Ховер — через класс .sb-winbtn (в sandbox.css; на сайте/
-// расширении класс без стилей, а сами кнопки гейтятся наличием SandboxWindowCtx).
-const sbWinBtn: CSSProperties = {
-  width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  border: 'none', borderRadius: 5, background: 'transparent', color: 'var(--muted)', cursor: 'pointer', flexShrink: 0, padding: 0,
-};
+// Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ×) — та же геометрия, что у всех иконок-действий
+// тулбара (ICON_BTN, 28×28/radius 7/глиф 15): раньше они были 24×24 с глифами 13 и 16,
+// и правый верхний угол выглядел разнокалиберным. Отличие только в цвете глифа
+// (приглушённый) и ховере: класс .sb-winbtn-close красит закрытие в красный
+// (sandbox.css; на сайте/в расширении класс без стилей, а сами кнопки гейтятся
+// наличием SandboxWindowCtx).
+const sbWinBtn: CSSProperties = { ...iconBtnStyle(false), color: 'var(--muted)' };
 
 /**
  * EmbedFrame — обёртка виджета: тулбар (lead + inline + ⚙more) + область графика
@@ -157,6 +157,7 @@ export function EmbedFrame({
                   onClick={() => setMoreOpen((v) => !v)}
                   title="Ещё настройки"
                   aria-label="Ещё настройки"
+                  className="emb-iconbtn"
                   style={iconBtnStyle(moreOpen)}
                 >
                   <Settings size={15} />
@@ -179,17 +180,17 @@ export function EmbedFrame({
                 onClick={win.onExpand}
                 title={win.maximized ? 'Свернуть' : 'Развернуть'}
                 aria-label={win.maximized ? 'Свернуть' : 'Развернуть'}
-                className="sb-winbtn"
+                className="emb-iconbtn"
                 style={sbWinBtn}
               >
-                {win.maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {win.maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
             )}
             {/* Кнопки «Тема панели» здесь больше нет: тему задаёт ТОЛЬКО шапка
                 оболочки, персональной темы у окна не бывает. */}
             {win.onClose && (
-              <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" className="sb-winbtn sb-winbtn-close" style={sbWinBtn}>
-                <XIcon size={16} />
+              <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" className="emb-iconbtn sb-winbtn-close" style={sbWinBtn}>
+                <XIcon size={15} />
               </button>
             )}
           </div>
@@ -624,7 +625,13 @@ export function ToolbarMenuButton({ label, icon, title, compact, children }: {
   );
 }
 
-function iconBtnStyle(active: boolean): CSSProperties {
+/**
+ * Единый стиль иконки-действия в тулбаре (⚙ ещё, ✏️ рисование, 📷 экспорт, ⤢ ×
+ * окна песочницы). ВСЕ иконки правого угла обязаны идти через него: пока у каждой
+ * был свой инлайн-объект, коробки разъезжались (28 против 24) и глифы были разного
+ * кегля (13/15/16) — угол выглядел кривым. Ховер — класс .emb-iconbtn.
+ */
+export function iconBtnStyle(active: boolean): CSSProperties {
   return {
     width: 28,
     height: 28,

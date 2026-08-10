@@ -20,7 +20,7 @@ import { getCbrFlows } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
 import { Checklist } from './EmbedSettings';
-import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown, ToolbarMenuButton, iconBtnStyle } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useToolbarCompact } from './useToolbarCompact';
@@ -190,11 +190,8 @@ export default function EmbedCbrFlows() {
             onClick={() => setExportOpen(true)}
             title="Экспорт графика"
             aria-label="Экспорт графика"
-            style={{
-              width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--text-secondary)',
-              cursor: 'pointer', flexShrink: 0, padding: 0,
-            }}
+            className="emb-iconbtn"
+            style={iconBtnStyle(false)}
           >
             <Camera size={15} />
           </button>
