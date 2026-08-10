@@ -21,7 +21,7 @@ import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, L
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
-import TierUpsellOverlay, { BLURRED_STYLE } from '../tier/TierUpsellOverlay';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { FundWithHistory } from '../../services/api';
 
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
@@ -208,15 +208,33 @@ function PickerModal({
     title: string;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
-    /** Тариф не даёт пикер (fund_trades.fund_picker): список слегка заблюрен,
-     *  поверх — апселл на Basic; закрытие ничего не применяет (2026-08-10). */
+    /** Тариф не даёт пикер (fund_trades.fund_picker): список открыт и читаем,
+     *  но любая попытка изменить набор показывает апселл на Basic; закрытие
+     *  ничего не применяет (2026-08-10; блюр убран — гейтим действия). */
     locked?: boolean;
 }) {
     const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
-    // Черновик: пусто в persisted-наборе = все выбраны.
-    const [draft, setDraft] = useState<Set<string>>(
-        () => (selected.size === 0 ? new Set(allTickers) : new Set(selected)),
+    // Черновик: пусто в persisted-наборе = все выбраны. У запертого тира
+    // «пусто» означает бэковый дефолт «без индексных» (_default_nonindex_funds)
+    // — черновик инициализируем так же, чтобы тумблер «Без индексных фондов»
+    // показывался прожатым и модалка не врала про состав.
+    const [rawDraft, setRawDraft] = useState<Set<string>>(
+        () => {
+            if (selected.size > 0) return new Set(selected);
+            return new Set(locked ? defaultPortfolioTickers(funds) : allTickers);
+        },
     );
+    const draft = rawDraft;
+    // Запертый тариф: любые мутации черновика вместо изменения открывают
+    // апселл — один гейт на все ручки (чекбокс, группа, «все», индексные).
+    const { showUpgrade } = useUpgradePrompt();
+    const setDraft: typeof setRawDraft = (next) => {
+        if (locked) {
+            showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'fund_trades' });
+            return;
+        }
+        setRawDraft(next);
+    };
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [sortKey, setSortKey] = useState<'nav' | 'y1'>('nav');
     const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
@@ -437,10 +455,7 @@ function PickerModal({
                         <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6 }}>
                             <button
                                 type="button"
-                                // Заперт: тумблер меняет draft, который всё равно
-                                // не применится — не даём его дёргать.
-                                onClick={locked ? undefined : toggleIndexOff}
-                                disabled={locked}
+                                onClick={toggleIndexOff}
                                 className="editorial-press"
                                 aria-pressed={indexOff}
                                 title={indexOff
@@ -478,21 +493,10 @@ function PickerModal({
                 </div>
 
                 {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
-                    вертикальный скроллбар не съедает правый отступ).
-                    Locked-тир: список слегка заблюрен, поверх — апселл на Basic
-                    (обёртка ниже относительная, оверлей — absolute). */}
-                <div className="flex-1 min-h-0 flex flex-col" style={{ position: 'relative' }}>
-                {locked && (
-                    <TierUpsellOverlay
-                        tier="basic"
-                        featureName="Выбор фондов"
-                        description="Соберите свой пул фондов — одна УК, только крупные или без индексных — портфель пересчитается по нему."
-                    />
-                )}
+                    вертикальный скроллбар не съедает правый отступ). */}
                 <div
                     className="flex-1 min-h-0 overflow-y-auto styled-scrollbar"
-                    style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges', ...(locked ? BLURRED_STYLE : null) }}
-                    aria-hidden={locked || undefined}
+                    style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}
                 >
                     <table className="w-full" style={{ fontSize: 'var(--fs-sm)', tableLayout: 'fixed' }}>
                         {/* Раскладка колонок — как bare-FundsTable: чекбокс 40,
@@ -731,7 +735,6 @@ function PickerModal({
                         </tbody>
                     </table>
                 </div>
-                </div>{/* /relative-обёртка блюр-гейта */}
 
                 {/* Футер «Готово» — применяет и закрывает (как FundPicker multi). */}
                 <div
@@ -830,7 +833,7 @@ export default function PortfolioFundPicker({
                 // внутри слегка заблюрен, поверх апселл на Basic (как в пикере
                 // «Денег в фондах»). Так видно, что именно даёт тариф.
                 onClick={() => setOpen(true)}
-                title={canPick ? undefined : 'Выбор фондов — на тарифе Basic и выше'}
+                title={canPick ? undefined : 'Выбор фондов — на тарифе Basic или Pro'}
                 className="editorial-press"
                 style={{
                     display: 'inline-flex',

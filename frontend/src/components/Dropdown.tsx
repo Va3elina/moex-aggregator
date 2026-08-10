@@ -202,16 +202,15 @@ export default function Dropdown<T extends string>({
                   width: 'calc(100% - 12px)',
                   borderRadius: 999,
                   fontWeight: active ? 800 : 600,
-                  color: opt.locked
-                    ? 'var(--text-muted)'
-                    : active
-                      ? 'var(--text-inverse)'
-                      : 'var(--text-primary)',
+                  // Тарифный locked НЕ затемняем (2026-08-10): опция выглядит
+                  // обычной с замочком, клик открывает апселл — затемнение
+                  // отпугивало от клика, а клик и есть путь к апгрейду.
+                  color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
                   backgroundColor: active ? 'var(--accent)' : 'transparent',
                   border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
                   boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
-                  cursor: opt.locked ? 'not-allowed' : 'pointer',
-                  opacity: opt.locked ? 0.5 : 1,
+                  cursor: 'pointer',
+                  opacity: 1,
                   transition: 'background-color 0.12s ease, color 0.12s ease',
                 }}
               >

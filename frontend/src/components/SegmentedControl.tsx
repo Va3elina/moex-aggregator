@@ -76,7 +76,10 @@ export default function SegmentedControl<T extends string>({
     >
       {options.map((opt, i) => {
         const active = opt.key === value;
-        const muted = opt.locked || opt.disabled;
+        // Затемняем ТОЛЬКО disabled (данных нет). Тарифный locked рисуем как
+        // обычный сегмент с замочком (2026-08-10): затемнение отпугивало от
+        // клика, а клик — это и есть путь к апселлу/логину.
+        const muted = opt.disabled;
         return (
           <button
             key={opt.key}
@@ -111,7 +114,7 @@ export default function SegmentedControl<T extends string>({
                   ? 'var(--text-inverse)'
                   : 'var(--text-primary)',
               opacity: muted ? 0.5 : 1,
-              cursor: muted ? 'not-allowed' : 'pointer',
+              cursor: opt.disabled ? 'not-allowed' : 'pointer',
               whiteSpace: 'nowrap',
               transition: 'background-color 0.12s ease, color 0.12s ease',
             }}

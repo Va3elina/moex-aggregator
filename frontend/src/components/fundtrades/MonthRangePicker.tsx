@@ -177,11 +177,10 @@ export default function MonthRangePicker({
                                                 : mid
                                                     ? 'color-mix(in srgb, var(--accent) 22%, transparent)'
                                                     : 'transparent',
-                                            color: locked
-                                                ? 'var(--text-muted)'
-                                                : edge ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                            opacity: locked ? 0.45 : 1,
-                                            cursor: locked ? 'not-allowed' : 'pointer',
+                                            // Тарифный locked не затемняем (2026-08-10) —
+                                            // замочек есть, клик ведёт в апселл.
+                                            color: edge ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                            cursor: 'pointer',
                                             transition: 'background-color 0.12s ease, color 0.12s ease',
                                         }}
                                     >

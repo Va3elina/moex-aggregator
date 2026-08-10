@@ -69,7 +69,7 @@ export default function LockedSnapshotTeaser({
           Свежий срез — по подписке
         </div>
         <div style={{ fontSize: 'var(--fs-sm, .9rem)', color: 'var(--text-secondary)', maxWidth: 340, lineHeight: 1.5 }}>
-          Что фонды купили и продали {dateStr ? `в срезе за ${dateStr}` : 'в свежей выборке'} — доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic'} и выше.
+          Что фонды купили и продали {dateStr ? `в срезе за ${dateStr}` : 'в свежей выборке'} — доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic или Pro'}.
         </div>
         <button
           onClick={open}

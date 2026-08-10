@@ -894,7 +894,7 @@ export default function MobileFundTradesPage() {
                             setAsOf(m);
                             setTimeSheetOpen(false);
                           }}
-                          style={{ justifyContent: 'flex-start', padding: '14px 16px', gap: 8, opacity: locked ? 0.6 : 1 }}
+                          style={{ justifyContent: 'flex-start', padding: '14px 16px', gap: 8 }}
                         >
                           {formatMonthYear(m)}
                           {locked && <Lock size={12} strokeWidth={2.4} style={{ marginLeft: 'auto' }} />}
