@@ -782,16 +782,20 @@ export default function SimpleChart({
     const isNavDrag = navDragRef.current;
     navDragRef.current = false;
 
-    // Дописывание хвоста (realtime) — тоже без анимации. Морфинг здесь не нужен
-    // и стоит дорого: каждые 5 минут пересчёт RAF-траекторий по всем точкам ряда
-    // (на 5м/6м — 26 тыс.), из-за чего график «переползал» и подтормаживал на
-    // каждом SSE-событии. Сдвиг от одной новой точки субпиксельный.
+    // Дописывание хвоста (realtime) — без анимации ТОЛЬКО на длинных рядах.
+    // Морфинг стоит ~19 мс/кадр на 26 тыс. точек (5м/6м) при бюджете 16.7 —
+    // там он рвётся и выглядит как подтормаживание. Но на часовом и дневном
+    // (2–5 тыс. точек) кадр стоит 1–2 мс, и гасить анимацию там нельзя: live-
+    // точка каждые 5 минут меняет ЗНАЧЕНИЕ (текущая цена ползёт), и без морфинга
+    // линия дёргается скачком вместо плавного хода. См. ANIMATION.appendMorphMaxPoints.
     // Флаг живёт до следующей смены data (эффект выше переставляет его каждый
     // раз): setNavRange от дописывания даёт ещё один прогон animateMorph, и он
-    // тоже должен быть мгновенным — иначе морф вернулся бы через заднюю дверь.
+    // должен решаться так же — иначе поведение разъедется между двумя прогонами.
     const isAppend = isAppendRef.current;
+    const appendTooHeavyToMorph = isAppend &&
+      displayData.length > ANIMATION.appendMorphMaxPoints;
 
-    if (isNavDrag || isAppend) {
+    if (isNavDrag || appendTooHeavyToMorph) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       setAnimatedPaths({
         primary: pointsToPath(targetPrimary),
