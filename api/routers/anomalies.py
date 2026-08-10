@@ -10,10 +10,18 @@
   POST /api/anomalies/toggle     — вкл/выкл всплывающие тосты (auth; гость — localStorage)
   POST /api/anomalies/{id}/subscribe — создать алерт из аномалии (auth + квота)
 
-ВИДИМОСТЬ ленты НЕ делится по силе/тарифу — все видят одно (решение Вадима).
-Тариф влияет ТОЛЬКО на КЛИК: «Открыть график» по gated-цели → апселл + дефолт
+ВИДИМОСТЬ ленты по силе НЕ делится — порог один для всех (решение Вадима).
+Тариф влияет на КЛИК: «Открыть график» по gated-цели → апселл + дефолт
 (вердикт `link_required_tier` считается сервером по features.py, фронту не доверяем);
 «Поставить сигнал» → квота telegram_alerts_quota.
+
+⚠️ ИСКЛЮЧЕНИЕ 2026-08-10: OI-аномалии (_OI_TYPES) для гостя и Free из ленты
+ВЫРЕЗАЮТСЯ. Причина: 2026-08-09 закрыли скринер сигналов (oi_screener.open),
+а лента отдавала ровно его содержимое — тикер, группу участников, направление
+и «×N к обычному дневному шагу», — то есть гейт скринера обходился колоколом.
+Гейт привязан к ТОМУ ЖЕ ключу матрицы, что и скринер: откроют скринер обратно —
+вернётся и лента, без второй правки. Потоки фондов (funds_flow) остаются всем:
+их источник — «Деньги в фондах», а он открыт.
 
 НЕ ЗАДВОИТЬ: `/feed` отдаёт DISTINCT ON (type·asset·clgroup·direction·день) с
 приоритетом личной строки → событие приходит ровно раз (mine=true если личная).
@@ -41,6 +49,13 @@ router = APIRouter(prefix="/api/anomalies", tags=["anomalies"])
 # диплинк (/funds-money?category=), он не гейтится. interval=24 разрешён всем
 # тарифам, 5-минутку в аномалиях не используем.
 _OI_TYPES = ("oi_move", "oi_zscore", "oi_participants")
+
+
+def _oi_feed_allowed(tier: str) -> bool:
+    """Пускать ли OI-аномалии в ленту. Один ключ со скринером (см. шапку модуля):
+    лента и скринер показывают одно и то же событие, разводить их гейты — значит
+    почти наверняка забыть один из них при следующей правке тарифов."""
+    return bool(get_indicator_limits(tier, "oi_screener").get("open"))
 
 
 def _link_required_tier(tier: str, atype: str, asset_id: str) -> Optional[str]:
@@ -98,6 +113,11 @@ class FeedOut(BaseModel):
     last_seen_id: Optional[int] = None   # серверный для залогиненных; None для гостя
     toasts_enabled: bool = True          # users.anomaly_toasts_enabled (гость → true)
     channel_posts: list[ChannelPostOut] = []   # новости каналов — секция колокола
+    # true — из ленты вырезаны OI-аномалии по тарифу (см. шапку модуля). Фронт по
+    # этому флагу рисует нудж «сигналы по позициям — с Basic», иначе у Free лента
+    # выглядела бы просто пустеющей без объяснения.
+    oi_locked: bool = False
+    oi_required_tier: Optional[str] = None
 
 
 _FEED_SQL = text("""
@@ -109,6 +129,10 @@ _FEED_SQL = text("""
     WHERE (scope = 'public' OR user_id = :uid)
       AND created_at >= now() - make_interval(hours => :max_age_hours)
       AND (:since_id = 0 OR id > :since_id)
+      -- OI-аномалии мимо тарифа (см. шапку модуля). Режем в SQL, а не после
+      -- выборки: LIMIT применяется ПОСЛЕ фильтра, иначе у Free лента из 50
+      -- строк схлопывалась бы до нескольких — почти все события сейчас oi_move.
+      AND (:oi_ok OR type <> ALL(string_to_array(:oi_types, ',')))
     ORDER BY type, asset_id, COALESCE(clgroup,''), COALESCE(direction,''), signal_date,
              (scope = 'personal') DESC, created_at DESC
   ) t
@@ -135,9 +159,11 @@ def feed(
     """Лента аномалий. Гость видит публичные; залогиненный — публичные + свои личные
     (свёрнутые в одно событие). Каждая строка несёт серверный вердикт диплинка."""
     tier = user_tier(user)
+    oi_ok = _oi_feed_allowed(tier)
     rows = db.execute(_FEED_SQL, {
         "uid": user.id if user else None,
         "since_id": since, "limit": limit, "max_age_hours": max_age_hours,
+        "oi_ok": oi_ok, "oi_types": ",".join(_OI_TYPES),
     }).mappings().all()
 
     items = [
@@ -171,6 +197,8 @@ def feed(
         last_seen_id=(user.last_seen_anomaly_id if user else None),
         toasts_enabled=(bool(user.anomaly_toasts_enabled) if user else True),
         channel_posts=posts,
+        oi_locked=not oi_ok,
+        oi_required_tier=None if oi_ok else "basic",
     )
 
 
