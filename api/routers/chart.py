@@ -188,6 +188,161 @@ def get_chart_data(
     )
 
 
+# Дельта старше этого возраста не имеет смысла: клиент долго спал (ноутбук в
+# сне), выгоднее и проще сказать ему перезагрузить ряд целиком, чем гнать
+# многодневный хвост через append-логику.
+_DELTA_MAX_AGE_DAYS = 3
+
+
+@router.get("/{sec_id}/delta")
+def get_chart_delta(
+        sec_id: str,
+        sectype: str = Query(...),
+        inst_type: InstTypeType = Query("futures"),
+        interval: int = Query(24),
+        clgroup: ClgroupType = Query("FIZ"),
+        show_oi: bool = Query(True),
+        since_candle: datetime = Query(..., description="time последней ЗАКРЫТОЙ свечи у клиента (без live)"),
+        since_oi: Optional[datetime] = Query(None, description="time последней закрытой точки OI (без live)"),
+        db: Session = Depends(get_db),
+        user = Depends(get_current_user_optional)
+):
+    """Инкрементальный догруз графика по SSE-событию.
+
+    Полный ответ /api/chart на 5м/6м — 6.2 МБ (26k свечей + 24k точек OI), и до
+    этой ручки фронт перекачивал его ЦЕЛИКОМ на каждый NOTIFY раз в ~5 минут —
+    отсюда конкуренция за CPU при пачке панелей и лаг перерисовки. Дельта отдаёт
+    только новые ЗАКРЫТЫЕ бары/OI после since_* + свежую live-точку — килобайты.
+
+    Контракт с клиентом: он присылает time последней закрытой точки (свою live
+    предварительно срезает), назад получает строго более новые закрытые точки и,
+    для актуальных тиров, live-точку (помечена live=true). Клиент срезает свою
+    старую live и дописывает ответ в хвост.
+
+    Tier-гейт зеркалит /api/chart: у Free потолок свежести effective_end
+    (закрытые бары режутся по нему, live-точка не отдаётся вовсе) — дельта у
+    Free почти всегда пустая, что корректно: его срез и не должен меняться
+    внутри дня. Кеша нет намеренно: запросы точечные (индексный спуск за
+    миллисекунды), а ключ включал бы since_* клиента — hit rate был бы нулевой.
+    """
+    if interval not in {5, 60, 24}:
+        raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
+
+    try:
+        sec_id = validate_safe_id(sec_id, "sec_id")
+        sectype = validate_safe_id(sectype, "sectype")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Те же tier-правила, что у полного графика (актив/ТФ/срез).
+    enforce_tier_limits(
+        user, "open_interest",
+        asset=sectype, interval=interval, clgroup=clgroup,
+    )
+    effective_end = get_effective_end_date(user, "open_interest")  # None = без задержки
+
+    # Клиент слишком отстал → дельта выродится в пол-истории. Пусть грузит полный
+    # ряд (тот как раз лежит в тёплом chart:-кеше).
+    if since_candle.date() < date.today() - timedelta(days=_DELTA_MAX_AGE_DAYS):
+        return {"full_reload": True, "candles": [], "open_interest": []}
+
+    # sec_ids — как в _compute_chart_data: instruments + календарные контракты.
+    sec_ids = [r[0] for r in db.execute(text("""
+        SELECT DISTINCT sec_id FROM instruments
+        WHERE sectype = :sectype AND type = :inst_type
+    """), {"sectype": sectype, "inst_type": inst_type}).fetchall()] or [sec_id]
+    if inst_type == 'futures':
+        cal_ids = front_sec_ids(db, sectype)
+        if cal_ids:
+            sec_ids = list(dict.fromkeys(sec_ids + cal_ids))
+
+    # ── Новые закрытые свечи (зеркало cache_updater._update_single_entry) ────
+    new_candles_raw = db.execute(text("""
+        SELECT begin_time, open, high, low, close, volume, sec_id
+        FROM candles
+        WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+          AND begin_time > :since
+        ORDER BY begin_time
+    """), {"sec_ids": sec_ids, "interval": interval, "since": since_candle}).fetchall()
+
+    if effective_end is not None:
+        new_candles_raw = [c for c in new_candles_raw if c[0].date() <= effective_end]
+    if interval != 24:
+        new_candles_raw = [c for c in new_candles_raw if float(c[5] or 0) > 0]
+
+    # Лучший контракт дня по объёму — как в cache_updater / chart.py.
+    from collections import defaultdict
+    daily_volume = defaultdict(lambda: defaultdict(float))
+    for c in new_candles_raw:
+        daily_volume[c[0].date()][c[6]] += float(c[5] or 0)
+    best_by_day = {day: max(contracts, key=contracts.get)
+                   for day, contracts in daily_volume.items() if contracts}
+
+    candles = [{
+        "time": c[0].isoformat(),
+        "open": float(c[1] or 0), "high": float(c[2] or 0),
+        "low": float(c[3] or 0), "close": float(c[4] or 0),
+        "volume": float(c[5] or 0),
+    } for c in new_candles_raw if c[6] == best_by_day.get(c[0].date(), c[6])]
+
+    # ── Новые закрытые точки OI ──────────────────────────────────────────────
+    open_interest = []
+    if show_oi and since_oi is not None:
+        new_oi_raw = db.execute(text("""
+            SELECT tradedate, tradetime, pos, pos_long, pos_short,
+                   pos_long_num, pos_short_num
+            FROM open_interest
+            WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
+              AND (tradedate > :last_date
+                   OR (tradedate = :last_date AND tradetime > :last_time_part))
+            ORDER BY tradedate, tradetime
+        """), {
+            "sectype": sectype, "clgroup": clgroup, "interval": interval,
+            "last_date": since_oi.date(), "last_time_part": since_oi.time(),
+        }).fetchall()
+
+        for oi in new_oi_raw:
+            trade_date = oi[0]
+            if effective_end is not None and trade_date > effective_end:
+                continue
+            trade_time = oi[1] if oi[1] else dt_time(23, 50)
+            if isinstance(trade_time, str):
+                parts = trade_time.split(":")
+                trade_time = dt_time(int(parts[0]), int(parts[1]),
+                                     int(parts[2]) if len(parts) > 2 else 0)
+            pos_long = int(oi[3] or 0)
+            pos_short = int(oi[4] or 0)
+            open_interest.append({
+                "time": datetime.combine(trade_date, trade_time).isoformat(),
+                "pos": int(oi[2] or 0),
+                "pos_long": pos_long, "pos_short": pos_short,
+                "pos_long_num": int(oi[5] or 0), "pos_short_num": int(oi[6] or 0),
+                "net_position": pos_long + pos_short,
+            })
+
+    # ── Live-точка (только тирам без задержки — как в cache_updater) ─────────
+    # Трюк с якорем: append_live_points сравнивает live-время с candles[-1],
+    # поэтому подсовываем ему мини-ответ, где последняя закрытая точка — либо
+    # свежедописанная, либо синтетический якорь с client-времени since_*.
+    # Якоря после вызова отбрасываем — клиенту уходят только новые точки.
+    if effective_end is None and interval in (24, 60):
+        anchor_c = {"time": since_candle.isoformat()}
+        anchor_o = {"time": (since_oi or since_candle).isoformat()}
+        mini = {
+            "interval": interval, "sectype": sectype, "clgroup": clgroup,
+            "mode": "price_and_oi" if (show_oi and since_oi is not None) else "price_only",
+            "contracts": sec_ids,
+            "candles": [anchor_c] + candles,
+            "open_interest": ([anchor_o] + open_interest) if (show_oi and since_oi is not None) else [],
+        }
+        append_live_points(db, mini)
+        candles = mini["candles"][1:]
+        if mini["open_interest"]:
+            open_interest = mini["open_interest"][1:]
+
+    return {"full_reload": False, "candles": candles, "open_interest": open_interest}
+
+
 def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
                         clgroup, show_oi, period, date_from, date_to):
     """Тяжёлый расчёт данных графика (вызывается через single-flight выше)."""

@@ -272,15 +272,26 @@ export default function SimpleChart({
     const prev = prevDataRef.current;
     if (data === prev) return;
 
-    const appended = prev.length > 0 && data.length >= prev.length &&
+    // Чистое дописывание: старый ряд — префикс нового.
+    const strictAppend = prev.length > 0 && data.length >= prev.length &&
       data[0]?.time === prev[0].time &&
       data[prev.length - 1]?.time === prev[prev.length - 1].time;
+    // Замена хвоста: последняя точка prev — live, её вытеснила свежая (та же
+    // или более поздняя метка), всё до предпоследней совпадает. Так выглядит
+    // realtime-догруз на 1ч/1д: live-точка каждые 5 минут пересоздаётся с новым
+    // временем, и строгая проверка (совпадение последней точки) не проходила —
+    // навигатор падал в дефолт, морфинг перезапускался.
+    const tailReplaced = !strictAppend && prev.length >= 2 && data.length >= prev.length - 1 &&
+      data[0]?.time === prev[0].time &&
+      data[prev.length - 2]?.time === prev[prev.length - 2].time &&
+      (data[data.length - 1]?.time ?? '') >= (prev[prev.length - 1]?.time ?? '');
+    const appended = strictAppend || tailReplaced;
     isAppendRef.current = appended;
     prevDataRef.current = data;
 
     if (appended) {
-      // Окно у правого края — растягиваем на новые точки; смотрит в середину —
-      // не трогаем вовсе.
+      // Окно у правого края — растягиваем/подтягиваем к новому концу; смотрит
+      // в середину — не трогаем вовсе.
       if (navRangeRef.current[1] >= prev.length - 1 && data.length !== prev.length) {
         setNavRange([navRangeRef.current[0], Math.max(0, data.length - 1)]);
       }

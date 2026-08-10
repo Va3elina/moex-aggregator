@@ -61,6 +61,12 @@ export interface UseIndicatorDataOptions<T> {
      *  себя. Обычную загрузку (смена периода/инструмента) не трогает: там срез
      *  обязан доехать до state, даже если совпал по сигнатуре. */
     isSameData?: (prev: T, next: T) => boolean;
+    /** Инкрементальный realtime-догруз вместо полного рефетча по SSE. Получает
+     *  ТЕКУЩИЙ срез, возвращает новый (замерженный) или null = «ничего нового,
+     *  state не трогать». throw → тихий фолбэк на полный рефетч (обычная ветка
+     *  с isSameData). Используется на OI: дельта — килобайты против 6.2 МБ
+     *  полного ряда 5м/6м на каждый NOTIFY. Первую загрузку не трогает. */
+    realtimeMerge?: (prev: T) => Promise<T | null>;
 }
 
 export interface UseIndicatorDataResult<T> {
@@ -73,7 +79,7 @@ export interface UseIndicatorDataResult<T> {
 export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndicatorDataResult<T> {
     const {
         fetcher, deps, channels, debounceMs, enabled = true,
-        errorMessage, onSuccess, tier, isSameData,
+        errorMessage, onSuccess, tier, isSameData, realtimeMerge,
     } = opts;
 
     const [data, setData] = useState<T | null>(null);
@@ -84,6 +90,9 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
     const dataRef = useRef<T | null>(null);
     const isSameRef = useRef(isSameData);
     isSameRef.current = isSameData;
+    // Ref, не deps: realtimeMerge — инлайн-замыкание страницы, новое каждый рендер.
+    const mergeRef = useRef(realtimeMerge);
+    mergeRef.current = realtimeMerge;
 
     const resolveError = (err: unknown): string =>
         typeof errorMessage === 'function' ? errorMessage(err)
@@ -97,6 +106,26 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
         // Дёшево и корректно для всех индикаторов — без него быстрый перебор
         // фильтра/типа давал гонку (медленный ранний ответ перезаписывал свежий).
         const isStale = () => myId !== reqIdRef.current;
+
+        // Инкрементальный догруз: страница умеет мержить дельту в текущий срез —
+        // полный рефетч не нужен. null = ничего нового (state не трогаем).
+        // Ошибка дельты (сеть/full_reload) → проваливаемся в полный рефетч ниже.
+        if (realtime && dataRef.current && mergeRef.current) {
+            try {
+                const merged = await mergeRef.current(dataRef.current);
+                if (isStale()) return;
+                if (merged !== null) {
+                    dataRef.current = merged;
+                    setData(merged);
+                    onSuccess?.(merged);
+                }
+                return;
+            } catch {
+                if (isStale()) return;
+                // фолбэк: обычная realtime-ветка (тихий полный рефетч + isSameData)
+            }
+        }
+
         try {
             // Realtime-рефетч — ТИХИЙ: спиннер «Обновление…» поверх графика на
             // каждое SSE-событие мигал каждые 5 минут, хотя данные на экране всё
