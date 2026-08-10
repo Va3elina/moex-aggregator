@@ -331,7 +331,8 @@ def _warm_chart_cache():
     import json
     import time as _time
     from datetime import date, timedelta
-    from api.cache import get_gzip, set_gzip, get_or_set, top_demand, DEFAULT_TTL
+    from api.cache import (get_gzip, set_gzip, get_or_set, top_demand,
+                           start_chart_refresh, take_chart_refresh_slot, DEFAULT_TTL)
     from api.database import SessionLocal
     from api.routers.chart import _compute_chart_data
 
@@ -347,6 +348,11 @@ def _warm_chart_cache():
         hot = [a for a in top_demand() if a in assets]
         order = hot + [a for a in assets if a not in set(hot)]
 
+        # Пришёл daily → открываем ровно len(order) слотов принудительного
+        # пересчёта: круг пройдётся один раз и режим выключится сам.
+        if start_chart_refresh(len(order)):
+            logger.info(f"Chart refresh after daily: {len(order)} активов в очереди")
+
         # Продолжаем с места прошлого цикла, а не с начала списка.
         start = int(get_or_set("chart:warm:cursor") or 0) % len(order)
         idx = start
@@ -356,11 +362,16 @@ def _warm_chart_cache():
             if _time.monotonic() > deadline:
                 break
             sectype = order[idx]
+            # Режим принудительного пересчёта после daily-обновления: тёплые ключи
+            # не пропускаем, а перезаписываем свежим расчётом (ролловер контракта,
+            # available_intervals, склейка — их инкрементальный апдейт не трогает).
+            # Слот берём один на актив, счётчик сам выключит режим, обойдя круг.
+            force = take_chart_refresh_slot()
             for interval, period in _WARM_CHART_COMBOS:
                 for date_to in (None, yesterday):
                     key = (f"chart:{sectype}:{sectype}:futures:{interval}:FIZ:True:"
                            f"{period}:None:{date_to}")
-                    if get_gzip(key) is not None:
+                    if not force and get_gzip(key) is not None:
                         continue
                     try:
                         data = _compute_chart_data(
