@@ -519,10 +519,14 @@ export default function FundTradesPage() {
 
             {/* Постоянный нудж «данные с задержкой» (Free/гость). Плашка одна на
                 страницу и читает общий snapshot_delay раздела, а «Общий портфель»
-                (2026-08-09) и «По бумаге» (2026-08-10, company_snapshot_delay=0)
-                отдают свежий срез всем — там она бы врала, поэтому на этих
-                вкладках не рисуем. Остальные вкладки по-прежнему с задержкой. */}
-            {tab !== 'portfolio' && tab !== 'company' && <DelayedDataBadge indicator="fund_trades" />}
+                (portfolio_snapshot_delay=0), «По бумаге» (company_snapshot_delay=0)
+                и «Витрина» вместе с карточкой фонда (showcase_snapshot_delay=0,
+                2026-08-10) отдают свежие данные всем — там она бы врала, поэтому
+                на этих вкладках не рисуем. Задержка осталась только у скрытых
+                вкладок «Движения»/«Снапшот» (там же LockedSnapshotTeaser). */}
+            {tab !== 'portfolio' && tab !== 'company' && tab !== 'funds' && (
+                <DelayedDataBadge indicator="fund_trades" />
+            )}
 
             {/* Ошибка загрузки — НАД карточкой: между вкладками и панелью не должно
                 быть ничего, иначе язычок папки оторвётся от панели (см. .has-tabs). */}

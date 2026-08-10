@@ -219,8 +219,12 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     use_fast_path = interval != 24 and period != "all" and not (date_from and date_to)
 
     if use_fast_path:
-        # Fast path: считаем от сегодня, без bounds запросов
-        work_end = date.today()
+        # Fast path: считаем от сегодня, без bounds запросов.
+        # date_to — ПОТОЛОК свежести (у Free это today−1 из get_effective_end_date).
+        # Раньше fast path его игнорировал, и задержка 24ч действовала только на
+        # дневном ТФ: на 5м/1ч Free получал бары вплоть до текущего момента
+        # (баг 2026-08-10, вылез когда интрадей открыли всем тирам).
+        work_end = min(date.today(), date_to) if date_to else date.today()
         days = PERIODS.get(period, 180)
         work_start = work_end - timedelta(days=days)
         has_oi_data = show_oi
@@ -290,14 +294,16 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
             data_end = c_end
             mode = "price_only"
 
-        if date_from and date_to:
+        # date_to применяется НЕЗАВИСИМО от date_from: это потолок свежести
+        # (у Free — today−1 из get_effective_end_date), а не только вторая
+        # граница ручного диапазона. Раньше без date_from он игнорировался, и
+        # тирная задержка на этом пути не работала вовсе.
+        work_end = min(data_end, date_to) if date_to else data_end
+        if date_from:
             work_start = max(data_start, date_from)
-            work_end = min(data_end, date_to)
         else:
-            work_end = data_end
             days = PERIODS.get(period, 180)
-            period_start = work_end - timedelta(days=days)
-            work_start = max(data_start, period_start)
+            work_start = max(data_start, work_end - timedelta(days=days))
 
         log.info(f"[4] work period: {(time.time()-t0)*1000:.0f} мс | {work_start} - {work_end}")
 

@@ -41,6 +41,7 @@ export interface IndicatorLimits {
     snapshot_delay?: number;
     portfolio_snapshot_delay?: number;
     company_snapshot_delay?: number;
+    showcase_snapshot_delay?: number;
     // Per-indicator flags:
     mode_imoex?: boolean;
     mode_all?: boolean;
@@ -56,6 +57,9 @@ export interface IndicatorLimits {
     metric_traders?: boolean;
     // funds_money / fund_trades: выбор ПОДМНОЖЕСТВА фондов (пикер) — с Basic.
     fund_picker?: boolean;
+    // fund_trades: кнопка-календарь «свой период» (произвольный диапазон
+    // месяцев вместо пресетов 1М/6М/1Г) — с Basic.
+    custom_range?: boolean;
     open?: boolean;
 }
 
