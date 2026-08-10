@@ -12,10 +12,10 @@ import time
 
 from sqlalchemy import text
 
-from api.cache import get_all_by_prefix, set_cache, DEFAULT_TTL
+from api.cache import get_all_by_prefix, set_cache, touch, DEFAULT_TTL
 from api.database import SessionLocal
 from api.services.chart_live import append_live_points, strip_live_points
-from datetime import datetime, time as dt_time
+from datetime import date, datetime, time as dt_time, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -48,20 +48,29 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
     interval = params["interval"]
     clgroup = params["clgroup"]
     show_oi = params["show_oi"]
-    # Инкрементально дописываем ТОЛЬКО актуальные записи кеша — у них
-    # date_from/date_to == None. У записи с заданным date_to потолок свежести
-    # фиксирован: это либо Free-тариф с задержкой 24ч (роутер подменяет date_to
-    # на today−1), либо шаринг-ссылка с явным диапазоном. Дописывать им новые
-    # точки нельзя — реалтайм утечёт мимо tier-гейта.
-    #
-    # ⚠️ Ровно этот баг чинили 2026-08-10: раньше проверка гейтила только
-    # live-точку, а новые ЗАКРЫТЫЕ свечи и OI дописывались всем записям подряд.
-    # Free получал корректный ответ с потолком «вчера», а спустя минуты NOTIFY
-    # дописывал в тот же кеш сегодняшние бары — задержка 24ч фактически не
-    # работала ни на одном таймфрейме. Такие записи просто ждут TTL и
-    # пересчитываются заново, уже с правильным потолком.
-    if params.get("date_from") != "None" or params.get("date_to") != "None":
+
+    # ── Потолок свежести записи ──────────────────────────────────────────────
+    # date_from задан → ручной диапазон (шаринг-ссылка): контент зафиксирован с
+    # обоих концов, дописывать нечего. Пусть уходит по TTL.
+    if params.get("date_from") != "None":
         return False
+
+    # date_to задан → потолок свежести (Free-задержка 24ч: роутер подменяет
+    # date_to на today−1). Такие записи МОЖНО дописывать закрытыми барами, но
+    # только до cap, и НИКОГДА — live-точкой: иначе реалтайм утечёт мимо
+    # tier-гейта (баг 2026-08-10, PR #1068 — тогда гейт стоял только у
+    # live-точки, а закрытые бары доливались всем подряд).
+    cap: date | None = None
+    date_to_s = params.get("date_to")
+    if date_to_s and date_to_s != "None":
+        try:
+            cap = date.fromisoformat(date_to_s)
+        except ValueError:
+            return False
+        # Потолок старше вчерашнего — запись уже никем не запрашивается
+        # (сегодняшний Free-ключ несёт cap = вчера). Не греем, пусть уходит.
+        if cap < date.today() - timedelta(days=1):
+            return False
 
     try:
         # Срезаем прошлую live-точку: last_candle_time нужно считать по последней
@@ -94,6 +103,10 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                 "interval": interval,
                 "last_time": last_candle_time,
             }).fetchall()
+
+            # Потолок свежести (Free-задержка): бары СТРОГО после cap не наши.
+            if cap is not None:
+                new_candles_raw = [c for c in new_candles_raw if c[0].date() <= cap]
 
             if new_candles_raw:
                 # Фильтруем volume=0 для интрадей (как в chart.py)
@@ -157,6 +170,8 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
 
                     for oi in new_oi_raw:
                         trade_date = oi[0]
+                        if cap is not None and trade_date > cap:
+                            continue      # тот же потолок, что у свечей
                         trade_time = oi[1] if oi[1] else dt_time(23, 50)
 
                         if isinstance(trade_time, str):
@@ -188,14 +203,22 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
 
         # Пересобираем свежую live-точку (текущее значение). Делаем это КАЖДЫЙ цикл,
         # даже когда новых закрытых свечей не было — live-точку нужно обновлять
-        # каждые 5 минут. Сюда доходят только актуальные записи (гейт выше).
-        live_added = append_live_points(db, cached_response)
+        # каждые 5 минут. ⚠️ Только для записей БЕЗ потолка: у Free-записи (cap)
+        # live-точка = сегодняшний реалтайм мимо tier-гейта.
+        live_added = append_live_points(db, cached_response) if cap is None else False
 
         # Перезаписываем кеш только если что-то изменилось (новые свечи/OI, добавлена
         # или убрана live-точка) — иначе лишние записи в Redis на каждый NOTIFY.
         changed = bool(appended_candles or appended_oi or live_added or had_live)
         if changed:
             set_cache(key, cached_response, ttl=DEFAULT_TTL)
+        else:
+            # Контент не изменился — но TTL продлить НАДО. Иначе запись протухает
+            # каждые 30 минут и следующий гость платит за холодный пересчёт (замер
+            # 2026-08-10: 5м/6м — 6.1 с, 1ч/1г — 10.8 с). У Free-записей дописывать
+            # обычно нечего (потолок = вчера), поэтому без touch они не грелись бы
+            # вовсе — ровно та регрессия, что вылезла после #1068.
+            touch(key, ttl=DEFAULT_TTL)
 
         if appended_candles > 0 or appended_oi > 0:
             log.info(f"Cache UPDATE: {key[:50]}... +{appended_candles} candles +{appended_oi} OI")

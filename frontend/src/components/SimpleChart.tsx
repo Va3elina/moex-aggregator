@@ -258,13 +258,35 @@ export default function SimpleChart({
   // Отслеживаем ссылку на текущий data — если сменилась, navRange устарел
   const prevDataRef = useRef(data);
 
+  // «Дописывание» — ряд тот же, справа добавился хвост (realtime-обновление:
+  // новая закрытая свеча / live-точка). Отличается от смены периода/инструмента,
+  // где ряд меняется целиком. Проверка дешёвая (три элемента), 26 тыс. точек
+  // 5-минутного ряда целиком не сравниваем.
+  const isAppendRef = useRef(false);
+
   // Сброс навигатора при смене данных (новый период/интервал) — снова к
-  // дефолтному окну (initialStartIndex), а не жёстко к 0.
+  // дефолтному окну (initialStartIndex), а не жёстко к 0. На ДОПИСЫВАНИИ
+  // навигатор не сбрасываем: иначе каждое SSE-обновление выбрасывало
+  // пользователя из его окна обратно в дефолтное.
   useEffect(() => {
-    if (data !== prevDataRef.current) {
-      prevDataRef.current = data;
-      setNavRange([clampNavStart(initialStartIndex, data.length), Math.max(0, data.length - 1)]);
+    const prev = prevDataRef.current;
+    if (data === prev) return;
+
+    const appended = prev.length > 0 && data.length >= prev.length &&
+      data[0]?.time === prev[0].time &&
+      data[prev.length - 1]?.time === prev[prev.length - 1].time;
+    isAppendRef.current = appended;
+    prevDataRef.current = data;
+
+    if (appended) {
+      // Окно у правого края — растягиваем на новые точки; смотрит в середину —
+      // не трогаем вовсе.
+      if (navRangeRef.current[1] >= prev.length - 1 && data.length !== prev.length) {
+        setNavRange([navRangeRef.current[0], Math.max(0, data.length - 1)]);
+      }
+      return;
     }
+    setNavRange([clampNavStart(initialStartIndex, data.length), Math.max(0, data.length - 1)]);
   }, [data, initialStartIndex]);
 
   // Срез данных по выбранному диапазону навигатора
@@ -749,7 +771,16 @@ export default function SimpleChart({
     const isNavDrag = navDragRef.current;
     navDragRef.current = false;
 
-    if (isNavDrag) {
+    // Дописывание хвоста (realtime) — тоже без анимации. Морфинг здесь не нужен
+    // и стоит дорого: каждые 5 минут пересчёт RAF-траекторий по всем точкам ряда
+    // (на 5м/6м — 26 тыс.), из-за чего график «переползал» и подтормаживал на
+    // каждом SSE-событии. Сдвиг от одной новой точки субпиксельный.
+    // Флаг живёт до следующей смены data (эффект выше переставляет его каждый
+    // раз): setNavRange от дописывания даёт ещё один прогон animateMorph, и он
+    // тоже должен быть мгновенным — иначе морф вернулся бы через заднюю дверь.
+    const isAppend = isAppendRef.current;
+
+    if (isNavDrag || isAppend) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       setAnimatedPaths({
         primary: pointsToPath(targetPrimary),
