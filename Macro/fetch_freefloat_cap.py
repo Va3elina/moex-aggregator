@@ -58,8 +58,10 @@ BACKFILL_FROM = date(2021, 9, 1)
 INDEX_ID = "MOEXBMI"
 ISS_ANALYTICS = ("https://iss.moex.com/iss/statistics/engines/stock/markets/index/"
                  "analytics/{idx}.json?iss.meta=off&date={d}&limit=100&start={start}")
+# ВАЖНО: per-ticker деталка ИГНОРИРУЕТ параметр date= (молча отдаёт пусто на
+# любую дату) — точечный срез только через from=till. Проверено 2026-08-10.
 ISS_TICKER = ("https://iss.moex.com/iss/statistics/engines/stock/markets/index/"
-              "analytics/{idx}/tickers/{t}.json?iss.meta=off&date={d}")
+              "analytics/{idx}/tickers/{t}.json?iss.meta=off&from={d}&till={d}")
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"}
 ISS_PAUSE = 0.15         # сек между запросами — не душить ISS
 DATE_PROBE_BACK = 15     # сколько дней назад от конца месяца ищем дату среза
