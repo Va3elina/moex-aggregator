@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Фрейм — индикаторы в терминале",
-  "version": "0.7.0",
-  "description": "Аналитические индикаторы Фрейм (framedata.ru) плавающим окном поверх торгового терминала Т-Инвестиций.",
+  "name": "FRAME — индикаторы в терминале",
+  "version": "0.7.1",
+  "description": "Аналитические индикаторы FRAME (framedata.ru) плавающим окном поверх торгового терминала Т-Инвестиций.",
   "homepage_url": "https://framedata.ru",
   "icons": {
     "16": "icons/icon16.png",
@@ -16,8 +16,7 @@
   "host_permissions": [
     "https://*.tbank.ru/*",
     "https://*.tinkoff.ru/*",
-    "https://framedata.ru/*",
-    "https://xn--80aklbnczmv.xn--p1ai/*"
+    "https://framedata.ru/*"
   ],
   "content_scripts": [
     {
@@ -44,7 +43,7 @@
   },
   "action": {
     "default_popup": "src/popup.html",
-    "default_title": "Фрейм",
+    "default_title": "FRAME",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

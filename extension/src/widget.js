@@ -278,7 +278,7 @@
       var bClose = h('button', { class: 'fw-btn', 'data-a': 'close', title: 'Закрыть', text: '×' });
       var ctrls = h('span', { class: 'fw-ctrls' }, [bPop, bTheme, bClose]);
       var head = h('div', { class: 'fw-head' }, [dot, title, beta, ctrls]);
-      var iframe = h('iframe', { class: 'fw-iframe', title: 'Фрейм · ' + ind.label });
+      var iframe = h('iframe', { class: 'fw-iframe', title: 'FRAME · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
       var resize = h('div', { class: 'fw-resize' });
       var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body, resize]);
