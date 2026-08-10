@@ -240,11 +240,11 @@ function paneBoxes(root: HTMLElement): HTMLElement[] {
 const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 
-// За сколько баров до начала ряда просить догрузку истории. Порог с запасом:
-// пока пользователь долистывает оставшиеся бары, следующий кусок уже едет, и
-// график не упирается в пустоту. Значение подобрано под ширину экрана — на
-// 1200px помещается ~200 свечей, то есть примерно половина запаса.
-const LOAD_MORE_BARS_AHEAD = 100;
+// За сколько баров до начала ряда просить догрузку истории. На 1200px
+// помещается ~200 свечей, то есть запрос уходит примерно за два экрана до
+// края — кусок (0.4 с) успевает доехать раньше, чем пользователь долистает,
+// и пустоты он не видит вовсе. Меньший порог давал заметную паузу у края.
+const LOAD_MORE_BARS_AHEAD = 400;
 
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true, onReachStart,
@@ -258,6 +258,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // проп пересоздаётся каждый рендер владельца.
   const onReachStartRef = useRef(onReachStart);
   onReachStartRef.current = onReachStart;
+  // Первое время оси на прошлом рендере: по нему ловим догрузку истории
+  // СЛЕВА и компенсируем сдвиг логических индексов (см. конец эффекта серий).
+  const prevFirstTimeRef = useRef<number | null>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
   // ⚠️ Определения серий храним ПАРАЛЛЕЛЬНО apisRef, а не читаем из panesRef.
@@ -2028,7 +2031,32 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         charts.forEach((ch) => ch.timeScale().fitContent());
       }
     } else if (savedRange ?? lastRangeRef.current) {
-      lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
+      // ⚠️ Догрузка истории сдвигает ЛОГИЧЕСКИЕ индексы: бар, который был
+      // нулевым, после склейки стоит N-м. Восстановить диапазон «как был»
+      // значит показать пользователю не то место, где он стоял, а прыжок на
+      // N баров назад — ровно то дёрганье, которого не должно быть при
+      // бесшовной подгрузке. Поэтому сдвигаем окно на число добавленных баров.
+      const axisTimes = spineTimes.length
+        ? spineTimes
+        : (panes[0]?.series[0]?.data.map((pt) => pt.time) ?? []);
+      const firstT = axisTimes[0] ?? null;
+      const prevFirstT = prevFirstTimeRef.current;
+      let shift = 0;
+      if (prevFirstT != null && firstT != null && firstT < prevFirstT) {
+        const idx = axisTimes.findIndex((t) => t >= prevFirstT);
+        if (idx > 0) shift = idx;
+      }
+      prevFirstTimeRef.current = firstT;
+
+      const r = (savedRange ?? lastRangeRef.current)!;
+      lead.timeScale().setVisibleLogicalRange(
+        shift ? { from: r.from + shift, to: r.to + shift } : r,
+      );
+    } else {
+      const axisTimes = spineTimes.length
+        ? spineTimes
+        : (panes[0]?.series[0]?.data.map((pt) => pt.time) ?? []);
+      prevFirstTimeRef.current = axisTimes[0] ?? null;
     }
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations, staticView]);
