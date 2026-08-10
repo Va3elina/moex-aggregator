@@ -120,7 +120,7 @@ export default function OiScreenerLocked({ compact = false }: { compact?: boolea
         </div>
         <div style={{ fontSize: compact ? 'var(--fs-xs, .8rem)' : 'var(--fs-sm, .9rem)', color: 'var(--text-secondary)', maxWidth: 360, lineHeight: 1.5 }}>
           Где сегодня резко сдвинулись позиции физлиц и юрлиц по всему рынку разом —
-          доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic'} и выше.
+          доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic или Pro'}.
         </div>
         <button
           onClick={open}

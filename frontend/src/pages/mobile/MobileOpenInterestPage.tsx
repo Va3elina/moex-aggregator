@@ -713,7 +713,7 @@ export default function MobileOpenInterestPage() {
                   setDisplayMode(m);
                   setOptionsSheetOpen(false);
                 }}
-                style={{ flex: 1, justifyContent: 'center', opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                style={{ flex: 1, justifyContent: 'center', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 aria-disabled={locked}
               >
                 {label}
@@ -740,7 +740,7 @@ export default function MobileOpenInterestPage() {
                   setOptionsSheetOpen(false);
                 }}
                 className={`fm-chip ${oiVariant === v ? 'active' : ''}`}
-                style={{ gap: 6, opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}
+                style={{ gap: 6, cursor: 'pointer' }}
                 aria-disabled={locked}
               >
                 <span
@@ -776,7 +776,7 @@ export default function MobileOpenInterestPage() {
                   setClgroup(g);
                   setOptionsSheetOpen(false);
                 }}
-                style={{ flex: 1, justifyContent: 'center', opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                style={{ flex: 1, justifyContent: 'center', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 aria-disabled={locked}
               >
                 {g === 'YUR' ? 'Юрлица' : 'Физлица'}

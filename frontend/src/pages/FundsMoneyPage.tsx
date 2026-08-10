@@ -672,7 +672,7 @@ export default function FundsMoneyPage() {
                     // апселл на Basic (FundPickerModal locked). Так видно, что
                     // именно даёт тариф, вместо голого замка.
                     onClick={() => setFundPickerOpen(true)}
-                    title={canPickFunds ? 'Выбрать фонды для графика' : 'Выбор фондов — на тарифе Basic и выше'}
+                    title={canPickFunds ? 'Выбрать фонды для графика' : 'Выбор фондов — на тарифе Basic или Pro'}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
                         color: 'var(--text-primary)',

@@ -401,7 +401,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const fundsFilter = viewMode === 'flows' && funds.length > 1 ? (
     <ToolbarButton
       label="Фонды"
-      title={canPickFunds ? 'Какие фонды учитывать' : 'Выбор фондов — на тарифе Basic и выше'}
+      title={canPickFunds ? 'Какие фонды учитывать' : 'Выбор фондов — на тарифе Basic или Pro'}
       icon={canPickFunds ? <ListFilter size={14} /> : <Lock size={14} />}
       compact={toolbarCompact}
       onClick={() => setFundPickerOpen(true)}

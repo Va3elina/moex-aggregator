@@ -101,7 +101,9 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                 display: 'flex',
                 alignItems: isMobile ? 'flex-end' : 'center',
                 justifyContent: 'center',
-                zIndex: 9999,
+                // Выше модалок-пикеров (FundPickerModal z-[100000]): апселл
+                // открывается ИЗ них по попытке действия и обязан лечь поверх.
+                zIndex: 100001,
                 animation: 'fadeIn 0.2s ease-out',
             }}
         >
@@ -174,7 +176,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         marginBottom: 12,
                         fontSize: 'var(--fs-base)',
                     }}>
-                        Чтобы использовать «{featureName}», нужен тариф {label.ru} или выше.
+                        Чтобы использовать «{featureName}», нужен тариф {tier === 'basic' ? 'Basic или Pro' : 'Pro'}.
                     </p>
                 )}
 

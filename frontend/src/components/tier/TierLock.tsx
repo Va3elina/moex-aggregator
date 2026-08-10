@@ -25,7 +25,7 @@
  *
  * Что делает:
  *   - Если у tier'а юзера есть доступ → render children как есть (passthrough)
- *   - Если нет → overlay с lock icon, opacity 0.45, click → showUpgrade('basic'|'pro')
+ *   - Если нет → overlay с lock icon (без затемнения), click → showUpgrade('basic'|'pro')
  *
  * Хорошо работает с любыми buttons/divs/cards. Wrapper не меняет layout —
  * pointer-events перенаправляются на overlay.
@@ -116,10 +116,10 @@ export function TierLock({
                 ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
                 : undefined}
         >
-            {/* Children с pointer-events disabled и пониженной opacity */}
+            {/* Children без затемнения (2026-08-10): элемент выглядит обычным,
+                платность выдаёт только замочек; клик по оверлею → апселл.
+                Затемнение отпугивало от клика, а клик и есть путь к апгрейду. */}
             <div style={{
-                opacity: 0.45,
-                filter: 'grayscale(0.5)',
                 pointerEvents: 'none',
                 userSelect: 'none',
             }}>
@@ -132,7 +132,7 @@ export function TierLock({
                 style={{
                     position: 'absolute',
                     inset: 0,
-                    cursor: 'not-allowed',
+                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'flex-end',

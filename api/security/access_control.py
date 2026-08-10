@@ -173,9 +173,10 @@ def get_effective_end_date(user, indicator: str) -> Optional[date]:
 # Сохранена для роутеров которые ещё не мигрированы на enforce_tier_limits.
 # В новом коде использовать enforce_tier_limits(user, indicator, ...).
 
-GUEST_ALLOWED_INTERVALS = {24}
-GUEST_MAX_PERIOD = "1y"
-GUEST_MAX_DAYS = 365
+# 2026-08-10: гость = free, гостевых лимитов нет (см. enforce_guest_limits).
+GUEST_ALLOWED_INTERVALS = {5, 60, 24}
+GUEST_MAX_PERIOD = "all"
+GUEST_MAX_DAYS = 99999
 
 GUEST_LIMITS = {
     "allowed_intervals": sorted(GUEST_ALLOWED_INTERVALS),
@@ -190,19 +191,12 @@ def enforce_guest_limits(
     period: Optional[str] = None,
     days: Optional[int] = None,
 ):
-    """LEGACY — простая binary guest/auth проверка.
+    """LEGACY — простая binary guest/auth проверка. Сейчас NO-OP.
 
-    Используется роутерами которые ещё не мигрированы на enforce_tier_limits.
-    Новый код должен использовать enforce_tier_limits(user, indicator, ...).
+    2026-08-10 (решение владельца): гость = free, отдельных гостевых
+    ограничений нет — гейтит только тарифная матрица (guest мапится на free
+    в _normalize_tier). Зеркало фронта: config/accessControl.ts.
+    Сигнатура и вызовы в legacy-роутерах оставлены, чтобы вернуть гейт можно
+    было одной правкой здесь.
     """
-    if user is not None:
-        return
-
-    if interval is not None and interval not in GUEST_ALLOWED_INTERVALS:
-        _forbid("Для доступа к интрадей данным необходима авторизация")
-
-    if period is not None and PERIOD_DAYS.get(period, 0) > PERIOD_DAYS.get(GUEST_MAX_PERIOD, 30):
-        _forbid("Для доступа к расширенной истории необходима авторизация")
-
-    if days is not None and days > GUEST_MAX_DAYS:
-        _forbid("Для доступа к расширенной истории необходима авторизация")
+    return

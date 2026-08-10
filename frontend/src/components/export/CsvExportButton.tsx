@@ -121,7 +121,6 @@ export default function CsvExportButton(props: Props) {
                     color: 'var(--text-primary)',
                     width: 44,
                     height: 44,
-                    opacity: locked ? 0.65 : 1,
                     position: 'relative',
                 }}
                 aria-label={locked ? `${title} (Pro)` : title}

@@ -199,6 +199,28 @@ PORTFOLIO_DELAY_KEY = "portfolio_snapshot_delay"
 COMPANY_DELAY_KEY = "company_snapshot_delay"
 
 
+def _default_nonindex_funds(db) -> str | None:
+    """Продуктовый дефолт набора «Общего портфеля»: все фонды, КРОМЕ индексных.
+
+    Индексные фонды механически повторяют индекс — их сделки это ребалансировка,
+    а не решения управляющих, и в консенсусе они забивают сигнал. Тумблер «Без
+    индексных фондов» в пикере включён по умолчанию, и это касается ВСЕХ тиров
+    (решение владельца 2026-08-10): тиры без fund_picker свой набор прислать не
+    могут, поэтому дефолт применяется здесь, на бэке, вместо «всех фондов».
+    Матч подкатегории по префиксу — зеркало frontend isIndexSubcategory
+    (fundConfig.ts): в данных встречается «Индекс МосБиржи»/«Мосбиржи».
+
+    Возвращает comma-строку тикеров в формате параметра `funds` (или None,
+    если по какой-то причине не-индексных фондов не нашлось — тогда «все»).
+    """
+    rows = db.execute(text("""
+        SELECT ticker FROM funds
+        WHERE ticker = ANY(:tickers) AND category = 'stocks'
+          AND LOWER(TRIM(COALESCE(subcategory, ''))) NOT LIKE 'индекс%'
+    """), {"tickers": list(WHITELIST_TICKERS)}).scalars().all()
+    return ",".join(rows) if rows else None
+
+
 def _snapshot_offset(user, key: str = "snapshot_delay") -> int:
     """На сколько снапшотов свежести назад видит юзер (0 = свежий срез).
 
@@ -954,8 +976,9 @@ def top_movers(
     # Гасим ОБА параметра: manager — тот же выбор пула, только через УК, и
     # оставленный открытым он был бы дырой в гейте. Фронт запирает таблетку
     # пикера замком, но URL правится руками — ограничение живёт на бэке.
+    # Вместо пула юзера — продуктовый дефолт «без индексных» (2026-08-10).
     if not get_indicator_limits(user_tier(user), "fund_trades").get("fund_picker", True):
-        funds = None
+        funds = _default_nonindex_funds(db)
         manager = None
 
     # funds: comma-separated список ТИКЕРОВ фондов (напр. "TMOS,SBMX"). Фильтр на
@@ -1326,8 +1349,9 @@ def combined_portfolio(
 
     # Своя подвыборка фондов — с Basic (матрица, fund_trades.fund_picker); см.
     # тот же гейт в /movers. Гасим и manager: это тот же выбор пула, но через УК.
+    # Вместо пула юзера — продуктовый дефолт «без индексных» (2026-08-10).
     if not get_indicator_limits(user_tier(user), "fund_trades").get("fund_picker", True):
-        funds = None
+        funds = _default_nonindex_funds(db)
         manager = None
 
     # funds (тикеры фондов) приоритетнее manager (uk_id). Пусто = все whitelist-акции.

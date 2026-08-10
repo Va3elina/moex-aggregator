@@ -46,7 +46,6 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
                         color: 'var(--text-primary)',
                         width: 44,
                         height: 44,
-                        opacity: locked ? 0.78 : 1,
                     }}
                     aria-label={locked ? 'Алерты — доступно на тарифе Basic и Pro' : 'Создать алерт'}
                     title={locked

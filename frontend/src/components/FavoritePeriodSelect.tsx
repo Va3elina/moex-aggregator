@@ -197,16 +197,13 @@ export default function FavoritePeriodSelect<T extends string>({
                     padding: '8px 12px',
                     borderRadius: 999,
                     fontWeight: active ? 800 : 600,
-                    color: opt.locked
-                      ? 'var(--text-muted)'
-                      : active
-                        ? 'var(--text-inverse)'
-                        : 'var(--text-primary)',
+                    // Тарифный locked не затемняем (2026-08-10) — замочек есть,
+                    // клик ведёт в апселл.
+                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
                     backgroundColor: active ? 'var(--accent)' : 'transparent',
                     border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
                     boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
-                    cursor: opt.locked ? 'not-allowed' : 'pointer',
-                    opacity: opt.locked ? 0.6 : 1,
+                    cursor: 'pointer',
                     whiteSpace: 'nowrap',
                   }}
                 >

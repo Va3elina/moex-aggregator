@@ -12,7 +12,6 @@ import { useSearchParams } from 'react-router-dom';
 import { Wallet, Lock, AlarmClock } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
-import TierUpsellOverlay, { BLURRED_STYLE } from '../../components/tier/TierUpsellOverlay';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
@@ -119,6 +118,13 @@ export default function MobileFundsMoneyPage() {
   // Выбор ПОДМНОЖЕСТВА фондов — с Basic (funds_money.fund_picker, 2026-08-09).
   // Пока тариф не резолвнут — не запираем (как везде).
   const canPickFunds = fundsAccess.isLoading || fundsAccess.canUseFlag('fund_picker');
+  // Запертый тариф: попытка изменить подвыборку (тоггл/массовые действия) —
+  // апселл вместо изменения. true = действие перехвачено.
+  const pickGuard = () => {
+    if (canPickFunds) return false;
+    showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
+    return true;
+  };
   // Санитайз слетевшего с тарифа: ключ hiddenFunds общий с десктопом и
   // переживает окончание подписки — иначе free-юзер остался бы с подвыборкой,
   // которую бэкенд уже игнорирует.
@@ -687,7 +693,7 @@ export default function MobileFundsMoneyPage() {
                 setOptionsSheetOpen(false);
                 setFundsSheetOpen(true);
               }}
-              style={{ justifyContent: 'space-between', padding: '14px 16px', opacity: canPickFunds ? 1 : 0.78 }}
+              style={{ justifyContent: 'space-between', padding: '14px 16px' }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 Фонды
@@ -708,28 +714,16 @@ export default function MobileFundsMoneyPage() {
         onClose={() => setFundsSheetOpen(false)}
         title="Фонды в категории"
       >
-        {/* Locked-тир (funds_money.fund_picker): список слегка заблюрен и без
-            интерактива, поверх — апселл на Basic (2026-08-10; раньше sheet не
-            открывался вовсе). relative-обёртка держит оверлей. */}
-        <div style={{ position: 'relative' }}>
-        {!canPickFunds && (
-          <TierUpsellOverlay
-            tier="basic"
-            featureName="Выбор фондов"
-            description="Соберите свою подвыборку фондов внутри категории — график и цифры пересчитаются по ней."
-          />
-        )}
-        <div
-          // Заперт: список обрезаем по высоте (overflow hidden) — иначе на
-          // длинной категории оверлей отцентрируется за пределами экрана шита.
-          style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4, ...(canPickFunds ? null : { ...BLURRED_STYLE, maxHeight: '60vh', overflow: 'hidden' }) }}
-          aria-hidden={!canPickFunds || undefined}
-        >
+        {/* Locked-тир (funds_money.fund_picker): список открыт и читаем, но
+            любая попытка изменить подвыборку открывает апселл на Basic
+            (2026-08-10; раньше sheet не открывался вовсе). Гейт — pickGuard
+            в обработчиках, без блюра. */}
+        <div style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {/* Quick-actions: все / никто */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             <button
               className="fm-chip"
-              onClick={() => setHiddenFunds(new Set())}
+              onClick={() => { if (pickGuard()) return; setHiddenFunds(new Set()); }}
               style={{ flex: 1, justifyContent: 'center' }}
             >
               Показать все
@@ -737,6 +731,7 @@ export default function MobileFundsMoneyPage() {
             <button
               className="fm-chip"
               onClick={() => {
+                if (pickGuard()) return;
                 // Скрыть только accessible — locked фонды и так не в расчётах,
                 // включать их в hiddenFunds бессмысленно.
                 setHiddenFunds(new Set(accessibleFunds.map((f) => f.fund_id)));
@@ -768,6 +763,7 @@ export default function MobileFundsMoneyPage() {
                     });
                     return;
                   }
+                  if (pickGuard()) return;
                   toggleFundVisibility(f.fund_id);
                 }}
                 className="fm-chip"
@@ -847,7 +843,6 @@ export default function MobileFundsMoneyPage() {
             );
           })}
         </div>
-        </div>{/* /relative-обёртка блюр-гейта */}
       </MobileSheet>
 
       {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ

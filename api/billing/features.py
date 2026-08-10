@@ -152,7 +152,7 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
         "free": {
             "tickers_whitelist": None,                 # все фонды открыты на Free (без whitelist'а)
             "allowed_timeframes": None,                # все ТФ, включая дневной (притоки-оттоки открыты)
-            "max_history_days": 365 * 3,               # 3 года (период «Всё» → Basic/Pro)
+            "max_history_days": None,                  # вся история, включая период «Всё» (2026-08-10)
             "fund_picker": False,                      # выбор подмножества фондов — с Basic
         },
         "basic": {
