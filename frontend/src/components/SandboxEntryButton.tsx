@@ -89,6 +89,8 @@ export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryBut
             onClick={onClick}
             title={title}
             aria-label={title}
+            // Якорь анонс-тура: шаг «И прямо с графика» (data/tours/terminal-intro).
+            data-tour="chart-terminal"
             className="editorial-press grid place-items-center rounded-full flex-shrink-0"
             style={{
                 color: 'var(--accent)',
