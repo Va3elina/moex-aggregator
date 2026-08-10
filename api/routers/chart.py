@@ -6,11 +6,12 @@ API endpoint для получения свечей и данных OI
 (pos_short в БД уже отрицательный, поэтому используем ПЛЮС)
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Response
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import gzip
 from datetime import datetime, date, time as dt_time, timedelta
-from api.cache import get_or_set, get_or_compute, get_raw, DEFAULT_TTL
+from api.cache import get_or_set, get_or_compute, get_or_compute_gzip, DEFAULT_TTL
 from typing import Optional
 from pydantic import BaseModel
 import time
@@ -136,6 +137,7 @@ def get_available_intervals(
 @router.get("/{sec_id}")
 def get_chart_data(
         sec_id: str,
+        request: Request,
         sectype: str = Query(...),
         inst_type: InstTypeType = Query("futures"),
         interval: int = Query(24),
@@ -175,19 +177,16 @@ def get_chart_data(
 
     # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
     cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"
-    # Тёплый путь — отдаём сырую строку из Redis, минуя json.loads → dict →
-    # повторный json.dumps в FastAPI. На 5м/6м (6.5 МБ) это 151 мс CPU впустую
-    # на КАЖДОМ хите при Redis GET в 25 мс (замер 2026-08-10). При 4 ядрах и
-    # пачке открытых вкладок такие миллисекунды и складываются в очередь.
-    # Контент байт-в-байт тот же — сериализовал его тот же json.dumps.
-    raw = get_raw(cache_key)
-    if raw is not None:
-        return Response(content=raw, media_type="application/json")
-
-    # single-flight: при истечении ключа считает только один воркер, остальные
-    # ждут его результат (защита от cache-stampede). Tier-логика выше — на роуте,
-    # date_to уже учитывает effective_end → у Free/Paid разные cache_key, не течёт.
-    return get_or_compute(
+    # Ответ лежит в кеше УЖЕ СЖАТЫМ и уходит клиенту как есть — ни json.loads →
+    # dumps, ни gzip на nginx. На 5м/6м это ~370 мс CPU на каждом хите против
+    # ~3 мс (замер 2026-08-10, см. api/cache.py). При 4 ядрах именно эти
+    # миллисекунды складывались в очередь: одиночный запрос 1.6 с, шесть
+    # подряд — 8-50 с.
+    #
+    # single-flight внутри: при истечении ключа считает один воркер, остальные
+    # ждут его результат. Tier-логика выше — на роуте, date_to уже учитывает
+    # effective_end → у Free/Paid разные cache_key, не течёт.
+    gz = get_or_compute_gzip(
         cache_key,
         lambda: _compute_chart_data(
             db, sec_id, sectype, inst_type, interval,
@@ -195,6 +194,15 @@ def get_chart_data(
         ),
         ttl=DEFAULT_TTL,
     )
+
+    # Клиент без gzip (curl без заголовка, старые интеграции) — распаковываем.
+    # Браузеры и наш фронт всегда шлют Accept-Encoding: gzip, так что это
+    # редкий путь, а не общий.
+    if "gzip" not in request.headers.get("accept-encoding", "").lower():
+        return Response(content=gzip.decompress(gz), media_type="application/json")
+
+    return Response(content=gz, media_type="application/json",
+                    headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
 
 
 # Дельта старше этого возраста не имеет смысла: клиент долго спал (ноутбук в
