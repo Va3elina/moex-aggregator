@@ -25,6 +25,7 @@ import CreateAlertModal, { type AlertMetricOption } from '../../components/alert
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { useChartRealtimeDelta } from '../../hooks/useChartRealtimeDelta';
+import { useChartWindowLoader } from './useChartWindowLoader';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
@@ -257,6 +258,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     controls: { sectype: instrument, interval, clgroup },
   });
 
+  // Оконная подача: прошлое догружаем, когда пользователь долистал к началу.
+  const { loadMore, loadingMore, reset: resetWindow } = useChartWindowLoader({
+    instrument, interval, clgroup, data, onExtended: setData,
+  });
+  // Смена актива/ТФ/среза — окно считается заново (счётчик кусков, край).
+  useEffect(() => { resetWindow(); }, [instrument, interval, clgroup, resetWindow]);
+
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
   useEffect(() => {
     if (!instrument) { setStatus('empty'); return; }
@@ -267,9 +275,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     // open_interest max_history_days на всех тарифах ≥ 5 лет, так что и год
     // часовых, и полгода 5-минуток проходят проверку везде. Границы — по
     // фактическому объёму данных на проде (5м живёт с 2026-02, 60м с 2020).
+    // Оконная подача (модель TradingView): стартуем с последнего окна, прошлое
+    // догружаем прокруткой (useChartWindowLoader). 5м за полгода — это 26.7 тыс.
+    // свечей и 6.2 МБ одним куском; окно в месяц — 4.4 тыс. и ~1 МБ, а глубина
+    // при этом не теряется: долистал — доехало.
     const period = interval === 24
       ? (oiAccess.isLoading ? '1y' : bestDailyPeriod(oiAccess.canUsePeriod))
-      : interval === 60 ? '1y' : '6m';
+      : interval === 60 ? '6m' : '1m';
     let cancelled = false;
     if (!silentRef.current) setStatus('loading');
     silentRef.current = false;
@@ -849,10 +861,28 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
+        {/* Догрузка истории при прокрутке влево: маленький маркер, чтобы пустота
+            у левого края читалась как «сейчас доедет», а не как конец данных. */}
+        {loadingMore && (
+          <div style={{
+            position: 'absolute', top: 8, left: 8, zIndex: 5,
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 8px', borderRadius: 6,
+            background: 'var(--bg-primary)', border: '1px solid var(--border)',
+            fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)',
+          }}>
+            <span
+              className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
+              style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
+            />
+            История…
+          </div>
+        )}
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChartPanes
             ref={panesRef}
             panes={chartPanes}
+            onReachStart={loadMore}
             drawPaneIndex={0}
             hideLegend
             expirations={expirations}
