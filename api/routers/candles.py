@@ -12,6 +12,7 @@ from api.schemas import CandleResponse, CandleListResponse
 from api.schemas.validators import validate_safe_id
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits
+from api.services.market_delay import price_cutoff
 
 router = APIRouter(prefix="/api/candles", tags=["candles"])
 
@@ -55,6 +56,12 @@ def get_candles(
         query = query.filter(Candle.begin_time >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
         query = query.filter(Candle.begin_time <= datetime.combine(date_to, datetime.max.time()))
+
+    # ⚠️ ЛИЦЕНЗИЯ MOEX: цена раздаётся с задержкой 15 минут для ВСЕХ (см.
+    # services/market_delay). Этот эндпоинт — «пятый путь» наружу, найденный
+    # аудитом 2026-08-10: фронт им не пользуется, но он публичный и отдавал
+    # свечи вплоть до текущей минуты. Потолок безусловный, как в /api/chart.
+    query = query.filter(Candle.begin_time <= price_cutoff())
 
     # Сортировка и лимит
     query = query.order_by(Candle.begin_time.asc()).limit(limit)
