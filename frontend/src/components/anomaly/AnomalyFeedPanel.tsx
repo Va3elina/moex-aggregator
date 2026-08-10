@@ -9,7 +9,7 @@
  * каналов открываются в новой вкладке и панель не закрывают.
  */
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Send } from 'lucide-react';
+import { TrendingUp, TrendingDown, Send, Lock } from 'lucide-react';
 import { useAnomalies } from '../../contexts/AnomalyContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { openAnomaly, tradeDateLabel } from './anomalyActions';
@@ -27,7 +27,7 @@ export function relTime(iso?: string | null): string {
 }
 
 export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
-  const { items, channelPosts, toastsEnabled, setToastsEnabled } = useAnomalies();
+  const { items, channelPosts, toastsEnabled, setToastsEnabled, oiLocked } = useAnomalies();
   const { showUpgrade } = useUpgradePrompt();
   const navigate = useNavigate();
 
@@ -46,7 +46,24 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      {merged.length === 0 ? (
+      {/* Нудж вместо молчания: сервер вырезал из ленты сдвиги позиций (тот же
+          гейт, что у скринера), и без этой строки лента у гостя/Free выглядела
+          бы просто вымершей — а причина не в рынке, а в тарифе. */}
+      {oiLocked && (
+        <button
+          type="button"
+          onClick={() => { showUpgrade({ tier: 'basic', featureName: 'сигналы по открытым позициям', indicator: 'oi_screener' }); onClose(); }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+            background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: 'none',
+            borderBottom: '0.5px solid var(--border-color)', padding: '9px 14px', cursor: 'pointer' }}
+        >
+          <Lock size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-primary)', fontSize: 12.5, lineHeight: 1.35 }}>
+            Резкие сдвиги позиций — на тарифе Basic
+          </span>
+        </button>
+      )}
+      {merged.length === 0 && !oiLocked ? (
         <div style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
           Пока тихо — ничего нового
         </div>

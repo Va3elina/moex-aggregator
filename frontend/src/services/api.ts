@@ -2174,6 +2174,11 @@ export interface AnomalyFeed {
     last_seen_id: number | null;  // серверный для залогиненных; null для гостя
     toasts_enabled: boolean;      // тумблер показа (гость → true, решает localStorage)
     channel_posts: ChannelPost[]; // новости каналов — секция в колоколе
+    // true — сервер вырезал из ленты аномалии по открытым позициям (гость/Free,
+    // тот же гейт, что у скринера сигналов). Без этого флага лента у Free просто
+    // «полупустая» без объяснения — по нему рисуем нудж.
+    oi_locked?: boolean;
+    oi_required_tier?: string | null;
 }
 
 // Лента аномалий. apiFetch работает и для гостя (без токена бэкенд видит guest).

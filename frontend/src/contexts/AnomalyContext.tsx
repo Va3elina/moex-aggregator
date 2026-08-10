@@ -42,6 +42,10 @@ interface AnomalyCtx {
   bellOpen: boolean;             // общий стейт: дайджест-тост открывает колокол
   setBellOpen: (v: boolean) => void;
   channelPosts: ChannelPost[];   // новости каналов — секция колокола
+  /** Сервер вырезал из ленты аномалии по открытым позициям (гость/Free, тот же
+   *  гейт, что у скринера). Колокол по этому флагу рисует нудж вместо того,
+   *  чтобы молча показывать полупустую ленту. */
+  oiLocked: boolean;
 }
 
 const Ctx = createContext<AnomalyCtx | null>(null);
@@ -57,6 +61,7 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
 
   const [items, setItems] = useState<AnomalyItem[]>([]);
   const [channelPosts, setChannelPosts] = useState<ChannelPost[]>([]);
+  const [oiLocked, setOiLocked] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [lastSeenId, setLastSeenId] = useState<number>(() => lsNum(LS_SEEN));
   // Маркер «просмотрено» для постов каналов — ОТДЕЛЬНО от аномалий (у постов свои
@@ -78,6 +83,7 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
       setItems(feed.items);
       const posts = feed.channel_posts || [];
       setChannelPosts(posts);
+      setOiLocked(!!feed.oi_locked);
       // Первый визит (маркер не инициализирован) → базлайн = текущий max post id:
       // существующие посты не считаются «новыми», бейдж даёт лишь пришедшее позже.
       // Дальше двигает только markAllSeen (открытие колокола).
@@ -151,8 +157,8 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AnomalyCtx>(() => ({
     items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch,
-    bellOpen, setBellOpen, channelPosts,
-  }), [items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch, bellOpen, channelPosts]);
+    bellOpen, setBellOpen, channelPosts, oiLocked,
+  }), [items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch, bellOpen, channelPosts, oiLocked]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
