@@ -148,8 +148,11 @@ export default function Layout() {
             </NavLink>
 
             {/* Desktop Навигация — flex-1 min-w-0 overflow-hidden чтобы
-                не выталкивать right side когда узко (laptop 1024). */}
-            <div className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0.5 xl:gap-1 overflow-hidden">
+                не выталкивать right side когда узко (laptop 1024).
+                pr-2 — зазор до правого кластера: без него обрез последнего
+                пункта приходился впритык к кнопке «Терминал» и выглядел как
+                наложение кнопки на список индикаторов. */}
+            <div className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0.5 xl:gap-1 overflow-hidden pr-2">
               {NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.path}
