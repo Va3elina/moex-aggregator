@@ -1294,15 +1294,7 @@ export default function SimpleChart({
               <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
             </linearGradient>
             <clipPath id="chartClip">
-              {/* Этот rect обрезает группу серий (см. ниже g clipPath="url(#chartClip)").
-                  На первом показе он же играет роль entrance-анимации: класс
-                  .chart-reveal-clip растягивает его по X слева направо, поэтому
-                  выезжает только линия. Оси, сетка, месяцы и легенда лежат вне
-                  этой группы и появляются сразу. */}
-              <rect
-                x={0} y={0} width={chartWidth} height={chartHeight}
-                className={revealed ? 'chart-reveal-clip' : undefined}
-              />
+              <rect x={0} y={0} width={chartWidth} height={chartHeight} />
             </clipPath>
           </defs>
 
@@ -1427,8 +1419,16 @@ export default function SimpleChart({
               );
             })}
 
-            {/* Область графика с клиппингом */}
+            {/* Область графика с клиппингом. Вложенная группа несёт entrance-
+                анимацию (только серии, без осей/подписей): CSS-анимация
+                clip-path: inset() слева направо. Именно вложенная — на самой
+                клипнутой группе класс перебил бы url(#chartClip) навсегда
+                (fill-mode both), и серии перестали бы обрезаться. Анимировать
+                rect внутри <clipPath> нельзя: содержимое clipPath не
+                рендерится, и браузеры не применяют к нему CSS-анимации —
+                поэтому первый вариант (#1123) молча не работал. */}
             <g clipPath="url(#chartClip)">
+            <g className={revealed ? 'chart-reveal' : undefined}>
               {/* ClipPath для обрезки сплошной линии (без прогнозных точек) */}
               {_forecastCount > 0 && targetCalc.points.length > _forecastCount && (
                 <defs>
@@ -1715,6 +1715,7 @@ export default function SimpleChart({
                   className="chart-hover-ui transition-opacity duration-150"
                 />
               )}
+            </g>
             </g>
 
             {/* Кросхэйр. Горизонтальная линия (режим алертов) видна ВЕЗДЕ, пока
