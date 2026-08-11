@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from api.database import get_engine
 from api.routers.auth import require_admin, get_current_user_optional
+from api.services.market_delay import price_cutoff
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
@@ -224,11 +225,12 @@ async def get_heatmap_prices():
                 SELECT close FROM candles
                 WHERE secid = m.sec_id AND type = 'stock' AND interval = 5
                   AND begin_time >= date_trunc('day', now())
+                  AND begin_time <= :cutoff
                   AND close > 0
                 ORDER BY begin_time DESC
                 LIMIT 1
             ) c
-        """)).fetchall()
+        """), {"cutoff": price_cutoff()}).fetchall()
 
     result = {row[0]: round(float(row[1]), 2) for row in rows}
     get_or_set(cache_key, result, ttl=30)  # кэш 30 сек (не 5 мин)
