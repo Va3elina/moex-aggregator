@@ -367,6 +367,43 @@ def get_chart_delta(
         if mini["open_interest"]:
             open_interest = mini["open_interest"][1:]
 
+    # ── Растяжка цены в дельте ───────────────────────────────────────────────
+    # Без неё дельта ломала #1113: клиент срезает свой stretched-хвост перед
+    # склейкой (иначе заполнение стало бы since и настоящие свечи потерялись
+    # бы), а сервер прежде ничего взамен не присылал. Итог: через 5 минут после
+    # загрузки правый край цены отступал к потолку лицензии, и точки ОИ снова
+    # висели без цены — ровно тот разрыв, который #1113 закрывал.
+    #
+    # Якорь тот же приём, что у live-точки: append_stretched_price растягивает
+    # от ПОСЛЕДНЕЙ РЕАЛЬНОЙ свечи, а она может быть у клиента и не попасть в
+    # дельту. Берём её из БД (одна строка по индексу) и подставляем якорем,
+    # после чего отбрасываем — клиенту уходят только новые точки.
+    if effective_end is None and show_oi and open_interest:
+        anchor = None
+        if candles and not candles[-1].get("live"):
+            anchor = candles[-1]
+        else:
+            row = db.execute(text("""
+                SELECT begin_time, close FROM candles
+                WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+                  AND begin_time <= :cutoff AND close > 0
+                ORDER BY begin_time DESC LIMIT 1
+            """), {"sec_ids": sec_ids, "interval": interval,
+                   "cutoff": price_cutoff()}).fetchone()
+            if row and row[0]:
+                anchor = {"time": row[0].isoformat(), "close": float(row[1] or 0)}
+
+        if anchor:
+            live_tail = [c for c in candles if c.get("live")]
+            closed = [c for c in candles if not c.get("live")]
+            mini = {
+                "candles": ([anchor] if anchor not in closed else []) + closed,
+                "open_interest": open_interest,
+            }
+            if append_stretched_price(mini):
+                stretched = [c for c in mini["candles"] if c.get("stretched")]
+                candles = closed + stretched + live_tail
+
     return {"full_reload": False, "candles": candles, "open_interest": open_interest}
 
 

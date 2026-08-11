@@ -101,7 +101,13 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
     const reload = useCallback(async (opts?: { realtime?: boolean }) => {
         if (enabled === false) return;
         const realtime = opts?.realtime === true;
-        const myId = ++reqIdRef.current;
+        // ⚠️ Realtime-заход НЕ занимает новый reqId. Иначе SSE, прилетевший
+        // посреди обычной загрузки (смена ТФ — на холодном ключе это секунды),
+        // делал её устаревшей: обычный reload молча выходил по isStale, не писал
+        // данные и НЕ гасил loading, а realtime-ветка возвращается своим путём и
+        // до finally не доходит. Итог — вечный спиннер и график со старым ТФ.
+        // Теперь наоборот: стартовавшая обычная загрузка обесценивает realtime.
+        const myId = realtime ? reqIdRef.current : ++reqIdRef.current;
         // Reqid-guard БЕЗУСЛОВНЫЙ: устаревший (не последний) ответ не пишет state.
         // Дёшево и корректно для всех индикаторов — без него быстрый перебор
         // фильтра/типа давал гонку (медленный ранний ответ перезаписывал свежий).

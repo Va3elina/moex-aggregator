@@ -271,6 +271,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const prefetchedFor = useRef('');
   useEffect(() => {
     if (status !== 'ok' || !data?.candles?.length) return;
+    // ⚠️ Ждём, пока data ДОГОНИТ контролы. При смене актива/ТФ статус ещё 'ok'
+    // (рефетч тихий), а data — от прежнего инструмента: префетч уходил бы с
+    // чужими датами, и ключ отмечался бы как уже сделанный, из-за чего запас
+    // для нового инструмента не грузился вовсе.
+    if (data.sectype !== instrument || data.interval !== interval || data.clgroup !== clgroup) return;
     const key = `${instrument}:${interval}:${clgroup}`;
     if (prefetchedFor.current === key) return;
     prefetchedFor.current = key;
