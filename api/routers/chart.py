@@ -34,7 +34,7 @@ from api.schemas.validators import (
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points, append_stretched_price
-from api.services.market_delay import price_cutoff
+from api.services.market_delay import price_cutoff, cutoff_for_interval
 from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids, stable_runs
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
@@ -285,12 +285,12 @@ def get_chart_delta(
         FROM candles
         WHERE sec_id = ANY(:sec_ids) AND interval = :interval
           AND begin_time > :since
-          AND begin_time <= :cutoff
+          AND (:cutoff IS NULL OR begin_time <= :cutoff)
         ORDER BY begin_time
     """), {"sec_ids": sec_ids, "interval": interval, "since": since_candle,
-            # Лицензия MOEX: дельта — третий путь наружу (после роутера и
-            # cache_updater), потолок цены обязателен и здесь.
-            "cutoff": price_cutoff()}).fetchall()
+            # Лицензия MOEX: дельта — ещё один путь наружу (после роутера и
+            # cache_updater). NULL для нерегулируемых ТФ — предикат вырождается.
+            "cutoff": cutoff_for_interval(interval)}).fetchall()
 
     if effective_end is not None:
         new_candles_raw = [c for c in new_candles_raw if c[0].date() <= effective_end]
@@ -386,10 +386,10 @@ def get_chart_delta(
             row = db.execute(text("""
                 SELECT begin_time, close FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
-                  AND begin_time <= :cutoff AND close > 0
+                  AND (:cutoff IS NULL OR begin_time <= :cutoff) AND close > 0
                 ORDER BY begin_time DESC LIMIT 1
             """), {"sec_ids": sec_ids, "interval": interval,
-                   "cutoff": price_cutoff()}).fetchone()
+                   "cutoff": cutoff_for_interval(interval)}).fetchone()
             if row and row[0]:
                 anchor = {"time": row[0].isoformat(), "close": float(row[1] or 0)}
 
@@ -541,13 +541,17 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
         "sec_ids": sec_ids,
         "interval": interval,
         "start_time": datetime.combine(work_start, dt_time.min),
-        # ⚠️ ЛИЦЕНЗИЯ MOEX: цена раздаётся с задержкой PRICE_DELAY_MINUTES.
-        # Режем ЗДЕСЬ, в самом запросе, а не после сборки ответа: так свежая
-        # свеча физически не попадает ни в ответ, ни в кеш, ни в производные
-        # (непрерывная серия, back-adjust). ОИ под ограничение не подпадает и
-        # остаётся актуальным — отсюда хвост без цены, который закрывает
-        # append_stretched_price при сборке ответа.
-        "end_time": min(datetime.combine(work_end, dt_time.max), price_cutoff()),
+        # ⚠️ ЛИЦЕНЗИЯ MOEX: 5-минутная цена раздаётся с задержкой
+        # PRICE_DELAY_MINUTES. Режем ЗДЕСЬ, в самом запросе, а не после сборки
+        # ответа: так свежая свеча физически не попадает ни в ответ, ни в кеш,
+        # ни в производные (непрерывная серия, back-adjust).
+        # Часовой и дневной ТФ под задержку не подпадают (решение владельца
+        # 2026-08-11), поэтому cutoff_for_interval вернёт им None и граница
+        # останется прежней. ОИ не придерживаем ни на одном ТФ — отсюда хвост
+        # без цены на 5м, который закрывает append_stretched_price.
+        "end_time": min(datetime.combine(work_end, dt_time.max), _cut)
+                    if (_cut := cutoff_for_interval(interval))
+                    else datetime.combine(work_end, dt_time.max),
     }).fetchall()
     log.info(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
