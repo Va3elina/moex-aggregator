@@ -39,6 +39,8 @@ const TITLE_LOCKED = 'Терминал: рабочий стол с индика�
 
 /** Размер кружка на панели контролов индикатора — в размер соседей по строке. */
 const ICON_SIZE = 40;
+/** Глиф внутри кружка. 20px терялся в 40px круге — заметный воздух по краям. */
+const GLYPH_SIZE = 26;
 
 export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryButtonProps) {
     const navigate = useNavigate();
@@ -100,7 +102,7 @@ export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryBut
                 height: ICON_SIZE,
             }}
         >
-            <FrameLogo size={20} showWordmark={false} />
+            <FrameLogo size={GLYPH_SIZE} showWordmark={false} />
         </button>
     );
 }
