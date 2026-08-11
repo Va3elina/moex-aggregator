@@ -1,5 +1,5 @@
 /**
- * CompanyShareChart — режимы «По капиталу» и «От капитализации» в «Потоках
+ * CompanyShareChart — режимы «Позиция» и «% в обращении» в «Потоках
  * по компании» (пункты общего ряда режимов, см. CompanyFlowsTab).
  *
  * Оформление — по макету «Силы рынка» (StrengthPage): ДВЕ визуально
@@ -460,7 +460,7 @@ export default function CompanyShareChart({
         return null;
     }, [visMonthIdx, shareVals]);
 
-    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов' : 'Доля от капитализации';
+    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов' : '% в обращении';
     // Значения режима: rub — рубли (адаптив млн/млрд), share/cap — проценты.
     const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v) : fmtPct(v));
     const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false) : fmtPct(v));

@@ -642,10 +642,10 @@ export default function MobileFundTradesPage() {
             кружками прямо на цене
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>По капиталу</strong> — сколько рублей фонды держат в бумаге
+            <strong>Позиция</strong> — сколько рублей фонды держат в бумаге
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>От капитализации</strong> — та же позиция в процентах от
+            <strong>% в обращении</strong> — та же позиция в процентах от
             акций в свободном обращении
           </p>
           <p style={{ opacity: 0.75, fontSize: 12 }}>
