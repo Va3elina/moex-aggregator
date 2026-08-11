@@ -166,51 +166,56 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                     })
                     appended_candles += 1
 
-                # Дописываем OI
-                if show_oi and cached_response["open_interest"]:
-                    last_oi_time_str = cached_response["open_interest"][-1]["time"]
-                    last_oi_dt = datetime.fromisoformat(last_oi_time_str)
+            # ⚠️ ОИ дозаписывается НЕЗАВИСИМО от того, были ли новые свечи.
+            # Раньше этот блок лежал внутри `if new_candles_raw:` — и после
+            # ввода лицензионной задержки (#1113) это стало системной потерей:
+            # свежих свечей регулярно НЕТ (они за потолком 15 минут), а ОИ идёт
+            # актуальным. Кеш переставал получать новые точки ОИ, и растяжка
+            # цены не продлевалась — правый край графика замирал.
+            if show_oi and cached_response["open_interest"]:
+                last_oi_time_str = cached_response["open_interest"][-1]["time"]
+                last_oi_dt = datetime.fromisoformat(last_oi_time_str)
 
-                    new_oi_raw = db.execute(text("""
-                        SELECT tradedate, tradetime, pos, pos_long, pos_short,
-                               pos_long_num, pos_short_num
-                        FROM open_interest
-                        WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
-                          AND (tradedate > :last_date
-                               OR (tradedate = :last_date AND tradetime > :last_time_part))
-                        ORDER BY tradedate, tradetime
-                    """), {
-                        "sectype": sectype,
-                        "clgroup": clgroup,
-                        "interval": interval,
-                        "last_date": last_oi_dt.date(),
-                        "last_time_part": last_oi_dt.time(),
-                    }).fetchall()
+                new_oi_raw = db.execute(text("""
+                    SELECT tradedate, tradetime, pos, pos_long, pos_short,
+                           pos_long_num, pos_short_num
+                    FROM open_interest
+                    WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
+                      AND (tradedate > :last_date
+                           OR (tradedate = :last_date AND tradetime > :last_time_part))
+                    ORDER BY tradedate, tradetime
+                """), {
+                    "sectype": sectype,
+                    "clgroup": clgroup,
+                    "interval": interval,
+                    "last_date": last_oi_dt.date(),
+                    "last_time_part": last_oi_dt.time(),
+                }).fetchall()
 
-                    for oi in new_oi_raw:
-                        trade_date = oi[0]
-                        if cap is not None and trade_date > cap:
-                            continue      # тот же потолок, что у свечей
-                        trade_time = oi[1] if oi[1] else dt_time(23, 50)
+                for oi in new_oi_raw:
+                    trade_date = oi[0]
+                    if cap is not None and trade_date > cap:
+                        continue      # тот же потолок, что у свечей
+                    trade_time = oi[1] if oi[1] else dt_time(23, 50)
 
-                        if isinstance(trade_time, str):
-                            parts = trade_time.split(":")
-                            trade_time = dt_time(int(parts[0]), int(parts[1]),
-                                                 int(parts[2]) if len(parts) > 2 else 0)
+                    if isinstance(trade_time, str):
+                        parts = trade_time.split(":")
+                        trade_time = dt_time(int(parts[0]), int(parts[1]),
+                                             int(parts[2]) if len(parts) > 2 else 0)
 
-                        pos_long = int(oi[3] or 0)
-                        pos_short = int(oi[4] or 0)
+                    pos_long = int(oi[3] or 0)
+                    pos_short = int(oi[4] or 0)
 
-                        cached_response["open_interest"].append({
-                            "time": datetime.combine(trade_date, trade_time).isoformat(),
-                            "pos": int(oi[2] or 0),
-                            "pos_long": pos_long,
-                            "pos_short": pos_short,
-                            "pos_long_num": int(oi[5] or 0),
-                            "pos_short_num": int(oi[6] or 0),
-                            "net_position": pos_long + pos_short,
-                        })
-                        appended_oi += 1
+                    cached_response["open_interest"].append({
+                        "time": datetime.combine(trade_date, trade_time).isoformat(),
+                        "pos": int(oi[2] or 0),
+                        "pos_long": pos_long,
+                        "pos_short": pos_short,
+                        "pos_long_num": int(oi[5] or 0),
+                        "pos_short_num": int(oi[6] or 0),
+                        "net_position": pos_long + pos_short,
+                    })
+                    appended_oi += 1
 
         # Обновляем метаданные по закрытым свечам
         cached_response["candles_count"] = len(cached_response["candles"])
