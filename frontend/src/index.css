@@ -2060,6 +2060,28 @@ a.btn-accent:active {
   animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
 
+/* Entrance-анимация ТОЛЬКО линии, без обрамления.
+   .chart-reveal режет весь блок с графиком — вместе с осями, месяцами и
+   легендой. Здесь клип едет внутри SVG: класс вешается на <rect> внутри
+   <clipPath>, которым обрезана группа серий, поэтому оси/сетка/подписи
+   рисуются сразу, а слева направо выезжает только сама линия.
+   transform-box: fill-box → scaleX считается от bbox самого rect,
+   transform-origin: left → рост от левого края plot-области. */
+@keyframes chart-reveal-clip {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.chart-reveal-clip {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: chart-reveal-clip 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-reveal-clip { animation: none; }
+}
+
 /* Onboarding tour — мягкий fade-in при переходе между шагами.
    Используется в OnboardingTour.tsx через key={stepIndex} на tooltip card.
    Длительность 240ms ease-out — заметно но не задерживает. */

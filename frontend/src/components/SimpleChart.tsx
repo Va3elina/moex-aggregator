@@ -1267,8 +1267,12 @@ export default function SimpleChart({
       )}
 
       {/* SVG График */}
+      {/* Клип входной анимации перенесён внутрь SVG (см. #chartClip): раньше
+          .chart-reveal висел здесь и уводил слева направо весь блок целиком —
+          вместе с осями и подписями. Wrapper теперь только прячет график до
+          первого замера ширины. */}
       <div ref={chartWrapRef}
-        className={`relative ${revealed ? 'chart-reveal' : ''}`}
+        className="relative"
         style={revealed ? undefined : { visibility: 'hidden' }}>
         <svg
           ref={svgRef}
@@ -1290,7 +1294,15 @@ export default function SimpleChart({
               <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
             </linearGradient>
             <clipPath id="chartClip">
-              <rect x={0} y={0} width={chartWidth} height={chartHeight} />
+              {/* Этот rect обрезает группу серий (см. ниже g clipPath="url(#chartClip)").
+                  На первом показе он же играет роль entrance-анимации: класс
+                  .chart-reveal-clip растягивает его по X слева направо, поэтому
+                  выезжает только линия. Оси, сетка, месяцы и легенда лежат вне
+                  этой группы и появляются сразу. */}
+              <rect
+                x={0} y={0} width={chartWidth} height={chartHeight}
+                className={revealed ? 'chart-reveal-clip' : undefined}
+              />
             </clipPath>
           </defs>
 
