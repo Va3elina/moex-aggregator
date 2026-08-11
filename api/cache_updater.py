@@ -18,7 +18,7 @@ from api.cache import get_all_gzip_by_prefix, set_gzip, touch, DEFAULT_TTL
 from api.database import SessionLocal
 from api.services.chart_live import (append_live_points, append_stretched_price,
                                      strip_live_points, strip_stretched_points)
-from api.services.market_delay import price_cutoff
+from api.services.market_delay import cutoff_for_interval
 from datetime import date, datetime, time as dt_time, timedelta
 
 log = logging.getLogger(__name__)
@@ -111,16 +111,16 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                 FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
                   AND begin_time > :last_time
-                  AND begin_time <= :cutoff
+                  AND (:cutoff IS NULL OR begin_time <= :cutoff)
                 ORDER BY begin_time
             """), {
                 "sec_ids": sec_ids,
                 "interval": interval,
                 "last_time": last_candle_time,
-                # Лицензия MOEX: цена с задержкой. cache_updater дописывает бары
-                # в кеш напрямую, минуя роутер, — потолок нужен и здесь, иначе
-                # свежая свеча утекла бы в обход задержки.
-                "cutoff": price_cutoff(),
+                # Лицензия MOEX: 5-минутная цена с задержкой. cache_updater
+                # дописывает бары в кеш напрямую, минуя роутер, — потолок нужен
+                # и здесь. Для 1ч/1д вернётся None и предикат выродится.
+                "cutoff": cutoff_for_interval(interval),
             }).fetchall()
 
             # Потолок свежести (Free-задержка): бары СТРОГО после cap не наши.

@@ -172,9 +172,10 @@ def alert_context(
               AND interval IN (5, 60, 24)
               AND close > 0
               AND begin_time >= now() - interval '14 days'
-              -- Лицензия MOEX: цена не свежее now−15 минут (решение владельца
-              -- 2026-08-11 — правило на ЛЮБУЮ цену MOEX, не только график ОИ).
-              AND begin_time <= :cutoff
+              -- Лицензия MOEX: задержка только у 5-минуток (решение владельца
+              -- 2026-08-11). Часовую и дневную свечу пропускаем как есть,
+              -- поэтому предикат условный, а не общий.
+              AND (interval <> 5 OR begin_time <= :cutoff)
             ORDER BY begin_time DESC, volume DESC NULLS LAST
             LIMIT 1
         """),
