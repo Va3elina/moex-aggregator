@@ -16,6 +16,11 @@
   python3 scripts/seo/seo.py recrawl /heatmap /oi        # Яндекс переобход
   python3 scripts/seo/seo.py diagnostics                 # Яндекс активные
   python3 scripts/seo/seo.py sitemap-submit              # сабмит в оба
+  python3 scripts/seo/seo.py status --legacy             # прежний таймфрейм.рф
+
+Домен: канонический — framedata.ru, хост в обоих вебмастерах выбирается сам.
+Пока права на новый не подтверждены (Яндекс) / property не заведён (GSC),
+CLI откатывается на прежний домен и говорит об этом строкой ⚠️.
 
 ⚠️ Не звать curl/этот скрипт внутри zsh for-цикла в Bash-туле (ломается) —
    у CLI для этого свои подкоманды с циклами внутри Python.
@@ -30,6 +35,10 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 HERE = Path(__file__).resolve().parent
 SITE = "https://framedata.ru"
+SITE_HOST = "framedata.ru"
+# Прежний домен остаётся в обоих вебмастерах: там вся история, и он же
+# источник 301 на новый. Смотреть его — флаг --legacy, удалять нельзя.
+LEGACY_HOST_HINT = "xn--80aklbnczmv"
 SITEMAP = f"{SITE}/sitemap.xml"
 BRAND_HINTS = ("таймфрейм", "frame", "фрейм")
 
@@ -49,14 +58,43 @@ def load_env(path=HERE / ".env"):
 class Yandex:
     BASE = "https://api.webmaster.yandex.net/v4"
 
-    def __init__(self, env):
+    def __init__(self, env, legacy=False):
         self.token = env.get("YANDEX_WEBMASTER_TOKEN")
         self.user = env.get("YANDEX_WEBMASTER_USER_ID")
-        self.host = urllib.parse.quote(env.get("YANDEX_WEBMASTER_HOST_ID", ""), safe="")
+        self.legacy = legacy
+        self.host_url = None
+        self.fell_back = False
+        raw = env.get("YANDEX_WEBMASTER_HOST_ID", "")
+        if self.token and self.user:
+            found = self._resolve_host()
+            self.fell_back = not legacy and not found
+            raw = found or raw
+        self.host = urllib.parse.quote(raw, safe="")
         self.ok = bool(self.token and self.user and self.host)
 
     def _h(self):
         return {"Authorization": f"OAuth {self.token}"}
+
+    def _resolve_host(self):
+        """host_id нужного домена — сам переключится на новый после верификации.
+
+        Вебмастер держит framedata.ru и таймфрейм.рф РАЗНЫМИ хостами: у нового
+        своя (пустая до подтверждения прав) статистика, у старого — вся история.
+        Пока новый не verified, показывать по нему нули честнее не молча, а
+        откатившись на старый — иначе `status` выглядит как «сайт пропал».
+        """
+        want = LEGACY_HOST_HINT if self.legacy else SITE_HOST
+        try:
+            r = requests.get(f"{self.BASE}/user/{self.user}/hosts",
+                             headers=self._h(), timeout=15).json()
+        except Exception:
+            return None
+        for h in r.get("hosts", []):
+            url = h.get("ascii_host_url") or h.get("unicode_host_url") or ""
+            if want in url and (self.legacy or h.get("verified")):
+                self.host_url = h.get("unicode_host_url") or url
+                return h.get("host_id")
+        return None
 
     def _u(self, tail):
         return f"{self.BASE}/user/{self.user}/hosts/{self.host}/{tail}"
@@ -115,9 +153,11 @@ class Google:
     API = "https://www.googleapis.com/webmasters/v3"
     SCOPE = "https://www.googleapis.com/auth/webmasters"
 
-    def __init__(self, sa_path=HERE / "gsc-service-account.json"):
+    def __init__(self, sa_path=HERE / "gsc-service-account.json", legacy=False):
         self.ok = sa_path.exists()
         self._tok = None
+        self.legacy = legacy
+        self.fell_back = False
         if self.ok:
             self.key = json.loads(sa_path.read_text())
 
@@ -145,11 +185,23 @@ class Google:
         return {"Authorization": "Bearer " + self.token()}
 
     def site_url(self):
+        """Property нового домена, пока он заведён; иначе — старый.
+
+        Сервисный аккаунт видит только те property, куда его добавили
+        пользователем: новый домен появится здесь не раньше, чем его заведут
+        и подтвердят в интерфейсе GSC (API property не создаёт).
+        """
         sites = requests.get(f"{self.API}/sites", headers=self._h()).json().get("siteEntry", [])
-        for s in sites:
-            if "p1ai" in s["siteUrl"] or "xn--" in s["siteUrl"]:
-                return s["siteUrl"]
-        return sites[0]["siteUrl"] if sites else None
+        urls = [s["siteUrl"] for s in sites]
+        if not self.legacy:
+            for u in urls:
+                if SITE_HOST in u:
+                    return u
+            self.fell_back = True
+        for u in urls:
+            if LEGACY_HOST_HINT in u or "p1ai" in u:
+                return u
+        return urls[0] if urls else None
 
     def _sa(self, site, body):
         enc = urllib.parse.quote(site, safe="")
@@ -231,9 +283,11 @@ def _qtable(rows, poscol=3):
 def cmd_status(y, g, args):
     if y.ok:
         s = y.summary()
-        print("🟢 ЯНДЕКС:  страниц в поиске=%s  исключено=%s  ИКС=%s  проблемы=%s" % (
+        print("🟢 ЯНДЕКС:  страниц в поиске=%s  исключено=%s  ИКС=%s  проблемы=%s  (%s)" % (
             s.get("searchable_pages_count"), s.get("excluded_pages_count"),
-            s.get("sqi"), s.get("site_problems")))
+            s.get("sqi"), s.get("site_problems"), y.host_url or "хост из .env"))
+        if y.fell_back:
+            print("   ⚠️  права на %s ещё не подтверждены — цифры по прежнему домену" % SITE_HOST)
     if g.ok:
         site = g.site_url()
         t = g.totals(site, args.days)
@@ -242,6 +296,8 @@ def cmd_status(y, g, args):
                 t["clicks"], t["impressions"], t["ctr"] * 100, t["position"], args.days, site))
         else:
             print("🟡 GOOGLE:  данных за период нет (%s)" % site)
+        if g.fell_back:
+            print("   ⚠️  property %s в GSC нет — цифры по прежнему домену" % SITE_HOST)
 
 
 def cmd_queries(y, g, args):
@@ -346,10 +402,14 @@ def main():
         sp.add_argument("--engine", choices=["yandex", "google", "both"], default="both")
     rp = sub.add_parser("recrawl")
     rp.add_argument("urls", nargs="+")
+    for sp in sub.choices.values():
+        sp.add_argument("--legacy", action="store_true",
+                        help="смотреть прежний домен таймфрейм.рф (там вся история)")
     args = p.parse_args()
 
     env = load_env()
-    y, g, m = Yandex(env), Google(), Metrika(env)
+    legacy = getattr(args, "legacy", False)
+    y, g, m = Yandex(env, legacy), Google(legacy=legacy), Metrika(env)
     if not y.ok:
         print("⚠️  Яндекс: нет .env/токена", file=sys.stderr)
     if not g.ok:
