@@ -664,23 +664,18 @@ export default function CompanyFlowsPriceMap({
                                 </div>
                             ))}
 
-                            {/* Таблетка значения на оси — как в «Сезонности» и ОИ:
-                                без курсора последняя цена окна, под курсором —
-                                цена наведённого месяца (кругляш стоит на его
-                                последней неделе, поэтому это то же закрытие, что
-                                в тултипе). Hover-таблетка помечена chart-hover-ui:
-                                в PNG-экспорте hover-слой снимается и остаётся
-                                статичная. */}
+                            {/* Таблетка значения на оси — только ПОСЛЕДНЯЯ цена
+                                видимого окна, на hover не меняется: значение
+                                наведённого месяца уже показывает тултип у
+                                курсора, дублировать его на оси незачем. */}
                             {(() => {
-                                const hoveredWi = hoveredIdx !== null ? visMarkers[hoveredIdx]?.wi : undefined;
-                                const close = hoveredWi != null ? closes[hoveredWi] : visCloses[visCloses.length - 1];
+                                const close = visCloses[visCloses.length - 1];
                                 if (close == null || !(close > 0)) return null;
                                 return (
                                     <ChartAxisPill
                                         value={fmtPrice(close)}
                                         color={PRICE_LINE_COLOR}
                                         topFrac={yFrac(close)}
-                                        className={hoveredWi != null ? 'chart-hover-ui' : ''}
                                     />
                                 );
                             })()}

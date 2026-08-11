@@ -604,18 +604,17 @@ export default function CompanyShareChart({
                                         </div>
                                     ))}
 
-                                    {/* Таблетка цены на оси (как в «Сезонности» и
-                                        ОИ): без курсора — последняя цена окна, под
-                                        курсором — цена наведённого месяца. */}
+                                    {/* Таблетка цены на оси — только последнее
+                                        значение окна; под курсором цену показывает
+                                        тултип, дубль на оси не нужен. */}
                                     {(() => {
-                                        const v = hoverPrice ?? lastVisPrice;
+                                        const v = lastVisPrice;
                                         if (v == null || !(v > 0)) return null;
                                         return (
                                             <ChartAxisPill
                                                 value={fmtPrice(v)}
                                                 color={PRICE_LINE_COLOR}
                                                 topFrac={priceY(v) / 1000}
-                                                className={hoverPrice != null ? 'chart-hover-ui' : ''}
                                             />
                                         );
                                     })()}
@@ -677,19 +676,16 @@ export default function CompanyShareChart({
                                     </div>
                                 ))}
 
-                                {/* Таблетка режима на оси: без курсора — последнее
-                                    значение окна, под курсором — значение
-                                    наведённого месяца. Цвет баров, формат оси. */}
+                                {/* Таблетка режима на оси — только последнее
+                                    значение окна. Цвет баров, формат оси. */}
                                 {(() => {
-                                    const hv = hoveredMi != null ? shareVals[hoveredMi] : null;
-                                    const v = hv ?? lastVisShare;
+                                    const v = lastVisShare;
                                     if (v == null) return null;
                                     return (
                                         <ChartAxisPill
                                             value={fmtAxis(v)}
                                             color={BAR_COLOR}
                                             topFrac={shareY(v) / 1000}
-                                            className={hv != null ? 'chart-hover-ui' : ''}
                                         />
                                     );
                                 })()}
