@@ -222,7 +222,9 @@ function FundPickerModal({
     };
 
     return (
-        <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
+        {/* role="dialog" — драг-обработчик панели песочницы игнорирует клики
+            внутри [role="dialog"] (см. onDragStart в SandboxPage). */}
+        <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
             {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
             <div
                 className="absolute inset-0"
