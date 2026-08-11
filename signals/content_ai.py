@@ -174,6 +174,7 @@ _SELECT_HYPE_FILTER_PENDING = text("""
     SELECT id, source, headline, raw_text, hype_filter_dispatch_attempts
     FROM content_candidates
     WHERE hype_filter_result IS NULL AND source_url IS NOT NULL
+      AND hype_filter_gave_up_at IS NULL
       AND hype_filter_dispatch_attempts < :max_attempts
       AND created_at < :cutoff
       AND (hype_filter_checked_at IS NULL OR hype_filter_checked_at < :cutoff)
@@ -185,8 +186,18 @@ _MARK_HYPE_FILTER_DISPATCHED = text("""
     SET hype_filter_dispatch_attempts = hype_filter_dispatch_attempts + 1, hype_filter_checked_at = now()
     WHERE id = :id
 """)
+# ⚠️ Найдено 2026-08-11: раньше здесь был ТОЛЬКО `hype_filter_checked_at =
+# now()`. Это не выводило строку из выборки «сдались» ниже — её условия
+# (hype_filter_result IS NULL + attempts >= MAX) вечны, а `checked_at < cutoff`
+# снова становилось истинным ровно через DISPATCH_COOLDOWN_MIN, то есть через
+# один прогон крона. Итог: один и тот же алерт уходил Вадиму каждые полчаса
+# бесконечно (живой случай — 15 кандидатов, 13 повторов за 6 часов, пока сам
+# инцидент давно закончился). Терминальный признак обязателен: у Шага А/В его
+# роль играет status (discarded/pending), у Шага Н статуса нет.
 _GIVE_UP_HYPE_FILTER = text("""
-    UPDATE content_candidates SET hype_filter_checked_at = now() WHERE id = :id
+    UPDATE content_candidates
+    SET hype_filter_checked_at = now(), hype_filter_gave_up_at = now()
+    WHERE id = :id
 """)
 
 # Лимит попыток исчерпан — Routine либо системно сломана, либо candidate
@@ -534,6 +545,7 @@ def run_once() -> dict:
             gave_up = db.execute(text("""
                 SELECT id FROM content_candidates
                 WHERE hype_filter_result IS NULL AND source_url IS NOT NULL
+                  AND hype_filter_gave_up_at IS NULL
                   AND hype_filter_dispatch_attempts >= :max_attempts
                   AND hype_filter_checked_at < :cutoff
             """), {"max_attempts": MAX_DISPATCH_ATTEMPTS, "cutoff": cutoff}).scalars().all()
