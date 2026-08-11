@@ -473,10 +473,20 @@ export default function SandboxPage() {
 
   // ── драг + магнит(18) + направляющие (§4.1) ──
   const onDragStart = useCallback((e: React.PointerEvent, id: string) => {
-    bringFront(id);
     const el = e.currentTarget as HTMLElement;
+    // Портал-модалки (FundPickerModal → body): pointerdown всплывает сюда по
+    // REACT-дереву, хотя в DOM цель лежит вне панели — драгу не принадлежит.
+    if (!el.contains(e.target as Node)) return;
+    bringFront(id);
     const rect = el.getBoundingClientRect();
-    if (e.clientY - rect.top > DRAG_STRIP) return; // тянем только за верхнюю полосу
+    // Тянем только за верхнюю полосу. dy < 0 — клик по fixed-модалке (поиск
+    // актива и т.п.), которая ВЫШЕ панели на экране: панель в нижней половине
+    // холста, модалка прижата к верху вьюпорта. Без этой ветки клик проходил
+    // проверку "<= DRAG_STRIP", не матчился в closest (строки модалок — div/tr)
+    // и получал preventDefault на pointerdown — браузер после этого не шлёт
+    // compatibility click, модалка «не откликалась».
+    const dy = e.clientY - rect.top;
+    if (dy < 0 || dy > DRAG_STRIP) return;
     if ((e.target as HTMLElement).closest('button, input, a, select, textarea, [role="dialog"]')) return;
     e.preventDefault();
     const list = st.bySheet[st.activeSheet] || [];

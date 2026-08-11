@@ -516,7 +516,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   };
 
   return (
-    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
+    // role="dialog" — не только семантика: в песочнице drag-обработчик панели
+    // (onDragStart в SandboxPage) игнорирует клики внутри [role="dialog"],
+    // иначе pointerdown по строке-div получает preventDefault и click гаснет.
+    <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
       {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
       <div
         className="absolute inset-0"
