@@ -106,22 +106,34 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
             last_candle_time = datetime.fromisoformat(cached_response["candles"][-1]["time"])
 
             # Берём новые свечи после последней закрытой в кеше
-            new_candles_raw = db.execute(text("""
+            # Лицензия MOEX: 5-минутная цена с задержкой. cache_updater
+            # дописывает бары в кеш напрямую, минуя роутер, — потолок нужен и
+            # здесь. Для 1ч/1д задержки нет.
+            #
+            # ⚠️ Условие добавляем В ТЕКСТ запроса, а не как параметр-NULL.
+            # Форма `:cutoff IS NULL OR ...` с None роняет pg8000: «could not
+            # determine data type of parameter» — Postgres не выводит тип у
+            # голого NULL. Первая же ошибка рвёт транзакцию, и весь цикл
+            # обновления кеша падает (замер на проде: 32 ошибки за 20 минут).
+            _cut = cutoff_for_interval(interval)
+            _params = {
+                "sec_ids": sec_ids,
+                "interval": interval,
+                "last_time": last_candle_time,
+            }
+            _cut_sql = ""
+            if _cut is not None:
+                _cut_sql = "AND begin_time <= :cutoff"
+                _params["cutoff"] = _cut
+
+            new_candles_raw = db.execute(text(f"""
                 SELECT begin_time, open, high, low, close, volume, sec_id
                 FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
                   AND begin_time > :last_time
-                  AND (:cutoff IS NULL OR begin_time <= :cutoff)
+                  {_cut_sql}
                 ORDER BY begin_time
-            """), {
-                "sec_ids": sec_ids,
-                "interval": interval,
-                "last_time": last_candle_time,
-                # Лицензия MOEX: 5-минутная цена с задержкой. cache_updater
-                # дописывает бары в кеш напрямую, минуя роутер, — потолок нужен
-                # и здесь. Для 1ч/1д вернётся None и предикат выродится.
-                "cutoff": cutoff_for_interval(interval),
-            }).fetchall()
+            """), _params).fetchall()
 
             # Потолок свежести (Free-задержка): бары СТРОГО после cap не наши.
             if cap is not None:
