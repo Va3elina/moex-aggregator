@@ -43,7 +43,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
-import { ChartTooltip, TooltipRow, ChartDatePill } from '../chart';
+import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -440,6 +440,26 @@ export default function CompanyShareChart({
         return closesAll[wk[wk.length - 1]] ?? null;
     }, [hasPrice, hoveredMi, months, weeksByMonth, closesAll]);
 
+    // Последние значения видимого окна — для статичных таблеток на правой оси
+    // (без курсора). Цена: закрытие последней недели последнего месяца окна;
+    // доля/капитал: последний месяц с данными (месяцы без снапшота дают null).
+    const lastVisPrice = useMemo(() => {
+        if (!hasPrice) return null;
+        for (let i = visMonthIdx.length - 1; i >= 0; i--) {
+            const wk = weeksByMonth.get(months[visMonthIdx[i]]);
+            if (wk && wk.length) return closesAll[wk[wk.length - 1]] ?? null;
+        }
+        return null;
+    }, [hasPrice, visMonthIdx, months, weeksByMonth, closesAll]);
+
+    const lastVisShare = useMemo(() => {
+        for (let i = visMonthIdx.length - 1; i >= 0; i--) {
+            const v = shareVals[visMonthIdx[i]];
+            if (v != null) return v;
+        }
+        return null;
+    }, [visMonthIdx, shareVals]);
+
     const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов' : 'Доля от капитализации';
     // Значения режима: rub — рубли (адаптив млн/млрд), share/cap — проценты.
     const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v) : fmtPct(v));
@@ -583,6 +603,22 @@ export default function CompanyShareChart({
                                             </span>
                                         </div>
                                     ))}
+
+                                    {/* Таблетка цены на оси (как в «Сезонности» и
+                                        ОИ): без курсора — последняя цена окна, под
+                                        курсором — цена наведённого месяца. */}
+                                    {(() => {
+                                        const v = hoverPrice ?? lastVisPrice;
+                                        if (v == null || !(v > 0)) return null;
+                                        return (
+                                            <ChartAxisPill
+                                                value={fmtPrice(v)}
+                                                color={PRICE_LINE_COLOR}
+                                                topFrac={priceY(v) / 1000}
+                                                className={hoverPrice != null ? 'chart-hover-ui' : ''}
+                                            />
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -640,6 +676,23 @@ export default function CompanyShareChart({
                                         </span>
                                     </div>
                                 ))}
+
+                                {/* Таблетка режима на оси: без курсора — последнее
+                                    значение окна, под курсором — значение
+                                    наведённого месяца. Цвет баров, формат оси. */}
+                                {(() => {
+                                    const hv = hoveredMi != null ? shareVals[hoveredMi] : null;
+                                    const v = hv ?? lastVisShare;
+                                    if (v == null) return null;
+                                    return (
+                                        <ChartAxisPill
+                                            value={fmtAxis(v)}
+                                            color={BAR_COLOR}
+                                            topFrac={shareY(v) / 1000}
+                                            className={hv != null ? 'chart-hover-ui' : ''}
+                                        />
+                                    );
+                                })()}
                             </div>
                             {/* Подписи оси X — по видимым месяцам. */}
                             <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 8, left: padArea.left, right: padArea.right, fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>

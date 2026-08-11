@@ -34,7 +34,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
-import { ChartTooltip, TooltipRow, ChartDatePill } from '../chart';
+import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { computeChartTopLineY } from '../chart/datePillLayout';
 import type { CompanyFlowsSeries } from './CompanyFlowsHistogram';
 
@@ -663,6 +663,27 @@ export default function CompanyFlowsPriceMap({
                                     </span>
                                 </div>
                             ))}
+
+                            {/* Таблетка значения на оси — как в «Сезонности» и ОИ:
+                                без курсора последняя цена окна, под курсором —
+                                цена наведённого месяца (кругляш стоит на его
+                                последней неделе, поэтому это то же закрытие, что
+                                в тултипе). Hover-таблетка помечена chart-hover-ui:
+                                в PNG-экспорте hover-слой снимается и остаётся
+                                статичная. */}
+                            {(() => {
+                                const hoveredWi = hoveredIdx !== null ? visMarkers[hoveredIdx]?.wi : undefined;
+                                const close = hoveredWi != null ? closes[hoveredWi] : visCloses[visCloses.length - 1];
+                                if (close == null || !(close > 0)) return null;
+                                return (
+                                    <ChartAxisPill
+                                        value={fmtPrice(close)}
+                                        color={PRICE_LINE_COLOR}
+                                        topFrac={yFrac(close)}
+                                        className={hoveredWi != null ? 'chart-hover-ui' : ''}
+                                    />
+                                );
+                            })()}
                         </div>
 
                         {/* Подписи оси X — месяц/год по видимым неделям. */}

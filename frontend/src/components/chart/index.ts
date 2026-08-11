@@ -5,5 +5,6 @@ export { default as ChartTooltip, TooltipRow } from './ChartTooltip';
 export { default as ChartDateLabel } from './ChartDateLabel';
 export { default as ChartDatePill } from './ChartDatePill';
 export { default as ChartYAxis } from './ChartYAxis';
+export { default as ChartAxisPill } from './ChartAxisPill';
 export { default as ChartXAxis } from './ChartXAxis';
 export { default as ChartMarker } from './ChartMarker';
