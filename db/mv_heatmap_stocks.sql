@@ -42,12 +42,24 @@ latest_daily AS (
     SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
     FROM ranked_daily WHERE rn = 1
 ),
--- Real-time: последняя 5мин свеча сегодня
+-- Последняя 5мин свеча сегодня — С ПОТОЛКОМ ЛИЦЕНЗИИ MOEX.
+--
+-- ⚠️ Цена раздаётся не свежее чем now−15 минут (условие контракта; решение
+-- владельца 2026-08-11: правило распространяется на ЛЮБУЮ цену MOEX, а не
+-- только на график ОИ). Отсюда price и все change_* в этой карте считаются от
+-- цены 15-минутной давности. Раньше здесь была самая свежая 5-минутка, и карта
+-- отдавала фактически realtime-фид: /api/heatmap/prices доступен даже без
+-- авторизации.
+--
+-- ⚠️ ВРЕМЯ: begin_time — НАИВНОЕ московское, а now() у Postgres в UTC
+-- (контейнер без TZ). Поэтому потолок считаем через AT TIME ZONE, иначе
+-- сравнение уехало бы на три часа и отрезало всю сессию.
 intraday_close AS (
     SELECT DISTINCT ON (secid) secid, close
     FROM candles
     WHERE type = 'stock' AND interval = 5
       AND begin_time::date = CURRENT_DATE
+      AND begin_time <= (now() AT TIME ZONE 'Europe/Moscow') - interval '15 minutes'
     ORDER BY secid, begin_time DESC
 ),
 -- Дата «снимка» карты per-секция: если сегодня уже были сделки (есть 5-мин

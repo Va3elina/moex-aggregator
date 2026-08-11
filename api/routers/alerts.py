@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api.services.market_delay import price_cutoff
 from api.database import get_db
 from api.models import User, Alert, AlertEvent
 from api.models.telegram_link_token import TelegramLinkToken
@@ -171,10 +172,13 @@ def alert_context(
               AND interval IN (5, 60, 24)
               AND close > 0
               AND begin_time >= now() - interval '14 days'
+              -- Лицензия MOEX: цена не свежее now−15 минут (решение владельца
+              -- 2026-08-11 — правило на ЛЮБУЮ цену MOEX, не только график ОИ).
+              AND begin_time <= :cutoff
             ORDER BY begin_time DESC, volume DESC NULLS LAST
             LIMIT 1
         """),
-        {"asset": asset},
+        {"asset": asset, "cutoff": price_cutoff()},
     ).first()
 
     if row is None:
