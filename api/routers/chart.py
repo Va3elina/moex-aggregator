@@ -280,17 +280,24 @@ def get_chart_delta(
             sec_ids = list(dict.fromkeys(sec_ids + cal_ids))
 
     # ── Новые закрытые свечи (зеркало cache_updater._update_single_entry) ────
-    new_candles_raw = db.execute(text("""
+    # Лицензия MOEX: дельта — ещё один путь наружу (после роутера и
+    # cache_updater). Условие вшиваем в текст, а не шлём NULL-параметром:
+    # `:cutoff IS NULL OR ...` с None роняет pg8000 (не выводится тип NULL).
+    _cut = cutoff_for_interval(interval)
+    _p = {"sec_ids": sec_ids, "interval": interval, "since": since_candle}
+    _cut_sql = ""
+    if _cut is not None:
+        _cut_sql = "AND begin_time <= :cutoff"
+        _p["cutoff"] = _cut
+
+    new_candles_raw = db.execute(text(f"""
         SELECT begin_time, open, high, low, close, volume, sec_id
         FROM candles
         WHERE sec_id = ANY(:sec_ids) AND interval = :interval
           AND begin_time > :since
-          AND (:cutoff IS NULL OR begin_time <= :cutoff)
+          {_cut_sql}
         ORDER BY begin_time
-    """), {"sec_ids": sec_ids, "interval": interval, "since": since_candle,
-            # Лицензия MOEX: дельта — ещё один путь наружу (после роутера и
-            # cache_updater). NULL для нерегулируемых ТФ — предикат вырождается.
-            "cutoff": cutoff_for_interval(interval)}).fetchall()
+    """), _p).fetchall()
 
     if effective_end is not None:
         new_candles_raw = [c for c in new_candles_raw if c[0].date() <= effective_end]
@@ -383,13 +390,17 @@ def get_chart_delta(
         if candles and not candles[-1].get("live"):
             anchor = candles[-1]
         else:
-            row = db.execute(text("""
+            _ap = {"sec_ids": sec_ids, "interval": interval}
+            _acut = ""
+            if _cut is not None:
+                _acut = "AND begin_time <= :cutoff"
+                _ap["cutoff"] = _cut
+            row = db.execute(text(f"""
                 SELECT begin_time, close FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
-                  AND (:cutoff IS NULL OR begin_time <= :cutoff) AND close > 0
+                  {_acut} AND close > 0
                 ORDER BY begin_time DESC LIMIT 1
-            """), {"sec_ids": sec_ids, "interval": interval,
-                   "cutoff": cutoff_for_interval(interval)}).fetchone()
+            """), _ap).fetchone()
             if row and row[0]:
                 anchor = {"time": row[0].isoformat(), "close": float(row[1] or 0)}
 
