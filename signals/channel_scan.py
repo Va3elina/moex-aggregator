@@ -39,6 +39,54 @@ _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://framedata.ru)"
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
+# ── Тихий режим при сетевой недоступности t.me (добавлено 2026-08-11) ──
+# 11.08 Telegram целиком перестал открываться с прода на уровне L4 (см. память
+# telegram_egress_block): t.me тоже, хотя раньше был достижим напрямую в обход
+# релея — на это прямо рассчитывал докстринг выше. Крон раз в 5 минут писал по
+# две одинаковые строки на прогон, лог рос ~0.5 МБ/сутки чистым шумом.
+#
+# Подавляем ТОЛЬКО связность (ConnectionError/Timeout): HTTP 4xx/5xx, ошибки
+# парсинга и БД по-прежнему шумят каждый прогон — они означают, что сломались
+# МЫ или разметка t.me, и это надо видеть сразу.
+#
+# Состояние живёт в файле, потому что каждый прогон — отдельный процесс: пишем
+# одну строку при ПЕРЕХОДЕ в офлайн и одну при восстановлении (с длительностью
+# простоя), между ними — полная тишина, включая итоговую строку прогона.
+_OFFLINE_FLAG = os.path.join(_ROOT, "logs", ".channel_scan_offline")
+
+
+def _offline_since():
+    """Момент ухода в офлайн, либо None если сейчас считаемся живыми."""
+    try:
+        with open(_OFFLINE_FLAG) as f:
+            return datetime.fromisoformat(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _mark_offline(now):
+    try:
+        os.makedirs(os.path.dirname(_OFFLINE_FLAG), exist_ok=True)
+        with open(_OFFLINE_FLAG, "w") as f:
+            f.write(now.isoformat())
+    except OSError:
+        pass          # не смогли записать флаг — переживём, просто пошумим ещё
+
+
+def _clear_offline():
+    try:
+        os.remove(_OFFLINE_FLAG)
+    except OSError:
+        pass
+
+
+def _human(delta) -> str:
+    mins = int(delta.total_seconds() // 60)
+    if mins < 60:
+        return f"{mins} мин"
+    h, m = divmod(mins, 60)
+    return f"{h} ч {m} мин" if h < 24 else f"{h // 24} сут {h % 24} ч"
+
 
 def _clean_text(raw: str) -> str:
     """HTML-фрагмент поста → плоский текст: <br>→пробел, срезаем теги, раскрываем
@@ -106,6 +154,8 @@ _UPSERT = text("""
 def run_once() -> dict:
     summary = {"channels": 0, "posts": 0, "errors": 0}
     rows = []
+    net_failures = 0            # из них — именно недоступность сети
+    net_reason = ""
     for username, fallback in CHANNELS:
         summary["channels"] += 1
         try:
@@ -115,9 +165,30 @@ def run_once() -> dict:
             title = _channel_title(r.text, fallback)
             for p in _parse_posts(r.text, username):
                 rows.append(dict(p, channel=username, channel_name=title))
+        except (requests.ConnectionError, requests.Timeout) as e:
+            # Связность: не шумим на каждый прогон — решение ниже, после цикла.
+            summary["errors"] += 1
+            net_failures += 1
+            net_reason = type(e).__name__
         except Exception as e:
             summary["errors"] += 1
             print(f"[channel_scan] {username} failed: {type(e).__name__}: {e}")
+
+    # Офлайн = ВСЕ каналы отпали именно по сети. Частичный сбой (один канал из
+    # нескольких) молчанием не заметаем — он попадёт в errors и в строку прогона.
+    now = datetime.now(timezone.utc)
+    was_offline = _offline_since()
+    all_net_down = net_failures and net_failures == summary["channels"]
+    if all_net_down:
+        if was_offline is None:
+            print(f"[channel_scan] t.me недоступен ({net_reason}) — ухожу в тихий "
+                  f"режим, однотипные ошибки связности подавляю до восстановления")
+            _mark_offline(now)
+        summary["quiet"] = True       # main() не печатает итог, пока молчим
+        return summary
+    if was_offline is not None:
+        print(f"[channel_scan] t.me снова доступен — молчал {_human(now - was_offline)}")
+        _clear_offline()
 
     if not rows:
         return summary
@@ -148,6 +219,8 @@ def run_once() -> dict:
 
 def main():
     s = run_once()
+    if s.pop("quiet", False):
+        return          # тихий режим: переход в офлайн уже залогирован один раз
     print(f"[{datetime.now(timezone.utc)}] channel_scan: {s}")
 
 
