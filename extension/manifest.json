@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FRAME — индикаторы в терминале",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Аналитические индикаторы FRAME (framedata.ru) плавающим окном поверх торгового терминала Т-Инвестиций.",
   "homepage_url": "https://framedata.ru",
   "icons": {
