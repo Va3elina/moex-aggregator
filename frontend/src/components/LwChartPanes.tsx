@@ -380,6 +380,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     }
   };
   const drawExpRef = useRef<(() => void) | null>(null);
+  // Колбэки слоя рисования — ПО ПАНЕЛЯМ: слой теперь живёт на каждой панели
+  // (рисовать можно и на RSI/ATR/объёмах, не только на основном графике).
+  const drawLayersRef = useRef<Map<number, { shapes: () => void; click: (x: number, y: number) => boolean }>>(new Map());
+  // Совместимость с местами, которые просто «перерисуй фигуры»: дёргаем все слои.
   const drawShapesRef = useRef<(() => void) | null>(null);
   /** Клик по слою рисования ВНЕ режима: текст-зона выделенной линии → правка
    *  текста; фигура → выделение; пусто → снять выделение. true = клик съеден. */
@@ -684,9 +688,12 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         // Вне режима рисования фигуры выделяются обычным кликом (как в
         // TradingView): хит-тест по слою рисования этой панели. В режиме
         // рисования сюда не попадаем — клики забирает его хит-слой (не CANVAS).
-        if (i === drawPaneIndexRef.current && drawClickRef.current) {
+        // Хит-тест идёт в слой ИМЕННО ЭТОЙ панели: слои теперь на всех панелях,
+        // и клик по RSI не должен искать фигуру в координатах графика цены.
+        const layer = drawLayersRef.current.get(i);
+        if (layer) {
           const br = box.getBoundingClientRect();
-          if (drawClickRef.current(e.clientX - br.left, e.clientY - br.top)) { e.stopPropagation(); return; }
+          if (layer.click(e.clientX - br.left, e.clientY - br.top)) { e.stopPropagation(); return; }
         }
         const per = pillsRef.current[i];
         if (!per) return;
@@ -1110,10 +1117,16 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     // левого края бокса. Пока левая шкала была везде скрыта, разница была нулём;
     // с появлением scale:'left' её надо прибавлять, иначе фигуры, хит-тест и
     // якорь панели свойств уедут на ширину шкалы (в LwChart это paneLeftW).
-    let cleanupDraw: (() => void) | null = null;
-    const dpi = drawPaneIndexRef.current;
-    if (dpi != null && boxes[dpi]) {
+    // Слой создаётся на КАЖДОЙ панели стека: рисовать можно и поверх RSI/ATR/
+    // объёмов, не только на основном графике (просьба Вадима). Пропом
+    // drawPaneIndex рисование по-прежнему включается целиком — он остался
+    // «панелью по умолчанию» для мест, которым нужен один конкретный индекс
+    // (экспорт, syncBeforeCapture).
+    const drawCleanups: (() => void)[] = [];
+    drawLayersRef.current.clear();
+    const createDrawLayer = (dpi: number) => {
       const box = boxes[dpi];
+      if (!box) return;
       const chart = () => chartsRef.current[dpi];
       const drawSvg = document.createElementNS(SVGNS, 'svg');
       // ⚠️ overflow:hidden, НЕ visible. Слой живёт в боксе панели цены, и с visible
@@ -1336,12 +1349,27 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         // свойств на время жеста замирает (как в TradingView), актуальный rect
         // досылается по отпусканию кнопки (см. onBtnUp).
         if (dragState || buttonsDown) return;
+        // ⚠️ Слоёв теперь несколько (по одному на панель), а панель свойств одна.
+        // «Пусто» шлём ТОЛЬКО если выделенной фигуры нет вообще нигде: иначе
+        // перерисовка соседней панели затирала бы прямоугольник той, где фигура
+        // реально выделена, и панель свойств прыгала бы или пропадала.
+        if (!r) {
+          const sel = selectedDrawIdRef.current;
+          const owner = sel ? (drawingsRef.current ?? []).find((d) => d.id === sel) : null;
+          if (owner && (owner.pane ?? 0) !== dpi) return;
+        }
         const key = r ? `${Math.round(r.x)}|${Math.round(r.y)}|${Math.round(r.w)}|${Math.round(r.h)}` : '';
         if (key === lastRectKey) return;
         lastRectKey = key;
         onSelectionRectRef.current?.(r);
       };
 
+      // Фигуры ЭТОЙ панели. Список фигур общий на весь стек (он же уезжает
+      // наружу и в persist), а рисует и ловит клики каждый слой только своё:
+      // цена у RSI и у графика цены — разные шкалы, чужая фигура спроецировалась
+      // бы в бессмысленное место. Фигуры без номера панели — с тех пор, когда
+      // рисовать можно было только на основном графике, — читаются как панель 0.
+      const mine = (list: LwDrawing[] | undefined) => (list ?? []).filter((d) => (d.pane ?? 0) === dpi);
       const drawShapes = () => {
         if (!chart()) return;
         // html2canvas трактует <svg> как replaced-элемент и меряет его через
@@ -1352,9 +1380,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         while (drawSvg.firstChild) drawSvg.removeChild(drawSvg.firstChild);
         if (drawHiddenRef.current) { emitSelRect(null); return; }
         const selId = selectedDrawIdRef.current;
-        for (const d of (drawingsRef.current ?? [])) { if (d.hidden) continue; renderOne(d, d.id === selId); }
+        for (const d of mine(drawingsRef.current)) { if (d.hidden) continue; renderOne(d, d.id === selId); }
         if (dragState) renderOne(dragState.d, false, true);
-        const live = dragState && dragState.d.id === selId ? dragState.d : (drawingsRef.current ?? []).find((d) => d.id === selId);
+        const live = dragState && dragState.d.id === selId ? dragState.d : mine(drawingsRef.current).find((d) => d.id === selId);
         emitSelRect(live && !live.hidden ? shapeRect(live) : null);
       };
       const syncDrawInteractivity = () => {
@@ -1368,14 +1396,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawHit.style.pointerEvents = on ? 'auto' : 'none';
         drawHit.style.cursor = on ? 'crosshair' : 'default';
       };
-      drawShapesRef.current = () => {
+      const layerShapes = () => {
         syncDrawInteractivity();
         // Сменили инструмент (или вышли из режима) с недостроенной фигурой —
         // бросаем её, иначе «висячий» превью тянулся бы уже за другим тулом.
         if (dragState?.pending && (!drawActiveRef.current || drawToolRef.current !== dragState.d.tool)) dragState = null;
         drawShapes();
       };
-      drawClickRef.current = (bx: number, by: number): boolean => {
+      const layerClick = (bx: number, by: number): boolean => {
         if (drawHiddenRef.current || drawLockedRef.current) return false;
         const hit = hitTest(bx, by);
         const cur = selectedDrawIdRef.current;
@@ -1385,6 +1413,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawShapes();
         return !!hit;
       };
+      drawLayersRef.current.set(dpi, { shapes: layerShapes, click: layerClick });
 
       const distToSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
         const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
@@ -1392,7 +1421,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
       };
       const hitTest = (bx: number, by: number): LwDrawing | null => {
-        const list = drawingsRef.current ?? [], pb = plotBox();
+        const list = mine(drawingsRef.current), pb = plotBox();
         for (let i = list.length - 1; i >= 0; i--) {
           const d = list[i];
           if (d.hidden) continue;
@@ -1440,7 +1469,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const dash = drawDashRef.current, opacity = drawOpacityRef.current;
         if (tool === 'text') {
           const id = uid();
-          commit([...(drawingsRef.current ?? []), { id, tool: 'text', pts: [lp], color, width, dash, opacity, text: '' }]);
+          commit([...(drawingsRef.current ?? []), { id, tool: 'text', pts: [lp], color, width, dash, opacity, text: '', pane: dpi }]);
           selectedDrawIdRef.current = id; onSelectDrawRef.current?.(id); onToolResetRef.current?.();
           // Сразу поле ввода на месте будущего текста; пустой ввод — фигура не нужна.
           openTextEditor(x, y - 8, '', (v) => {
@@ -1449,7 +1478,8 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           });
           return;
         }
-        const base = { color, width, dash, opacity };
+        // pane — обязательно: по нему фигура находит свою шкалу цен при отрисовке.
+        const base = { color, width, dash, opacity, pane: dpi };
         const d: LwDrawing = ONE_PT.has(tool) ? { id: uid(), tool, pts: [lp], ...base } : { id: uid(), tool, pts: [lp, lp], ...base };
         dragState = { mode: 'create', d, startXY: { x, y } };
         try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
@@ -1592,7 +1622,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       const drawRo = new ResizeObserver(() => { drawShapes(); requestAnimationFrame(() => drawShapes()); });
       drawRo.observe(box);
 
-      cleanupDraw = () => {
+      drawCleanups.push(() => {
         box.removeEventListener('pointerdown', onOutsideDown, true);
         box.removeEventListener('mousedown', onSwallow, true);
         closeTextEditor();
@@ -1606,9 +1636,23 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         drawRo.disconnect();
         drawSvg.parentNode?.removeChild(drawSvg);
         drawHit.parentNode?.removeChild(drawHit);
-        drawShapesRef.current = null;
-        drawClickRef.current = null;
+        drawLayersRef.current.delete(dpi);
+      });
+    };
+
+    if (drawPaneIndexRef.current != null) {
+      boxes.forEach((_, idx) => createDrawLayer(idx));
+      // Общие ссылки для мест, которые не знают про панели: «перерисуй фигуры»
+      // и «обработай клик» уходят во ВСЕ слои (клик — до первого съевшего).
+      drawShapesRef.current = () => { drawLayersRef.current.forEach((l) => l.shapes()); };
+      drawClickRef.current = (x, y) => {
+        let eaten = false;
+        drawLayersRef.current.forEach((l) => { if (!eaten) eaten = l.click(x, y); });
+        return eaten;
       };
+    } else {
+      drawShapesRef.current = null;
+      drawClickRef.current = null;
     }
 
     // Статичный вид обязан переподгоняться под размер: панель тянут за угол —
@@ -1696,7 +1740,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       drawExpRef.current = null;
       wheelOff.forEach((f) => f());
       unsubs.forEach((u) => { try { u(); } catch { /* noop */ } });
-      cleanupDraw?.();
+      drawCleanups.forEach((f) => { try { f(); } catch { /* слой уже снят */ } });
+      drawShapesRef.current = null;
+      drawClickRef.current = null;
       charts.forEach((ch) => ch.remove());
       tips.forEach((tp) => tp.parentNode?.removeChild(tp));
       legends.forEach((lg) => lg.parentNode?.removeChild(lg));

@@ -66,6 +66,12 @@ export interface LwDrawPoint { logical: number; price: number }
 export type LwDash = 'solid' | 'dashed' | 'dotted';
 export interface LwDrawing {
   id: string; tool: LwDrawShape; pts: LwDrawPoint[]; color: string; width: number;
+  /** Панель, В КОТОРОЙ живёт фигура (0 — основной график, 1+ — панели
+   *  индикаторов). Координата `price` у точек считается по шкале ИМЕННО этой
+   *  панели: у RSI и у цены шкалы разные, и без номера фигура спроецировалась бы
+   *  не туда. Поле необязательное — у фигур, нарисованных до появления
+   *  рисования на панелях индикаторов, его нет, и они читаются как панель 0. */
+  pane?: number;
   text?: string; dash?: LwDash; opacity?: number; hidden?: boolean; locked?: boolean;
   /** ── настройки ТЕКСТА (у текст-фигуры и у подписи на линии) ── */
   textSize?: number;
