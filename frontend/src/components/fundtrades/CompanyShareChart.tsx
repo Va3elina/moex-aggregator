@@ -713,11 +713,13 @@ export default function CompanyShareChart({
                                     });
                                 })()}
                             </div>
-                            {/* Watermark — в нижней панели, как в гистограммах. */}
-                            <ChartWatermark
+                            {/* Watermark — в нижней панели, как в гистограммах.
+                                В окне терминала (bare) не рисуем: панель тесная,
+                                знак ложится прямо на данные. */}
+                            {!bare && <ChartWatermark
                                 left={`calc(${padArea.left} + 5px)`}
                                 bottom={`${XLABEL_H + 5}px`}
-                            />
+                            />}
                         </div>
                     </div>
 
