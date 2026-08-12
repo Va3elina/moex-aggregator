@@ -338,6 +338,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // слетел бы на fit ровно в момент, когда пользователь этого не просил.
   // Читаем его при восстановлении, если у свежесозданного чарта своего ещё нет.
   const lastRangeRef = useRef<LogicalRange | null>(null);
+  // Сигнатура СОСТАВА серий (всё, кроме самих точек) — по ней эффект решает,
+  // можно ли обновить данные на месте (setData) вместо полного пересоздания.
+  const seriesSigRef = useRef<string>('');
   // Последний видимый диапазон во ВРЕМЕНИ. Нужен отдельно от логического: когда
   // панели пересоздаются (сменилось их число), `getVisibleRange()` у свежего
   // пустого графика вернёт null, и восстанавливать было бы нечем — оставался
@@ -1768,6 +1771,101 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     const savedTimeRange = (liveTimeRange ?? lastTimeRangeRef.current) as Parameters<
       ReturnType<IChartApi['timeScale']>['setVisibleRange']
     >[0] | null;
+
+    // ── БЫСТРЫЙ ПУТЬ: только данные ───────────────────────────────────────────
+    // Новый срез данных при НЕИЗМЕННОМ составе серий (пришёл реалтайм-тик,
+    // доехала догрузка истории, обновился период) — самый частый случай. Полное
+    // пересоздание здесь избыточно: оно снимает и заново вешает все серии,
+    // примитивы и линии (~100 мс на панель) и обязательно сопровождается
+    // восстановлением вида — отсюда и дрожание, и «прыжки» диапазона.
+    // Обновляем точки на существующих сериях; вид движок сохраняет сам.
+    //
+    // ⚠️ Сигнатура включает ВСЁ, кроме самих точек: id, тип, ось, цвета, толщину,
+    // пунктир, базу гистограммы, подпись, формат оси, зоны, нулевую линию. Любая
+    // из этих правок обязана идти полным путём — иначе изменение молча не
+    // применится (менял цвет, а линия прежняя). Проп priceLines и настройки
+    // графика сюда же: они создают примитивы поверх серий.
+    const seriesSig = JSON.stringify([
+      panes.map((p) => p.series.map((d) => [
+        d.id, d.type ?? 'line', d.scale ?? 'right', d.color, d.areaTop, d.areaBottom,
+        d.lineWidth, d.dashed, d.base, d.zeroLine, d.label, d.lastValueVisible,
+        d.minMove, !!d.axisFmt, !!d.tipFmt,
+        d.bands ? [d.bands.upper, d.bands.lower, d.bands.middle, d.bands.color, d.bands.fill,
+          d.bands.upperColor, d.bands.lowerColor, d.bands.middleColor] : null,
+      ])),
+      chartPrefs?.lineWidth, chartPrefs?.lastValue,
+      (priceLines ?? []).map((l) => [l.price, l.color, l.pane, l.scale, l.title]),
+      staticView,
+    ]);
+    const sameShape = seriesSig === seriesSigRef.current
+      && apisRef.current.length === panes.length
+      && apisRef.current.every((a, i) => a.length === (panes[i]?.series.length ?? -1));
+    seriesSigRef.current = seriesSig;
+
+    if (sameShape) {
+      const rcFast = (i: number, col: string | undefined) => resolveColor(boxes[i] ?? root, col);
+      panes.forEach((pane, i) => {
+        pane.series.forEach((def, j) => {
+          const api = apisRef.current[i]?.[j];
+          if (!api) return;
+          const isOhlc = def.type === 'candlestick' || def.type === 'bar';
+          try {
+            if (isOhlc) {
+              (api as ISeriesApi<'Candlestick'>).setData(def.data.map((pt) => ({
+                time: pt.time as UTCTimestamp,
+                open: pt.open ?? pt.value, high: pt.high ?? pt.value,
+                low: pt.low ?? pt.value, close: pt.close ?? pt.value,
+              })));
+            } else {
+              (api as ISeriesApi<'Line'>).setData(def.data.map((pt) => ({
+                time: pt.time as UTCTimestamp, value: pt.value,
+                ...(pt.color ? { color: rcFast(i, pt.color) } : {}),
+              })));
+            }
+          } catch (err) { console.error('LwChartPanes fast setData failed:', def.id, err); }
+          // Карта время→значение кормит тултип, магнит и подписи строк.
+          mapsRef.current[i][j] = new Map(def.data.map((pt) => [pt.time, pt.value]));
+          seriesDefsRef.current[i][j] = def;
+        });
+      });
+      // Хребет общей оси времени: у него свой набор дат, и он тоже растёт.
+      if (spinesRef.current.length) {
+        const set = new Set<number>();
+        for (const p of panes) for (const d of p.series) for (const pt of d.data) set.add(pt.time);
+        const times = Array.from(set).sort((a, b) => a - b);
+        spinesRef.current.forEach((sp) => {
+          try { sp.setData(times.map((t) => ({ time: t as UTCTimestamp }))); } catch { /* снят */ }
+        });
+      }
+      // Первое время оси запоминаем и здесь: по нему МЕДЛЕННЫЙ путь считает
+      // сдвиг логических индексов после догрузки истории. Не обновишь — сдвиг
+      // посчитается от устаревшей даты и вернёт вид не туда.
+      prevFirstTimeRef.current = (() => {
+        let min: number | null = null;
+        for (const p of panes) for (const d of p.series) {
+          const t = d.data[0]?.time;
+          if (t != null && (min == null || t < min)) min = t;
+        }
+        return min;
+      })();
+      requestAnimationFrame(() => drawExpRef.current?.());
+      paintRowValuesRef.current?.(null);
+      drawShapesRef.current?.();
+      // Статичный вид обязан переподгоняться под новые данные; обычный — нет:
+      // серии живы, диапазон движок держит сам, трогать его нечем и незачем.
+      if (staticView) charts.forEach((ch) => ch.timeScale().fitContent());
+      else if (fitKey !== lastFitRef.current) {
+        lastFitRef.current = fitKey;
+        const total = Math.max(0, ...panes.flatMap((p) => p.series.map((x) => x.data.length)));
+        const lead0 = charts[charts.length - 1];
+        if (initialBars && total > initialBars) {
+          lead0.timeScale().setVisibleLogicalRange({ from: total - initialBars, to: total + 2 });
+        } else {
+          charts.forEach((ch) => ch.timeScale().fitContent());
+        }
+      }
+      return;
+    }
 
     apisRef.current.forEach((apis, i) => apis.forEach((s) => { try { charts[i]?.removeSeries(s); } catch { /* removed */ } }));
     apisRef.current = panes.map(() => []);
