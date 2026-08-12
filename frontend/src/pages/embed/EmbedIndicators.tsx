@@ -1064,6 +1064,12 @@ function IndicatorRow({ inst, api, value, bases }: {
     text: BASIS_BADGE[basis],
     title: bases?.find((b) => b.id === basis)?.label,
   };
+  // Базиса нет в текущем режиме виджета (например наложение по ОИ, а выбран
+  // режим «Покупки + Продажи» — единого ряда ОИ там нет): рисовать нечего.
+  // Раньше строка стояла как включённая, а линии не было — выглядело поломкой.
+  // Теперь показываем её ровно как выключенную глазиком; сохранённый visible
+  // не трогаем, вернулся режим — вернулась и линия.
+  const basisGone = !!bases && bases.length > 0 && !bases.some((b) => b.id === basis);
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
   // принимал бы за клик мимо любое нажатие внутри самого окна — оно закрывалось
@@ -1076,7 +1082,8 @@ function IndicatorRow({ inst, api, value, bases }: {
         badge={badge}
         value={inst.statusValue === false ? undefined : value}
         valueId={inst.id}
-        visible={inst.visible}
+        visible={inst.visible && !basisGone}
+        title={basisGone ? 'В этом режиме нет ряда для расчёта — индикатор скрыт' : undefined}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
         onRemove={() => api.remove(inst.id)}
@@ -1091,8 +1098,10 @@ function IndicatorRow({ inst, api, value, bases }: {
  *  подразумевается, и метка на каждой строке была бы шумом. */
 const BASIS_BADGE: Record<IndBasis, string> = { price: '', oi: 'ОИ' };
 
-function Row({ color, label, badge, value, valueId, visible, onToggle, onSettings, onRemove, menu }: {
+function Row({ color, label, badge, value, valueId, visible, title, onToggle, onSettings, onRemove, menu }: {
   color: string; label: string; value?: IndValue; valueId?: string; visible: boolean;
+  /** Подсказка на всю строку (например «нет данных в этом режиме»). */
+  title?: string;
   /** Метка базиса расчёта — см. BASIS_BADGE. */
   badge?: { text: string; title?: string };
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
@@ -1103,6 +1112,7 @@ function Row({ color, label, badge, value, valueId, visible, onToggle, onSetting
 }) {
   return (
     <div
+      title={title}
       style={{
         display: 'flex', alignItems: 'center', gap: 5, padding: '1px 6px 1px 4px', borderRadius: 6,
         background: 'color-mix(in srgb, var(--bg-secondary, #17161A) 72%, transparent)',
