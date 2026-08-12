@@ -262,12 +262,32 @@ export async function requestPasswordReset(email: string): Promise<void> {
   }
 }
 
-/** Смена пароля по коду из письма. Все сессии аккаунта при этом разлогиниваются. */
+/**
+ * Проверка кода отдельным шагом — до того, как просить придумать пароль.
+ * Неверный код тратит попытку так же, как в confirm.
+ */
+export async function verifyPasswordResetCode(email: string, code: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/password-reset/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  if (!response.ok) {
+    const message = await parseApiError(response, 'Не удалось проверить код');
+    throw new ApiError(response.status, message);
+  }
+}
+
+/**
+ * Смена пароля по коду. Гасит прежние сессии и возвращает НОВУЮ пару токенов —
+ * человек попадает сразу в аккаунт, без повторного входа с только что
+ * придуманным паролем.
+ */
 export async function confirmPasswordReset(
   email: string,
   code: string,
   newPassword: string,
-): Promise<void> {
+): Promise<{ access_token: string; refresh_token: string }> {
   const response = await apiFetch(`${API_BASE}/api/auth/password-reset/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -277,6 +297,7 @@ export async function confirmPasswordReset(
     const message = await parseApiError(response, 'Не удалось сменить пароль');
     throw new ApiError(response.status, message);
   }
+  return response.json();
 }
 
 // ==================== ИНСТРУМЕНТЫ ====================
