@@ -1060,9 +1060,10 @@ function IndicatorRow({ inst, api, value, bases }: {
   // Бейдж различает «MA 20» по цене и «MA 20» по ОИ — без него две одинаковые
   // строки в одном углу неотличимы. В строке места нет, поэтому короткий код
   // базиса, а полная подпись ряда («Чистая позиция») уходит в тултип.
+  const basisLabel = bases?.find((b) => b.id === basis)?.label;
   const badge = basis === 'price' ? undefined : {
-    text: BASIS_BADGE[basis],
-    title: bases?.find((b) => b.id === basis)?.label,
+    text: basisBadgeText(basis, basisLabel),
+    title: basisLabel ? `Считается от ряда «${basisLabel}»` : undefined,
   };
   // Базиса нет в текущем режиме виджета (например наложение по ОИ, а выбран
   // режим «Покупки + Продажи» — единого ряда ОИ там нет): рисовать нечего.
@@ -1097,6 +1098,22 @@ function IndicatorRow({ inst, api, value, bases }: {
 /** Короткий код базиса в строке легенды. Цена своего бейджа не имеет: она
  *  подразумевается, и метка на каждой строке была бы шумом. */
 const BASIS_BADGE: Record<IndBasis, string> = { price: '', oi: 'ОИ' };
+
+/** Бейдж должен называть КОНКРЕТНЫЙ ряд, а не базис вообще: «ОИ» одинаково
+ *  стояло и на средней по открытому интересу, и по чистой позиции, и по
+ *  покупкам — понять, что именно посчитано, было нельзя (фидбек Вадима).
+ *  Показатель называется полной подписью ряда, здесь ужимаем её до бейджа. */
+const OI_SHORT: Record<string, string> = {
+  'Открытый интерес': 'ОИ',
+  'Чистая позиция': 'Чист. поз.',
+  'Покупки': 'Покупки',
+  'Продажи': 'Продажи',
+  'Покупки + Продажи': 'Пок.+Прод.',
+};
+function basisBadgeText(basis: IndBasis, label?: string): string {
+  if (!label) return BASIS_BADGE[basis];
+  return OI_SHORT[label] ?? label;
+}
 
 function Row({ color, label, badge, value, valueId, visible, title, onToggle, onSettings, onRemove, menu }: {
   color: string; label: string; value?: IndValue; valueId?: string; visible: boolean;

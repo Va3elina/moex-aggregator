@@ -688,16 +688,26 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // приносят: панель ОИ и так добавлена строкой ниже. Поэтому фильтр по
   // «своим» панелям остаётся прежним, и множество номеров получается ровно то
   // же, что у сборки серий.
+  // ⚠️ Исключение из правила выше: у индикатора, чьего БАЗИСА в текущем режиме
+  // нет вовсе (наложение/панель по ОИ, а выбран режим «Покупки + Продажи» —
+  // единого ряда ОИ там не существует), панель не держим. Иначе оставалась
+  // пустая панель, которую ещё и можно тянуть за разделитель (фидбек Вадима).
+  // Строка такого индикатора тоже не рисуется (IndicatorRow), а сам он живёт
+  // в состоянии — вернулся режим, вернулись и панель, и строка.
+  const hasBasis = useCallback(
+    (i: { basis?: 'price' | 'oi' }) => indBases.some((b) => b.id === (i.basis ?? 'price')),
+    [indBases],
+  );
   const extraPanes = useMemo(() => {
     const used = [...new Set([
-      ...inds.list.filter((i) => i.pane > 0).map((i) => i.pane),
+      ...inds.list.filter((i) => i.pane > 0 && hasBasis(i)).map((i) => i.pane),
       ...(oiPaneEff > 0 ? [oiPaneEff] : []),
     ])].sort((a, b) => a - b);
     return used.map((pane) => ({
       pane,
       series: [...(pane === oiPaneEff ? oiOwn : []), ...(indSeries[pane] ?? [])],
     }));
-  }, [inds.list, indSeries, oiPaneEff, oiOwn]);
+  }, [inds.list, indSeries, oiPaneEff, oiOwn, hasBasis]);
   // Номер панели ≠ её индекс в стеке: номера не подряд (после удалений остаются
   // дыры), а осям алертов и уровням нужен именно индекс.
   const oiChartIndex = oiPaneEff === 0 ? 0 : extraPanes.findIndex((x) => x.pane === oiPaneEff) + 1;
