@@ -82,6 +82,15 @@ class User(Base):
     email_verify_attempts = Column(Integer, default=0, nullable=False)  # неверные попытки
     email_verify_sent_at = Column(DateTime(timezone=True), nullable=True)     # время последней отправки (кулдаун)
 
+    # === Восстановление пароля (миграция 049) ===
+    # Та же механика, что у email_verify_* выше: код на почту, TTL, счётчик
+    # неверных попыток, кулдаун повторной отправки. Заполняются только для
+    # тех, у кого есть hashed_password — чистым OAuth-юзерам сбрасывать нечего.
+    password_reset_code = Column(String(6), nullable=True)
+    password_reset_expires_at = Column(DateTime(timezone=True), nullable=True)
+    password_reset_attempts = Column(Integer, default=0, nullable=False, server_default="0")
+    password_reset_sent_at = Column(DateTime(timezone=True), nullable=True)
+
     # === Защита от брутфорса ===
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime(timezone=True), nullable=True)

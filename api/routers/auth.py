@@ -9,7 +9,9 @@ ENDPOINTS:
   POST /api/auth/logout    — выход (инвалидация refresh токена)
   GET  /api/auth/me        — информация о текущем пользователе
   PUT  /api/auth/profile   — обновление профиля
-  POST /api/auth/change-password — смена пароля
+  POST /api/auth/change-password — смена пароля (зная старый)
+  POST /api/auth/password-reset/request — код для забытого пароля
+  POST /api/auth/password-reset/confirm — смена пароля по коду
 
 БЕЗОПАСНОСТЬ:
 - Пароли хэшируются Argon2
@@ -42,10 +44,12 @@ from api.schemas.auth import (
     PasswordChange,
     AddEmailRequest,
     VerifyEmailRequest,
+    PasswordResetRequest,
+    PasswordResetConfirm,
 )
 
 # Email-сервис (SMTP Yandex 360)
-from api.services.email import send_verification_email
+from api.services.email import send_verification_email, send_password_reset_email
 
 # Безопасность
 from api.security import (
@@ -819,4 +823,164 @@ async def change_password(
         extra={"extra_data": {"event": "password_changed", "user_id": user.id}}
     )
 
+    return None
+
+# ============================================================================
+# ВОССТАНОВЛЕНИЕ ЗАБЫТОГО ПАРОЛЯ
+# ============================================================================
+#
+# Механика та же, что у подтверждения email: 6-значный код на почту, TTL 30 мин,
+# 5 попыток, кулдаун 60с между отправками (константы EMAIL_VERIFY_* переиспользуем
+# намеренно — два разных набора правил для двух одноразовых кодов рано или поздно
+# разъедутся).
+#
+# ⚠️ Оба эндпоинта отвечают ОДИНАКОВО независимо от того, существует ли аккаунт.
+# Иначе форма «забыли пароль» превращается в оракул для перебора: злоумышленник
+# скармливает список адресов и по ответу узнаёт, кто у нас зарегистрирован.
+
+@router.post(
+    "/password-reset/request",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Запросить код для смены забытого пароля",
+    responses={
+        204: {"description": "Если аккаунт существует — код отправлен на почту"},
+        429: {"description": "Слишком много запросов с этого IP"},
+    },
+)
+async def password_reset_request(
+    data: PasswordResetRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Отправляет код восстановления, если такой аккаунт есть и у него есть пароль.
+
+    Всегда 204 — по ответу нельзя понять, зарегистрирован ли адрес.
+    """
+    ip = get_client_ip(request)
+    if not check_ip_rate_limit(ip, max_attempts=10, window_minutes=5):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много запросов. Попробуйте через несколько минут.",
+        )
+
+    email = data.email.lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+
+    # Чистым OAuth-юзерам (hashed_password пуст) сбрасывать нечего — они входят
+    # через провайдера. Synthetic-адреса (Telegram/VK без почты) тоже мимо:
+    # письмо физически некуда слать.
+    if not user or not user.hashed_password or is_synthetic_oauth_email(user.email):
+        logger.info(
+            "Password reset requested for unusable account",
+            extra={"extra_data": {"event": "password_reset_noop", "ip": ip}},
+        )
+        return None
+
+    now = datetime.now(timezone.utc)
+    if user.password_reset_sent_at:
+        sent_at = user.password_reset_sent_at
+        if sent_at.tzinfo is None:
+            sent_at = sent_at.replace(tzinfo=timezone.utc)
+        if (now - sent_at).total_seconds() < EMAIL_VERIFY_RESEND_COOLDOWN_SEC:
+            # Кулдаун — молча выходим тем же 204: сообщать «подождите N секунд»
+            # значило бы подтвердить, что аккаунт существует.
+            return None
+
+    code = _generate_verify_code()
+    user.password_reset_code = code
+    user.password_reset_expires_at = now + timedelta(minutes=EMAIL_VERIFY_TTL_MIN)
+    user.password_reset_attempts = 0
+    user.password_reset_sent_at = now
+    db.commit()
+
+    background_tasks.add_task(
+        send_password_reset_email, user.email, code, getattr(user, "display_name", None)
+    )
+    logger.info(
+        f"Password reset code issued for user {user.id}",
+        extra={"extra_data": {"event": "password_reset_requested", "user_id": user.id, "ip": ip}},
+    )
+    return None
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Сменить пароль по коду из письма",
+    responses={
+        204: {"description": "Пароль изменён, все сессии разлогинены"},
+        400: {"description": "Неверный или истёкший код"},
+        429: {"description": "Исчерпаны попытки ввода кода"},
+    },
+)
+async def password_reset_confirm(
+    data: PasswordResetConfirm,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Устанавливает новый пароль по коду и разлогинивает все сессии аккаунта."""
+    ip = get_client_ip(request)
+    if not check_ip_rate_limit(ip, max_attempts=20, window_minutes=5):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много попыток. Попробуйте через несколько минут.",
+        )
+
+    # Единая формулировка на все случаи: не существует / нет кода / истёк /
+    # не совпал — снаружи неразличимы.
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Неверный или истёкший код. Запросите новый.",
+    )
+
+    email = data.email.lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.hashed_password or not user.password_reset_code:
+        raise invalid
+    if not user.password_reset_expires_at:
+        raise invalid
+
+    expires = user.password_reset_expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires:
+        raise invalid
+
+    if user.password_reset_attempts >= EMAIL_VERIFY_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Исчерпаны попытки ввода кода. Запросите новый.",
+        )
+
+    # compare_digest, а не == : сравнение по времени не должно подсказывать,
+    # сколько первых цифр угадано.
+    if not secrets.compare_digest(user.password_reset_code, data.code):
+        user.password_reset_attempts += 1
+        db.commit()
+        raise invalid
+
+    user.hashed_password = hash_password(data.new_password)
+    user.password_reset_code = None
+    user.password_reset_expires_at = None
+    user.password_reset_attempts = 0
+    # Сброс пароля снимает и блокировку по неудачным входам: человек доказал
+    # владение почтой, держать его в лок-ауте больше незачем.
+    user.failed_login_attempts = 0
+    user.locked_until = None
+
+    # ⚠️ Отзываем ВСЕ refresh-токены. Если пароль меняют потому, что аккаунт
+    # увели, чужая сессия обязана умереть вместе со старым паролем — иначе
+    # злоумышленник продолжит обновлять токены как ни в чём не бывало.
+    revoked = (
+        db.query(RefreshToken)
+        .filter(RefreshToken.user_id == user.id, RefreshToken.is_revoked.is_(False))
+        .update({"is_revoked": True}, synchronize_session=False)
+    )
+    db.commit()
+
+    logger.info(
+        f"Password reset completed for user {user.id} ({revoked} sessions revoked)",
+        extra={"extra_data": {"event": "password_reset_completed", "user_id": user.id, "ip": ip}},
+    )
     return None

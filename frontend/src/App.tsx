@@ -55,6 +55,7 @@ import RefundPage from './pages/RefundPage';
 import DeliveryPage from './pages/DeliveryPage';
 import AddEmailPage from './pages/AddEmailPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import FAQPage from './pages/FAQPage';
 import GlossaryPage from './pages/GlossaryPage';
 import { API_CSV_ENABLED } from './config/features';
@@ -221,6 +222,7 @@ export default function App() {
           {/* Подтверждение email кодом из письма (email+password юзеры).
               Без Layout — fullscreen форма. Редирект сюда после регистрации. */}
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>

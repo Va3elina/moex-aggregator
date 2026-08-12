@@ -243,6 +243,42 @@ export async function resendVerification(): Promise<void> {
   }
 }
 
+/**
+ * Запрос кода для смены забытого пароля.
+ *
+ * Бэкенд отвечает 204 и когда аккаунта нет — намеренно, чтобы форма не работала
+ * оракулом «зарегистрирован ли такой адрес». Поэтому UI после успеха говорит
+ * «если аккаунт есть — код отправлен», а не «код отправлен».
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/password-reset/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const message = await parseApiError(response, 'Не удалось отправить код');
+    throw new ApiError(response.status, message);
+  }
+}
+
+/** Смена пароля по коду из письма. Все сессии аккаунта при этом разлогиниваются. */
+export async function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, new_password: newPassword }),
+  });
+  if (!response.ok) {
+    const message = await parseApiError(response, 'Не удалось сменить пароль');
+    throw new ApiError(response.status, message);
+  }
+}
+
 // ==================== ИНСТРУМЕНТЫ ====================
 
 export async function getInstruments(

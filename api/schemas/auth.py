@@ -171,6 +171,38 @@ class VerifyEmailRequest(BaseModel):
         return v
 
 
+# === ВОССТАНОВЛЕНИЕ ПАРОЛЯ ===
+
+class PasswordResetRequest(BaseModel):
+    """Запрос кода для смены забытого пароля (эндпоинт отвечает 200 всегда)."""
+    email: EmailStr = Field(..., description="Email аккаунта", examples=["user@example.com"])
+
+
+class PasswordResetConfirm(BaseModel):
+    """Смена пароля по коду из письма.
+
+    Требования к новому паролю те же, что при регистрации: только длина от 8.
+    Ужесточать правила именно здесь нельзя — человек и так восстанавливает
+    доступ, дополнительный барьер тут дороже выигрыша в стойкости.
+    """
+    email: EmailStr = Field(..., description="Email аккаунта")
+    code: str = Field(..., description="6-значный код из письма", examples=["123456"])
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Новый пароль (минимум 8 символов)",
+    )
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.isdigit() and len(v) == 6):
+            raise ValueError("Код должен состоять из 6 цифр")
+        return v
+
+
 # === СМЕНА ПАРОЛЯ ===
 
 class PasswordChange(BaseModel):

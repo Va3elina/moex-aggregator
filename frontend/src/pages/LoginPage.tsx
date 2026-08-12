@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { safeInternalPath, setPostLoginNext } from '../utils/postLoginRedirect';
@@ -451,6 +451,19 @@ export default function LoginPage() {
                         )}
                     </button>
                 </form>
+
+                {/* Забыли пароль — только на входе: в режиме регистрации нечего восстанавливать */}
+                {mode === 'login' && (
+                    <div className="mt-4 text-center">
+                        <Link
+                            to="/forgot-password"
+                            className="text-sm font-medium hover:underline"
+                            style={{ color: 'var(--accent)' }}
+                        >
+                            Забыли пароль?
+                        </Link>
+                    </div>
+                )}
 
                 {/* Toggle mode */}
                 <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>

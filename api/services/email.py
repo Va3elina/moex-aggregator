@@ -46,16 +46,20 @@ SITE_URL = "https://framedata.ru"
 LOGO_PATH = Path(__file__).parent / "assets" / "logo-email.png"
 
 # Шапка писем — общая для всех шаблонов, чтобы бренд не разъезжался по файлу.
+#
+# ⚠️ Одна строка, обе ячейки выровнены по ВЕРХУ, а line-height названия равен
+# высоте логотипа (28px) — так их центры совпадают в любом почтовом клиенте.
+# vertical-align:middle здесь не годится: он считает высоту по всей ячейке, и
+# логотип уезжает вниз, стоит появиться второй строке текста.
 EMAIL_HEADER = """\
         <tr><td style="padding:32px 32px 8px;">
-          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="padding-right:10px;vertical-align:middle;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td width="28" style="padding-right:12px;vertical-align:top;">
               <img src="cid:logo" width="28" height="28" alt=""
-                   style="display:block;width:28px;height:28px;">
+                   style="display:block;width:28px;height:28px;border:0;">
             </td>
-            <td style="vertical-align:middle;">
-              <div style="font-size:22px;font-weight:800;color:#15110B;letter-spacing:0.02em;">FRAME</div>
-              <div style="font-size:13px;color:#6B6357;margin-top:2px;">аналитика Московской биржи</div>
+            <td style="vertical-align:top;">
+              <div style="font-size:22px;line-height:28px;font-weight:800;color:#15110B;letter-spacing:0.02em;">FRAME</div>
             </td>
           </tr></table>
         </td></tr>"""
@@ -114,8 +118,7 @@ def send_verification_email(to_email: str, code: str, display_name: str | None =
         f"    {code}\n\n"
         f"Код действует 30 минут.\n\n"
         f"Если вы не регистрировались на {SITE_URL}, просто проигнорируйте это письмо.\n\n"
-        f"— FRAME, аналитика Московской биржи\n"
-        f"{SITE_URL}\n"
+        f"— FRAME\n{SITE_URL}\n"
     )
 
     html_body = f"""\
@@ -175,7 +178,7 @@ def send_trial_ending_email(
         f"подписка станет платной.\n\n"
         f"Если не хотите продолжать — отмените подписку и отвяжите карту в профиле "
         f"до {charge_date}, тогда списания не будет:\n{profile_url}\n\n"
-        f"— FRAME, аналитика Московской биржи\n{SITE_URL}\n"
+        f"— FRAME\n{SITE_URL}\n"
     )
 
     html_body = f"""\
@@ -206,6 +209,63 @@ def send_trial_ending_email(
             {charge_date} — списания не будет.
           </p>
           <a href="{profile_url}" style="display:inline-block;background:#FF5C2B;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 22px;border-radius:10px;">Управление подпиской</a>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px;">
+          <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">framedata.ru</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    return _send(to_email, subject, text_body, html_body)
+
+
+def send_password_reset_email(to_email: str, code: str, display_name: str | None = None) -> bool:
+    """Письмо с 6-значным кодом для восстановления пароля.
+
+    Отдельный шаблон, а не переиспользование письма верификации: коды разные
+    по смыслу, и человек должен понимать, что именно он подтверждает. Плюс
+    здесь обязательна строчка «если это не вы» — письмо может прийти тому,
+    чей адрес просто ввели в форму.
+    """
+    subject = f"Код для смены пароля: {code} — FRAME"
+    greeting = f"Здравствуйте, {display_name}!" if display_name else "Здравствуйте!"
+
+    text_body = (
+        f"{greeting}\n\n"
+        f"Вы запросили восстановление пароля на FRAME.\n"
+        f"Код для смены пароля:\n\n"
+        f"    {code}\n\n"
+        f"Код действует 30 минут.\n\n"
+        f"Если вы не запрашивали смену пароля — просто проигнорируйте это письмо, "
+        f"пароль останется прежним.\n\n"
+        f"— FRAME\n{SITE_URL}\n"
+    )
+
+    html_body = f"""\
+<!doctype html>
+<html lang="ru"><body style="margin:0;padding:0;background:#0B0D12;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0D12;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+{EMAIL_HEADER}
+        <tr><td style="padding:8px 32px 0;">
+          <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
+          <p style="font-size:15px;color:#2A241B;margin:0 0 20px;">Код для смены пароля:</p>
+        </td></tr>
+        <tr><td style="padding:0 32px;">
+          <div style="background:#15110B;border-radius:12px;padding:20px;text-align:center;">
+            <span style="font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace;font-size:34px;font-weight:700;letter-spacing:10px;color:#FF5C2B;">{code}</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:20px 32px 0;">
+          <p style="font-size:13px;color:#6B6357;margin:0;line-height:1.5;">
+            Код действует 30&nbsp;минут. Если вы не запрашивали смену пароля — просто
+            проигнорируйте это письмо, пароль останется прежним.
+          </p>
         </td></tr>
         <tr><td style="padding:24px 32px 32px;">
           <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
