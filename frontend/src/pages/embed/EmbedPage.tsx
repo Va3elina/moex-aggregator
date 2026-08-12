@@ -14,9 +14,14 @@
  *
  * НЕ в навигации сайта. План: .claude/TERMINAL_EXTENSION_PLAN.md
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useTheme, type ThemeId } from '../../contexts/ThemeContext';
+import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
+import { SandboxWindowCtx, type SandboxWindowControls } from './EmbedToolbar';
+// Токены и хром оконной панели. Все селекторы файла скоупнуты на .sb-* → на
+// обычный embed (без ?shell=win) не влияют.
+import '../sandbox/sandbox.css';
 import { exchangeExtensionToken } from '../../services/api';
 import EmbedOpenInterest from './EmbedOpenInterest';
 import EmbedBuffett from './EmbedBuffett';
@@ -50,6 +55,58 @@ export default function EmbedPage() {
   }, [params]);
   const { setTheme } = useTheme();
   const [auth, setAuth] = useState<AuthState>('loading');
+
+  // ── Оконный режим (?shell=win) ────────────────────────────────────────────
+  // Расширение просит рендерить панель так же, как это делает наш терминал
+  // (/sandbox): единая шапка вместо двойной, оконные кнопки в тулбаре графика,
+  // общие настройки графиков. Реализуется подстановкой тех же контекстов —
+  // никаких вторых версий индикаторов.
+  const shellWin = params.get('shell') === 'win';
+  const [maximized, setMaximized] = useState(false);
+
+  const post = useCallback((action: string, payload?: Record<string, unknown>) => {
+    if (window.parent === window) return;
+    window.parent.postMessage({ source: 'frame-embed', type: 'win', action, ...payload }, '*');
+  }, []);
+
+  const winControls = useMemo<SandboxWindowControls>(() => ({
+    onClose: () => post('close'),
+    onExpand: () => post('expand'),
+    maximized,
+    onResize: (w, h) => post('resize', { w, h }),
+    onDragStart: (x, y) => post('drag-start', { x, y }),
+  }), [post, maximized]);
+
+  // Оболочка сообщает фактическое состояние окна (развёрнуто/нет) — иконка ⤢/⤡
+  // должна отражать правду, а не наш локальный оптимизм: разворот мог не
+  // произойти (например, панель уже во весь экран).
+  useEffect(() => {
+    if (!shellWin) return;
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { source?: string; type?: string; maximized?: boolean } | null;
+      if (!d || d.source !== 'frame-ext' || d.type !== 'win-state') return;
+      if (e.source !== window.parent) return;
+      setMaximized(!!d.maximized);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [shellWin]);
+
+  // Общие настройки графиков приходят из попапа расширения через URL (только
+  // строки — урок кавычек в LS-ключах, см. embedPersist.ts). Нет параметра →
+  // undefined → движок работает со своими дефолтами.
+  const chartPrefs = useMemo<ChartPrefs>(() => {
+    const bool = (k: string) => (params.get(k) == null ? undefined : params.get(k) === '1');
+    const lw = Number(params.get('lw'));
+    return {
+      lineWidth: lw === 1 || lw === 2 || lw === 3 ? (lw as 1 | 2 | 3) : undefined,
+      crosshair: bool('ch'),
+      grid: bool('gr'),
+      lastValue: bool('lv'),
+      // Панель в терминале и так тесная — водяной знак только мешает (как в /sandbox).
+      watermark: false,
+    };
+  }, [params]);
 
   // Синхронизируем тему контекста (bespoke-компоненты читают её через useTheme()).
   useEffect(() => {
@@ -108,18 +165,23 @@ export default function EmbedPage() {
     };
   }, [token]);
 
-  return (
+  const body = (
     <div
       data-embed-root={indicator || 'unknown'}
       data-embed-auth={auth}
+      className={shellWin ? 'sb-panel' : undefined}
+      data-sbtheme={shellWin ? (theme === 'editorial-light' ? 'light' : 'dark') : undefined}
       style={{
         width: '100vw',
         height: '100vh',
-        background: 'var(--bg-base)',
+        background: shellWin ? 'var(--bg)' : 'var(--bg-base)',
         color: 'var(--text-primary)',
         overflow: 'hidden',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif',
         boxSizing: 'border-box',
+        // Окно рисует оболочка (widget.js): рамка/тень/скругление — на ней, иначе
+        // получилась бы «карточка в карточке». Здесь только сама поверхность.
+        border: shellWin ? 'none' : undefined,
       }}
     >
       {auth === 'loading' && <EmbedCenter text="Загрузка…" />}
@@ -127,6 +189,21 @@ export default function EmbedPage() {
       {auth === 'expired' && <EmbedExpired />}
       {auth === 'ok' && renderIndicator(indicator)}
     </div>
+  );
+
+  // Обычный embed (shareable-ссылка, старые сборки расширения) — как было.
+  if (!shellWin) return body;
+
+  // Оконный режим: тот же контекст, что даёт панели песочница, — единая шапка
+  // (грип + ⤢ + × прямо в тулбаре графика), компактная кнопка актива, палитра
+  // макета через .sb-panel и общие настройки графиков. Индикаторы не трогаем:
+  // весь оконный UI у них уже написан «есть контекст → рисуем».
+  return (
+    <ChartPrefsCtx.Provider value={chartPrefs}>
+      <SandboxWindowCtx.Provider value={winControls}>
+        {body}
+      </SandboxWindowCtx.Provider>
+    </ChartPrefsCtx.Provider>
   );
 }
 

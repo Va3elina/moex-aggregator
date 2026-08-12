@@ -39,6 +39,12 @@ export interface SandboxWindowControls {
    *  SandboxPage сам клампит к границам холста и MINW/MINH; на сайте/расширении
    *  контекста нет → вызов недоступен, embed просто не резайзит. */
   onResize?: (w: number, h: number) => void;
+  /** Нажали на грип шапки. Нужен ТОЛЬКО оконному режиму расширения: там панель
+   *  живёт в iframe, и оболочка сама поймать pointerdown на грипе не может —
+   *  embed сообщает ей экранные координаты, дальше тянет оболочка (см. EmbedPage
+   *  и widget.js dragFromEmbed). В песочнице панель тянется своим обработчиком
+   *  на контейнере, поэтому поле не задаётся. */
+  onDragStart?: (screenX: number, screenY: number) => void;
 }
 export const SandboxWindowCtx = createContext<SandboxWindowControls | null>(null);
 import InstrumentIcon from '../../components/InstrumentIcon';
@@ -125,7 +131,13 @@ export function EmbedFrame({
         {/* Грип-хват окна ПЕСОЧНИЦЫ: тулбар бывает забит кнопками и «взять» окно не за что.
             Не button → проходит фильтр onDragStart (тянем только не-интерактивное). Только в песочнице. */}
         {win && (
-          <div title="Перетащить окно" aria-hidden style={{ display: 'flex', alignItems: 'center', color: 'var(--muted, #9A958C)', cursor: 'grab', flexShrink: 0, marginLeft: -2 }}>
+          <div
+            title="Перетащить окно"
+            aria-hidden
+            onPointerDown={win.onDragStart ? (e) => { e.preventDefault(); win.onDragStart!(e.screenX, e.screenY); } : undefined}
+            onDoubleClick={win.onExpand}
+            style={{ display: 'flex', alignItems: 'center', color: 'var(--muted, #9A958C)', cursor: 'grab', flexShrink: 0, marginLeft: -2 }}
+          >
             <GripVertical size={15} />
           </div>
         )}

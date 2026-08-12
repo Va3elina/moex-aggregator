@@ -23,8 +23,10 @@
     { id: 'buffett', label: 'Индикатор Баффетта', group: 'market' },
     { id: 'strength', label: 'Сила рынка', group: 'market' },
     { id: 'funds-money', label: 'Фонды', group: 'market' },
+    { id: 'fund-movers', label: 'Покупки фондов', group: 'market' },
     { id: 'fund-trades', label: 'Сделки фондов', group: 'market' },
-    { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' }
+    { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' },
+    { id: 'heatmap', label: 'Карта рынка', group: 'market' }
   ];
 
   // deep_link.route (из AnomalyItem) → id embed-индикатора. Клик по сигналу в
@@ -32,11 +34,23 @@
   var ROUTE_TO_ID = {
     '/oi': 'oi', '/funds-money': 'funds-money', '/seasonality': 'seasonality',
     '/strength': 'strength', '/buffett': 'buffett', '/cbr-flows': 'cbr-flows',
-    '/fund-trades': 'fund-trades'
+    '/fund-trades': 'fund-trades', '/fund-movers': 'fund-movers',
+    '/heatmap': 'heatmap', '/screener': 'screener',
+    // Дайджест «Рынок штормит» в тосте: колокола в панели нет → открываем ленту.
+    '/signals': 'signals'
   };
 
   var DEFAULT_THEME = 'editorial-dark';
   var KEY_PANELS = 'framePanels'; // [{id,x,y,w,h,theme}]
+  var KEY_PREFS = 'framePrefs';   // общие настройки графиков (попап расширения)
+
+  // Оконный режим панели: embed рисует ЕДИНУЮ шапку (грип + контролы индикатора +
+  // ⤢ + ×) прямо в тулбаре графика — ровно как панель нашего терминала /sandbox.
+  // Своя шапка оболочки (.fw-head) при этом не нужна: она была вторым заголовком.
+  var WIN_SHELL = true;
+
+  // Дефолты графиков — те же, что в «Настройках песочницы».
+  var DEF_PREFS = { lineW: 2, crosshair: true, grid: true, lastValue: true, theme: DEFAULT_THEME };
 
   // Стартовый размер панели по индикатору — чтобы график+оси влезали сразу,
   // без ручного ресайза (фидбек Вадима «нужно развернуть чтобы было видно всё»).
@@ -49,7 +63,9 @@
     'strength':    { w: 600, h: 620 }, // два графика (IMOEX + breadth) — выше
     'funds-money': { w: 660, h: 560 },
     'cbr-flows':   { w: 660, h: 580 },
-    'fund-trades': { w: 560, h: 560 }
+    'fund-trades': { w: 560, h: 560 },
+    'fund-movers': { w: 560, h: 560 },
+    'heatmap':     { w: 680, h: 560 }  // плитки — шире, чем график
   };
   var DEFAULT_SIZE = { w: 620, h: 560 };
 
@@ -164,10 +180,17 @@
       var item = h('button', { class: 'fw-item', 'data-id': ind.id }, [h('span', { class: 'fw-d' }), ind.label]);
       menu.appendChild(item);
     });
+    // Тема панелей — в меню, а не в шапке каждой панели: в оконном режиме своей
+    // шапки у панели нет, а тема в нашем терминале и так общая для всех окон.
+    var themeItem = h('button', { class: 'fw-item', 'data-a': 'theme-all' },
+      [h('span', { class: 'fw-d' }), 'Тема панелей']);
+    menu.appendChild(h('div', { class: 'fw-grp', text: 'Вид' }));
+    menu.appendChild(themeItem);
     shadow.appendChild(menu);
     pageRoot.appendChild(host);
 
     var extToken = null;
+    var prefs = { lineW: DEF_PREFS.lineW, crosshair: DEF_PREFS.crosshair, grid: DEF_PREFS.grid, lastValue: DEF_PREFS.lastValue };
     var panels = []; // {id, el, state, reload}
     var zTop = 2147483600;
 
@@ -182,6 +205,16 @@
       // на первый рендер панели, дальше embed сам персистит выбор в pid-LS (см.
       // reload() — на смену темы/токена extra не шлём, чтобы не перебивать выбор юзера).
       var q = '?theme=' + theme + (pid ? '&pid=' + encodeURIComponent(pid) : '');
+      // Оконный режим + общие настройки графиков (попап). Только скаляры в query —
+      // embed читает их как строки, JSON тут когда-то уже стрелял в ногу (кавычки
+      // уехали в API-параметр → 422).
+      if (WIN_SHELL) {
+        q += '&shell=win';
+        q += '&lw=' + (prefs.lineW || DEF_PREFS.lineW);
+        q += '&ch=' + (prefs.crosshair ? 1 : 0);
+        q += '&gr=' + (prefs.grid ? 1 : 0);
+        q += '&lv=' + (prefs.lastValue ? 1 : 0);
+      }
       if (extra) Object.keys(extra).forEach(function (k) {
         var v = extra[k];
         if (v != null && v !== '') q += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(v);
@@ -217,27 +250,43 @@
             top: Math.max(0, fr.top), bottom: Math.min(window.innerHeight, fr.bottom)
           };
         }
-        var nodes = document.querySelectorAll('.react-draggable');
+        // Виджеты терминала. `.react-draggable` — исходный признак, но вёрстка
+        // Т-Банка меняется (класс мог уехать на внутренний узел или исчезнуть),
+        // а без целей ВЕРТИКАЛЬНЫЙ магнит просто переставал существовать —
+        // горизонталь при этом жила за счёт краёв поля. Поэтому селекторов
+        // несколько, и дубликаты (вложенные совпадения) схлопываем по rect'у.
+        var nodes = document.querySelectorAll('.react-draggable, [data-widget-id], [class*="widgetWrap"]');
+        var seen = {};
         for (var i = 0; i < nodes.length; i++) {
           var r = nodes[i].getBoundingClientRect();
-          if (r.width > 120 && r.height > 80) widgets.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+          // Порог только отсекает мусор (иконки/кнопки), а не «узкие» виджеты:
+          // прежние 120×80 выбрасывали, например, низкие ленты.
+          if (r.width < 80 || r.height < 40) continue;
+          var key = Math.round(r.left) + ':' + Math.round(r.top) + ':' + Math.round(r.width) + ':' + Math.round(r.height);
+          if (seen[key]) continue;
+          seen[key] = 1;
+          widgets.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
         }
       } catch (e) { /* терминал перерисовался — fallback на окно */ }
       if (!field) field = { left: MARGIN, right: window.innerWidth - MARGIN, top: MARGIN, bottom: window.innerHeight - MARGIN };
       return { field: field, widgets: widgets };
     }
 
-    // Магнит при перетаскивании. ВЕРТИКАЛЬ (верх/низ) — ТОЛЬКО к краям виджетов
-    // терминала и соседних панелей. Верх/низ «поля» (widgetsWrap) — это тулбар-
-    // вкладки сверху и статус-бар снизу; виджеты часто стоят НИЖЕ верха поля, и
-    // тогда панель липла на ~20px выше шапки виджета (фидбек Вадима «не та шапка»).
-    // ГОРИЗОНТАЛЬ — стороны поля (стенки экрана) + виджеты/панели. Из всех целей в
-    // радиусе SNAP берём БЛИЖАЙШУЮ. env кешируется на старте drag.
+    // Магнит при перетаскивании. Цели — края «поля» терминала (внутренняя рабочая
+    // область БЕЗ тулбаров и статус-бара), края виджетов терминала и края соседних
+    // наших панелей. Из всех целей в радиусе SNAP берём БЛИЖАЙШУЮ; env кешируется
+    // на старте drag.
+    //
+    // Раньше `ys` намеренно начинался пустым (верх/низ поля исключались, чтобы
+    // панель не липла выше шапки виджета). Побочный эффект: когда виджеты не
+    // находились селектором, вертикального магнита не оставалось вообще — по бокам
+    // липло, вверх/вниз нет (фидбек Вадима). Теперь верх/низ поля — такие же цели:
+    // это именно рабочая область (widgetsWrap), а не тулбар.
     function snapMove(st, self, env) {
       env = env || getSnapEnv();
       var f = env.field;
       var xs = [f.left, f.right]; // цели для левого/правого края панели
-      var ys = [];                // цели для верхнего/нижнего края (без краёв поля)
+      var ys = [f.top, f.bottom]; // цели для верхнего/нижнего края
       function add(L, R, T, B) { xs.push(L, R); ys.push(T, B); }
       env.widgets.forEach(function (w) { add(w.left, w.right, w.top, w.bottom); });
       panels.forEach(function (p) { if (p.state !== self) { var s = p.state; add(s.x, s.x + s.w, s.y, s.y + s.h); } });
@@ -256,12 +305,11 @@
     }
 
     // Магнит при ресайзе — липнут ТОЛЬКО тянущиеся края (dir: n/s/e/w и их пары).
-    // По горизонтали цели — стенки поля + края виджетов/панелей; по вертикали только
-    // виджеты/панели (верх/низ поля = тулбар и статус-бар, к ним не липнем).
+    // Набор целей тот же, что у snapMove (включая верх/низ поля — см. коммент там).
     function snapResize(st, env, dir) {
       env = env || getSnapEnv();
       var f = env.field;
-      var xs = [f.left, f.right], ys = [];
+      var xs = [f.left, f.right], ys = [f.top, f.bottom];
       env.widgets.forEach(function (w) { xs.push(w.left, w.right); ys.push(w.top, w.bottom); });
       panels.forEach(function (p) { if (p.state !== st) { var s = p.state; xs.push(s.x, s.x + s.w); ys.push(s.y, s.y + s.h); } });
       function nearest(list, val) {
@@ -316,7 +364,7 @@
       var ind = INDICATORS.find(function (x) { return x.id === id; });
       if (!ind) return;
       var sz = SIZES[id] || DEFAULT_SIZE;
-      var st = saved || { id: id, x: null, y: null, w: sz.w, h: sz.h, theme: DEFAULT_THEME };
+      var st = saved || { id: id, x: null, y: null, w: sz.w, h: sz.h, theme: prefs.theme || DEFAULT_THEME };
       st.id = id;
       // Стабильный id панели: у новых — генерим, у восстановленных без pid (старые
       // сохранения) — тоже, тогда окно засидится глобальными настройками индикатора
@@ -335,7 +383,10 @@
       var head = h('div', { class: 'fw-head' }, [dot, title, beta, ctrls]);
       var iframe = h('iframe', { class: 'fw-iframe', title: 'FRAME · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
-      var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body]);
+      // В оконном режиме шапки оболочки нет вовсе — грип/⤢/× рисует сам embed в
+      // строке тулбара (та же единая шапка, что у панели /sandbox).
+      var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme },
+        WIN_SHELL ? [body] : [head, body]);
       var DIRS = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'];
       DIRS.forEach(function (d) { el.appendChild(h('div', { class: 'fw-rz fw-rz-' + d, 'data-dir': d })); });
 
@@ -348,10 +399,23 @@
       // Разворот НА ВЕСЬ ТЕРМИНАЛ (не новая вкладка): панель растягивается на поле
       // виджетов терминала, повторный клик возвращает прежнюю геометрию.
       function applyMax() { var r = fieldRect(); st.x = r.x; st.y = r.y; st.w = r.w; st.h = r.h; applyLayout(); }
+      // Иконка ⤢/⤡ живёт ВНУТРИ iframe (единая шапка) — состояние окна знает только
+      // оболочка, поэтому сообщаем его вниз. Свой .fw-head в этом режиме не рисуется,
+      // но кнопки на нём держим синхронными: старые сборки/фолбэк.
+      function notifyWinState() {
+        try {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.postMessage(
+              { source: 'frame-ext', type: 'win-state', maximized: !!st.max }, EMBED_BASE);
+          }
+        } catch (e) { /* iframe ещё не загружен */ }
+      }
+      iframe.addEventListener('load', notifyWinState);
       function syncMaxBtn() {
         el.setAttribute('data-max', st.max ? '1' : '0');
         bMax.textContent = st.max ? '⤡' : '⤢';
         bMax.title = st.max ? 'Свернуть к прежнему размеру' : 'Развернуть на весь терминал';
+        notifyWinState();
       }
       function toggleMax() {
         if (st.max) {
@@ -418,8 +482,40 @@
         hEl.addEventListener('pointermove', mv); hEl.addEventListener('pointerup', up); hEl.addEventListener('pointercancel', up);
       });
 
+      // ── Перетаскивание за грип, который живёт ВНУТРИ iframe ──
+      // Мышь после pointerdown обрабатывает вложенный документ, и родитель не видит
+      // ни одного pointermove. Приём: на время drag'а гасим у iframe pointer-events —
+      // хит-тест начинает проваливаться мимо него, и события снова приходят нам.
+      // Координаты берём ЭКРАННЫЕ (screenX/Y): они одинаковы в обоих документах,
+      // в отличие от clientX/Y, сдвинутых на положение iframe.
+      function dragFromEmbed(sx, sy) {
+        if (st.max) return;
+        var ox = st.x, oy = st.y;
+        var env = getSnapEnv();
+        iframe.style.pointerEvents = 'none';
+        function mv(ev) {
+          st.x = ox + (ev.screenX - sx); st.y = oy + (ev.screenY - sy);
+          clampPanel(st); snapMove(st, st, env);
+          el.style.left = st.x + 'px'; el.style.top = st.y + 'px';
+        }
+        function up() {
+          window.removeEventListener('pointermove', mv, true);
+          window.removeEventListener('pointerup', up, true);
+          window.removeEventListener('pointercancel', up, true);
+          iframe.style.pointerEvents = '';
+          persist();
+        }
+        window.addEventListener('pointermove', mv, true);
+        window.addEventListener('pointerup', up, true);
+        window.addEventListener('pointercancel', up, true);
+      }
+
       shadow.appendChild(el);
-      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout, applyMax: applyMax, iframe: iframe };
+      var panel = {
+        id: id, el: el, state: st, reload: reload, applyLayout: applyLayout,
+        applyMax: applyMax, iframe: iframe, toggleMax: toggleMax, toFront: toFront,
+        dragFromEmbed: dragFromEmbed, notifyWinState: notifyWinState,
+      };
       panels.push(panel);
       return panel;
     }
@@ -444,6 +540,19 @@
     function closeMenu() { menu.classList.remove('open'); }
     menu.addEventListener('click', function (e) {
       var it = e.target.closest('.fw-item'); if (!it) return;
+      if (it.getAttribute('data-a') === 'theme-all') {
+        prefs.theme = (prefs.theme || DEFAULT_THEME) === 'editorial-dark' ? 'editorial-light' : 'editorial-dark';
+        menu.setAttribute('data-theme', prefs.theme);
+        panels.forEach(function (p) {
+          p.state.theme = prefs.theme;
+          p.el.setAttribute('data-theme', prefs.theme);
+          p.reload();
+        });
+        lsSet(KEY_PREFS, prefs);
+        persist();
+        closeMenu();
+        return;
+      }
       spawnPanel(it.getAttribute('data-id'));
       persist();
       closeMenu();
@@ -480,10 +589,25 @@
     // рендер панели на этом активе (дальше embed персистит сам).
     window.addEventListener('message', function (e) {
       var d = e.data;
-      if (!d || d.source !== 'frame-embed' || d.type !== 'open-signal') return;
+      if (!d || d.source !== 'frame-embed') return;
       if (e.origin !== EMBED_BASE) return;
-      var fromOurs = panels.some(function (p) { return p.iframe && p.iframe.contentWindow === e.source; });
-      if (!fromOurs) return;
+      var from = null;
+      panels.forEach(function (p) { if (p.iframe && p.iframe.contentWindow === e.source) from = p; });
+      if (!from) return;
+
+      // Оконные команды единой шапки (кнопки нарисованы внутри iframe).
+      if (d.type === 'win') {
+        if (d.action === 'close') removePanel(from);
+        else if (d.action === 'expand') from.toggleMax();
+        else if (d.action === 'drag-start') { from.toFront(); from.dragFromEmbed(d.x, d.y); }
+        else if (d.action === 'resize' && !from.state.max) {
+          if (typeof d.w === 'number') from.state.w = d.w;
+          if (typeof d.h === 'number') from.state.h = d.h;
+          clampPanel(from.state); from.applyLayout(); persist();
+        }
+        return;
+      }
+      if (d.type !== 'open-signal') return;
       var dl = d.deepLink || {};
       var id = ROUTE_TO_ID[dl.route];
       if (!id) return;
@@ -499,15 +623,26 @@
     });
 
     // Загрузка токена + восстановление панелей.
-    Promise.all([getExtToken(), lsGet(KEY_PANELS)]).then(function (arr) {
+    Promise.all([getExtToken(), lsGet(KEY_PANELS), lsGet(KEY_PREFS)]).then(function (arr) {
       extToken = arr[0];
+      var saved = arr[2];
+      if (saved) Object.keys(prefs).forEach(function (k) { if (saved[k] != null) prefs[k] = saved[k]; });
+      if (saved && saved.theme) { prefs.theme = saved.theme; menu.setAttribute('data-theme', saved.theme); }
       (arr[1] || []).forEach(function (s) { spawnPanel(s.id, s); });
     });
     // Смена токена в popup → перезагрузить все панели.
     try {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener(function (ch, area) {
-          if (area === 'local' && ch.frameToken) { extToken = ch.frameToken.newValue || null; reloadAll(); }
+          if (area !== 'local') return;
+          if (ch.frameToken) { extToken = ch.frameToken.newValue || null; reloadAll(); }
+          // Настройки графиков меняются в попапе → доезжают во все открытые панели
+          // (они попадают в URL embed'а, поэтому нужен reload iframe).
+          if (ch.framePrefs) {
+            var v = ch.framePrefs.newValue || {};
+            Object.keys(prefs).forEach(function (k) { if (v[k] != null) prefs[k] = v[k]; });
+            reloadAll();
+          }
         });
       }
     } catch (e) { /* нет chrome API */ }
