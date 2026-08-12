@@ -26,9 +26,9 @@
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
  * общему контракту — здесь импортируем строго по контрактным именам.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, TrendingUp } from 'lucide-react';
+import { CalendarRange, CandlestickChart, ChevronDown, Coins, Percent, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
@@ -59,7 +59,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 // UI-кит панелей (тулбар окна). Лежит в pages/embed, но это именно набор
 // примитивов, а не страница: сайтовые SegmentedControl/таблетки в тулбар окна
 // не влезают (та же причина, по которой скринер не переиспользует OiScreenerTable).
-import { PillGroup } from '../../pages/embed/EmbedToolbar';
+import { Dropdown as EmbDropdown, PillGroup } from '../../pages/embed/EmbedToolbar';
 
 type Metric = 'amount' | 'weight';
 
@@ -79,6 +79,15 @@ const MODE_LABELS: Record<ChartMode, string> = {
     cap: '% в обращении',
 };
 const CF_MODES: ChartMode[] = ['map', 'rub', 'cap'];
+// Ширина места под контролы в тулбаре окна, ниже которой подписи не влезают.
+const TOOLBAR_COMPACT_PX = 560;
+// Иконки режимов для compact-тулбара окна (порядок и смысл 1-в-1 с сайтом:
+// сделки на цене / позиция в ₽ / доля во free-float).
+const MODE_ICONS: Record<ChartMode, ReactNode> = {
+    map: <CandlestickChart size={14} />,
+    rub: <Coins size={14} />,
+    cap: <Percent size={14} />,
+};
 
 // Ключ прежней схемы (субтумблер веса). Читаем один раз при миграции старого
 // значения mode='share' и чистим, чтобы не оставлять мусор в localStorage.
@@ -172,6 +181,19 @@ export default function CompanyFlowsTab({
     // В ОКНЕ высота берётся у контейнера панели, а не у вьюпорта: useFitToViewport
     // меряет окно браузера, а панель — маленький прямоугольник внутри него, и
     // график вылезал за нижний край (проверено вживую: ось дат уходила под обрез).
+    // Узкая панель → подписи контролов схлопываются в иконки. Меряем НЕ сам ряд
+    // (он content-sized и всегда «влезает» в себя), а место, которое даёт тулбар
+    // окна: контейнер, куда ряд уехал порталом.
+    const [tbCompact, setTbCompact] = useState(false);
+    useEffect(() => {
+        const host = controlsTarget?.parentElement;
+        if (!embedded || !host || typeof ResizeObserver === 'undefined') return;
+        const check = () => setTbCompact(host.clientWidth < TOOLBAR_COMPACT_PX);
+        check();
+        const ro = new ResizeObserver(check);
+        ro.observe(host);
+        return () => ro.disconnect();
+    }, [embedded, controlsTarget]);
     const [boxH, setBoxH] = useState(0);
     const roRef = useRef<ResizeObserver | null>(null);
     // Callback-ref, а НЕ useEffect: на первом рендере компонент отдаёт скелет
@@ -754,6 +776,8 @@ export default function CompanyFlowsTab({
                     onChange={handleFundsChange}
                     title="Фонды с этой бумагой"
                     allLabel="Все фонды"
+                    compact={embedded}
+                    iconOnly={embedded && tbCompact}
                 />
 
                 {/* Режим — один плоский ряд. «% в обращении» появляется
@@ -763,8 +787,9 @@ export default function CompanyFlowsTab({
                 {embedded ? (
                     <PillGroup<ChartMode>
                         value={effectiveMode}
-                        options={visibleModes.map(m => ({ id: m, label: MODE_LABELS[m] }))}
+                        options={visibleModes.map(m => ({ id: m, label: MODE_LABELS[m], icon: MODE_ICONS[m] }))}
                         onChange={setMode}
+                        compact={tbCompact}
                     />
                 ) : (
                 <div data-tour="ft-company-modes" style={{ display: 'flex' }}>
@@ -791,10 +816,15 @@ export default function CompanyFlowsTab({
                     Последний в левой группе контролов: идёт после тумблеров, но
                     к правому краю ряда НЕ прижимается. */}
                 {embedded ? (
-                    <PillGroup<Period>
+                    // Одной кнопкой-списком: три пилюли съедали полосу и гнали
+                    // тулбар в скролл (фидбек Вадима).
+                    <EmbDropdown<Period>
                         value={period}
                         options={CF_PERIODS.map(p => ({ id: p, label: PERIOD_LABELS[p] }))}
                         onChange={setPeriod}
+                        title="Период"
+                        icon={<CalendarRange size={14} />}
+                        compact={tbCompact}
                     />
                 ) : (
                 <SegmentedControl<Period>

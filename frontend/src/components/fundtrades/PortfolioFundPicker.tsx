@@ -17,7 +17,7 @@
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock } from 'lucide-react';
+import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock, Wallet } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -785,12 +785,17 @@ export interface PortfolioFundPickerProps {
      *  «выбрано» — это производная от дефолта «без индексных фондов», и сброс
      *  в пусто не вернул бы состояние по умолчанию, а сломал бы его. */
     resetWhenLocked?: boolean;
+    /** Панельный вид триггера (окно терминала): геометрия как у остальных
+     *  контролов тулбара, без сайтовой пилюли с hard-shadow. */
+    compact?: boolean;
+    /** Совсем узкий тулбар — вместо подписи только иконка кошелька. */
+    iconOnly?: boolean;
 }
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
     title = 'Фонды акций', allLabel = 'Все фонды акций',
-    resetWhenLocked = false,
+    resetWhenLocked = false, compact = false, iconOnly = false,
 }: PortfolioFundPickerProps) {
     const [open, setOpen] = useState(false);
 
@@ -834,8 +839,24 @@ export default function PortfolioFundPicker({
                 // «Денег в фондах»). Так видно, что именно даёт тариф.
                 onClick={() => setOpen(true)}
                 title={canPick ? undefined : 'Выбор фондов — на тарифе Basic или Pro'}
-                className="editorial-press"
-                style={{
+                className={compact ? undefined : 'editorial-press'}
+                style={compact ? {
+                    // Панельный вид: та же геометрия, что у PillGroup/Dropdown в
+                    // тулбаре окна. Сайтовая пилюля с hard-shadow среди них чужая.
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '3px 8px',
+                    maxWidth: 150,
+                    background: active ? 'var(--accent)' : 'transparent',
+                    color: active ? '#fff' : 'var(--text-primary)',
+                    border: '1.5px solid var(--border-strong, var(--border-color, rgba(128,128,128,0.4)))',
+                    borderRadius: 6,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                } : {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
@@ -852,7 +873,9 @@ export default function PortfolioFundPicker({
                     whiteSpace: 'nowrap',
                 }}
             >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                {compact && iconOnly
+                    ? <Wallet size={14} style={{ flexShrink: 0 }} />
+                    : <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>}
                 {canPick
                     ? <span style={{ fontSize: '0.75em', opacity: 0.85, flexShrink: 0 }}>▾</span>
                     : <Lock size={13} strokeWidth={2.4} style={{ flexShrink: 0, opacity: 0.85 }} />}
