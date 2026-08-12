@@ -212,14 +212,15 @@ services:
       - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
       - TBANK_VAT=${TBANK_VAT:-none}
       # Почта (SMTP Yandex 360) — письма-подтверждения email при регистрации.
-      # ВАЖНО: SMTP_USER/SMTP_FROM в PUNYCODE (noreply@xn--80aklbnczmv.xn--p1ai),
-      # не в кириллице — SMTP AUTH/From это ASCII-протокол.
+      # Отправитель — noreply@framedata.ru (переезд 12.08.2026, ящик прежний).
+      # Адрес держать в ASCII: SMTP AUTH и From — ASCII-протокол, кириллический
+      # домен потребовал бы punycode-формы.
       - SMTP_HOST=${SMTP_HOST:-smtp.yandex.ru}
       - SMTP_PORT=${SMTP_PORT:-465}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
-      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-FRAME}
       # KILL-SWITCH публичного API + CSV-экспорта (скрыто до офиц. запуска).
       # Пусто/не задано = выключено (роутеры /api/export,/api/keys,/api/v1/public
       # не монтируются → 404; csv_export/api_access=False даже для Pro).
@@ -328,7 +329,7 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
-      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-FRAME}
       # Прод-тест рекуррента: цена basic для конверсии триала (должна совпадать с api).
       - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
     command: ["python", "main_orchestrator.py"]

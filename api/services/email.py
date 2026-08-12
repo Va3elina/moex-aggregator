@@ -9,20 +9,22 @@
 Конфиг через .env (см. database.py — load_dotenv грузит /opt/frame/.env):
   SMTP_HOST       smtp.yandex.ru
   SMTP_PORT       465
-  SMTP_USER       noreply@xn--80aklbnczmv.xn--p1ai   (punycode таймфрейм.рф!)
+  SMTP_USER       noreply@framedata.ru
   SMTP_PASSWORD   <пароль приложения Yandex ID>
   SMTP_FROM       (опц.) адрес в From, по умолчанию = SMTP_USER
-  SMTP_FROM_NAME  (опц.) display-name отправителя, по умолчанию "Фрейм"
+  SMTP_FROM_NAME  (опц.) display-name отправителя, по умолчанию "FRAME"
 
-ВАЖНО: SMTP_USER/SMTP_FROM — в punycode. Кириллический домен таймфрейм.рф
-в SMTP AUTH и в заголовке From не гарантированно проходит (ASCII-протокол).
-Punycode-форма (xn--80aklbnczmv.xn--p1ai) — тот же ящик, но ASCII-безопасна.
+Почта переехала на framedata.ru 12.08.2026; ящик тот же, прежний адрес
+noreply@xn--80aklbnczmv.xn--p1ai остаётся вторым адресом того же ящика.
+ВАЖНО: адрес в SMTP AUTH и в From держать в ASCII — кириллический
+таймфрейм.рф проходит не везде, для него нужна punycode-форма.
 """
 
 import os
 import ssl
 import smtplib
 import logging
+from pathlib import Path
 from email.message import EmailMessage
 
 log = logging.getLogger("moex_api")
@@ -32,9 +34,31 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Фрейм")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "FRAME")
 
 SITE_URL = "https://framedata.ru"
+
+# Логотип в шапке письма. Вшивается ВЛОЖЕНИЕМ (cid:logo), а не ссылкой на сайт:
+# почтовики по умолчанию режут внешние картинки, и шапка приезжала бы пустой.
+# PNG, не SVG — векторные картинки почтовые клиенты не рисуют.
+# Пересобрать после правки frontend/public/logo.svg:
+#   rsvg-convert -w 96 -h 96 frontend/public/logo.svg -o api/services/assets/logo-email.png
+LOGO_PATH = Path(__file__).parent / "assets" / "logo-email.png"
+
+# Шапка писем — общая для всех шаблонов, чтобы бренд не разъезжался по файлу.
+EMAIL_HEADER = """\
+        <tr><td style="padding:32px 32px 8px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="padding-right:10px;vertical-align:middle;">
+              <img src="cid:logo" width="28" height="28" alt=""
+                   style="display:block;width:28px;height:28px;">
+            </td>
+            <td style="vertical-align:middle;">
+              <div style="font-size:22px;font-weight:800;color:#15110B;letter-spacing:0.02em;">FRAME</div>
+              <div style="font-size:13px;color:#6B6357;margin-top:2px;">аналитика Московской биржи</div>
+            </td>
+          </tr></table>
+        </td></tr>"""
 
 
 def is_configured() -> bool:
@@ -59,6 +83,14 @@ def _send(to_email: str, subject: str, text_body: str, html_body: str) -> bool:
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
+    # Логотип цепляем ТОЛЬКО к html-части (add_related на самом msg сломал бы
+    # multipart/alternative — text и html перестали бы быть равноправными
+    # вариантами одного письма).
+    if "cid:logo" in html_body and LOGO_PATH.exists():
+        msg.get_payload()[-1].add_related(
+            LOGO_PATH.read_bytes(), maintype="image", subtype="png", cid="<logo>"
+        )
+
     try:
         ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=20) as smtp:
@@ -73,16 +105,16 @@ def _send(to_email: str, subject: str, text_body: str, html_body: str) -> bool:
 
 def send_verification_email(to_email: str, code: str, display_name: str | None = None) -> bool:
     """Письмо с 6-значным кодом подтверждения email."""
-    subject = f"Код подтверждения: {code} — Фрейм"
+    subject = f"Код подтверждения: {code} — FRAME"
     greeting = f"Здравствуйте, {display_name}!" if display_name else "Здравствуйте!"
 
     text_body = (
         f"{greeting}\n\n"
-        f"Ваш код подтверждения email на Фрейм:\n\n"
+        f"Ваш код подтверждения email на FRAME:\n\n"
         f"    {code}\n\n"
         f"Код действует 30 минут.\n\n"
         f"Если вы не регистрировались на {SITE_URL}, просто проигнорируйте это письмо.\n\n"
-        f"— Фрейм, аналитика Московской биржи\n"
+        f"— FRAME, аналитика Московской биржи\n"
         f"{SITE_URL}\n"
     )
 
@@ -93,10 +125,7 @@ def send_verification_email(to_email: str, code: str, display_name: str | None =
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
              style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-        <tr><td style="padding:32px 32px 8px;">
-          <div style="font-size:22px;font-weight:800;color:#15110B;letter-spacing:-0.02em;">Фрейм</div>
-          <div style="font-size:13px;color:#6B6357;margin-top:2px;">аналитика Московской биржи</div>
-        </td></tr>
+{EMAIL_HEADER}
         <tr><td style="padding:8px 32px 0;">
           <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
           <p style="font-size:15px;color:#2A241B;margin:0 0 20px;">Ваш код подтверждения email:</p>
@@ -146,7 +175,7 @@ def send_trial_ending_email(
         f"подписка станет платной.\n\n"
         f"Если не хотите продолжать — отмените подписку и отвяжите карту в профиле "
         f"до {charge_date}, тогда списания не будет:\n{profile_url}\n\n"
-        f"— Фрейм, аналитика Московской биржи\n{SITE_URL}\n"
+        f"— FRAME, аналитика Московской биржи\n{SITE_URL}\n"
     )
 
     html_body = f"""\
@@ -156,10 +185,7 @@ def send_trial_ending_email(
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
              style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-        <tr><td style="padding:32px 32px 8px;">
-          <div style="font-size:22px;font-weight:800;color:#15110B;letter-spacing:-0.02em;">Фрейм</div>
-          <div style="font-size:13px;color:#6B6357;margin-top:2px;">аналитика Московской биржи</div>
-        </td></tr>
+{EMAIL_HEADER}
         <tr><td style="padding:8px 32px 0;">
           <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
           <p style="font-size:15px;color:#2A241B;margin:0 0 12px;line-height:1.5;">
