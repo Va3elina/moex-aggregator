@@ -76,7 +76,7 @@
   var MINW_BY_ID = {
     'signals': 340, 'oi': 540, 'seasonality': 470, 'funds-money': 580,
     'strength': 440, 'screener': 460, 'heatmap': 320, 'buffett': 380,
-    'fund-trades': 490, 'cbr-flows': 560
+    'fund-trades': 620, 'cbr-flows': 560
   };
   function minW(id) { return MINW_BY_ID[id] || 300; }
 
