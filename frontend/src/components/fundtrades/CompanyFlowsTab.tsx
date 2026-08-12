@@ -658,8 +658,9 @@ export default function CompanyFlowsTab({
     // примитивов — сайтовые SegmentedControl в строку тулбара не помещаются.
     const controlsRow = (
             <div
+                className={embedded ? 'emb-ctl-row' : undefined}
                 style={embedded
-                    ? { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }
+                    ? { display: 'flex', alignItems: 'center', gap: 6 }
                     : { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--sp-2)' }}
             >
                 {/* Таблетка бумаги — widget-flat (icon + имя + тикер + ▾),
@@ -684,7 +685,6 @@ export default function CompanyFlowsTab({
                         background: 'transparent',
                         maxWidth: 170,
                         minWidth: 0,
-                        flexShrink: 1,
                         cursor: 'pointer',
                     } : {
                         color: 'var(--text-primary)',

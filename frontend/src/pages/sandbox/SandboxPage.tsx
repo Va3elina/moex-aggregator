@@ -107,6 +107,9 @@ const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
   // РЕАЛЬНУЮ ширину панели, но паддинг — нет; ширина пошире держит дефолт
   // подальше от этого предела (пользователь всё ещё может ужать вручную).
   'cbr-flows': { w: 620, h: 380 },
+  // Таб-бар (4 вкладки) + контролы «Потоков» (бумага/режим/период/фонды) живут
+  // в ОДНОЙ строке тулбара — на прежних 560 полоса сразу уходила в скролл.
+  'fund-trades': { w: 660, h: 480 },
 };
 const DEFAULT_SIZE = { w: 560, h: 400 };   // чуть больше — тулбар не так забит на старте
 
@@ -395,7 +398,8 @@ export default function SandboxPage() {
   }, [setActivePanels]);
 
   const spawn = useCallback((type: IndKind, cfg?: PanelCfg) => {
-    const sz = SIZES[type] || DEFAULT_SIZE;
+    const szRaw = SIZES[type] || DEFAULT_SIZE;
+    const sz = { w: Math.max(szRaw.w, MINW_BY_TYPE[type] ?? MINW), h: szRaw.h };
     const rc = canvasRef.current?.getBoundingClientRect();
     const cw = rc?.width ?? window.innerWidth, ch = rc?.height ?? (window.innerHeight - TOPBAR_H);
     zTop.current += 1; const z = zTop.current;

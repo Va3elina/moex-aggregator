@@ -149,3 +149,9 @@
 @keyframes sb-pop { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes sb-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sb-drawer { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Ряд контролов индикатора, уехавший ПОРТАЛОМ в тулбар окна (см. CompanyFlowsTab
+   embedded). Без этого дефолтный flex-shrink:1 ужимал обёртки контролов до нуля,
+   а их содержимое (пикер фондов, кнопка бумаги) вылезало поверх соседей —
+   выглядело как наложение кнопок. Ужимать нечего: полоса скроллится целиком. */
+.emb-ctl-row, .emb-ctl-row > * { flex: 0 0 auto; }

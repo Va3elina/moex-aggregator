@@ -62,8 +62,8 @@
     'strength':    { w: 600, h: 620 }, // два графика (IMOEX + breadth) — выше
     'funds-money': { w: 660, h: 560 },
     'cbr-flows':   { w: 660, h: 580 },
-    'fund-trades': { w: 560, h: 560 },
-    'fund-movers': { w: 560, h: 560 },
+    'fund-trades': { w: 660, h: 560 },
+    
     'heatmap':     { w: 680, h: 560 }  // плитки — шире, чем график
   };
   var DEFAULT_SIZE = { w: 620, h: 560 };
