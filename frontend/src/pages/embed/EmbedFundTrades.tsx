@@ -1,189 +1,68 @@
 /**
- * EmbedFundTrades — виджет «Сделки фондов / Что покупают фонды» для терминала
- * Т-Инвестиций. Компактный 4-таб экран (полностью PRO — embed под PRO-токеном):
- *   - movers   «Сделки» — консенсус-движения, тот же `PortfolioMoversPanel`
- *               («Чистые покупки/продажи»), что и на сайте во вкладке «Общий
- *               портфель» (июль 2026 редизайн, #493/#571) — раньше тут была своя
- *               параллельная вёрстка, разъехавшаяся с сайтом после переноса
- *               «Покупок фондов» внутрь «Сделок фондов». Период 1М/6М/1Г —
- *               в шапке самой панели (её проп), фильтр фондов — в ⚙.
- *   - snapshots «Снапшот» — per-fund помесячный diff (докупил/продал/новые/вышел).
- *   - funds    «Состав» — карточки фондов (УК + тикер + донат + топ-холдинги + доходность).
- *   - company  «Потоки» — потоки по компании (переиспользует CompanyFlowsTab).
+ * EmbedFundTrades — «Сделки фондов» для панели терминала (песочница и окно
+ * расширения). Вкладки и их наполнение — 1-в-1 с сайтовой FundTradesPage:
  *
- * Локальный pill-таб-бар живёт ВНУТРИ этого файла (не в EmbedSettings). Активный
- * таб + параметры контролов персистятся в namespace frame:embed:fundtrades:*.
+ *   - portfolio «Общий портфель» — движения фондов (PortfolioMoversPanel) +
+ *      состав портфеля (CombinedPortfolioView). На сайте это два столбца, в
+ *      окне ширины нет → колонкой с общим скроллом. Набор фондов один на оба
+ *      блока, пикер живёт в тулбаре (на сайте — рядом над карточкой).
+ *   - company  «По бумаге» — CompanyFlowsTab в панельном режиме: его контролы
+ *      уезжают ПОРТАЛОМ в тулбар окна (см. controlsTarget).
+ *   - funds    «Витрина» — карточки фондов; клик открывает FundDetailModal.
  *
+ * Вкладки «Сделки» и «Снапшот» убраны вслед за сайтом (там их скрыли): их id
+ * остаются в типе только чтобы старые сохранённые панели открывались на
+ * «Общем портфеле», а не падали.
+ *
+ * Активная вкладка и настройки персистятся в namespace frame:embed:fundtrades:*.
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   listFundsWithHistory,
   getFundTradesMovers,
-  getFundSnapshots,
-  getFundSnapshotReview,
   getFundTradesDetail,
+  getFundPortfolio,
+  type FundPortfolio,
   type FundTradesMovers,
   type FundWithHistory,
-  type FundSnapshotsList,
-  type FundSnapshotReview,
-  type FundDiffRow,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
 import { Dropdown, EmbedFrame } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
-import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
+import PortfolioFundPicker, { defaultPortfolioTickers } from '../../components/fundtrades/PortfolioFundPicker';
+import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
   formatRubShort,
-  formatShares,
   formatReturnPct,
   returnColor,
 } from '../../components/funds/FundDetailModal';
 import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
-type EmbedTab = 'movers' | 'snapshots' | 'funds' | 'company';
+// Состав и порядок вкладок 1-в-1 с сайтом (FundTradesPage.ChartTabs): «Сделки»
+// и «Снапшот» оттуда убраны, «Состав» называется «Витрина», «Потоки» — «По
+// бумаге». `movers`/`snapshots` остаются как ID для уже сохранённых панелей
+// и роута /embed/fund-movers — они мапятся на «Общий портфель».
+type EmbedTab = 'portfolio' | 'company' | 'funds' | 'movers' | 'snapshots';
 
-const POS = 'var(--funds-flow-positive, #4A9268)';
-const NEG = 'var(--funds-flow-negative, #C0504D)';
 
 const TABS: { id: EmbedTab; label: string }[] = [
-  { id: 'movers', label: 'Сделки' },
-  { id: 'snapshots', label: 'Снапшот' },
-  { id: 'funds', label: 'Состав' },
-  { id: 'company', label: 'Потоки' },
+  { id: 'portfolio', label: 'Общий портфель' },
+  { id: 'company', label: 'По бумаге' },
+  { id: 'funds', label: 'Витрина' },
 ];
 
 // ─────────────────────────────── helpers ───────────────────────────────
 
-// "2026-04-30" → "Апрель 2026" — для month-picker день не показываем.
-const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-function formatMonthYear(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`;
-}
 
 // ─────────────────────────────── shared bits ───────────────────────────────
 
-
-// Кнопки-сегменты компактные (для метрики внутри тела таба).
-function MetricToggle<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: [T, string][];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      {options.map(([key, lbl]) => {
-        const on = key === value;
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onChange(key)}
-            style={{
-              fontSize: 11.5,
-              fontWeight: on ? 700 : 600,
-              padding: '4px 10px',
-              borderRadius: 6,
-              cursor: 'pointer',
-              border: on ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.35))',
-              background: on ? 'var(--accent)' : 'transparent',
-              color: on ? '#fff' : 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {lbl}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Горизонтальный бар (editorial-стиль) для снапшота: имя + bar + значение.
-function EmbedBar({
-  label,
-  subLabel,
-  amount,
-  maxAbs,
-  isPositive,
-  formatValue,
-}: {
-  label: string;
-  subLabel?: string;
-  amount: number;
-  maxAbs: number;
-  isPositive: boolean;
-  formatValue: (absValue: number) => string;
-}) {
-  const widthPct = maxAbs > 0 ? Math.max(2, (Math.abs(amount) / maxAbs) * 100) : 2;
-  const color = isPositive ? POS : NEG;
-  return (
-    <div style={{ padding: '6px 0', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {label}
-        </span>
-        <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
-          {isPositive ? '+' : '−'}{formatValue(Math.abs(amount))}
-        </span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-        <div style={{ flex: 1, height: 5, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{ width: `${widthPct}%`, height: '100%', background: color, borderRadius: 3 }} />
-        </div>
-        {subLabel && (
-          <span style={{ flexShrink: 0, fontSize: 10.5, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {subLabel}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function EmbedSection({
-  title,
-  count,
-  total,
-  isPositive,
-  formatValue,
-  children,
-}: {
-  title: string;
-  count: number;
-  total: number;
-  isPositive: boolean;
-  formatValue: (absValue: number) => string;
-  children: ReactNode;
-}) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: '1.5px solid var(--text-primary)', paddingBottom: 5, marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: 'var(--text-primary)' }}>{title}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{count}</span>
-        </div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: isPositive ? POS : NEG, fontVariantNumeric: 'tabular-nums' }}>
-          {isPositive ? '+' : '−'}{formatValue(Math.abs(total))}
-        </span>
-      </div>
-      {children}
-    </div>
-  );
-}
 
 // ─────────────────────────────── root ───────────────────────────────
 
@@ -191,11 +70,14 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   const { rd, wr } = useEmbedPersist();
   // lockTab — отдельный индикатор «Сделки фондов»: фиксируем вкладку movers,
   // таб-бар прячем, а название и первичные контролы (период/метрика) — в тулбар.
-  const [tab, setTab] = useState<EmbedTab>(() => {
-    if (lockTab) return lockTab;
-    const v = rd('frame:embed:fundtrades:tab', 'movers');
-    return (['movers', 'snapshots', 'funds', 'company'] as const).includes(v as EmbedTab) ? (v as EmbedTab) : 'movers';
+  const [tab, setTabRaw] = useState<EmbedTab>(() => {
+    const v = lockTab ?? rd('frame:embed:fundtrades:tab', 'portfolio');
+    // Старые сохранения (и lockTab='movers' у /embed/fund-movers) → «Общий
+    // портфель»: движения фондов теперь живут там, как на сайте.
+    if (v === 'movers' || v === 'snapshots') return 'portfolio';
+    return TABS.some((t) => t.id === v) ? (v as EmbedTab) : 'portfolio';
   });
+  const setTab = setTabRaw;
   useEffect(() => { if (!lockTab) wr('frame:embed:fundtrades:tab', tab); }, [tab, lockTab]);
 
   // Список фондов — загружается один раз, шарится между movers/snapshots/funds.
@@ -229,13 +111,15 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   useRealtimeData(['funds', 'daily'], () => { silentRef.current = true; setRefreshTick((t) => t + 1); });
 
   useEffect(() => {
-    if (tab !== 'movers') return;
+    if (tab !== 'portfolio') return;
     let cancelled = false;
     if (!silentRef.current) setMoversStatus('loading');
     silentRef.current = false;
     // sort:'amount' — как на сайте (вкладка «Общий портфель»); отдельного
     // тумблера «% веса» больше нет, редизайн #493/#571 его убрал.
-    getFundTradesMovers(moversPeriod, { funds: fundsParam || undefined, sort: 'amount' })
+    // scope:'portfolio' — как на сайте на этой вкладке (своя, нулевая задержка
+    // в тарифной матрице), иначе Free видел бы другой срез, чем на сайте.
+    getFundTradesMovers(moversPeriod, { funds: fundsParam || undefined, sort: 'amount', scope: 'portfolio' })
       .then((res) => {
         if (cancelled) return;
         setMoversData(res);
@@ -248,11 +132,6 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       });
     return () => { cancelled = true; };
   }, [tab, moversPeriod, fundsParam, refreshTick]);
-
-  const moverPickerFunds = useMemo<FundPickerFund[]>(
-    () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
-    [funds],
-  );
 
   // ── funds tab state ──
   const [fundSort, setFundSort] = useState<'return' | 'volume' | 'name'>(() => rd('frame:embed:fundtrades:fundSort', 'return') as 'return' | 'volume' | 'name');
@@ -271,17 +150,42 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
     return [...funds].sort(cmp);
   }, [funds, fundSort]);
 
+  // ── состав портфеля (правая половина сайтовой вкладки «Общий портфель») ──
+  const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioMode, setPortfolioMode] = useState<'rub' | 'share'>(
+    () => (rd('frame:embed:fundtrades:pMode', 'rub') as 'rub' | 'share'));
+  const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(
+    () => rd('frame:embed:fundtrades:pAsOf', '') || undefined);
+  useEffect(() => { wr('frame:embed:fundtrades:pMode', portfolioMode); }, [portfolioMode]);
+  useEffect(() => { wr('frame:embed:fundtrades:pAsOf', portfolioAsOf ?? ''); }, [portfolioAsOf]);
+
+  useEffect(() => {
+    if (tab !== 'portfolio' || funds.length === 0) return;
+    let cancelled = false;
+    setPortfolioLoading(true);
+    getFundPortfolio({ funds: fundsParam || undefined, as_of: portfolioAsOf })
+      .then((r) => { if (!cancelled) setPortfolio(r); })
+      .catch((err) => { if (!cancelled) console.error('embed/fund-trades portfolio load failed:', err); })
+      .finally(() => { if (!cancelled) setPortfolioLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, fundsParam, portfolioAsOf, funds.length, refreshTick]);
+
+  // Дефолт набора фондов — как на сайте: всё, кроме индексных (их сделки это
+  // ребалансировка вслед за индексом, в консенсусе они забивают управляющих).
+  const defaultsApplied = useRef(false);
+  useEffect(() => {
+    if (funds.length === 0 || defaultsApplied.current) return;
+    defaultsApplied.current = true;
+    if (selectedMoverFunds.size === 0) setSelectedMoverFunds(new Set(defaultPortfolioTickers(funds)));
+  }, [funds, selectedMoverFunds.size]);
+
   // Узел-слот тулбара для контролов вкладки «Потоки» (портал из CompanyFlowsTab).
   // Через useState, а не ref: портал должен перерисоваться, когда узел появится.
   const [companySlot, setCompanySlot] = useState<HTMLDivElement | null>(null);
+  // Бумага, выбранная кликом в «Общем портфеле» → открыть её во вкладке «По бумаге».
+  const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
-  // ── «ещё» (⚙) для movers: период 1М/6М/1Г теперь в шапке самой панели
-  // (её onPeriodChange) — как на сайте; в ⚙ остаётся только фильтр фондов. ──
-  const moversMore: ReactNode = moverPickerFunds.length > 1 ? (
-    <DrawerSection label="Фонды">
-      <FundPicker funds={moverPickerFunds} mode="multi" selected={selectedMoverFunds} onChange={setSelectedMoverFunds} />
-    </DrawerSection>
-  ) : undefined;
   const fundsMore: ReactNode = (
     <>
       <DrawerSection label="Сортировка">
@@ -296,10 +200,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   // ⚙ рисуем ТОЛЬКО когда за ней есть настройки. У «Потоков» и «Снапшота» все
   // контролы вынесены в тулбар, и шестерёнка показывала одну лишь подсказку —
   // кнопка-пустышка (фидбек Вадима: «если не нужна — убираем»).
-  const more: ReactNode | undefined =
-    tab === 'movers' ? moversMore
-    : tab === 'funds' ? fundsMore
-    : undefined;
+  const more: ReactNode | undefined = tab === 'funds' ? fundsMore : undefined;
 
   // Тулбар: заперт на movers → пусто (заголовок и период 1М/6М/1Г уже в
   // шапке самой PortfolioMoversPanel, дублировать их в тулбаре не нужно).
@@ -318,8 +219,20 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       title="Вкладка"
     />
   );
-  const toolbar: ReactNode = lockTab === 'movers' ? undefined : (
-    <div ref={setCompanySlot} style={{ display: 'contents' }} />
+  const toolbar: ReactNode = (
+    <>
+      {tab === 'portfolio' && funds.length > 1 && (
+        <PortfolioFundPicker
+          funds={funds}
+          selected={selectedMoverFunds}
+          onChange={setSelectedMoverFunds}
+          compact
+          resetWhenLocked
+        />
+      )}
+      {/* Слот вкладки «По бумаге»: её контролы приезжают порталом. */}
+      <div ref={setCompanySlot} style={{ display: 'contents' }} />
+    </>
   );
 
   return (
@@ -338,332 +251,60 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
             ? { flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }
             : { flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}
         >
-          {tab === 'movers' && (
-            moversStatus === 'ok' || moversStatus === 'empty' ? (
-              <PortfolioMoversPanel
-                movers={moversData}
-                loading={false}
-                period={moversPeriod}
-                variant="embedded"
-                onPeriodChange={setMoversPeriod}
-              />
-            ) : (
-              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                {moversStatus === 'loading' && <EmbedMsg text="Загрузка…" />}
-                {moversStatus === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-                {moversStatus === 'idle' && <EmbedMsg text="Загрузка…" />}
+          {/* «Общий портфель» = сайтовая вкладка целиком: сверху движения фондов
+              (что докупили / из чего вышли), снизу — состав портфеля. На сайте
+              они стоят в два столбца; в окне терминала места по ширине нет,
+              поэтому колонкой, с общим скроллом. Набор фондов — один на оба
+              блока (пикер в тулбаре), как и на сайте. */}
+          {tab === 'portfolio' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {moversStatus === 'ok' || moversStatus === 'empty' ? (
+                <PortfolioMoversPanel
+                  movers={moversData}
+                  loading={false}
+                  period={moversPeriod}
+                  variant="embedded"
+                  onPeriodChange={setMoversPeriod}
+                  onAssetClick={(m) => { setCompanyPreset({ asset_name: m.asset_name, isin: null }); setTab('company'); }}
+                />
+              ) : (
+                <div style={{ minHeight: 120, position: 'relative' }}>
+                  {moversStatus === 'error' ? <EmbedMsg text="Ошибка загрузки" /> : <EmbedMsg text="Загрузка…" />}
+                </div>
+              )}
+              <div style={{ borderTop: '1.5px solid var(--border-color, rgba(128,128,128,0.25))', paddingTop: 12 }}>
+                <CombinedPortfolioView
+                  portfolio={portfolio}
+                  loading={portfolioLoading}
+                  mode={portfolioMode}
+                  onModeChange={setPortfolioMode}
+                  variant="embedded"
+                  availableMonths={portfolio?.available_months}
+                  asOf={portfolioAsOf}
+                  onAsOfChange={setPortfolioAsOf}
+                  onAssetClick={(h) => { setCompanyPreset({ asset_name: h.asset_name, isin: h.isin }); setTab('company'); }}
+                />
               </div>
-            )
+            </div>
           )}
-
-          {tab === 'snapshots' && <SnapshotsTab funds={funds} />}
 
           {tab === 'funds' && <FundsTab funds={sortedFunds} hasFunds={funds.length > 0} />}
 
           {tab === 'company' && (
             <div style={{ flex: 1, minHeight: 0 }}>
-              <CompanyFlowsTab embedded controlsTarget={companySlot} />
+              {/* presetAsset — клик по бумаге в «Общем портфеле» открывает её
+                  здесь, как переход между вкладками на сайте. */}
+              <CompanyFlowsTab
+                embedded
+                controlsTarget={companySlot}
+                presetAsset={companyPreset}
+                onPresetConsumed={() => setCompanyPreset(null)}
+              />
             </div>
           )}
         </div>
       </div>
     </EmbedFrame>
-  );
-}
-
-// ─────────────────────────────── snapshots tab ───────────────────────────────
-
-function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
-  const { rd, wr } = useEmbedPersist();
-  const [ticker, setTicker] = useState<string>('EQMX');
-  const [metric, setMetric] = useState<'amount' | 'weight'>(() => rd('frame:embed:fundtrades:snapMetric', 'amount') as 'amount' | 'weight');
-  const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [review, setReview] = useState<FundSnapshotReview | null>(null);
-  const [status, setStatus] = useState<LoadStatus>('idle');
-
-  useEffect(() => { wr('frame:embed:fundtrades:snapMetric', metric); }, [metric]);
-
-  // Фонды с историей снапшотов (для пикера). funds приходят из root.
-  const pickerFunds = useMemo<FundPickerFund[]>(
-    () => funds.filter((f) => (f.snapshot_count || 0) > 0).map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
-    [funds],
-  );
-  const pickerSelected = useMemo(() => new Set([ticker]), [ticker]);
-
-  // Список снапшотов при смене фонда.
-  useEffect(() => {
-    let cancel = false;
-    setStatus('loading');
-    getFundSnapshots(ticker)
-      .then((data) => {
-        if (cancel) return;
-        setSnapshotsList(data);
-        if (data.snapshots.length > 0) {
-          setSelectedDate(data.snapshots[0].snapshot_date);
-        } else {
-          setSelectedDate(null);
-          setReview(null);
-          setStatus('empty');
-        }
-      })
-      .catch((err) => { if (!cancel) { console.error('embed/snapshots list failed:', err); setStatus('error'); } });
-    return () => { cancel = true; };
-  }, [ticker]);
-
-  // Обзор при смене даты.
-  useEffect(() => {
-    if (!selectedDate) return;
-    let cancel = false;
-    setStatus('loading');
-    getFundSnapshotReview(ticker, selectedDate)
-      .then((data) => { if (!cancel) { setReview(data); setStatus('ok'); } })
-      .catch((err) => { if (!cancel) { console.error('embed/snapshot review failed:', err); setStatus('error'); } });
-    return () => { cancel = true; };
-  }, [ticker, selectedDate]);
-
-  const isW = metric === 'weight';
-  const wDelta = (r: FundDiffRow) => (r.curr_weight ?? 0) - (r.prev_weight ?? 0);
-  const aAdded = (r: FundDiffRow) => r.delta_amount_rub ?? 0;
-  const aNew = (r: FundDiffRow) => r.curr_amount_rub ?? 0;
-  const aSold = (r: FundDiffRow) => -(r.prev_amount_rub ?? 0);
-  const wNew = (r: FundDiffRow) => r.curr_weight ?? 0;
-  const wSold = (r: FundDiffRow) => -(r.prev_weight ?? 0);
-
-  const maxAbs = useMemo(() => {
-    if (!review) return 1;
-    if (isW) {
-      return Math.max(
-        0.01,
-        ...review.added.map((r) => Math.abs(wDelta(r))),
-        ...review.reduced.map((r) => Math.abs(wDelta(r))),
-        ...review.new.map((r) => r.curr_weight ?? 0),
-        ...review.sold_out.map((r) => r.prev_weight ?? 0),
-      );
-    }
-    return Math.max(
-      1,
-      ...review.added.map((r) => Math.abs(r.delta_amount_rub ?? 0)),
-      ...review.reduced.map((r) => Math.abs(r.delta_amount_rub ?? 0)),
-      ...review.new.map((r) => r.curr_amount_rub ?? 0),
-      ...review.sold_out.map((r) => r.prev_amount_rub ?? 0),
-    );
-  }, [review, isW]);
-
-  const fmtVal = isW ? (v: number) => `${v.toFixed(2)}%` : (v: number) => formatRubShort(v);
-  const sortByAbs = (items: FundDiffRow[], get: (r: FundDiffRow) => number) =>
-    [...items].sort((a, b) => Math.abs(get(b)) - Math.abs(get(a)));
-  const sumBy = (items: FundDiffRow[], get: (r: FundDiffRow) => number) => items.reduce((s, r) => s + get(r), 0);
-
-  // В режиме «% веса» докупил/продал бакетим по знаку Δдоли.
-  const addedItems = review
-    ? (isW ? [...review.added, ...review.reduced].filter((r) => wDelta(r) > 0) : review.added)
-    : [];
-  const reducedItems = review
-    ? (isW ? [...review.added, ...review.reduced].filter((r) => wDelta(r) < 0) : review.reduced)
-    : [];
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
-      {/* Контролы: фонд (FundPicker single) + метрика */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-        {pickerFunds.length > 0 && (
-          <FundPicker
-            funds={pickerFunds}
-            mode="single"
-            selected={pickerSelected}
-            onChange={(next) => {
-              const t = next.values().next().value as string | undefined;
-              if (t) setTicker(t);
-            }}
-            minWidth={200}
-          />
-        )}
-        <div style={{ marginLeft: 'auto' }}>
-          <MetricToggle<'amount' | 'weight'>
-            value={metric}
-            options={[['amount', 'Объём, руб'], ['weight', '% веса']]}
-            onChange={setMetric}
-          />
-        </div>
-      </div>
-
-      {/* Лента месяцев */}
-      {snapshotsList && snapshotsList.snapshots.length > 0 && (
-        <div className="styled-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, flexShrink: 0 }}>
-          {snapshotsList.snapshots.map((s) => {
-            const on = s.snapshot_date === selectedDate;
-            return (
-              <button
-                key={s.snapshot_date}
-                type="button"
-                onClick={() => setSelectedDate(s.snapshot_date)}
-                title={`${s.snapshot_date} · ${s.asset_count} активов`}
-                style={{
-                  padding: '4px 11px',
-                  fontSize: 11,
-                  fontWeight: on ? 700 : 600,
-                  borderRadius: 999,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  fontVariantNumeric: 'tabular-nums',
-                  border: on ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.35))',
-                  background: on ? 'var(--accent)' : 'transparent',
-                  color: on ? '#fff' : 'var(--text-secondary)',
-                }}
-              >
-                {formatMonthYear(s.snapshot_date)}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Тело */}
-      <div className="styled-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
-        {status === 'loading' && <EmbedMsg text="Загрузка…" />}
-        {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-        {status === 'empty' && <EmbedMsg text={`У ${ticker} пока нет снапшотов`} />}
-
-        {status === 'ok' && review && review.totals && (
-          <div>
-            {/* Заголовок */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>{review.fund.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                {formatMonthYear(review.current_snapshot_date)}
-                {review.previous_snapshot_date && <> · с {formatMonthYear(review.previous_snapshot_date)}</>}
-                {' · '}{review.totals!.current_assets} активов
-              </div>
-            </div>
-
-            {/* Нет предыдущего — показываем состав */}
-            {!review.previous_snapshot_date && (
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                  Самый ранний снапшот — состав фонда на эту дату:
-                </div>
-                {review.current_holdings.map((h) => (
-                  <div key={h.isin || h.asset_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fundAssetName(h.asset_name, h.isin)}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                      {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* ДОКУПИЛ */}
-            {addedItems.length > 0 && (
-              <EmbedSection
-                title="ДОКУПИЛ"
-                count={addedItems.length}
-                total={isW ? sumBy(addedItems, wDelta) : review.totals!.total_added_rub}
-                isPositive
-                formatValue={fmtVal}
-              >
-                {sortByAbs(addedItems, isW ? wDelta : aAdded).slice(0, 8).map((r) => (
-                  <EmbedBar
-                    key={`${r.asset_name}-${r.isin || ''}`}
-                    label={fundAssetName(r.asset_name, r.isin)}
-                    subLabel={`+${formatShares(r.delta_positions || 0)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
-                    amount={isW ? wDelta(r) : aAdded(r)}
-                    maxAbs={maxAbs}
-                    isPositive
-                    formatValue={fmtVal}
-                  />
-                ))}
-              </EmbedSection>
-            )}
-
-            {/* ПРОДАЛ */}
-            {reducedItems.length > 0 && (
-              <EmbedSection
-                title="ПРОДАЛ"
-                count={reducedItems.length}
-                total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals!.total_reduced_rub)}
-                isPositive={false}
-                formatValue={fmtVal}
-              >
-                {sortByAbs(reducedItems, isW ? wDelta : aAdded).slice(0, 8).map((r) => (
-                  <EmbedBar
-                    key={`${r.asset_name}-${r.isin || ''}`}
-                    label={fundAssetName(r.asset_name, r.isin)}
-                    subLabel={`${formatShares(r.delta_positions || 0)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
-                    amount={isW ? wDelta(r) : aAdded(r)}
-                    maxAbs={maxAbs}
-                    isPositive={false}
-                    formatValue={fmtVal}
-                  />
-                ))}
-              </EmbedSection>
-            )}
-
-            {/* НОВЫЕ ПОЗИЦИИ */}
-            {review.new.length > 0 && (
-              <EmbedSection
-                title="НОВЫЕ ПОЗИЦИИ"
-                count={review.new.length}
-                total={isW ? sumBy(review.new, wNew) : review.totals!.total_new_rub}
-                isPositive
-                formatValue={fmtVal}
-              >
-                {sortByAbs(review.new, isW ? wNew : aNew).slice(0, 8).map((r) => (
-                  <EmbedBar
-                    key={`${r.asset_name}-${r.isin || ''}`}
-                    label={fundAssetName(r.asset_name, r.isin)}
-                    subLabel={`${formatShares(r.curr_positions)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
-                    amount={isW ? wNew(r) : aNew(r)}
-                    maxAbs={maxAbs}
-                    isPositive
-                    formatValue={fmtVal}
-                  />
-                ))}
-              </EmbedSection>
-            )}
-
-            {/* ПОЛНОСТЬЮ ВЫШЕЛ */}
-            {review.sold_out.length > 0 && (
-              <EmbedSection
-                title="ПОЛНОСТЬЮ ВЫШЕЛ"
-                count={review.sold_out.length}
-                total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals!.total_sold_out_rub}
-                isPositive={false}
-                formatValue={fmtVal}
-              >
-                {sortByAbs(review.sold_out, isW ? wSold : aSold).slice(0, 8).map((r) => (
-                  <EmbedBar
-                    key={`${r.asset_name}-${r.isin || ''}`}
-                    label={fundAssetName(r.asset_name, r.isin)}
-                    subLabel={`было ${formatShares(r.prev_positions)} шт`}
-                    amount={isW ? wSold(r) : aSold(r)}
-                    maxAbs={maxAbs}
-                    isPositive={false}
-                    formatValue={fmtVal}
-                  />
-                ))}
-              </EmbedSection>
-            )}
-
-            {/* Без изменений */}
-            {review.previous_snapshot_date
-              && review.added.length === 0
-              && review.reduced.length === 0
-              && review.new.length === 0
-              && review.sold_out.length === 0 && (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                Состав не изменился между снапшотами.
-              </div>
-            )}
-          </div>
-        )}
-        {status === 'ok' && review && !review.totals && (
-          <EmbedMsg text="Свежий срез — по подписке · framedata.ru" />
-        )}
-      </div>
-    </div>
   );
 }
 
