@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import ModalLayer from './ModalLayer';
+import { MODAL_LAYER_Z } from '../utils/modalHost';
 import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
@@ -516,257 +518,259 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   };
 
   return (
-    // role="dialog" — не только семантика: в песочнице drag-обработчик панели
-    // (onDragStart в SandboxPage) игнорирует клики внутри [role="dialog"],
-    // иначе pointerdown по строке-div получает preventDefault и click гаснет.
-    <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
-      {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
-      <div
-        className="absolute inset-0"
-        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-        onClick={onClose}
-      />
+      <ModalLayer>
+        // role="dialog" — не только семантика: в песочнице drag-обработчик панели
+        // (onDragStart в SandboxPage) игнорирует клики внутри [role="dialog"],
+        // иначе pointerdown по строке-div получает preventDefault и click гаснет.
+        <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10" style={{ zIndex: MODAL_LAYER_Z }}>
+          {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
+          <div
+            className="absolute inset-0"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onClick={onClose}
+          />
 
-      {/* Modal — editorial pill в светлой / glass в dark, через CSS-overrides.
-          Базово: bg-secondary + 2px border + hard shadow. */}
-      <div
-        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '2px solid var(--text-primary)',
-          boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-          color: 'var(--text-primary)',
-        }}
-      >
-        {/* Header — заголовок «Выбор актива» убран (поиск самоочевиден), осталась
-            только кнопка закрытия + компактный поиск, чтобы освободить место под
-            список активов. */}
-        <div className="px-6 pt-6 pb-3 flex-shrink-0">
-          {/* Поиск + «×» в одном ряду. Раньше «×» жил в отдельной строке сверху,
-              из-за чего над поиском оставался пустой gap. Теперь поиск тянется
-              (flex-1), «×» прижат справа → список активов получает эту высоту. */}
-          <div className="flex items-center gap-3">
-            {/* Search — outline 2px text-primary в editorial / accent в dark */}
-            <div className="relative flex-1 min-w-0">
-              <Search
-                size={18}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--text-secondary)' }}
-              />
-              <input
-                ref={inputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск актива"
-                className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  border: '2px solid var(--text-primary)',
-                }}
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-label="Закрыть"
-            >
-              <X size={22} />
-            </button>
-          </div>
-
-          {/* Категории — chip pills */}
-          {!onlyGroups && (
-          <div className="flex gap-2 mt-3 flex-wrap">
-            {CATEGORY_FILTERS.map(cat => {
-              const active = categoryFilter === cat.key;
-              return (
-                <button
-                  key={cat.key}
-                  onClick={() => setCategoryFilter(cat.key)}
-                  className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
-                  style={{
-                    backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
-                  }}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-          </div>
-          )}
-
-          {/* Multi-режим: массовые действия — выбрать весь видимый список или
-              все избранные. Editorial-кнопки (2px border, токены, press). */}
-          {multiSelect && (
-            <div className="flex gap-2 mt-3 flex-wrap">
-              <button
-                type="button"
-                onClick={selectAllVisible}
-                className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors"
-                style={{
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '2px solid var(--text-primary)',
-                  fontSize: 'var(--fs-xs)',
-                }}
-              >
-                {/* При активной категории — контекстная подпись «весь сектор»,
-                    чтобы было очевидно, что добавится именно текущий сектор. */}
-                {categoryFilter !== 'all'
-                  ? `Выбрать весь сектор: «${
-                      CATEGORY_FILTERS.find((c) => c.key === categoryFilter)?.label ?? categoryFilter
-                    }»`
-                  : 'Выбрать все'}
-              </button>
-              <button
-                type="button"
-                onClick={selectAllFavorites}
-                className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
-                style={{
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '2px solid var(--text-primary)',
-                  fontSize: 'var(--fs-xs)',
-                  gap: 'var(--sp-1)',
-                }}
-              >
-                <Star size={14} fill="currentColor" style={{ color: 'var(--accent)' }} />
-                Все избранные
-              </button>
-              {/* Снять весь выбор — иначе после «Выбрать все» (100+ активов)
-                  не убрать руками по одному. Появляется только когда есть что снимать. */}
-              {selectedSet.size > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onClearAll?.()}
-                  className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
-                  style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-secondary)',
-                    border: '2px solid var(--border-color)',
-                    fontSize: 'var(--fs-xs)',
-                    gap: 'var(--sp-1)',
-                  }}
-                >
-                  <X size={14} />
-                  Снять выбор ({selectedSet.size})
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Results — sticky-шапка колонок ВНУТРИ скролла: общий скроллбар
-            (scrollbar-gutter stable) + одинаковые с строками отступы/gap/ширины
-            → заголовки и значения гарантированно в одной сетке. */}
-        <div
-          className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
-          style={{ scrollbarGutter: 'stable' }}
-        >
-          {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
-              ([иконка 28]·gap·[Актив flex-1]·[Объём]·[Изм.]·[lock 18]·[звезда 28]) */}
-          {!loading && (
-            <div
-              className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2 mb-1.5"
-              style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
-            >
-              {/* Чекбокс-спейсер — зеркалит чекбокс в строке (multi-режим) */}
-              {multiSelect && <span style={{ width: 22, flexShrink: 0 }} aria-hidden="true" />}
-              {/* Подпись «Актив» убрана — строка-шапка нужна только под сортировку
-                  (Изм./Объём). Слева — растягивающийся спейсер, чтобы контролы
-                  сортировки оставались выровнены по колонкам строк. */}
-              <span className="flex-1" aria-hidden="true" />
-              {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
-              {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
-              <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
-              <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
-            </div>
-          )}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div
-                className="w-8 h-8 border-2 rounded-full animate-spin"
-                style={{
-                  borderColor: 'var(--accent)',
-                  borderTopColor: 'transparent',
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              {/* Favorites */}
-              {favoriteInstruments.length > 0 && searchQuery === '' && (
-                <div className="mb-2">
-                  <h3
-                    className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
+          {/* Modal — editorial pill в светлой / glass в dark, через CSS-overrides.
+              Базово: bg-secondary + 2px border + hard shadow. */}
+          <div
+            className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              border: '2px solid var(--text-primary)',
+              boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+              color: 'var(--text-primary)',
+            }}
+          >
+            {/* Header — заголовок «Выбор актива» убран (поиск самоочевиден), осталась
+                только кнопка закрытия + компактный поиск, чтобы освободить место под
+                список активов. */}
+            <div className="px-6 pt-6 pb-3 flex-shrink-0">
+              {/* Поиск + «×» в одном ряду. Раньше «×» жил в отдельной строке сверху,
+                  из-за чего над поиском оставался пустой gap. Теперь поиск тянется
+                  (flex-1), «×» прижат справа → список активов получает эту высоту. */}
+              <div className="flex items-center gap-3">
+                {/* Search — outline 2px text-primary в editorial / accent в dark */}
+                <div className="relative flex-1 min-w-0">
+                  <Search
+                    size={18}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2"
                     style={{ color: 'var(--text-secondary)' }}
+                  />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Поиск актива"
+                    className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
+                    style={{
+                      backgroundColor: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      border: '2px solid var(--text-primary)',
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={onClose}
+                  className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
+                  style={{ color: 'var(--text-secondary)' }}
+                  aria-label="Закрыть"
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              {/* Категории — chip pills */}
+              {!onlyGroups && (
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {CATEGORY_FILTERS.map(cat => {
+                  const active = categoryFilter === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      onClick={() => setCategoryFilter(cat.key)}
+                      className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
+                      style={{
+                        backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                        color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                        border: '2px solid var(--text-primary)',
+                        boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
+                      }}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+              )}
+
+              {/* Multi-режим: массовые действия — выбрать весь видимый список или
+                  все избранные. Editorial-кнопки (2px border, токены, press). */}
+              {multiSelect && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={selectAllVisible}
+                    className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors"
+                    style={{
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      border: '2px solid var(--text-primary)',
+                      fontSize: 'var(--fs-xs)',
+                    }}
                   >
-                    Избранные
-                  </h3>
-                  <div className="instrument-list">
-                    {favoriteInstruments.map(renderItem)}
-                  </div>
+                    {/* При активной категории — контекстная подпись «весь сектор»,
+                        чтобы было очевидно, что добавится именно текущий сектор. */}
+                    {categoryFilter !== 'all'
+                      ? `Выбрать весь сектор: «${
+                          CATEGORY_FILTERS.find((c) => c.key === categoryFilter)?.label ?? categoryFilter
+                        }»`
+                      : 'Выбрать все'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={selectAllFavorites}
+                    className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
+                    style={{
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      border: '2px solid var(--text-primary)',
+                      fontSize: 'var(--fs-xs)',
+                      gap: 'var(--sp-1)',
+                    }}
+                  >
+                    <Star size={14} fill="currentColor" style={{ color: 'var(--accent)' }} />
+                    Все избранные
+                  </button>
+                  {/* Снять весь выбор — иначе после «Выбрать все» (100+ активов)
+                      не убрать руками по одному. Появляется только когда есть что снимать. */}
+                  {selectedSet.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onClearAll?.()}
+                      className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
+                      style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-secondary)',
+                        border: '2px solid var(--border-color)',
+                        fontSize: 'var(--fs-xs)',
+                        gap: 'var(--sp-1)',
+                      }}
+                    >
+                      <X size={14} />
+                      Снять выбор ({selectedSet.size})
+                    </button>
+                  )}
                 </div>
               )}
+            </div>
 
-              {/* Regular — со своей подписью-секцией «Остальные», когда есть
-                  избранные: две явно разделённые зоны (Избранные сверху, остальные
-                  ниже) через разделитель + заголовок, а не еле заметную линию. */}
-              {regularInstruments.length === 0 && favoriteInstruments.length === 0 ? (
-                <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                  Ничего не найдено
+            {/* Results — sticky-шапка колонок ВНУТРИ скролла: общий скроллбар
+                (scrollbar-gutter stable) + одинаковые с строками отступы/gap/ширины
+                → заголовки и значения гарантированно в одной сетке. */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
+                  ([иконка 28]·gap·[Актив flex-1]·[Объём]·[Изм.]·[lock 18]·[звезда 28]) */}
+              {!loading && (
+                <div
+                  className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2 mb-1.5"
+                  style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
+                >
+                  {/* Чекбокс-спейсер — зеркалит чекбокс в строке (multi-режим) */}
+                  {multiSelect && <span style={{ width: 22, flexShrink: 0 }} aria-hidden="true" />}
+                  {/* Подпись «Актив» убрана — строка-шапка нужна только под сортировку
+                      (Изм./Объём). Слева — растягивающийся спейсер, чтобы контролы
+                      сортировки оставались выровнены по колонкам строк. */}
+                  <span className="flex-1" aria-hidden="true" />
+                  {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
+                  {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
+                  <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
+                  <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
+                </div>
+              )}
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div
+                    className="w-8 h-8 border-2 rounded-full animate-spin"
+                    style={{
+                      borderColor: 'var(--accent)',
+                      borderTopColor: 'transparent',
+                    }}
+                  />
                 </div>
               ) : (
                 <>
-                  {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
-                    <>
-                      <div className="h-px mb-2" style={{ backgroundColor: 'var(--border-color)' }} />
+                  {/* Favorites */}
+                  {favoriteInstruments.length > 0 && searchQuery === '' && (
+                    <div className="mb-2">
                       <h3
                         className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
                         style={{ color: 'var(--text-secondary)' }}
                       >
-                        Остальные
+                        Избранные
                       </h3>
+                      <div className="instrument-list">
+                        {favoriteInstruments.map(renderItem)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Regular — со своей подписью-секцией «Остальные», когда есть
+                      избранные: две явно разделённые зоны (Избранные сверху, остальные
+                      ниже) через разделитель + заголовок, а не еле заметную линию. */}
+                  {regularInstruments.length === 0 && favoriteInstruments.length === 0 ? (
+                    <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
+                      Ничего не найдено
+                    </div>
+                  ) : (
+                    <>
+                      {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
+                        <>
+                          <div className="h-px mb-2" style={{ backgroundColor: 'var(--border-color)' }} />
+                          <h3
+                            className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
+                            style={{ color: 'var(--text-secondary)' }}
+                          >
+                            Остальные
+                          </h3>
+                        </>
+                      )}
+                      <div className="instrument-list">
+                        {regularInstruments.map(renderItem)}
+                      </div>
                     </>
                   )}
-                  <div className="instrument-list">
-                    {regularInstruments.map(renderItem)}
-                  </div>
                 </>
               )}
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* Footer (только multi-режим): «Готово (N)» закрывает выбор через onDone. */}
-        {multiSelect && (
-          <div
-            className="flex-shrink-0 px-6 py-4"
-            style={{ borderTop: '2px solid var(--text-primary)', backgroundColor: 'var(--bg-secondary)' }}
-          >
-            <button
-              type="button"
-              onClick={() => onDone?.()}
-              className="editorial-press w-full py-3 font-bold rounded-xl transition-colors"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--text-inverse)',
-                border: '2px solid var(--text-primary)',
-                boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
-                fontSize: 'var(--fs-base)',
-              }}
-            >
-              Готово ({selectedSet.size})
-            </button>
+            {/* Footer (только multi-режим): «Готово (N)» закрывает выбор через onDone. */}
+            {multiSelect && (
+              <div
+                className="flex-shrink-0 px-6 py-4"
+                style={{ borderTop: '2px solid var(--text-primary)', backgroundColor: 'var(--bg-secondary)' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onDone?.()}
+                  className="editorial-press w-full py-3 font-bold rounded-xl transition-colors"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--text-inverse)',
+                    border: '2px solid var(--text-primary)',
+                    boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
+                    fontSize: 'var(--fs-base)',
+                  }}
+                >
+                  Готово ({selectedSet.size})
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      </ModalLayer>
   );
 }
