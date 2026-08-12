@@ -306,6 +306,10 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
     return [...funds].sort(cmp);
   }, [funds, fundSort]);
 
+  // Узел-слот тулбара для контролов вкладки «Потоки» (портал из CompanyFlowsTab).
+  // Через useState, а не ref: портал должен перерисоваться, когда узел появится.
+  const [companySlot, setCompanySlot] = useState<HTMLDivElement | null>(null);
+
   // ── «ещё» (⚙) для movers: период 1М/6М/1Г теперь в шапке самой панели
   // (её onPeriodChange) — как на сайте; в ⚙ остаётся только фильтр фондов. ──
   const moversMore: ReactNode = moverPickerFunds.length > 1 ? (
@@ -337,8 +341,14 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
 
   // Тулбар: заперт на movers → пусто (заголовок и период 1М/6М/1Г уже в
   // шапке самой PortfolioMoversPanel, дублировать их в тулбаре не нужно).
+  // Рядом с табами — слот, в который вкладка «Потоки» порталом кладёт СВОИ
+  // контролы (бумага/режим/период/фонды): состояние живёт в CompanyFlowsTab,
+  // поэтому поднять их пропами нельзя, а второй реализации быть не должно.
   const toolbar: ReactNode = lockTab === 'movers' ? undefined : (
-    <TabBar tab={tab} onChange={setTab} />
+    <>
+      <TabBar tab={tab} onChange={setTab} />
+      <div ref={setCompanySlot} style={{ display: 'contents' }} />
+    </>
   );
 
   return (
@@ -347,7 +357,15 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       more={more}
     >
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-        <div className="styled-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}>
+        {/* «Потоки» — чарт-вкладка: edge-to-edge и без прокрутки, как у остальных
+            графических панелей (её контролы уехали в тулбар). Остальные вкладки —
+            списки/карточки: им нужны отступы и скролл. */}
+        <div
+          className="styled-scrollbar"
+          style={tab === 'company'
+            ? { flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }
+            : { flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}
+        >
           {tab === 'movers' && (
             moversStatus === 'ok' || moversStatus === 'empty' ? (
               <PortfolioMoversPanel
@@ -372,7 +390,7 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
 
           {tab === 'company' && (
             <div style={{ flex: 1, minHeight: 0 }}>
-              <CompanyFlowsTab />
+              <CompanyFlowsTab embedded controlsTarget={companySlot} />
             </div>
           )}
         </div>

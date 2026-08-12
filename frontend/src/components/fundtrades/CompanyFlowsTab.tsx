@@ -27,6 +27,7 @@
  * общему контракту — здесь импортируем строго по контрактным именам.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
@@ -55,6 +56,10 @@ import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import ChartSettings from '../chart/ChartSettings';
 import { usePersistedState } from '../../hooks/usePersistedState';
+// UI-кит панелей (тулбар окна). Лежит в pages/embed, но это именно набор
+// примитивов, а не страница: сайтовые SegmentedControl/таблетки в тулбар окна
+// не влезают (та же причина, по которой скринер не переиспользует OiScreenerTable).
+import { PillGroup } from '../../pages/embed/EmbedToolbar';
 
 type Metric = 'amount' | 'weight';
 
@@ -145,16 +150,29 @@ export interface CompanyFlowsTabProps {
      *  Только для десктопа: у мобилки свой тулбар-шит, у эмбеда — EmbedToolbar,
      *  и ChartCaptureButton тянет AnalyticsContext, которого в эмбеде может не быть. */
     showChartActions?: boolean;
+    /** Панельный режим (окно расширения / песочницы): сайтовый ряд контролов не
+     *  рисуется на месте, а УЕЗЖАЕТ ПОРТАЛОМ в тулбар окна (controlsTarget) в
+     *  компактных примитивах; сам таб отдаёт только график во всю площадь.
+     *  Данные, фильтры и методология — те же, второй реализации нет. */
+    embedded?: boolean;
+    /** Куда портировать контролы в панельном режиме (узел внутри тулбара окна). */
+    controlsTarget?: HTMLElement | null;
 }
 
-export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showChartActions = false }: CompanyFlowsTabProps = {}) {
+export default function CompanyFlowsTab({
+    presetAsset, onPresetConsumed, showChartActions = false, embedded = false, controlsTarget = null,
+}: CompanyFlowsTabProps = {}) {
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     // min = 475: карточка графика = chartHeight + ~39px (padding + легенда/навигатор),
     // то есть floor даёт блок ~514px — ровно фиксированный размер блока в «Силе рынка»
     // (--strength-chart-top-height 300 + --strength-chart-bottom-height 150 + chrome).
     // Ниже этого блок не ужимается даже на низком окне.
     const chartAnchorRef = useRef<HTMLDivElement>(null);
-    const chartHeight = useFitToViewport(chartAnchorRef, { min: 475, max: 720, bottomBuffer: 64 });
+    const chartHeight = useFitToViewport(chartAnchorRef, embedded
+        // В окне высота = сама панель: сайтовый пол 475px не даёт графику
+        // ужаться под невысокое окно терминала и вылезает за край.
+        ? { min: 180, max: 2000, bottomBuffer: 6 }
+        : { min: 475, max: 720, bottomBuffer: 64 });
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);
@@ -635,17 +653,14 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
         );
     }
 
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-            {/* Контролы: таблетка поиска бумаги (стиль «Сезонности») + фильтр фондов.
-                Раскладка кнопок повторяет «Деньги в фондах» — горизонтальный ряд. */}
+    // Ряд контролов. На сайте рисуется тут же над графиком; в панели уезжает
+    // порталом в тулбар окна (см. controlsRow ниже) и собирается из компактных
+    // примитивов — сайтовые SegmentedControl в строку тулбара не помещаются.
+    const controlsRow = (
             <div
-                style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: 'var(--sp-2)',
-                }}
+                style={embedded
+                    ? { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }
+                    : { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--sp-2)' }}
             >
                 {/* Таблетка бумаги — widget-flat (icon + имя + тикер + ▾),
                     1-в-1 как селектор актива на «Сезонности» (под именем — тикер).
@@ -656,8 +671,22 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     data-tour="ft-company-asset"
                     onClick={() => setPickerOpen(true)}
                     title={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
-                    className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
-                    style={{
+                    className={embedded ? 'font-medium flex items-center' : 'widget-flat font-medium transition-colors flex items-center hover:opacity-90'}
+                    style={embedded ? {
+                        // Как AssetButton других панелей: рамка, компактные кегли,
+                        // имя обрезается — тулбар окна живёт в одну строку.
+                        color: 'var(--text-primary)',
+                        fontSize: 11.5,
+                        padding: '2px 6px',
+                        gap: 5,
+                        borderRadius: 6,
+                        border: '1.5px solid var(--border-strong, var(--border-color, rgba(128,128,128,0.4)))',
+                        background: 'transparent',
+                        maxWidth: 170,
+                        minWidth: 0,
+                        flexShrink: 1,
+                        cursor: 'pointer',
+                    } : {
                         color: 'var(--text-primary)',
                         fontSize: 'var(--fs-sm)',
                         padding: 'var(--sp-2) var(--sp-4)',
@@ -671,8 +700,8 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     }}
                 >
                     {selectedAsset
-                        ? <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} size={28} />
-                        : <span style={{ width: 28, height: 28, flexShrink: 0 }} />}
+                        ? <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} size={embedded ? 16 : 28} />
+                        : <span style={{ width: embedded ? 16 : 28, height: embedded ? 16 : 28, flexShrink: 0 }} />}
                     <div className="flex-1 text-left" style={{ minWidth: 0 }}>
                         <div
                             className="font-medium"
@@ -680,7 +709,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                         >
                             {selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : 'Выберите бумагу'}
                         </div>
-                        {selectedAsset && (
+                        {selectedAsset && !embedded && (
                             <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
                                 {selectedTicker ?? `${selectedAsset.funds_count} ${pluralFunds(selectedAsset.funds_count)}`}
                             </div>
@@ -705,6 +734,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     только у бумаг с free-float капой (акции из MOEXBMI).
                     Обёртка — якорь онбординг-тура (шаг «Три взгляда на бумагу»);
                     display:flex, чтобы в flex-ряду контролов ничего не поехало. */}
+                {embedded ? (
+                    <PillGroup<ChartMode>
+                        value={effectiveMode}
+                        options={visibleModes.map(m => ({ id: m, label: MODE_LABELS[m] }))}
+                        onChange={setMode}
+                    />
+                ) : (
                 <div data-tour="ft-company-modes" style={{ display: 'flex' }}>
                 <SegmentedControl<ChartMode>
                     options={visibleModes.map(m => ({ key: m, label: MODE_LABELS[m] }))}
@@ -723,15 +759,24 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     }
                 />
                 </div>
+                )}
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё).
                     Последний в левой группе контролов: идёт после тумблеров, но
                     к правому краю ряда НЕ прижимается. */}
+                {embedded ? (
+                    <PillGroup<Period>
+                        value={period}
+                        options={CF_PERIODS.map(p => ({ id: p, label: PERIOD_LABELS[p] }))}
+                        onChange={setPeriod}
+                    />
+                ) : (
                 <SegmentedControl<Period>
                     options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
                     value={period}
                     onChange={setPeriod}
                 />
+                )}
 
                 {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
                     фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
@@ -766,6 +811,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                     </ChartActionsMenu>
                 )}
             </div>
+    );
+
+    return (
+        <div style={embedded
+            // Панель: контролы уехали в тулбар, здесь только график во всю площадь.
+            ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }
+            : { display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}
+        >
+            {embedded
+                ? (controlsTarget ? createPortal(controlsRow, controlsTarget) : null)
+                : controlsRow}
 
             {flowsError && (
                 <div
@@ -799,7 +855,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showCha
                 получают одинаковое окно месяцев — режимы синхронны. */}
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
-            <div ref={chartAnchorRef} data-tour="ft-company-chart" style={{ position: 'relative' }}>
+            <div
+                ref={chartAnchorRef}
+                data-tour="ft-company-chart"
+                style={embedded ? { position: 'relative', flex: 1, minHeight: 0 } : { position: 'relative' }}
+            >
                 {effectiveMode === 'map' ? (
                     <CompanyFlowsPriceMap
                         months={visibleMonths}
