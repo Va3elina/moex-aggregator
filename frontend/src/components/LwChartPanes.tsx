@@ -2080,8 +2080,20 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     } else if (savedTimeRange) {
       // Тот же участок ИСТОРИИ, что и был. Если новый ряд его не покрывает,
       // движок бросит — тогда падаем на логический диапазон ниже.
-      let okByTime = false;
-      try { lead.timeScale().setVisibleRange(savedTimeRange); okByTime = true; } catch { /* вне данных */ }
+      //
+      // ⚠️ Если график УЖЕ стоит на этом окне (частый случай: данные доехали
+      // вторым куском, состав серий тот же) — не трогаем его вовсе. Каждая
+      // лишняя установка диапазона это ещё один пересчёт раскладки, и на серии
+      // быстрых обновлений подряд (смена ТФ → префетч истории → реалтайм-тик)
+      // они складываются в видимое дрожание вида влево-вправо.
+      const same = (() => {
+        try {
+          const cur = lead.timeScale().getVisibleRange();
+          return !!cur && cur.from === savedTimeRange.from && cur.to === savedTimeRange.to;
+        } catch { return false; }
+      })();
+      let okByTime = same;
+      try { if (!same) { lead.timeScale().setVisibleRange(savedTimeRange); okByTime = true; } } catch { /* вне данных */ }
       if (!okByTime && (savedRange ?? lastRangeRef.current)) {
         lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
       }

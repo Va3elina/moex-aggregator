@@ -270,8 +270,29 @@ function smoothOf<T>(pts: IndPoint<T>[], type: SmoothType, length: number): IndP
   return sma(pts, length);   // sma и sma_bb — середина одна и та же
 }
 
-/** Палитра наложений — та же CC-гамма, что у ⚙-Формата серий. */
+/** Палитра наложений — та же CC-гамма, что у ⚙-Формата серий. Осталась как
+ *  фолбэк для видов без своей гаммы. */
 const PALETTE = ['#9B8BF0', '#E0A34E', '#57C7C7', '#5BD49C', '#EF6F6F', '#5DA3E9'];
+
+/**
+ * Цвет ПО ВИДУ индикатора (просьба Вадима «присвоить всему цвета»): RSI всегда
+ * фиолетовый, ATR — красный, объёмы — синие и так далее. Раньше цвет брался
+ * хешем от id, то есть был случайным: две панели RSI на соседних окнах могли
+ * оказаться разного цвета, и глазом они не связывались.
+ *
+ * Внутри вида — три оттенка: MA 20 и MA 50 на одном графике обязаны отличаться,
+ * иначе две одинаковые линии не различить. Четвёртый и дальше идут по кругу
+ * (столько одинаковых индикаторов сразу — уже экзотика).
+ */
+const KIND_TINTS: Record<IndicatorKind, string[]> = {
+  ma:     ['#E0A34E', '#C4842B', '#F2C078'],   // охра
+  ema:    ['#5BD49C', '#37A876', '#8FE5BC'],   // зелёный
+  bb:     ['#57C7C7', '#369F9F', '#8BDBDB'],   // бирюза
+  rsi:    ['#9B8BF0', '#7361D8', '#BDB2F7'],   // фиолетовый
+  atr:    ['#EF6F6F', '#CE4B4B', '#F79A9A'],   // красный
+  volume: ['#5DA3E9', '#3B7FC7', '#8DC1F0'],   // синий
+  vp:     ['#8E9BB3', '#6C7A94', '#AEB9CC'],   // серо-синий
+};
 
 const uid = () => 'ind_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
@@ -466,7 +487,16 @@ export function useIndicators(lsKey: string, opts?: {
   }, [swapPanes]);
 
   const colorOf = useCallback(
-    (i: IndicatorInst) => i.styles?.line?.color ?? i.color ?? PALETTE[Math.abs(hash(i.id)) % PALETTE.length],
+    (i: IndicatorInst) => {
+      const own = i.styles?.line?.color ?? i.color;
+      if (own) return own;                       // выбранный руками цвет — приоритет
+      const tints = KIND_TINTS[i.kind];
+      if (!tints) return PALETTE[Math.abs(hash(i.id)) % PALETTE.length];
+      // Порядковый номер СРЕДИ СВОЕГО ВИДА — по нему берём оттенок. Читаем ref,
+      // а не list: колбэк обязан оставаться стабильным (он в депсах мемо серий).
+      const idx = listRef.current.filter((x) => x.kind === i.kind).findIndex((x) => x.id === i.id);
+      return tints[(idx < 0 ? 0 : idx) % tints.length];
+    },
     [],
   );
 
