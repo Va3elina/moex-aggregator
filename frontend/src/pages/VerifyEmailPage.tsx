@@ -98,7 +98,7 @@ export default function VerifyEmailPage() {
         <div className="flex items-center gap-3 mb-6">
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: 'var(--accent-bg)' }}
+            style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}
           >
             <MailCheck size={20} style={{ color: 'var(--accent)' }} />
           </div>

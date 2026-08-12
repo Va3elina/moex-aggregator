@@ -222,11 +222,13 @@ export default function App() {
           {/* Подтверждение email кодом из письма (email+password юзеры).
               Без Layout — fullscreen форма. Редирект сюда после регистрации. */}
           <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>
             <Route path="/login" element={<LoginPage />} />
+            {/* Восстановление пароля — тоже модалка поверх сайта, как вход:
+                уходить из модалки на fullscreen-страницу и обратно — разрыв. */}
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/" element={<HomeRoute />} />
             <Route path="/oi" element={
               <ResponsiveRoute

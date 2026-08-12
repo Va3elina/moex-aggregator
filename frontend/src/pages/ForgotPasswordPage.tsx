@@ -1,21 +1,25 @@
 /**
  * ForgotPasswordPage — восстановление забытого пароля по коду из письма.
  *
- * Два шага на одной странице: ввод email → ввод кода и нового пароля. Отдельного
- * роута под второй шаг нет намеренно — код живёт 30 минут в БД, а не в URL, так
- * что «ссылка из письма» здесь не нужна и лишний адрес только даёт куда потерять
+ * ⚠️ Оформлена МОДАЛКОЙ поверх сайта, точно как LoginPage, и роут живёт внутри
+ * Layout. Первая версия была fullscreen-страницей — и переход «Забыли пароль?»
+ * из модалки входа выбрасывал человека на голый экран без шапки. Меняя вёрстку
+ * здесь, держите её в паре с LoginPage.
+ *
+ * Два шага в одном окне: email → код + новый пароль. Отдельного роута под
+ * второй шаг нет намеренно: код живёт 30 минут в БД, а не в URL, так что
+ * «ссылка из письма» здесь не нужна и лишний адрес только даёт куда потерять
  * состояние.
  *
- * ⚠️ Бэкенд отвечает 204 даже если такого аккаунта нет (защита от перебора
- * адресов), поэтому шаг 2 показываем ВСЕГДА, а формулировки держим в
- * сослагательном: «если аккаунт существует». Иначе UI выдал бы то, что бэкенд
- * специально скрывает.
+ * ⚠️ Бэкенд отвечает 204 даже если аккаунта нет (защита от перебора адресов),
+ * поэтому шаг 2 показываем ВСЕГДА, а формулировки держим в сослагательном:
+ * «если аккаунт существует». Иначе UI выдаст то, что бэкенд прячет.
  *
  * Бэкенд: POST /api/auth/password-reset/{request,confirm}.
  */
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { KeyRound, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, KeyRound, AlertCircle, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { requestPasswordReset, confirmPasswordReset, ApiError } from '../services/api';
 
 export default function ForgotPasswordPage() {
@@ -92,7 +96,11 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  const inputStyle = {
+  const fieldWrap = 'relative';
+  const fieldIcon = 'absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none';
+  const fieldInput =
+    'w-full pl-10 pr-3 py-2.5 rounded-xl border outline-none focus:ring-2 text-sm transition-colors';
+  const fieldStyle = {
     backgroundColor: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     borderColor: 'var(--border-color)',
@@ -100,44 +108,56 @@ export default function ForgotPasswordPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-10"
-      style={{ backgroundColor: 'var(--bg-primary)' }}
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
     >
+      {/* Backdrop — клик уводит на главную, как в модалке входа */}
+      <div className="absolute inset-0" onClick={() => navigate('/')} />
+
       <div
-        className="w-full max-w-md p-6 sm:p-8 rounded-lg"
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-        }}
+        className="relative w-full max-w-md border rounded-2xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+        style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
       >
-        <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => navigate('/')}
+          className="absolute top-4 right-4 p-2.5 -m-1 rounded-lg transition-all hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
+          style={{ color: 'var(--text-muted)' }}
+          aria-label="Закрыть"
+        >
+          <X size={20} />
+        </button>
+
+        <div className="text-center mb-6">
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: 'var(--accent-bg)' }}
+            className="w-11 h-11 rounded-full flex items-center justify-center mx-auto mb-3"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}
           >
             <KeyRound size={20} style={{ color: 'var(--accent)' }} />
           </div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             {step === 'email' ? 'Восстановление пароля' : 'Новый пароль'}
-          </h1>
+          </h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+            {step === 'email'
+              ? 'Пришлём код на почту аккаунта'
+              : 'Введите код из письма и придумайте пароль'}
+          </p>
         </div>
 
         {step === 'email' ? (
-          <>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Введите адрес, на который зарегистрирован аккаунт — пришлём код для смены пароля.
-            </p>
-            <form onSubmit={handleRequest} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  Email
-                </label>
+          <form onSubmit={handleRequest} className="space-y-4">
+            <div>
+              <label
+                htmlFor="reset-email"
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Email
+              </label>
+              <div className={fieldWrap}>
+                <Mail size={16} className={fieldIcon} style={{ color: 'var(--text-muted)' }} />
                 <input
-                  id="email"
+                  id="reset-email"
                   type="email"
                   autoComplete="email"
                   value={email}
@@ -146,47 +166,51 @@ export default function ForgotPasswordPage() {
                   required
                   autoFocus
                   disabled={submitting}
-                  className="w-full px-3 py-3 rounded border outline-none focus:ring-2"
-                  style={inputStyle}
+                  className={fieldInput}
+                  style={fieldStyle}
                 />
               </div>
+            </div>
 
-              {error && (
-                <div
-                  className="flex items-start gap-2 p-3 rounded text-sm"
-                  style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'var(--danger, #dc2626)' }}
-                >
-                  <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  <div>{error}</div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting || !email.trim()}
-                className="w-full py-2.5 rounded font-medium transition-opacity disabled:opacity-50"
-                style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-text, #fff)' }}
+            {error && (
+              <div
+                className="flex items-start gap-2 p-3 rounded-xl text-sm"
+                style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'var(--danger, #dc2626)' }}
               >
-                {submitting ? 'Отправляем…' : 'Прислать код'}
-              </button>
-            </form>
-          </>
+                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                <div>{error}</div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting || !email.trim()}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+              style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+            >
+              {submitting ? (
+                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  Прислать код
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </form>
         ) : (
           <>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Введите код из письма и придумайте новый пароль. Код действует 30&nbsp;минут.
-            </p>
             <form onSubmit={handleConfirm} className="space-y-4">
               <div>
                 <label
-                  htmlFor="code"
-                  className="block text-sm font-medium mb-2"
+                  htmlFor="reset-code"
+                  className="block text-sm font-medium mb-1.5"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   Код из письма
                 </label>
                 <input
-                  id="code"
+                  id="reset-code"
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
@@ -197,9 +221,9 @@ export default function ForgotPasswordPage() {
                   autoFocus
                   maxLength={6}
                   disabled={submitting}
-                  className="w-full px-3 py-3 rounded border outline-none focus:ring-2 text-center"
+                  className="w-full px-3 py-3 rounded-xl border outline-none focus:ring-2 text-center"
                   style={{
-                    ...inputStyle,
+                    ...fieldStyle,
                     fontFamily: 'var(--font-mono, monospace)',
                     fontSize: '24px',
                     letterSpacing: '0.4em',
@@ -210,30 +234,33 @@ export default function ForgotPasswordPage() {
 
               <div>
                 <label
-                  htmlFor="new-password"
-                  className="block text-sm font-medium mb-2"
+                  htmlFor="reset-password"
+                  className="block text-sm font-medium mb-1.5"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   Новый пароль
                 </label>
-                <input
-                  id="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(ev) => setPassword(ev.target.value)}
-                  placeholder="минимум 8 символов"
-                  required
-                  minLength={8}
-                  disabled={submitting}
-                  className="w-full px-3 py-3 rounded border outline-none focus:ring-2"
-                  style={inputStyle}
-                />
+                <div className={fieldWrap}>
+                  <Lock size={16} className={fieldIcon} style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    id="reset-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(ev) => setPassword(ev.target.value)}
+                    placeholder="минимум 8 символов"
+                    required
+                    minLength={8}
+                    disabled={submitting}
+                    className={fieldInput}
+                    style={fieldStyle}
+                  />
+                </div>
               </div>
 
               {error && (
                 <div
-                  className="flex items-start gap-2 p-3 rounded text-sm"
+                  className="flex items-start gap-2 p-3 rounded-xl text-sm"
                   style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'var(--danger, #dc2626)' }}
                 >
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
@@ -243,7 +270,7 @@ export default function ForgotPasswordPage() {
 
               {info && (
                 <div
-                  className="flex items-start gap-2 p-3 rounded text-sm"
+                  className="flex items-start gap-2 p-3 rounded-xl text-sm"
                   style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--success, #16a34a)' }}
                 >
                   <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" />
@@ -254,10 +281,17 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={submitting || code.length !== 6 || password.length < 8}
-                className="w-full py-2.5 rounded font-medium transition-opacity disabled:opacity-50"
-                style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-text, #fff)' }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+                style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
               >
-                {submitting ? 'Меняем пароль…' : 'Сменить пароль'}
+                {submitting ? (
+                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    Сменить пароль
+                    <ArrowRight size={16} />
+                  </>
+                )}
               </button>
             </form>
 
@@ -265,7 +299,7 @@ export default function ForgotPasswordPage() {
               type="button"
               onClick={handleResend}
               disabled={cooldown > 0 || submitting}
-              className="w-full mt-3 py-2 text-sm transition-opacity hover:opacity-70 disabled:opacity-50"
+              className="w-full mt-3 py-2 text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
               style={{ color: 'var(--accent)' }}
             >
               {cooldown > 0 ? `Отправить код повторно (${cooldown}с)` : 'Отправить код повторно'}
@@ -273,14 +307,12 @@ export default function ForgotPasswordPage() {
           </>
         )}
 
-        <Link
-          to="/login"
-          className="flex items-center justify-center gap-1.5 w-full mt-3 py-2 text-sm transition-opacity hover:opacity-70"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <ArrowLeft size={14} />
-          Вернуться ко входу
-        </Link>
+        <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+          Вспомнили пароль?{' '}
+          <Link to="/login" className="font-medium hover:underline" style={{ color: 'var(--accent)' }}>
+            Войти
+          </Link>
+        </div>
       </div>
     </div>
   );
