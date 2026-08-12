@@ -870,7 +870,12 @@ export default function CompanyFlowsTab({
     );
 
     return (
-        <div style={embedded
+        <div
+            // Тултип этой вкладки в панели ОСТАВЛЯЕМ (см. sandbox.css): движок
+            // старый, значений в легенде нет, и разбивку сделок по фондам
+            // показывает только подсказка под курсором.
+            className={embedded ? 'emb-tooltip-ok' : undefined}
+            style={embedded
             // Панель: контролы уехали в тулбар, здесь только график во всю площадь.
             ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }
             : { display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}

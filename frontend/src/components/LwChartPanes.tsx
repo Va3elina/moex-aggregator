@@ -1634,6 +1634,30 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       };
       bx.addEventListener('wheel', onWheel, { capture: true, passive: false });
       wheelOff.push(() => bx.removeEventListener('wheel', onWheel, true));
+
+      // Кроссхэйр после зума колесом. Движок двигает его только по mousemove:
+      // при зуме мышь стоит, бары под ней разъезжаются — и перекрестие остаётся
+      // на старом ПИКСЕЛЕ, то есть уже не там, где курсор (фидбек Вадима
+      // «кроссхэйр отвязывается от курсора»). Досылаем синтетический mousemove
+      // в тех же координатах — движок пересчитывает перекрестие под курсор.
+      // rAF: к этому моменту библиотека уже применила новый диапазон.
+      let reAimRaf = 0;
+      const reAim = (e: WheelEvent) => {
+        const x = e.clientX, y = e.clientY;
+        if (reAimRaf) cancelAnimationFrame(reAimRaf);
+        reAimRaf = requestAnimationFrame(() => {
+          reAimRaf = 0;
+          const el = document.elementFromPoint(x, y);
+          if (el && bx.contains(el)) {
+            el.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+          }
+        });
+      };
+      bx.addEventListener('wheel', reAim, { passive: true });
+      wheelOff.push(() => {
+        bx.removeEventListener('wheel', reAim);
+        if (reAimRaf) cancelAnimationFrame(reAimRaf);
+      });
       // Двойной клик по ценовой оси — вернуть автомасштаб (и сбросить отступы,
       // накрученные колесом). Ровно как в терминалах.
       const onAxisDbl = (e: MouseEvent) => {
@@ -1721,6 +1745,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     if (!root) return;
     const boxes = paneBoxes(root);
     const savedRange = charts[charts.length - 1].timeScale().getVisibleLogicalRange();
+    // ВРЕМЕННОЙ диапазон — приоритетный якорь при перестроении серий. Логический
+    // (номера баров) врёт, когда у нового набора серий ДРУГАЯ длина: переключил
+    // «Чистая позиция» → «ОИ», рядов стало больше/меньше, и окно [1200..1300]
+    // указывает уже на другие даты — график «бросало в начало» (фидбек Вадима).
+    // Время же не зависит от того, сколько точек в ряду.
+    const savedTimeRange = (() => {
+      try { return charts[charts.length - 1].timeScale().getVisibleRange(); } catch { return null; }
+    })();
 
     apisRef.current.forEach((apis, i) => apis.forEach((s) => { try { charts[i]?.removeSeries(s); } catch { /* removed */ } }));
     apisRef.current = panes.map(() => []);
@@ -2030,6 +2062,18 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       } else {
         charts.forEach((ch) => ch.timeScale().fitContent());
       }
+    } else if (savedTimeRange) {
+      // Тот же участок ИСТОРИИ, что и был. Если новый ряд его не покрывает,
+      // движок бросит — тогда падаем на логический диапазон ниже.
+      let okByTime = false;
+      try { lead.timeScale().setVisibleRange(savedTimeRange); okByTime = true; } catch { /* вне данных */ }
+      if (!okByTime && (savedRange ?? lastRangeRef.current)) {
+        lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
+      }
+      const axisTimesT = spineTimes.length
+        ? spineTimes
+        : (panes[0]?.series[0]?.data.map((pt) => pt.time) ?? []);
+      prevFirstTimeRef.current = axisTimesT[0] ?? null;
     } else if (savedRange ?? lastRangeRef.current) {
       // ⚠️ Догрузка истории сдвигает ЛОГИЧЕСКИЕ индексы: бар, который был
       // нулевым, после склейки стоит N-м. Восстановить диапазон «как был»
