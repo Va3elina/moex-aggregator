@@ -279,7 +279,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     const key = `${instrument}:${interval}:${clgroup}`;
     if (prefetchedFor.current === key) return;
     prefetchedFor.current = key;
-    loadMore();
+    // ⚠️ С задержкой, а не сразу: догрузка истории приходит вторым куском и
+    // пересобирает серии графика. Если это случается в тот же момент, когда
+    // пользователь только что переключил таймфрейм и график появился, два
+    // перестроения подряд читаются как дрожание вида (фидбек Вадима). Полсекунды
+    // хватает, чтобы первый показ устоялся; на «долистал до края» это не влияет —
+    // там loadMore зовёт сам график, без этой паузы.
+    const t = window.setTimeout(() => loadMore(), 500);
+    return () => window.clearTimeout(t);
   }, [status, data, instrument, interval, clgroup, loadMore]);
 
   // Загрузка данных графика. show_oi=true всегда (в embed всегда есть серия ОИ).
