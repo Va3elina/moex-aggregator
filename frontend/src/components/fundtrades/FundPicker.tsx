@@ -14,6 +14,8 @@
 //                           Кнопка-триггер = «тикер · имя» с аватаром УК.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ModalLayer from '../ModalLayer';
+import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X } from 'lucide-react';
 import { UK_LOGOS, stripUkName } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -222,192 +224,273 @@ function FundPickerModal({
     };
 
     return (
-        // role="dialog" — драг-обработчик панели песочницы игнорирует клики
-        // внутри [role="dialog"] (см. onDragStart в SandboxPage).
-        <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
-            {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
-            <div
-                className="absolute inset-0"
-                style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-                onClick={onClose}
-            />
+        <ModalLayer>
+            // role="dialog" — драг-обработчик панели песочницы игнорирует клики
+            // внутри [role="dialog"] (см. onDragStart в SandboxPage).
+            <div role="dialog" aria-modal="true" className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20" style={{ zIndex: MODAL_LAYER_Z }}>
+                {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
+                <div
+                    className="absolute inset-0"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                    onClick={onClose}
+                />
 
-            {/* Окно — bg-secondary + 2px border text-primary + hard shadow. */}
-            <div
-                className="instrument-modal relative w-full rounded-2xl max-h-[80vh] overflow-hidden flex flex-col"
-                style={{
-                    maxWidth: 580,
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-                    color: 'var(--text-primary)',
-                }}
-            >
-                {/* Header */}
-                <div className="px-6 pt-6 pb-4">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                            Выбор фонда
-                        </h2>
-                        <button
-                            onClick={onClose}
-                            className="instrument-modal-close transition-colors"
-                            style={isMobile ? {
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: 44, height: 44, flexShrink: 0, borderRadius: 8,
-                                border: '1.5px solid var(--text-primary)',
-                                background: 'var(--bg-primary)', color: 'var(--text-primary)',
-                            } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
-                            aria-label="Закрыть"
-                        >
-                            <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
-                        </button>
+                {/* Окно — bg-secondary + 2px border text-primary + hard shadow. */}
+                <div
+                    className="instrument-modal relative w-full rounded-2xl max-h-[80vh] overflow-hidden flex flex-col"
+                    style={{
+                        maxWidth: 580,
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '2px solid var(--text-primary)',
+                        boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+                        color: 'var(--text-primary)',
+                    }}
+                >
+                    {/* Header */}
+                    <div className="px-6 pt-6 pb-4">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                                Выбор фонда
+                            </h2>
+                            <button
+                                onClick={onClose}
+                                className="instrument-modal-close transition-colors"
+                                style={isMobile ? {
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 44, height: 44, flexShrink: 0, borderRadius: 8,
+                                    border: '1.5px solid var(--text-primary)',
+                                    background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
+                                aria-label="Закрыть"
+                            >
+                                <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
+                            </button>
+                        </div>
+
+                        {/* Search */}
+                        <div className="relative">
+                            <Search
+                                size={20}
+                                className="absolute left-4 top-1/2 -translate-y-1/2"
+                                style={{ color: 'var(--text-secondary)' }}
+                            />
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Поиск по тикеру или имени"
+                                className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
+                                style={{
+                                    backgroundColor: 'var(--bg-primary)',
+                                    color: 'var(--text-primary)',
+                                    border: '2px solid var(--text-primary)',
+                                }}
+                            />
+                        </div>
+
+                        {/* Таблетка-тумблер «Без индексных фондов» под поиском: прожата —
+                            индексные фонды сняты с выбора, рядом «?» с объяснением. */}
+                        {mode === 'multi' && idxTickers.length > 0 && (
+                            <div className="flex items-center mt-4" style={{ gap: 6 }}>
+                                <button
+                                    type="button"
+                                    onClick={toggleIndexOff}
+                                    className="editorial-press"
+                                    aria-pressed={indexOff}
+                                    title={indexOff
+                                        ? `Индексные фонды выключены (${idxTickers.length})`
+                                        : `Выключить индексные фонды (${idxTickers.length})`}
+                                    style={{
+                                        padding: '4px 14px',
+                                        borderRadius: 999,
+                                        border: '2px solid var(--text-primary)',
+                                        background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
+                                        color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                        fontSize: 'var(--fs-xs)',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
+                                        transition: 'background-color 0.12s ease, color 0.12s ease',
+                                    }}
+                                >
+                                    Без индексных фондов
+                                </button>
+                                {/* float — окно с overflow:hidden обрезало бы поповер. */}
+                                <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
+                            </div>
+                        )}
                     </div>
 
-                    {/* Search */}
-                    <div className="relative">
-                        <Search
-                            size={20}
-                            className="absolute left-4 top-1/2 -translate-y-1/2"
-                            style={{ color: 'var(--text-secondary)' }}
-                        />
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Поиск по тикеру или имени"
-                            className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
-                            style={{
-                                backgroundColor: 'var(--bg-primary)',
-                                color: 'var(--text-primary)',
-                                border: '2px solid var(--text-primary)',
-                            }}
-                        />
-                    </div>
-
-                    {/* Таблетка-тумблер «Без индексных фондов» под поиском: прожата —
-                        индексные фонды сняты с выбора, рядом «?» с объяснением. */}
-                    {mode === 'multi' && idxTickers.length > 0 && (
-                        <div className="flex items-center mt-4" style={{ gap: 6 }}>
+                    {/* Results */}
+                    <div className="overflow-y-auto flex-1 px-6 styled-scrollbar">
+                        {/* «Все фонды» — только в multi, сброс selected в пусто. Не закрывает окно. */}
+                        {mode === 'multi' && !q && (
                             <button
                                 type="button"
-                                onClick={toggleIndexOff}
-                                className="editorial-press"
-                                aria-pressed={indexOff}
-                                title={indexOff
-                                    ? `Индексные фонды выключены (${idxTickers.length})`
-                                    : `Выключить индексные фонды (${idxTickers.length})`}
+                                onClick={() => onChange(new Set())}
+                                onMouseEnter={() => setHover('__all__')}
+                                onMouseLeave={() => setHover(null)}
                                 style={{
-                                    padding: '4px 14px',
-                                    borderRadius: 999,
-                                    border: '2px solid var(--text-primary)',
-                                    background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
-                                    color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                    fontSize: 'var(--fs-xs)',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    whiteSpace: 'nowrap',
-                                    boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
-                                    transition: 'background-color 0.12s ease, color 0.12s ease',
-                                }}
-                            >
-                                Без индексных фондов
-                            </button>
-                            {/* float — окно с overflow:hidden обрезало бы поповер. */}
-                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
-                        </div>
-                    )}
-                </div>
-
-                {/* Results */}
-                <div className="overflow-y-auto flex-1 px-6 styled-scrollbar">
-                    {/* «Все фонды» — только в multi, сброс selected в пусто. Не закрывает окно. */}
-                    {mode === 'multi' && !q && (
-                        <button
-                            type="button"
-                            onClick={() => onChange(new Set())}
-                            onMouseEnter={() => setHover('__all__')}
-                            onMouseLeave={() => setHover(null)}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 10,
-                                width: '100%',
-                                padding: '12px 14px',
-                                textAlign: 'left',
-                                cursor: 'pointer',
-                                background: allActive
-                                    ? 'var(--bg-primary)'
-                                    : (hover === '__all__' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
-                                color: 'var(--text-primary)',
-                                border: 'none',
-                                borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                fontSize: 'var(--fs-sm)',
-                                fontWeight: allActive ? 800 : 600,
-                                whiteSpace: 'nowrap',
-                                borderRadius: 8,
-                            }}
-                        >
-                            <span
-                                style={{
-                                    width: 18,
-                                    height: 18,
-                                    flexShrink: 0,
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'center',
-                                    borderRadius: 4,
-                                    background: allActive ? 'var(--accent)' : 'transparent',
-                                    border: `2px solid ${allActive ? 'var(--accent)' : 'var(--text-muted)'}`,
-                                    transition: 'all 150ms',
+                                    gap: 10,
+                                    width: '100%',
+                                    padding: '12px 14px',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    background: allActive
+                                        ? 'var(--bg-primary)'
+                                        : (hover === '__all__' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
+                                    color: 'var(--text-primary)',
+                                    border: 'none',
+                                    borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: allActive ? 800 : 600,
+                                    whiteSpace: 'nowrap',
+                                    borderRadius: 8,
                                 }}
                             >
-                                {allActive && (
-                                    <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <polyline points="2 7 6 11 12 3" />
-                                    </svg>
-                                )}
-                            </span>
-                            Все фонды
-                        </button>
-                    )}
+                                <span
+                                    style={{
+                                        width: 18,
+                                        height: 18,
+                                        flexShrink: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        borderRadius: 4,
+                                        background: allActive ? 'var(--accent)' : 'transparent',
+                                        border: `2px solid ${allActive ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                        transition: 'all 150ms',
+                                    }}
+                                >
+                                    {allActive && (
+                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="2 7 6 11 12 3" />
+                                        </svg>
+                                    )}
+                                </span>
+                                Все фонды
+                            </button>
+                        )}
 
-                    {groups.length === 0 ? (
-                        <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                            {funds.length === 0 ? 'Нет фондов' : 'Ничего не найдено'}
-                        </div>
-                    ) : (
-                        groups.map((g) => (
-                            <div key={g.key}>
-                                {/* Заголовок-группа УК. В multi — кликабелен: чекбокс выбирает ВЕСЬ УК. */}
-                                {(() => {
-                                    const gTickers = g.funds.map((f) => f.ticker);
-                                    const gOn = gTickers.filter((t) => selected.has(t)).length;
-                                    const gAll = gOn === gTickers.length && gTickers.length > 0;
-                                    const gHover = hover === `__grp__${g.key}`;
-                                    return (
-                                        <div
-                                            onClick={mode === 'multi' ? () => toggleGroup(g) : undefined}
-                                            onMouseEnter={mode === 'multi' ? () => setHover(`__grp__${g.key}`) : undefined}
-                                            onMouseLeave={mode === 'multi' ? () => setHover(null) : undefined}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                                padding: '10px 14px 6px',
-                                                position: 'sticky',
-                                                top: 0,
-                                                zIndex: 1,
-                                                background: mode === 'multi' && gHover
-                                                    ? 'color-mix(in srgb, var(--accent) 8%, var(--bg-secondary))'
-                                                    : 'var(--bg-secondary)',
-                                                borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                                cursor: mode === 'multi' ? 'pointer' : 'default',
-                                                transition: 'background 150ms',
-                                            }}
-                                        >
-                                            {mode === 'multi' && (
+                        {groups.length === 0 ? (
+                            <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
+                                {funds.length === 0 ? 'Нет фондов' : 'Ничего не найдено'}
+                            </div>
+                        ) : (
+                            groups.map((g) => (
+                                <div key={g.key}>
+                                    {/* Заголовок-группа УК. В multi — кликабелен: чекбокс выбирает ВЕСЬ УК. */}
+                                    {(() => {
+                                        const gTickers = g.funds.map((f) => f.ticker);
+                                        const gOn = gTickers.filter((t) => selected.has(t)).length;
+                                        const gAll = gOn === gTickers.length && gTickers.length > 0;
+                                        const gHover = hover === `__grp__${g.key}`;
+                                        return (
+                                            <div
+                                                onClick={mode === 'multi' ? () => toggleGroup(g) : undefined}
+                                                onMouseEnter={mode === 'multi' ? () => setHover(`__grp__${g.key}`) : undefined}
+                                                onMouseLeave={mode === 'multi' ? () => setHover(null) : undefined}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                    padding: '10px 14px 6px',
+                                                    position: 'sticky',
+                                                    top: 0,
+                                                    zIndex: 1,
+                                                    background: mode === 'multi' && gHover
+                                                        ? 'color-mix(in srgb, var(--accent) 8%, var(--bg-secondary))'
+                                                        : 'var(--bg-secondary)',
+                                                    borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                    cursor: mode === 'multi' ? 'pointer' : 'default',
+                                                    transition: 'background 150ms',
+                                                }}
+                                            >
+                                                {mode === 'multi' && (
+                                                    <span
+                                                        style={{
+                                                            width: 18,
+                                                            height: 18,
+                                                            flexShrink: 0,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            borderRadius: 4,
+                                                            background: gAll ? 'var(--accent)' : 'transparent',
+                                                            border: `2px solid ${gAll || gOn > 0 ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                                            transition: 'all 150ms',
+                                                        }}
+                                                    >
+                                                        {gAll ? (
+                                                            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="2 7 6 11 12 3" />
+                                                            </svg>
+                                                        ) : gOn > 0 ? (
+                                                            <span style={{ width: 8, height: 2, background: 'var(--accent)', borderRadius: 1 }} />
+                                                        ) : null}
+                                                    </span>
+                                                )}
+                                                <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
+                                                <span
+                                                    style={{
+                                                        fontSize: 'var(--fs-xs)',
+                                                        fontWeight: 800,
+                                                        color: 'var(--text-secondary)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.02em',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        flex: 1,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    {g.name}
+                                                </span>
+                                                {mode === 'multi' && gOn > 0 && (
+                                                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 700 }}>
+                                                        {gOn}/{gTickers.length}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Фонды-строки: чекбокс(multi)/радио(single) + тикер + имя */}
+                                    {g.funds.map((f) => {
+                                        const on = selected.has(f.ticker);
+                                        const isHover = hover === f.ticker;
+                                        return (
+                                            <button
+                                                key={f.ticker}
+                                                type="button"
+                                                onClick={() => (mode === 'multi' ? toggleMulti(f.ticker) : pickSingle(f.ticker))}
+                                                onMouseEnter={() => setHover(f.ticker)}
+                                                onMouseLeave={() => setHover(null)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 12,
+                                                    width: '100%',
+                                                    padding: '10px 14px',
+                                                    textAlign: 'left',
+                                                    cursor: 'pointer',
+                                                    background: on
+                                                        ? 'var(--bg-primary)'
+                                                        : (isHover ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
+                                                    color: 'var(--text-primary)',
+                                                    border: 'none',
+                                                    fontSize: 'var(--fs-sm)',
+                                                    fontWeight: on ? 700 : 500,
+                                                    whiteSpace: 'nowrap',
+                                                    borderRadius: 8,
+                                                }}
+                                            >
+                                                {/* Индикатор выбора: квадрат-чекбокс (multi) / круг-радио (single) */}
                                                 <span
                                                     style={{
                                                         width: 18,
@@ -416,160 +499,81 @@ function FundPickerModal({
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
-                                                        borderRadius: 4,
-                                                        background: gAll ? 'var(--accent)' : 'transparent',
-                                                        border: `2px solid ${gAll || gOn > 0 ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                                        borderRadius: mode === 'single' ? '50%' : 4,
+                                                        background: on ? 'var(--accent)' : 'transparent',
+                                                        border: `2px solid ${on ? 'var(--accent)' : 'var(--text-muted)'}`,
                                                         transition: 'all 150ms',
                                                     }}
                                                 >
-                                                    {gAll ? (
-                                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                            <polyline points="2 7 6 11 12 3" />
-                                                        </svg>
-                                                    ) : gOn > 0 ? (
-                                                        <span style={{ width: 8, height: 2, background: 'var(--accent)', borderRadius: 1 }} />
-                                                    ) : null}
+                                                    {on && (mode === 'single'
+                                                        ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-inverse)' }} />
+                                                        : (
+                                                            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="2 7 6 11 12 3" />
+                                                            </svg>
+                                                        ))}
                                                 </span>
-                                            )}
-                                            <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
-                                            <span
-                                                style={{
-                                                    fontSize: 'var(--fs-xs)',
-                                                    fontWeight: 800,
-                                                    color: 'var(--text-secondary)',
-                                                    textTransform: 'uppercase',
-                                                    letterSpacing: '0.02em',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                    flex: 1,
-                                                    minWidth: 0,
-                                                }}
-                                            >
-                                                {g.name}
-                                            </span>
-                                            {mode === 'multi' && gOn > 0 && (
-                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 700 }}>
-                                                    {gOn}/{gTickers.length}
+                                                <span
+                                                    style={{
+                                                        fontWeight: 700,
+                                                        flex: 1,
+                                                        minWidth: 0,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        color: 'var(--text-primary)',
+                                                    }}
+                                                    title={f.name}
+                                                >
+                                                    {stripUkName(f.name, g.ukId)}
                                                 </span>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
+                                                <span
+                                                    style={{
+                                                        fontFamily: 'var(--font-mono, monospace)',
+                                                        fontSize: 'var(--fs-xs)',
+                                                        flexShrink: 0,
+                                                        color: 'var(--text-secondary)',
+                                                    }}
+                                                >
+                                                    {f.ticker}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ))
+                        )}
+                    </div>
 
-                                {/* Фонды-строки: чекбокс(multi)/радио(single) + тикер + имя */}
-                                {g.funds.map((f) => {
-                                    const on = selected.has(f.ticker);
-                                    const isHover = hover === f.ticker;
-                                    return (
-                                        <button
-                                            key={f.ticker}
-                                            type="button"
-                                            onClick={() => (mode === 'multi' ? toggleMulti(f.ticker) : pickSingle(f.ticker))}
-                                            onMouseEnter={() => setHover(f.ticker)}
-                                            onMouseLeave={() => setHover(null)}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 12,
-                                                width: '100%',
-                                                padding: '10px 14px',
-                                                textAlign: 'left',
-                                                cursor: 'pointer',
-                                                background: on
-                                                    ? 'var(--bg-primary)'
-                                                    : (isHover ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
-                                                color: 'var(--text-primary)',
-                                                border: 'none',
-                                                fontSize: 'var(--fs-sm)',
-                                                fontWeight: on ? 700 : 500,
-                                                whiteSpace: 'nowrap',
-                                                borderRadius: 8,
-                                            }}
-                                        >
-                                            {/* Индикатор выбора: квадрат-чекбокс (multi) / круг-радио (single) */}
-                                            <span
-                                                style={{
-                                                    width: 18,
-                                                    height: 18,
-                                                    flexShrink: 0,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    borderRadius: mode === 'single' ? '50%' : 4,
-                                                    background: on ? 'var(--accent)' : 'transparent',
-                                                    border: `2px solid ${on ? 'var(--accent)' : 'var(--text-muted)'}`,
-                                                    transition: 'all 150ms',
-                                                }}
-                                            >
-                                                {on && (mode === 'single'
-                                                    ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-inverse)' }} />
-                                                    : (
-                                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                            <polyline points="2 7 6 11 12 3" />
-                                                        </svg>
-                                                    ))}
-                                            </span>
-                                            <span
-                                                style={{
-                                                    fontWeight: 700,
-                                                    flex: 1,
-                                                    minWidth: 0,
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    color: 'var(--text-primary)',
-                                                }}
-                                                title={f.name}
-                                            >
-                                                {stripUkName(f.name, g.ukId)}
-                                            </span>
-                                            <span
-                                                style={{
-                                                    fontFamily: 'var(--font-mono, monospace)',
-                                                    fontSize: 'var(--fs-xs)',
-                                                    flexShrink: 0,
-                                                    color: 'var(--text-secondary)',
-                                                }}
-                                            >
-                                                {f.ticker}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        ))
+                    {/* Footer — только multi: «Готово» закрывает окно (выбор уже применён). */}
+                    {mode === 'multi' && (
+                        <div
+                            className="px-6 py-4"
+                            style={{ borderTop: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
+                        >
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="editorial-press"
+                                style={{
+                                    width: '100%',
+                                    padding: '12px 18px',
+                                    background: 'var(--accent)',
+                                    color: 'var(--text-inverse)',
+                                    border: '2px solid var(--text-primary)',
+                                    borderRadius: 12,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '3px 3px 0 var(--text-primary)',
+                                }}
+                            >
+                                Готово{allActive ? '' : ` · ${selected.size}`}
+                            </button>
+                        </div>
                     )}
                 </div>
-
-                {/* Footer — только multi: «Готово» закрывает окно (выбор уже применён). */}
-                {mode === 'multi' && (
-                    <div
-                        className="px-6 py-4"
-                        style={{ borderTop: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
-                    >
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="editorial-press"
-                            style={{
-                                width: '100%',
-                                padding: '12px 18px',
-                                background: 'var(--accent)',
-                                color: 'var(--text-inverse)',
-                                border: '2px solid var(--text-primary)',
-                                borderRadius: 12,
-                                fontSize: 'var(--fs-sm)',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                boxShadow: '3px 3px 0 var(--text-primary)',
-                            }}
-                        >
-                            Готово{allActive ? '' : ` · ${selected.size}`}
-                        </button>
-                    </div>
-                )}
             </div>
-        </div>
+        </ModalLayer>
     );
 }
 

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import ModalLayer from '../../components/ModalLayer';
+import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
 import { resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
@@ -289,153 +291,155 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   };
 
   return (
-    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
-      {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
-      <div
-        className="absolute inset-0"
-        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-        onClick={onClose}
-      />
-
-      {/* Окно — bg-secondary + 2px border text-primary + hard shadow. Flex-колонка
-          + max-h-[90vh] (как в InstrumentSearchModal): список тянется на всю
-          доступную высоту, а не упирается в фикс. calc → окно не «укороченное». */}
-      <div
-        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '2px solid var(--text-primary)',
-          boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-          color: 'var(--text-primary)',
-        }}
-      >
-        {/* Header — заголовок «Выбор бумаги» убран (поиск самоочевиден). Поиск
-            (flex-1) + «×» в одном ряду — как в Сезонности (InstrumentSearchModal). */}
-        <div className="px-6 pt-6 pb-3 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Search — outline 2px text-primary, компактный (py-2.5) как в Сезонности */}
-            <div className="relative flex-1 min-w-0">
-              <Search
-                size={18}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--text-secondary)' }}
-              />
-              <input
-                ref={inputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск актива"
-                className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  border: '2px solid var(--text-primary)',
-                }}
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="instrument-modal-close transition-colors flex-shrink-0"
-              style={isMobile ? {
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 34, height: 34, borderRadius: 8,
-                border: '1.5px solid var(--text-primary)',
-                background: 'var(--bg-primary)', color: 'var(--text-primary)',
-              } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8, marginRight: -8 }}
-              aria-label="Закрыть"
-            >
-              <X size={isMobile ? 18 : 22} strokeWidth={isMobile ? 2.4 : 2} />
-            </button>
-          </div>
-
-          {/* Табы-категории (показываем только если корзин > 1). Дефолт «Акции» —
-              чистый список; облигации/ОФЗ/фонды доступны по клику. «Все» — последняя. */}
-          {presentCats.length > 1 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {[...presentCats, 'all'].map((cat) => {
-                const isActive = effectiveCat === cat;
-                const label = cat === 'all' ? 'Все' : (CAT_LABELS[cat] ?? cat);
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setActiveCat(cat)}
-                    className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
-                    style={{
-                      backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
-                      color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                      border: '2px solid var(--text-primary)',
-                      boxShadow: isActive ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Results — со sticky-шапкой колонок ВНУТРИ скролл-контейнера: общий
-            скроллбар (scrollbar-gutter stable) + одинаковые с строками отступы/
-            gap/ширины → заголовки и значения гарантированно в одной сетке. */}
-        <div
-          className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
-          style={{ scrollbarGutter: 'stable' }}
-        >
-          {/* Sticky-шапка колонок — кликабельная сортировка, зеркалит строку списка
-              ([лого-спейсер 24] · gap · [Бумага flex-1] · cols · [звезда-спейсер 36]) */}
+      <ModalLayer>
+        <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10" style={{ zIndex: MODAL_LAYER_Z }}>
+          {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
           <div
-            className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2.5 mb-2"
-            style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
+            className="absolute inset-0"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onClick={onClose}
+          />
+
+          {/* Окно — bg-secondary + 2px border text-primary + hard shadow. Flex-колонка
+              + max-h-[90vh] (как в InstrumentSearchModal): список тянется на всю
+              доступную высоту, а не упирается в фикс. calc → окно не «укороченное». */}
+          <div
+            className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              border: '2px solid var(--text-primary)',
+              boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+              color: 'var(--text-primary)',
+            }}
           >
-            <span
-              className="flex-1 uppercase font-bold"
-              style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
-            >
-              Бумага
-            </span>
-            {renderSortHeader('volume', 'Суммарный объём в фондах', 'Суммарный объём бумаги в портфелях фондов, ₽')}
-            <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
-          </div>
-
-          {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
-            <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-              Ничего не найдено
-            </div>
-          ) : (
-            <>
-              {/* Favorites */}
-              {favoriteAssets.length > 0 && !q && (
-                <div className="mb-6">
-                  <h3
-                    className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
+            {/* Header — заголовок «Выбор бумаги» убран (поиск самоочевиден). Поиск
+                (flex-1) + «×» в одном ряду — как в Сезонности (InstrumentSearchModal). */}
+            <div className="px-6 pt-6 pb-3 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                {/* Search — outline 2px text-primary, компактный (py-2.5) как в Сезонности */}
+                <div className="relative flex-1 min-w-0">
+                  <Search
+                    size={18}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2"
                     style={{ color: 'var(--text-secondary)' }}
-                  >
-                    Избранные
-                  </h3>
-                  <div className="instrument-list">
-                    {favoriteAssets.map(renderItem)}
-                  </div>
+                  />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Поиск актива"
+                    className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
+                    style={{
+                      backgroundColor: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      border: '2px solid var(--text-primary)',
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={onClose}
+                  className="instrument-modal-close transition-colors flex-shrink-0"
+                  style={isMobile ? {
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 34, height: 34, borderRadius: 8,
+                    border: '1.5px solid var(--text-primary)',
+                    background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                  } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8, marginRight: -8 }}
+                  aria-label="Закрыть"
+                >
+                  <X size={isMobile ? 18 : 22} strokeWidth={isMobile ? 2.4 : 2} />
+                </button>
+              </div>
+
+              {/* Табы-категории (показываем только если корзин > 1). Дефолт «Акции» —
+                  чистый список; облигации/ОФЗ/фонды доступны по клику. «Все» — последняя. */}
+              {presentCats.length > 1 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {[...presentCats, 'all'].map((cat) => {
+                    const isActive = effectiveCat === cat;
+                    const label = cat === 'all' ? 'Все' : (CAT_LABELS[cat] ?? cat);
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setActiveCat(cat)}
+                        className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
+                        style={{
+                          backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
+                          color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
+                          border: '2px solid var(--text-primary)',
+                          boxShadow: isActive ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
+            </div>
 
-              {/* Divider */}
-              {!q && favoriteAssets.length > 0 && regularAssets.length > 0 && (
-                <div className="h-px mb-6" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
-              )}
+            {/* Results — со sticky-шапкой колонок ВНУТРИ скролл-контейнера: общий
+                скроллбар (scrollbar-gutter stable) + одинаковые с строками отступы/
+                gap/ширины → заголовки и значения гарантированно в одной сетке. */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              {/* Sticky-шапка колонок — кликабельная сортировка, зеркалит строку списка
+                  ([лого-спейсер 24] · gap · [Бумага flex-1] · cols · [звезда-спейсер 36]) */}
+              <div
+                className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2.5 mb-2"
+                style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
+              >
+                <span
+                  className="flex-1 uppercase font-bold"
+                  style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
+                >
+                  Бумага
+                </span>
+                {renderSortHeader('volume', 'Суммарный объём в фондах', 'Суммарный объём бумаги в портфелях фондов, ₽')}
+                <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
+              </div>
 
-              {/* Regular */}
-              {regularAssets.length > 0 && (
-                <div className="instrument-list">
-                  {regularAssets.map(renderItem)}
+              {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
+                <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  Ничего не найдено
                 </div>
+              ) : (
+                <>
+                  {/* Favorites */}
+                  {favoriteAssets.length > 0 && !q && (
+                    <div className="mb-6">
+                      <h3
+                        className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        Избранные
+                      </h3>
+                      <div className="instrument-list">
+                        {favoriteAssets.map(renderItem)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divider */}
+                  {!q && favoriteAssets.length > 0 && regularAssets.length > 0 && (
+                    <div className="h-px mb-6" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
+                  )}
+
+                  {/* Regular */}
+                  {regularAssets.length > 0 && (
+                    <div className="instrument-list">
+                      {regularAssets.map(renderItem)}
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </ModalLayer>
   );
 }

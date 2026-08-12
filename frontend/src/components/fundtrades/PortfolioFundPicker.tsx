@@ -17,6 +17,8 @@
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
 
 import React, { useEffect, useMemo, useState } from 'react';
+import ModalLayer from '../ModalLayer';
+import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock, Wallet } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
@@ -416,353 +418,355 @@ function PickerModal({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
-            <div
-                className="absolute inset-0"
-                style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-                onClick={applyAndClose}
-            />
-            <div
-                className="relative w-full rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
-                style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-                    color: 'var(--text-primary)',
-                    maxWidth: 816,
-                }}
-            >
-                {/* Заголовок + счётчик выбранных в одном ряду, справа крестик —
-                    как шапка модалки фондов в «Деньгах в фондах». */}
+        <ModalLayer>
+            <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10" style={{ zIndex: MODAL_LAYER_Z }}>
                 <div
-                    className="flex items-center flex-shrink-0 flex-wrap"
-                    style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: SOFT_BORDER }}
+                    className="absolute inset-0"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                    onClick={applyAndClose}
+                />
+                <div
+                    className="relative w-full rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                    style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '2px solid var(--text-primary)',
+                        boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+                        color: 'var(--text-primary)',
+                        maxWidth: 816,
+                    }}
                 >
-                    <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
-                        {title}
-                    </span>
-                    {/* Знаменатель — доступные к выбору фонды: с прожатой таблеткой
-                        индексные из пула выпадают (19 → 16). Сколько именно выключено,
-                        тут не пишем: об этом говорят сама прожатая таблетка и плашка
-                        поверх размытой группы. */}
-                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                        выбрано {draft.size} из {allTickers.length - (indexOff ? idxTickers.length : 0)}
-                    </span>
-                    {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
-                        счётчиком: прожата — три индексных фонда сняты (счётчик сразу
-                        меньше на 3), рядом «?» с объяснением почему. */}
-                    {idxTickers.length > 0 && (
-                        <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6 }}>
-                            <button
-                                type="button"
-                                onClick={toggleIndexOff}
-                                className="editorial-press"
-                                aria-pressed={indexOff}
-                                title={indexOff
-                                    ? `Индексные фонды выключены (${idxTickers.length})`
-                                    : `Выключить индексные фонды (${idxTickers.length})`}
-                                style={{
-                                    padding: '4px 14px',
-                                    borderRadius: 999,
-                                    border: '2px solid var(--text-primary)',
-                                    background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
-                                    color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                    fontSize: 'var(--fs-xs)',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    whiteSpace: 'nowrap',
-                                    boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
-                                    transition: 'background-color 0.12s ease, color 0.12s ease',
-                                }}
-                            >
-                                Без индексных фондов
-                            </button>
-                            {/* float — окно модалки с overflow:hidden обрезало бы
-                                поповер по своему краю (особенно на узком экране). */}
-                            <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
-                        </span>
-                    )}
-                    <button
-                        onClick={applyAndClose}
-                        className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
-                        style={{ color: 'var(--text-secondary)' }}
-                        aria-label="Закрыть"
+                    {/* Заголовок + счётчик выбранных в одном ряду, справа крестик —
+                        как шапка модалки фондов в «Деньгах в фондах». */}
+                    <div
+                        className="flex items-center flex-shrink-0 flex-wrap"
+                        style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: SOFT_BORDER }}
                     >
-                        <X size={22} />
-                    </button>
-                </div>
+                        <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
+                            {title}
+                        </span>
+                        {/* Знаменатель — доступные к выбору фонды: с прожатой таблеткой
+                            индексные из пула выпадают (19 → 16). Сколько именно выключено,
+                            тут не пишем: об этом говорят сама прожатая таблетка и плашка
+                            поверх размытой группы. */}
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                            выбрано {draft.size} из {allTickers.length - (indexOff ? idxTickers.length : 0)}
+                        </span>
+                        {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
+                            счётчиком: прожата — три индексных фонда сняты (счётчик сразу
+                            меньше на 3), рядом «?» с объяснением почему. */}
+                        {idxTickers.length > 0 && (
+                            <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6 }}>
+                                <button
+                                    type="button"
+                                    onClick={toggleIndexOff}
+                                    className="editorial-press"
+                                    aria-pressed={indexOff}
+                                    title={indexOff
+                                        ? `Индексные фонды выключены (${idxTickers.length})`
+                                        : `Выключить индексные фонды (${idxTickers.length})`}
+                                    style={{
+                                        padding: '4px 14px',
+                                        borderRadius: 999,
+                                        border: '2px solid var(--text-primary)',
+                                        background: indexOff ? 'var(--accent)' : 'var(--bg-secondary)',
+                                        color: indexOff ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                        fontSize: 'var(--fs-xs)',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: indexOff ? '3px 3px 0 var(--text-primary)' : 'none',
+                                        transition: 'background-color 0.12s ease, color 0.12s ease',
+                                    }}
+                                >
+                                    Без индексных фондов
+                                </button>
+                                {/* float — окно модалки с overflow:hidden обрезало бы
+                                    поповер по своему краю (особенно на узком экране). */}
+                                <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
+                            </span>
+                        )}
+                        <button
+                            onClick={applyAndClose}
+                            className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
+                            style={{ color: 'var(--text-secondary)' }}
+                            aria-label="Закрыть"
+                        >
+                            <X size={22} />
+                        </button>
+                    </div>
 
-                {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
-                    вертикальный скроллбар не съедает правый отступ). */}
-                <div
-                    className="flex-1 min-h-0 overflow-y-auto styled-scrollbar"
-                    style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}
-                >
-                    <table className="w-full" style={{ fontSize: 'var(--fs-sm)', tableLayout: 'fixed' }}>
-                        {/* Раскладка колонок — как bare-FundsTable: чекбокс 40,
-                            Название тянется, СЧА 84, Доходность 142. */}
-                        <colgroup>
-                            <col style={{ width: 40 }} />
-                            <col />
-                            <col style={{ width: 84 }} />
-                            <col style={{ width: 142 }} />
-                        </colgroup>
-                        <thead>
-                            <tr className="text-left" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                                <th className="pl-2 pr-0 py-2 w-10"></th>
-                                <th className="pl-1 pr-2 py-2" style={HEAD_STYLE}>Название</th>
-                                <th className="px-2 py-2 text-right whitespace-nowrap">
-                                    {sortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
-                                </th>
-                                <th className="px-2 py-2 text-right whitespace-nowrap">
-                                    {sortButton('y1', 'Доходность', 'Доходность пая за 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {/* Мастер-строка «Выбрать все» + суммарная СЧА выбранных. */}
-                            <tr style={{ borderBottom: SOFT_BORDER }}>
-                                <td className="pl-2 pr-0 py-1">
-                                    <div
-                                        className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
-                                        onClick={toggleAll}
-                                    >
-                                        <CheckBox checked={allSelected} indeterminate={anySelected && !allSelected} />
-                                    </div>
-                                </td>
-                                <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
-                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>Выбрать все</span>
-                                </td>
-                                <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
-                                    {navSumBln(funds).toFixed(2)}
-                                </td>
-                                <td className="cursor-pointer select-none" onClick={toggleAll} />
-                            </tr>
+                    {/* Скролл-зона с симметричными отступами (scrollbar-gutter both-edges —
+                        вертикальный скроллбар не съедает правый отступ). */}
+                    <div
+                        className="flex-1 min-h-0 overflow-y-auto styled-scrollbar"
+                        style={{ padding: '0 var(--sp-4) var(--sp-4)', scrollbarGutter: 'stable both-edges' }}
+                    >
+                        <table className="w-full" style={{ fontSize: 'var(--fs-sm)', tableLayout: 'fixed' }}>
+                            {/* Раскладка колонок — как bare-FundsTable: чекбокс 40,
+                                Название тянется, СЧА 84, Доходность 142. */}
+                            <colgroup>
+                                <col style={{ width: 40 }} />
+                                <col />
+                                <col style={{ width: 84 }} />
+                                <col style={{ width: 142 }} />
+                            </colgroup>
+                            <thead>
+                                <tr className="text-left" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                    <th className="pl-2 pr-0 py-2 w-10"></th>
+                                    <th className="pl-1 pr-2 py-2" style={HEAD_STYLE}>Название</th>
+                                    <th className="px-2 py-2 text-right whitespace-nowrap">
+                                        {sortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
+                                    </th>
+                                    <th className="px-2 py-2 text-right whitespace-nowrap">
+                                        {sortButton('y1', 'Доходность', 'Доходность пая за 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {/* Мастер-строка «Выбрать все» + суммарная СЧА выбранных. */}
+                                <tr style={{ borderBottom: SOFT_BORDER }}>
+                                    <td className="pl-2 pr-0 py-1">
+                                        <div
+                                            className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
+                                            onClick={toggleAll}
+                                        >
+                                            <CheckBox checked={allSelected} indeterminate={anySelected && !allSelected} />
+                                        </div>
+                                    </td>
+                                    <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
+                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>Выбрать все</span>
+                                    </td>
+                                    <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
+                                        {navSumBln(funds).toFixed(2)}
+                                    </td>
+                                    <td className="cursor-pointer select-none" onClick={toggleAll} />
+                                </tr>
 
-                            {groups.map((g) => {
-                                const tickers = g.funds.map((f) => f.ticker);
-                                const gAll = tickers.every((t) => draft.has(t));
-                                const gAny = tickers.some((t) => draft.has(t));
-                                const isCollapsed = collapsed.has(g.key);
-                                return (
-                                    <React.Fragment key={g.key}>
-                                        {/* Заголовок подкатегории — один в один со строкой
-                                            подкатегории в FundsTable: чекбокс группы, шеврон
-                                            сворачивания, название, «?»-справка и СЧА группы. */}
-                                        <tr style={{ borderTop: SOFT_BORDER }}>
-                                            <td className="pl-2 pr-0 py-1">
-                                                <div
-                                                    className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
-                                                    onClick={() => toggleGroup(g)}
-                                                >
-                                                    <CheckBox checked={gAll} indeterminate={gAny && !gAll} />
-                                                </div>
-                                            </td>
-                                            <td
-                                                className="pl-1 pr-2 py-1 cursor-pointer select-none"
-                                                onClick={() => setCollapsed((prev) => {
-                                                    const next = new Set(prev);
-                                                    next.has(g.key) ? next.delete(g.key) : next.add(g.key);
-                                                    return next;
-                                                })}
-                                            >
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    {/* Индикатор сворачивания — SVG-шеврон (как у сортировки
-                                                        колонок), а не текстовый ▼: тот в Windows подхватывался
-                                                        эмодзи-шрифтом и выглядел инородно. */}
-                                                    <ChevronDown
-                                                        size={13}
-                                                        strokeWidth={2.5}
-                                                        className="flex-shrink-0 transition-transform duration-200"
-                                                        style={{ color: 'var(--text-secondary)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
-                                                    />
-                                                    <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
-                                                        {g.label}
-                                                    </span>
-                                                    {/* Справка по подкатегории — та же, что в «Деньгах в
-                                                        фондах»; клик по «?» не сворачивает группу. */}
-                                                    {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
-                                                        <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
-                                                            <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} float />
-                                                        </span>
-                                                    )}
-                                                    {gAny && !gAll && (
-                                                        <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                                            {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-2 py-1 text-right select-none" style={NUM_STYLE}>
-                                                {navSumBln(g.funds).toFixed(2)}
-                                            </td>
-                                            <td />
-                                        </tr>
-                                        {!isCollapsed && sortFunds(g.funds).map((fund) => {
-                                            const on = draft.has(fund.ticker);
-                                            const uk = resolveFundLogo(fund.ticker, fund.uk_id);
-                                            const br = bestReturn(fund.returns);
-                                            // Пока таблетка прожата, индексные фонды слегка
-                                            // размыты — видно, что они выведены из портфеля,
-                                            // но строка остаётся кликабельной.
-                                            const blurred = indexOff && isIndexSubcategory(fund.subcategory);
-                                            const stale = staleInfo(fund);
-                                            return (
-                                                <tr
-                                                    key={fund.ticker}
-                                                    className={`transition-colors cursor-pointer ${on ? 'hover:bg-white/5' : 'opacity-50 grayscale hover:bg-white/5'}`}
-                                                    style={{
-                                                        height: 41,
-                                                        borderTop: SOFT_BORDER,
-                                                        ...(blurred ? { filter: 'blur(1.1px)' } : null),
-                                                    }}
-                                                    onClick={() => toggleFund(fund.ticker)}
-                                                >
-                                                    <td className="pl-2 pr-0 py-1">
-                                                        <div className="flex items-center justify-center w-5 h-5 rounded-lg">
-                                                            <CheckBox checked={on} />
-                                                        </div>
-                                                    </td>
-                                                    <td className="pl-1 pr-2 py-1 overflow-hidden">
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            {uk && (
-                                                                <div
-                                                                    className="rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
-                                                                    style={{
-                                                                        backgroundColor: uk.img ? undefined : uk.bg,
-                                                                        color: uk.color,
-                                                                        width: 28, height: 28,
-                                                                    }}
-                                                                >
-                                                                    {uk.img
-                                                                        ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
-                                                                        : uk.letter}
-                                                                </div>
-                                                            )}
-                                                            <FadedName
-                                                                name={fund.name}
-                                                                display={stripUkName(fund.name, fund.uk_id)}
-                                                            />
-                                                            <span
-                                                                className="flex-shrink-0"
-                                                                style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
-                                                            >
-                                                                {fund.ticker}
-                                                            </span>
-                                                            {/* Фонд не отчитался за месяц среза — «!» с месяцем
-                                                                его последнего состава (как в списке фондов
-                                                                «Денег в фондах»). */}
-                                                            {stale && (
-                                                                <span
-                                                                    className="cursor-help inline-flex flex-shrink-0"
-                                                                    style={{ opacity: 0.6, color: 'var(--text-secondary)' }}
-                                                                    title={stale}
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                >
-                                                                    <AlertCircle size={17} strokeWidth={2.2} />
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-2 py-1 text-right" style={NUM_STYLE}>
-                                                        {fund.nav_rub ? (fund.nav_rub / 1e9).toFixed(2) : '—'}
-                                                    </td>
-                                                    <td
-                                                        className="px-2 py-1 text-right whitespace-nowrap"
-                                                        style={{
-                                                            ...NUM_STYLE,
-                                                            ...(br ? { color: br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' } : {}),
-                                                        }}
-                                                    >
-                                                        {!br ? '—' : (
-                                                            <>
-                                                                {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
-                                                                {br.label !== '1г' && (
-                                                                    <span style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3, color: 'var(--text-secondary)' }}>{br.label}</span>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {/* Плашка «выключено» лежит ПОВЕРХ всей размытой группы,
-                                            а не рядом с её названием: так метка относится ко всем
-                                            строкам сразу и не читается как свойство подкатегории.
-                                            Технически — нулевой высоты строка сразу за группой;
-                                            оверлей внутри её ячейки растягивается вверх на высоту
-                                            группы (строки фиксированные, ROW_H), поэтому плашка
-                                            встаёт ровно по центру блока. Клик возвращает фонды. */}
-                                        {!isCollapsed && indexOff && isIndexSubcategory(g.subcat) && (
-                                            <tr style={{ height: 0 }}>
-                                                <td colSpan={4} style={{ padding: 0, border: 0, height: 0, position: 'relative' }}>
+                                {groups.map((g) => {
+                                    const tickers = g.funds.map((f) => f.ticker);
+                                    const gAll = tickers.every((t) => draft.has(t));
+                                    const gAny = tickers.some((t) => draft.has(t));
+                                    const isCollapsed = collapsed.has(g.key);
+                                    return (
+                                        <React.Fragment key={g.key}>
+                                            {/* Заголовок подкатегории — один в один со строкой
+                                                подкатегории в FundsTable: чекбокс группы, шеврон
+                                                сворачивания, название, «?»-справка и СЧА группы. */}
+                                            <tr style={{ borderTop: SOFT_BORDER }}>
+                                                <td className="pl-2 pr-0 py-1">
                                                     <div
-                                                        style={{
-                                                            position: 'absolute', left: 0, right: 0, bottom: 0,
-                                                            height: g.funds.length * ROW_H,
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            pointerEvents: 'none',
-                                                        }}
+                                                        className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
+                                                        onClick={() => toggleGroup(g)}
                                                     >
-                                                        <button
-                                                            type="button"
-                                                            onClick={toggleIndexOff}
-                                                            className="editorial-press"
-                                                            title="Индексные фонды выключены таблеткой в шапке. Нажмите, чтобы вернуть их в портфель."
-                                                            style={{
-                                                                pointerEvents: 'auto',
-                                                                padding: '5px 16px',
-                                                                borderRadius: 999,
-                                                                border: '2px solid var(--text-primary)',
-                                                                background: 'var(--bg-secondary)',
-                                                                color: 'var(--text-primary)',
-                                                                fontSize: 'var(--fs-xs)',
-                                                                fontWeight: 700,
-                                                                whiteSpace: 'nowrap',
-                                                                cursor: 'pointer',
-                                                                boxShadow: '3px 3px 0 var(--text-primary)',
-                                                            }}
-                                                        >
-                                                            Выключены · вернуть
-                                                        </button>
+                                                        <CheckBox checked={gAll} indeterminate={gAny && !gAll} />
                                                     </div>
                                                 </td>
+                                                <td
+                                                    className="pl-1 pr-2 py-1 cursor-pointer select-none"
+                                                    onClick={() => setCollapsed((prev) => {
+                                                        const next = new Set(prev);
+                                                        next.has(g.key) ? next.delete(g.key) : next.add(g.key);
+                                                        return next;
+                                                    })}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        {/* Индикатор сворачивания — SVG-шеврон (как у сортировки
+                                                            колонок), а не текстовый ▼: тот в Windows подхватывался
+                                                            эмодзи-шрифтом и выглядел инородно. */}
+                                                        <ChevronDown
+                                                            size={13}
+                                                            strokeWidth={2.5}
+                                                            className="flex-shrink-0 transition-transform duration-200"
+                                                            style={{ color: 'var(--text-secondary)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                                                        />
+                                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
+                                                            {g.label}
+                                                        </span>
+                                                        {/* Справка по подкатегории — та же, что в «Деньгах в
+                                                            фондах»; клик по «?» не сворачивает группу. */}
+                                                        {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
+                                                            <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                                                                <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} float />
+                                                            </span>
+                                                        )}
+                                                        {gAny && !gAll && (
+                                                            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 700 }}>
+                                                                {tickers.filter((t) => draft.has(t)).length}/{tickers.length}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-2 py-1 text-right select-none" style={NUM_STYLE}>
+                                                    {navSumBln(g.funds).toFixed(2)}
+                                                </td>
+                                                <td />
                                             </tr>
-                                        )}
-                                    </React.Fragment>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                                            {!isCollapsed && sortFunds(g.funds).map((fund) => {
+                                                const on = draft.has(fund.ticker);
+                                                const uk = resolveFundLogo(fund.ticker, fund.uk_id);
+                                                const br = bestReturn(fund.returns);
+                                                // Пока таблетка прожата, индексные фонды слегка
+                                                // размыты — видно, что они выведены из портфеля,
+                                                // но строка остаётся кликабельной.
+                                                const blurred = indexOff && isIndexSubcategory(fund.subcategory);
+                                                const stale = staleInfo(fund);
+                                                return (
+                                                    <tr
+                                                        key={fund.ticker}
+                                                        className={`transition-colors cursor-pointer ${on ? 'hover:bg-white/5' : 'opacity-50 grayscale hover:bg-white/5'}`}
+                                                        style={{
+                                                            height: 41,
+                                                            borderTop: SOFT_BORDER,
+                                                            ...(blurred ? { filter: 'blur(1.1px)' } : null),
+                                                        }}
+                                                        onClick={() => toggleFund(fund.ticker)}
+                                                    >
+                                                        <td className="pl-2 pr-0 py-1">
+                                                            <div className="flex items-center justify-center w-5 h-5 rounded-lg">
+                                                                <CheckBox checked={on} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="pl-1 pr-2 py-1 overflow-hidden">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                {uk && (
+                                                                    <div
+                                                                        className="rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
+                                                                        style={{
+                                                                            backgroundColor: uk.img ? undefined : uk.bg,
+                                                                            color: uk.color,
+                                                                            width: 28, height: 28,
+                                                                        }}
+                                                                    >
+                                                                        {uk.img
+                                                                            ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
+                                                                            : uk.letter}
+                                                                    </div>
+                                                                )}
+                                                                <FadedName
+                                                                    name={fund.name}
+                                                                    display={stripUkName(fund.name, fund.uk_id)}
+                                                                />
+                                                                <span
+                                                                    className="flex-shrink-0"
+                                                                    style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)' }}
+                                                                >
+                                                                    {fund.ticker}
+                                                                </span>
+                                                                {/* Фонд не отчитался за месяц среза — «!» с месяцем
+                                                                    его последнего состава (как в списке фондов
+                                                                    «Денег в фондах»). */}
+                                                                {stale && (
+                                                                    <span
+                                                                        className="cursor-help inline-flex flex-shrink-0"
+                                                                        style={{ opacity: 0.6, color: 'var(--text-secondary)' }}
+                                                                        title={stale}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    >
+                                                                        <AlertCircle size={17} strokeWidth={2.2} />
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-2 py-1 text-right" style={NUM_STYLE}>
+                                                            {fund.nav_rub ? (fund.nav_rub / 1e9).toFixed(2) : '—'}
+                                                        </td>
+                                                        <td
+                                                            className="px-2 py-1 text-right whitespace-nowrap"
+                                                            style={{
+                                                                ...NUM_STYLE,
+                                                                ...(br ? { color: br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' } : {}),
+                                                            }}
+                                                        >
+                                                            {!br ? '—' : (
+                                                                <>
+                                                                    {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
+                                                                    {br.label !== '1г' && (
+                                                                        <span style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3, color: 'var(--text-secondary)' }}>{br.label}</span>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {/* Плашка «выключено» лежит ПОВЕРХ всей размытой группы,
+                                                а не рядом с её названием: так метка относится ко всем
+                                                строкам сразу и не читается как свойство подкатегории.
+                                                Технически — нулевой высоты строка сразу за группой;
+                                                оверлей внутри её ячейки растягивается вверх на высоту
+                                                группы (строки фиксированные, ROW_H), поэтому плашка
+                                                встаёт ровно по центру блока. Клик возвращает фонды. */}
+                                            {!isCollapsed && indexOff && isIndexSubcategory(g.subcat) && (
+                                                <tr style={{ height: 0 }}>
+                                                    <td colSpan={4} style={{ padding: 0, border: 0, height: 0, position: 'relative' }}>
+                                                        <div
+                                                            style={{
+                                                                position: 'absolute', left: 0, right: 0, bottom: 0,
+                                                                height: g.funds.length * ROW_H,
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                pointerEvents: 'none',
+                                                            }}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                onClick={toggleIndexOff}
+                                                                className="editorial-press"
+                                                                title="Индексные фонды выключены таблеткой в шапке. Нажмите, чтобы вернуть их в портфель."
+                                                                style={{
+                                                                    pointerEvents: 'auto',
+                                                                    padding: '5px 16px',
+                                                                    borderRadius: 999,
+                                                                    border: '2px solid var(--text-primary)',
+                                                                    background: 'var(--bg-secondary)',
+                                                                    color: 'var(--text-primary)',
+                                                                    fontSize: 'var(--fs-xs)',
+                                                                    fontWeight: 700,
+                                                                    whiteSpace: 'nowrap',
+                                                                    cursor: 'pointer',
+                                                                    boxShadow: '3px 3px 0 var(--text-primary)',
+                                                                }}
+                                                            >
+                                                                Выключены · вернуть
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
 
-                {/* Футер «Готово» — применяет и закрывает (как FundPicker multi). */}
-                <div
-                    className="px-6 py-4 flex-shrink-0"
-                    style={{ borderTop: SOFT_BORDER }}
-                >
-                    <button
-                        type="button"
-                        onClick={applyAndClose}
-                        className="editorial-press"
-                        style={{
-                            width: '100%',
-                            padding: '12px 18px',
-                            background: 'var(--accent)',
-                            color: 'var(--text-inverse)',
-                            border: '2px solid var(--text-primary)',
-                            borderRadius: 12,
-                            fontSize: 'var(--fs-sm)',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            boxShadow: '3px 3px 0 var(--text-primary)',
-                        }}
+                    {/* Футер «Готово» — применяет и закрывает (как FundPicker multi). */}
+                    <div
+                        className="px-6 py-4 flex-shrink-0"
+                        style={{ borderTop: SOFT_BORDER }}
                     >
-                        Готово{allSelected ? '' : ` · ${draft.size}`}
-                    </button>
+                        <button
+                            type="button"
+                            onClick={applyAndClose}
+                            className="editorial-press"
+                            style={{
+                                width: '100%',
+                                padding: '12px 18px',
+                                background: 'var(--accent)',
+                                color: 'var(--text-inverse)',
+                                border: '2px solid var(--text-primary)',
+                                borderRadius: 12,
+                                fontSize: 'var(--fs-sm)',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                boxShadow: '3px 3px 0 var(--text-primary)',
+                            }}
+                        >
+                            Готово{allSelected ? '' : ` · ${draft.size}`}
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </ModalLayer>
     );
 }
 

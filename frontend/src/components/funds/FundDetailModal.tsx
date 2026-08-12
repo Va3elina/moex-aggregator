@@ -20,6 +20,7 @@
  *   - false → БАЗОВАЯ карточка: шапка + СЧА + доходность + притоки-оттоки.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import ModalLayer from '../ModalLayer';
 import { Calendar } from 'lucide-react';
 import {
     getAssetHistory,
@@ -354,741 +355,743 @@ export default function FundDetailModal({
     const hasDist = detailFund?.has_distributions ?? hasDistributions ?? false;
 
     return (
-        <>
-        <div
-            onClick={onClose}
-            style={{
-                position: 'fixed',
-                inset: 0,
-                background: 'rgba(0, 0, 0, 0.5)',
-                zIndex: 1000,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: isMobile ? 4 : 16,
-            }}
-        >
+        <ModalLayer>
+            <>
             <div
-                onClick={(e) => e.stopPropagation()}
+                onClick={onClose}
                 style={{
-                    background: 'var(--bg-primary)',
-                    border: '1.5px solid var(--text-primary)',
-                    borderRadius: 14,
-                    width: '100%',
-                    maxWidth: 1240,
-                    maxHeight: isMobile ? '94dvh' : '92vh',
-                    overflow: 'auto',
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.5)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: isMobile ? 4 : 16,
                 }}
             >
-                {/* Header */}
                 <div
+                    onClick={(e) => e.stopPropagation()}
                     style={{
-                        padding: '16px 20px',
-                        borderBottom: '1px solid var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        position: 'sticky',
-                        top: 0,
                         background: 'var(--bg-primary)',
-                        zIndex: 1,
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 14,
+                        width: '100%',
+                        maxWidth: 1240,
+                        maxHeight: isMobile ? '94dvh' : '92vh',
+                        overflow: 'auto',
+                        boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
                     }}
                 >
-                    {/* Флекс по базовой линии: имя, тикер и дата среза сидят на одной
-                        строке текста, а не «прыгают» по вертикали из-за разных кеглей
-                        и иконки календаря. */}
-                    <h2
+                    {/* Header */}
+                    <div
                         style={{
-                            margin: 0,
+                            padding: '16px 20px',
+                            borderBottom: '1px solid var(--border-color)',
                             display: 'flex',
-                            alignItems: 'baseline',
-                            flexWrap: 'wrap',
-                            columnGap: 10,
-                            rowGap: 2,
-                            minWidth: 0,
-                            fontSize: 'var(--fs-lg)',
-                            fontWeight: 800,
-                            color: 'var(--text-primary)',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            position: 'sticky',
+                            top: 0,
+                            background: 'var(--bg-primary)',
+                            zIndex: 1,
                         }}
                     >
-                        <span style={{ minWidth: 0 }}>{data?.fund.name || data?.fund.ticker || ticker}</span>
-                        {data?.fund.name && (data?.fund.ticker || ticker) && (
-                            <span
-                                style={{
-                                    fontWeight: 400,
-                                    fontSize: 'var(--fs-sm)',
-                                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                    color: 'var(--text-secondary)',
-                                }}
-                            >
-                                {data?.fund.ticker || ticker}
-                            </span>
-                        )}
-                        {/* Дата среза состава — здесь же, в шапке-легенде после тикера.
-                            Иконка выровнена по тексту (translateY), сам спан — по baseline. */}
-                        {data?.current_snapshot_date && (
-                            <span
-                                style={{
-                                    fontWeight: 600,
-                                    fontSize: 'var(--fs-2xs)',
-                                    color: 'var(--text-muted)',
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                <Calendar size={12} style={{ display: 'inline-block', verticalAlign: '-0.15em', marginRight: 5 }} />
-                                Состав на {formatSnapshotDate(data.current_snapshot_date)}
-                            </span>
-                        )}
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            fontSize: 20,
-                            padding: 12,
-                            margin: -8,
-                        }}
-                    >
-                        ✕
-                    </button>
-                </div>
-
-                <div style={{ padding: isMobile ? 12 : 20 }}>
-                    {loading && !data && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
-                    {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
-                    {data && !error && (
-                        <>
-                            {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
-                                значение живёт в его центре и блок не рендерится вовсе
-                                (дата среза переехала в шапку карточки). */}
-                            {!navInDonut && (
-                            <div style={{ marginBottom: 20 }}>
-                                <div
+                        {/* Флекс по базовой линии: имя, тикер и дата среза сидят на одной
+                            строке текста, а не «прыгают» по вертикали из-за разных кеглей
+                            и иконки календаря. */}
+                        <h2
+                            style={{
+                                margin: 0,
+                                display: 'flex',
+                                alignItems: 'baseline',
+                                flexWrap: 'wrap',
+                                columnGap: 10,
+                                rowGap: 2,
+                                minWidth: 0,
+                                fontSize: 'var(--fs-lg)',
+                                fontWeight: 800,
+                                color: 'var(--text-primary)',
+                            }}
+                        >
+                            <span style={{ minWidth: 0 }}>{data?.fund.name || data?.fund.ticker || ticker}</span>
+                            {data?.fund.name && (data?.fund.ticker || ticker) && (
+                                <span
                                     style={{
+                                        fontWeight: 400,
+                                        fontSize: 'var(--fs-sm)',
+                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                                        color: 'var(--text-secondary)',
+                                    }}
+                                >
+                                    {data?.fund.ticker || ticker}
+                                </span>
+                            )}
+                            {/* Дата среза состава — здесь же, в шапке-легенде после тикера.
+                                Иконка выровнена по тексту (translateY), сам спан — по baseline. */}
+                            {data?.current_snapshot_date && (
+                                <span
+                                    style={{
+                                        fontWeight: 600,
                                         fontSize: 'var(--fs-2xs)',
                                         color: 'var(--text-muted)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.06em',
-                                        fontWeight: 700,
-                                        marginBottom: 2,
+                                        whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    Объём (СЧА)
-                                </div>
-                                <div
-                                    style={{
-                                        fontSize: 'var(--fs-2xl)',
-                                        fontWeight: 800,
-                                        fontVariantNumeric: 'tabular-nums',
-                                        color: 'var(--text-primary)',
-                                        lineHeight: 1.1,
-                                    }}
-                                >
-                                    {navValue != null ? formatRubShort(navValue) : '—'}
-                                </div>
-                            </div>
+                                    <Calendar size={12} style={{ display: 'inline-block', verticalAlign: '-0.15em', marginRight: 5 }} />
+                                    Состав на {formatSnapshotDate(data.current_snapshot_date)}
+                                </span>
                             )}
+                        </h2>
+                        <button
+                            onClick={onClose}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                fontSize: 20,
+                                padding: 12,
+                                margin: -8,
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
-                            {/* (3) График цены пая (₽) + плашки доходности по периодам */}
-                            {(() => {
-                                const perf = data.performance;
-                                const ret = perf?.returns ?? returns ?? null;
-                                const chartData = payChartData; // мемоизирован выше (стабильная ссылка)
-                                return (
-                                    <div style={{ marginBottom: 24 }}>
-                                        {/* Заголовка у раздела нет: график читается сам —
-                                            легенда «Цена пая, ₽» + плашки доходности под ним. */}
-                                        {/* Мобила: график во всю ширину карточки (компенсируем
-                                            боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
-                                        <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
-                                        {chartData.length > 1 ? (
-                                            <SimpleChart
-                                                data={chartData}
-                                                height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
-                                                primaryLabel="Цена пая, ₽"
-                                                legendPosition="top"
-                                                formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
-                                                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
-                                                formatTime={formatMonthYearShort}
-                                                tooltipDateFormat={formatMonthYearShort}
-                                                clampEdgeLabels
-                                                mobilePadRight={isMobile ? 14 : undefined}
-                                                showValueHeader={false}
-                                                showDownloadButton={false}
-                                                showNavigator={!isMobile}
-                                            />
-                                        ) : (
-                                            <div>
-                                                <div
-                                                    style={{
-                                                        padding: '24px 16px',
-                                                        textAlign: 'center',
-                                                        color: 'var(--text-muted)',
-                                                        fontSize: 'var(--fs-sm)',
-                                                        border: '1px solid var(--border-color)',
-                                                        borderRadius: 10,
-                                                        background: 'var(--bg-secondary)',
-                                                    }}
-                                                >
-                                                    Недостаточно истории для графика цены пая
-                                                </div>
-                                            </div>
-                                        )}
-                                        </div>
-
-                                        {/* Плашки returns 1м/3м/6м/1г + «за всё время».
-                                            Пустые периоды (фонд младше периода) прячем — иначе
-                                            у молодых фондов сплошные «—». «За всё время» (с первого
-                                            дня данных) есть всегда → заполняет молодые фонды. */}
-                                        <div
-                                            style={{
-                                                display: 'grid',
-                                                gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))',
-                                                gap: 8,
-                                                marginTop: 12,
-                                            }}
-                                        >
-                                            {[
-                                                { label: '1 мес', v: ret?.m1 },
-                                                { label: '3 мес', v: ret?.m3 },
-                                                { label: '6 мес', v: ret?.m6 },
-                                                { label: '1 год', v: ret?.y1 },
-                                                { label: 'Всё время', v: ret?.all },
-                                            ].filter(({ v }) => v != null).map(({ label, v }) => (
-                                                <div
-                                                    key={label}
-                                                    style={{
-                                                        padding: '10px 12px',
-                                                        background: 'var(--bg-secondary)',
-                                                        borderRadius: 8,
-                                                        border: '1px solid var(--border-color)',
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            fontSize: 'var(--fs-2xs)',
-                                                            color: 'var(--text-muted)',
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '0.04em',
-                                                            fontWeight: 600,
-                                                            marginBottom: 3,
-                                                        }}
-                                                    >
-                                                        {label}
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            fontSize: 'var(--fs-md)',
-                                                            fontWeight: 800,
-                                                            fontVariantNumeric: 'tabular-nums',
-                                                            color: returnColor(v),
-                                                        }}
-                                                    >
-                                                        {formatReturnPct(v)}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {hasDist && (
-                                            <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                                                Плашки — полная доходность, с&nbsp;учётом выплат дохода.
-                                                Линия графика — цена пая: в&nbsp;даты выплат она снижается.
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
-
-                            {/* (4) Donut состава + список топ-позиций — только при enableDrilldown */}
-                            {enableDrilldown && (
-                                <>
-                                    <h3
+                    <div style={{ padding: isMobile ? 12 : 20 }}>
+                        {loading && !data && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
+                        {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
+                        {data && !error && (
+                            <>
+                                {/* (2) Объём — полная СЧА (AUM). Когда есть пончик состава,
+                                    значение живёт в его центре и блок не рендерится вовсе
+                                    (дата среза переехала в шапку карточки). */}
+                                {!navInDonut && (
+                                <div style={{ marginBottom: 20 }}>
+                                    <div
                                         style={{
-                                            fontSize: 'var(--fs-md)',
+                                            fontSize: 'var(--fs-2xs)',
+                                            color: 'var(--text-muted)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.06em',
                                             fontWeight: 700,
-                                            color: 'var(--text-primary)',
-                                            marginBottom: 12,
+                                            marginBottom: 2,
                                         }}
                                     >
-                                        Состав фонда
-                                    </h3>
-                                    {data.current_holdings.length > 0 ? (() => {
-                                        // (G) holdings пончика = топ-10 + «Прочее»; colors — параллельный
-                                        // массив (фирменный/индекс, «Прочее» серый). maxSlices = длине →
-                                        // Donut НЕ агрегирует сам, индекс слайса 1:1 совпадает с массивом,
-                                        // поэтому onSliceClick(i) корректно мапится на бумагу.
-                                        // TOP = 10 — синхронно с превью списка: сектора пончика 1:1
-                                        // соответствуют видимым строкам (hover-связь без «слепых» зон).
-                                        const holds = data.current_holdings;
-                                        const TOP = 10;
-                                        const topHolds = holds.slice(0, TOP);
-                                        const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
-                                        const donutHoldings = [
-                                            ...topHolds.map((h) => ({ name: h.asset_name, weight: (h.weight ?? 0) / 100 })),
-                                            ...(restWeight > 0 ? [{ name: 'Прочее', weight: restWeight / 100 }] : []),
-                                        ];
-                                        const donutColors = donutHoldings.map((h, i) =>
-                                            h.name === 'Прочее'
-                                                ? 'var(--text-muted)'
-                                                : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
-                                        );
-                                        const isSelected = (h: typeof holds[number]) =>
-                                            drillDown != null
-                                            && drillDown.asset_name === h.asset_name
-                                            && (drillDown.isin ?? null) === (h.isin ?? null);
-                                        const openAsset = (h: typeof holds[number]) =>
-                                            setDrillDown({ asset_name: h.asset_name, isin: h.isin ?? null });
-                                        // Список в стиле «Обзора портфеля»: логотип · имя (fade) ·
-                                        // нейтральная полоса · доля · объём. Цвет несёт пончик.
-                                        const top10W = topHolds.reduce((s, h) => s + (h.weight ?? 0), 0);
-                                        const maxW = Math.max(...holds.map((h) => h.weight ?? 0), 0.0001);
-                                        const shownHolds = showAllHoldings ? holds : topHolds;
-                                        const listGrid = isMobile
-                                            ? '24px minmax(0, 1fr) 56px'
-                                            : '30px minmax(110px, 1.1fr) minmax(60px, 1fr) 60px 84px';
-                                        return (
-                                        <div
+                                        Объём (СЧА)
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 'var(--fs-2xl)',
+                                            fontWeight: 800,
+                                            fontVariantNumeric: 'tabular-nums',
+                                            color: 'var(--text-primary)',
+                                            lineHeight: 1.1,
+                                        }}
+                                    >
+                                        {navValue != null ? formatRubShort(navValue) : '—'}
+                                    </div>
+                                </div>
+                                )}
+
+                                {/* (3) График цены пая (₽) + плашки доходности по периодам */}
+                                {(() => {
+                                    const perf = data.performance;
+                                    const ret = perf?.returns ?? returns ?? null;
+                                    const chartData = payChartData; // мемоизирован выше (стабильная ссылка)
+                                    return (
+                                        <div style={{ marginBottom: 24 }}>
+                                            {/* Заголовка у раздела нет: график читается сам —
+                                                легенда «Цена пая, ₽» + плашки доходности под ним. */}
+                                            {/* Мобила: график во всю ширину карточки (компенсируем
+                                                боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
+                                            <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
+                                            {chartData.length > 1 ? (
+                                                <SimpleChart
+                                                    data={chartData}
+                                                    height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
+                                                    primaryLabel="Цена пая, ₽"
+                                                    legendPosition="top"
+                                                    formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
+                                                    formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
+                                                    formatTime={formatMonthYearShort}
+                                                    tooltipDateFormat={formatMonthYearShort}
+                                                    clampEdgeLabels
+                                                    mobilePadRight={isMobile ? 14 : undefined}
+                                                    showValueHeader={false}
+                                                    showDownloadButton={false}
+                                                    showNavigator={!isMobile}
+                                                />
+                                            ) : (
+                                                <div>
+                                                    <div
+                                                        style={{
+                                                            padding: '24px 16px',
+                                                            textAlign: 'center',
+                                                            color: 'var(--text-muted)',
+                                                            fontSize: 'var(--fs-sm)',
+                                                            border: '1px solid var(--border-color)',
+                                                            borderRadius: 10,
+                                                            background: 'var(--bg-secondary)',
+                                                        }}
+                                                    >
+                                                        Недостаточно истории для графика цены пая
+                                                    </div>
+                                                </div>
+                                            )}
+                                            </div>
+
+                                            {/* Плашки returns 1м/3м/6м/1г + «за всё время».
+                                                Пустые периоды (фонд младше периода) прячем — иначе
+                                                у молодых фондов сплошные «—». «За всё время» (с первого
+                                                дня данных) есть всегда → заполняет молодые фонды. */}
+                                            <div
+                                                style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))',
+                                                    gap: 8,
+                                                    marginTop: 12,
+                                                }}
+                                            >
+                                                {[
+                                                    { label: '1 мес', v: ret?.m1 },
+                                                    { label: '3 мес', v: ret?.m3 },
+                                                    { label: '6 мес', v: ret?.m6 },
+                                                    { label: '1 год', v: ret?.y1 },
+                                                    { label: 'Всё время', v: ret?.all },
+                                                ].filter(({ v }) => v != null).map(({ label, v }) => (
+                                                    <div
+                                                        key={label}
+                                                        style={{
+                                                            padding: '10px 12px',
+                                                            background: 'var(--bg-secondary)',
+                                                            borderRadius: 8,
+                                                            border: '1px solid var(--border-color)',
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                fontSize: 'var(--fs-2xs)',
+                                                                color: 'var(--text-muted)',
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.04em',
+                                                                fontWeight: 600,
+                                                                marginBottom: 3,
+                                                            }}
+                                                        >
+                                                            {label}
+                                                        </div>
+                                                        <div
+                                                            style={{
+                                                                fontSize: 'var(--fs-md)',
+                                                                fontWeight: 800,
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                                color: returnColor(v),
+                                                            }}
+                                                        >
+                                                            {formatReturnPct(v)}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {hasDist && (
+                                                <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                                                    Плашки — полная доходность, с&nbsp;учётом выплат дохода.
+                                                    Линия графика — цена пая: в&nbsp;даты выплат она снижается.
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* (4) Donut состава + список топ-позиций — только при enableDrilldown */}
+                                {enableDrilldown && (
+                                    <>
+                                        <h3
                                             style={{
-                                                display: 'flex',
-                                                gap: isMobile ? 14 : 24,
-                                                flexWrap: 'wrap',
-                                                alignItems: 'flex-start',
+                                                fontSize: 'var(--fs-md)',
+                                                fontWeight: 700,
+                                                color: 'var(--text-primary)',
+                                                marginBottom: 12,
                                             }}
                                         >
-                                            <div style={{ flexShrink: 0, margin: '0 auto', lineHeight: 0 }}>
-                                                <Donut
-                                                    holdings={donutHoldings}
-                                                    colors={donutColors}
-                                                    maxSlices={donutHoldings.length}
-                                                    centerCount={data.current_holdings.length}
-                                                    size={isMobile ? Math.min(330, vw - 80) : 380}
-                                                    outerRadius={90}
-                                                    innerRadius={56}
-                                                    // Editorial-подача (макет «Состав фонда»): слайсы с зазором,
-                                                    // при наведении активный выезжает и получает контур чернилами,
-                                                    // соседи НЕ тускнеют, центр — HTML-карточка бумаги.
-                                                    gapDeg={2.2}
-                                                    dimOthers={false}
-                                                    activeOutline
-                                                    hoverPop={4}
-                                                    renderCenter={(active, holePx) => {
-                                                        // Кегль суммы — от диаметра дырки (как в макете),
-                                                        // чтобы «14,11 млрд ₽» не упиралось в кольцо.
-                                                        const navFont = Math.max(11, Math.min(24, Math.round(holePx / 7.4)));
-                                                        const h = active == null ? null : (active < topHolds.length ? topHolds[active] : null);
-                                                        // «Прочее» (последний слайс) своей карточки не имеет —
-                                                        // показываем только долю без имени бумаги.
-                                                        const restActive = active != null && h == null;
-                                                        return (
-                                                            <div style={{ width: holePx }}>
-                                                                {active == null ? (
-                                                                    <>
-                                                                        {navValue != null && (
-                                                                            <>
-                                                                                <p style={{ margin: '0 0 8px', fontSize: 9, letterSpacing: '0.16em', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                                                                                    Объём (СЧА)
-                                                                                </p>
-                                                                                <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: navFont, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                                                                                    {formatRubShort(navValue)}
-                                                                                </p>
-                                                                            </>
-                                                                        )}
-                                                                        <p style={{ margin: navValue != null ? '8px 0 0' : 0, fontSize: 11, color: 'var(--text-secondary)' }}>
-                                                                            {holds.length} {plural(holds.length, 'позиция', 'позиции', 'позиций')}
-                                                                        </p>
-                                                                    </>
-                                                                ) : restActive ? (
-                                                                    <>
-                                                                        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
-                                                                            Прочие ({Math.max(0, holds.length - topHolds.length)})
-                                                                        </p>
-                                                                        <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                                                                            {restWeight.toFixed(1).replace('.', ',')}%
-                                                                        </p>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        {(() => {
-                                                                            const tk = resolveFundTicker(h!.asset_name, h!.isin);
-                                                                            return tk ? (
-                                                                                <p style={{ margin: '0 0 6px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: 'var(--text-muted)' }}>
-                                                                                    {tk}
-                                                                                </p>
-                                                                            ) : null;
-                                                                        })()}
-                                                                        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
-                                                                            {fundAssetName(h!.asset_name, h!.isin)}
-                                                                        </p>
-                                                                        <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                                                                            {h!.weight != null ? `${h!.weight.toFixed(1).replace('.', ',')}%` : '—'}
-                                                                        </p>
-                                                                        {h!.amount_rub != null && (
-                                                                            <p style={{ margin: '5px 0 0', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
-                                                                                {formatRubShort(h!.amount_rub)}
+                                            Состав фонда
+                                        </h3>
+                                        {data.current_holdings.length > 0 ? (() => {
+                                            // (G) holdings пончика = топ-10 + «Прочее»; colors — параллельный
+                                            // массив (фирменный/индекс, «Прочее» серый). maxSlices = длине →
+                                            // Donut НЕ агрегирует сам, индекс слайса 1:1 совпадает с массивом,
+                                            // поэтому onSliceClick(i) корректно мапится на бумагу.
+                                            // TOP = 10 — синхронно с превью списка: сектора пончика 1:1
+                                            // соответствуют видимым строкам (hover-связь без «слепых» зон).
+                                            const holds = data.current_holdings;
+                                            const TOP = 10;
+                                            const topHolds = holds.slice(0, TOP);
+                                            const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
+                                            const donutHoldings = [
+                                                ...topHolds.map((h) => ({ name: h.asset_name, weight: (h.weight ?? 0) / 100 })),
+                                                ...(restWeight > 0 ? [{ name: 'Прочее', weight: restWeight / 100 }] : []),
+                                            ];
+                                            const donutColors = donutHoldings.map((h, i) =>
+                                                h.name === 'Прочее'
+                                                    ? 'var(--text-muted)'
+                                                    : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+                                            );
+                                            const isSelected = (h: typeof holds[number]) =>
+                                                drillDown != null
+                                                && drillDown.asset_name === h.asset_name
+                                                && (drillDown.isin ?? null) === (h.isin ?? null);
+                                            const openAsset = (h: typeof holds[number]) =>
+                                                setDrillDown({ asset_name: h.asset_name, isin: h.isin ?? null });
+                                            // Список в стиле «Обзора портфеля»: логотип · имя (fade) ·
+                                            // нейтральная полоса · доля · объём. Цвет несёт пончик.
+                                            const top10W = topHolds.reduce((s, h) => s + (h.weight ?? 0), 0);
+                                            const maxW = Math.max(...holds.map((h) => h.weight ?? 0), 0.0001);
+                                            const shownHolds = showAllHoldings ? holds : topHolds;
+                                            const listGrid = isMobile
+                                                ? '24px minmax(0, 1fr) 56px'
+                                                : '30px minmax(110px, 1.1fr) minmax(60px, 1fr) 60px 84px';
+                                            return (
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    gap: isMobile ? 14 : 24,
+                                                    flexWrap: 'wrap',
+                                                    alignItems: 'flex-start',
+                                                }}
+                                            >
+                                                <div style={{ flexShrink: 0, margin: '0 auto', lineHeight: 0 }}>
+                                                    <Donut
+                                                        holdings={donutHoldings}
+                                                        colors={donutColors}
+                                                        maxSlices={donutHoldings.length}
+                                                        centerCount={data.current_holdings.length}
+                                                        size={isMobile ? Math.min(330, vw - 80) : 380}
+                                                        outerRadius={90}
+                                                        innerRadius={56}
+                                                        // Editorial-подача (макет «Состав фонда»): слайсы с зазором,
+                                                        // при наведении активный выезжает и получает контур чернилами,
+                                                        // соседи НЕ тускнеют, центр — HTML-карточка бумаги.
+                                                        gapDeg={2.2}
+                                                        dimOthers={false}
+                                                        activeOutline
+                                                        hoverPop={4}
+                                                        renderCenter={(active, holePx) => {
+                                                            // Кегль суммы — от диаметра дырки (как в макете),
+                                                            // чтобы «14,11 млрд ₽» не упиралось в кольцо.
+                                                            const navFont = Math.max(11, Math.min(24, Math.round(holePx / 7.4)));
+                                                            const h = active == null ? null : (active < topHolds.length ? topHolds[active] : null);
+                                                            // «Прочее» (последний слайс) своей карточки не имеет —
+                                                            // показываем только долю без имени бумаги.
+                                                            const restActive = active != null && h == null;
+                                                            return (
+                                                                <div style={{ width: holePx }}>
+                                                                    {active == null ? (
+                                                                        <>
+                                                                            {navValue != null && (
+                                                                                <>
+                                                                                    <p style={{ margin: '0 0 8px', fontSize: 9, letterSpacing: '0.16em', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                                                                                        Объём (СЧА)
+                                                                                    </p>
+                                                                                    <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: navFont, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                        {formatRubShort(navValue)}
+                                                                                    </p>
+                                                                                </>
+                                                                            )}
+                                                                            <p style={{ margin: navValue != null ? '8px 0 0' : 0, fontSize: 11, color: 'var(--text-secondary)' }}>
+                                                                                {holds.length} {plural(holds.length, 'позиция', 'позиции', 'позиций')}
                                                                             </p>
-                                                                        )}
-                                                                    </>
+                                                                        </>
+                                                                    ) : restActive ? (
+                                                                        <>
+                                                                            <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
+                                                                                Прочие ({Math.max(0, holds.length - topHolds.length)})
+                                                                            </p>
+                                                                            <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                {restWeight.toFixed(1).replace('.', ',')}%
+                                                                            </p>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            {(() => {
+                                                                                const tk = resolveFundTicker(h!.asset_name, h!.isin);
+                                                                                return tk ? (
+                                                                                    <p style={{ margin: '0 0 6px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                                                        {tk}
+                                                                                    </p>
+                                                                                ) : null;
+                                                                            })()}
+                                                                            <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
+                                                                                {fundAssetName(h!.asset_name, h!.isin)}
+                                                                            </p>
+                                                                            <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                {h!.weight != null ? `${h!.weight.toFixed(1).replace('.', ',')}%` : '—'}
+                                                                            </p>
+                                                                            {h!.amount_rub != null && (
+                                                                                <p style={{ margin: '5px 0 0', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                                                                    {formatRubShort(h!.amount_rub)}
+                                                                                </p>
+                                                                            )}
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }}
+                                                        highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}
+                                                        onHoverChange={(s) => setModalHover(s == null ? null : (s < topHolds.length ? s : null))}
+                                                        onSliceClick={(i) => {
+                                                            // «Прочее» — последний слайс, если добавлен; клик игнорим.
+                                                            if (i < topHolds.length) openAsset(topHolds[i]);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: isMobile ? 220 : 320 }}>
+                                                    {/* Концентрация: сколько позиций и сколько весит топ-10 —
+                                                        отличает индексный фонд от концентрированного. */}
+                                                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
+                                                        {holds.length} позиций · топ-10 занимают {Math.min(top10W, 100).toFixed(1).replace('.', ',')}%
+                                                    </div>
+                                                    {/* Шапка списка — как в «Обзоре портфеля». */}
+                                                    <div style={{ display: 'grid', gridTemplateColumns: listGrid, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                                                        <span /><span>Бумага</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>Доля</span>{!isMobile && <span style={{ textAlign: 'right' }}>Объём</span>}
+                                                    </div>
+                                                    {shownHolds.map((h, i) => {
+                                                        const selected = isSelected(h);
+                                                        const w = h.weight ?? 0;
+                                                        const pct = Math.max(2, (w / maxW) * 100);
+                                                        const hov = modalHover === i;
+                                                        const last = i === shownHolds.length - 1;
+                                                        return (
+                                                            <div
+                                                                key={h.asset_name}
+                                                                onClick={() => openAsset(h)}
+                                                                onMouseEnter={() => setModalHover(i)}
+                                                                onMouseLeave={() => setModalHover(null)}
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAsset(h); } }}
+                                                                title={`По бумаге: ${fundAssetName(h.asset_name, h.isin)}`}
+                                                                style={{
+                                                                    display: 'grid',
+                                                                    gridTemplateColumns: listGrid,
+                                                                    gap: 10,
+                                                                    alignItems: 'center',
+                                                                    padding: '7px 8px',
+                                                                    margin: '0 -8px',
+                                                                    borderRadius: 8,
+                                                                    cursor: 'pointer',
+                                                                    background: selected
+                                                                        ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                                                                        : hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent',
+                                                                    borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                                    transition: 'background 0.12s ease',
+                                                                }}
+                                                            >
+                                                                <HoldingLogo name={h.asset_name} isin={h.isin} idx={i} size={isMobile ? 24 : 30} />
+                                                                {/* Кегли строки — 1:1 как deskRow «Состава портфеля» в «Общем
+                                                                    портфеле»: имя fs-md/600, цифры fs-sm/600. На мобилке кегли
+                                                                    мельче — как в mobRow того же блока. */}
+                                                                <span style={{ minWidth: 0, fontSize: isMobile ? 'var(--fs-sm)' : 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
+                                                                    {fundAssetName(h.asset_name, h.isin)}
+                                                                </span>
+                                                                {/* Полоса нейтральная — цвет несёт пончик слева. */}
+                                                                {!isMobile && (
+                                                                    <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                                                                        <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
+                                                                    </div>
+                                                                )}
+                                                                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: isMobile ? 'var(--fs-xs)' : 'var(--fs-sm)', fontWeight: isMobile ? 800 : 600, color: 'var(--text-primary)' }}>
+                                                                    {h.weight !== null ? `${w.toFixed(2)}%` : '—'}
+                                                                </span>
+                                                                {!isMobile && (
+                                                                    <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                                        {h.amount_rub != null ? fmtVolShort(h.amount_rub) : '—'}
+                                                                    </span>
                                                                 )}
                                                             </div>
                                                         );
-                                                    }}
-                                                    highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}
-                                                    onHoverChange={(s) => setModalHover(s == null ? null : (s < topHolds.length ? s : null))}
-                                                    onSliceClick={(i) => {
-                                                        // «Прочее» — последний слайс, если добавлен; клик игнорим.
-                                                        if (i < topHolds.length) openAsset(topHolds[i]);
-                                                    }}
-                                                />
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: isMobile ? 220 : 320 }}>
-                                                {/* Концентрация: сколько позиций и сколько весит топ-10 —
-                                                    отличает индексный фонд от концентрированного. */}
-                                                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
-                                                    {holds.length} позиций · топ-10 занимают {Math.min(top10W, 100).toFixed(1).replace('.', ',')}%
-                                                </div>
-                                                {/* Шапка списка — как в «Обзоре портфеля». */}
-                                                <div style={{ display: 'grid', gridTemplateColumns: listGrid, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                                                    <span /><span>Бумага</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>Доля</span>{!isMobile && <span style={{ textAlign: 'right' }}>Объём</span>}
-                                                </div>
-                                                {shownHolds.map((h, i) => {
-                                                    const selected = isSelected(h);
-                                                    const w = h.weight ?? 0;
-                                                    const pct = Math.max(2, (w / maxW) * 100);
-                                                    const hov = modalHover === i;
-                                                    const last = i === shownHolds.length - 1;
-                                                    return (
-                                                        <div
-                                                            key={h.asset_name}
-                                                            onClick={() => openAsset(h)}
-                                                            onMouseEnter={() => setModalHover(i)}
-                                                            onMouseLeave={() => setModalHover(null)}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAsset(h); } }}
-                                                            title={`По бумаге: ${fundAssetName(h.asset_name, h.isin)}`}
-                                                            style={{
-                                                                display: 'grid',
-                                                                gridTemplateColumns: listGrid,
-                                                                gap: 10,
-                                                                alignItems: 'center',
-                                                                padding: '7px 8px',
-                                                                margin: '0 -8px',
-                                                                borderRadius: 8,
-                                                                cursor: 'pointer',
-                                                                background: selected
-                                                                    ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-                                                                    : hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent',
-                                                                borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                                                transition: 'background 0.12s ease',
-                                                            }}
-                                                        >
-                                                            <HoldingLogo name={h.asset_name} isin={h.isin} idx={i} size={isMobile ? 24 : 30} />
-                                                            {/* Кегли строки — 1:1 как deskRow «Состава портфеля» в «Общем
-                                                                портфеле»: имя fs-md/600, цифры fs-sm/600. На мобилке кегли
-                                                                мельче — как в mobRow того же блока. */}
-                                                            <span style={{ minWidth: 0, fontSize: isMobile ? 'var(--fs-sm)' : 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
-                                                                {fundAssetName(h.asset_name, h.isin)}
-                                                            </span>
-                                                            {/* Полоса нейтральная — цвет несёт пончик слева. */}
-                                                            {!isMobile && (
-                                                                <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
-                                                                    <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
-                                                                </div>
-                                                            )}
-                                                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: isMobile ? 'var(--fs-xs)' : 'var(--fs-sm)', fontWeight: isMobile ? 800 : 600, color: 'var(--text-primary)' }}>
-                                                                {h.weight !== null ? `${w.toFixed(2)}%` : '—'}
-                                                            </span>
-                                                            {!isMobile && (
-                                                                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                                    {h.amount_rub != null ? fmtVolShort(h.amount_rub) : '—'}
-                                                                </span>
-                                                            )}
+                                                    })}
+                                                    {/* Разворот «Прочие бумаги» — та же неяркая ссылка, что в
+                                                        «Обзоре портфеля»; разворачивает список inline (модалка
+                                                        и так скроллится). */}
+                                                    {holds.length > TOP && (
+                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
+                                                            <button
+                                                                onClick={() => setShowAllHoldings((v) => !v)}
+                                                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
+                                                            >
+                                                                {showAllHoldings
+                                                                    ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                    : <>Прочие бумаги · ещё {holds.length - TOP} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                            </button>
                                                         </div>
-                                                    );
-                                                })}
-                                                {/* Разворот «Прочие бумаги» — та же неяркая ссылка, что в
-                                                    «Обзоре портфеля»; разворачивает список inline (модалка
-                                                    и так скроллится). */}
-                                                {holds.length > TOP && (
-                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
-                                                        <button
-                                                            onClick={() => setShowAllHoldings((v) => !v)}
-                                                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
-                                                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
-                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
-                                                        >
-                                                            {showAllHoldings
-                                                                ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
-                                                                : <>Прочие бумаги · ещё {holds.length - TOP} <span style={{ fontSize: '0.85em' }}>↓</span></>}
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                        );
-                                    })() : (
-                                        <div
-                                            style={{
-                                                padding: '24px 16px',
-                                                textAlign: 'center',
-                                                color: 'var(--text-muted)',
-                                                fontSize: 'var(--fs-sm)',
-                                            }}
-                                        >
-                                            Состав не публикуется
-                                        </div>
-                                    )}
+                                            );
+                                        })() : (
+                                            <div
+                                                style={{
+                                                    padding: '24px 16px',
+                                                    textAlign: 'center',
+                                                    color: 'var(--text-muted)',
+                                                    fontSize: 'var(--fs-sm)',
+                                                }}
+                                            >
+                                                Состав не публикуется
+                                            </div>
+                                        )}
 
-                                    {/* (5) Что купили и продали — diff текущего и предыдущего
-                                        месячных снапшотов (уже приходит в ответе detail).
-                                        Период сравнения (1М/6М/1Г + произвольный диапазон
-                                        месяцев через календарь) выбирается в шапке раздела —
-                                        кнопки периодов переехали сюда из «Сделок» Общего
-                                        портфеля. Клик по строке — тот же drill-down в бумагу.
-                                        Раздел виден, когда есть что показать ИЛИ юзер уже
-                                        трогал период (иначе после пустого 6М он бы исчез
-                                        вместе с кнопками). */}
-                                    {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m' || diffRange != null) && (() => {
-                                        // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
-                                        // две секции с нейтральными полосами и величиной справа, единица
-                                        // (млрд/млн ₽) — в подписи секции. Отличие: секции стоят не стопкой,
-                                        // а колонками — покупки слева, продажи справа. Масштаб полос общий
-                                        // по обеим колонкам, чтобы покупки и продажи сравнивались.
-                                        const DIFF_PREVIEW = 8;
-                                        const dw = (d: typeof data.diff[number]) => d.delta_weight ?? 0;
-                                        // Величину показываем в рублях — как «Сделки» Общего портфеля.
-                                        // Если у снапшотов нет объёмов (старые импорты без amount_rub),
-                                        // откатываемся на п.п., чтобы раздел не опустел.
-                                        const moneyMode = data.diff.some((d) => d.delta_amount_rub != null);
-                                        const val = (d: typeof data.diff[number]) => (moneyMode ? (d.delta_amount_rub ?? 0) : dw(d));
-                                        const byAbs = (a: typeof data.diff[number], b: typeof data.diff[number]) => Math.abs(val(b)) - Math.abs(val(a));
-                                        // Колонку задаёт знак показанной величины (иначе строка с «+» уехала бы
-                                        // в продажи); нули разводим по типу изменения и знаку доли.
-                                        const buys = data.diff.filter((d) => val(d) > 0 || (val(d) === 0 && (d.change_type === 'new' || dw(d) > 0))).sort(byAbs);
-                                        const sells = data.diff.filter((d) => val(d) < 0 || (val(d) === 0 && (d.change_type === 'sold_out' || dw(d) < 0))).sort(byAbs);
-                                        const maxAbs = Math.max(0.0001, ...data.diff.map((d) => Math.abs(val(d))));
-                                        const scale = scaleOf(maxAbs);
-                                        const rowGrid = isMobile
-                                            ? '24px minmax(40px, 1fr) minmax(24px, 0.7fr) max-content'
-                                            : '30px minmax(60px, 1fr) minmax(28px, 0.9fr) max-content';
-                                        const sectionLabel = (text: string, up: boolean) => (
-                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: '0 0 4px' }}>
-                                                {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
-                                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({moneyMode ? scale.unit : 'п.п.'})</span>
-                                            </div>
-                                        );
-                                        const diffRow = (d: typeof data.diff[number], i: number, last: boolean) => {
-                                            const delta = moneyMode ? d.delta_amount_rub : d.delta_weight;
-                                            const pct = Math.max(2, (Math.abs(delta ?? 0) / maxAbs) * 100);
-                                            const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
-                                            const meta = CHANGE_META[d.change_type];
-                                            const isEvent = d.change_type === 'new' || d.change_type === 'sold_out';
-                                            return (
-                                                <div
-                                                    key={`${d.asset_name}|${d.isin ?? ''}`}
-                                                    onClick={openDiffAsset}
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
-                                                    title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}${meta ? ` · ${meta.label}` : ''}`}
-                                                    style={{
-                                                        display: 'grid',
-                                                        gridTemplateColumns: rowGrid,
-                                                        gap: 10,
-                                                        alignItems: 'center',
-                                                        padding: '7px 6px',
-                                                        margin: '0 -6px',
-                                                        borderRadius: 8,
-                                                        cursor: 'pointer',
-                                                        borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                                        transition: 'background 0.12s ease',
-                                                    }}
-                                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; }}
-                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                                                >
-                                                    <HoldingLogo name={d.asset_name} isin={d.isin ?? null} idx={i} size={isMobile ? 24 : 30} />
-                                                    <span style={{ minWidth: 0, fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
-                                                        {fundAssetName(d.asset_name, d.isin ?? null)}
-                                                    </span>
-                                                    {/* Полоса нейтральная — направление задаёт колонка. Вход/выход
-                                                        из бумаги (событие) заливаем плотнее, чем докупку/сокращение. */}
-                                                    <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
-                                                        <div style={{ width: `${pct}%`, height: '100%', background: `color-mix(in srgb, var(--text-primary) ${isEvent ? 55 : 32}%, transparent)`, borderRadius: 5 }} />
-                                                    </div>
-                                                    <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                        {delta == null
-                                                            ? '—'
-                                                            : moneyMode
-                                                                ? fmtSignedNum(delta, scale.div, scale.dec)
-                                                                : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`}
-                                                    </span>
+                                        {/* (5) Что купили и продали — diff текущего и предыдущего
+                                            месячных снапшотов (уже приходит в ответе detail).
+                                            Период сравнения (1М/6М/1Г + произвольный диапазон
+                                            месяцев через календарь) выбирается в шапке раздела —
+                                            кнопки периодов переехали сюда из «Сделок» Общего
+                                            портфеля. Клик по строке — тот же drill-down в бумагу.
+                                            Раздел виден, когда есть что показать ИЛИ юзер уже
+                                            трогал период (иначе после пустого 6М он бы исчез
+                                            вместе с кнопками). */}
+                                        {data.current_snapshot_date && (data.diff.length > 0 || diffPeriod !== '1m' || diffRange != null) && (() => {
+                                            // Структура «Сделок» из «Общего портфеля» (PortfolioMoversPanel):
+                                            // две секции с нейтральными полосами и величиной справа, единица
+                                            // (млрд/млн ₽) — в подписи секции. Отличие: секции стоят не стопкой,
+                                            // а колонками — покупки слева, продажи справа. Масштаб полос общий
+                                            // по обеим колонкам, чтобы покупки и продажи сравнивались.
+                                            const DIFF_PREVIEW = 8;
+                                            const dw = (d: typeof data.diff[number]) => d.delta_weight ?? 0;
+                                            // Величину показываем в рублях — как «Сделки» Общего портфеля.
+                                            // Если у снапшотов нет объёмов (старые импорты без amount_rub),
+                                            // откатываемся на п.п., чтобы раздел не опустел.
+                                            const moneyMode = data.diff.some((d) => d.delta_amount_rub != null);
+                                            const val = (d: typeof data.diff[number]) => (moneyMode ? (d.delta_amount_rub ?? 0) : dw(d));
+                                            const byAbs = (a: typeof data.diff[number], b: typeof data.diff[number]) => Math.abs(val(b)) - Math.abs(val(a));
+                                            // Колонку задаёт знак показанной величины (иначе строка с «+» уехала бы
+                                            // в продажи); нули разводим по типу изменения и знаку доли.
+                                            const buys = data.diff.filter((d) => val(d) > 0 || (val(d) === 0 && (d.change_type === 'new' || dw(d) > 0))).sort(byAbs);
+                                            const sells = data.diff.filter((d) => val(d) < 0 || (val(d) === 0 && (d.change_type === 'sold_out' || dw(d) < 0))).sort(byAbs);
+                                            const maxAbs = Math.max(0.0001, ...data.diff.map((d) => Math.abs(val(d))));
+                                            const scale = scaleOf(maxAbs);
+                                            const rowGrid = isMobile
+                                                ? '24px minmax(40px, 1fr) minmax(24px, 0.7fr) max-content'
+                                                : '30px minmax(60px, 1fr) minmax(28px, 0.9fr) max-content';
+                                            const sectionLabel = (text: string, up: boolean) => (
+                                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: '0 0 4px' }}>
+                                                    {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
+                                                    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({moneyMode ? scale.unit : 'п.п.'})</span>
                                                 </div>
                                             );
-                                        };
-                                        const column = (items: typeof data.diff, label: string, up: boolean) => {
-                                            const shown = showAllDiff ? items : items.slice(0, DIFF_PREVIEW);
-                                            return (
-                                                <div style={{ minWidth: 0 }}>
-                                                    {sectionLabel(label, up)}
-                                                    {shown.length === 0 ? (
-                                                        <div style={{ padding: '10px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-                                                            Ничего {up ? 'не купили' : 'не продали'}
+                                            const diffRow = (d: typeof data.diff[number], i: number, last: boolean) => {
+                                                const delta = moneyMode ? d.delta_amount_rub : d.delta_weight;
+                                                const pct = Math.max(2, (Math.abs(delta ?? 0) / maxAbs) * 100);
+                                                const openDiffAsset = () => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null });
+                                                const meta = CHANGE_META[d.change_type];
+                                                const isEvent = d.change_type === 'new' || d.change_type === 'sold_out';
+                                                return (
+                                                    <div
+                                                        key={`${d.asset_name}|${d.isin ?? ''}`}
+                                                        onClick={openDiffAsset}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
+                                                        title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}${meta ? ` · ${meta.label}` : ''}`}
+                                                        style={{
+                                                            display: 'grid',
+                                                            gridTemplateColumns: rowGrid,
+                                                            gap: 10,
+                                                            alignItems: 'center',
+                                                            padding: '7px 6px',
+                                                            margin: '0 -6px',
+                                                            borderRadius: 8,
+                                                            cursor: 'pointer',
+                                                            borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                            transition: 'background 0.12s ease',
+                                                        }}
+                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                                    >
+                                                        <HoldingLogo name={d.asset_name} isin={d.isin ?? null} idx={i} size={isMobile ? 24 : 30} />
+                                                        <span style={{ minWidth: 0, fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text-primary)', ...nameFade }}>
+                                                            {fundAssetName(d.asset_name, d.isin ?? null)}
+                                                        </span>
+                                                        {/* Полоса нейтральная — направление задаёт колонка. Вход/выход
+                                                            из бумаги (событие) заливаем плотнее, чем докупку/сокращение. */}
+                                                        <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                                                            <div style={{ width: `${pct}%`, height: '100%', background: `color-mix(in srgb, var(--text-primary) ${isEvent ? 55 : 32}%, transparent)`, borderRadius: 5 }} />
                                                         </div>
-                                                    ) : shown.map((d, i) => diffRow(d, i, i === shown.length - 1))}
-                                                </div>
-                                            );
-                                        };
-                                        const hiddenCount = Math.max(0, buys.length - DIFF_PREVIEW) + Math.max(0, sells.length - DIFF_PREVIEW);
-                                        const hasDiff = data.diff.length > 0 && data.previous_snapshot_date != null;
-                                        return (
-                                            <div style={{ marginTop: 28 }}>
-                                                {/* Шапка как у «Сделок» Общего портфеля: заголовок +
-                                                    подзаголовок-диапазон слева, сегменты периода справа. */}
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                                        <h3
-                                                            style={{
-                                                                fontSize: 'var(--fs-md)',
-                                                                fontWeight: 700,
-                                                                color: 'var(--text-primary)',
-                                                                margin: 0,
-                                                            }}
-                                                        >
-                                                            Что купили и продали
-                                                        </h3>
-                                                        <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
-                                                            {diffRange
-                                                                ? <>{monthRangeLabel(diffRange.from, diffRange.to)} · свой диапазон</>
-                                                                : hasDiff
-                                                                    ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
-                                                                    : <>Месячные срезы состава</>}
+                                                        <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                            {delta == null
+                                                                ? '—'
+                                                                : moneyMode
+                                                                    ? fmtSignedNum(delta, scale.div, scale.dec)
+                                                                    : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`}
                                                         </span>
                                                     </div>
-                                                    {/* align-items: stretch — кнопка-календарь тянется в высоту сегментов. */}
-                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
-                                                        <SegmentedControl<string>
-                                                            options={[
-                                                                { key: '1m', label: '1М' },
-                                                                { key: '6m', label: '6М' },
-                                                                { key: '1y', label: '1Г' },
-                                                            ]}
-                                                            // Свой диапазон — активной пилюли нет (период показывает календарь).
-                                                            value={diffRange ? 'custom' : diffPeriod}
-                                                            onChange={(k) => { setDiffRange(null); setDiffPeriod(k as MoversDiffPeriod); }}
-                                                        />
-                                                        {diffMonths.length > 1 && (
-                                                            <MonthRangePicker
-                                                                availableMonths={diffMonths}
-                                                                value={diffRange}
-                                                                onChange={(r) => setDiffRange(r)}
-                                                                onReset={() => setDiffRange(null)}
+                                                );
+                                            };
+                                            const column = (items: typeof data.diff, label: string, up: boolean) => {
+                                                const shown = showAllDiff ? items : items.slice(0, DIFF_PREVIEW);
+                                                return (
+                                                    <div style={{ minWidth: 0 }}>
+                                                        {sectionLabel(label, up)}
+                                                        {shown.length === 0 ? (
+                                                            <div style={{ padding: '10px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+                                                                Ничего {up ? 'не купили' : 'не продали'}
+                                                            </div>
+                                                        ) : shown.map((d, i) => diffRow(d, i, i === shown.length - 1))}
+                                                    </div>
+                                                );
+                                            };
+                                            const hiddenCount = Math.max(0, buys.length - DIFF_PREVIEW) + Math.max(0, sells.length - DIFF_PREVIEW);
+                                            const hasDiff = data.diff.length > 0 && data.previous_snapshot_date != null;
+                                            return (
+                                                <div style={{ marginTop: 28 }}>
+                                                    {/* Шапка как у «Сделок» Общего портфеля: заголовок +
+                                                        подзаголовок-диапазон слева, сегменты периода справа. */}
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                            <h3
+                                                                style={{
+                                                                    fontSize: 'var(--fs-md)',
+                                                                    fontWeight: 700,
+                                                                    color: 'var(--text-primary)',
+                                                                    margin: 0,
+                                                                }}
+                                                            >
+                                                                Что купили и продали
+                                                            </h3>
+                                                            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
+                                                                {diffRange
+                                                                    ? <>{monthRangeLabel(diffRange.from, diffRange.to)} · свой диапазон</>
+                                                                    : hasDiff
+                                                                        ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
+                                                                        : <>Месячные срезы состава</>}
+                                                            </span>
+                                                        </div>
+                                                        {/* align-items: stretch — кнопка-календарь тянется в высоту сегментов. */}
+                                                        <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+                                                            <SegmentedControl<string>
+                                                                options={[
+                                                                    { key: '1m', label: '1М' },
+                                                                    { key: '6m', label: '6М' },
+                                                                    { key: '1y', label: '1Г' },
+                                                                ]}
+                                                                // Свой диапазон — активной пилюли нет (период показывает календарь).
+                                                                value={diffRange ? 'custom' : diffPeriod}
+                                                                onChange={(k) => { setDiffRange(null); setDiffPeriod(k as MoversDiffPeriod); }}
                                                             />
-                                                        )}
+                                                            {diffMonths.length > 1 && (
+                                                                <MonthRangePicker
+                                                                    availableMonths={diffMonths}
+                                                                    value={diffRange}
+                                                                    onChange={(r) => setDiffRange(r)}
+                                                                    onReset={() => setDiffRange(null)}
+                                                                />
+                                                            )}
+                                                        </div>
                                                     </div>
+                                                    {!hasDiff ? (
+                                                        <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
+                                                            {loading
+                                                                ? 'Загружаем…'
+                                                                : diffRange
+                                                                    ? 'Нет среза состава на начало выбранного диапазона.'
+                                                                    : 'Нет более раннего среза за выбранный период.'}
+                                                        </div>
+                                                    ) : (
+                                                    <>
+                                                    {/* Покупки слева, продажи справа. На мобиле — стопкой.
+                                                        При перезагрузке периода — слегка тускнеет. */}
+                                                    <div style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                                                        gap: isMobile ? 18 : 28,
+                                                        alignItems: 'start',
+                                                        opacity: loading ? 0.5 : 1,
+                                                        transition: 'opacity 0.15s ease',
+                                                    }}>
+                                                        {column(buys, 'Покупки', true)}
+                                                        {column(sells, 'Продажи', false)}
+                                                    </div>
+                                                    {hiddenCount > 0 && (
+                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
+                                                            <button
+                                                                onClick={() => setShowAllDiff((v) => !v)}
+                                                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
+                                                            >
+                                                                {showAllDiff
+                                                                    ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                    : <>Все изменения · ещё {hiddenCount} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    </>
+                                                    )}
                                                 </div>
-                                                {!hasDiff ? (
-                                                    <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-                                                        {loading
-                                                            ? 'Загружаем…'
-                                                            : diffRange
-                                                                ? 'Нет среза состава на начало выбранного диапазона.'
-                                                                : 'Нет более раннего среза за выбранный период.'}
-                                                    </div>
-                                                ) : (
-                                                <>
-                                                {/* Покупки слева, продажи справа. На мобиле — стопкой.
-                                                    При перезагрузке периода — слегка тускнеет. */}
-                                                <div style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                                                    gap: isMobile ? 18 : 28,
-                                                    alignItems: 'start',
-                                                    opacity: loading ? 0.5 : 1,
-                                                    transition: 'opacity 0.15s ease',
-                                                }}>
-                                                    {column(buys, 'Покупки', true)}
-                                                    {column(sells, 'Продажи', false)}
-                                                </div>
-                                                {hiddenCount > 0 && (
-                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
-                                                        <button
-                                                            onClick={() => setShowAllDiff((v) => !v)}
-                                                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
-                                                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
-                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
-                                                        >
-                                                            {showAllDiff
-                                                                ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
-                                                                : <>Все изменения · ещё {hiddenCount} <span style={{ fontSize: '0.85em' }}>↓</span></>}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                </>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
-                                </>
-                            )}
+                                            );
+                                        })()}
+                                    </>
+                                )}
 
-                            {/* (6) Приток и отток денег инвесторов — /funds/flows по одному
-                                фонду. Гистограмма — тот же самодостаточный
-                                CompanyFlowsHistogram, что в «Потоках по компании». Это
-                                принципиально другая метрика, чем доходность: чистый поток
-                                денег, очищенный от роста рынка. Стоит последней — сначала
-                                состав и сделки фонда, потом деньги пайщиков. */}
-                            {(flowsLoading || flowMonths.length > 1) && (
-                                <div style={{ marginTop: 28 }}>
-                                    <h3
-                                        style={{
-                                            fontSize: 'var(--fs-md)',
-                                            fontWeight: 700,
-                                            color: 'var(--text-primary)',
-                                            marginBottom: 4,
-                                        }}
-                                    >
-                                        Приток и отток денег
-                                    </h3>
-                                    <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
-                                        Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
-                                        Рост рынка вычтен — это не доходность, а именно движение денег.
+                                {/* (6) Приток и отток денег инвесторов — /funds/flows по одному
+                                    фонду. Гистограмма — тот же самодостаточный
+                                    CompanyFlowsHistogram, что в «Потоках по компании». Это
+                                    принципиально другая метрика, чем доходность: чистый поток
+                                    денег, очищенный от роста рынка. Стоит последней — сначала
+                                    состав и сделки фонда, потом деньги пайщиков. */}
+                                {(flowsLoading || flowMonths.length > 1) && (
+                                    <div style={{ marginTop: 28 }}>
+                                        <h3
+                                            style={{
+                                                fontSize: 'var(--fs-md)',
+                                                fontWeight: 700,
+                                                color: 'var(--text-primary)',
+                                                marginBottom: 4,
+                                            }}
+                                        >
+                                            Приток и отток денег
+                                        </h3>
+                                        <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+                                            Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
+                                            Рост рынка вычтен — это не доходность, а именно движение денег.
+                                        </div>
+                                        <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
+                                            <CompanyFlowsHistogram
+                                                months={flowMonths}
+                                                series={flowSeries}
+                                                title="Чистый приток и отток денег (млн ₽)"
+                                                height={isMobile ? 260 : 320}
+                                                loading={flowsLoading}
+                                                animTrigger={ticker}
+                                                tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
+                                            />
+                                        </div>
                                     </div>
-                                    <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
-                                        <CompanyFlowsHistogram
-                                            months={flowMonths}
-                                            series={flowSeries}
-                                            title="Чистый приток и отток денег (млн ₽)"
-                                            height={isMobile ? 260 : 320}
-                                            loading={flowsLoading}
-                                            animTrigger={ticker}
-                                            tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </>
-                    )}
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
 
-        {/* (G) drill-down: «как этот фонд/УК покупал актив» — тот же
-            AssetHistoryModal, что в «Обзоре снапшота» (та же сигнатура пропсов).
-            z-index выше overlay'я FundDetailModal → ложится сверху.
-            Только при enableDrilldown. */}
-        {enableDrilldown && drillDown && (
-            <AssetHistoryModal
-                ticker={ticker}
-                asset_name={drillDown.asset_name}
-                isin={drillDown.isin}
-                onClose={() => setDrillDown(null)}
-            />
-        )}
-        </>
+            {/* (G) drill-down: «как этот фонд/УК покупал актив» — тот же
+                AssetHistoryModal, что в «Обзоре снапшота» (та же сигнатура пропсов).
+                z-index выше overlay'я FundDetailModal → ложится сверху.
+                Только при enableDrilldown. */}
+            {enableDrilldown && drillDown && (
+                <AssetHistoryModal
+                    ticker={ticker}
+                    asset_name={drillDown.asset_name}
+                    isin={drillDown.isin}
+                    onClose={() => setDrillDown(null)}
+                />
+            )}
+            </>
+        </ModalLayer>
     );
 }
 
