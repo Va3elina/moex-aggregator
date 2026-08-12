@@ -872,6 +872,7 @@ export default function CompanyFlowsTab({
                         noFundsSelected={noFundsSelected}
                         priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
                         animTrigger={animTrigger}
+                        bare={embedded}
                     />
                 ) : (
                     <CompanyShareChart
@@ -887,6 +888,7 @@ export default function CompanyFlowsTab({
                         noFundsSelected={noFundsSelectedShare}
                         priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
                         animTrigger={animTrigger}
+                        bare={embedded}
                     />
                 )}
             </div>

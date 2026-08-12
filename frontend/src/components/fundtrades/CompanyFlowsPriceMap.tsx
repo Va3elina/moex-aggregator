@@ -82,6 +82,10 @@ const RING_OUTSET = 4.5;
 const PRICE_LINE_COLOR = FUND_PALETTE[0];
 
 interface CompanyFlowsPriceMapProps {
+    /** Панельный режим (окно терминала/расширения): без карточки-рамки и
+     *  внутренних отступов — график занимает всю площадь окна. См.
+     *  CompanyFlowsTab embedded. На сайте не задаётся → вид прежний. */
+    bare?: boolean;
     /** "YYYY-MM" — месячная ось потоков (уже обрезана периодом в родителе). */
     months: string[];
     /** Серии по фондам (₽, выровнено с months) — сумма даёт нетто месяца. */
@@ -135,6 +139,7 @@ export default function CompanyFlowsPriceMap({
     noFundsSelected = false,
     priceMissing = false,
     animTrigger,
+    bare = false,
 }: CompanyFlowsPriceMapProps) {
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -373,7 +378,10 @@ export default function CompanyFlowsPriceMap({
 
     // ─────────────────────────────────────────────────────────────────────
     return (
-        <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative" style={{ ['--chart-height' as string]: `${height}px` }}>
+        <div
+            className={bare ? 'relative' : 'rounded-2xl p-5 bg-theme-primary border border-theme relative'}
+            style={{ ['--chart-height' as string]: `${height}px` }}
+        >
             {noFundsSelected ? (
                 <div
                     className="flex flex-col items-center justify-center text-center"
