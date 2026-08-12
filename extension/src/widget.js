@@ -16,16 +16,15 @@
   var EMBED_BASE = window.FRAME_WIDGET_EMBED_BASE || 'https://framedata.ru';
 
   var INDICATORS = [
-    { id: 'signals', label: '🔔 Сигналы', group: 'signals' },
+    { id: 'signals', label: 'Сигналы', group: 'signals' },
     { id: 'oi', label: 'Открытые позиции', group: 'instrument' },
     { id: 'seasonality', label: 'Сезонность', group: 'instrument' },
     { id: 'screener', label: 'Скринер сигналов', group: 'instrument' },
     { id: 'buffett', label: 'Индикатор Баффетта', group: 'market' },
     { id: 'strength', label: 'Сила рынка', group: 'market' },
-    { id: 'funds-money', label: 'Фонды', group: 'market' },
-    { id: 'fund-movers', label: 'Покупки фондов', group: 'market' },
+    { id: 'funds-money', label: 'Деньги в фондах', group: 'market' },
     { id: 'fund-trades', label: 'Сделки фондов', group: 'market' },
-    { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' },
+    { id: 'cbr-flows', label: 'Поток капитала', group: 'market' },
     { id: 'heatmap', label: 'Карта рынка', group: 'market' }
   ];
 
@@ -68,6 +67,18 @@
     'heatmap':     { w: 680, h: 560 }  // плитки — шире, чем график
   };
   var DEFAULT_SIZE = { w: 620, h: 560 };
+
+  // Пол ширины ПО ИНДИКАТОРУ — первая линия защиты от наложения кнопок тулбара:
+  // слева контролы индикатора, справа хром окна (рисование/экспорт/⚙/тема/⤢/×), и
+  // на узкой панели они наезжают друг на друга. Значения — те же, что у панелей
+  // нашего терминала (SandboxPage.MINW_BY_TYPE), замерены по реальным тулбарам.
+  // Добавили контрол — подними число здесь И там.
+  var MINW_BY_ID = {
+    'signals': 340, 'oi': 540, 'seasonality': 470, 'funds-money': 580,
+    'strength': 440, 'screener': 460, 'heatmap': 320, 'buffett': 380,
+    'fund-trades': 490, 'cbr-flows': 560
+  };
+  function minW(id) { return MINW_BY_ID[id] || 300; }
 
   function lsGet(key) {
     return new Promise(function (res) {
@@ -142,7 +153,6 @@
     '.fw-rz-ne{right:0;top:0;width:14px;height:14px;cursor:nesw-resize}',
     '.fw-rz-sw{left:0;bottom:0;width:14px;height:14px;cursor:nesw-resize}',
     '.fw-rz-se{right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize}',
-    '.fw-rz-se::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--w-dim);border-bottom:2px solid var(--w-dim)}',
     // развёрнутая на всё поле терминала панель не тянется и не таскается
     '.fw-panel[data-max="1"] .fw-rz{display:none}',
     '.fw-panel[data-max="1"] .fw-head{cursor:default}'
@@ -180,12 +190,8 @@
       var item = h('button', { class: 'fw-item', 'data-id': ind.id }, [h('span', { class: 'fw-d' }), ind.label]);
       menu.appendChild(item);
     });
-    // Тема панелей — в меню, а не в шапке каждой панели: в оконном режиме своей
-    // шапки у панели нет, а тема в нашем терминале и так общая для всех окон.
-    var themeItem = h('button', { class: 'fw-item', 'data-a': 'theme-all' },
-      [h('span', { class: 'fw-d' }), 'Тема панелей']);
-    menu.appendChild(h('div', { class: 'fw-grp', text: 'Вид' }));
-    menu.appendChild(themeItem);
+    // Тема — НЕ в меню: у каждого окна своя кнопка ◐ в тулбаре (фидбек Вадима —
+    // «это не наш терминал, тема нужна на шапке окна»).
     shadow.appendChild(menu);
     pageRoot.appendChild(host);
 
@@ -224,7 +230,7 @@
     }
     function clampPanel(st) {
       var vw = window.innerWidth, vh = window.innerHeight;
-      st.w = Math.max(300, Math.min(st.w, vw - 16));
+      st.w = Math.max(minW(st.id), Math.min(st.w, vw - 16));
       st.h = Math.max(200, Math.min(st.h, vh - 16));
       if (st.x == null) st.x = Math.max(8, vw - st.w - 28 - (panels.length * 26) % 180);
       if (st.y == null) st.y = 80 + (panels.length * 26) % 180;
@@ -330,6 +336,9 @@
     var MIN_W = 300, MIN_H = 200;
     function clampResize(st, dir, o) {
       var vw = window.innerWidth, vh = window.innerHeight;
+      // Пол ширины — по индикатору (см. MINW_BY_ID): на общих 300px кнопки тулбара
+      // наезжали друг на друга.
+      var MIN_W = minW(st.id);
       if (dir.indexOf('w') >= 0) {
         var right = o.x + o.w;
         if (st.x < MARGIN) st.x = MARGIN;
@@ -416,6 +425,13 @@
         bMax.textContent = st.max ? '⤡' : '⤢';
         bMax.title = st.max ? 'Свернуть к прежнему размеру' : 'Развернуть на весь терминал';
         notifyWinState();
+      }
+      // Тема окна — кнопка ◐ в тулбаре embed'а (в оконном режиме своей шапки нет).
+      function toggleTheme() {
+        st.theme = st.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark';
+        el.setAttribute('data-theme', st.theme);
+        reload();
+        persist();
       }
       function toggleMax() {
         if (st.max) {
@@ -514,7 +530,7 @@
       var panel = {
         id: id, el: el, state: st, reload: reload, applyLayout: applyLayout,
         applyMax: applyMax, iframe: iframe, toggleMax: toggleMax, toFront: toFront,
-        dragFromEmbed: dragFromEmbed, notifyWinState: notifyWinState,
+        dragFromEmbed: dragFromEmbed, notifyWinState: notifyWinState, toggleTheme: toggleTheme,
       };
       panels.push(panel);
       return panel;
@@ -540,19 +556,6 @@
     function closeMenu() { menu.classList.remove('open'); }
     menu.addEventListener('click', function (e) {
       var it = e.target.closest('.fw-item'); if (!it) return;
-      if (it.getAttribute('data-a') === 'theme-all') {
-        prefs.theme = (prefs.theme || DEFAULT_THEME) === 'editorial-dark' ? 'editorial-light' : 'editorial-dark';
-        menu.setAttribute('data-theme', prefs.theme);
-        panels.forEach(function (p) {
-          p.state.theme = prefs.theme;
-          p.el.setAttribute('data-theme', prefs.theme);
-          p.reload();
-        });
-        lsSet(KEY_PREFS, prefs);
-        persist();
-        closeMenu();
-        return;
-      }
       spawnPanel(it.getAttribute('data-id'));
       persist();
       closeMenu();
@@ -599,6 +602,7 @@
       if (d.type === 'win') {
         if (d.action === 'close') removePanel(from);
         else if (d.action === 'expand') from.toggleMax();
+        else if (d.action === 'theme') from.toggleTheme();
         else if (d.action === 'drag-start') { from.toFront(); from.dragFromEmbed(d.x, d.y); }
         else if (d.action === 'resize' && !from.state.max) {
           if (typeof d.w === 'number') from.state.w = d.w;
