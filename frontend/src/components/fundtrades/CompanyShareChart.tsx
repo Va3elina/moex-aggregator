@@ -68,6 +68,10 @@ export interface CompanyShareFundSeries {
 }
 
 interface CompanyShareChartProps {
+    /** Панельный режим (окно терминала/расширения): без карточки-рамки и
+     *  внутренних отступов — график занимает всю площадь окна. См.
+     *  CompanyFlowsTab embedded. На сайте не задаётся → вид прежний. */
+    bare?: boolean;
     /** "YYYY-MM" — месячная ось (уже обрезана периодом в родителе). */
     months: string[];
     /** Серии по фондам (уже отфильтрованные пикером), выровнено с months. */
@@ -139,6 +143,7 @@ export default function CompanyShareChart({
     noFundsSelected = false,
     priceMissing = false,
     animTrigger,
+    bare = false,
 }: CompanyShareChartProps) {
     const isMobile = useIsMobile();
     // Обёртка обеих панелей — общая система координат для курсора и тултипа.
@@ -493,7 +498,10 @@ export default function CompanyShareChart({
 
     // ─────────────────────────────────────────────────────────────────────
     return (
-        <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative" style={{ ['--chart-height' as string]: `${height}px` }}>
+        <div
+            className={bare ? 'relative' : 'rounded-2xl p-5 bg-theme-primary border border-theme relative'}
+            style={{ ['--chart-height' as string]: `${height}px` }}
+        >
             {noFundsSelected ? (
                 <div
                     className="flex flex-col items-center justify-center text-center"

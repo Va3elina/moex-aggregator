@@ -30,7 +30,7 @@ import {
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup } from './EmbedSettings';
-import { EmbedFrame } from './EmbedToolbar';
+import { Dropdown, EmbedFrame } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
@@ -71,42 +71,6 @@ function formatMonthYear(iso: string): string {
 
 // ─────────────────────────────── shared bits ───────────────────────────────
 
-// Локальный таб-бар (pills) ВНУТРИ виджета. Живёт в тулбаре EmbedFrame — там
-// у родителя overflow:hidden в ОДНУ строку (§4.1), поэтому flexWrap тут не
-// сработал бы (лишние строки просто обрежутся, а ⚙ наедет на обрезанную
-// вкладку — реальный баг на узкой панели у MINW=300). Вместо wrap — горизонтальный
-// скролл в один ряд: узко — скроллим тач/колесом, не теряем доступ к вкладкам.
-function TabBar({ tab, onChange }: { tab: EmbedTab; onChange: (t: EmbedTab) => void }) {
-  return (
-    <div className="styled-scrollbar" style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 6, flexShrink: 1, minWidth: 0 }}>
-      {TABS.map((t) => {
-        const on = t.id === tab;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onChange(t.id)}
-            style={{
-              padding: '5px 12px',
-              fontSize: 12,
-              fontWeight: on ? 800 : 600,
-              borderRadius: 999,
-              cursor: 'pointer',
-              border: on ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.35))',
-              background: on ? 'var(--accent)' : 'transparent',
-              color: on ? '#fff' : 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-              lineHeight: 1.3,
-              transition: 'background 0.12s, border-color 0.12s',
-            }}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // Кнопки-сегменты компактные (для метрики внутри тела таба).
 function MetricToggle<T extends string>({
@@ -344,15 +308,25 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   // Рядом с табами — слот, в который вкладка «Потоки» порталом кладёт СВОИ
   // контролы (бумага/режим/период/фонды): состояние живёт в CompanyFlowsTab,
   // поэтому поднять их пропами нельзя, а второй реализации быть не должно.
+  // Вкладка — Dropdown в LEAD, то есть ЗА пределами прокручиваемой полосы
+  // контролов. Раньше это был ряд пилюль внутри неё: у «Потоков» свои четыре
+  // контрола, полоса уходила в скролл и таб-бар уезжал из виду — переключить
+  // вкладку становилось нечем (проверено вживую на панели 660px).
+  const lead: ReactNode = lockTab === 'movers' ? undefined : (
+    <Dropdown<EmbedTab>
+      value={tab}
+      options={TABS.map((t) => ({ id: t.id, label: t.label }))}
+      onChange={setTab}
+      title="Вкладка"
+    />
+  );
   const toolbar: ReactNode = lockTab === 'movers' ? undefined : (
-    <>
-      <TabBar tab={tab} onChange={setTab} />
-      <div ref={setCompanySlot} style={{ display: 'contents' }} />
-    </>
+    <div ref={setCompanySlot} style={{ display: 'contents' }} />
   );
 
   return (
     <EmbedFrame
+      lead={lead}
       toolbar={toolbar}
       more={more}
     >
