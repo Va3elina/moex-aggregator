@@ -168,11 +168,24 @@ export default function CompanyFlowsTab({
     // (--strength-chart-top-height 300 + --strength-chart-bottom-height 150 + chrome).
     // Ниже этого блок не ужимается даже на низком окне.
     const chartAnchorRef = useRef<HTMLDivElement>(null);
-    const chartHeight = useFitToViewport(chartAnchorRef, embedded
-        // В окне высота = сама панель: сайтовый пол 475px не даёт графику
-        // ужаться под невысокое окно терминала и вылезает за край.
-        ? { min: 180, max: 2000, bottomBuffer: 6 }
-        : { min: 475, max: 720, bottomBuffer: 64 });
+    const fitHeight = useFitToViewport(chartAnchorRef, { min: 475, max: 720, bottomBuffer: 64 });
+    // В ОКНЕ высота берётся у контейнера панели, а не у вьюпорта: useFitToViewport
+    // меряет окно браузера, а панель — маленький прямоугольник внутри него, и
+    // график вылезал за нижний край (проверено вживую: ось дат уходила под обрез).
+    const [boxH, setBoxH] = useState(0);
+    useEffect(() => {
+        const el = chartAnchorRef.current;
+        if (!embedded || !el || typeof ResizeObserver === 'undefined') return;
+        const measure = () => setBoxH(el.clientHeight);
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [embedded]);
+    // PAD_TOP — воздух под легенду графика: карточку с её padding'ом в панели
+    // убрали (bare), и подпись серии упиралась в тулбар.
+    const PAD_TOP = 8;
+    const chartHeight = embedded ? Math.max(160, boxH - PAD_TOP) : fitHeight;
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);
@@ -858,7 +871,9 @@ export default function CompanyFlowsTab({
             <div
                 ref={chartAnchorRef}
                 data-tour="ft-company-chart"
-                style={embedded ? { position: 'relative', flex: 1, minHeight: 0 } : { position: 'relative' }}
+                style={embedded
+                    ? { position: 'relative', flex: 1, minHeight: 0, paddingTop: PAD_TOP, boxSizing: 'border-box' }
+                    : { position: 'relative' }}
             >
                 {effectiveMode === 'map' ? (
                     <CompanyFlowsPriceMap
