@@ -21,6 +21,7 @@ noreply@xn--80aklbnczmv.xn--p1ai остаётся вторым адресом т
 """
 
 import os
+import re
 import ssl
 import smtplib
 import logging
@@ -44,6 +45,11 @@ SITE_URL = "https://framedata.ru"
 # Пересобрать после правки frontend/public/logo.svg:
 #   rsvg-convert -w 96 -h 96 frontend/public/logo.svg -o api/services/assets/logo-email.png
 LOGO_PATH = Path(__file__).parent / "assets" / "logo-email.png"
+
+# ⚠️ Одноразовые коды живут в ТЕМЕ письма («Код подтверждения: 123456 — FRAME»),
+# поэтому тему нельзя писать в лог как есть: журнал переживает код на месяцы, а
+# кода достаточно, чтобы сменить пароль чужому аккаунту. Маскируем при записи.
+_CODE_IN_TEXT = re.compile(r"\b\d{6}\b")
 
 # Шапка писем — общая для всех шаблонов, чтобы бренд не разъезжался по файлу.
 #
@@ -100,7 +106,7 @@ def _send(to_email: str, subject: str, text_body: str, html_body: str) -> bool:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=20) as smtp:
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.send_message(msg)
-        log.info("Email отправлен на %s (subject=%r)", to_email, subject)
+        log.info("Email отправлен на %s (subject=%r)", to_email, _CODE_IN_TEXT.sub("******", subject))
         return True
     except Exception as e:  # noqa: BLE001 — не роняем регистрацию из-за SMTP
         log.error("Ошибка отправки email на %s: %s: %s", to_email, type(e).__name__, e)
