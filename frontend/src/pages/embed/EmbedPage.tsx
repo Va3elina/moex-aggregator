@@ -75,6 +75,9 @@ export default function EmbedPage() {
     maximized,
     onResize: (w, h) => post('resize', { w, h }),
     onDragStart: (x, y) => post('drag-start', { x, y }),
+    // Тема — у КАЖДОГО окна своя: панели висят поверх чужого интерфейса терминала,
+    // и общего переключателя (как в шапке нашего терминала) здесь нет.
+    onTheme: () => post('theme'),
   }), [post, maximized]);
 
   // Оболочка сообщает фактическое состояние окна (развёрнуто/нет) — иконка ⤢/⤡

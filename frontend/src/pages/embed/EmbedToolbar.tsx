@@ -21,7 +21,7 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical, Contrast } from 'lucide-react';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -45,6 +45,11 @@ export interface SandboxWindowControls {
    *  и widget.js dragFromEmbed). В песочнице панель тянется своим обработчиком
    *  на контейнере, поэтому поле не задаётся. */
   onDragStart?: (screenX: number, screenY: number) => void;
+  /** Переключить тему ЭТОЙ панели. Только расширение: в терминале Т-Инвестиций
+   *  окна живут поверх чужого интерфейса и тему удобно менять у каждого окна
+   *  отдельно (кнопка ◐ была в шапке оболочки, пока шапка существовала).
+   *  В нашей песочнице тема общая и живёт в шапке терминала → поле не задаётся. */
+  onTheme?: () => void;
 }
 export const SandboxWindowCtx = createContext<SandboxWindowControls | null>(null);
 import InstrumentIcon from '../../components/InstrumentIcon';
@@ -125,17 +130,32 @@ export function EmbedFrame({
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const win = useContext(SandboxWindowCtx);
 
+  // Тянуть окно можно за ЛЮБОЕ свободное место шапки, не только за грип (фидбек
+  // Вадима). Интерактив пропускаем: иначе pointerdown с preventDefault съедает
+  // click у кнопок и поповеров. Тот же фильтр, что у панели песочницы.
+  const dragHandlers = win?.onDragStart
+    ? {
+        onPointerDown: (e: React.PointerEvent) => {
+          if ((e.target as HTMLElement).closest('button, input, a, select, textarea, [role="dialog"]')) return;
+          e.preventDefault();
+          win.onDragStart!(e.screenX, e.screenY);
+        },
+        onDoubleClick: (e: React.MouseEvent) => {
+          if ((e.target as HTMLElement).closest('button, input, a, select, textarea, [role="dialog"]')) return;
+          win.onExpand?.();
+        },
+      }
+    : {};
+
   return (
     <div style={frameStyle}>
-      <div style={toolbarRow}>
+      <div style={win?.onDragStart ? { ...toolbarRow, cursor: 'grab' } : toolbarRow} {...dragHandlers}>
         {/* Грип-хват окна ПЕСОЧНИЦЫ: тулбар бывает забит кнопками и «взять» окно не за что.
             Не button → проходит фильтр onDragStart (тянем только не-интерактивное). Только в песочнице. */}
         {win && (
           <div
             title="Перетащить окно"
             aria-hidden
-            onPointerDown={win.onDragStart ? (e) => { e.preventDefault(); win.onDragStart!(e.screenX, e.screenY); } : undefined}
-            onDoubleClick={win.onExpand}
             style={{ display: 'flex', alignItems: 'center', color: 'var(--muted, #9A958C)', cursor: 'grab', flexShrink: 0, marginLeft: -2 }}
           >
             <GripVertical size={15} />
@@ -189,6 +209,18 @@ export function EmbedFrame({
             видимый провал 8px против 2px у остальных иконок ряда. */}
         {win && (
           <div style={{ display: 'flex', gap: 2, flexShrink: 0, ...(actions || more ? { marginLeft: -6 } : {}) }}>
+            {win.onTheme && (
+              <button
+                type="button"
+                onClick={win.onTheme}
+                title="Тема окна"
+                aria-label="Тема окна"
+                className="emb-iconbtn"
+                style={sbWinBtn}
+              >
+                <Contrast size={15} />
+              </button>
+            )}
             {win.onExpand && (
               <button
                 type="button"
