@@ -2059,10 +2059,9 @@ a.btn-accent:active {
 .chart-reveal {
   animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .chart-reveal { animation: none; }
-}
+/* ⚠️ Без @media (prefers-reduced-motion) — на Windows «эффекты анимации»
+   у многих выключены системно, и такой гард молча убивает reveal во всех
+   браузерах юзера. Остальные анимации сайта reduce тоже не уважают. */
 
 /* Onboarding tour — мягкий fade-in при переходе между шагами.
    Используется в OnboardingTour.tsx через key={stepIndex} на tooltip card.
