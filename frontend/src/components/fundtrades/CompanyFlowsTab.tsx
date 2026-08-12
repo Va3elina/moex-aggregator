@@ -173,15 +173,24 @@ export default function CompanyFlowsTab({
     // меряет окно браузера, а панель — маленький прямоугольник внутри него, и
     // график вылезал за нижний край (проверено вживую: ось дат уходила под обрез).
     const [boxH, setBoxH] = useState(0);
-    useEffect(() => {
-        const el = chartAnchorRef.current;
-        if (!embedded || !el || typeof ResizeObserver === 'undefined') return;
+    const roRef = useRef<ResizeObserver | null>(null);
+    // Callback-ref, а НЕ useEffect: на первом рендере компонент отдаёт скелет
+    // загрузки бумаг — якоря графика ещё нет, и однократный эффект уходил ни с
+    // чем, после чего панель навсегда оставалась с полом высоты 160px. Ref
+    // срабатывает ровно тогда, когда узел появляется (и исчезает).
+    const setChartAnchor = useCallback((el: HTMLDivElement | null) => {
+        chartAnchorRef.current = el;
+        roRef.current?.disconnect();
+        roRef.current = null;
+        if (!el || !embedded || typeof ResizeObserver === 'undefined') return;
         const measure = () => setBoxH(el.clientHeight);
         measure();
         const ro = new ResizeObserver(measure);
         ro.observe(el);
-        return () => ro.disconnect();
+        roRef.current = ro;
     }, [embedded]);
+    useEffect(() => () => roRef.current?.disconnect(), []);
+
     // PAD_TOP — воздух под легенду графика: карточку с её padding'ом в панели
     // убрали (bare), и подпись серии упиралась в тулбар.
     const PAD_TOP = 8;
@@ -869,7 +878,7 @@ export default function CompanyFlowsTab({
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
             <div
-                ref={chartAnchorRef}
+                ref={setChartAnchor}
                 data-tour="ft-company-chart"
                 style={embedded
                     ? { position: 'relative', flex: 1, minHeight: 0, paddingTop: PAD_TOP, boxSizing: 'border-box' }
