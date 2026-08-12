@@ -194,7 +194,11 @@ export default function CompanyFlowsTab({
     // PAD_TOP — воздух под легенду графика: карточку с её padding'ом в панели
     // убрали (bare), и подпись серии упиралась в тулбар.
     const PAD_TOP = 8;
-    const chartHeight = embedded ? Math.max(160, boxH - PAD_TOP) : fitHeight;
+    // --chart-height задаёт только ПОЛЕ графика; сверху компонент рисует легенду,
+    // снизу — подписи дат и навигатор. Без этого запаса низ уезжал за край окна
+    // (замерено вживую: контент был выше контейнера примерно на эту величину).
+    const CHART_CHROME = 56;
+    const chartHeight = embedded ? Math.max(160, boxH - PAD_TOP - CHART_CHROME) : fitHeight;
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);

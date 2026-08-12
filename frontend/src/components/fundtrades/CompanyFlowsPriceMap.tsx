@@ -587,11 +587,12 @@ export default function CompanyFlowsPriceMap({
                             })}
                         </div>
 
-                        {/* Watermark — как в гистограмме. */}
-                        <ChartWatermark
+                        {/* Watermark — как в гистограмме. В окне терминала (bare)
+                            не рисуем: панель тесная, знак ложится на данные. */}
+                        {!bare && <ChartWatermark
                             left="calc(var(--chart-pad-left, 100px) + 5px)"
                             bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 420px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
-                        />
+                        />}
 
                         {/* Тултип: цена месяца, ниже разделителя — сделки месяца
                             с разбивкой (контент 1-в-1 с гистограммой). Цена берётся
