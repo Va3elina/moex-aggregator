@@ -526,7 +526,11 @@ export default function SimpleChart({
   // .chart-reveal (1s), финал — revealW=null (rect следует за chartWidth).
   useEffect(() => {
     if (!revealed) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // ⚠️ Нарочно БЕЗ prefers-reduced-motion: на Windows настройка «эффекты
+    // анимации» выключена у многих по умолчанию и матчится reduce во всех
+    // браузерах — гард молча убивал reveal у реальных юзеров (в т.ч. у
+    // основателя). Остальные анимации сайта (волна гистограмм, морфинг
+    // периодов) reduce тоже не уважают — единообразно.
     const D = 1000;
     let start: number | null = null;
     const step = (ts: number) => {
