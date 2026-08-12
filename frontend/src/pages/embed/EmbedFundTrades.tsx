@@ -22,6 +22,7 @@ import {
   getFundTradesMovers,
   getFundSnapshots,
   getFundSnapshotReview,
+  getFundTradesDetail,
   type FundTradesMovers,
   type FundWithHistory,
   type FundSnapshotsList,
@@ -37,7 +38,7 @@ import FundPicker, { type FundPickerFund } from '../../components/fundtrades/Fun
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import Donut from '../../components/funds/Donut';
-import {
+import FundDetailModal, {
   formatRubShort,
   formatShares,
   formatReturnPct,
@@ -292,16 +293,13 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
       </DrawerSection>
     </>
   );
-  const more: ReactNode =
+  // ⚙ рисуем ТОЛЬКО когда за ней есть настройки. У «Потоков» и «Снапшота» все
+  // контролы вынесены в тулбар, и шестерёнка показывала одну лишь подсказку —
+  // кнопка-пустышка (фидбек Вадима: «если не нужна — убираем»).
+  const more: ReactNode | undefined =
     tab === 'movers' ? moversMore
     : tab === 'funds' ? fundsMore
-    : (
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          {tab === 'snapshots'
-            ? 'Выбор фонда, месяца и метрики — кнопками в самом виджете.'
-            : 'Выбор бумаги и фондов — кнопками в самом виджете.'}
-        </div>
-      );
+    : undefined;
 
   // Тулбар: заперт на movers → пусто (заголовок и период 1М/6М/1Г уже в
   // шапке самой PortfolioMoversPanel, дублировать их в тулбаре не нужно).
@@ -672,6 +670,11 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
 // ─────────────────────────────── funds tab ───────────────────────────────
 
 function FundsTab({ funds, hasFunds }: { funds: FundWithHistory[]; hasFunds: boolean }) {
+  // Карточка фонда кликабельна, как на сайте: открывается FundDetailModal
+  // (СЧА, цена пая, состав с пончиком, изменения) — в панели этого не хватало.
+  const [ticker, setTicker] = useState<string | null>(null);
+  const selected = ticker ? funds.find((f) => f.ticker === ticker) ?? null : null;
+
   if (!hasFunds) {
     return <EmbedMsg text="Загрузка…" />;
   }
@@ -681,13 +684,24 @@ function FundsTab({ funds, hasFunds }: { funds: FundWithHistory[]; hasFunds: boo
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {funds.map((f) => (
-        <FundCard key={f.fund_id} fund={f} />
+        <FundCard key={f.fund_id} fund={f} onOpen={() => setTicker(f.ticker)} />
       ))}
+      {ticker && (
+        <FundDetailModal
+          ticker={ticker}
+          loadDetail={(period, range) => getFundTradesDetail(ticker, period, range ? { from: range.from, to: range.to } : {})}
+          navRub={selected?.nav_rub}
+          returns={selected?.returns}
+          hasDistributions={selected?.has_distributions}
+          enableDrilldown
+          onClose={() => setTicker(null)}
+        />
+      )}
     </div>
   );
 }
 
-function FundCard({ fund: f }: { fund: FundWithHistory }) {
+function FundCard({ fund: f, onOpen }: { fund: FundWithHistory; onOpen: () => void }) {
   const uk = resolveFundLogo(f.ticker, f.uk_id);
   const top = f.top_holdings ?? [];
   // Донат подсвечивает только те 5 бумаг, что показаны в списке; остальное — серый сектор «Прочее».
@@ -716,6 +730,11 @@ function FundCard({ fund: f }: { fund: FundWithHistory }) {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+      title="Открыть карточку фонда"
       style={{
         padding: 12,
         background: 'var(--bg-secondary, transparent)',
@@ -724,6 +743,8 @@ function FundCard({ fund: f }: { fund: FundWithHistory }) {
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
+        cursor: 'pointer',
+        textAlign: 'left',
       }}
     >
       {/* Header: аватар + имя + тикер */}
