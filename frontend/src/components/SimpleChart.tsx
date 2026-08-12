@@ -405,6 +405,16 @@ export default function SimpleChart({
   const isFirstRender = useRef(true);
   const [revealed, setRevealed] = useState(false);
 
+  // Entrance-анимация только серий (оси/легенда видны сразу): rAF-анимация
+  // ширины rect в #chartClip от 0 до chartWidth. Декларативные варианты не
+  // работают: содержимое <clipPath> не рендерится и CSS-анимации к нему не
+  // применяются (#1123), а clip-path: inset() на вложенной SVG <g> Chromium
+  // тоже не анимирует (#1125). null = анимация закончена/не начата, rect
+  // берёт полный chartWidth (и продолжает следовать за resize'ом).
+  const [revealW, setRevealW] = useState<number | null>(null);
+  const revealAnimRef = useRef<number | null>(null);
+  const chartWidthRef = useRef(0);
+
   // === Pill width — точное измерение через getBBox (не canvas-предсказание).
   // canvas.measureText() систематически расходится с SVG-рендером (шрифт,
   // kerning, субпиксели) → pill узкий → текст обрезается. Решение: меряем
@@ -507,6 +517,34 @@ export default function SimpleChart({
   const effectiveHeight = isMobile ? Math.min(height, 350) : height;
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = effectiveHeight - padding.top - padding.bottom;
+  // Актуальная ширина для reveal-эффекта ниже: сам эффект зависит только от
+  // revealed и не должен перезапускаться при resize.
+  chartWidthRef.current = chartWidth;
+
+  // Запуск reveal-анимации: revealed переключается один раз на первом рендере
+  // с данными (см. animateMorph). Длительность/изинг — как у прежнего CSS
+  // .chart-reveal (1s), финал — revealW=null (rect следует за chartWidth).
+  useEffect(() => {
+    if (!revealed) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const D = 1000;
+    let start: number | null = null;
+    const step = (ts: number) => {
+      if (start == null) start = ts;
+      const t = Math.min((ts - start) / D, 1);
+      setRevealW(easeOutCubic(t) * chartWidthRef.current);
+      if (t < 1) {
+        revealAnimRef.current = requestAnimationFrame(step);
+      } else {
+        setRevealW(null);
+      }
+    };
+    setRevealW(0);
+    revealAnimRef.current = requestAnimationFrame(step);
+    return () => {
+      if (revealAnimRef.current) cancelAnimationFrame(revealAnimRef.current);
+    };
+  }, [revealed]);
 
   // Непрерывный зум-вьюпорт (TradingView-style): колесо над ЦЕНОВОЙ осью (лев/прав
   // полосы) → верт. масштаб (yZoom); над ТЕЛОМ/ОСЬЮ ДАТ → плавно зумит окно navRange
@@ -1294,7 +1332,9 @@ export default function SimpleChart({
               <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
             </linearGradient>
             <clipPath id="chartClip">
-              <rect x={0} y={0} width={chartWidth} height={chartHeight} />
+              {/* Ширина = revealW во время entrance-анимации (JS-rAF, см. выше),
+                  дальше — полный chartWidth. */}
+              <rect x={0} y={0} width={revealW ?? chartWidth} height={chartHeight} />
             </clipPath>
           </defs>
 
@@ -1419,16 +1459,10 @@ export default function SimpleChart({
               );
             })}
 
-            {/* Область графика с клиппингом. Вложенная группа несёт entrance-
-                анимацию (только серии, без осей/подписей): CSS-анимация
-                clip-path: inset() слева направо. Именно вложенная — на самой
-                клипнутой группе класс перебил бы url(#chartClip) навсегда
-                (fill-mode both), и серии перестали бы обрезаться. Анимировать
-                rect внутри <clipPath> нельзя: содержимое clipPath не
-                рендерится, и браузеры не применяют к нему CSS-анимации —
-                поэтому первый вариант (#1123) молча не работал. */}
+            {/* Область графика с клиппингом. Entrance-анимация серий делается
+                шириной rect в #chartClip (JS-rAF выше) — декларативные CSS-
+                варианты (#1123, #1125) в браузерах молча не работают. */}
             <g clipPath="url(#chartClip)">
-            <g className={revealed ? 'chart-reveal' : undefined}>
               {/* ClipPath для обрезки сплошной линии (без прогнозных точек) */}
               {_forecastCount > 0 && targetCalc.points.length > _forecastCount && (
                 <defs>
@@ -1715,7 +1749,6 @@ export default function SimpleChart({
                   className="chart-hover-ui transition-opacity duration-150"
                 />
               )}
-            </g>
             </g>
 
             {/* Кросхэйр. Горизонтальная линия (режим алертов) видна ВЕЗДЕ, пока
