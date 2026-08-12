@@ -338,6 +338,11 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // слетел бы на fit ровно в момент, когда пользователь этого не просил.
   // Читаем его при восстановлении, если у свежесозданного чарта своего ещё нет.
   const lastRangeRef = useRef<LogicalRange | null>(null);
+  // Последний видимый диапазон во ВРЕМЕНИ. Нужен отдельно от логического: когда
+  // панели пересоздаются (сменилось их число), `getVisibleRange()` у свежего
+  // пустого графика вернёт null, и восстанавливать было бы нечем — оставался
+  // логический диапазон, который на ряду другой длины смещает вид вправо/влево.
+  const lastTimeRangeRef = useRef<{ from: unknown; to: unknown } | null>(null);
   /**
    * Обновление чисел в строках индикаторов. time — точка под курсором, null —
    * вернуть последний бар. Ищем узлы по data-ind-value и пишем textContent:
@@ -561,6 +566,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
       const handler = (range: LogicalRange | null) => {
         if (syncingRange || !range) return;
         lastRangeRef.current = range;
+        try {
+          const tr = chart.timeScale().getVisibleRange();
+          if (tr) lastTimeRangeRef.current = tr as unknown as { from: unknown; to: unknown };
+        } catch { /* график без данных */ }
         syncingRange = true;
         try {
           charts.forEach((other, j) => { if (j !== i) other.timeScale().setVisibleLogicalRange(range); });
@@ -1750,9 +1759,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     // «Чистая позиция» → «ОИ», рядов стало больше/меньше, и окно [1200..1300]
     // указывает уже на другие даты — график «бросало в начало» (фидбек Вадима).
     // Время же не зависит от того, сколько точек в ряду.
-    const savedTimeRange = (() => {
+    // Сначала спрашиваем сам график, иначе берём последний известный (панели
+    // могли только что пересоздаться — у пустого графика диапазона ещё нет).
+    const liveTimeRange = (() => {
       try { return charts[charts.length - 1].timeScale().getVisibleRange(); } catch { return null; }
     })();
+    if (liveTimeRange) lastTimeRangeRef.current = liveTimeRange as unknown as { from: unknown; to: unknown };
+    const savedTimeRange = (liveTimeRange ?? lastTimeRangeRef.current) as Parameters<
+      ReturnType<IChartApi['timeScale']>['setVisibleRange']
+    >[0] | null;
 
     apisRef.current.forEach((apis, i) => apis.forEach((s) => { try { charts[i]?.removeSeries(s); } catch { /* removed */ } }));
     apisRef.current = panes.map(() => []);
