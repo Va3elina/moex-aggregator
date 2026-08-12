@@ -249,6 +249,7 @@ export const SEO_META: Record<string, SeoMeta> = {
     // Защита от попадания в выдачу. Помимо noindex meta также Disallowed
     // в robots.txt — defense in depth.
     '/login': { title: 'Вход | FRAME', description: '', noindex: true },
+    '/forgot-password': { title: 'Восстановление пароля | FRAME', description: '', noindex: true },
     '/add-email': { title: 'Привязка email | FRAME', description: '', noindex: true },
     '/profile': { title: 'Профиль | FRAME', description: '', noindex: true },
     '/billing/success': { title: 'Спасибо за подписку | FRAME', description: '', noindex: true },
