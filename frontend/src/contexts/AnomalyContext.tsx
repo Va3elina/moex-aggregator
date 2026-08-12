@@ -21,6 +21,7 @@ import {
 } from 'react';
 import { useAuth } from './AuthContext';
 import { useSSE } from '../hooks/useSSE';
+import { isEmbedRoute } from '../utils/embedContext';
 import {
   getAnomalyFeed, markAnomaliesSeen, setAnomalyToasts, type AnomalyItem, type ChannelPost,
 } from '../services/api';
@@ -29,6 +30,10 @@ const LS_SEEN = 'anomaly_last_seen_id';
 const LS_SEEN_POST = 'channel_last_seen_post_id';
 const LS_TOASTS = 'anomaly_toasts_enabled';
 const POLL_MS = 90_000;
+// Лок «кто поллит ленту» среди панелей расширения (см. эффект поллинга ниже).
+const LS_LEADER = 'frame:embed:anomaly:leader';
+const LEADER_BEAT_MS = 30_000;
+const LEADER_TTL_MS = 75_000;    // > 2 тактов: краткая заминка не отбирает лидерство
 const FEED_WINDOW_HOURS = 168;   // колокол показывает до 7д; тост-свежесть режет ToastHost
 
 interface AnomalyCtx {
@@ -105,10 +110,50 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
   fetchRef.current = refetch;
 
   // Первичная загрузка + поллинг.
+  //
+  // В расширении открыто НЕСКОЛЬКО панелей = несколько iframe одного origin, и
+  // каждый поднимал свой провайдер → лента тянулась N раз каждые 90с, а тост мог
+  // выстрелить в произвольном окне. Поэтому в embed'е поллит только «лидер»:
+  // владелец LS-лока, который продлевает его каждые LEADER_TTL/3. Панель закрыли —
+  // лок протух → лидером станет следующая. Лок общий, т.к. у панелей общий origin
+  // (и, значит, общий localStorage-раздел). На сайте вкладка одна — гейта нет.
   useEffect(() => {
-    fetchRef.current();
-    const t = setInterval(() => fetchRef.current(), POLL_MS);
-    return () => clearInterval(t);
+    if (!isEmbedRoute()) {
+      fetchRef.current();
+      const t = setInterval(() => fetchRef.current(), POLL_MS);
+      return () => clearInterval(t);
+    }
+    const me = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const isLeader = () => {
+      try {
+        const raw = localStorage.getItem(LS_LEADER);
+        const cur = raw ? (JSON.parse(raw) as { id: string; ts: number }) : null;
+        if (cur && cur.id !== me && Date.now() - cur.ts < LEADER_TTL_MS) return false;
+        localStorage.setItem(LS_LEADER, JSON.stringify({ id: me, ts: Date.now() }));
+        return true;
+      } catch {
+        return true;   // нет LS (partitioned) → работаем как обычно, дублей максимум N
+      }
+    };
+    const beat = () => { if (isLeader()) fetchRef.current(); };
+    beat();
+    // Тик чаще, чем TTL: продлеваем лок и быстро подхватываем лидерство, но
+    // fetch реально уходит лишь раз в POLL_MS (внутри fetchRef дешёвых гейтов нет,
+    // поэтому считаем такты сами).
+    let ticks = 0;
+    const t = setInterval(() => {
+      const leader = isLeader();
+      ticks += 1;
+      if (leader && ticks % (POLL_MS / LEADER_BEAT_MS) === 0) fetchRef.current();
+    }, LEADER_BEAT_MS);
+    return () => {
+      clearInterval(t);
+      // Уходим — освобождаем лок сразу, чтобы соседняя панель не ждала TTL.
+      try {
+        const raw = localStorage.getItem(LS_LEADER);
+        if (raw && (JSON.parse(raw) as { id: string }).id === me) localStorage.removeItem(LS_LEADER);
+      } catch { /* ignore */ }
+    };
   }, [isAuthenticated]);
 
   // SSE-нудж: новая аномалия → подтянуть ленту (сам объект REST'ом, как везде).

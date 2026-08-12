@@ -59,6 +59,55 @@
       .catch(function () { removeLocal('Удалён из браузера (отозвать не удалось — проверьте в кабинете)'); });
   }
 
+  // ── Общие настройки графиков ──
+  // Живут в chrome.storage.local.framePrefs; widget.js слушает onChanged и
+  // перезагружает панели (значения уходят в URL embed'а). Дефолты совпадают с
+  // «Настройками» терминала Фрейма, чтобы вид не разъезжался между продуктами.
+  var PREF_DEF = { lineW: 2, crosshair: true, grid: true, lastValue: true };
+  var prefEls = {
+    lineW: document.getElementById('lineW'),
+    crosshair: document.getElementById('crosshair'),
+    grid: document.getElementById('grid'),
+    lastValue: document.getElementById('lastValue')
+  };
+
+  function readPrefs() {
+    return {
+      lineW: Number(prefEls.lineW.value) || PREF_DEF.lineW,
+      crosshair: prefEls.crosshair.checked,
+      grid: prefEls.grid.checked,
+      lastValue: prefEls.lastValue.checked
+    };
+  }
+
+  function savePrefs() {
+    try {
+      // Тему панелей держит widget.js в том же объекте — не затираем её.
+      chrome.storage.local.get(['framePrefs'], function (o) {
+        var cur = (o && o.framePrefs) || {};
+        var next = readPrefs();
+        if (cur.theme) next.theme = cur.theme;
+        chrome.storage.local.set({ framePrefs: next });
+      });
+    } catch (e) { /* хранилище недоступно — настройки просто не сохранятся */ }
+  }
+
+  function loadPrefs() {
+    try {
+      chrome.storage.local.get(['framePrefs'], function (o) {
+        var p = (o && o.framePrefs) || {};
+        prefEls.lineW.value = String(p.lineW != null ? p.lineW : PREF_DEF.lineW);
+        prefEls.crosshair.checked = p.crosshair != null ? !!p.crosshair : PREF_DEF.crosshair;
+        prefEls.grid.checked = p.grid != null ? !!p.grid : PREF_DEF.grid;
+        prefEls.lastValue.checked = p.lastValue != null ? !!p.lastValue : PREF_DEF.lastValue;
+      });
+    } catch (e) { /* дефолты уже в разметке */ }
+  }
+
+  Object.keys(prefEls).forEach(function (k) {
+    prefEls[k].addEventListener('change', savePrefs);
+  });
+
   document.getElementById('save').addEventListener('click', save);
   document.getElementById('clear').addEventListener('click', clear);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
@@ -70,4 +119,5 @@
   } catch (e) { /* нет chrome API */ }
 
   load();
+  loadPrefs();
 })();

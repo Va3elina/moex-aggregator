@@ -23,6 +23,7 @@ import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { type AnomalyItem } from '../../services/api';
 import { AnomalyToast } from './AnomalyToast';
 import { openAnomaly, subscribeAnomalyAction } from './anomalyActions';
+import { emitEmbedSignal, isEmbedRoute } from '../../utils/embedContext';
 import { Activity, X } from 'lucide-react';
 
 const SESSION_CAP = 5;
@@ -45,6 +46,8 @@ export function ToastHost() {
   const [subscribing, setSubscribing] = useState<number | null>(null);
   const [subscribed, setSubscribed] = useState<Set<number>>(new Set());
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  // Колокола/навигации в embed'е нет — там всё уходит в оболочку расширения.
+  const inEmbed = isEmbedRoute();
 
   // Рефы для интервала (свежие значения без переусанной подписки).
   const itemsRef = useRef(items); itemsRef.current = items;
@@ -140,9 +143,14 @@ export function ToastHost() {
   }, []);
 
   const open = useCallback((item: AnomalyItem) => {
-    openAnomaly(item, navigate, showUpgrade);
+    // В embed'е (окно расширения в терминале) сайта нет — отдаём диплинк оболочке,
+    // она откроет НАШУ панель индикатора на активе сигнала. navigate() здесь
+    // развернул бы полную страницу сайта внутри окошка терминала.
+    if (!(inEmbed && emitEmbedSignal(item.deep_link))) {
+      openAnomaly(item, navigate, showUpgrade);
+    }
     dismiss(item.id);
-  }, [navigate, showUpgrade, dismiss]);
+  }, [inEmbed, navigate, showUpgrade, dismiss]);
 
   const subscribe = useCallback(async (item: AnomalyItem) => {
     setSubscribing(item.id);
@@ -172,7 +180,13 @@ export function ToastHost() {
             <div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 500 }}>Рынок штормит</div>
             <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{digest.count} заметных аномалий</div>
           </div>
-          <button onClick={() => { setBellOpen(true); setDigest(null); }}
+          <button onClick={() => {
+            // В embed'е колокола нет: «Посмотреть» открывает нашу панель «Сигналы»
+            // (лента /embed/signals) поверх терминала — тем же мостом, что и тост.
+            if (inEmbed) emitEmbedSignal({ route: '/signals' } as AnomalyItem['deep_link']);
+            else setBellOpen(true);
+            setDigest(null);
+          }}
             style={{ background: 'transparent', border: '0.5px solid var(--border-color, rgba(255,255,255,0.14))',
               color: 'var(--text-primary)', fontSize: 13, fontWeight: 500, padding: '6px 12px',
               borderRadius: 8, cursor: 'pointer' }}>Посмотреть</button>
