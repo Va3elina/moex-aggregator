@@ -1066,14 +1066,15 @@ function IndicatorRow({ inst, api, value, bases }: {
   };
   // Базиса нет в текущем режиме виджета (например наложение по ОИ, а выбран
   // режим «Покупки + Продажи» — единого ряда ОИ там нет): рисовать нечего.
-  // Раньше строка стояла как включённая, а линии не было — выглядело поломкой.
-  // Теперь показываем её ровно как выключенную глазиком; сохранённый visible
-  // не трогаем, вернулся режим — вернулась и линия.
+  // Строку УБИРАЕМ целиком (решение Вадима: «так проще», чем гасить глазиком).
+  // Сам индикатор остаётся в состоянии — вернулся режим, вернулась и строка.
   const basisGone = !!bases && bases.length > 0 && !bases.some((b) => b.id === basis);
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
   // принимал бы за клик мимо любое нажатие внутри самого окна — оно закрывалось
   // бы на первом же действии. Закрытие живёт в окне: подложка, ✕, Отмена, Ок.
+  if (basisGone) return null;
+
   return (
     <div style={{ position: 'relative' }}>
       <Row
@@ -1082,8 +1083,7 @@ function IndicatorRow({ inst, api, value, bases }: {
         badge={badge}
         value={inst.statusValue === false ? undefined : value}
         valueId={inst.id}
-        visible={inst.visible && !basisGone}
-        title={basisGone ? 'В этом режиме нет ряда для расчёта — индикатор скрыт' : undefined}
+        visible={inst.visible}
         onToggle={() => api.patch(inst.id, { visible: !inst.visible })}
         onSettings={() => setOpen((v) => !v)}
         onRemove={() => api.remove(inst.id)}
