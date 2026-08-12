@@ -178,6 +178,20 @@ class PasswordResetRequest(BaseModel):
     email: EmailStr = Field(..., description="Email аккаунта", examples=["user@example.com"])
 
 
+class PasswordResetVerify(BaseModel):
+    """Проверка кода отдельным шагом, до ввода нового пароля."""
+    email: EmailStr = Field(..., description="Email аккаунта")
+    code: str = Field(..., description="6-значный код из письма", examples=["123456"])
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.isdigit() and len(v) == 6):
+            raise ValueError("Код должен состоять из 6 цифр")
+        return v
+
+
 class PasswordResetConfirm(BaseModel):
     """Смена пароля по коду из письма.
 

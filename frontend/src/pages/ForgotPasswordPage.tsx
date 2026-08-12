@@ -6,10 +6,14 @@
  * из модалки входа выбрасывал человека на голый экран без шапки. Меняя вёрстку
  * здесь, держите её в паре с LoginPage.
  *
- * Два шага в одном окне: email → код + новый пароль. Отдельного роута под
- * второй шаг нет намеренно: код живёт 30 минут в БД, а не в URL, так что
- * «ссылка из письма» здесь не нужна и лишний адрес только даёт куда потерять
- * состояние.
+ * Три шага в одном окне: email → код → новый пароль. Код проверяется ОТДЕЛЬНЫМ
+ * запросом до ввода пароля — иначе про опечатку в коде человек узнавал бы уже
+ * после того, как придумал пароль. Отдельных роутов под шаги нет намеренно: код
+ * живёт 30 минут в БД, а не в URL, так что «ссылка из письма» здесь не нужна.
+ *
+ * После успешной смены сразу входим в аккаунт: confirm возвращает пару токенов,
+ * кладём её через auth.login. Отправлять человека на форму входа вводить пароль,
+ * который он придумал секунду назад, — лишний шаг в никуда.
  *
  * ⚠️ Бэкенд отвечает 204 даже если аккаунта нет (защита от перебора адресов),
  * поэтому шаг 2 показываем ВСЕГДА, а формулировки держим в сослагательном:
@@ -20,11 +24,18 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, KeyRound, AlertCircle, CheckCircle2, ArrowRight, X } from 'lucide-react';
-import { requestPasswordReset, confirmPasswordReset, ApiError } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  requestPasswordReset,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
+  ApiError,
+} from '../services/api';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'email' | 'code'>('email');
+  const auth = useAuth();
+  const [step, setStep] = useState<'email' | 'code' | 'password'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -60,7 +71,7 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  const handleConfirm = async (e: FormEvent) => {
+  const handleVerifyCode = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
@@ -68,16 +79,39 @@ export default function ForgotPasswordPage() {
       setError('Код состоит из 6 цифр');
       return;
     }
+    setSubmitting(true);
+    try {
+      await verifyPasswordResetCode(email.trim().toLowerCase(), code.trim());
+      setStep('password');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось проверить код');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirm = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
     if (password.length < 8) {
       setError('Пароль должен быть не короче 8 символов');
       return;
     }
     setSubmitting(true);
     try {
-      await confirmPasswordReset(email.trim().toLowerCase(), code.trim(), password);
-      navigate('/login?reset=ok', { replace: true });
+      const tokens = await confirmPasswordReset(email.trim().toLowerCase(), code.trim(), password);
+      // Сразу в аккаунт: пароль только что задан, второй раз его спрашивать незачем.
+      await auth.login(tokens);
+      navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сменить пароль');
+      // Код мог протухнуть между шагами — тогда возвращаем к его вводу.
+      if (err instanceof ApiError && err.status === 400) {
+        setStep('code');
+        setError('Код больше не действует. Запросите новый и введите его.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Не удалось сменить пароль');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -135,12 +169,18 @@ export default function ForgotPasswordPage() {
             <KeyRound size={20} style={{ color: 'var(--accent)' }} />
           </div>
           <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            {step === 'email' ? 'Восстановление пароля' : 'Новый пароль'}
+            {step === 'email'
+              ? 'Восстановление пароля'
+              : step === 'code'
+                ? 'Код из письма'
+                : 'Новый пароль'}
           </h2>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             {step === 'email'
               ? 'Пришлём код на почту аккаунта'
-              : 'Введите код из письма и придумайте пароль'}
+              : step === 'code'
+                ? `Отправили шестизначный код на ${email.trim()}`
+                : 'Придумайте новый пароль — им и войдёте'}
           </p>
         </div>
 
@@ -198,9 +238,9 @@ export default function ForgotPasswordPage() {
               )}
             </button>
           </form>
-        ) : (
+        ) : step === 'code' ? (
           <>
-            <form onSubmit={handleConfirm} className="space-y-4">
+            <form onSubmit={handleVerifyCode} className="space-y-4">
               <div>
                 <label
                   htmlFor="reset-code"
@@ -232,32 +272,6 @@ export default function ForgotPasswordPage() {
                 />
               </div>
 
-              <div>
-                <label
-                  htmlFor="reset-password"
-                  className="block text-sm font-medium mb-1.5"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  Новый пароль
-                </label>
-                <div className={fieldWrap}>
-                  <Lock size={16} className={fieldIcon} style={{ color: 'var(--text-muted)' }} />
-                  <input
-                    id="reset-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(ev) => setPassword(ev.target.value)}
-                    placeholder="минимум 8 символов"
-                    required
-                    minLength={8}
-                    disabled={submitting}
-                    className={fieldInput}
-                    style={fieldStyle}
-                  />
-                </div>
-              </div>
-
               {error && (
                 <div
                   className="flex items-start gap-2 p-3 rounded-xl text-sm"
@@ -280,7 +294,7 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                disabled={submitting || code.length !== 6 || password.length < 8}
+                disabled={submitting || code.length !== 6}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
                 style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
               >
@@ -288,7 +302,7 @@ export default function ForgotPasswordPage() {
                   <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    Сменить пароль
+                    Продолжить
                     <ArrowRight size={16} />
                   </>
                 )}
@@ -305,6 +319,61 @@ export default function ForgotPasswordPage() {
               {cooldown > 0 ? `Отправить код повторно (${cooldown}с)` : 'Отправить код повторно'}
             </button>
           </>
+        ) : (
+          <form onSubmit={handleConfirm} className="space-y-4">
+            <div>
+              <label
+                htmlFor="reset-password"
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Новый пароль
+              </label>
+              <div className={fieldWrap}>
+                <Lock size={16} className={fieldIcon} style={{ color: 'var(--text-muted)' }} />
+                <input
+                  id="reset-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(ev) => setPassword(ev.target.value)}
+                  placeholder="минимум 8 символов"
+                  required
+                  minLength={8}
+                  autoFocus
+                  disabled={submitting}
+                  className={fieldInput}
+                  style={fieldStyle}
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div
+                className="flex items-start gap-2 p-3 rounded-xl text-sm"
+                style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'var(--danger, #dc2626)' }}
+              >
+                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                <div>{error}</div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting || password.length < 8}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+              style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+            >
+              {submitting ? (
+                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  Сменить пароль и войти
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </form>
         )}
 
         <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>

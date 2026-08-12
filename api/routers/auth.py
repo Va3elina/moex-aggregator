@@ -11,7 +11,8 @@ ENDPOINTS:
   PUT  /api/auth/profile   — обновление профиля
   POST /api/auth/change-password — смена пароля (зная старый)
   POST /api/auth/password-reset/request — код для забытого пароля
-  POST /api/auth/password-reset/confirm — смена пароля по коду
+  POST /api/auth/password-reset/verify  — проверка кода (шаг перед паролем)
+  POST /api/auth/password-reset/confirm — смена пароля по коду + вход
 
 БЕЗОПАСНОСТЬ:
 - Пароли хэшируются Argon2
@@ -45,6 +46,7 @@ from api.schemas.auth import (
     AddEmailRequest,
     VerifyEmailRequest,
     PasswordResetRequest,
+    PasswordResetVerify,
     PasswordResetConfirm,
 )
 
@@ -838,6 +840,43 @@ async def change_password(
 # Иначе форма «забыли пароль» превращается в оракул для перебора: злоумышленник
 # скармливает список адресов и по ответу узнаёт, кто у нас зарегистрирован.
 
+
+def _check_reset_code(user: User | None, code: str, db: Session) -> None:
+    """Валидирует код сброса. Бросает HTTPException, если что-то не так.
+
+    ⚠️ Формулировка ошибки ОДНА на все случаи (нет юзера / нет кода / истёк /
+    не совпал) — иначе по тексту можно отличить «такого аккаунта нет» от
+    «код неверный» и перебором собрать список зарегистрированных адресов.
+    """
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Неверный или истёкший код. Запросите новый.",
+    )
+    if not user or not user.hashed_password or not user.password_reset_code:
+        raise invalid
+    if not user.password_reset_expires_at:
+        raise invalid
+
+    expires = user.password_reset_expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires:
+        raise invalid
+
+    if user.password_reset_attempts >= EMAIL_VERIFY_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Исчерпаны попытки ввода кода. Запросите новый.",
+        )
+
+    # compare_digest, а не == : время сравнения не должно подсказывать,
+    # сколько первых цифр угадано.
+    if not secrets.compare_digest(user.password_reset_code, code):
+        user.password_reset_attempts += 1
+        db.commit()
+        raise invalid
+
+
 @router.post(
     "/password-reset/request",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -905,11 +944,44 @@ async def password_reset_request(
 
 
 @router.post(
-    "/password-reset/confirm",
+    "/password-reset/verify",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Сменить пароль по коду из письма",
+    summary="Проверить код, не меняя пароль",
     responses={
-        204: {"description": "Пароль изменён, все сессии разлогинены"},
+        204: {"description": "Код верный — можно переходить к вводу пароля"},
+        400: {"description": "Неверный или истёкший код"},
+        429: {"description": "Исчерпаны попытки ввода кода"},
+    },
+)
+async def password_reset_verify(
+    data: PasswordResetVerify,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Отдельный шаг проверки кода — чтобы не заставлять придумывать пароль
+    вслепую и узнавать об опечатке в коде только после этого.
+
+    Неудачная проверка тратит попытку так же, как в confirm: иначе этот
+    эндпоинт стал бы бесплатным оракулом для перебора шестизначного кода.
+    """
+    ip = get_client_ip(request)
+    if not check_ip_rate_limit(ip, max_attempts=20, window_minutes=5):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много попыток. Попробуйте через несколько минут.",
+        )
+    email = data.email.lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+    _check_reset_code(user, data.code, db)
+    return None
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=TokenResponse,
+    summary="Сменить пароль по коду и войти",
+    responses={
+        200: {"description": "Пароль изменён, прежние сессии разлогинены, выдана новая"},
         400: {"description": "Неверный или истёкший код"},
         429: {"description": "Исчерпаны попытки ввода кода"},
     },
@@ -919,7 +991,12 @@ async def password_reset_confirm(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Устанавливает новый пароль по коду и разлогинивает все сессии аккаунта."""
+    """Ставит новый пароль, гасит прежние сессии и сразу впускает в аккаунт.
+
+    Токены возвращаются намеренно: человек только что доказал владение почтой
+    и задал пароль — гнать его после этого на форму входа вводить тот же
+    пароль ещё раз незачем.
+    """
     ip = get_client_ip(request)
     if not check_ip_rate_limit(ip, max_attempts=20, window_minutes=5):
         raise HTTPException(
@@ -927,38 +1004,9 @@ async def password_reset_confirm(
             detail="Слишком много попыток. Попробуйте через несколько минут.",
         )
 
-    # Единая формулировка на все случаи: не существует / нет кода / истёк /
-    # не совпал — снаружи неразличимы.
-    invalid = HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Неверный или истёкший код. Запросите новый.",
-    )
-
     email = data.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
-    if not user or not user.hashed_password or not user.password_reset_code:
-        raise invalid
-    if not user.password_reset_expires_at:
-        raise invalid
-
-    expires = user.password_reset_expires_at
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires:
-        raise invalid
-
-    if user.password_reset_attempts >= EMAIL_VERIFY_MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Исчерпаны попытки ввода кода. Запросите новый.",
-        )
-
-    # compare_digest, а не == : сравнение по времени не должно подсказывать,
-    # сколько первых цифр угадано.
-    if not secrets.compare_digest(user.password_reset_code, data.code):
-        user.password_reset_attempts += 1
-        db.commit()
-        raise invalid
+    _check_reset_code(user, data.code, db)
 
     user.hashed_password = hash_password(data.new_password)
     user.password_reset_code = None
@@ -979,8 +1027,23 @@ async def password_reset_confirm(
     )
     db.commit()
 
+    # Новая пара выдаётся ПОСЛЕ отзыва старых — иначе массовый update погасил бы
+    # и её тоже, и человек остался бы с мёртвым refresh сразу после сброса.
+    tokens = create_token_pair(user.id, user.role)
+    persist_refresh_token(db, user.id, tokens.refresh_token, request)
+    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_ip = ip
+    db.commit()
+
     logger.info(
         f"Password reset completed for user {user.id} ({revoked} sessions revoked)",
         extra={"extra_data": {"event": "password_reset_completed", "user_id": user.id, "ip": ip}},
     )
-    return None
+    log_successful_login(user.id, user.email, ip, request.headers.get("user-agent", ""))
+
+    return TokenResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type="bearer",
+        expires_in=tokens.expires_in,
+    )
