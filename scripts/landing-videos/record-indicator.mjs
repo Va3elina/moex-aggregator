@@ -890,6 +890,27 @@ async function recordOne(name, theme = 'dark') {
   }
   await page.waitForTimeout(800);
 
+  // ⚠️ Тему ставим ВТОРОЙ раз — уже после логина и синка настроек.
+  // Тема входит в SYNC_KEYS (frontend/src/services/settingsSync.ts): после
+  // loadUser серверный снапшот аккаунта перезаписывает localStorage и будит
+  // ThemeProvider синтетическим storage-событием. Поэтому установки в
+  // addInitScript НЕ достаточно — она честно применяется к первому рендеру,
+  // а затем её молча перебивает тема, сохранённая у тестового аккаунта
+  // (именно так тёмный buffett однажды записался светлым).
+  await page.evaluate((t) => {
+    localStorage.setItem('theme', t);
+    // key=null — тот же сигнал, которым будит провайдер сам settingsSync.
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+  }, themeId);
+  await page.waitForTimeout(400);
+  const appliedTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (appliedTheme !== themeId) {
+    console.error(`   ❌ тема не применилась: ожидали ${themeId}, на странице ${appliedTheme}`);
+    await context.close(); await browser.close();
+    return null;
+  }
+  console.log(`   → тема подтверждена: ${appliedTheme}`);
+
   console.log('   → скрываем шапку сайта + per-page CSS...');
   await hideSiteChrome(page, scenario.cssExtra || '');
 
