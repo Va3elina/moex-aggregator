@@ -786,6 +786,22 @@ async def admin_revoke_invite(
     return {"ok": True}
 
 
+@router.delete("/admin/invites/{token}/purge")
+async def admin_delete_invite(
+    token: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Удалить отработавший токен из списка навсегда."""
+    try:
+        ok = invite_service.delete_invite(db, admin, token)
+    except invite_service.InviteDeleteError as e:
+        raise HTTPException(400, str(e))
+    if not ok:
+        raise HTTPException(404, "Токен не найден")
+    return {"ok": True}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  9. ADMIN — refund любой подписки (без 14-дневного ограничения)
 # ═══════════════════════════════════════════════════════════════════════════════
