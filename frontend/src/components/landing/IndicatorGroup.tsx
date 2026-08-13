@@ -13,6 +13,7 @@
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import HlsVideo from '../HlsVideo';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export interface Indicator {
   /** Название индикатора (короткое, для заголовка карточки) */
@@ -206,17 +207,28 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
  *
  * URL convention: videoUrl=`/videos/<name>.webm` → HLS=`/videos/<name>/index.m3u8`,
  * mp4 fallback=`/videos/<name>.mp4`.
+ *
+ * Тема: записи сняты в двух вариантах — тёмная лежит под базовым именем
+ * (`<name>.*`), светлая с суффиксом (`<name>-light.*`). Суффикс формирует
+ * scripts/landing-videos/record-indicator.mjs (--theme=light), так что
+ * менять соглашение нужно в обоих местах разом.
+ *
+ * Переключение темы на лету безопасно: смена hlsSrc гоняет useEffect в
+ * HlsVideo заново, а его cleanup вызывает hls.destroy() — старый MSE-инстанс
+ * не остаётся висеть на <video>.
  */
 function MediaArea({
   videoUrl, posterUrl, illustration,
 }: { videoUrl?: string; posterUrl?: string; illustration?: ReactNode }) {
+  const { theme } = useTheme();
   if (videoUrl) {
-    const baseName = videoUrl.replace(/\.webm$/, '').replace(/^\/videos\//, '');
+    const themeSuffix = theme === 'editorial-light' ? '-light' : '';
+    const baseName = videoUrl.replace(/\.webm$/, '').replace(/^\/videos\//, '') + themeSuffix;
     return (
       <HlsVideo
         hlsSrc={`/videos/${baseName}/index.m3u8`}
-        mp4Src={videoUrl.replace(/\.webm$/, '.mp4')}
-        poster={posterUrl}
+        mp4Src={`/videos/${baseName}.mp4`}
+        poster={posterUrl?.replace(/-poster\.jpg$/, `${themeSuffix}-poster.jpg`)}
         className="w-full h-full object-cover"
       />
     );

@@ -87,7 +87,15 @@ compare_stocks.py
 cbonds_capture.flow
 # scripts/ — раньше игнорилось целиком, но build-sprite.py нужен Docker build'у
 # для сборки sprite.png из логотипов. Игнорим только тяжёлые/локальные части:
-scripts/landing-videos/
+# scripts/landing-videos: раньше игнорилась ЦЕЛИКОМ из-за node_modules — вместе
+# с ней уезжал и сам record-indicator.mjs (сценарии записи лендинг-видео).
+# Скрипт версионируем: сценарии ломаются от правок UI (напр. анонс
+# «Новое: Терминал» перекрыл клики, а фича-флаг SHOW_FORECAST убил шаг buffett),
+# и чинить их без истории — вслепую. Тяжёлое и временное остаётся локальным.
+scripts/landing-videos/node_modules/
+scripts/landing-videos/.tmp-recordings/
+scripts/landing-videos/debug-*.mjs
+scripts/landing-videos/sim-shot-tmp.mjs
 scripts/*.flow
 scripts/__pycache__/
 *.pdf
