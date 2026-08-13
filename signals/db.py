@@ -133,7 +133,7 @@ FUND_CATEGORIES = {
     "stocks": "IMOEX",
     "bonds": "RGBITR",
     "gold": "GLDRUB_TOM",
-    "yuan": "RUSFARCNY",
+    "yuan": "CNYRUB_TOM",
 }
 
 

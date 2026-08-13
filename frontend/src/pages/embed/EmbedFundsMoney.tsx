@@ -46,7 +46,7 @@ const CATS: { id: Category; label: string; genitive: string; index: string; icon
   { id: 'stocks', label: 'Акции', genitive: 'акций', index: 'IMOEX', icon: <TrendingUp size={14} /> },
   { id: 'bonds', label: 'Облигации', genitive: 'облигаций', index: 'RGBITR', icon: <Landmark size={14} /> },
   { id: 'gold', label: 'Золото', genitive: 'золота', index: 'GLDRUB_TOM', icon: <Coins size={14} /> },
-  { id: 'yuan', label: 'Юань', genitive: 'юаня', index: 'RUSFARCNY', icon: <Banknote size={14} /> },
+  { id: 'yuan', label: 'Юань', genitive: 'юаня', index: 'CNYRUB_TOM', icon: <Banknote size={14} /> },
 ];
 // Категория рендерится через Dropdown (не PillGroup) — иконка там одна, по
 // текущему значению (см. CAT_ICONS), а не per-option как в PillGroup.
