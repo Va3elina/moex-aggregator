@@ -7,7 +7,7 @@
  *   - список существующих токенов с кнопками "копировать ссылку" и "отозвать"
  */
 import { useEffect, useState } from 'react';
-import { Copy, Trash2, Plus, Link2, Check, Eye, EyeOff } from 'lucide-react';
+import { Copy, Trash2, Plus, Link2, Check, Eye, EyeOff, X } from 'lucide-react';
 import { apiFetch, parseApiError } from '../services/api';
 import { usePersistedState } from '../hooks/usePersistedState';
 
@@ -118,6 +118,19 @@ export default function AdminBillingInvites() {
     }
   };
 
+  // Точечное удаление отработавшей ссылки — чтобы список не зарастал.
+  // Бэкенд пускает только неактивные (api/billing/invites.py, delete_invite).
+  const handleDelete = async (token: string) => {
+    if (!confirm('Удалить эту ссылку из списка навсегда? История её использований пропадёт, выданные подписки останутся.')) return;
+    try {
+      const r = await apiFetch(`/api/billing/admin/invites/${token}/purge`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(await parseApiError(r, 'Не удалось удалить'));
+      await loadInvites();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Ошибка');
+    }
+  };
+
   const handleCopy = (token: string) => {
     const url = `${window.location.origin}/billing/redeem?token=${token}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -135,7 +148,8 @@ export default function AdminBillingInvites() {
         </h2>
         <div className="flex items-center gap-2">
           {/* Отработавшие копятся и топят живые ссылки, поэтому по умолчанию
-              спрятаны. Не удаляем — история использования нужна. */}
+              спрятаны. Скопом не чистим — историю решает админ, точечное
+              удаление есть на каждой отработавшей строке. */}
           {spentCount > 0 && (
             <button
               onClick={() => setShowSpent(v => !v)}
@@ -295,6 +309,13 @@ export default function AdminBillingInvites() {
                       <Trash2 size={16} />
                     </button>
                   </>
+                )}
+                {!inv.is_active && (
+                  <button onClick={() => handleDelete(inv.token)}
+                    title="Удалить из списка навсегда"
+                    className="p-2 rounded-lg transition-colors hover:bg-red-500/10 text-red-400">
+                    <X size={16} />
+                  </button>
                 )}
               </div>
             );

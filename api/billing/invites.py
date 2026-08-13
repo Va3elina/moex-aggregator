@@ -220,3 +220,38 @@ def revoke_invite(db: Session, admin: User, token: str) -> bool:
     db.commit()
     log.info("Admin #%s revoked invite %s...", admin.id, token[:8])
     return True
+
+
+class InviteDeleteError(Exception):
+    """Удаление невозможно (например, токен ещё живой)."""
+
+
+def delete_invite(db: Session, admin: User, token: str) -> bool:
+    """
+    Насовсем удаляет отработавший токен из БД — чтобы список не зарастал.
+
+    Только для НЕактивных (истёк / исчерпан / отозван). Живую ссылку сначала
+    надо отозвать: удаление живого токена молча убило бы рабочую ссылку.
+
+    Записи InviteRedemption уезжают по ON DELETE CASCADE, но выданные подписки
+    не трогаются — они живут отдельными строками в subscriptions.
+    """
+    invite = db.query(SubscriptionInvite).filter(
+        SubscriptionInvite.token == token
+    ).first()
+    if not invite:
+        return False
+
+    now = datetime.now(timezone.utc)
+    is_active = (
+        invite.revoked_at is None
+        and invite.expires_at > now
+        and invite.uses_count < invite.max_uses
+    )
+    if is_active:
+        raise InviteDeleteError("Ссылка ещё активна — сначала отзови её")
+
+    db.delete(invite)
+    db.commit()
+    log.info("Admin #%s deleted invite %s... permanently", admin.id, token[:8])
+    return True
