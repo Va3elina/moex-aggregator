@@ -89,8 +89,8 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
     { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
     { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
     { key: 'gold', name: 'Золото', genitive: 'золота', icon: GoldBarsIcon, index: 'GLDRUB_TOM' },
-    // Раздел «Юань» — рабочий (NAV юаневых фондов в ₽, бенчмарк RUSFARCNY).
-    { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY' },
+    // Раздел «Юань» — рабочий (NAV юаневых фондов в ₽, бенчмарк CNYRUB_TOM).
+    { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'CNYRUB_TOM' },
 ];
 
 // Цвета СЧА графика — theme-aware. Primary (СЧА) = accent (рыжий), secondary
