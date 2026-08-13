@@ -60,6 +60,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('theme', theme);
     }, [theme]);
 
+    // Синк настроек (settingsSync) применяет серверный снапшот к localStorage
+    // ПОСЛЕ инициализации провайдера (ThemeProvider — над AuthProvider) и будит
+    // сторы синтетическим storage-событием с key=null; настоящие storage-события
+    // приходят от других вкладок. В обоих случаях перечитываем тему/акцент.
+    useEffect(() => {
+        const onStorage = (e: StorageEvent) => {
+            if (e.key !== null && e.key !== 'theme' && e.key !== 'accent') return;
+            try {
+                const t = localStorage.getItem('theme') as ThemeId | null;
+                if (t && THEMES.some(th => th.id === t)) setThemeState(t);
+                const a = localStorage.getItem('accent') as AccentId | null;
+                if (a && ACCENTS.some(ac => ac.id === a)) setAccentState(a);
+            } catch { /* private mode */ }
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
+
     useEffect(() => {
         // 'default' = убрать атрибут, чтобы тема сама решила цвет accent'а.
         if (accent === 'default') {

@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { reloadOnceForChunk } from './utils/chunkReload'
 import { readPalette, applyPalette } from './hooks/useChartPalette'
+import { installSettingsSync } from './services/settingsSync'
 
 // После деплоя hashed-имена code-split чанков меняются. Долго открытая вкладка
 // держит старый бандл и ссылается на чанк, которого новый билд уже не содержит,
@@ -26,6 +27,10 @@ const head = createHead()
 // Глобальная палитра графиков (colorblind) — применяем ДО рендера, чтобы не было
 // вспышки красно-зелёного перед переключением на colorblind-safe (Okabe-Ito).
 applyPalette(readPalette())
+
+// Синк настроек между устройствами: перехват записей в localStorage ставим до
+// рендера, серверный снапшот подтянет AuthContext.loadUser (services/settingsSync).
+installSettingsSync()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
