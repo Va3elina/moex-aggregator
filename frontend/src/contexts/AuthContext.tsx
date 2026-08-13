@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiFetch } from '../services/api';
+import { hydrateSettingsFromServer } from '../services/settingsSync';
 
 interface User {
   id: number;
@@ -62,6 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (resp.ok) {
         const data = await resp.json();
         setUser(data);
+        // Настройки с сервера — ДО setLoading(false) (finally): страницы ещё
+        // не отрендерены, usePersistedState прочитает уже гидрированный
+        // localStorage. Никогда не бросает; провал = синк молча выключен.
+        await hydrateSettingsFromServer();
         return;
       }
 
