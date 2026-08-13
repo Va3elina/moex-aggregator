@@ -42,8 +42,8 @@ export default function AdminBillingInvites() {
   // создание молча падало 400 «Invalid tier: premium», пока админ не трогал
   // селект руками. Тир premium выведен из TIER_LEVELS и запрещён в
   // create_invites (api/billing/invites.py) — его тут быть не должно.
-  const [formTier, setFormTier] = useState('basic');
-  const [formDays, setFormDays] = useState(365);
+  const [formTier, setFormTier] = useState('pro');
+  const [formDays, setFormDays] = useState(30);
   const [formCount, setFormCount] = useState(1);
   const [formExpires, setFormExpires] = useState(30);
   const [formMaxUses, setFormMaxUses] = useState(1);
