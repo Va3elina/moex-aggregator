@@ -2977,9 +2977,41 @@ def price_weekly(
     if not by_week:
         raise HTTPException(status_code=404, detail="Нет истории цены по этой бумаге")
 
+    # МЕДИАННЫЙ ДНЕВНОЙ ОБОРОТ ПО МЕСЯЦАМ — знаменатель режима «Навес» в
+    # «Потоках по компании» (позиция фондов ₽ / оборот ₽ в день = дней на выход).
+    # Медиана, а не среднее: один аукционный день с аномальным оборотом не
+    # должен схлопывать навес. Оборот (value) уже в рублях, поэтому склейка
+    # редомициляции идёт БЕЗ коэффициента обмена (REDOMICILE_RATIO масштабирует
+    # только цены за штуку); на пересечении дат побеждает запрошенная бумага —
+    # тем же правилом, что и цены выше.
+    def daily_value(secid: str) -> list[tuple]:
+        return db.execute(text("""
+            SELECT begin_time::date AS day, value
+            FROM candles
+            WHERE secid = :t AND interval = 24 AND type = 'stock' AND value > 0
+            ORDER BY 1
+        """), {"t": secid}).all()
+
+    by_day: dict = {}
+    for old in legacy:
+        for d, v in daily_value(old):
+            by_day[d] = float(v)
+    for d, v in daily_value(ticker):
+        by_day[d] = float(v)
+
+    from collections import defaultdict
+    from statistics import median
+    vals_by_month: dict = defaultdict(list)
+    for d, v in by_day.items():
+        vals_by_month[d.strftime("%Y-%m")].append(v)
+    turnover_months = sorted(vals_by_month)
+
     weeks = sorted(by_week)
     return {
         "ticker": ticker,
         "weeks": [w.isoformat() for w in weeks],
         "closes": [by_week[w] for w in weeks],
+        # "YYYY-MM" + медианный дневной оборот (руб) этого месяца, выровнены.
+        "turnover_months": turnover_months,
+        "med_turnover": [round(median(vals_by_month[m])) for m in turnover_months],
     }

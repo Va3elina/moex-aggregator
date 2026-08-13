@@ -8,12 +8,15 @@
  * (контекст), нижняя — помесячная гистограмма ПОЗИЦИИ бумаги у выбранных
  * фондов. Курсор общий: вертикаль идёт сквозь обе панели, тултип один на обе.
  *
- * Значение месяца — два режима (пункты общего ряда в CompanyFlowsTab):
- *   rub   — Σ(СЧА_фонда × доля_%/100): АБСОЛЮТНАЯ позиция фондов в бумаге,
- *           в рублях (ось — адаптивно млн/млрд ₽);
- *   cap   — Σ позиций / free-float капа компании (ffcap из /company-weights,
- *           источник MOEXBMI), %: сколько торгуемой части компании лежит
- *           в выбранных фондах.
+ * Значение месяца — три режима (пункты общего списка в CompanyFlowsTab):
+ *   rub      — Σ(СЧА_фонда × доля_%/100): АБСОЛЮТНАЯ позиция фондов в бумаге,
+ *              в рублях (ось — адаптивно млн/млрд ₽);
+ *   cap      — Σ позиций / free-float капа компании (ffcap из /company-weights,
+ *              источник MOEXBMI), %: сколько торгуемой части компании лежит
+ *              в выбранных фондах;
+ *   overhang — Σ позиций / медианный дневной оборот торгов месяца (turnover из
+ *              /price-weekly), дни: за сколько дней торгов фонды могли бы
+ *              выйти из бумаги, забирая весь оборот («Навес»).
  * В расчёт месяца входят только фонды с ПОЛНЫМ снапшотом (weights[i] != null);
  * 0 — честный ноль (фонд отчитался без бумаги), null — дыра данных → месяц
  * без бара (разрыв), а не ложный ноль. Месяц без единой СЧА тоже null: без
@@ -56,7 +59,7 @@ const BAR_COLOR = FUND_PALETTE[0];
 // Полоса подписей оси X внутри нижней секции, px.
 const XLABEL_H = 40;
 
-export type ShareMode = 'rub' | 'cap';
+export type ShareMode = 'rub' | 'cap' | 'overhang';
 
 export interface CompanyShareFundSeries {
     label: string;
@@ -78,6 +81,9 @@ interface CompanyShareChartProps {
     funds: CompanyShareFundSeries[];
     /** Free-float капа компании (руб), выровнено с months (null = нет в MOEXBMI). */
     ffcap?: (number | null)[];
+    /** Медианный дневной оборот торгов (руб) месяца, выровнено с months —
+     *  знаменатель режима «Навес» (null = месяц без торгов/данных). */
+    turnover?: (number | null)[];
     /** ISO-даты понедельников недель, ASC — вся история цены. */
     weeks: string[];
     /** Недельные закрытия, выровнено с weeks. */
@@ -119,6 +125,13 @@ function fmtRub(v: number, suffix = true): string {
     return `${(v / 1e3).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} тыс${sfx}`;
 }
 
+// Дни (режим «Навес»): навес по бумаге гуляет от долей дня до сотен дней,
+// поэтому знаки — адаптивно, как у рублей.
+function fmtDays(v: number): string {
+    const d = v >= 10 ? 0 : v >= 1 ? 1 : 2;
+    return `${v.toLocaleString('ru-RU', { maximumFractionDigits: d })} дн`;
+}
+
 function fmtPrice(v: number): string {
     if (v >= 1000) return Math.round(v).toLocaleString('ru-RU');
     if (v >= 100) return v.toFixed(1);
@@ -134,6 +147,7 @@ export default function CompanyShareChart({
     months: monthsAll,
     funds: fundsAll,
     ffcap: ffcapAll,
+    turnover: turnoverAll,
     weeks: weeksAll,
     closes: closesAll,
     shareMode,
@@ -152,8 +166,9 @@ export default function CompanyShareChart({
     const shareSvgRef = useRef<SVGSVGElement>(null);
 
     // ── Значение месяца по выбранному весу (по ПОЛНОМУ набору месяцев). ──
-    // rub — абсолютная позиция Σ(СЧА×доля), руб; share — среднее долей, %;
-    // cap — Σ позиций / free-float капа компании, %.
+    // rub — абсолютная позиция Σ(СЧА×доля), руб; cap — Σ позиций / free-float
+    // капа компании, %; overhang — Σ позиций / медианный дневной оборот
+    // месяца = дней торгов на выход фондов из бумаги («Навес»).
     const shareValsAll = useMemo(() => {
         return monthsAll.map((_, i) => {
             let rub = 0, hasNav = false, cnt = 0;
@@ -168,10 +183,14 @@ export default function CompanyShareChart({
             // ложный ноль: без СЧА рубли позиции не восстановить.
             if (cnt === 0 || !hasNav) return null;
             if (shareMode === 'rub') return rub;
+            if (shareMode === 'overhang') {
+                const t = turnoverAll?.[i];
+                return t != null && t > 0 ? rub / t : null;
+            }
             const cap = ffcapAll?.[i];
             return cap != null && cap > 0 ? (rub / cap) * 100 : null;
         });
-    }, [monthsAll, fundsAll, ffcapAll, shareMode]);
+    }, [monthsAll, fundsAll, ffcapAll, turnoverAll, shareMode]);
 
     // ── Обрезка пустого левого хвоста: до первого месяца с долей > 0. ──
     const trimStart = useMemo(() => {
@@ -185,6 +204,7 @@ export default function CompanyShareChart({
     const months = useMemo(() => monthsAll.slice(trimStart), [monthsAll, trimStart]);
     const shareVals = useMemo(() => shareValsAll.slice(trimStart), [shareValsAll, trimStart]);
     const ffcap = useMemo(() => ffcapAll?.slice(trimStart), [ffcapAll, trimStart]);
+    const turnover = useMemo(() => turnoverAll?.slice(trimStart), [turnoverAll, trimStart]);
     const funds = useMemo(
         () => fundsAll.map(f => ({
             ...f,
@@ -413,11 +433,14 @@ export default function CompanyShareChart({
     })();
 
     // Разбивка тултипа: вклад каждого фонда В ЕДИНИЦАХ РЕЖИМА (top-6 по
-    // убыванию): rub — его позиция ₽, cap — его % от free-float капы.
+    // убыванию): rub — его позиция ₽, cap — его % от free-float капы,
+    // overhang — его дни выхода (знаменатель у всех общий — оборот месяца,
+    // поэтому вклады аддитивны и сумма строк равна значению бара).
     // Фонд без СЧА показать нечем — строка выпадает.
     const hoverBreakdown = useMemo(() => {
         if (hoveredMi == null) return null;
         const cap = ffcap?.[hoveredMi];
+        const turn = turnover?.[hoveredMi];
         const rows = funds
             .map(f => {
                 const w = f.weights[hoveredMi];
@@ -426,6 +449,11 @@ export default function CompanyShareChart({
                 if (nav == null || nav <= 0) return null;
                 const rub = nav * (w / 100);
                 if (shareMode === 'rub') return { label: f.label, color: f.color, v: rub };
+                if (shareMode === 'overhang') {
+                    return turn != null && turn > 0
+                        ? { label: f.label, color: f.color, v: rub / turn }
+                        : null;
+                }
                 return cap != null && cap > 0
                     ? { label: f.label, color: f.color, v: (rub / cap) * 100 }
                     : null;
@@ -433,7 +461,7 @@ export default function CompanyShareChart({
             .filter((r): r is { label: string; color: string; v: number } => r != null)
             .sort((a, b) => b.v - a.v);
         return { rows, share: shareVals[hoveredMi] };
-    }, [hoveredMi, funds, shareVals, shareMode, ffcap]);
+    }, [hoveredMi, funds, shareVals, shareMode, ffcap, turnover]);
 
     // Цена hovered месяца — последнее закрытие месяца, то же значение, что
     // рисует превью навигатора. Первой строкой тултипа: доля без ценового
@@ -465,10 +493,13 @@ export default function CompanyShareChart({
         return null;
     }, [visMonthIdx, shareVals]);
 
-    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов' : '% в обращении';
-    // Значения режима: rub — рубли (адаптив млн/млрд), share/cap — проценты.
-    const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v) : fmtPct(v));
-    const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false) : fmtPct(v));
+    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов'
+        : shareMode === 'overhang' ? 'Навес' : '% в обращении';
+    // Значения режима: rub — рубли (адаптив млн/млрд), overhang — дни, cap — %.
+    const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v)
+        : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
+    const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false)
+        : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
 
     // Ширина бара: 66% слота, но не шире 22 (узкое окно → бары не распухают).
     const barHalf = Math.min((0.33 / visCount) * 1000, 22);
@@ -639,7 +670,7 @@ export default function CompanyShareChart({
                             легенда сидит ровно посередине между полосой и графиком. */}
                         <div className="flex items-center justify-center relative z-10" style={{ marginBottom: hasPrice ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
-                                items={[{ color: BAR_COLOR, label: `${shareModeLabel} (${shareMode === 'rub' ? '₽' : '%'})` }]}
+                                items={[{ color: BAR_COLOR, label: `${shareModeLabel} (${shareMode === 'rub' ? '₽' : shareMode === 'overhang' ? 'дни' : '%'})` }]}
                                 fontWeight={600}
                                 style={{ color: 'var(--text-primary)' }}
                             />
