@@ -56,6 +56,18 @@ export default function HlsVideo({
     if (!inView || !videoRef.current) return;
     const video = videoRef.current;
 
+    // Смена источника на лету (переключение темы сайта: <name> ↔ <name>-light).
+    // Без сброса элемент ~1.2с продолжает показывать ПОСЛЕДНИЙ ОТРИСОВАННЫЙ
+    // кадр старой темы — светлый график на тёмной странице и наоборот: poster
+    // уже правильный, но браузер рисует его только пока кадров нет вообще.
+    // load() возвращает элемент в это состояние → сразу виден poster новой
+    // темы (десятки КБ), а видео доезжает следом. На первом монтировании
+    // ветка не срабатывает: сбрасывать нечего.
+    if (video.readyState > 0 || video.currentSrc) {
+      video.removeAttribute('src');
+      video.load();
+    }
+
     // Safari (Mac/iOS) — native HLS support
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = hlsSrc;
