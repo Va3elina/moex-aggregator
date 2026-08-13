@@ -2006,6 +2006,11 @@ export interface CompanyPriceWeeklyResponse {
     weeks: string[];
     /** Закрытие недели (последняя дневная свеча), выровнено с weeks. */
     closes: number[];
+    /** "YYYY-MM" месяцы, по которым есть оборот торгов, ASC. */
+    turnover_months?: string[];
+    /** Медианный дневной оборот (₽) месяца, выровнено с turnover_months —
+     *  знаменатель режима «Навес» (дней на выход из позиции). */
+    med_turnover?: number[];
 }
 
 export async function getCompanyPriceWeekly(ticker: string): Promise<CompanyPriceWeeklyResponse> {

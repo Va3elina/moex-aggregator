@@ -2,7 +2,8 @@
  * CompanyFlowsTab — раздел «Потоки по компании».
  *
  * Выбор бумаги (таблетка-поиск в стиле «Сезонности») → её помесячная история
- * по фондам, что её держат. ОДИН ряд режимов (SegmentedControl), у всех общая
+ * по фондам, что её держат. ОДИН выпадающий список режимов (Dropdown; с
+ * четвёртым пунктом ряд-SegmentedControl перестал влезать), у всех общая
  * ось месяцев и линия цены сверху — меняется только нижний слой:
  *  - «Сделки» — CompanyFlowsPriceMap: недельная линия цены акции с кругляшами
  *    месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких уровнях цены
@@ -13,6 +14,9 @@
  *  - «% в обращении» — тот же чарт, бары в % от free-float капы компании
  *    (ffcap). Пункт СКРЫТ, если ffcap пуст: облигация/ОФЗ или бумага вне
  *    индекса широкого рынка MOEXBMI.
+ *  - «Навес» — тот же чарт, бары в ДНЯХ: позиция фондов / медианный дневной
+ *    оборот торгов месяца (med_turnover из /price-weekly). Пункт скрыт, если
+ *    оборота нет (не акция / нет истории в candles).
  * Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
  *
  * Прежний двухуровневый выбор («Сделки/Позиция» + субтумблер веса) сплющен в
@@ -28,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarRange, CandlestickChart, ChevronDown, Coins, Percent, TrendingUp } from 'lucide-react';
+import { CalendarRange, CandlestickChart, ChevronDown, Coins, Hourglass, Percent, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
@@ -47,11 +51,11 @@ import Skeleton from '../Skeleton';
 import { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
 import CompanyFlowsPriceMap from './CompanyFlowsPriceMap';
 import CompanyShareChart, { type CompanyShareFundSeries, type ShareMode } from './CompanyShareChart';
-import HelpTooltip from '../HelpTooltip';
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import PortfolioFundPicker, { indexFundTickers } from './PortfolioFundPicker';
 import SegmentedControl from '../SegmentedControl';
+import Dropdown from '../Dropdown';
 import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import ChartSettings from '../chart/ChartSettings';
@@ -70,23 +74,35 @@ const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 го�
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
 
-// Режим отображения — один плоский ряд: сделки на цене / позиция в ₽ / позиция
-// в % от free-float капы. 'rub' и 'cap' — это ShareMode чарта (см. ниже).
+// Режим отображения — с четвёртым пунктом («Навес») ряд перестал влезать в
+// строку и на сайте стал ВЫПАДАЮЩИМ СПИСКОМ (решение владельца 2026-08-13):
+// сделки на цене / позиция в ₽ / % от free-float капы / навес в днях оборота.
+// 'rub', 'cap' и 'overhang' — это ShareMode чарта (см. ниже).
 type ChartMode = 'map' | ShareMode;
 const MODE_LABELS: Record<ChartMode, string> = {
     map: 'Сделки',
     rub: 'Позиция',
     cap: '% в обращении',
+    overhang: 'Навес',
 };
-const CF_MODES: ChartMode[] = ['map', 'rub', 'cap'];
+const CF_MODES: ChartMode[] = ['map', 'rub', 'cap', 'overhang'];
+// Подсказки режимов — «?» у пунктов выпадающего списка (заменили прежний общий
+// HelpTooltip у SegmentedControl: у списка подсказка живёт при каждом пункте).
+const MODE_HELP: Record<ChartMode, string> = {
+    map: 'Кругляши покупок и продаж на линии цены: видно, на каких уровнях фонды набирали позицию, а на каких выходили. Размер кругляша — объём чистой сделки за месяц.',
+    rub: 'Сколько рублей выбранные фонды держат в бумаге: доля в портфеле × СЧА фонда, суммой по фондам.',
+    cap: 'Позиция фондов в процентах от стоимости акций компании в свободном обращении (free-float, данные МосБиржи). Показывает, какая часть торгуемых акций лежит в этих фондах.',
+    overhang: 'Позиция выбранных фондов, делённая на медианный дневной оборот торгов за месяц. Показывает, за сколько дней торгов фонды могли бы выйти из бумаги, забирая весь оборот: чем больше дней, тем труднее им двигаться без влияния на цену.',
+};
 // Ширина места под контролы в тулбаре окна, ниже которой подписи не влезают.
 const TOOLBAR_COMPACT_PX = 560;
 // Иконки режимов для compact-тулбара окна (порядок и смысл 1-в-1 с сайтом:
-// сделки на цене / позиция в ₽ / доля во free-float).
+// сделки на цене / позиция в ₽ / доля во free-float / навес в днях).
 const MODE_ICONS: Record<ChartMode, ReactNode> = {
     map: <CandlestickChart size={14} />,
     rub: <Coins size={14} />,
     cap: <Percent size={14} />,
+    overhang: <Hourglass size={14} />,
 };
 
 // Ключ прежней схемы (субтумблер веса). Читаем один раз при миграции старого
@@ -623,6 +639,24 @@ export default function CompanyFlowsTab({
         [weightsData, sharePeriodStart],
     );
 
+    // Медианный дневной оборот по месяцам (/price-weekly) на оси месяцев
+    // /company-weights — знаменатель режима «Навес». Ключ join'а — "YYYY-MM".
+    const turnoverAll = useMemo<(number | null)[]>(() => {
+        if (!weightsData) return [];
+        const byMonth = new Map<string, number>();
+        if (price && price.ticker === selectedTicker && price.turnover_months && price.med_turnover) {
+            price.turnover_months.forEach((m, i) => {
+                const v = price.med_turnover![i];
+                if (v != null && v > 0) byMonth.set(m, v);
+            });
+        }
+        return weightsData.months.map(m => byMonth.get(m) ?? null);
+    }, [weightsData, price, selectedTicker]);
+    const visibleTurnover = useMemo(
+        () => turnoverAll.slice(sharePeriodStart),
+        [turnoverAll, sharePeriodStart],
+    );
+
     // «% в обращении» доступен, только если у бумаги вообще есть free-float
     // капа (акция из MOEXBMI). Облигации/ОФЗ/внеиндексные — пункт скрыт, а
     // персистнутый выбор 'cap' на такой бумаге тихо падает на «Позицию»
@@ -631,10 +665,19 @@ export default function CompanyFlowsTab({
         () => (weightsData?.ffcap ?? []).some(v => v != null),
         [weightsData],
     );
-    const effectiveMode: ChartMode = mode === 'cap' && !capAvailable ? 'rub' : mode;
+    // «Навес» требует оборота торгов (акция с историей в candles) — у
+    // облигаций/ОФЗ пункт скрыт, персистнутый выбор падает на «Позицию» тем же
+    // правилом, что и 'cap'. Пока цена грузится, пункт не прячем: иначе список
+    // мигал бы при каждой смене бумаги (оборот приходит вместе с ценой).
+    const overhangAvailable = useMemo(
+        () => priceLoading || turnoverAll.some(v => v != null),
+        [priceLoading, turnoverAll],
+    );
+    const effectiveMode: ChartMode =
+        (mode === 'cap' && !capAvailable) || (mode === 'overhang' && !overhangAvailable) ? 'rub' : mode;
     const visibleModes = useMemo(
-        () => CF_MODES.filter(m => m !== 'cap' || capAvailable),
-        [capAvailable],
+        () => CF_MODES.filter(m => (m !== 'cap' || capAvailable) && (m !== 'overhang' || overhangAvailable)),
+        [capAvailable, overhangAvailable],
     );
 
     // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
@@ -780,9 +823,11 @@ export default function CompanyFlowsTab({
                     iconOnly={embedded && tbCompact}
                 />
 
-                {/* Режим — один плоский ряд. «% в обращении» появляется
-                    только у бумаг с free-float капой (акции из MOEXBMI).
-                    Обёртка — якорь онбординг-тура (шаг «Три взгляда на бумагу»);
+                {/* Режим — выпадающий список (4 пункта в ряд уже не влезали).
+                    «% в обращении» и «Навес» появляются только у бумаг со
+                    своими данными (free-float капа / оборот торгов). Подсказка
+                    «?» — при каждом пункте списка. Обёртка — якорь
+                    онбординг-тура (шаг «Четыре взгляда на бумагу»);
                     display:flex, чтобы в flex-ряду контролов ничего не поехало. */}
                 {embedded ? (
                     <PillGroup<ChartMode>
@@ -793,21 +838,14 @@ export default function CompanyFlowsTab({
                     />
                 ) : (
                 <div data-tour="ft-company-modes" style={{ display: 'flex' }}>
-                <SegmentedControl<ChartMode>
-                    options={visibleModes.map(m => ({ key: m, label: MODE_LABELS[m] }))}
+                <Dropdown<ChartMode>
+                    options={visibleModes.map(m => ({
+                        key: m,
+                        label: MODE_LABELS[m],
+                        help: { title: MODE_LABELS[m], content: MODE_HELP[m] },
+                    }))}
                     value={effectiveMode}
                     onChange={setMode}
-                    trailing={
-                        <HelpTooltip
-                            align="right"
-                            title="Что показывает график"
-                            sections={[
-                                { heading: 'Сделки', body: 'Кругляши покупок и продаж на линии цены: видно, на каких уровнях фонды набирали позицию, а на каких выходили. Размер кругляша — объём чистой сделки за месяц.' },
-                                { heading: 'Позиция', body: 'Сколько рублей выбранные фонды держат в бумаге: доля в портфеле × СЧА фонда, суммой по фондам.' },
-                                ...(capAvailable ? [{ heading: '% в обращении', body: 'Позиция фондов в процентах от стоимости акций компании в свободном обращении (free-float, данные МосБиржи). Показывает, какая часть торгуемых акций лежит в этих фондах.' }] : []),
-                            ]}
-                        />
-                    }
                 />
                 </div>
                 )}
@@ -942,6 +980,7 @@ export default function CompanyFlowsTab({
                         months={visibleShareMonths}
                         funds={visibleShareFunds}
                         ffcap={visibleFfcap}
+                        turnover={visibleTurnover}
                         weeks={price && price.ticker === selectedTicker ? price.weeks : []}
                         closes={price && price.ticker === selectedTicker ? price.closes : []}
                         shareMode={effectiveMode as ShareMode}
