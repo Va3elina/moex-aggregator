@@ -72,7 +72,7 @@ const SENTIMENT_INDICATORS: Indicator[] = [
     icon: <TrendingUp size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/buffett',
-    ...v('buffett', 792),
+    ...v('buffett', 790),
   },
 ];
 
