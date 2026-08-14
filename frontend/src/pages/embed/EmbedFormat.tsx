@@ -7,15 +7,18 @@
  * в обеих темах): это осознанный выбор пользователя, поэтому он одинаков на
  * сайте, в расширении и в песочнице.
  */
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { DrawerSection, SegGroup } from './EmbedSettings';
+import { SegGroup } from './EmbedSettings';
 import { useEmbedPersist } from './embedPersist';
+import ColorLinePicker from './ColorLinePicker';
 
 export type ChartKind = 'line' | 'area' | 'histogram' | 'candlestick' | 'bar';
 // color null = цвет индикатора; visible — «глаз» строки в списке индикаторов
 // (undefined трактуем как true, чтобы старый персист читался без миграции).
-export interface ChartFormat { kind: ChartKind; color: string | null; visible?: boolean }
+// opacity 0..100 (дефолт 100), width 1..4 (undefined = глобальная толщина
+// песочницы) — детальная настройка линии из ColorLinePicker.
+export interface ChartFormat { kind: ChartKind; color: string | null; visible?: boolean; opacity?: number; width?: number }
 
 // Реестр «id → подпись». 'histogram' («Столбцы») больше НЕ в выбираемых наборах
 // (убран по фидбеку Вадима), но остаётся валидным типом для нативных серий (funds-flow)
@@ -34,9 +37,6 @@ export function kindOptions(kinds: ChartKind[] = OHLC_KINDS): { id: ChartKind; l
   return kinds.map((id) => ({ id, label: KIND_LABELS[id] }));
 }
 
-// CC-палитра дизайнера: price / up / down / sec / amber / cyan.
-const SWATCHES = ['#5DA3E9', '#5BD49C', '#EF6F6F', '#9B8BF0', '#E0A34E', '#57C7C7'];
-
 const DEF: ChartFormat = { kind: 'line', color: null };
 
 // ⚠️ parse ПЕРЕСОБИРАЕТ объект руками, а не спредит распарсенное — это намеренно
@@ -47,9 +47,18 @@ function parse(raw: string): ChartFormat {
   try {
     const j = JSON.parse(raw) as Partial<ChartFormat>;
     const kind = (j.kind && j.kind in KIND_LABELS ? j.kind : 'line') as ChartKind;
-    const color = typeof j.color === 'string' && SWATCHES.includes(j.color) ? j.color : null;
+    // Раньше color валидировался по списку заготовок; теперь любой #RRGGBB
+    // (детальный пикер) — старые значения тоже hex, читаются как есть.
+    const color = typeof j.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(j.color) ? j.color : null;
     const visible = typeof j.visible === 'boolean' ? j.visible : undefined;
-    return { kind, color, ...(visible === undefined ? {} : { visible }) };
+    const opacity = typeof j.opacity === 'number' ? Math.max(5, Math.min(100, Math.round(j.opacity))) : undefined;
+    const width = typeof j.width === 'number' && [1, 2, 3, 4].includes(j.width) ? j.width : undefined;
+    return {
+      kind, color,
+      ...(visible === undefined ? {} : { visible }),
+      ...(opacity === undefined ? {} : { opacity }),
+      ...(width === undefined ? {} : { width }),
+    };
   } catch { return DEF; }
 }
 
@@ -65,6 +74,8 @@ export function useChartFormat(lsKey: string, defKind: ChartKind = 'line') {
     fmt,
     setKind: (kind: ChartKind) => setFmt((f) => ({ ...f, kind })),
     setColor: (color: string | null) => setFmt((f) => ({ ...f, color })),
+    setOpacity: (opacity: number) => setFmt((f) => ({ ...f, opacity })),
+    setWidth: (width: number) => setFmt((f) => ({ ...f, width })),
   };
 }
 
@@ -93,18 +104,27 @@ export function useSeriesFormats(lsKey: string) {
   // «Глаз» строки в списке индикаторов: нативную серию нельзя удалить, но можно
   // скрыть. undefined трактуется как видимая — старый персист читается как есть.
   const setVisible = useCallback((id: string, visible: boolean) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), visible } })), []);
+  const setOpacity = useCallback((id: string, opacity: number) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), opacity } })), []);
+  const setWidth = useCallback((id: string, width: number) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), width } })), []);
   // ⚠️ useMemo обязателен. Новый объект на каждый рендер попадал в депсы мемо
   // в embed'ах (visibleNative/allSeries → chartPanes), и ЛЮБОЙ ререндер —
   // например, выделение фигуры кликом — пересоздавал ВСЕ серии графика с
   // восстановлением диапазона. Вадим видел это как «нажал на линию и меня
   // телепортировало» плюс микрофриз (пересоздание серий ≈ 100 мс по замеру).
-  return useMemo(() => ({ get, setKind, setColor, setVisible }), [get, setKind, setColor, setVisible]);
+  return useMemo(() => ({ get, setKind, setColor, setVisible, setOpacity, setWidth }), [get, setKind, setColor, setVisible, setOpacity, setWidth]);
 }
 
-/** Применить формат к серии: тип + цвет (+ градиент области / база столбцов). */
+/** Применить формат к серии: тип + цвет + прозрачность + толщина
+ *  (+ градиент области / база столбцов). */
 export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
-  const color = fmt.color ?? def.color;
+  const base = fmt.color ?? def.color;
+  const op = fmt.opacity ?? 100;
+  // color-mix, а не hex-альфа: базой может быть var(--токен) — LwChartPanes
+  // резолвит любые CSS-цвета пробой (см. resolveColor).
+  const color = op < 100 ? `color-mix(in srgb, ${base} ${op}%, transparent)` : base;
   const out: LwSeries = { ...def, type: fmt.kind, color };
+  // Явная толщина юзера побеждает глобальный тумблер песочницы (chartPrefs).
+  if (fmt.width) out.userLineWidth = fmt.width;
   if (fmt.kind === 'area') {
     // Градиент как на сайте (SimpleChart): верх ~18%, низ — МЯГКИЙ ПОЛ 2% (не полный
     // ноль). Полностью прозрачный низ фейдил заливку в ничто у серий, чья линия сидит
@@ -120,42 +140,43 @@ export function applyFormat(def: LwSeries, fmt: ChartFormat): LwSeries {
   return out;
 }
 
-/** ⚙-секция «Формат»: сегменты типа + свотчи цвета (первый — «Авто», сброс).
+/** ⚙-секция «Формат»: сегменты типа + кнопка «цвет/линия» СПРАВА от подписи —
+ *  раскрывается в детальный пикер (палитра, свои цвета, прозрачность, толщина).
+ *  Ряд заготовленных свотчей убран (фидбек Вадима, мокап TradingView).
  *  `label` — заголовок секции (для пер-серийного формата — имя линии).
- *  `kinds` — какие режимы доступны (дефолт линия/область; цена фьючерса → OHLC_KINDS). */
-export function FormatSection({ fmt, onKind, onColor, label = 'Формат', kinds = DEFAULT_KINDS }: {
+ *  `kinds` — какие режимы доступны (дефолт линия/область; цена фьючерса → OHLC_KINDS).
+ *  `defaultColor` — родной цвет серии для превью при «Авто». */
+export function FormatSection({ fmt, onKind, onColor, onOpacity, onWidth, label = 'Формат', kinds = DEFAULT_KINDS, defaultColor }: {
   fmt: ChartFormat;
   onKind: (k: ChartKind) => void;
   onColor: (c: string | null) => void;
+  onOpacity?: (o: number) => void;
+  onWidth?: (w: number) => void;
   label?: string;
   kinds?: ChartKind[];
+  defaultColor?: string;
 }) {
   const opts = kinds.map((id) => ({ id, label: KIND_LABELS[id] }));
   return (
-    <DrawerSection label={label}>
-      <SegGroup<ChartKind> value={fmt.kind} options={opts} onChange={onKind} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
-        <button
-          type="button"
-          title="Авто (цвет индикатора)"
-          onClick={() => onColor(null)}
-          style={swatchStyle(fmt.color === null, 'transparent')}
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span
+          style={{
+            fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase',
+            letterSpacing: '0.06em', color: 'var(--text-secondary)',
+          }}
         >
-          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-secondary)' }}>А</span>
-        </button>
-        {SWATCHES.map((c) => (
-          <button key={c} type="button" title={c} onClick={() => onColor(c)} style={swatchStyle(fmt.color === c, c)} />
-        ))}
+          {label}
+        </span>
+        <ColorLinePicker
+          value={{ color: fmt.color, opacity: fmt.opacity ?? 100, width: fmt.width ?? null }}
+          onColor={onColor}
+          onOpacity={onOpacity ?? (() => {})}
+          onWidth={onWidth ?? (() => {})}
+          defaultColor={defaultColor}
+        />
       </div>
-    </DrawerSection>
+      <SegGroup<ChartKind> value={fmt.kind} options={opts} onChange={onKind} />
+    </div>
   );
-}
-
-function swatchStyle(active: boolean, bg: string): CSSProperties {
-  return {
-    width: 22, height: 22, borderRadius: 6, background: bg, cursor: 'pointer', padding: 0,
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    border: active ? '2px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.35))',
-    boxSizing: 'border-box',
-  };
 }

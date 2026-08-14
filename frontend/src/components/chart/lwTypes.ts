@@ -20,6 +20,9 @@ export interface LwSeries {
   color: string;
   scale?: 'left' | 'right';
   lineWidth?: number;
+  /** Явная толщина, выбранная юзером в пикере формата серии — побеждает и
+   *  глобальный chartPrefs.lineWidth песочницы, и дефолтный lineWidth. */
+  userLineWidth?: number;
   /** Пунктирная линия — для прогнозного «хвоста» (Баффетт): проекцию не выдаём
    *  за реальные данные. Действует на line и area. */
   dashed?: boolean;

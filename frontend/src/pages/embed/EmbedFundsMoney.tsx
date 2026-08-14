@@ -108,7 +108,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   const fundsAccess = useTierAccess('funds_money');
 
-  const { fmt, setKind, setColor } = useChartFormat('frame:embed:funds:fmt', 'area');
+  const { fmt, setKind, setColor, setOpacity, setWidth } = useChartFormat('frame:embed:funds:fmt', 'area');
   const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category'), rd));
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || rd('frame:embed:funds:viewMode', 'flows')) as ViewMode);
@@ -459,7 +459,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
           <DrawerSection label="Отображение">
             <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
           </DrawerSection>
-          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />
+          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} onOpacity={setOpacity} onWidth={setWidth} defaultColor="var(--chart-line-3)" />
         </>
       ) : undefined}
     >
