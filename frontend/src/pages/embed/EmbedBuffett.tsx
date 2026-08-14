@@ -73,7 +73,7 @@ export default function EmbedBuffett() {
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const { fmt, setKind, setColor } = useChartFormat('frame:embed:buffett:fmt');
+  const { fmt, setKind, setColor, setOpacity, setWidth } = useChartFormat('frame:embed:buffett:fmt');
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (params.get('mode') === 'cap-m2' || rd('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
   );
@@ -285,7 +285,7 @@ export default function EmbedBuffett() {
           <DrawerSection label="Слои">
             <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
-          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} />
+          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} onOpacity={setOpacity} onWidth={setWidth} />
         </>
       }
     >

@@ -912,15 +912,15 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
               графике: Цена (линия/область/свечи/бары), линии ОИ (линия/область). Подписи ниже
               адаптивны: Чистая позиция / Открытый интерес / Покупки / Продажи (или Покупки+Продажи). */}
           {showPrice && (
-            <FormatSection label="Цена" kinds={OHLC_KINDS} fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} />
+            <FormatSection label="Цена" kinds={OHLC_KINDS} fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} onOpacity={(o) => sf.setOpacity('price', o)} onWidth={(w) => sf.setWidth('price', w)} defaultColor={OI_COLORS.primary} />
           )}
           {oiVariant === 'both' ? (
             <>
-              <FormatSection label={labels.secondary} fmt={sf.get('oi-long')} onKind={(k) => sf.setKind('oi-long', k)} onColor={(c) => sf.setColor('oi-long', c)} />
-              <FormatSection label={labels.third} fmt={sf.get('oi-short')} onKind={(k) => sf.setKind('oi-short', k)} onColor={(c) => sf.setColor('oi-short', c)} />
+              <FormatSection label={labels.secondary} fmt={sf.get('oi-long')} onKind={(k) => sf.setKind('oi-long', k)} onColor={(c) => sf.setColor('oi-long', c)} onOpacity={(o) => sf.setOpacity('oi-long', o)} onWidth={(w) => sf.setWidth('oi-long', w)} defaultColor={colors.secondary} />
+              <FormatSection label={labels.third} fmt={sf.get('oi-short')} onKind={(k) => sf.setKind('oi-short', k)} onColor={(c) => sf.setColor('oi-short', c)} onOpacity={(o) => sf.setOpacity('oi-short', o)} onWidth={(w) => sf.setWidth('oi-short', w)} defaultColor={colors.third} />
             </>
           ) : (
-            <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} />
+            <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} onOpacity={(o) => sf.setOpacity('oi', o)} onWidth={(w) => sf.setWidth('oi', w)} defaultColor={colors.secondary} />
           )}
           <WheelHint>
             <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми

@@ -489,7 +489,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           paneApis?.forEach((s, si) => {
             const def = seriesDefsRef.current[pi2]?.[si];
             if (!def || (def.type !== 'line' && def.type !== 'area')) return;
-            const lw0 = (chartPrefsRef.current?.lineWidth ?? def.lineWidth ?? 2);
+            const lw0 = (def.userLineWidth ?? chartPrefsRef.current?.lineWidth ?? def.lineWidth ?? 2);
             const lw1 = Math.max(1, Math.min(4, Math.round(lw0 * scale)));
             if (lw1 === lw0) return;
             try {
@@ -1998,7 +1998,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     const seriesSig = JSON.stringify([
       panes.map((p) => p.series.map((d) => [
         d.id, d.type ?? 'line', d.scale ?? 'right', d.color, d.areaTop, d.areaBottom,
-        d.lineWidth, d.dashed, d.base, d.zeroLine, d.label, d.lastValueVisible,
+        d.lineWidth, d.userLineWidth, d.dashed, d.base, d.zeroLine, d.label, d.lastValueVisible,
         d.minMove, !!d.axisFmt, !!d.tipFmt,
         d.bands ? [d.bands.upper, d.bands.lower, d.bands.middle, d.bands.color, d.bands.fill,
           d.bands.upperColor, d.bands.lowerColor, d.bands.middleColor] : null,
@@ -2145,7 +2145,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const priceFormat = def.axisFmt
           ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
           : undefined;
-        const lw = ((chartPrefs?.lineWidth ?? def.lineWidth ?? 2)) as 1 | 2 | 3 | 4;
+        const lw = ((def.userLineWidth ?? chartPrefs?.lineWidth ?? def.lineWidth ?? 2)) as 1 | 2 | 3 | 4;
         // Явный def.lastValueVisible побеждает глобальный тумблер песочницы (см. LwChart.tsx).
         const lastLine = def.lastValueVisible ?? chartPrefs?.lastValue ?? true;
         const lastHist = def.lastValueVisible ?? chartPrefs?.lastValue ?? false;
