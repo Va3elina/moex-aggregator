@@ -392,6 +392,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
 
   // Ширины осей, действовавшие до экспорта — вернуть в restoreAfterCapture.
   const axisWBeforeRef = useRef<{ left?: number; right?: number }>({});
+  // Толщины линий, действовавшие до экспорта — вернуть в restoreAfterCapture.
+  const lineWBeforeRef = useRef<{ s: AnySeries; lw: number }[]>([]);
   useImperativeHandle(forwardedRef, () => ({
     syncBeforeCapture: () => {
       const root = rootRef.current;
@@ -421,6 +423,24 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         // фактические ширины стали разными. Оценка ширины через коэффициент
         // кегля: точность не важна, важно ОДНО значение на все панели.
         const scale = fs / BASE_FONT_SIZE;
+        // ⚠️ Тем же множителем — толщина линий. Шрифт на снимке растёт, а линии
+        // оставались экранными 2px и на широком кадре выглядели волосяными
+        // (Вадим, скрин песочницы «линии очень тоненькие»). Движок принимает
+        // только целые 1..4, поэтому округляем и клампим сверху.
+        lineWBeforeRef.current = [];
+        apisRef.current.forEach((paneApis, pi2) => {
+          paneApis?.forEach((s, si) => {
+            const def = seriesDefsRef.current[pi2]?.[si];
+            if (!def || (def.type !== 'line' && def.type !== 'area')) return;
+            const lw0 = (chartPrefsRef.current?.lineWidth ?? def.lineWidth ?? 2);
+            const lw1 = Math.max(1, Math.min(4, Math.round(lw0 * scale)));
+            if (lw1 === lw0) return;
+            try {
+              (s as ISeriesApi<'Line'>).applyOptions({ lineWidth: lw1 as 1 | 2 | 3 | 4 });
+              lineWBeforeRef.current.push({ s, lw: lw0 });
+            } catch { /* §R2-30 */ }
+          });
+        });
         for (const side of ['left', 'right'] as const) {
           let maxW = 0;
           for (const ch of chartsRef.current) {
@@ -446,6 +466,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         }
       }
       axisWBeforeRef.current = {};
+      for (const { s, lw } of lineWBeforeRef.current) {
+        try { (s as ISeriesApi<'Line'>).applyOptions({ lineWidth: lw as 1 | 2 | 3 | 4 }); } catch { /* §R2-30 */ }
+      }
+      lineWBeforeRef.current = [];
       drawShapesRef.current?.();
     },
   }), []);
