@@ -406,7 +406,6 @@ export function AssetButton({
         {!sb && <PlusCircle size={16} style={{ color: 'var(--accent)' }} />}
         <InstrumentIcon sectype={current} size={sb ? 16 : 18} />
         <span style={{ fontWeight: sb ? 700 : 800, fontSize: sb ? 11 : 12.5, letterSpacing: '-0.01em' }}>{ticker}</span>
-        {sb && <PlusCircle size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
       </button>
       {open && (
         <InstrumentSearchModal
