@@ -429,8 +429,10 @@ export function AssetButton({
  * переопределяет их в scope `.sb-panel` (sandbox.css) под значения макета —
  * тот же приём, что G-1 для палитры. Blueprint G-4.
  */
-const CTL_FS = 'var(--emb-ctl-fs, 11.5px)';
-const CTL_FW = 'var(--emb-ctl-fw, 700)' as unknown as CSSProperties['fontWeight'];
+/** Экспортируются: меню индикаторов (EmbedIndicators) держит тот же кегль, что
+ *  тулбар и его выпадашки — иначе рядом открываются списки разным шрифтом. */
+export const CTL_FS = 'var(--emb-ctl-fs, 11.5px)';
+export const CTL_FW = 'var(--emb-ctl-fw, 700)' as unknown as CSSProperties['fontWeight'];
 
 /** Компактная группа пилюль для тулбара (мало коротких опций — таймфрейм, режим).
  *  Один слитный pill (рамка+фон на группе, разделитель между сегментами), а не
@@ -566,14 +568,41 @@ export function Dropdown<T extends string | number>({
         onClick={() => { if (single) return; if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
       >
         {resolvedIcon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{resolvedIcon}</span>}
-        {!iconOnly && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>}
+        {!iconOnly && (
+          // Кнопка резервирует ширину под САМЫЙ ДЛИННЫЙ пункт, а не под текущий:
+          // список ниже открывается ровно по её ширине, и его правый край больше
+          // не «заступает» за кнопку на длинных лейблах («Покупки + Продажи»).
+          // Приём — grid-стек: все лейблы в одной ячейке, ширина ячейки = максимум
+          // из них; невыбранные с height:0/hidden, поэтому не видны и не растят
+          // высоту. Без него пришлось бы мерить текст в JS на каждый рендер.
+          <span style={{ display: 'grid', minWidth: 0 }}>
+            <span style={{ gridArea: '1 / 1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
+            {options.map((o) => (
+              <span
+                key={String(o.id)}
+                aria-hidden
+                style={{ gridArea: '1 / 1', height: 0, overflow: 'hidden', visibility: 'hidden', whiteSpace: 'nowrap', maxWidth: 150 }}
+              >
+                {o.label}
+              </span>
+            ))}
+          </span>
+        )}
         {!single && <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />}
       </button>
       {open && !single && (
-        // Ширина = по контенту (влезает самое длинное словосочетание, без гориз. ползунка),
-        // но не у́же кнопки (minWidth = ширина кнопки) — Вадим.
-        <Popover anchorEl={btnRef.current} align="left" compact width="max-content" onClose={() => setOpen(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: btnW }}>
+        // Ширина списка = ширина кнопки: та уже зарезервирована под самый длинный
+        // лейбл (grid-стек выше), поэтому текст влезает, а края совпадают —
+        // никакого заступа вправо. В compact-режиме кнопка схлопнута до иконки и
+        // ширины не хватит — там список по контенту, как раньше.
+        <Popover
+          anchorEl={btnRef.current}
+          align="left"
+          compact
+          width={!iconOnly && btnW ? `${btnW}px` : 'max-content'}
+          onClose={() => setOpen(false)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: iconOnly ? btnW : undefined }}>
             {options.map((o) => {
               const on = o.id === value;
               return (
@@ -588,15 +617,15 @@ export function Dropdown<T extends string | number>({
                     border: 'none',
                     background: on ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
                     color: on ? 'var(--accent)' : 'var(--text-primary)',
-                    // Размер/жирность — как в меню «Индикаторы» (menuItem в
-                    // EmbedIndicators: 11.5px / 500), а НЕ как у кнопки-триггера:
-                    // в песочнице триггеры ужаты до 10.5px/600 (--emb-ctl-*), и
-                    // рядом открывались два выпадающих списка разным кеглем.
-                    // Активный жирнее для индикации выбора — там же 800.
-                    // nowrap — чтобы «1 день» не переносился.
-                    fontWeight: on ? 800 : 500,
-                    fontSize: 11.5,
+                    // Размер/жирность как у кнопки-триггера (CTL_FS/CTL_FW) — Вадим: «как сверху».
+                    // Активный чуть жирнее для индикации выбора. nowrap — чтобы «1 день» не переносился.
+                    fontWeight: on ? 800 : CTL_FW,
+                    fontSize: CTL_FS,
                     whiteSpace: 'nowrap',
+                    // Ширина задана кнопкой: если лейбл всё же не влез (кнопка
+                    // упёрлась в maxWidth 150), обрезаем многоточием, а не вылезаем.
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     cursor: 'pointer',
                   }}
                 >
