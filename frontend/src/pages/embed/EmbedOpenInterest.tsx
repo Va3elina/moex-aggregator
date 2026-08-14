@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, User, Building2 } from 'lucide-react';
+import { Clock, User, Building2, BarChart3, Users } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -29,7 +29,7 @@ import { useChartWindowLoader } from './useChartWindowLoader';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
-import { EmbedFrame, AssetButton, Dropdown, PillGroup, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -59,16 +59,30 @@ type Series = { time: string; value: number; open?: number; high?: number; low?:
  *  мемоизацию потребителей (профиль объёма пересчитывался бы впустую). */
 const EMPTY_CANDLES: Series = [];
 
-// Группа участников — единственная выпадашка ОИ, оставшаяся в тулбаре: она
-// относится ко всему окну (чьи позиции смотрим), а не к отдельной линии.
-const CLGROUP_OPTS: { id: ClGroup; label: string; icon: ReactNode }[] = [
-  { id: 'FIZ', label: 'Физлица', icon: <User size={14} /> },
-  { id: 'YUR', label: 'Юрлица', icon: <Building2 size={14} /> },
+// Срез ОИ — три выпадашки тулбара в одном ряду: КТО (группа участников), КАК
+// (режим: объём против числа трейдеров) и ЧТО (показатель: нога ОИ). Все три —
+// Dropdown с раскрытием ВНИЗ, а не пилюли и не подменю строки: они меняются
+// одинаково часто и должны выглядеть и вести себя одинаково (Вадим, 2026-08-15).
+const CLGROUP_OPTS: { id: ClGroup; label: string }[] = [
+  { id: 'FIZ', label: 'Физлица' },
+  { id: 'YUR', label: 'Юрлица' },
 ];
+const CLGROUP_ICON = (v: ClGroup): ReactNode =>
+  v === 'FIZ' ? <User size={14} /> : <Building2 size={14} />;
 const MODE_OPTS: { id: DisplayMode; label: string }[] = [
   { id: 'positions', label: 'Объём позиций' },
   { id: 'participants', label: 'Число трейдеров' },
 ];
+const MODE_ICON = (v: DisplayMode): ReactNode =>
+  v === 'positions' ? <BarChart3 size={14} /> : <Users size={14} />;
+
+/** Цветная точка показателя — иконка дропдауна «Показатель». На узкой панели
+ *  лейбл схлопывается, и точка остаётся единственным признаком выбранной ноги,
+ *  поэтому цвет берём ФАКТИЧЕСКИЙ (с учётом перекраски линии в ⚙ Формат). */
+const Dot = ({ color }: { color: string }) => (
+  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
+);
+
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
 // Дневной ТФ раньше был жёстко '1y' — обрезал историю ровно годом для ВСЕХ
@@ -786,12 +800,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       id: 'price', label: displayName, color: sf.get('price').color ?? OI_COLORS.primary,
       visible: showPrice, onToggle: () => setShowPrice((v) => !v),
     }];
-    // Настройки самой величины ОИ — здесь, в строке. Раньше это были две
-    // выпадашки в тулбаре; см. NativeRowMenu о том, почему они переехали.
-    const choices = [
-      { label: 'Режим', value: displayMode, options: MODE_OPTS, onChange: (v: string) => setDisplayMode(v as DisplayMode) },
-      { label: 'Показатель', value: oiVariant, options: variantOpts, onChange: (v: string) => setOiVariant(v as OIVariant) },
-    ];
+    // Режим и показатель ОИ здесь БОЛЬШЕ НЕ ЖИВУТ: они вернулись в тулбар
+    // отдельными выпадашками (см. controls ниже). В ⋯ строки остаётся только
+    // перемещение линии между панелями — иначе одна и та же настройка имела бы
+    // два входа и рассинхронилась бы с рядом наверху.
     const at = inds.occupiedPanes.indexOf(oiPaneEff);
     for (const d of lwSeries) {
       if (d.id === 'price') continue;
@@ -799,12 +811,42 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         id: d.id, label: d.label, color: d.color,
         visible: sf.get(d.id).visible !== false,
         onToggle: () => sf.setVisible(d.id, sf.get(d.id).visible === false),
-        pane: oiPaneEff, onMove: moveOi, choices,
+        pane: oiPaneEff, onMove: moveOi,
         canUp: at > 0, canDown: at >= 0 && at < inds.occupiedPanes.length - 1,
       });
     }
     return rows;
-  }, [lwSeries, sf, showPrice, displayName, displayMode, oiVariant, variantOpts, oiPaneEff, inds.occupiedPanes, moveOi]);
+  }, [lwSeries, sf, showPrice, displayName, oiPaneEff, inds.occupiedPanes, moveOi]);
+
+  // Иконка «Показателя» — точка цветом ТЕКУЩЕЙ линии ОИ (с учётом перекраски в
+  // ⚙ Формат, поэтому цвет из sf, а не из палитры). «Покупки + Продажи» — две
+  // точки: линии там две, и одна точка врала бы про цвет второй.
+  const variantIcon = useMemo<ReactNode>(() => (
+    oiVariant === 'both'
+      ? (
+        <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+          <Dot color={sf.get('oi-long').color ?? colors.secondary} />
+          <Dot color={sf.get('oi-short').color ?? colors.third} />
+        </span>
+      )
+      : <Dot color={sf.get('oi').color ?? colors.secondary} />
+  ), [oiVariant, sf, colors]);
+
+  // Ряд контролов тулбара. ОДНА функция на видимый ряд и на невидимый измеритель
+  // (compact=false всегда) — если рендерить их двумя копиями JSX, любая правка
+  // одной копии тихо расходится с другой, и compact начинает срабатывать не там.
+  const controls = (compact: boolean) => (
+    <>
+      {/* Список ТФ фильтруется по tfOptions — неликвидные EOD-only фьючерсы
+          (напр. PXU6 «Полюс мини») интрадей-ОИ не отдают вовсе, так что 5м/1ч
+          для них просто не предлагаем, а не молча гасим линию после выбора. */}
+      <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={compact} />
+      <Dropdown value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} title="Участники" icon={CLGROUP_ICON} compact={compact} />
+      <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICON} compact={compact} />
+      <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель" icon={variantIcon} compact={compact} />
+      <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} compact={compact} />
+    </>
+  );
 
   return (
     <EmbedFrame
@@ -842,24 +884,17 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             aria-hidden
             style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
           >
-            <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} />
-            <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} />
-            <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} />
+            {controls(false)}
           </div>
-          {/* ТФ — компактный дропдаун (тулбар был слишком широк с пилюлями). Физ/Юр —
-              горизонтальные пилюли (2 пункта). Режим и показатель ОИ из тулбара УБРАНЫ:
-              они относятся к одной линии, а не ко всему окну, и живут в её ⋯ вместе
-              с настройками пользовательских индикаторов. На их месте — «Индикаторы».
-              Вид графика убран из тулбара → настраивается
-              per-линия в ⚙ Формат (цена/покупки-продажи/ОИ — по тому, что на графике).
-              Список фильтруется по tfOptions — неликвидные EOD-only фьючерсы (напр.
-              PXU6 «Полюс мини») не отдают интрадей-ОИ вообще, так что 5м/1ч для них
-              просто не предлагаем, а не молча гасим линию после выбора.
+          {/* Ряд тулбара: [ТФ] [Физ/Юр] [Режим] [Показатель] [Индикаторы] — все
+              выпадашки раскрываются ВНИЗ и выглядят одинаково (пилюль Физ/Юр
+              больше нет). Режим и показатель ОИ вернулись сюда из ⋯ строки
+              легенды: настройка среза нужна часто, а искать её в меню линии
+              было неочевидно. Вид графика тут по-прежнему не настраивается —
+              он per-линия в ⚙ Формат (цена / покупки-продажи / ОИ).
               icon на каждом контроле — узкая панель схлопывает лейбл в иконку
               (toolbarCompact, см. измеритель выше); title сохраняет текст в тултипе. */}
-          <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={toolbarCompact} />
-          <PillGroup value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} compact={toolbarCompact} />
-          <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} compact={toolbarCompact} />
+          {controls(toolbarCompact)}
         </div>
       }
       actions={
