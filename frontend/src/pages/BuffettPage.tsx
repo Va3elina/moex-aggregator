@@ -248,7 +248,7 @@ export default function BuffettPage() {
     // Клик «+» на правой оси (коэффициент) → модалка. cap-m2: домен=доля → в %.
     const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
         if (p.axis !== 'secondary') return;   // «+» только на коэффициенте (правая ось)
-        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' }); return; }
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' }); return; }
         const toPct = (v: number) => (isM2 ? v * 100 : v);
         setChartAlertPrefill({
             metricKey: 'buffett_ratio',

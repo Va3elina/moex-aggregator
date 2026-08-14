@@ -129,7 +129,7 @@ export const terminalIntroTour: TourStep[] = [
       <>
         <TerminalDemo />
         <p style={{ marginTop: 10 }}>
-          Индикаторы плавающими окнами на одном экране — рабочий стол, как в
+          Индикаторы плавающими окнами на одном экране: рабочий стол, как в
           биржевом терминале.
         </p>
       </>
@@ -140,7 +140,7 @@ export const terminalIntroTour: TourStep[] = [
     title: 'Открывается отсюда',
     body: (
       <p>
-        Кнопка в шапке — с любой страницы. Входит в тариф <strong>Pro</strong>.
+        Кнопка в шапке работает с любой страницы. Входит в тариф <strong>Pro</strong>.
       </p>
     ),
     position: 'bottom',

@@ -79,7 +79,7 @@ const plural = (n: number, one: string, few: string, many: string): string => {
     if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
     return many;
 };
-const alertsWord = (n: number) => plural(n, 'алерт', 'алерта', 'алертов');
+const alertsWord = (n: number) => plural(n, 'уведомление', 'уведомления', 'уведомлений');
 const assetsWord = (n: number) => plural(n, 'актив', 'актива', 'активов');
 
 // Уровни сигнала для oi_move — ступени множителя ATR (×). «Сильное» по умолчанию.
@@ -387,9 +387,9 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                 if (res.errors.length) notes.push(`не удалось ${res.errors.length}: ${res.errors[0]}`);
                 if (notes.length) setMsg({ type: 'err', text: notes.join('; ') });
             } else if (res.skipped > 0) {
-                setMsg({ type: 'ok', text: 'Эти алерты уже созданы' });
+                setMsg({ type: 'ok', text: 'Эти уведомления уже созданы' });
             } else {
-                setMsg({ type: 'err', text: res.errors[0] || 'Не удалось создать алерты' });
+                setMsg({ type: 'err', text: res.errors[0] || 'Не удалось создать уведомления' });
             }
         } catch (e) {
             setMsg({ type: 'err', text: (e as Error).message });
@@ -407,7 +407,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
-                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> Новый алерт
+                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> Новое уведомление
                     </span>
                     <button onClick={onClose} aria-label="Закрыть" className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                 </div>
@@ -418,7 +418,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         <div style={{ fontWeight: 600, marginBottom: 4 }}>
                             {createdCount > 1
                                 ? `${createdCount} ${alertsWord(createdCount)} создано`
-                                : 'Алерт создан'}
+                                : 'Уведомление создано'}
                         </div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
                             {createdCount > 1 ? 'Уведомления придут' : 'Уведомление придёт'}{' '}
@@ -683,7 +683,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                 раз сегодняшнее движение больше обычного»: 1 — обычный день, 3 — втрое
                                 сильнее обычного. Уровни откалиброваны по частоте на ликвидных бумагах:
                                 «Заметное» случается примерно раз в неделю, «Сильное» — раз в две-три недели,
-                                «Экстремальное» — раз в два месяца. Алерт описывает само движение, а не прогноз цены.
+                                «Экстремальное» — раз в два месяца. Уведомление описывает само движение, а не прогноз цены.
                             </div>
                         )}
 
@@ -744,7 +744,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                 ? 'Создаём…'
                                 : isTierMetric
                                     ? `Создать ${selectedList.length} ${alertsWord(selectedList.length)}`
-                                    : 'Создать алерт'}
+                                    : 'Создать уведомление'}
                         </button>
                     </div>
                 )}

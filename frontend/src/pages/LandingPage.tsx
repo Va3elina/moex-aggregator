@@ -60,7 +60,7 @@ const v = (name: string, videoHeight: number) => ({
 const SENTIMENT_INDICATORS: Indicator[] = [
   {
     title: 'Сила рынка',
-    desc: 'IMOEX + breadth по 90 акциям. Виден ли рост на широком фронте или только на нескольких тяжеловесах.',
+    desc: 'IMOEX + ширина рынка по 90 акциям. Виден ли рост на широком фронте или только на нескольких тяжеловесах.',
     icon: <Activity size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/strength',
@@ -80,7 +80,7 @@ const SENTIMENT_INDICATORS: Indicator[] = [
 const MONEY_FLOW_INDICATORS: Indicator[] = [
   {
     title: 'Открытые позиции',
-    desc: 'Позиции участников по фьючерсам с 2007 года. Разбивка физики/юрики/нерезиденты — где деньги на самом деле.',
+    desc: 'Позиции участников по фьючерсам с 2007 года. Разбивка на физиков, юриков и нерезидентов показывает, где деньги на самом деле.',
     icon: <BarChart3 size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/oi',
@@ -88,7 +88,7 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
   },
   {
     title: 'Деньги в фондах',
-    desc: '36 российских ETF: СЧА, притоки-оттоки по категориям. Куда идут большие деньги — туда идёт рынок.',
+    desc: '36 российских ETF: СЧА, притоки-оттоки по категориям. Куда идут большие деньги, туда идёт рынок.',
     icon: <Wallet size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/funds-money',
@@ -100,7 +100,7 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
 const PATTERNS_INDICATORS: Indicator[] = [
   {
     title: 'Сезонность',
-    desc: 'Средняя динамика по дням, месяцам, годам. Паттерны с 1997 года — на одном экране. Сравнивайте любые периоды.',
+    desc: 'Средняя динамика по дням, месяцам, годам. Закономерности с 1997 года на одном экране. Сравнивайте любые периоды.',
     icon: <CalendarDays size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/seasonality',
@@ -108,7 +108,7 @@ const PATTERNS_INDICATORS: Indicator[] = [
   },
   {
     title: 'Карта рынка',
-    desc: 'Все акции MOEX на одном экране. Размер — капитализация, цвет — дневная динамика. За взгляд видите кто двигает рынок.',
+    desc: 'Все акции MOEX на одном экране. Размер плитки означает капитализацию, цвет — дневную динамику. За взгляд видите, кто двигает рынок.',
     icon: <Grid3X3 size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/heatmap',
@@ -147,7 +147,7 @@ export default function LandingPage() {
               }}
             >
               Лучшие инвестиционные решения начинаются с качественных данных.
-              Российский рынок, индикаторы и аналитика — в одном дашборде.
+              Российский рынок, индикаторы и аналитика на одном экране.
             </p>
             {/* Hero buttons — кастомные классы hero-btn-* с ИНВЕРТИРОВАННОЙ
                 тенью: чёрная кнопка → кремовая тень (light theme), кремовая
@@ -271,21 +271,21 @@ export default function LandingPage() {
         {/* ═══ ГРУППА 1: Настроение рынка ═══ */}
         <IndicatorGroup
           title="Что чувствуют участники"
-          subtitle="Композитные индексы и метрики настроения. Ширина рынка и макро-переоценка — численно."
+          subtitle="Композитные индексы и метрики настроения. Ширина рынка и макро-переоценка в числах."
           indicators={SENTIMENT_INDICATORS}
         />
 
         {/* ═══ ГРУППА 2: Деньги участников ═══ */}
         <IndicatorGroup
           title="Куда идут реальные деньги"
-          subtitle="Позиции на фьючерсах, потоки в ETF, структура портфелей фондов. Большие деньги двигают рынок — следите за ними."
+          subtitle="Позиции на фьючерсах, потоки в ETF, структура портфелей фондов. Большие деньги двигают рынок, следите за ними."
           indicators={MONEY_FLOW_INDICATORS}
         />
 
         {/* ═══ ГРУППА 3: Паттерны и текущая картина ═══ */}
         <IndicatorGroup
           title="Закономерности и текущая картина"
-          subtitle="Что повторяется год от года, и что на рынке прямо сейчас. Один взгляд — и всё видно."
+          subtitle="Что повторяется год от года, и что на рынке прямо сейчас. Всё видно за один взгляд."
           indicators={PATTERNS_INDICATORS}
         />
 
@@ -335,8 +335,8 @@ export default function LandingPage() {
               lineHeight: 1.55,
             }}
           >
-            Бесплатный доступ к базовым индикаторам — без оплаты и без карты.
-            Тарифы Basic и Pro — когда понадобятся real-time данные, расширенная история и продвинутые режимы.
+            Бесплатный доступ к базовым индикаторам: без оплаты и без карты.
+            Тарифы Basic и Pro пригодятся, когда понадобятся данные в реальном времени, расширенная история и продвинутые режимы.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link

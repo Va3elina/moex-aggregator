@@ -955,7 +955,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               <div>
                 <div className="sb-uc" style={{ marginBottom: 8 }}>Графики</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <PrefToggle label="Кроссхэйр" checked={prefs.crosshair} onChange={(v) => setPrefs({ crosshair: v })} />
+                  <PrefToggle label="Перекрестье" checked={prefs.crosshair} onChange={(v) => setPrefs({ crosshair: v })} />
                   <PrefToggle label="Сетка графика" checked={prefs.chartGrid} onChange={(v) => setPrefs({ chartGrid: v })} />
                   <PrefToggle label="Последнее значение на оси" checked={prefs.lastValue} onChange={(v) => setPrefs({ lastValue: v })} />
                 </div>
@@ -974,7 +974,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z, background: 'rgba(0,0,0,0.28)', animation: 'sb-fade .15s ease' }} onClick={() => setSignalsOpen(false)} />
           <div style={signalsDrawerStyle}>
             <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Сигналы и алерты</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Сигналы и уведомления</span>
               <button type="button" className="sb-hoverable" onClick={() => setSignalsOpen(false)} title="Закрыть" style={{ ...chromeBtn, width: 28, height: 28, marginLeft: 'auto', border: 'none' }}>
                 <XIcon size={16} />
               </button>

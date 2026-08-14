@@ -2316,7 +2316,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         try {
           const al = api.createPriceLine({
             price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
-            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'алерт',
+            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'уведомление',
           });
           lineRegRef.current.push({ line: al, token: pl.color ?? 'var(--accent)', pane: pi });
         } catch { /* серия уже снята */ }

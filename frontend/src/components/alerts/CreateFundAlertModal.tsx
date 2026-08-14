@@ -353,7 +353,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                         ) : (
                             <>
                                 <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
-                                    Чтобы получать сигналы, подключите мессенджер. После этого все ваши алерты будут приходить туда.
+                                    Чтобы получать сигналы, подключите мессенджер. После этого все ваши уведомления будут приходить туда.
                                 </p>
                                 <MessengerChoice onTelegram={handleConnect} busy={busy} />
                             </>

@@ -453,7 +453,7 @@ export default function OpenInterestPage() {
   // Клик по «+» пилюле оси → открыть модалку с префиллом уровня + текущим значением.
   const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
     if (alertsLocked) {
-      showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
+      showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' });
       return;
     }
     const isOi = p.axis === 'secondary';
@@ -614,7 +614,7 @@ export default function OpenInterestPage() {
     useState<{ sectype: string; name: string; clgroup: 'FIZ' | 'YUR' } | null>(null);
   const handleScreenerAlert = (sectype: string, name: string, clg: 'FIZ' | 'YUR') => {
     if (alertsLocked) {
-      showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
+      showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' });
       return;
     }
     setScreenerAlertAsset({ sectype, name, clgroup: clg });

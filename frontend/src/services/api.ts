@@ -2111,7 +2111,7 @@ export async function getAlertContext(
 ): Promise<AlertContext> {
     const params = new URLSearchParams({ indicator, asset, clgroup });
     const resp = await apiFetch(`${API_BASE}/api/alerts/context?${params}`);
-    if (!resp.ok) throw new Error('Не удалось получить контекст алерта');
+    if (!resp.ok) throw new Error('Не удалось получить контекст уведомления');
     return resp.json();
 }
 export async function getNotifySettings(): Promise<NotifySettings> {
@@ -2151,7 +2151,7 @@ export async function listAlerts(opts?: { limit?: number; offset?: number }): Pr
     if (opts?.offset != null) params.set('offset', String(opts.offset));
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/alerts${qs ? `?${qs}` : ''}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить алерты');
+    if (!resp.ok) throw new Error('Не удалось загрузить уведомления');
     const items: AlertInfo[] = await resp.json();
     // X-Total-Count может отсутствовать (старый бэк / прокси режет заголовок) —
     // фолбэк на длину текущей страницы, чтобы UI не падал.
@@ -2181,7 +2181,7 @@ export async function getAlertFires(
 export async function getAlertsStats(days?: number): Promise<AlertsStats> {
     const qs = days != null ? `?days=${days}` : '';
     const resp = await apiFetch(`${API_BASE}/api/analytics/alerts-stats${qs}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить статистику алертов');
+    if (!resp.ok) throw new Error('Не удалось загрузить статистику уведомлений');
     return resp.json();
 }
 export async function createAlert(payload: AlertCreatePayload): Promise<AlertInfo> {
@@ -2192,9 +2192,9 @@ export async function createAlert(payload: AlertCreatePayload): Promise<AlertInf
     });
     if (resp.status === 403) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d?.detail || d?.error?.message || 'Алерты доступны на тарифе Basic и Pro');
+        throw new Error(d?.detail || d?.error?.message || 'Уведомления доступны на тарифе Basic и Pro');
     }
-    if (!resp.ok) throw new Error('Не удалось создать алерт');
+    if (!resp.ok) throw new Error('Не удалось создать уведомление');
     return resp.json();
 }
 export interface AlertBatchResult { created: number; skipped: number; errors: string[]; }
@@ -2208,24 +2208,24 @@ export async function createAlertsBatch(alerts: AlertCreatePayload[]): Promise<A
     });
     if (resp.status === 403) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d?.detail || d?.error?.message || 'Алерты доступны на тарифе Basic и Pro');
+        throw new Error(d?.detail || d?.error?.message || 'Уведомления доступны на тарифе Basic и Pro');
     }
-    if (!resp.ok) throw new Error('Не удалось создать алерты');
+    if (!resp.ok) throw new Error('Не удалось создать уведомления');
     return resp.json();
 }
 export async function deleteAlert(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить алерт');
+    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить уведомление');
 }
 // Массовое удаление всех алертов пользователя (если случайно создал группу из 100).
 export async function deleteAllAlerts(): Promise<{ deleted: number }> {
     const resp = await apiFetch(`${API_BASE}/api/alerts`, { method: 'DELETE' });
-    if (!resp.ok) throw new Error('Не удалось удалить алерты');
+    if (!resp.ok) throw new Error('Не удалось удалить уведомления');
     return resp.json();
 }
 export async function setAlertStatus(id: number, status: 'active' | 'paused'): Promise<AlertInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?status=${status}`, { method: 'PATCH' });
-    if (!resp.ok) throw new Error('Не удалось изменить алерт');
+    if (!resp.ok) throw new Error('Не удалось изменить уведомление');
     return resp.json();
 }
 // Таймфрейм источника сигнала ('5m'|'1h'|'1d') — только для oi_move/oi_participants/

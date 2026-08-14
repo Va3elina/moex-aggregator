@@ -35,7 +35,7 @@ const SOURCE_OPTS: { id: SourceKey; label: string; title: string; icon: ReactNod
   { id: 'all', label: 'Все', title: 'Все сигналы', icon: <Sparkles size={14} /> },
   { id: 'oi', label: 'ОИ', title: 'Резкие сдвиги открытого интереса', icon: <BarChart3 size={14} /> },
   { id: 'funds', label: 'Фонды', title: 'Притоки/оттоки фондов', icon: <Wallet size={14} /> },
-  { id: 'mine', label: 'Мои', title: 'Мои сработавшие алерты', icon: <Star size={14} /> },
+  { id: 'mine', label: 'Мои', title: 'Мои сработавшие уведомления', icon: <Star size={14} /> },
 ];
 
 const MONO = { fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums' as const };
@@ -135,7 +135,7 @@ export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink
       more={
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           Лента резких движений: сдвиги <b style={{ color: 'var(--text-primary)' }}>открытого интереса</b> (z-score),
-          притоки/оттоки <b style={{ color: 'var(--text-primary)' }}>фондов</b> и твои сработавшие алерты
+          притоки/оттоки <b style={{ color: 'var(--text-primary)' }}>фондов</b> и твои сработавшие уведомления
           (<b style={{ color: 'var(--text-primary)' }}>Мои</b>). Клик по сигналу открывает панель нужного
           индикатора на этом активе.
         </div>
@@ -146,7 +146,7 @@ export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink
           {status === 'loading' && !items && <EmbedMsg text="Загрузка…" />}
           {status === 'error' && !items && <EmbedMsg text="Не удалось загрузить сигналы" />}
           {items && visible.length === 0 && (
-            <EmbedMsg text={source === 'mine' ? 'Нет сработавших алертов' : 'Пока тихо — сигналов нет'} />
+            <EmbedMsg text={source === 'mine' ? 'Нет сработавших уведомлений' : 'Пока тихо, сигналов нет'} />
           )}
           {visible.map((it) => <SignalRow key={it.id} it={it} onOpen={openSignal} />)}
         </div>
