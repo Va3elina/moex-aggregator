@@ -926,6 +926,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             drawWidth={draw.drawWidth}
             drawDash={draw.drawDash}
             drawOpacity={draw.drawOpacity}
+            drawFill={draw.drawFill}
+            drawFillColor={draw.drawFillColor}
+            drawFillOpacity={draw.drawFillOpacity}
             selectedDrawId={draw.selectedDrawId}
             onSelectDraw={draw.setSelectedDrawId}
             onSelectionRect={draw.setSelRect}
