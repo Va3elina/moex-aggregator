@@ -313,6 +313,10 @@ export default function SandboxPage() {
   // Операции с листом: контекст-меню и инлайн-переименование (§3.3).
   const [sheetMenu, setSheetMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  // Подтверждение закрытия листа: закрытие уносит ВСЮ его раскладку и отменить
+  // это нечем (undo в песочнице нет). Спрашиваем только когда есть что терять —
+  // на пустом листе диалог был бы шумом (см. requestDeleteSheet).
+  const [confirmSheet, setConfirmSheet] = useState<string | null>(null);
   // ⤢ Развернуть — id панели, раскрытой на весь sb-root (не «окно покрупнее»,
   // а полная замена шапки+холста тулбаром индикатора). null — обычный режим.
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
@@ -629,6 +633,24 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     });
   }, []);
 
+  // Закрытие листа из UI: пустой — сразу, с панелями — через подтверждение.
+  const requestDeleteSheet = useCallback((id: string) => {
+    if (st.sheets.length <= 1) return;                 // последний лист не удаляем
+    if ((st.bySheet[id] || []).length === 0) { deleteSheet(id); return; }
+    setConfirmSheet(id);
+  }, [st, deleteSheet]);
+
+  const confirmSheetObj = confirmSheet ? st.sheets.find((sh) => sh.id === confirmSheet) ?? null : null;
+  const confirmSheetCount = confirmSheet ? (st.bySheet[confirmSheet] || []).length : 0;
+
+  // Esc — отмена подтверждения (диалог модальный, других хоткеев у него нет).
+  useEffect(() => {
+    if (!confirmSheet) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setConfirmSheet(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmSheet]);
+
   return (
     <ChartPrefsCtx.Provider value={chartPrefsValue}>
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
@@ -721,7 +743,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
                     role="button"
                     tabIndex={-1}
                     className="sb-winbtn-close"
-                    onClick={(e) => { e.stopPropagation(); deleteSheet(sh.id); }}
+                    onClick={(e) => { e.stopPropagation(); requestDeleteSheet(sh.id); }}
                     title="Закрыть лист"
                     style={sheetCloseStyle}
                   >
@@ -853,7 +875,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               type="button"
               disabled={st.sheets.length <= 1}
               style={{ ...sheetMenuItem, color: st.sheets.length <= 1 ? 'var(--muted)' : 'var(--c-down)', cursor: st.sheets.length <= 1 ? 'default' : 'pointer' }}
-              onClick={() => { deleteSheet(sheetMenu.id); setSheetMenu(null); }}
+              onClick={() => { requestDeleteSheet(sheetMenu.id); setSheetMenu(null); }}
             >
               Удалить
             </button>
@@ -959,6 +981,29 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             </div>
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               <EmbedSignals onPick={onSignal} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Подтверждение закрытия листа ── */}
+      {confirmSheetObj && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z + 2, background: 'rgba(0,0,0,0.4)', animation: 'sb-fade .15s ease' }} onClick={() => setConfirmSheet(null)} />
+          <div role="dialog" aria-modal="true" style={confirmDialogStyle}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Закрыть лист «{confirmSheetObj.name}»?</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+              На нём {confirmSheetCount} {panelWord(confirmSheetCount)}. Раскладка удалится без возможности вернуть.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button type="button" autoFocus onClick={() => setConfirmSheet(null)} style={arrangeBtnStyle}>Отмена</button>
+              <button
+                type="button"
+                onClick={() => { deleteSheet(confirmSheetObj.id); setConfirmSheet(null); }}
+                style={{ ...addBtnStyle, background: 'var(--c-down)' }}
+              >
+                Закрыть лист
+              </button>
             </div>
           </div>
         </>
@@ -1143,4 +1188,17 @@ const signalsDrawerStyle: CSSProperties = {
   position: 'fixed', top: 0, right: 0, bottom: 0, width: 360, zIndex: OVERLAY_Z + 1, display: 'flex', flexDirection: 'column',
   background: 'var(--panel)', borderLeft: '1px solid var(--border)', boxShadow: 'var(--shadow)', animation: 'sb-drawer .22s ease',
 };
+const confirmDialogStyle: CSSProperties = {
+  position: 'fixed', zIndex: OVERLAY_Z + 3, top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  width: 340, padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+  background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)',
+  animation: 'sb-pop .14s ease',
+};
+/** Склонение «панель» для счётчика в подтверждении закрытия листа. */
+function panelWord(n: number): string {
+  const d10 = n % 10, d100 = n % 100;
+  if (d10 === 1 && d100 !== 11) return 'панель';
+  if (d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14)) return 'панели';
+  return 'панелей';
+}
 const footNote: CSSProperties = { position: 'fixed', bottom: 6, left: 12, fontSize: 10, color: 'var(--muted)', opacity: 0.55, pointerEvents: 'none', zIndex: 1 };
