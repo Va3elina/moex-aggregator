@@ -620,8 +620,11 @@ export function Dropdown<T extends string | number>({
                     padding: '7px 9px',
                     borderRadius: 7,
                     border: 'none',
-                    background: on ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
-                    color: on ? 'var(--accent)' : 'var(--text-primary)',
+                    // Выбранный пункт помечен очень слабой акцентной подложкой и
+                    // жирностью: оранжевый текст на заливке читался как яркая
+                    // кнопка действия, а это всего лишь индикация выбора.
+                    background: on ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
+                    color: 'var(--text-primary)',
                     // Размер/жирность как у кнопки-триггера (CTL_FS/CTL_FW) — Вадим: «как сверху».
                     // Активный чуть жирнее для индикации выбора. nowrap — чтобы «1 день» не переносился.
                     fontWeight: on ? 800 : CTL_FW,
