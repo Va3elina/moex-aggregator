@@ -3,7 +3,7 @@
  *
  * Песочница уже живёт на сервере, но попасть в неё можно было только по прямому
  * URL. Этот компонент — единственная точка входа, две формы. Клик открывает
- * Терминал ОТДЕЛЬНЫМ окном (см. openTerminalWindow), сайт остаётся на месте:
+ * Терминал НОВОЙ ВКЛАДКОЙ (см. openTerminalWindow), сайт остаётся на месте:
  *
  *   variant="pill" — шапка сайта (Layout, правая зона). Глиф + подпись
  *     «Терминал». Подпись раскрывается только с 2xl: на xl список индикаторов
@@ -43,30 +43,21 @@ const ICON_SIZE = 40;
 const GLYPH_SIZE = 26;
 
 /**
- * Имя окна Терминала. Повторный клик не плодит окна, а поднимает уже открытое.
+ * Имя вкладки Терминала. Повторный клик не плодит вкладки, а переиспользует
+ * уже открытую.
  */
 const WINDOW_NAME = 'frame-terminal';
 
 /**
- * Терминал открывается отдельным окном, а не в текущей вкладке: это рабочий
- * стол, его держат рядом с сайтом, а не вместо него. `popup=yes` просит
- * браузер именно окно, а не вкладку; размер — почти во весь экран, потому что
- * сетка индикаторов на маленьком окне не читается.
+ * Терминал открывается новой вкладкой текущего окна, а не в этой же: это
+ * рабочий стол, его держат рядом с сайтом, а не вместо него. Отдельным окном
+ * (popup=…) не открываем намеренно — браузер выносит его из окна пользователя,
+ * и это ощущается чужеродно. Без третьего аргумента window.open даёт именно
+ * вкладку.
  */
 function openTerminalWindow() {
-    const w = Math.max(1024, Math.round(window.screen.availWidth * 0.9));
-    const h = Math.max(700, Math.round(window.screen.availHeight * 0.9));
-    const left = Math.round((window.screen.availWidth - w) / 2);
-    const top = Math.round((window.screen.availHeight - h) / 2);
-    const features = `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`;
-    const win = window.open('/sandbox', WINDOW_NAME, features);
-    // Блокировщик попапов вернёт null — тогда обычная вкладка, чтобы клик
-    // не оказался пустым.
-    if (!win) {
-        window.open('/sandbox', '_blank', 'noopener');
-        return;
-    }
-    win.focus();
+    const win = window.open('/sandbox', WINDOW_NAME);
+    win?.focus();
 }
 
 export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryButtonProps) {
