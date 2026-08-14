@@ -918,7 +918,10 @@ export function AddIndicatorMenu({ api, hasVolume, bases = PRICE_ONLY, onPickBas
             }}
             style={{
               display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6,
-              border: 'none', background: 'transparent', fontSize: 11.5,
+              // Кегль общий со всеми списками тулбара (CTL_FS/CTL_FW). Здесь он
+              // задавался в обход них, без веса вовсе — список видов индикаторов
+              // был тоньше соседних выпадашек.
+              border: 'none', background: 'transparent', fontSize: CTL_FS, fontWeight: CTL_FW,
               color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap',
             }}
           >
