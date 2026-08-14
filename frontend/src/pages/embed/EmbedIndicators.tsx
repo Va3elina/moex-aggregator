@@ -1207,6 +1207,9 @@ function RowMenu({ inst, api, bases, onSettings }: {
   const [sub, setSub] = useState<'move' | 'basis' | null>(null);
   const d = KINDS[inst.kind];
   const own = inst.pane > 0;
+  const at = api.occupiedPanes.indexOf(inst.pane);
+  const canUp = at > 0;
+  const canDown = at >= 0 && at < api.occupiedPanes.length - 1;
   const side = useSubmenuSide(!!sub);
   // Смена базиса уже добавленному индикатору. Пункт есть, только если в окне
   // реально больше одного подходящего ряда: у объёмов базис один (цена), а у
@@ -1241,17 +1244,24 @@ function RowMenu({ inst, api, bases, onSettings }: {
                 )}
               </div>
             )}
+            {/* Пустое подменю не показываем: у наложения без своей панели
+                (ownPaneOk: false) двигать некуда вообще. */}
+            {(own || d.ownPaneOk !== false) && (
             <div style={{ position: 'relative' }}>
               {subTrigger('Переместить', () => setSub((v) => (v === 'move' ? null : 'move')))}
               {sub === 'move' && (
                 <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
-                  {item('Выше', () => api.movePane(inst.id, -1), !own)}
-                  {item('Ниже', () => api.movePane(inst.id, 1), !own)}
+                  {/* Только у индикатора в своей панели: на основном графике
+                      меняться местами не с чем. Серость считаем по СОСЕДЯМ —
+                      без них клик молча ничего не делал. */}
+                  {own && item('Выше', () => api.movePane(inst.id, -1), !canUp)}
+                  {own && item('Ниже', () => api.movePane(inst.id, 1), !canDown)}
                   {d.ownPaneOk !== false && !own && item('В отдельную панель', () => api.setPane(inst.id, true))}
                   {d.overlayOk && own && item('На основной график', () => api.setPane(inst.id, false))}
                 </div>
               )}
             </div>
+            )}
             {item('Дублировать', () => api.duplicate(inst.id))}
             {/* «Скрыть» и «Удалить» в меню НЕ дублируем: они уже есть на строке
                 отдельными кнопками (глаз и корзина), а два пути к одному действию
@@ -1401,30 +1411,28 @@ function useSubmenuSide(open: boolean) {
  * Режим и показатель ОИ здесь были с 2026-06, но вернулись в тулбар окна
  * (EmbedOpenInterest, ряд `controls`): срез меняют часто, а в меню линии его
  * не находили. Настройки ВИДА ряда (тип линии, цвет) живут в ⚙ Формат.
+ *
+ * Подменю «Переместить ›» здесь НЕТ: перенос — единственный пункт этого меню, и
+ * лишний уровень заставлял открывать список ради списка. Пункты стоят сразу.
+ * «Выше/Ниже» показываем только у ряда в своей панели: на основном графике
+ * менять местами нечего, и вечно серые пункты читались как поломка.
  */
 function NativeRowMenu({ row }: { row: NativeRow }) {
-  const [sub, setSub] = useState<string | null>(null);
   const own = (row.pane ?? 0) > 0;
-  const side = useSubmenuSide(!!sub);
 
   return (
     <RowPopMenu>
       {(closeMenu) => {
-        const pick = (fn: () => void) => { fn(); setSub(null); closeMenu(); };
+        const pick = (fn: () => void) => { fn(); closeMenu(); };
         return (
           <>
             {row.onMove && (
-              <div style={{ position: 'relative' }}>
-                {subTrigger('Переместить', () => setSub((s) => (s === 'move' ? null : 'move')))}
-                {sub === 'move' && (
-                  <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
-                    {menuItem('Выше', () => pick(() => row.onMove?.('up')), !own || !row.canUp)}
-                    {menuItem('Ниже', () => pick(() => row.onMove?.('down')), !own || !row.canDown)}
-                    {!own && menuItem('В отдельную панель', () => pick(() => row.onMove?.('own')))}
-                    {own && menuItem('На основной график', () => pick(() => row.onMove?.('main')))}
-                  </div>
-                )}
-              </div>
+              <>
+                {own && menuItem('Выше', () => pick(() => row.onMove?.('up')), !row.canUp)}
+                {own && menuItem('Ниже', () => pick(() => row.onMove?.('down')), !row.canDown)}
+                {!own && menuItem('В отдельную панель', () => pick(() => row.onMove?.('own')))}
+                {own && menuItem('На основной график', () => pick(() => row.onMove?.('main')))}
+              </>
             )}
           </>
         );
