@@ -243,18 +243,54 @@ function paneBoxes(root: HTMLElement): HTMLElement[] {
 }
 const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
-/** Сторона эллипса, за которую тянут: лево/право (ширина), верх/низ (высота). */
-type EllipseEdge = 'l' | 'r' | 't' | 'b';
-/** Четыре ручки эллипса в пикселях — середины сторон бокса, то есть точки на
- *  самом овале. a/b — экранные координаты двух опорных точек фигуры. */
-function ellipseHandles(a: { x: number; y: number }, b: { x: number; y: number }): { id: EllipseEdge; x: number; y: number }[] {
-  const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+/** Ручка эллипса: a1/a2 — концы первой оси, b1/b2 — второй. */
+type EllipseHandle = 'a1' | 'a2' | 'b1' | 'b2';
+interface Pt2 { x: number; y: number }
+/** Каркас эллипса в пикселях: центр c и векторы полуосей u и v.
+ *
+ *  ДВЕ точки в фигуре — старая запись (углы бокса, овал строго по осям экрана),
+ *  ТРИ — новая: pts[0]/pts[1] — концы одной оси, pts[2] — конец второй. Наклон
+ *  живёт в самих точках, отдельного угла нет: фигура остаётся привязанной к
+ *  барам и ценам и деформируется вместе со шкалами (иначе наклонённый овал
+ *  «отклеивался» бы от свечей при зуме). Старые эллипсы переезжают в новую
+ *  запись сами — при первом же перетаскивании ручки. */
+function ellipseFrame(pts: Pt2[]): { c: Pt2; u: Pt2; v: Pt2 } | null {
+  if (pts.length >= 3) {
+    const c = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    return { c, u: { x: pts[0].x - c.x, y: pts[0].y - c.y }, v: { x: pts[2].x - c.x, y: pts[2].y - c.y } };
+  }
+  if (pts.length < 2) return null;
+  const [a, b] = pts;
+  return {
+    c: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    u: { x: Math.abs(a.x - b.x) / 2, y: 0 },
+    v: { x: 0, y: Math.abs(a.y - b.y) / 2 },
+  };
+}
+/** Четыре ручки — концы обеих полуосей, то есть точки на самом овале. */
+function ellipseHandles(f: { c: Pt2; u: Pt2; v: Pt2 }): { id: EllipseHandle; x: number; y: number }[] {
+  const { c, u, v } = f;
   return [
-    { id: 'l', x: Math.min(a.x, b.x), y: cy },
-    { id: 'r', x: Math.max(a.x, b.x), y: cy },
-    { id: 't', x: cx, y: Math.min(a.y, b.y) },
-    { id: 'b', x: cx, y: Math.max(a.y, b.y) },
+    { id: 'a1', x: c.x + u.x, y: c.y + u.y },
+    { id: 'a2', x: c.x - u.x, y: c.y - u.y },
+    { id: 'b1', x: c.x + v.x, y: c.y + v.y },
+    { id: 'b2', x: c.x - v.x, y: c.y - v.y },
   ];
+}
+/** Контур четырьмя кубическими кривыми: svg-<ellipse> умеет только оси экрана, а
+ *  наклонный овал — это аффинный образ круга (0.5523 — классическая kappa). */
+function ellipsePath(f: { c: Pt2; u: Pt2; v: Pt2 }): string {
+  const { c, u, v } = f, K = 0.5522847498;
+  const P = (su: number, sv: number) => `${c.x + u.x * su + v.x * sv} ${c.y + u.y * su + v.y * sv}`;
+  return `M ${P(1, 0)} C ${P(1, K)} ${P(K, 1)} ${P(0, 1)} C ${P(-K, 1)} ${P(-1, K)} ${P(-1, 0)}`
+    + ` C ${P(-1, -K)} ${P(-K, -1)} ${P(0, -1)} C ${P(K, -1)} ${P(1, -K)} ${P(1, 0)} Z`;
+}
+/** Точка в координатах осей эллипса: p = c + α·u + β·v (null — оси вырождены). */
+function ellipseSolve(f: { c: Pt2; u: Pt2; v: Pt2 }, p: Pt2): { a: number; b: number } | null {
+  const { c, u, v } = f, det = u.x * v.y - u.y * v.x;
+  if (Math.abs(det) < 1e-6) return null;
+  const dx = p.x - c.x, dy = p.y - c.y;
+  return { a: (dx * v.y - dy * v.x) / det, b: (u.x * dy - u.y * dx) / det };
 }
 
 // За сколько баров до начала ряда просить догрузку истории. На 1200px
@@ -1305,13 +1341,17 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           // настройки → читаются как «включён, цветом фигуры, 13%» (как было).
           const fill = d.fill === false ? 'none' : (d.fillColor || col);
           const fo = String((d.fillOpacity == null ? 0.13 : d.fillOpacity) * (d.opacity == null ? 1 : d.opacity));
-          if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill, 'fill-opacity': fo, ...S }));
-          else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill, 'fill-opacity': fo, ...S }));
+          if (d.tool === 'rect') {
+            drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill, 'fill-opacity': fo, ...S }));
+            if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+            return;
+          }
+          const P = d.pts.map(lp2xy); if (P.some((p) => !p)) return;
+          const f = ellipseFrame(P as Pt2[]); if (!f) return;
+          drawSvg.appendChild(svgEl('path', { d: ellipsePath(f), fill, 'fill-opacity': fo, ...S }));
           // У эллипса углы бокса лежат ВНЕ фигуры — хвататься там не за что.
-          // Ручки ставим на сам овал (4 точки, как в TradingView): боковые тянут
-          // ширину, верхняя/нижняя — высоту.
-          if (sel && d.tool === 'ellipse') for (const h of ellipseHandles(a, b)) dot(h.x, h.y);
-          else if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+          // Ручки ставим на сам овал: концы обеих осей (4 точки, как в TradingView).
+          if (sel) for (const h of ellipseHandles(f)) dot(h.x, h.y);
         } else if (d.tool === 'fib') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
           const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x), p0 = d.pts[0].price, p1 = d.pts[1].price;
@@ -1370,14 +1410,17 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       // pending — фигура строится «кликами»: первый клик поставил начало, курсор
       // тянет её без зажатой кнопки, второй клик фиксирует. Кнопка мыши при этом
       // отпущена, но dragState жив (в отличие от обычного перетаскивания).
-      let dragState: null | { mode: 'create' | 'move' | 'vertex' | 'edge'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; edge?: EllipseEdge; startXY: { x: number; y: number }; pending?: boolean } = null;
+      let dragState: null | { mode: 'create' | 'move' | 'vertex' | 'edge'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; edge?: EllipseHandle; startXY: { x: number; y: number }; pending?: boolean } = null;
       const HANDLE_R = 8;
       /** Попадание в ручку эллипса (null — мимо или фигура другого типа). */
-      const hitEllipseHandle = (d: LwDrawing, x: number, y: number): EllipseEdge | null => {
+      const ellipsePx = (d: LwDrawing) => {
         if (d.tool !== 'ellipse' || d.pts.length < 2) return null;
-        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]);
-        if (!a || !b) return null;
-        return ellipseHandles(a, b).find((h) => Math.hypot(x - h.x, y - h.y) <= HANDLE_R)?.id ?? null;
+        const P = d.pts.map(lp2xy);
+        return P.some((p) => !p) ? null : ellipseFrame(P as Pt2[]);
+      };
+      const hitEllipseHandle = (d: LwDrawing, x: number, y: number): EllipseHandle | null => {
+        const f = ellipsePx(d); if (!f) return null;
+        return ellipseHandles(f).find((h) => Math.hypot(x - h.x, y - h.y) <= HANDLE_R)?.id ?? null;
       };
       const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
@@ -1394,6 +1437,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (d.tool === 'text') {
           const fs = d.textSize ?? (13 + d.width * 2);
           return { x: pts[0].x + ox, y: pts[0].y - fs + oy, w: Math.max(40, (d.text || 'Текст').length * fs * 0.58), h: fs };
+        }
+        if (d.tool === 'ellipse') {
+          // Габарит наклонённого овала шире, чем бокс его опорных точек.
+          const f = ellipseFrame(pts);
+          if (f) {
+            const hw = Math.hypot(f.u.x, f.v.x), hh = Math.hypot(f.u.y, f.v.y);
+            return { x: f.c.x - hw + ox, y: f.c.y - hh + oy, w: hw * 2, h: hh * 2 };
+          }
         }
         if (d.tool === 'ray' && pts.length >= 2) pts[1] = rayEnd(pts[0], pts[1], pb);
         const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
@@ -1489,7 +1540,18 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           else if (d.tool === 'vline') { const xy = lp2xy(d.pts[0]); if (xy && Math.abs(bx - xy.x) < 6) return d; }
           else if (d.tool === 'trend' || d.tool === 'arrow') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b && distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; }
           else if (d.tool === 'ray') { const a = lp2xy(d.pts[0]), b0 = lp2xy(d.pts[1]); if (a && b0) { const b = rayEnd(a, b0, pb); if (distToSeg(bx, by, a.x, a.y, b.x, b.y) < 6) return d; } }
-          else if (d.tool === 'rect' || d.tool === 'ellipse' || d.tool === 'ruler') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
+          else if (d.tool === 'ellipse') {
+            // Внутри овала, а не бокса: у наклонённого эллипса углы бокса — чужая
+            // территория, и клик по ним не должен цеплять фигуру. Допуск ~6px по
+            // радиусу, чтобы попадать и по самому контуру.
+            const f = ellipsePx(d);
+            const ab = f && ellipseSolve(f, { x: bx, y: by });
+            if (f && ab) {
+              const lim = 1 + 6 / Math.max(1, Math.min(Math.hypot(f.u.x, f.u.y), Math.hypot(f.v.x, f.v.y)));
+              if (ab.a * ab.a + ab.b * ab.b <= lim * lim) return d;
+            }
+          }
+          else if (d.tool === 'rect' || d.tool === 'ruler') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
           else if (d.tool === 'fib') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x); if (bx >= xL - 5 && bx <= xR + 5) { const p0 = d.pts[0].price, p1 = d.pts[1].price; for (const lv of FIB) { const yy = priceY(p0 + (p1 - p0) * lv); if (yy != null && Math.abs(by - yy) < 6) return d; } } } }
           else if (d.tool === 'brush') { const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[]; for (let j = 1; j < pnts.length; j++) if (distToSeg(bx, by, pnts[j - 1].x, pnts[j - 1].y, pnts[j].x, pnts[j].y) < 6) return d; }
           else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); const fs = d.textSize ?? (13 + d.width * 2); const half = Math.max(30, (d.text || 'Текст').length * fs * 0.3); if (xy && bx > xy.x - 6 && bx < xy.x + half * 2 && Math.abs(by - (xy.y - fs * 0.35)) < fs * 0.8 + 4) return d; }
@@ -1583,21 +1645,37 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const lp = xy2lp(x, y); if (!lp) return;
           const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
         } else if (dragState.mode === 'edge') {
-          // Ручка эллипса двигает ОДНУ координату той опорной точки, что сейчас с
-          // этой стороны: противоположная сторона остаётся на месте. Какая из
-          // двух точек «левая»/«верхняя» — считаем по экрану: порядок точек
-          // произвольный (рисовали справа налево), а шкала цен может быть любой.
-          const lp = xy2lp(x, y); if (!lp) return;
-          const pts = dragState.d.pts.map((p) => ({ ...p }));
-          const a = lp2xy(pts[0]), b = lp2xy(pts[1]); if (!a || !b) return;
-          if (dragState.edge === 'l' || dragState.edge === 'r') {
-            const first = dragState.edge === 'l' ? a.x <= b.x : a.x >= b.x;
-            pts[first ? 0 : 1].logical = lp.logical;
+          // Ручка эллипса ходит СВОБОДНО, по обеим осям (как в TradingView):
+          // конец оси тянешь — овал поворачивается вокруг противоположного конца
+          // и меняет длину, вторая полуось едет следом, сохраняя ширину; конец
+          // второй оси тянешь — овал крутится вокруг центра и меняет ширину.
+          const f = ellipsePx(dragState.d); if (!f) return;
+          const { c, u, v } = f, cur = { x, y };
+          let nc = c, nu = u, nv = v;
+          if (dragState.edge === 'a1' || dragState.edge === 'a2') {
+            const sgn = dragState.edge === 'a1' ? 1 : -1;
+            const fix = { x: c.x - sgn * u.x, y: c.y - sgn * u.y };
+            nc = { x: (fix.x + cur.x) / 2, y: (fix.y + cur.y) / 2 };
+            nu = { x: (sgn * (cur.x - fix.x)) / 2, y: (sgn * (cur.y - fix.y)) / 2 };
+            const lu = Math.hypot(nu.x, nu.y), lv = Math.hypot(v.x, v.y);
+            if (lu < 1) return;
+            // Единичная нормаль к новой оси; знак — чтобы вторая полуось осталась
+            // с той же стороны и фигура не «прыгнула» зеркально.
+            const px = -nu.y / lu, py = nu.x / lu, s = px * v.x + py * v.y >= 0 ? 1 : -1;
+            nv = { x: px * lv * s, y: py * lv * s };
           } else {
-            const first = dragState.edge === 't' ? a.y <= b.y : a.y >= b.y;
-            pts[first ? 0 : 1].price = lp.price;
+            const sgn = dragState.edge === 'b1' ? 1 : -1;
+            nv = { x: sgn * (cur.x - c.x), y: sgn * (cur.y - c.y) };
+            const lv = Math.hypot(nv.x, nv.y), lu = Math.hypot(u.x, u.y);
+            if (lv < 1) return;
+            const px = nv.y / lv, py = -nv.x / lv, s = px * u.x + py * u.y >= 0 ? 1 : -1;
+            nu = { x: px * lu * s, y: py * lu * s };
           }
-          dragState.d.pts = pts;
+          const p0 = xy2lp(nc.x + nu.x, nc.y + nu.y);
+          const p1 = xy2lp(nc.x - nu.x, nc.y - nu.y);
+          const p2 = xy2lp(nc.x + nv.x, nc.y + nv.y);
+          if (!p0 || !p1 || !p2) return;
+          dragState.d.pts = [p0, p1, p2];
         } else {
           const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
           dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
