@@ -625,9 +625,11 @@ export function Dropdown<T extends string | number>({
                     // кнопка действия, а это всего лишь индикация выбора.
                     background: on ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
                     color: 'var(--text-primary)',
-                    // Размер/жирность как у кнопки-триггера (CTL_FS/CTL_FW) — Вадим: «как сверху».
-                    // Активный чуть жирнее для индикации выбора. nowrap — чтобы «1 день» не переносился.
-                    fontWeight: on ? 800 : CTL_FW,
+                    // Размер как у кнопки-триггера (CTL_FS) — Вадим: «как сверху».
+                    // Выбор держится на ЖИРНОСТИ, поэтому невыбранные заметно легче
+                    // (500 против CTL_FW=700): 700 vs 800 на глаз не различались.
+                    // nowrap — чтобы «1 день» не переносился.
+                    fontWeight: on ? 800 : 500,
                     fontSize: CTL_FS,
                     whiteSpace: 'nowrap',
                     // Ширина задана кнопкой: если лейбл всё же не влез (кнопка
