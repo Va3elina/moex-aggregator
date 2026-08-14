@@ -589,10 +589,14 @@ export function Dropdown<T extends string | number>({
                     border: 'none',
                     background: on ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
                     color: on ? 'var(--accent)' : 'var(--text-primary)',
-                    // Размер/жирность как у кнопки-триггера (CTL_FS/CTL_FW) — Вадим: «как сверху».
-                    // Активный чуть жирнее для индикации выбора. nowrap — чтобы «1 день» не переносился.
-                    fontWeight: on ? 800 : CTL_FW,
-                    fontSize: CTL_FS,
+                    // Размер/жирность — как в меню «Индикаторы» (menuItem в
+                    // EmbedIndicators: 11.5px / 500), а НЕ как у кнопки-триггера:
+                    // в песочнице триггеры ужаты до 10.5px/600 (--emb-ctl-*), и
+                    // рядом открывались два выпадающих списка разным кеглем.
+                    // Активный жирнее для индикации выбора — там же 800.
+                    // nowrap — чтобы «1 день» не переносился.
+                    fontWeight: on ? 800 : 500,
+                    fontSize: 11.5,
                     whiteSpace: 'nowrap',
                     cursor: 'pointer',
                   }}
