@@ -2355,11 +2355,16 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
 
   // Смена таймфрейма (интрадей ⇄ дневной) не пересоздаёт чарты, поэтому
   // timeVisible применяем реактивно — иначе ось застревает в режиме маунта.
+  // ⚠️ paneCount в deps обязателен: перенос ОИ в отдельную панель (или новая
+  // панель RSI/ATR) пересоздаёт ВЕСЬ стек чартов, а createChart timeVisible не
+  // задаёт (дефолт false). Проп при этом не менялся — без paneCount эффект не
+  // перезапускался, и на интрадее ось нового стека показывала только дни
+  // («14») без времени.
   useEffect(() => {
     for (const ch of chartsRef.current) {
       try { ch.applyOptions({ timeScale: { timeVisible: !!timeVisible } }); } catch { /* чарт снят */ }
     }
-  }, [timeVisible]);
+  }, [timeVisible, paneCount]);
 
   // ── реагировать на изменение пропов рисования (как в LwChart.tsx) ──
   useEffect(() => {
