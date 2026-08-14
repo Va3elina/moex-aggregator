@@ -822,14 +822,6 @@ const ICON_BTN: CSSProperties = {
   cursor: 'pointer', padding: 0, flexShrink: 0,
 };
 
-/** Один выбор в ⋯-меню нативной строки (у ОИ — режим и показатель). */
-export interface NativeChoice {
-  label: string;
-  value: string;
-  options: { id: string; label: string }[];
-  onChange: (v: string) => void;
-}
-
 /** Строка списка для НАТИВНОЙ серии embed'а (цена, ОИ): её нельзя удалить. */
 export interface NativeRow {
   id: string;
@@ -844,9 +836,6 @@ export interface NativeRow {
   onMove?: (to: 'up' | 'down' | 'own' | 'main') => void;
   canUp?: boolean;
   canDown?: boolean;
-  /** Настройки ряда прямо в ⋯ — у ОИ это режим (позиции/трейдеры) и показатель.
-   *  Отдельного окна им не заводим: это два списка из пяти пунктов, а не форма. */
-  choices?: NativeChoice[];
 }
 
 /**
@@ -1057,9 +1046,9 @@ export function PaneIndicatorList({ api, pane, values, native, oiPane = 0, bases
 }
 
 /** Строка нативного ряда. Удалить её нельзя (ряд принадлежит самому виджету),
- *  зато можно скрыть, перенести в свою панель и — у ОИ — переключить показатель. */
+ *  зато можно скрыть и перенести в свою панель. */
 function NativeRowView({ row }: { row: NativeRow }) {
-  const hasMenu = !!row.onMove || !!row.choices?.length;
+  const hasMenu = !!row.onMove;
   return (
     <Row
       color={row.color} label={row.label} visible={row.visible} onToggle={row.onToggle}
@@ -1405,13 +1394,11 @@ function useSubmenuSide(open: boolean) {
 }
 
 /**
- * ⋯-меню нативной строки. Здесь живут настройки ряда, которых раньше не было
- * вовсе: у ОИ — режим и показатель, стоявшие двумя выпадашками в тулбаре.
+ * ⋯-меню нативной строки — перенос ряда между панелями.
  *
- * Why: тулбар — место для того, что меняют часто и что относится ко всему окну
- * (актив, таймфрейм). Показатель ОИ относится к ОДНОЙ линии, и когда рядом
- * появились пользовательские индикаторы со своими ⋯, две выпадашки наверху
- * стали единственным исключением из общего правила «настройки ряда — в строке».
+ * Режим и показатель ОИ здесь были с 2026-06, но вернулись в тулбар окна
+ * (EmbedOpenInterest, ряд `controls`): срез меняют часто, а в меню линии его
+ * не находили. Настройки ВИДА ряда (тип линии, цвет) живут в ⚙ Формат.
  */
 function NativeRowMenu({ row }: { row: NativeRow }) {
   const [sub, setSub] = useState<string | null>(null);
@@ -1424,16 +1411,6 @@ function NativeRowMenu({ row }: { row: NativeRow }) {
         const pick = (fn: () => void) => { fn(); setSub(null); closeMenu(); };
         return (
           <>
-            {row.choices?.map((c) => (
-              <div key={c.label} style={{ position: 'relative' }}>
-                {subTrigger(c.label, () => setSub((s) => (s === c.label ? null : c.label)))}
-                {sub === c.label && (
-                  <div ref={side.ref} style={{ ...side.style, ...SURFACE }}>
-                    {c.options.map((o) => <Fragment key={o.id}>{menuItem(o.label, () => pick(() => c.onChange(o.id)), false, o.id === c.value)}</Fragment>)}
-                  </div>
-                )}
-              </div>
-            ))}
             {row.onMove && (
               <div style={{ position: 'relative' }}>
                 {subTrigger('Переместить', () => setSub((s) => (s === 'move' ? null : 'move')))}
