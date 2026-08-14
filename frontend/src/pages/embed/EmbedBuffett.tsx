@@ -282,7 +282,7 @@ export default function EmbedBuffett() {
               />
             </DrawerSection>
           )}
-          <DrawerSection label="Слои">
+          <DrawerSection label="Настройки">
             <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
           <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} onOpacity={setOpacity} onWidth={setWidth} />

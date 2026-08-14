@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { SegGroup } from './EmbedSettings';
+import { Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import ColorLinePicker from './ColorLinePicker';
 
@@ -176,7 +176,13 @@ export function FormatSection({ fmt, onKind, onColor, onOpacity, onWidth, label 
           defaultColor={defaultColor}
         />
       </div>
-      <SegGroup<ChartKind> value={fmt.kind} options={opts} onChange={onKind} />
+      {/* Ряд «Стиль · выпадашка» вместо ряда сегмент-пилюль: у цены типов
+          четыре, и пилюли занимали две строки на каждой серии окна. Выпадашка
+          та же, что в тулбаре — один визуальный язык у всех контролов. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Стиль</span>
+        <Dropdown<ChartKind> value={fmt.kind} options={opts} onChange={onKind} title="Стиль" />
+      </div>
     </div>
   );
 }

@@ -29,7 +29,7 @@ import { useChartWindowLoader } from './useChartWindowLoader';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
 import { FormatSection, applyFormat, useSeriesFormats, OHLC_KINDS } from './EmbedFormat';
-import { EmbedFrame, AssetButton, Dropdown, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -902,7 +902,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       more={
         <>
-          <DrawerSection label="Слои">
+          <DrawerSection label="Настройки">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <ToggleRow label="Цена" checked={showPrice} onChange={setShowPrice} hint="Линия цены фьючерса" />
               <ToggleRow label="Экспирации" checked={showExpirations} onChange={setShowExpirations} hint="Метки смены контракта" />
@@ -922,10 +922,6 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           ) : (
             <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} onOpacity={(o) => sf.setOpacity('oi', o)} onWidth={(w) => sf.setWidth('oi', w)} defaultColor={colors.secondary} />
           )}
-          <WheelHint>
-            <b>Алерт</b> — наведи на ценовую ось (слева) или ось ОИ (справа) и нажми
-            оранжевый <b>＋</b> на нужном уровне — как на сайте.
-          </WheelHint>
         </>
       }
     >
