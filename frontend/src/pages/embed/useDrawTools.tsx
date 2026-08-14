@@ -26,6 +26,7 @@ import {
   EllipseIcon, FibIcon, BrushIcon, RulerIcon, TextIcon, type DrawIconProps,
 } from '../../components/chart/drawToolIcons';
 import type { ExportMetadata } from '../../components/export/types';
+import { ColorButton } from './ColorPicker';
 import { useEmbedPersist } from './embedPersist';
 import { iconBtnStyle } from './EmbedToolbar';
 
@@ -378,12 +379,6 @@ const SURFACE: CSSProperties = {
   border: '1px solid var(--border-color, rgba(128,128,128,0.35))',
   backdropFilter: 'blur(4px)', boxShadow: '0 8px 26px rgba(0,0,0,0.4)',
 };
-/** Шахматка под образцом цвета — сквозь полупрозрачный фон видно, насколько он
- *  прозрачный (иначе бледный тон не отличить от светлого). */
-const CHECKER: CSSProperties = {
-  backgroundImage: 'conic-gradient(rgba(128,128,128,0.45) 0 25%, transparent 0 50%, rgba(128,128,128,0.45) 0 75%, transparent 0)',
-  backgroundSize: '8px 8px',
-};
 const PBTN: CSSProperties = {
   height: 26, minWidth: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3,
   border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--text-primary)',
@@ -598,8 +593,6 @@ function DrawStylePanel({ draw }: { draw: DrawTools }): ReactNode {
  *  сразу; «Отмена» откатывает к снимку, сделанному при открытии. */
 function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
   const [tab, setTab] = useState<'style' | 'text' | 'coords'>('style');
-  const [fillMenu, setFillMenu] = useState(false);
-  const fillMenuRef = useRef<HTMLDivElement | null>(null);
   const d = draw.selectedDraw;
   const dRef = useRef(d); dRef.current = d;
   const snapRef = useRef<LwDrawing | null>(null);
@@ -611,20 +604,7 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
     const s = dRef.current;
     snapRef.current = s ? { fill: undefined, fillColor: undefined, fillOpacity: undefined, ...s } : null;
     setTab('style');
-    setFillMenu(false);
   }, [draw.settingsOpen]);
-
-  // Клик мимо выпадашки цвета — закрыть. Слушаем в ФАЗЕ ЗАХВАТА: модалка гасит
-  // всплытие (onPointerDown → stopPropagation), и обычный слушатель на документе
-  // до кликов внутри неё просто не доходит.
-  useEffect(() => {
-    if (!fillMenu) return;
-    const onDown = (e: PointerEvent) => {
-      if (!fillMenuRef.current?.contains(e.target as Node)) setFillMenu(false);
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
-  }, [fillMenu]);
 
   if (!draw.settingsOpen || !d) return null;
   const set = (patch: Partial<LwDrawing>) => draw.patchSelected(patch);
@@ -705,8 +685,9 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
               <span style={{ fontSize: 11, color: 'var(--text-primary)', minWidth: 30, textAlign: 'right' }}>{Math.round(op * 100)}%</span>
             </div>
             {/* Фон — одна строка: галочка и квадратик цвета. Палитра и
-                прозрачность живут в выпадашке по квадратику (модель TradingView),
-                чтобы не раздувать вкладку «Стиль». */}
+                прозрачность живут в поповере ColorButton — том же, что у формата
+                серий: он уходит ПОРТАЛОМ в body и спокойно вылезает за нижний
+                край окна настроек (absolute-поповер оно бы обрезало прокруткой). */}
             {FILL_TOOLS.has(d.tool) && (
               <div style={row}>
                 <label style={{ ...label, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -717,51 +698,15 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
                   />
                   Фон
                 </label>
-                <div ref={fillMenuRef} style={{ position: 'relative', marginLeft: 'auto' }}>
-                  <button
-                    type="button" title="Цвет фона" disabled={d.fill === false}
-                    onClick={() => setFillMenu((m) => !m)}
-                    style={{
-                      width: 34, height: 26, borderRadius: 6, padding: 0, cursor: d.fill === false ? 'default' : 'pointer',
-                      border: '1px solid ' + (fillMenu ? 'var(--accent)' : 'var(--border-color, rgba(128,128,128,0.35))'),
-                      opacity: d.fill === false ? 0.45 : 1, ...CHECKER,
-                    }}
-                  >
-                    <span style={{ display: 'block', width: '100%', height: '100%', borderRadius: 5, background: d.fillColor || d.color, opacity: fop }} />
-                  </button>
-                  {fillMenu && d.fill !== false && (
-                    <div style={{ position: 'absolute', top: 30, right: 0, zIndex: 3, padding: 8, borderRadius: 9, width: 224, ...SURFACE }}>
-                      {PALETTE_ROWS.map((rowColors, ri) => (
-                        <div key={ri} style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
-                          {rowColors.map((c) => (
-                            <button
-                              key={c} type="button" title={c} onClick={() => set({ fillColor: c })}
-                              style={{ width: 15, height: 15, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: (d.fillColor || '').toLowerCase() === c.toLowerCase() ? '2px solid var(--accent)' : '1px solid rgba(128,128,128,0.35)' }}
-                            />
-                          ))}
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7 }}>
-                        {/* «Как фигура» — дефолт: фон перекрашивается вместе с рамкой. */}
-                        <button
-                          type="button" onClick={() => set({ fillColor: null })}
-                          style={{ ...PBTN, fontSize: 10, padding: '0 6px', width: 'auto', border: '1px solid ' + (d.fillColor ? 'transparent' : 'var(--accent)') }}
-                        >
-                          как фигура
-                        </button>
-                        <input type="color" value={d.fillColor || d.color} onChange={(e) => set({ fillColor: e.target.value })} title="Свой цвет" style={{ width: 26, height: 18, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }} />
-                      </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, fontSize: 11, color: 'var(--text-secondary)' }}>
-                        Прозрачность
-                        <input
-                          type="range" min={5} max={100} value={Math.round(fop * 100)}
-                          onChange={(e) => set({ fillOpacity: Number(e.target.value) / 100 })}
-                          style={{ flex: 1, minWidth: 0, accentColor: 'var(--accent)' }}
-                        />
-                        <span style={{ flexShrink: 0, minWidth: 28, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(fop * 100)}%</span>
-                      </label>
-                    </div>
-                  )}
+                <div style={{ marginLeft: 'auto', opacity: d.fill === false ? 0.45 : 1, pointerEvents: d.fill === false ? 'none' : undefined }}>
+                  <ColorButton
+                    showLine={false}
+                    value={{ color: d.fillColor || d.color, opacity: Math.round(fop * 100) }}
+                    onChange={(p) => set({
+                      ...(p.color !== undefined ? { fillColor: p.color } : {}),
+                      ...(p.opacity !== undefined ? { fillOpacity: p.opacity / 100 } : {}),
+                    })}
+                  />
                 </div>
               </div>
             )}
