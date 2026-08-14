@@ -136,6 +136,10 @@ interface LwChartPanesProps {
   drawLocked?: boolean;
   drawDash?: LwDash;
   drawOpacity?: number;
+  /** Стиль фона (заливки) для НОВЫХ прямоугольников/эллипсов. */
+  drawFill?: boolean;
+  drawFillColor?: string | null;
+  drawFillOpacity?: number;
   onToolReset?: () => void;
 }
 
@@ -251,7 +255,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
   paneOverlay, paneSizes, onPaneSizesChange, staticView,
-  selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity, onToolReset,
+  selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity,
+  drawFill, drawFillColor, drawFillOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
   const rootRef = useRef<HTMLDivElement>(null);
   // Колбэк догрузки держим в ref: подписка на диапазон живёт один раз, а
@@ -309,6 +314,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const drawLockedRef = useRef(drawLocked); drawLockedRef.current = drawLocked;
   const drawDashRef = useRef(drawDash); drawDashRef.current = drawDash;
   const drawOpacityRef = useRef(drawOpacity); drawOpacityRef.current = drawOpacity;
+  const drawFillRef = useRef(drawFill); drawFillRef.current = drawFill;
+  const drawFillColorRef = useRef(drawFillColor); drawFillColorRef.current = drawFillColor;
+  const drawFillOpacityRef = useRef(drawFillOpacity); drawFillOpacityRef.current = drawFillOpacity;
   const onToolResetRef = useRef(onToolReset); onToolResetRef.current = onToolReset;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
@@ -1255,9 +1263,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         } else if (d.tool === 'rect' || d.tool === 'ellipse') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
           const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y);
-          const fo = String(0.13 * (d.opacity == null ? 1 : d.opacity));
-          if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill: col, 'fill-opacity': fo, ...S }));
-          else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill: col, 'fill-opacity': fo, ...S }));
+          // Фон (заливка) — отключаемый: fill:none оставляет только рамку. Поля
+          // fill/fillColor/fillOpacity пустые у фигур, нарисованных до появления
+          // настройки → читаются как «включён, цветом фигуры, 13%» (как было).
+          const fill = d.fill === false ? 'none' : (d.fillColor || col);
+          const fo = String((d.fillOpacity == null ? 0.13 : d.fillOpacity) * (d.opacity == null ? 1 : d.opacity));
+          if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill, 'fill-opacity': fo, ...S }));
+          else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill, 'fill-opacity': fo, ...S }));
           if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
         } else if (d.tool === 'fib') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
@@ -1479,7 +1491,11 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           return;
         }
         // pane — обязательно: по нему фигура находит свою шкалу цен при отрисовке.
-        const base = { color, width, dash, opacity, pane: dpi };
+        // Стиль фона несём только у фигур с заливкой — линии его не используют.
+        const fillBase = tool === 'rect' || tool === 'ellipse'
+          ? { fill: drawFillRef.current !== false, fillColor: drawFillColorRef.current ?? null, fillOpacity: drawFillOpacityRef.current }
+          : {};
+        const base = { color, width, dash, opacity, pane: dpi, ...fillBase };
         const d: LwDrawing = ONE_PT.has(tool) ? { id: uid(), tool, pts: [lp], ...base } : { id: uid(), tool, pts: [lp, lp], ...base };
         dragState = { mode: 'create', d, startXY: { x, y } };
         try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
@@ -2369,7 +2385,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
   // ── реагировать на изменение пропов рисования (как в LwChart.tsx) ──
   useEffect(() => {
     drawShapesRef.current?.();
-  }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawHidden, drawLocked, drawDash, drawOpacity]);
+  }, [drawActive, drawTool, drawings, selectedDrawId, drawColor, drawWidth, drawHidden, drawLocked, drawDash, drawOpacity, drawFill, drawFillColor, drawFillOpacity]);
 
   // Отступ водяного знака слева = ширина ЛЕВОЙ шкалы первой панели: иначе знак
   // ложится на подписи оси (та же логика, что в LwChart).

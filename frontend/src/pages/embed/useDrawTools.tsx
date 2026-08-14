@@ -47,6 +47,10 @@ const DRAW_TOOLS: { id: LwDrawTool; title: string; Icon: ComponentType<DrawIconP
 ];
 /** Текст поддерживает только текст-фигура: подписей на линиях/фигурах нет. */
 const TEXT_TOOLS = new Set(['text']);
+/** Фигуры с заливкой (фоном) — у остальных настройки «Фон» нет. */
+const FILL_TOOLS = new Set(['rect', 'ellipse']);
+/** Историческая плотность заливки: раньше была жёстко зашита в рендер. */
+const DEF_FILL_OPACITY = 0.13;
 const TEXT_SIZES = [11, 13, 16, 20, 26];
 /** Дефолтный кегль текст-фигуры — историческая формула от толщины (сохраняем,
  *  чтобы старые надписи не поменяли размер). */
@@ -83,6 +87,10 @@ export interface DrawTools {
   drawWidth: number;
   drawDash: LwDash;
   drawOpacity: number;
+  /** Стиль фона (заливки) для новых прямоугольников/эллипсов. */
+  drawFill: boolean;
+  drawFillColor: string | null;
+  drawFillOpacity: number;
   selectedDrawId: string | null;
   setSelectedDrawId: (id: string | null) => void;
   drawHidden: boolean;
@@ -142,6 +150,9 @@ export function useDrawTools(persistKey: string): DrawTools {
   const [drawWidth, setDrawWidth] = useState(2);
   const [drawDash, setDrawDash] = useState<LwDash>('solid');
   const [drawOpacity, setDrawOpacity] = useState(1);
+  const [drawFill, setDrawFill] = useState(true);
+  const [drawFillColor, setDrawFillColor] = useState<string | null>(null);
+  const [drawFillOpacity, setDrawFillOpacity] = useState(0.13);
   const [layersOpen, setLayersOpen] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -173,6 +184,9 @@ export function useDrawTools(persistKey: string): DrawTools {
     if (patch.width !== undefined) setDrawWidth(patch.width);
     if (patch.dash !== undefined) setDrawDash(patch.dash);
     if (patch.opacity !== undefined) setDrawOpacity(patch.opacity);
+    if (patch.fill !== undefined) setDrawFill(patch.fill);
+    if (patch.fillColor !== undefined) setDrawFillColor(patch.fillColor);
+    if (patch.fillOpacity !== undefined) setDrawFillOpacity(patch.fillOpacity);
   };
   const deleteSelected = () => {
     if (!selectedDrawId) return;
@@ -305,6 +319,7 @@ export function useDrawTools(persistKey: string): DrawTools {
 
   return {
     drawMode, setDrawMode, drawTool, drawColor, drawings, setDrawings, drawWidth, drawDash, drawOpacity,
+    drawFill, drawFillColor, drawFillOpacity,
     selectedDrawId, setSelectedDrawId, drawHidden, setDrawHidden, drawLocked, setDrawLocked,
     onToolReset, exportOpen, setExportOpen,
     drawKeep, setDrawKeep, setDrawTool, layersOpen, setLayersOpen,
@@ -580,11 +595,20 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
   const d = draw.selectedDraw;
   const dRef = useRef(d); dRef.current = d;
   const snapRef = useRef<LwDrawing | null>(null);
-  useEffect(() => { if (draw.settingsOpen) { snapRef.current = dRef.current; setTab('style'); } }, [draw.settingsOpen]);
+  // Снимок для «Отмены». Ключи фона проставляем ЯВНО (пусть и в undefined): откат
+  // идёт через patchSelected (merge), а отсутствующий ключ merge не сбросил бы —
+  // выключенный фон остался бы выключенным после Отмены.
+  useEffect(() => {
+    if (!draw.settingsOpen) return;
+    const s = dRef.current;
+    snapRef.current = s ? { fill: undefined, fillColor: undefined, fillOpacity: undefined, ...s } : null;
+    setTab('style');
+  }, [draw.settingsOpen]);
 
   if (!draw.settingsOpen || !d) return null;
   const set = (patch: Partial<LwDrawing>) => draw.patchSelected(patch);
   const op = d.opacity == null ? 1 : d.opacity;
+  const fop = d.fillOpacity == null ? DEF_FILL_OPACITY : d.fillOpacity;
   const dash: LwDash = d.dash ?? 'solid';
   const tabs: { id: typeof tab; name: string }[] = [
     { id: 'style', name: 'Стиль' },
@@ -659,6 +683,46 @@ function DrawSettingsModal({ draw }: { draw: DrawTools }): ReactNode {
               <input type="range" min={10} max={100} value={Math.round(op * 100)} onChange={(e) => set({ opacity: Number(e.target.value) / 100 })} style={{ flex: 1, accentColor: 'var(--accent)' }} />
               <span style={{ fontSize: 11, color: 'var(--text-primary)', minWidth: 30, textAlign: 'right' }}>{Math.round(op * 100)}%</span>
             </div>
+            {FILL_TOOLS.has(d.tool) && (
+              <>
+                <div style={row}>
+                  <label style={{ ...label, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox" checked={d.fill !== false}
+                      onChange={(e) => set({ fill: e.target.checked })}
+                      style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                    />
+                    Фон
+                  </label>
+                  {d.fill !== false && (
+                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {/* «Как фигура» — дефолт: фон перекрашивается вместе с рамкой. */}
+                      <button
+                        type="button" title="Как у фигуры" onClick={() => set({ fillColor: null })}
+                        style={{ ...PBTN, fontSize: 10, padding: '0 6px', width: 'auto', border: '1px solid ' + (d.fillColor ? 'transparent' : 'var(--accent)') }}
+                      >
+                        как фигура
+                      </button>
+                      {PALETTE_ROWS[0].slice(0, 6).map((c) => (
+                        <button key={c} type="button" title={c} onClick={() => set({ fillColor: c })} style={{ width: 15, height: 15, borderRadius: 3, background: c, cursor: 'pointer', padding: 0, border: (d.fillColor || '').toLowerCase() === c.toLowerCase() ? '2px solid var(--accent)' : '1px solid rgba(128,128,128,0.35)' }} />
+                      ))}
+                      <input type="color" value={d.fillColor || d.color} onChange={(e) => set({ fillColor: e.target.value })} title="Свой цвет" style={{ width: 22, height: 17, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }} />
+                    </div>
+                  )}
+                </div>
+                {d.fill !== false && (
+                  <div style={row}>
+                    <span style={label}>Плотность фона</span>
+                    <input
+                      type="range" min={5} max={100} value={Math.round(fop * 100)}
+                      onChange={(e) => set({ fillOpacity: Number(e.target.value) / 100 })}
+                      style={{ flex: 1, accentColor: 'var(--accent)' }}
+                    />
+                    <span style={{ fontSize: 11, color: 'var(--text-primary)', minWidth: 30, textAlign: 'right' }}>{Math.round(fop * 100)}%</span>
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
 
