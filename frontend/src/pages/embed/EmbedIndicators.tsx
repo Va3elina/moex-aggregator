@@ -30,7 +30,7 @@ import {
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
-import { ToolbarMenuButton } from './EmbedToolbar';
+import { ToolbarMenuButton, CTL_FS, CTL_FW } from './EmbedToolbar';
 import { ColorButton, type ElStyle } from './ColorPicker';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
@@ -1342,10 +1342,12 @@ function menuItem(label: ReactNode, onClick: () => void, disabled = false, activ
       type="button" disabled={disabled} onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '5px 9px', borderRadius: 6,
-        border: 'none', fontSize: 11.5, cursor: disabled ? 'default' : 'pointer',
+        // Кегль общий с тулбаром и его выпадашками (CTL_FS/CTL_FW): списки
+        // открываются рядом, и разный шрифт в них сразу бросается в глаза.
+        border: 'none', fontSize: CTL_FS, cursor: disabled ? 'default' : 'pointer',
         background: active ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'transparent',
         color: disabled ? 'var(--text-secondary)' : active ? 'var(--accent)' : 'var(--text-primary)',
-        fontWeight: active ? 800 : 500,
+        fontWeight: active ? 800 : CTL_FW,
         opacity: disabled ? 0.45 : 1,
       }}
     >
@@ -1362,7 +1364,7 @@ function subTrigger(label: string, onClick: () => void): ReactNode {
       style={{
         display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
         padding: '5px 9px', borderRadius: 6, border: 'none', background: 'transparent',
-        fontSize: 11.5, color: 'var(--text-primary)', cursor: 'pointer',
+        fontSize: CTL_FS, fontWeight: CTL_FW, color: 'var(--text-primary)', cursor: 'pointer',
       }}
     >
       {label}<ChevronRight size={12} />
