@@ -26,7 +26,7 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
     const handleClick = () => {
         if (locked) {
             // Замочек уже виден; клик объясняет почему и ведёт на апгрейд.
-            showUpgrade({ tier: 'basic', featureName: 'Алерты в мессенджере', indicator: 'alerts' });
+            showUpgrade({ tier: 'basic', featureName: 'Уведомления в мессенджере', indicator: 'alerts' });
             return;
         }
         setOpen(true);
@@ -47,10 +47,10 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
                         width: 44,
                         height: 44,
                     }}
-                    aria-label={locked ? 'Алерты — доступно на тарифе Basic и Pro' : 'Создать алерт'}
+                    aria-label={locked ? 'Уведомления доступны на тарифе Basic и Pro' : 'Создать уведомление'}
                     title={locked
-                        ? 'Алерты в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
-                        : 'Создать алерт в мессенджере'}
+                        ? 'Уведомления в мессенджере доступны на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
+                        : 'Создать уведомление в мессенджере'}
                 >
                     <AlarmClock size={22} />
                 </button>

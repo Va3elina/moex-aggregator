@@ -69,7 +69,7 @@ export default function MessengerChoice({ onTelegram, busy, title = 'Выбер�
                 </div>
             </div>
             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.5 }}>
-                Сейчас алерты доступны в&nbsp;Telegram. Мессенджер&nbsp;<b>МАКС</b> — в&nbsp;разработке,
+                Сейчас уведомления доступны в&nbsp;Telegram. Мессенджер&nbsp;<b>МАКС</b> в&nbsp;разработке,
                 подключим позже. Мессенджер можно сменить в&nbsp;любой момент в&nbsp;профиле.
             </p>
         </div>

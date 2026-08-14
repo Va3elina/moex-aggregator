@@ -751,8 +751,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     const lines: Line[] = myAlerts
       .filter((a) => a.status === 'active' && a.asset === instrument)
       .flatMap((a): Line[] => {
-        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'алерт' }];
-        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex, title: 'алерт' }];
+        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'уведомление' }];
+        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex, title: 'уведомление' }];
         return [];
       });
     return lines.length ? lines : undefined;

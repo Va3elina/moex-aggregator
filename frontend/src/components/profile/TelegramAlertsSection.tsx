@@ -32,7 +32,7 @@ const BellGlyph = () => (
         width: 18, height: 18, borderRadius: '50%', margin: '0 2px',
         border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)',
         color: 'var(--text-primary)', verticalAlign: '-4px',
-    }} aria-label="колокол алертов">
+    }} aria-label="колокол уведомлений">
         <AlarmClock size={11} strokeWidth={2.2} />
     </span>
 );
@@ -206,7 +206,7 @@ export default function TelegramAlertsSection() {
         finally { setBusy(false); }
     };
     const handleUnlink = async () => {
-        if (!window.confirm('Отвязать Telegram? Алерты перестанут приходить.')) return;
+        if (!window.confirm('Отвязать Telegram? Уведомления перестанут приходить.')) return;
         setBusy(true); setMsg(null);
         try { await unlinkTelegram(); setLinked(false); setUsername(null); setLinkUrl(null); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
@@ -222,13 +222,13 @@ export default function TelegramAlertsSection() {
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
     const remove = async (a: AlertInfo) => {
-        if (!window.confirm('Удалить алерт?')) return;
+        if (!window.confirm('Удалить уведомление?')) return;
         try { await deleteAlert(a.id); refresh(); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
     // Массовое удаление — на случай, если случайно создал группу из десятков алертов.
     const removeAll = async () => {
-        if (!window.confirm(`Удалить ВСЕ ${alerts.length} алертов? Это необратимо.`)) return;
+        if (!window.confirm(`Удалить ВСЕ ${alerts.length} уведомлений? Это необратимо.`)) return;
         try { const r = await deleteAllAlerts(); refresh(); setMsg({ type: 'ok', text: `Удалено ${r.deleted}` }); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
@@ -310,15 +310,15 @@ export default function TelegramAlertsSection() {
     return (
         <div>
             <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-                <AlarmClock size={18} style={{ color: link }} /> Алерты в мессенджере
+                <AlarmClock size={18} style={{ color: link }} /> Уведомления в мессенджере
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                Уведомления при достижении уровней (цена, аномалии OI). Создаются с индикаторов кнопкой<BellGlyph />.
-                Сейчас доступен Telegram, мессенджер&nbsp;МАКС — в&nbsp;разработке.
+                Сообщения при достижении уровней (цена, аномалии открытых позиций). Создаются с индикаторов кнопкой<BellGlyph />.
+                Сейчас доступен Telegram, мессенджер&nbsp;МАКС в&nbsp;разработке.
             </p>
 
             {quota === 0 ? (
-                <button onClick={() => showUpgrade({ tier: 'basic', featureName: 'Алерты в мессенджере', indicator: 'alerts' })}
+                <button onClick={() => showUpgrade({ tier: 'basic', featureName: 'Уведомления в мессенджере', indicator: 'alerts' })}
                     className="editorial-press" style={{ padding: '10px 16px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 600 }}>
                     Доступно на Basic и Pro — улучшить тариф
                 </button>
@@ -356,7 +356,7 @@ export default function TelegramAlertsSection() {
                         )}
                         {linked === false && activeCount > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', marginTop: 8 }}>
-                                <AlertTriangle size={14} /> {activeCount} активных алертов не придут, пока не подключите мессенджер.
+                                <AlertTriangle size={14} /> {activeCount} активных уведомлений не придут, пока не подключите мессенджер.
                             </div>
                         )}
                     </div>
@@ -364,7 +364,7 @@ export default function TelegramAlertsSection() {
                     {/* ── Список алертов ── */}
                     {alerts.length === 0 ? (
                         <div style={{ color: sub, fontSize: 'var(--fs-sm)' }}>
-                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе («Открытые позиции» или «Деньги в фондах»).
+                            Пока нет уведомлений. Создайте кнопкой<BellGlyph /> на индикаторе («Открытые позиции» или «Деньги в фондах»).
                         </div>
                     ) : (
                         <>
@@ -413,7 +413,7 @@ export default function TelegramAlertsSection() {
                         {/* Аккордеоны по секторам (схлопнуты по умолчанию — не вываливаем весь список) */}
                         {oiAlerts.length === 0 ? (
                             <div style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                                {query ? 'Ничего не найдено по запросу.' : 'Нет алертов по открытым позициям.'}
+                                {query ? 'Ничего не найдено по запросу.' : 'Нет уведомлений по открытым позициям.'}
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -499,7 +499,7 @@ export default function TelegramAlertsSection() {
                                                                                 {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
                                                                             </button>
                                                                         )}
-                                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить уведомление" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
                                                                     </div>
                                                                 </div>
                                                                 {firesOpen && firesN > 0 && (
@@ -566,7 +566,7 @@ export default function TelegramAlertsSection() {
                                                                 {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
                                                             </button>
                                                         )}
-                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить уведомление" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
                                                     </div>
                                                 </div>
                                                 {firesOpen && firesN > 0 && (

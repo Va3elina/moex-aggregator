@@ -302,7 +302,7 @@ export default function StrengthPage() {
 
     // Клик «+» на оси % → модалка (уровень + текущее значение).
     const handleCreateAlertFromChart = useCallback((levelPct: number, currentPct: number) => {
-        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' }); return; }
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' }); return; }
         setChartAlertPrefill({ metricKey: 'strength_level', threshold: Math.round(levelPct * 10) / 10, currentLabel: `${currentPct.toFixed(1)}%` });
     }, [alertsLocked, showUpgrade]);
 
