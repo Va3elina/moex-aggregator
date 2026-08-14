@@ -153,8 +153,12 @@ export default function ColorLinePicker({ value, onColor, onOpacity, onWidth, de
         <div
           ref={popRef}
           {...portalTheme}
+          // Маркер для outside-click родительских поповеров (⚙-дровер тулбара):
+          // мы портал в body, для его ref.contains мы «снаружи» — см. EmbedToolbar.
+          data-keep-parent-open=""
           style={{
-            position: 'fixed', top: pos.top, left: pos.left, width: POP_W, zIndex: 10000,
+            // zIndex выше ⚙-дровера (2147483000), иначе поповер уезжает под него.
+            position: 'fixed', top: pos.top, left: pos.left, width: POP_W, zIndex: 2147483100,
             background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
             boxShadow: '4px 4px 0 0 var(--text-primary)', borderRadius: 12, padding: 12,
             boxSizing: 'border-box',

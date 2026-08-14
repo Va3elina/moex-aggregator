@@ -308,6 +308,11 @@ export function Popover({
       const t = e.target as Node;
       // Клик по самой кнопке-триггеру не закрываем — её onClick сам тогглит.
       if (anchorEl && anchorEl.contains(t)) return;
+      // ⚠️ Вложенные порталы (пикер цвета серии) живут в body, а НЕ внутри
+      // ref.current — без этой ветки дровер закрывался на pointerdown по
+      // свотчу и уносил пикер с собой ДО click'а: палитра выглядела рабочей,
+      // но цвет не менялся (Вадим, «кнопки как будто не рабочие»).
+      if (t instanceof Element && t.closest('[data-keep-parent-open]')) return;
       if (ref.current && !ref.current.contains(t)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
