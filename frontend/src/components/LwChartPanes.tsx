@@ -243,6 +243,19 @@ function paneBoxes(root: HTMLElement): HTMLElement[] {
 }
 const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
+/** Сторона эллипса, за которую тянут: лево/право (ширина), верх/низ (высота). */
+type EllipseEdge = 'l' | 'r' | 't' | 'b';
+/** Четыре ручки эллипса в пикселях — середины сторон бокса, то есть точки на
+ *  самом овале. a/b — экранные координаты двух опорных точек фигуры. */
+function ellipseHandles(a: { x: number; y: number }, b: { x: number; y: number }): { id: EllipseEdge; x: number; y: number }[] {
+  const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+  return [
+    { id: 'l', x: Math.min(a.x, b.x), y: cy },
+    { id: 'r', x: Math.max(a.x, b.x), y: cy },
+    { id: 't', x: cx, y: Math.min(a.y, b.y) },
+    { id: 'b', x: cx, y: Math.max(a.y, b.y) },
+  ];
+}
 
 // За сколько баров до начала ряда просить догрузку истории. На 1200px
 // помещается ~200 свечей, то есть запрос уходит примерно за два экрана до
@@ -1294,7 +1307,11 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const fo = String((d.fillOpacity == null ? 0.13 : d.fillOpacity) * (d.opacity == null ? 1 : d.opacity));
           if (d.tool === 'rect') drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill, 'fill-opacity': fo, ...S }));
           else drawSvg.appendChild(svgEl('ellipse', { cx: x + rw / 2, cy: y + rh / 2, rx: rw / 2, ry: rh / 2, fill, 'fill-opacity': fo, ...S }));
-          if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+          // У эллипса углы бокса лежат ВНЕ фигуры — хвататься там не за что.
+          // Ручки ставим на сам овал (4 точки, как в TradingView): боковые тянут
+          // ширину, верхняя/нижняя — высоту.
+          if (sel && d.tool === 'ellipse') for (const h of ellipseHandles(a, b)) dot(h.x, h.y);
+          else if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
         } else if (d.tool === 'fib') {
           const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (!a || !b) return;
           const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x), p0 = d.pts[0].price, p1 = d.pts[1].price;
@@ -1353,8 +1370,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       // pending — фигура строится «кликами»: первый клик поставил начало, курсор
       // тянет её без зажатой кнопки, второй клик фиксирует. Кнопка мыши при этом
       // отпущена, но dragState жив (в отличие от обычного перетаскивания).
-      let dragState: null | { mode: 'create' | 'move' | 'vertex'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; startXY: { x: number; y: number }; pending?: boolean } = null;
+      let dragState: null | { mode: 'create' | 'move' | 'vertex' | 'edge'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; edge?: EllipseEdge; startXY: { x: number; y: number }; pending?: boolean } = null;
       const HANDLE_R = 8;
+      /** Попадание в ручку эллипса (null — мимо или фигура другого типа). */
+      const hitEllipseHandle = (d: LwDrawing, x: number, y: number): EllipseEdge | null => {
+        if (d.tool !== 'ellipse' || d.pts.length < 2) return null;
+        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]);
+        if (!a || !b) return null;
+        return ellipseHandles(a, b).find((h) => Math.hypot(x - h.x, y - h.y) <= HANDLE_R)?.id ?? null;
+      };
       const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
       // Габарит фигуры — якорь панели свойств (см. LwChart.shapeRect). Здесь слой
@@ -1492,10 +1516,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
           if (hit && !hit.locked) {   // per-element замок: выделить можно, двигать нельзя
             let vi = -1;
-            if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
-            dragState = vi >= 0
-              ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, vi, startXY: { x, y } }
-              : { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
+            const edge = hitEllipseHandle(hit, x, y);
+            if (!edge && hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
+            dragState = edge
+              ? { mode: 'edge', edge, d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, startXY: { x, y } }
+              : vi >= 0
+                ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, vi, startXY: { x, y } }
+                : { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
             try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
           }
           drawShapes(); return;
@@ -1555,6 +1582,22 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         } else if (dragState.mode === 'vertex') {
           const lp = xy2lp(x, y); if (!lp) return;
           const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
+        } else if (dragState.mode === 'edge') {
+          // Ручка эллипса двигает ОДНУ координату той опорной точки, что сейчас с
+          // этой стороны: противоположная сторона остаётся на месте. Какая из
+          // двух точек «левая»/«верхняя» — считаем по экрану: порядок точек
+          // произвольный (рисовали справа налево), а шкала цен может быть любой.
+          const lp = xy2lp(x, y); if (!lp) return;
+          const pts = dragState.d.pts.map((p) => ({ ...p }));
+          const a = lp2xy(pts[0]), b = lp2xy(pts[1]); if (!a || !b) return;
+          if (dragState.edge === 'l' || dragState.edge === 'r') {
+            const first = dragState.edge === 'l' ? a.x <= b.x : a.x >= b.x;
+            pts[first ? 0 : 1].logical = lp.logical;
+          } else {
+            const first = dragState.edge === 't' ? a.y <= b.y : a.y >= b.y;
+            pts[first ? 0 : 1].price = lp.price;
+          }
+          dragState.d.pts = pts;
         } else {
           const dx = x - dragState.startXY.x, dy = y - dragState.startXY.y;
           dragState.d.pts = (dragState.orig ?? dragState.d.pts).map((p) => { const xy = lp2xy(p); if (!xy) return p; return xy2lp(xy.x + dx, xy.y + dy) ?? p; });
@@ -1626,10 +1669,13 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         selectedDrawIdRef.current = hit.id; onSelectDrawRef.current?.(hit.id);
         if (hit.locked) { drawShapes(); return; }
         let vi = -1;
-        if (hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
-        dragState = vi >= 0
-          ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, vi, startXY: { x, y } }
-          : { mode: 'move', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, orig: hit.pts.map((pp) => ({ ...pp })), startXY: { x, y } };
+        const edge = hitEllipseHandle(hit, x, y);
+        if (!edge && hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
+        dragState = edge
+          ? { mode: 'edge', edge, d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, startXY: { x, y } }
+          : vi >= 0
+            ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, vi, startXY: { x, y } }
+            : { mode: 'move', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, orig: hit.pts.map((pp) => ({ ...pp })), startXY: { x, y } };
         drawShapes();
         const mv = (ev: PointerEvent) => onDrawMove(ev);
         const up = (ev: PointerEvent) => {
