@@ -1,13 +1,16 @@
 /**
- * CookieConsentBanner — bottom popup для согласия на сбор аналитики.
+ * CookieConsentBanner — bottom popup про использование cookies.
  *
- * Показывается ОДИН раз пока user не нажмёт «Принять» или «Только необходимые».
- * После этого localStorage `frame_consent_v1` хранит выбор → banner не появляется.
+ * Формат уведомления (как у крупных РФ-магазинов): один текст + одна кнопка
+ * «Окей». Показывается ОДИН раз, после клика localStorage `frame_consent_v1`
+ * хранит выбор → banner не появляется.
  *
  * Логика:
- *  - 'accepted'  → AnalyticsProvider шлёт events
- *  - 'minimal'   → events НЕ шлются (только session-cookie auth остаётся)
- *  - null        → banner visible (consent ещё не дан)
+ *  - 'accepted'  → AnalyticsProvider шлёт events (ставится кликом «Окей»)
+ *  - 'minimal'   → events НЕ шлются; из баннера больше не выставляется,
+ *                  но значение остаётся валидным для старых юзеров и для
+ *                  тумблера отказа в профиле
+ *  - null        → banner visible (юзер ещё не кликал)
  *
  * Дизайн — editorial-press chip-button style (paper bg + hard 1.5px border).
  * Размещение — bottom-fixed, не overlay (не блокирует контент сверху).
@@ -25,7 +28,7 @@ export default function CookieConsentBanner() {
   return (
     <div
       role="dialog"
-      aria-label="Согласие на сбор данных"
+      aria-label="Уведомление об использовании cookies"
       className="fixed bottom-0 left-0 right-0 z-[100] border-t"
       style={{
         backgroundColor: 'var(--bg-primary)',
@@ -51,35 +54,21 @@ export default function CookieConsentBanner() {
               maxWidth: 720,
             }}
           >
-            Мы собираем обезличенную статистику посещений (страницы, события,
-            время на сайте) — это помогает улучшать сервис. IP-адрес не
-            сохраняется, контент-события привязаны к аккаунту только если вы
-            залогинены.{' '}
+            Мы используем{' '}
             <Link
               to="/privacy"
               className="underline"
               style={{ color: 'var(--accent)' }}
             >
-              Подробнее
+              cookies
             </Link>
+            , чтобы анализировать, как вы пользуетесь сайтом, и делать сервис
+            удобнее. IP-адрес не сохраняется.
           </p>
         </div>
 
-        {/* Buttons */}
-        <div className="flex items-center w-full md:w-auto" style={{ gap: 'var(--sp-2)' }}>
-          <button
-            onClick={() => setConsent('minimal')}
-            className="editorial-press font-semibold rounded-full flex-1 md:flex-initial whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              border: '1.5px solid var(--text-primary)',
-              fontSize: 'var(--fs-sm)',
-              padding: 'var(--sp-2) var(--sp-4)',
-            }}
-          >
-            Только необходимые
-          </button>
+        {/* Button */}
+        <div className="flex items-center w-full md:w-auto">
           <button
             onClick={() => setConsent('accepted')}
             className="editorial-press font-semibold rounded-full flex-1 md:flex-initial whitespace-nowrap"
@@ -88,10 +77,10 @@ export default function CookieConsentBanner() {
               color: '#fff',
               border: '1.5px solid var(--text-primary)',
               fontSize: 'var(--fs-sm)',
-              padding: 'var(--sp-2) var(--sp-4)',
+              padding: 'var(--sp-2) var(--sp-6)',
             }}
           >
-            Принять
+            Окей
           </button>
         </div>
       </div>
