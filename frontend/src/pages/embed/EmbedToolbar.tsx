@@ -447,12 +447,17 @@ export function PillGroup<T extends string | number>({
   options,
   onChange,
   compact,
+  fontSize,
 }: {
   value: T;
   options: { id: T; label: string; title?: string; icon?: ReactNode }[];
   onChange: (v: T) => void;
   /** Узкая панель: текст лейблов не помещается — показываем только icon (label уходит в title). */
   compact?: boolean;
+  /** Кегль лейблов, если общего тулбарного мало (одиночные символы вроде ₽/$
+   *  читаются мельче слов рядом). Высоту кнопки это не меняет: line-height
+   *  задан длиной от базового CTL_FS, а не множителем от своего шрифта. */
+  fontSize?: string;
 }) {
   return (
     // flexShrink:0 — группа держит полный размер и не сплющивается сама по себе;
@@ -481,14 +486,16 @@ export function PillGroup<T extends string | number>({
             aria-pressed={active}
             onClick={() => onChange(o.id)}
             style={{
-              fontSize: CTL_FS,
+              fontSize: fontSize ?? CTL_FS,
               fontWeight: CTL_FW,
               padding: iconOnly ? 'var(--emb-pill-pad-icon, 4px 7px)' : 'var(--emb-pill-pad, 4px 9px)',
               border: 'none',
               borderLeft: i > 0 ? '1.5px solid var(--border-color, rgba(128,128,128,0.3))' : 'none',
               background: active ? 'var(--accent)' : 'transparent',
               color: active ? '#fff' : 'var(--emb-pill-off, var(--text-primary))',
-              lineHeight: 1.2,
+              // Длиной, а не множителем: при увеличенном fontSize высота пилюли
+              // остаётся такой же, как у соседей по тулбару.
+              lineHeight: 'calc(var(--emb-ctl-fs, 11.5px) * 1.2)',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               flexShrink: 0,
