@@ -12,7 +12,7 @@
  * Виджет целиком под PRO-токеном, поэтому тир-гейтинга нет.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { LineChart, BarChart3, Landmark, Grid3x3, TrendingUp } from 'lucide-react';
+import { Landmark, Grid3x3, TrendingUp } from 'lucide-react';
 import LwChartPanes, { type LwPane, type LwChartPanesHandle } from '../../components/LwChartPanes';
 // Дефолт оси времени в LwChartPanes сменился на ruTickMark (нужен интрадею ОИ) —
 // «Сила рынка» живёт на дневках, поэтому свой формат задаём явно.
@@ -20,7 +20,7 @@ import { monthsYearsTickFmt } from '../../components/chart/lwTypes';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { DrawerSection, ToggleRow } from './EmbedSettings';
+import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
@@ -45,10 +45,18 @@ const EMAS: { id: Ema; label: string }[] = [
   { id: 100, label: 'EMA 100' },
   { id: 200, label: 'EMA 200' },
 ];
-const CHART_MODES: { id: ChartMode; label: string; icon: ReactNode }[] = [
-  { id: 'line', label: 'Линия', icon: <LineChart size={14} /> },
-  { id: 'histogram', label: 'Гистограмма', icon: <BarChart3 size={14} /> },
+// Вид ряда живёт в «Ещё настройки» (SegGroup), поэтому иконки ему не нужны.
+const CHART_MODES: { id: ChartMode; label: string }[] = [
+  { id: 'line', label: 'Линия' },
+  { id: 'histogram', label: 'Гистограмма' },
 ];
+const CURRENCIES: { id: Currency; label: string }[] = [
+  { id: 'rub', label: '₽' },
+  { id: 'usd', label: '$' },
+];
+// Символ валюты в общем кегле тулбара выглядит мельче слов рядом — поднимаем
+// шрифт; высоту кнопки PillGroup держит фиксированным line-height.
+const CUR_FS = 'calc(var(--emb-ctl-fs, 11.5px) * 1.2)';
 const UNIVERSE_ICONS: Record<UniverseBase, ReactNode> = {
   imoex: <Landmark size={14} />,
   all: <Grid3x3 size={14} />,
@@ -286,7 +294,6 @@ export default function EmbedStrength() {
         <div ref={toolbarWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {/* Невидимый измеритель — см. useToolbarCompact.ts: всегда полные лейблы. */}
           <div ref={toolbarMeasureRef} aria-hidden style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
             <Dropdown<UniverseBase>
               value={universeBase}
               options={[
@@ -298,10 +305,9 @@ export default function EmbedStrength() {
               icon={UNIVERSE_ICONS[universeBase]}
             />
             <Dropdown<Ema> value={ema} options={EMAS} onChange={setEma} title="Скользящая" icon={<TrendingUp size={14} />} />
-            <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
+            <PillGroup<Currency> value={currency} options={CURRENCIES} onChange={setCurrency} fontSize={CUR_FS} />
             <IndicatorsButton api={inds} hasVolume={false} />
           </div>
-          <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} compact={toolbarCompact} />
           <Dropdown<UniverseBase>
             value={universeBase}
             options={[
@@ -317,13 +323,20 @@ export default function EmbedStrength() {
               переключатель вида (EMA 20/50/100/200 меняет саму метрику), и в
               drawer'е его попросту не находили. */}
           <Dropdown<Ema> value={ema} options={EMAS} onChange={setEma} title="Скользящая" icon={<TrendingUp size={14} />} compact={toolbarCompact} />
-          <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
+          {/* Валюта — символом, поэтому кегль чуть крупнее соседей: ₽/$ в общем
+              размере тулбара читаются мельче слов рядом (высота та же). */}
+          <PillGroup<Currency> value={currency} options={CURRENCIES} onChange={setCurrency} fontSize={CUR_FS} />
           <IndicatorsButton api={inds} hasVolume={false} compact={toolbarCompact} />
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={status === 'ok' && panes.length > 0} />}
       more={
         <>
+          {/* Вид ряда breadth — из тулбара в «Ещё настройки»: переключают его
+              редко, а места в узкой панели sandbox не хватает. */}
+          <DrawerSection label="Вид ряда">
+            <SegGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
+          </DrawerSection>
           <DrawerSection label="Индекс сверху">
             <ToggleRow
               label={currency === 'usd' ? 'Показывать RTS' : 'Показывать IMOEX'}
