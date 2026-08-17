@@ -553,6 +553,12 @@ export default function FundsMoneyPage() {
     // отображаемых значений. При смене день/неделя/месяц число баров другое —
     // старые значения ресемплируются к новой длине (resampleVals), иначе морф
     // выглядел «хаотичной перестановкой баров» (прежняя причина отказа от него).
+    //
+    // Морф идёт в ВИЗУАЛЬНОМ пространстве, как в BreadthChart: стартовые
+    // значения нормализуются со старой шкалы на новую (v / oldMax * newMax).
+    // Без этого при переходе 3Г → 1М старые потоки (млрды) в новой шкале
+    // (сотни млн) давали высоту в разы больше холста — график «дёргался в
+    // разные стороны», пока бары не сходились к целям.
     useEffect(() => {
         if (!flowsData?.flows?.length) return;
 
@@ -562,9 +568,11 @@ export default function FundsMoneyPage() {
         const wave = isFirstBarsRender.current || dispFlowsRef.current.length === 0;
         isFirstBarsRender.current = false;
 
+        const newMax = Math.max(...targetFlows.map(Math.abs), 0.001);
+        const oldMax = Math.max(...dispFlowsRef.current.map(Math.abs), 0.001);
         const fromFlows = wave
             ? new Array(targetFlows.length).fill(0)
-            : resampleVals(dispFlowsRef.current, targetFlows.length);
+            : resampleVals(dispFlowsRef.current, targetFlows.length).map(v => (v / oldMax) * newMax);
 
         // Волна: каскад слева направо; морф: все бары синхронно (как в OI).
         // Параметры из единого конфига chartTheme.ANIMATION.

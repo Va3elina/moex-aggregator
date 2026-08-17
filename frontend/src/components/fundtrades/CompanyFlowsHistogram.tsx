@@ -177,9 +177,14 @@ export default function CompanyFlowsHistogram({
         const target = netMln;
         const wave = !wavedRef.current || dispRef.current.length === 0;
         wavedRef.current = true;
+        // Морф в визуальном пространстве: стартовые значения нормализуются со
+        // старой шкалы на новую (v / oldMax * newMax) — иначе при смене бумаги
+        // с крупными потоками на мелкую бары стартовали бы выше холста.
+        const newMax = Math.max(...target.map(Math.abs), 0.001);
+        const oldMax = Math.max(...dispRef.current.map(Math.abs), 0.001);
         const from = wave
             ? new Array<number>(target.length).fill(0)
-            : resampleVals(dispRef.current, target.length);
+            : resampleVals(dispRef.current, target.length).map(v => (v / oldMax) * newMax);
         const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
         const staggerDelay = wave ? ANIMATION.waveStagger : 0;
         let start: number | null = null;
