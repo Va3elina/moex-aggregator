@@ -100,6 +100,7 @@ const NAV_COLOR   = 'var(--accent)';
 
 // Easing для анимации гистограммы
 import { ANIMATION } from '../config/chartTheme';
+import { resampleVals } from '../utils/chartAnimation';
 const easeOutCubic = ANIMATION.easing;
 
 
@@ -277,11 +278,12 @@ export default function FundsMoneyPage() {
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
-    // Анимация баров гистограммы (морфинг при смене данных)
+    // Анимация баров гистограммы: волна на первом рендере с данными, морф
+    // при последующих сменах данных. dispFlowsRef — текущие отображаемые
+    // значения (обновляется каждый кадр) — старт морфа при прерывании.
     const [animatedBarsIn, setAnimatedBarsIn] = useState<number[]>([]);
     const [animatedBarsOut, setAnimatedBarsOut] = useState<number[]>([]);
-    const prevBarsInRef = useRef<number[]>([]);
-    const prevBarsOutRef = useRef<number[]>([]);
+    const dispFlowsRef = useRef<number[]>([]);
     const barsAnimRef = useRef<number | null>(null);
     const isFirstBarsRender = useRef(true);
 
@@ -532,8 +534,7 @@ export default function FundsMoneyPage() {
             if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
             setAnimatedBarsIn([]);
             setAnimatedBarsOut([]);
-            prevBarsInRef.current = [];
-            prevBarsOutRef.current = [];
+            dispFlowsRef.current = [];
             isFirstBarsRender.current = true;
         }
     }, [viewMode]);
@@ -547,25 +548,28 @@ export default function FundsMoneyPage() {
         }
     }, [flowsData]);
 
-    // Анимация гистограммы при смене flowsData.
-    // Всегда начинаем с нуля + каскад слева направо (волна),
-    // а не морфим из предыдущих значений — при переключении
-    // день/неделя/месяц данные полностью разные, морфинг
-    // показывал хаотичную перестановку баров.
+    // Анимация гистограммы при смене flowsData — схема как в OI (SimpleChart):
+    // волна с нуля только на ПЕРВОМ рендере с данными, дальше морф из текущих
+    // отображаемых значений. При смене день/неделя/месяц число баров другое —
+    // старые значения ресемплируются к новой длине (resampleVals), иначе морф
+    // выглядел «хаотичной перестановкой баров» (прежняя причина отказа от него).
     useEffect(() => {
         if (!flowsData?.flows?.length) return;
 
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
 
         const targetFlows = flowsData.flows.map(f => f.flow);
-        const fromFlows = new Array(targetFlows.length).fill(0);
-
+        const wave = isFirstBarsRender.current || dispFlowsRef.current.length === 0;
         isFirstBarsRender.current = false;
 
-        // Каскадная анимация: бары появляются слева направо (волна).
+        const fromFlows = wave
+            ? new Array(targetFlows.length).fill(0)
+            : resampleVals(dispFlowsRef.current, targetFlows.length);
+
+        // Волна: каскад слева направо; морф: все бары синхронно (как в OI).
         // Параметры из единого конфига chartTheme.ANIMATION.
-        const totalDuration = ANIMATION.waveDuration;
-        const staggerDelay = ANIMATION.waveStagger;
+        const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
+        const staggerDelay = wave ? ANIMATION.waveStagger : 0;
         let startTime: number | null = null;
 
         const animate = (timestamp: number) => {
@@ -579,15 +583,13 @@ export default function FundsMoneyPage() {
                 return fromFlows[i] + (v - fromFlows[i]) * easeOutCubic(t);
             });
 
+            dispFlowsRef.current = flows;
             // Разделяем на in/out по знаку текущего анимированного значения
             setAnimatedBarsIn(flows.map(v => Math.max(0, v)));
             setAnimatedBarsOut(flows.map(v => Math.min(0, v)));
 
             if (elapsed < totalDuration) {
                 barsAnimRef.current = requestAnimationFrame(animate);
-            } else {
-                prevBarsInRef.current = targetFlows;
-                prevBarsOutRef.current = [];
             }
         };
 

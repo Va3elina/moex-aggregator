@@ -63,10 +63,11 @@ export default function SeasonalityHistogram({
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
 
-  // grown — флаг «волны слева направо» при каждом mount'е.
-  // Компонент remount'ится через key={fetchId} в родителе при каждом новом
-  // fetch'е — значит grown всегда начинает с false, rAF переключает в true,
-  // CSS transition с staggered delay рисует волну. Единая логика для всех сценариев.
+  // grown — флаг «волны слева направо» на первом рендере с данными.
+  // Ремоунта по key больше нет (схема как в OI: анимация один раз при
+  // открытии): grown стартует false, rAF переключает в true, CSS transition
+  // со staggered delay рисует волну. Последующие смены данных морфятся тем же
+  // CSS transition'ом на y/height — бары «перетекают» к новым значениям.
   const [grown, setGrown] = useState(false);
   useLayoutEffect(() => {
     if (bars.length > 0 && !grown) {

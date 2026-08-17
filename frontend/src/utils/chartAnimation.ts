@@ -32,6 +32,22 @@ export const resamplePts = (pts: { x: number; y: number }[], len: number) => {
     return out;
 };
 
+/** 1-D ресемпл массива значений до длины len (линейная интерполяция).
+ *  Для морфа гистограмм при смене числа баров (день↔неделя↔месяц): каждый
+ *  новый бар стартует с интерполированного значения между соседними старыми,
+ *  а не «выпадает из одной точки» (тот же приём, что resamplePts для линий). */
+export const resampleVals = (vals: number[], len: number): number[] => {
+    if (vals.length === 0 || vals.length === len) return vals;
+    const out: number[] = [];
+    for (let i = 0; i < len; i++) {
+        const si = (i / Math.max(len - 1, 1)) * (vals.length - 1);
+        const lo = Math.floor(si);
+        const hi = Math.min(lo + 1, vals.length - 1);
+        out.push(lerp(vals[lo], vals[hi], si - lo));
+    }
+    return out;
+};
+
 export const morphPts = (from: { x: number; y: number }[], to: { x: number; y: number }[], t: number) => {
     const n = Math.max(from.length, to.length);
     const a = resamplePts(from, n);

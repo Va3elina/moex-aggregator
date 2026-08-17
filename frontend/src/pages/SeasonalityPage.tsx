@@ -158,8 +158,6 @@ export default function SeasonalityPage() {
   const seasonalityReqIdRef = useRef(0);
   // Ref на chart card для capture (передаётся ChartCaptureButton)
   const chartCardRef = useRef<HTMLDivElement>(null);
-  // Счётчик успешных фетчей — React key для histogram'а (remount = новая анимация волны)
-  const [histogramFetchId, setHistogramFetchId] = useState(0);
 
   // Data
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
@@ -171,7 +169,6 @@ export default function SeasonalityPage() {
   // Мульти-серии для годовой — тот же паттерн, что monthlySeries.
   const [yearlySeries, setYearlySeries] = useState<YearlySeasonalityResponse[] | null>(null);
   const yearlyReqIdRef = useRef(0);
-  const [yearlyFetchId, setYearlyFetchId] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,7 +238,6 @@ export default function SeasonalityPage() {
         // Ни одной серии не выбрано — empty state
         setDataRaw(null);
         setMonthlySeries(null);
-        setHistogramFetchId(id => id + 1);
         return;
       }
 
@@ -252,7 +248,6 @@ export default function SeasonalityPage() {
       // Первая серия — база для maxAbs и single-bar отображения (если серия одна).
       setDataRaw(results[0]);
       setMonthlySeries(results.length > 1 ? results : null);
-      setHistogramFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
       if (!handleTierError(e, `режим «Календарь»`)) {
@@ -306,7 +301,6 @@ export default function SeasonalityPage() {
         // Проще — empty state.
         setYearlyData(null);
         setYearlySeries(null);
-        setYearlyFetchId(id => id + 1);
         return;
       }
 
@@ -314,7 +308,6 @@ export default function SeasonalityPage() {
       if (reqId !== yearlyReqIdRef.current) return;
       setYearlyData(results[0]);
       setYearlySeries(results.length > 1 ? results : null);
-      setYearlyFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== yearlyReqIdRef.current) return;
       if (!handleTierError(e, 'годовая сезонность')) {
@@ -862,8 +855,9 @@ export default function SeasonalityPage() {
               Выберите хотя бы один "Период с" в меню выше
             </div>
           ) : (
+            // Без key-ремоунта: волна играет один раз (первое открытие),
+            // смена периодов/срезов морфит бары CSS-transition'ом.
             <SeasonalityHistogram
-              key={histogramFetchId}
               bars={bars}
               maxAbs={maxAbs}
               tooltip={tooltip}
@@ -888,8 +882,8 @@ export default function SeasonalityPage() {
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           )
         ) : yearlyData ? (
+          // Без key-ремоунта: reveal играет один раз, смена периодов морфит линии.
           <YearlySeasonalityChart
-            key={yearlyFetchId}
             yearlyData={yearlyData}
             seriesData={yearlySeries}
             seriesMeta={seriesMeta}

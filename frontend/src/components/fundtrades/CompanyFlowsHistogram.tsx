@@ -22,6 +22,7 @@ import {
 } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
+import { resampleVals } from '../../utils/chartAnimation';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -55,7 +56,8 @@ interface CompanyFlowsHistogramProps {
     loading?: boolean;
     /** Все фонды сняты пользователем — empty-state вместо пустой гистограммы. */
     noFundsSelected?: boolean;
-    /** Перезапуск волны: меняй при смене бумаги / набора фондов. */
+    /** Смена бумаги / набора фондов: сброс навигатора + морф баров
+     *  (волна с нуля играет только на первом рендере с данными). */
     animTrigger?: string;
     /** Подписи чистого потока в тултипе. Дефолт — «Чистая покупка/продажа»
      *  (потоки по компании); карточка фонда передаёт «Приток/Отток». */
@@ -157,18 +159,29 @@ export default function CompanyFlowsHistogram({
         if (months.length > 0) setNavRange([0, months.length - 1]);
     }, [months.length, animTrigger]);
 
-    // ── Каскадная волна баров (grow-from-zero, слева направо) — как в макете. ──
+    // ── Анимация баров — схема как в OI (SimpleChart): каскадная волна
+    // grow-from-zero только на ПЕРВОМ рендере с данными, дальше любые смены
+    // данных (бумага, набор фондов) морфят из текущих отображаемых значений,
+    // ресемплированных к новой длине. ──
     const [animated, setAnimated] = useState<number[]>([]);
+    const dispRef = useRef<number[]>([]);
+    const wavedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
     useEffect(() => {
         if (!netMln.length) {
             setAnimated([]);
+            dispRef.current = [];
             return;
         }
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         const target = netMln;
-        const totalDuration = ANIMATION.waveDuration;
-        const staggerDelay = ANIMATION.waveStagger;
+        const wave = !wavedRef.current || dispRef.current.length === 0;
+        wavedRef.current = true;
+        const from = wave
+            ? new Array<number>(target.length).fill(0)
+            : resampleVals(dispRef.current, target.length);
+        const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
+        const staggerDelay = wave ? ANIMATION.waveStagger : 0;
         let start: number | null = null;
 
         const tick = (ts: number) => {
@@ -178,8 +191,9 @@ export default function CompanyFlowsHistogram({
                 const barDelay = (i / target.length) * staggerDelay;
                 const barElapsed = Math.max(0, elapsed - barDelay);
                 const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-                return v * easeOutCubic(t);
+                return from[i] + (v - from[i]) * easeOutCubic(t);
             });
+            dispRef.current = next;
             setAnimated(next);
             if (elapsed < totalDuration) rafRef.current = requestAnimationFrame(tick);
         };
@@ -187,7 +201,7 @@ export default function CompanyFlowsHistogram({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-        // netMln (стабилен через useMemo) + animTrigger — перезапуск волны.
+        // netMln (стабилен через useMemo) + animTrigger — старт морфа/волны.
     }, [netMln, animTrigger]);
 
     // ── Hover ──
