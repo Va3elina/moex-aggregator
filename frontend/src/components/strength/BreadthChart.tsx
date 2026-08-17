@@ -452,11 +452,15 @@ export default function BreadthChart({
                             pillLeft = Math.min(pillLeft, width - 4 - pillW);
                             pillLeft = Math.max(pillLeft, plotRight + 2);
                             const textX = pillLeft + padX;
+                            // Вертикальный кламп в пределах SVG: при breadth ≈100%
+                            // центр pill'а = padding.top (10px) < pillH/2 — верх
+                            // срезался бы краем холста (симметрично низу IndexChart).
+                            const pillY = Math.min(Math.max(lastP.y, pillH / 2 + 1), height - pillH / 2 - 1);
                             return (
                                 <g pointerEvents="none">
                                     <rect
                                         x={pillLeft}
-                                        y={lastP.y - pillH / 2}
+                                        y={pillY - pillH / 2}
                                         width={pillW}
                                         height={pillH}
                                         rx={4} ry={4}
@@ -465,7 +469,7 @@ export default function BreadthChart({
                                     />
                                     <text
                                         x={textX}
-                                        y={lastP.y}
+                                        y={pillY}
                                         textAnchor="start"
                                         dominantBaseline="central"
                                         fill="#FFFFFF"

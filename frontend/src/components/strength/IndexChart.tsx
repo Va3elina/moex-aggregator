@@ -227,11 +227,16 @@ export default function IndexChart({
                             pillLeft = Math.min(pillLeft, width - 4 - pillW);
                             pillLeft = Math.max(pillLeft, plotRight + 2);
                             const textX = pillLeft + padX;
+                            // Вертикальный кламп: линия тянется до самого низа SVG
+                            // (padding.bottom здесь не резервируется), и на цене у
+                            // минимума окна центр pill'а = низ SVG → нижняя половина
+                            // обрезалась краем холста. Симметрично для максимума.
+                            const pillY = Math.min(Math.max(lastP.y, pillH / 2 + 1), height - pillH / 2 - 1);
                             return (
                                 <g pointerEvents="none">
                                     <rect
                                         x={pillLeft}
-                                        y={lastP.y - pillH / 2}
+                                        y={pillY - pillH / 2}
                                         width={pillW}
                                         height={pillH}
                                         rx={4} ry={4}
@@ -240,7 +245,7 @@ export default function IndexChart({
                                     />
                                     <text
                                         x={textX}
-                                        y={lastP.y}
+                                        y={pillY}
                                         textAnchor="start"
                                         dominantBaseline="central"
                                         fill="#FFFFFF"
