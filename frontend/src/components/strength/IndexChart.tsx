@@ -5,6 +5,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
+import { useChartReveal } from '../chart/useChartReveal';
 import ChartWatermark from '../ChartWatermark';
 
 interface IndexChartProps {
@@ -38,8 +39,9 @@ export default function IndexChart({
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
     const prevWidthRef = useRef(0);
-    // CSS-driven reveal на первом рендере (clip-path анимация слева направо).
-    // Match SimpleChart pattern: state триггерит class .chart-reveal на wrapper.
+    // Reveal только линии на первом рендере: rAF-анимация ширины clip-rect
+    // (useChartReveal, как в SimpleChart). Оси, сетка и пилюля вне клипа —
+    // видны с первого кадра.
     const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
@@ -57,6 +59,7 @@ export default function IndexChart({
     // X-подписи у верхнего графика не рисуются (они под BreadthChart),
     // поэтому padding.bottom не резервируем — линия тянется до низа SVG.
     const chartHeight = height - padding.top;
+    const revealW = useChartReveal(revealed, chartWidth);
 
     const chartData = useMemo(() => {
         if (!syncedData.length || chartWidth <= 0) return null;
@@ -122,9 +125,7 @@ export default function IndexChart({
             currPtsRef.current = [];
             setAnimLinePath(ptsToPath(target));
             setAnimAreaPath(ptsToArea(target, bottom));
-            // Запускаем CSS-reveal слева направо (как в SimpleChart).
-            // setState внутри useLayoutEffect → синхронный re-render до paint,
-            // первый видимый кадр уже с class и clip-path в стартовом состоянии.
+            // Запускаем reveal линии слева направо (rAF clip-rect, как в SimpleChart).
             if (!revealed) setRevealed(true);
             return;
         }
@@ -156,7 +157,9 @@ export default function IndexChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
+            {/* chart-plot — маркер для computeChartTopLineY (StrengthPage ищет
+                обёртку графика query-селектором; раньше это был .chart-reveal). */}
+            <div ref={chartWrapRef} className="relative chart-plot">
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-primary)', contain: 'paint' }}>
                         <defs>
@@ -164,9 +167,16 @@ export default function IndexChart({
                                 <stop offset="0%" stopColor={CHART_COLORS.primary} stopOpacity="0.3" />
                                 <stop offset="100%" stopColor={CHART_COLORS.primary} stopOpacity="0" />
                             </linearGradient>
+                            {/* Reveal-клип: ширина rect анимируется useChartReveal
+                                (rAF), финал revealW=null — rect следует за resize. */}
+                            <clipPath id="indexRevealClip">
+                                <rect x={padding.left} y={0} width={Math.max(revealW ?? chartWidth, 0)} height={height} />
+                            </clipPath>
                         </defs>
 
-                        <path d={animLinePath} fill="none" stroke={CHART_COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <g clipPath="url(#indexRevealClip)">
+                            <path d={animLinePath} fill="none" stroke={CHART_COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </g>
 
                         {crosshairX !== null && (
                             <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartHeight}

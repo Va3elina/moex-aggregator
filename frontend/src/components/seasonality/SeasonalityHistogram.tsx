@@ -62,11 +62,6 @@ export default function SeasonalityHistogram({
 }: SeasonalityHistogramProps) {
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
-  // reveal — CSS clip-path слева направо на первом рендере
-  const [revealed, setRevealed] = useState(false);
-  useLayoutEffect(() => {
-    if (bars.length > 0 && !revealed) setRevealed(true);
-  }, [bars.length, revealed]);
 
   // grown — флаг «волны слева направо» при каждом mount'е.
   // Компонент remount'ится через key={fetchId} в родителе при каждом новом
@@ -158,7 +153,10 @@ export default function SeasonalityHistogram({
 
   return (
     <div
-      className={`relative overflow-hidden pb-2 cursor-crosshair ${revealed ? 'chart-reveal' : ''}`}
+      // Без chart-reveal на обёртке: бары и так растут «волной» слева направо
+      // (grown + transition-delay), а обёртка уводила вместе с ними оси и
+      // подписи — обрамление видно с первого кадра.
+      className="relative overflow-hidden pb-2 cursor-crosshair"
       style={{
         aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
         minHeight: 'var(--seasonality-hist-min-height, 240px)',

@@ -48,6 +48,7 @@ import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
+import { useChartReveal } from '../chart/useChartReveal';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -378,6 +379,11 @@ export default function CompanyShareChart({
         return easeOutCubic(t);
     };
 
+    // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
+    // Перезапуск на animTrigger (смена бумаги); смена режима панель цены не
+    // трогает — там перерисовываются только бары своей волной.
+    const revealW = useChartReveal(true, 1000, animTrigger);
+
     // ── Hover: ближайший месяц с данными по X (общий на обе панели). ──
     const [hoveredMi, setHoveredMi] = useState<number | null>(null); // индекс в months
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
@@ -414,7 +420,7 @@ export default function CompanyShareChart({
     // Оба живут ВНУТРИ wrapRef, значит их offsetParent — сам wrapRef, и
     // координаты считаются от его верхнего левого угла. Прибавлять offsetTop/
     // offsetLeft обёртки (как это делает StrengthPage, где пилюля лежит на
-    // уровне карточки, а обёртка — вложенный .chart-reveal) здесь НЕЛЬЗЯ:
+    // уровне карточки, а обёртка — вложенный .chart-plot) здесь НЕЛЬЗЯ:
     // это двойной учёт, из-за него пилюля уезжала вниз и вправо от курсора.
     //
     // topLineY — верхняя грид-линия ПЕРВОЙ панели (цена — на самом верху
@@ -578,9 +584,12 @@ export default function CompanyShareChart({
                 )}
 
                 {/* Обёртка обеих секций — общий курсор, тултип и пилюля даты. */}
+                {/* Без chart-reveal на обёртке: линия цены рисуется reveal-клипом
+                    в своём SVG, бары растут «волной» (popFor) — оси, пилюли и
+                    подписи видны с первого кадра. */}
                 <div
                     ref={wrapRef}
-                    className="relative cursor-crosshair chart-reveal"
+                    className="relative cursor-crosshair"
                     style={{ touchAction: 'none' }}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
@@ -617,19 +626,28 @@ export default function CompanyShareChart({
                                     расстоянии от легенды, что в OI, на любой высоте панели. */}
                                 <div className="absolute" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, left: padArea.left, right: padArea.right }}>
                                     <svg ref={priceSvgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                                        <defs>
+                                            {/* Reveal-клип линии цены: ширина rect (юниты
+                                                viewBox) анимируется useChartReveal (rAF). */}
+                                            <clipPath id="sharePriceRevealClip">
+                                                <rect x={0} y={0} width={Math.max(revealW ?? 1000, 0)} height={1000} />
+                                            </clipPath>
+                                        </defs>
                                         {priceTicks.map((p, i) => (
                                             <line key={`pg-${i}`} x1="0" y1={priceY(p)} x2="1000" y2={priceY(p)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
                                         ))}
                                         {linePath && (
-                                            <path
-                                                d={linePath}
-                                                fill="none"
-                                                stroke={PRICE_LINE_COLOR}
-                                                strokeWidth="2"
-                                                vectorEffect="non-scaling-stroke"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
+                                            <g clipPath="url(#sharePriceRevealClip)">
+                                                <path
+                                                    d={linePath}
+                                                    fill="none"
+                                                    stroke={PRICE_LINE_COLOR}
+                                                    strokeWidth="2"
+                                                    vectorEffect="non-scaling-stroke"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            </g>
                                         )}
                                         {hoveredMi !== null && crosshair(hoveredMi)}
                                     </svg>

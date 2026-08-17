@@ -2051,17 +2051,10 @@ a.btn-accent:active {
   animation: page-reveal 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes chart-reveal {
-  from { clip-path: inset(0 100% 0 0); }
-  to   { clip-path: inset(0); }
-}
-
-.chart-reveal {
-  animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-}
-/* ⚠️ Без @media (prefers-reduced-motion) — на Windows «эффекты анимации»
-   у многих выключены системно, и такой гард молча убивает reveal во всех
-   браузерах юзера. Остальные анимации сайта reduce тоже не уважают. */
+/* Класс .chart-reveal (clip-path sweep всего блока графика) удалён: все
+   графики перешли на reveal только серий — rAF-анимацию ширины clip-rect
+   внутри SVG (useChartReveal / SimpleChart) либо «волну» баров; оси, сетка
+   и легенда видны с первого кадра. */
 
 /* Onboarding tour — мягкий fade-in при переходе между шагами.
    Используется в OnboardingTour.tsx через key={stepIndex} на tooltip card.

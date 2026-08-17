@@ -5,6 +5,7 @@ import { CHART_COLORS, CROSSHAIR, PADDING, cssVar, ANIMATION } from '../../confi
 import { ChartGrid, ChartCrosshair, ChartDot, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis, ChartMarker } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
+import { useChartReveal } from '../chart/useChartReveal';
 import ChartWatermark from '../ChartWatermark';
 
 interface TooltipState {
@@ -34,9 +35,12 @@ export default function SeasonalityPriceChart({
 }: SeasonalityPriceChartProps) {
   const divHoverRef = useRef(false);
 
-  // Анимация путей: reveal на первом рендере, морф при смене периода,
-  // мгновенное обновление при drag'е навигатора (priceData === prev).
+  // Анимация путей: reveal на первом рендере (rAF clip-rect — только линии,
+  // обрамление видно сразу), морф при смене периода, мгновенное обновление
+  // при drag'е навигатора (priceData === prev).
   const [revealed, setRevealed] = useState(false);
+  // Ширина reveal-клипа в юнитах viewBox (0..1000).
+  const revealW = useChartReveal(revealed, 1000);
   const [animRawPath, setAnimRawPath] = useState('');
   const [animAdjPath, setAnimAdjPath] = useState('');
   const prevRawRef = useRef<{ x: number; y: number }[]>([]);
@@ -190,10 +194,11 @@ export default function SeasonalityPriceChart({
         />
       </div>
 
-      {/* Chart area — chart-reveal класс активируется после первого рендера.
+      {/* Chart area — entrance-reveal живёт внутри SVG (клип только линий),
+          обёртку не анимируем: оси и подписи видны с первого кадра.
           touchAction: none + onTouch* handlers → поддержка водения пальцем на mobile. */}
       <div
-        className={`relative cursor-crosshair ${revealed ? 'chart-reveal' : ''}`}
+        className="relative cursor-crosshair"
         style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550, maxWidth: '100%', touchAction: 'none' }}
         onMouseMove={(e) => {
           if (divHoverRef.current) return;
@@ -265,14 +270,23 @@ export default function SeasonalityPriceChart({
         {/* SVG */}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox={`0 0 1000 500`} preserveAspectRatio="none" width="100%" height="100%">
+            <defs>
+              {/* Reveal-клип: ширина rect (в юнитах viewBox) анимируется
+                  useChartReveal (rAF), клипятся только линии — сетка вне клипа. */}
+              <clipPath id="seasonPriceRevealClip">
+                <rect x={0} y={0} width={Math.max(revealW ?? 1000, 0)} height={500} />
+              </clipPath>
+            </defs>
             {/* Grid */}
             <ChartGrid yTicks={yTicks} />
-            {/* Raw price — путь анимируется через animRawPath */}
-            <path d={animRawPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
-            {/* Adjusted — dashed линия */}
-            {hasAdj && (
-              <path d={animAdjPath} fill="none" stroke={CHART_COLORS.adjusted} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
-            )}
+            <g clipPath="url(#seasonPriceRevealClip)">
+              {/* Raw price — путь анимируется через animRawPath */}
+              <path d={animRawPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+              {/* Adjusted — dashed линия */}
+              {hasAdj && (
+                <path d={animAdjPath} fill="none" stroke={CHART_COLORS.adjusted} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
+              )}
+            </g>
             {/* Crosshair + Dot */}
             {tooltip?.priceDate && (() => {
               const idx = pricePoints.findIndex(p => p.date === tooltip.priceDate);
