@@ -683,8 +683,9 @@ export default function CompanyFlowsTab({
         [capAvailable, overhangAvailable],
     );
 
-    // Триггер entrance-волны (бары / кругляши): перезапуск при смене бумаги,
-    // набора фондов, периода, режима ИЛИ веса доли — окно проигрывает каскад заново.
+    // Триггер сброса навигатора и морфа при смене бумаги, набора фондов,
+    // периода, режима ИЛИ веса доли. Entrance-анимации (волна/reveal) играют
+    // только на первом рендере с данными — схема как в OI.
     const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${effectiveMode}`;
 
     // ── Рендер ──

@@ -189,15 +189,14 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
   //
   // animKey — комбинируем ДВА сигнала:
-  //   - animTrigger (от parent) — меняется при смене type/period, явный
-  //     сигнал «перезапусти wave».
+  //   - animTrigger (от parent) — меняется при смене type/period.
   //   - data-signature (длина + крайние даты) — меняется когда данные впервые
   //     приезжают. На первом открытии компонент рендерится в loading-состоянии
-  //     с пустыми данными; эффект делает early-return, а animTrigger потом не
-  //     меняется → entrance-анимация НЕ играла при первом открытии страницы.
-  //     Signature ловит переход [] → загружено.
-  //   Toggle категорий не меняет ни animTrigger, ни signature → wave корректно
-  //   НЕ перезапускается.
+  //     с пустыми данными; signature ловит переход [] → загружено и запускает
+  //     первую (и единственную) волну.
+  //   После первой волны смена animKey НЕ переигрывает каскад (схема как в
+  //   OI: анимация только при первом открытии) — прогресс сразу fill(1),
+  //   бары мгновенно показывают новые данные.
   //
   // ВАЖНО: signature берём из allPeriods (ПОЛНЫЙ набор), а не из periods (срез
   // нижнего таймлайна-навигатора через navRange). Иначе драг навигатора менял
@@ -217,15 +216,20 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
   );
+  // Волна играет ОДИН раз — на первом рендере с данными (схема как в OI):
+  // смена type/period/среза (animKey) после этого ставит бары сразу на полную
+  // высоту, без повторного каскада с нуля.
+  const wavedRef = useRef(false);
   // Сброс прогресса СИНХРОННО при смене animKey (React-паттерн «adjust state
   // during render»). Без него один кадр бары рендерятся со старым animProgress:
   // при переключении на более длинный период правые бары (индексы за пределами
   // старого массива) попадают на `animProgress[i] ?? 1` = full — и видны на
-  // полную высоту до того, как до них дойдёт wave.
+  // полную высоту до того, как до них дойдёт wave. После первой волны —
+  // наоборот, сразу fill(1): данные меняются без entrance-анимации.
   const [animatedKey, setAnimatedKey] = useState(animKey);
   if (animKey !== animatedKey) {
     setAnimatedKey(animKey);
-    setAnimProgress(new Array(periods.length).fill(0));
+    setAnimProgress(new Array(periods.length).fill(wavedRef.current ? 1 : 0));
   }
   // rafRef хранит ID текущего кадра СНАРУЖИ эффекта — нужен settleForCapture
   // (imperative handle ниже), чтобы отменить цикл и не дать следующему tick()
@@ -233,6 +237,12 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const rafRef = useRef(0);
   useEffect(() => {
     if (periods.length === 0) return;
+    if (wavedRef.current) {
+      // Волна уже отыграла — новые данные встают сразу на полную высоту.
+      setAnimProgress(new Array(periods.length).fill(1));
+      return;
+    }
+    wavedRef.current = true;
     setAnimProgress(new Array(periods.length).fill(0));
     const start = performance.now();
     // Slower wave (match с Притоки/Оттоки feel):

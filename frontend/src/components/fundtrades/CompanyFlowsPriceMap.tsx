@@ -103,7 +103,8 @@ interface CompanyFlowsPriceMapProps {
     noFundsSelected?: boolean;
     /** Нет истории цены (не акция / нет candles) — свой empty-state. */
     priceMissing?: boolean;
-    /** Перезапуск анимации: меняй при смене бумаги / фондов / периода. */
+    /** Смена бумаги / фондов / периода: сброс навигатора. Анимации
+     *  (волна кругляшей, reveal линии) играют только на первом рендере. */
     animTrigger?: string;
 }
 
@@ -288,10 +289,14 @@ export default function CompanyFlowsPriceMap({
     const isOverflow = (net: number) => Math.abs(net) > normAbsNet;
 
     // ── Каскадное появление кругляшей (масштаб 0→1, слева направо). ──
+    // Схема как в OI: волна играет один раз — на первом рендере с данными.
+    // Смена бумаги/фондов/окна обновляет кругляши без повторного каскада.
     const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
     const rafRef = useRef<number | null>(null);
-    const markersSig = useMemo(() => markers.map(m => m.mi).join(','), [markers]);
+    const wavedRef = useRef(false);
     useEffect(() => {
+        if (!markers.length || wavedRef.current) return;
+        wavedRef.current = true;
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         let start: number | null = null;
         const tick = (ts: number) => {
@@ -304,7 +309,7 @@ export default function CompanyFlowsPriceMap({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [markersSig, animTrigger]);
+    }, [markers.length]);
     const popFor = (orderIdx: number, total: number) => {
         const delay = (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger;
         const t = Math.min(Math.max(elapsed - delay, 0) / (ANIMATION.waveDuration - ANIMATION.waveStagger), 1);
@@ -312,8 +317,8 @@ export default function CompanyFlowsPriceMap({
     };
 
     // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
-    // Перезапуск на animTrigger — вместе с волной кругляшей при смене бумаги.
-    const revealW = useChartReveal(true, 1000, animTrigger);
+    // Стартует, когда данные впервые готовы, и играет один раз — как в OI.
+    const revealW = useChartReveal(hasData, 1000);
 
     // ── Hover: ближайший видимый кругляш по X. ──
     // Снап именно к кругляшам, а не к неделям: и потоки, и цена в тултипе

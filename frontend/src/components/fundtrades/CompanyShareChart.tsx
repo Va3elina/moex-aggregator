@@ -100,7 +100,8 @@ interface CompanyShareChartProps {
     noFundsSelected?: boolean;
     /** Нет истории цены (не акция) → верхней секции нет. */
     priceMissing?: boolean;
-    /** Перезапуск анимации: меняй при смене бумаги / фондов / периода / веса. */
+    /** Смена бумаги / фондов / периода / веса: сброс навигатора. Волна и
+     *  reveal играют только на первом рендере, дальше бары морфят. */
     animTrigger?: string;
 }
 
@@ -357,9 +358,15 @@ export default function CompanyShareChart({
     );
 
     // ── Каскадное появление баров (высота 0→1, слева направо). ──
+    // Схема как в OI: волна играет один раз — на первом рендере с данными.
+    // Дальнейшие смены (режим, бумага, период) морфят бары CSS-transition'ом
+    // (см. barsMorphing ниже), а не переигрывают каскад.
     const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
     const rafRef = useRef<number | null>(null);
+    const wavedRef = useRef(false);
     useEffect(() => {
+        if (!hasData || wavedRef.current) return;
+        wavedRef.current = true;
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         let start: number | null = null;
         const tick = (ts: number) => {
@@ -372,17 +379,43 @@ export default function CompanyShareChart({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [animTrigger, shareMode]);
+    }, [hasData]);
     const popFor = (orderIdx: number, total: number) => {
         const delay = (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger;
         const t = Math.min(Math.max(elapsed - delay, 0) / (ANIMATION.waveDuration - ANIMATION.waveStagger), 1);
         return easeOutCubic(t);
     };
 
+    // ── Морф баров при смене режима/бумаги/периода (не окна навигатора). ──
+    // CSS-transition на x/y/width/height включается только на время морфа:
+    // держать его постоянно нельзя — драг навигатора двигает бары каждый тик
+    // и transition давал бы «желейное» отставание. Паттерн «adjust state
+    // during render»: setState до коммита → новая геометрия рендерится уже
+    // с transition-стилем, и браузер анимирует от прежних значений.
+    const morphKey = `${shareMode}|${months[0] ?? ''}|${months.length}`;
+    const [prevMorphKey, setPrevMorphKey] = useState(morphKey);
+    const [barsMorphing, setBarsMorphing] = useState(false);
+    if (morphKey !== prevMorphKey) {
+        setPrevMorphKey(morphKey);
+        // Во время первой волны морф не включаем — rAF сам ведёт высоты.
+        if (wavedRef.current && elapsed >= ANIMATION.waveDuration) setBarsMorphing(true);
+    }
+    useEffect(() => {
+        if (!barsMorphing) return;
+        const t = window.setTimeout(() => setBarsMorphing(false), ANIMATION.morphDuration + 100);
+        return () => window.clearTimeout(t);
+    }, [barsMorphing]);
+    const barMorphStyle: React.CSSProperties | undefined = barsMorphing
+        ? {
+              transition: ['x', 'y', 'width', 'height']
+                  .map(p => `${p} ${ANIMATION.morphDuration}ms ${ANIMATION.waveEasing}`)
+                  .join(', '),
+          }
+        : undefined;
+
     // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
-    // Перезапуск на animTrigger (смена бумаги); смена режима панель цены не
-    // трогает — там перерисовываются только бары своей волной.
-    const revealW = useChartReveal(true, 1000, animTrigger);
+    // Стартует, когда цена впервые готова, и играет один раз — как в OI.
+    const revealW = useChartReveal(hasPrice && linePath !== '', 1000);
 
     // ── Hover: ближайший месяц с данными по X (общий на обе панели). ──
     const [hoveredMi, setHoveredMi] = useState<number | null>(null); // индекс в months
@@ -719,6 +752,7 @@ export default function CompanyShareChart({
                                                 height={1000 - yTop}
                                                 fill={BAR_COLOR}
                                                 opacity={dim ? 0.45 : 0.92}
+                                                style={barMorphStyle}
                                             />
                                         );
                                     })}

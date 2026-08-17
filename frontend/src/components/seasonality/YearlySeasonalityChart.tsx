@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, useRef } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
-import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
+import { ANIMATION, CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
+import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
@@ -52,14 +53,23 @@ export default function YearlySeasonalityChart({
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
   const isMobile = useIsMobile();
-  // Reveal линий на mount (key-based remount в parent): rAF clip-rect —
-  // клипятся только серии, оси/сетка/пилюли видны с первого кадра.
+  // Reveal линий на первом рендере с данными: rAF clip-rect — клипятся
+  // только серии, оси/сетка/пилюли видны с первого кадра. Играет один раз
+  // (схема как в OI); смена периодов морфит пути (см. morph-эффект ниже).
   const [revealed, setRevealed] = useState(false);
   useLayoutEffect(() => {
     if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
   }, [yearlyData.average.length, revealed]);
   // Ширина reveal-клипа в юнитах viewBox (0..1000).
   const revealW = useChartReveal(revealed, 1000);
+
+  // Морф путей при смене данных (периоды, тоггл текущего года): пути серий
+  // хранятся в animPaths (key серии → d), интерполяция morphPts с ресемплом.
+  const [animPaths, setAnimPaths] = useState<Record<string, string>>({});
+  const prevPtsRef = useRef<Record<string, { x: number; y: number }[]>>({});
+  const currPtsRef = useRef<Record<string, { x: number; y: number }[]>>({});
+  const morphRafRef = useRef<number | null>(null);
+  const isFirstPathsRef = useRef(true);
 
   // === Pill positioning через ResizeObserver ===
   // Раньше pill был HTML-div с transform: translateY(-50%). В html2canvas
@@ -87,11 +97,9 @@ export default function YearlySeasonalityChart({
   const vw = useViewportWidth();
   const pillFontPx = axisFontSize(vw);
 
-  if (!yearlyData || yearlyData.average.length === 0) {
-    return (
-      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
-    );
-  }
+  // Ранний выход «Нет данных» перенесён НИЖЕ morph-эффекта (rules-of-hooks —
+  // число хуков между рендерами должно быть постоянным). Вся геометрия ниже
+  // безопасна на пустых массивах.
 
   // Когда выбран ОДИН период без extras, seriesData не передаётся (SeasonalityPage
   // оптимизирует — не делает лишний промис). seriesMeta при этом ВСЕГДА содержит
@@ -106,11 +114,11 @@ export default function YearlySeasonalityChart({
   const allSeries = series.slice(0, safeCount);
   const allMeta: SeriesMeta[] = meta.slice(0, safeCount);
 
-  const baseAvg = yearlyData.average;
+  const baseAvg = yearlyData?.average ?? [];
   // Тоггл «Текущий год»: пустой массив каскадно убирает линию, value-pill,
   // вклад в Y-шкалу и строки тултипа. Легенда гейтится отдельно (ниже).
-  const cur = showCurrentYear ? yearlyData.current : [];
-  const fullMaxTD = yearlyData.max_trading_days || 252;
+  const cur = (showCurrentYear ? yearlyData?.current : null) ?? [];
+  const fullMaxTD = yearlyData?.max_trading_days || 252;
 
   // Всегда показываем весь год: td нормализуется по полному диапазону торговых
   // дней [0..fullMaxTD] (scX(td) = td / fullMaxTD).
@@ -170,16 +178,79 @@ export default function YearlySeasonalityChart({
     return match;
   };
 
-  // SVG paths для каждой ВИДИМОЙ серии
-  const seriesPaths = visAllSeries.map(s =>
-    s.average.map((p, i) =>
-      `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.avg_pct) * 500}`
-    ).join(' ')
+  // Точки каждой ВИДИМОЙ серии в юнитах viewBox — из них строятся пути и
+  // они же — таргеты морфа при смене данных.
+  const seriesPts = visAllSeries.map(s =>
+    s.average.map(p => ({ x: scX(p.td) * 1000, y: scY(p.avg_pct) * 500 }))
   );
+  const curPts = visCur.map(p => ({ x: scX(p.td) * 1000, y: scY(p.pct) * 500 }));
 
-  const curPath = visCur.map((p, i) =>
-    `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.pct) * 500}`
-  ).join(' ');
+  const seriesPaths = seriesPts.map(ptsToPath);
+  const curPath = ptsToPath(curPts);
+
+  // Морф путей при смене данных: первый рендер с данными ставит пути мгновенно
+  // (reveal рисует их слева направо), дальше — morphPts из текущей визуальной
+  // позиции (прерывание корректно). Серии сопоставляются по key из allMeta:
+  // новая серия (добавили период) появляется сразу на месте, без морфа.
+  const CUR_KEY = '__current';
+  useLayoutEffect(() => {
+    const targets: Record<string, { x: number; y: number }[]> = {};
+    seriesPts.forEach((pts, i) => {
+      if (pts.length) targets[allMeta[i]?.key ?? String(i)] = pts;
+    });
+    if (curPts.length) targets[CUR_KEY] = curPts;
+
+    if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
+    if (Object.keys(targets).length === 0) {
+      prevPtsRef.current = {};
+      currPtsRef.current = {};
+      setAnimPaths({});
+      return;
+    }
+
+    const toPaths = (m: Record<string, { x: number; y: number }[]>) =>
+      Object.fromEntries(Object.entries(m).map(([k, pts]) => [k, ptsToPath(pts)]));
+
+    if (isFirstPathsRef.current || Object.keys(prevPtsRef.current).length === 0) {
+      isFirstPathsRef.current = false;
+      prevPtsRef.current = targets;
+      currPtsRef.current = {};
+      setAnimPaths(toPaths(targets));
+      return;
+    }
+
+    const fromMap: Record<string, { x: number; y: number }[]> = {};
+    for (const k of Object.keys(targets)) {
+      fromMap[k] = currPtsRef.current[k] ?? prevPtsRef.current[k] ?? targets[k];
+    }
+    let start: number | null = null;
+    const animate = (ts: number) => {
+      if (start == null) start = ts;
+      const t = easeOutCubic(Math.min((ts - start) / ANIMATION.morphDuration, 1));
+      const interp: Record<string, { x: number; y: number }[]> = {};
+      for (const k of Object.keys(targets)) {
+        interp[k] = morphPts(fromMap[k], targets[k], t);
+      }
+      currPtsRef.current = interp;
+      setAnimPaths(toPaths(interp));
+      if (t < 1) {
+        morphRafRef.current = requestAnimationFrame(animate);
+      } else {
+        prevPtsRef.current = targets;
+        currPtsRef.current = {};
+      }
+    };
+    morphRafRef.current = requestAnimationFrame(animate);
+    return () => { if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current); };
+    // Геометрия зависит только от данных (viewBox фиксирован 1000×500).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearlyData, seriesData, seriesMeta, showCurrentYear]);
+
+  if (!yearlyData || yearlyData.average.length === 0) {
+    return (
+      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+    );
+  }
 
   // X-axis: месяцы (Янв-Дек) — каждая подпись позиционируется absolute по
   // реальной X-координате месяца через scX(td). Раньше использовался
@@ -403,9 +474,11 @@ export default function YearlySeasonalityChart({
                 strokeWidth=3 совпадает с tokens.linePrimaryW в SimpleChart (OI/Buffett) —
                 визуальная консистентность линий между индикаторами. */}
             <g clipPath="url(#yearlySeasonRevealClip)">
+              {/* d = animPaths (морф-состояние), фоллбэк — свежий таргет:
+                  до первого прогона morph-эффекта пути не мигают пустыми. */}
               {seriesPaths.map((path, s) => (
                 path ? (
-                  <path key={allMeta[s]?.key ?? s} d={path}
+                  <path key={allMeta[s]?.key ?? s} d={animPaths[allMeta[s]?.key ?? String(s)] ?? path}
                     fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
                     strokeWidth="3"
                     vectorEffect="non-scaling-stroke"
@@ -417,7 +490,7 @@ export default function YearlySeasonalityChart({
 
               {/* Current year line — accent, поверх */}
               {cur.length > 0 && (
-                <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="3"
+                <path d={animPaths[CUR_KEY] ?? curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="3"
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round" strokeLinejoin="round" />
               )}
