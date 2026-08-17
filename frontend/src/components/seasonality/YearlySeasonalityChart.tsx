@@ -8,6 +8,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { axisFontSize } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
+import { useChartReveal } from '../chart/useChartReveal';
 
 interface TooltipState {
   x: number;
@@ -51,11 +52,14 @@ export default function YearlySeasonalityChart({
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
   const isMobile = useIsMobile();
-  // CSS-reveal на mount (key-based remount в parent)
+  // Reveal линий на mount (key-based remount в parent): rAF clip-rect —
+  // клипятся только серии, оси/сетка/пилюли видны с первого кадра.
   const [revealed, setRevealed] = useState(false);
   useLayoutEffect(() => {
     if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
   }, [yearlyData.average.length, revealed]);
+  // Ширина reveal-клипа в юнитах viewBox (0..1000).
+  const revealW = useChartReveal(revealed, 1000);
 
   // === Pill positioning через ResizeObserver ===
   // Раньше pill был HTML-div с transform: translateY(-50%). В html2canvas
@@ -304,7 +308,7 @@ export default function YearlySeasonalityChart({
   };
 
   return (
-    <div className={revealed ? 'chart-reveal' : ''}>
+    <div>
       {/* Легенда — серии-периоды (среднее + сравниваемые года + текущий год),
           каждая со своим цветом линии. Название актива убрано — оно есть
           в заголовке карточки, дублирование выглядело перегружено. */}
@@ -374,6 +378,13 @@ export default function YearlySeasonalityChart({
           <ChartWatermark left="6px" bottom="6px" />
 
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
+            <defs>
+              {/* Reveal-клип: ширина rect (в юнитах viewBox) анимируется
+                  useChartReveal (rAF), клипятся только линии — сетка вне клипа. */}
+              <clipPath id="yearlySeasonRevealClip">
+                <rect x={0} y={0} width={Math.max(revealW ?? 1000, 0)} height={500} />
+              </clipPath>
+            </defs>
             {/* Grid + zero line + month separators.
                 zeroPct: позиция 0 на оси Y. emphasizeZero=true → жирная контрастная
                 линия (text-primary @ 1.75px @ opacity 0.6) — yearly чарт показывает
@@ -391,24 +402,26 @@ export default function YearlySeasonalityChart({
                 теперь все серии — явно выбранные "Период с YYYY", все равнозначные.
                 strokeWidth=3 совпадает с tokens.linePrimaryW в SimpleChart (OI/Buffett) —
                 визуальная консистентность линий между индикаторами. */}
-            {seriesPaths.map((path, s) => (
-              path ? (
-                <path key={allMeta[s]?.key ?? s} d={path}
-                  fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
-                  strokeWidth="3"
-                  vectorEffect="non-scaling-stroke"
-                  strokeLinecap="round" strokeLinejoin="round"
-                  opacity={0.85}
-                />
-              ) : null
-            ))}
+            <g clipPath="url(#yearlySeasonRevealClip)">
+              {seriesPaths.map((path, s) => (
+                path ? (
+                  <path key={allMeta[s]?.key ?? s} d={path}
+                    fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
+                    strokeWidth="3"
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    opacity={0.85}
+                  />
+                ) : null
+              ))}
 
-            {/* Current year line — accent, поверх */}
-            {cur.length > 0 && (
-              <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="3"
-                vectorEffect="non-scaling-stroke"
-                strokeLinecap="round" strokeLinejoin="round" />
-            )}
+              {/* Current year line — accent, поверх */}
+              {cur.length > 0 && (
+                <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="3"
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round" strokeLinejoin="round" />
+              )}
+            </g>
 
             {/* Crosshair */}
             {tooltip?.yearlyTd !== undefined && (

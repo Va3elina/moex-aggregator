@@ -36,6 +36,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { computeChartTopLineY } from '../chart/datePillLayout';
+import { useChartReveal } from '../chart/useChartReveal';
 import type { CompanyFlowsSeries } from './CompanyFlowsHistogram';
 
 const easeOutCubic = ANIMATION.easing;
@@ -310,6 +311,10 @@ export default function CompanyFlowsPriceMap({
         return easeOutCubic(t);
     };
 
+    // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
+    // Перезапуск на animTrigger — вместе с волной кругляшей при смене бумаги.
+    const revealW = useChartReveal(true, 1000, animTrigger);
+
     // ── Hover: ближайший видимый кругляш по X. ──
     // Снап именно к кругляшам, а не к неделям: и потоки, и цена в тултипе
     // месячные, поэтому останавливаться курсору есть смысл только там, где
@@ -472,9 +477,11 @@ export default function CompanyFlowsPriceMap({
                     </div>
 
                     {/* График с тултипом */}
+                    {/* Без chart-reveal на обёртке: линия рисуется reveal-клипом в
+                        SVG, кругляши растут «волной» — оси и даты видны сразу. */}
                     <div
                         ref={containerRef}
-                        className="relative cursor-crosshair chart-reveal"
+                        className="relative cursor-crosshair"
                         style={{ height: 'var(--chart-height, 420px)', display: 'flow-root', touchAction: 'none' }}
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
@@ -493,6 +500,13 @@ export default function CompanyFlowsPriceMap({
                         {/* Область графика — те же CSS-отступы, что в гистограмме. */}
                         <div className="absolute" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)' }}>
                             <svg ref={svgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                                <defs>
+                                    {/* Reveal-клип линии цены: ширина rect (юниты
+                                        viewBox) анимируется useChartReveal (rAF). */}
+                                    <clipPath id="priceMapRevealClip">
+                                        <rect x={0} y={0} width={Math.max(revealW ?? 1000, 0)} height={1000} />
+                                    </clipPath>
+                                </defs>
                                 {/* Горизонтальная сетка по тикам цены */}
                                 {priceTicks.map((p, i) => {
                                     const y = yFrac(p) * 1000;
@@ -503,15 +517,17 @@ export default function CompanyFlowsPriceMap({
 
                                 {/* Линия цены — акцентный цвет, толщина как primary-линии. */}
                                 {linePath && (
-                                    <path
-                                        d={linePath}
-                                        fill="none"
-                                        stroke={PRICE_LINE_COLOR}
-                                        strokeWidth="2"
-                                        vectorEffect="non-scaling-stroke"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    />
+                                    <g clipPath="url(#priceMapRevealClip)">
+                                        <path
+                                            d={linePath}
+                                            fill="none"
+                                            stroke={PRICE_LINE_COLOR}
+                                            strokeWidth="2"
+                                            vectorEffect="non-scaling-stroke"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </g>
                                 )}
 
                                 {/* Вертикальный курсор — снап к hovered кругляшу.

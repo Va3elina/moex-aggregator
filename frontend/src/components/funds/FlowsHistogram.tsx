@@ -130,9 +130,12 @@ export default function FlowsHistogram({
                 </div>
 
                 {/* График с тултипом */}
+                {/* Без chart-reveal на обёртке: бары и так растут «волной» слева
+                    направо (animatedBarsIn/Out из родителя), а обёртка уводила
+                    вместе с ними оси, сетку и даты — они видны с первого кадра. */}
                 <div
                     ref={flowContainerRef}
-                    className="relative cursor-crosshair chart-reveal"
+                    className="relative cursor-crosshair"
                     style={{
                         height: 'var(--chart-height, 450px)',
                         display: 'flow-root',

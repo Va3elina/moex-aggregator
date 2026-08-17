@@ -620,7 +620,7 @@ export default function StrengthPage() {
                                     Middle = (top + bottom) / 2 от верха containerRef. */}
                                 {(() => {
                                     // Единая логика date-pill через computeChartTopLineY.
-                                    // Helper находит первый .chart-reveal внутри containerRef и считает y верхней линии.
+                                    // Helper находит первый .chart-plot внутри containerRef и считает y верхней линии.
                                     const topLineY = computeChartTopLineY({
                                         container: containerRef.current,
                                         paddingTop: padding.top,

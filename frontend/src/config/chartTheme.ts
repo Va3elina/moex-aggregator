@@ -124,8 +124,9 @@ export const ANIMATION = {
   /** CSS easing для transition/animation баров */
   waveEasing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
 
-  // ── CSS reveal (clip-path left-to-right sweep) ──
-  // Используется через класс .chart-reveal в index.css
+  // ── Entrance-reveal серий (clip-rect left-to-right sweep) ──
+  // Используется в useChartReveal (общий хук) и SimpleChart (rAF-анимация
+  // ширины rect в <clipPath> — только серии, обрамление видно сразу).
   revealDuration: 1000,
 
   /** Потолок точек, при котором морфинг ДОПИСЫВАНИЯ (realtime-обновление ряда)

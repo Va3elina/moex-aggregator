@@ -18,7 +18,7 @@
  * ── Различия chart'ов ──
  * • SimpleChart: chartWrapRef → drawing area; line at padding.top
  * • FlowsHistogram: chartContainer → SVG; grid line at 3% chart-area
- * • StrengthPage: containerRef → first .chart-reveal (IndexChart wrapper)
+ * • StrengthPage: containerRef → first .chart-plot (IndexChart wrapper)
  *
  * Helper унифицирует через optional gridOffsetFrac.
  */
@@ -26,7 +26,7 @@
 export const PILL_GAP_ABOVE_LINE = -3;
 
 interface ChartTopLineOptions {
-  /** Wrapper element с chart-reveal SVG. Если null — query из container'а. */
+  /** Wrapper element с chart SVG. Если null — query из container'а. */
   wrapper?: HTMLElement | null;
   /** Контейнер для query (если wrapper не задан явно). */
   container?: HTMLElement | null;
@@ -47,7 +47,7 @@ interface ChartTopLineOptions {
  */
 export function computeChartTopLineY(opts: ChartTopLineOptions): number {
   const wrap = opts.wrapper
-    ?? (opts.container?.querySelector<HTMLElement>('.chart-reveal') ?? null);
+    ?? (opts.container?.querySelector<HTMLElement>('.chart-plot') ?? null);
   const wrapTop = wrap?.offsetTop ?? 60;
   const padTop = opts.paddingTop ?? 8;
   const gridOff = (opts.gridOffsetFrac ?? 0) * (opts.chartAreaHeight ?? 0);

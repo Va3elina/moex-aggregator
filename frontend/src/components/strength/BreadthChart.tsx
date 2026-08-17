@@ -5,6 +5,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
+import { useChartReveal } from '../chart/useChartReveal';
 import ChartWatermark from '../ChartWatermark';
 
 type ChartMode = 'line' | 'histogram';
@@ -107,7 +108,8 @@ export default function BreadthChart({
     const currPtsRef = useRef<{ x: number; y: number }[]>([]);
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
-    // CSS-driven reveal на первом рендере (clip-path анимация слева направо)
+    // Reveal только серий на первом рендере: rAF-анимация ширины rect в
+    // #breadthChartClip (useChartReveal). Оси, уровни и пилюля вне клипа.
     const [revealed, setRevealed] = useState(false);
 
     // Animation for histogram mode
@@ -129,6 +131,7 @@ export default function BreadthChart({
 
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
+    const revealW = useChartReveal(revealed, chartWidth);
 
     // «+» алерт на ось % (TradingView-стиль). cursorY трекаем локально в этом SVG.
     const alertsOn = !!onCreateAlert && !isMobile;
@@ -273,7 +276,7 @@ export default function BreadthChart({
 
                 setAnimLinePath(ptsToPath(targetPts));
                 setAnimBars(targetBars);
-                // CSS-reveal на первом рендере (как в SimpleChart/IndexChart)
+                // Reveal серий на первом рендере (rAF clip-rect, как в SimpleChart/IndexChart)
                 if (!revealed) setRevealed(true);
                 return;
             }
@@ -350,7 +353,9 @@ export default function BreadthChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
+            {/* chart-plot — маркер для computeChartTopLineY (в соло-режиме без
+                индекса StrengthPage находит эту обёртку как первую). */}
+            <div ref={chartWrapRef} className="relative chart-plot">
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block"
                         style={{ backgroundColor: 'var(--bg-primary)', contain: 'paint' }}
@@ -361,9 +366,12 @@ export default function BreadthChart({
                                 <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
                                 <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
                             </linearGradient>
-                            {/* Clip: bars don't overflow chart area */}
+                            {/* Clip: bars don't overflow chart area. Ширина rect
+                                дополнительно служит entrance-reveal'ом: revealW
+                                анимируется useChartReveal (rAF), финал null —
+                                rect следует за chartWidth при resize. */}
                             <clipPath id="breadthChartClip">
-                                <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} />
+                                <rect x={padding.left} y={padding.top} width={Math.max(revealW ?? chartWidth, 0)} height={chartHeight} />
                             </clipPath>
                         </defs>
 
@@ -386,14 +394,17 @@ export default function BreadthChart({
                                 </g>
                             )}
 
-                            {/* Animated line with colored segments */}
+                            {/* Animated line with colored segments — в том же клипе,
+                                что и бары: entrance-reveal рисует линию слева направо. */}
                             {mode === 'line' && (
-                                <BreadthLineRenderer
-                                    animLinePath={animLinePath}
-                                    dataLength={syncedData.length}
-                                    breadthValues={breadthValues}
-                                    getColor={getColor}
-                                />
+                                <g clipPath="url(#breadthChartClip)">
+                                    <BreadthLineRenderer
+                                        animLinePath={animLinePath}
+                                        dataLength={syncedData.length}
+                                        breadthValues={breadthValues}
+                                        getColor={getColor}
+                                    />
+                                </g>
                             )}
 
                             {/* Crosshair */}

@@ -296,9 +296,12 @@ export default function CompanyFlowsHistogram({
                     </div>
 
                     {/* График с тултипом */}
+                    {/* Без chart-reveal на обёртке: бары и так растут «волной» слева
+                        направо, а обёртка уводила вместе с ними оси и даты —
+                        обрамление видно с первого кадра. */}
                     <div
                         ref={containerRef}
-                        className="relative cursor-crosshair chart-reveal"
+                        className="relative cursor-crosshair"
                         style={{ height: 'var(--chart-height, 420px)', display: 'flow-root', touchAction: 'none' }}
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
