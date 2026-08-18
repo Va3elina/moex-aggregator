@@ -32,9 +32,19 @@ export function useChartReveal(
   const widthRef = useRef(fullWidth);
   widthRef.current = fullWidth;
   const rafRef = useRef<number | null>(null);
+  // Reveal играет ОДИН раз за жизнь компонента (схема как в OI). Без doneRef
+  // мигание start false→true (смена актива: два фетча, данные на кадр
+  // «рассинхронены» и hasData фликает) переигрывало reveal — линия заново
+  // ползла слева, хотя кругляши/бары уже стояли. Явный restartKey
+  // по-прежнему перезапускает.
+  const doneRef = useRef(false);
+  const keyRef = useRef(restartKey);
 
   useEffect(() => {
     if (!start) return;
+    const keyChanged = keyRef.current !== restartKey;
+    keyRef.current = restartKey;
+    if (doneRef.current && !keyChanged) return;
     const D = ANIMATION.revealDuration;
     let t0: number | null = null;
     const step = (ts: number) => {
@@ -44,6 +54,7 @@ export function useChartReveal(
       if (t < 1) {
         rafRef.current = requestAnimationFrame(step);
       } else {
+        doneRef.current = true;
         setRevealW(null);
       }
     };

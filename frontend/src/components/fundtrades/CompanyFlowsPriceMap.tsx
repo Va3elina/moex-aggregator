@@ -30,6 +30,7 @@ import {
 } from 'react';
 import { LineChart } from 'lucide-react';
 import { GRID, CROSSHAIR, ANIMATION, FUND_PALETTE, cssVar } from '../../config/chartTheme';
+import { morphPts } from '../../utils/chartAnimation';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -367,18 +368,88 @@ export default function CompanyFlowsPriceMap({
         return { rows, net };
     }, [hoveredIdx, visMarkers, series]);
 
-    // Линия цены: path в нормированных координатах 0..1000 (non-scaling-stroke).
-    const linePath = useMemo(() => {
-        if (visCloses.length < 2) return '';
-        const pts: string[] = [];
-        for (let i = 0; i < visCloses.length; i++) {
-            const x = ((i + 0.5) / visCount) * 1000;
-            const y = yFrac(visCloses[i]) * 1000;
-            pts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`);
-        }
-        return pts.join(' ');
+    // Линия цены: точки в нормированных координатах 0..1000 (non-scaling-stroke).
+    const targetLinePts = useMemo(() => {
+        if (visCloses.length < 2) return [] as { x: number; y: number }[];
+        return visCloses.map((c, i) => ({
+            x: ((i + 0.5) / visCount) * 1000,
+            y: yFrac(c) * 1000,
+        }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visCloses, visCount, priceLo, priceHi]);
+
+    // ── Морф линии при смене данных (бумага/период) — как в OI (SimpleChart):
+    // из текущих отображаемых точек в новые (morphPts ресемплирует при разной
+    // длине). Драг навигатора — мгновенно (snap). Смена данных приводит ещё и
+    // к сбросу навигатора СЛЕДУЮЩИМ коммитом (эффект выше) — поэтому морф,
+    // застигнутый сменой окна, не обрывается snap'ом, а ретаргетится в новое
+    // окно из текущих точек. lineMorphing отдаётся кругляшам: на время морфа
+    // они получают CSS-transition и скользят вместе с линией, а не прыгают
+    // на новые места раньше неё.
+    const [linePts, setLinePts] = useState<{ x: number; y: number }[]>([]);
+    const linePtsRef = useRef<{ x: number; y: number }[]>([]);
+    const lineRafRef = useRef<number | null>(null);
+    // Флаг «морф в полёте» — отдельным ref'ом, НЕ через lineRafRef: cleanup
+    // эффекта выполняется до нового тела и обнулил бы rafRef раньше проверки.
+    const lineMorphActiveRef = useRef(false);
+    const prevWeeksRef = useRef<string[] | null>(null);
+    const [lineMorphing, setLineMorphing] = useState(false);
+    useLayoutEffect(() => {
+        const dataChanged = prevWeeksRef.current !== weeks;
+        prevWeeksRef.current = weeks;
+        const morphInFlight = lineMorphActiveRef.current;
+        if (lineRafRef.current) cancelAnimationFrame(lineRafRef.current);
+        lineRafRef.current = null;
+        const from = linePtsRef.current;
+        const needMorph = (dataChanged || morphInFlight)
+            && from.length >= 2 && targetLinePts.length >= 2;
+        if (!needMorph) {
+            // Стартовый кадр/драг — мгновенно, до paint.
+            lineMorphActiveRef.current = false;
+            linePtsRef.current = targetLinePts;
+            setLinePts(targetLinePts);
+            setLineMorphing(false);
+            return;
+        }
+        lineMorphActiveRef.current = true;
+        setLineMorphing(true);
+        let start: number | null = null;
+        const tick = (ts: number) => {
+            if (start == null) start = ts;
+            const t = Math.min((ts - start) / ANIMATION.morphDuration, 1);
+            const pts = morphPts(from, targetLinePts, easeOutCubic(t));
+            linePtsRef.current = pts;
+            setLinePts(pts);
+            if (t < 1) {
+                lineRafRef.current = requestAnimationFrame(tick);
+            } else {
+                lineRafRef.current = null;
+                lineMorphActiveRef.current = false;
+                setLineMorphing(false);
+            }
+        };
+        lineRafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (lineRafRef.current) {
+                cancelAnimationFrame(lineRafRef.current);
+                lineRafRef.current = null;
+            }
+        };
+    }, [targetLinePts, weeks]);
+    const linePath = useMemo(
+        () => (linePts.length >= 2
+            ? linePts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+            : ''),
+        [linePts],
+    );
+    // Скольжение кругляшей на время морфа линии (позиция и размер).
+    const glideStyle = lineMorphing
+        ? {
+              transition: ['left', 'top', 'width', 'height']
+                  .map(p => `${p} ${ANIMATION.morphDuration}ms ${ANIMATION.waveEasing}`)
+                  .join(', '),
+          }
+        : undefined;
 
     // Тики сетки/оси Y — 5 равных шагов цены.
     const priceTicks = useMemo(
@@ -582,6 +653,7 @@ export default function CompanyFlowsPriceMap({
                                                     boxSizing: 'border-box',
                                                     opacity: dim ? 0.25 : 0.55,
                                                     pointerEvents: 'none',
+                                                    ...glideStyle,
                                                 }}
                                             />
                                         )}
@@ -601,6 +673,7 @@ export default function CompanyFlowsPriceMap({
                                                 boxSizing: 'border-box',
                                                 opacity: dim ? 0.45 : 1,
                                                 pointerEvents: 'none',
+                                                ...glideStyle,
                                             }}
                                         />
                                     </Fragment>
