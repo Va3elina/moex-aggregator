@@ -289,6 +289,47 @@ def _nearest_split_ratio(observed: float) -> float:
     return min(cands, key=lambda c: abs(math.log(observed) - math.log(c)))
 
 
+def _position_flow_rub(curr_pos, prev_pos, curr_amt, prev_amt) -> float:
+    """₽-поток по ОДНОМУ инструменту между двумя снапшотами: Δ позиций × цена.
+
+    Это чистая сделка: сколько бумаг реально купили/продали, оценённое текущей
+    ценой. Разница стоимости позиций (amount_rub) для этого не годится — в неё
+    входит переоценка: Полюс в июне-июле 2026 дал −3.75 млрд «продаж» при
+    реальных −0.8 млрд, остальное просто падение цены.
+
+    Появление позиции = приток всей стоимости, исчезновение = отток всей.
+    Нет количества бумаг или цены → откат к разнице стоимости (лучше, чем 0).
+    Сплит-коррекция prev — та же, что в snapshot_review/company_flows.
+    Вызывать ТОЛЬКО в разрезе одного ISIN: позиции разных инструментов
+    (ГДР и акция на стыке редомициляции) вычитать друг из друга нельзя.
+    """
+    curr_pos = int(curr_pos) if curr_pos is not None else None
+    prev_pos = int(prev_pos) if prev_pos is not None else None
+    curr_amt = float(curr_amt) if curr_amt is not None else None
+    prev_amt = float(prev_amt) if prev_amt is not None else None
+
+    if prev_pos is None and prev_amt is None:
+        return curr_amt or 0.0          # новая позиция
+    if curr_pos is None and curr_amt is None:
+        return -(prev_amt or 0.0)       # позиция закрыта полностью
+
+    curr_price = (curr_amt / curr_pos) if (curr_amt and curr_pos and curr_pos > 0) else None
+    if curr_pos is None or prev_pos is None or not curr_price:
+        return (curr_amt or 0.0) - (prev_amt or 0.0)
+
+    adj_prev_pos = prev_pos
+    if prev_pos > 0 and curr_amt and prev_amt:
+        prev_price = prev_amt / prev_pos
+        pos_r = curr_pos / prev_pos
+        price_r = prev_price / curr_price
+        amt_r = curr_amt / prev_amt
+        if (price_r and abs(amt_r - 1) < 0.4 and abs(pos_r / price_r - 1) < 0.4
+                and ((pos_r > 1.8 and price_r > 1.8) or (pos_r < 0.55 and price_r < 0.55))):
+            adj_prev_pos = round(prev_pos * _nearest_split_ratio((pos_r * price_r) ** 0.5))
+
+    return (curr_pos - adj_prev_pos) * curr_price
+
+
 # Периоды для diff-расчёта (label → days назад).
 PERIOD_DAYS = {
     "1m": 30,
@@ -1037,8 +1078,6 @@ def top_movers(
         manager_filter = "AND f.uk_id = ANY(:managers)"
     else:
         manager_filter = ""
-    # order_col server-controlled (валидируется ниже) → безопасно для f-string ORDER BY.
-    order_col = "total_delta_amount" if sort == "amount" else "total_delta_weight"
     params = {
         "months": months,
         "limit": limit,
@@ -1131,32 +1170,41 @@ def top_movers(
             -- sold_out) и +6.4 млрд в покупках (акция new) вместо нетто +0.6.
             -- GROUP BY: АДР и акция могут сосуществовать в одном снапшоте на
             -- стыке конвертации — суммируем, иначе FULL JOIN размножит строки.
+            -- ikey = сырой ISIN: дельту ПОЗИЦИЙ считаем строго внутри одного
+            -- инструмента (см. _position_flow_rub), akey лишь склеивает потоки
+            -- ГДР и акции в одну строку рейтинга.
             SELECT fd.fund_id,
                    COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS ikey,
                    MIN(h.asset_name) AS asset_name,
                    SUM(h.weight) AS weight,
-                   SUM(h.amount_rub) AS amount_rub
+                   SUM(h.amount_rub) AS amount_rub,
+                   SUM(h.positions) AS positions
             FROM fund_dates fd
             JOIN fund_holdings_history h
               ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.curr_date
              AND h.source = ANY(:sources)
             LEFT JOIN securities_ref sr ON sr.isin = h.isin
             WHERE fd.prev_date IS NOT NULL
-            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name)
+            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name),
+                     COALESCE(NULLIF(h.isin, ''), h.asset_name)
         ),
         prev_h AS (
             SELECT fd.fund_id,
                    COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS ikey,
                    MIN(h.asset_name) AS asset_name,
                    SUM(h.weight) AS weight,
-                   SUM(h.amount_rub) AS amount_rub
+                   SUM(h.amount_rub) AS amount_rub,
+                   SUM(h.positions) AS positions
             FROM fund_dates fd
             JOIN fund_holdings_history h
               ON h.fund_id = fd.fund_id AND h.snapshot_date = fd.prev_date
              AND h.source = ANY(:sources)
             LEFT JOIN securities_ref sr ON sr.isin = h.isin
             WHERE fd.prev_date IS NOT NULL
-            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name)
+            GROUP BY fd.fund_id, COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name),
+                     COALESCE(NULLIF(h.isin, ''), h.asset_name)
         ),
         per_fund_diff AS (
             -- Дельта per (fund, asset): FULL OUTER JOIN по (fund_id, akey), обе
@@ -1166,67 +1214,75 @@ def top_movers(
             -- prev-строки NULL-расширялись по fd и вырезались WHERE — полные
             -- ликвидации позиций не попадали в «Чистые продажи» (кейс: Алёнка
             -- слила АФК Система −112 млн ₽ за июнь-2026, топ-продажа невидима).
+            -- ₽-дельту НЕ считаем здесь: сырые стоимости уезжают в Python, где
+            -- поток = Δ позиций × цена со сплит-коррекцией (_position_flow_rub).
             SELECT
                 COALESCE(c.fund_id, p.fund_id) AS fund_id,
                 COALESCE(c.akey, p.akey) AS akey,
                 COALESCE(c.asset_name, p.asset_name) AS asset_name,
                 COALESCE(c.weight, 0) - COALESCE(p.weight, 0) AS delta_weight,
-                COALESCE(c.amount_rub, 0) - COALESCE(p.amount_rub, 0) AS delta_amount
+                c.amount_rub AS curr_amount,
+                p.amount_rub AS prev_amount,
+                c.positions AS curr_positions,
+                p.positions AS prev_positions
             FROM curr_h c
             FULL OUTER JOIN prev_h p
-                ON p.fund_id = c.fund_id AND p.akey = c.akey
-        ),
-        aggregated AS (
-            -- Суммарная дельта per asset (across всех фондов), агрегируем по ISIN-ключу.
-            SELECT
-                akey,
-                -- Имя per akey: каноническое из securities_ref (по ISIN), fallback —
-                -- самое короткое свободное. Различает ао/ап, схлопывает написания.
-                COALESCE(MAX(sr.short_name),
-                         (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1]) AS asset_name,
-                SUM(delta_weight) AS total_delta_weight,
-                SUM(delta_amount) AS total_delta_amount,
-                COUNT(DISTINCT fund_id) FILTER (WHERE delta_weight > 0) AS funds_buying,
-                COUNT(DISTINCT fund_id) FILTER (WHERE delta_weight < 0) AS funds_selling
-            FROM per_fund_diff
-            LEFT JOIN securities_ref sr ON sr.isin = akey
-            WHERE delta_weight <> 0
-            GROUP BY akey
+                ON p.fund_id = c.fund_id AND p.akey = c.akey AND p.ikey = c.ikey
         )
-        (
-            SELECT 'top_accumulated' AS bucket, akey, asset_name, total_delta_weight, total_delta_amount,
-                   funds_buying, funds_selling
-            FROM aggregated
-            WHERE {order_col} > 0
-            ORDER BY {order_col} DESC
-            LIMIT :limit
-        )
-        UNION ALL
-        (
-            SELECT 'top_reduced' AS bucket, akey, asset_name, total_delta_weight, total_delta_amount,
-                   funds_buying, funds_selling
-            FROM aggregated
-            WHERE {order_col} < 0
-            ORDER BY {order_col} ASC
-            LIMIT :limit
-        )
+        SELECT d.fund_id, d.akey, d.asset_name, sr.short_name,
+               d.delta_weight, d.curr_amount, d.prev_amount,
+               d.curr_positions, d.prev_positions
+        FROM per_fund_diff d
+        LEFT JOIN securities_ref sr ON sr.isin = d.akey
     """), params).mappings().all()
 
-    top_accumulated = []
-    top_reduced = []
+    # Свод в Python: per (fund, akey) складываем ₽-потоки по каждому ISIN, потом
+    # агрегируем по akey. Порог `delta_weight <> 0` остался на уровне (fund, asset),
+    # как в прежней SQL-редакции.
+    from collections import defaultdict
+    per_fund = defaultdict(lambda: {"dw": 0.0, "flow": 0.0})
+    akey_short: dict = {}
+    akey_name: dict = {}
     for r in rows:
-        item = {
-            "akey": r["akey"],
-            "asset_name": r["asset_name"],
-            "total_delta_weight": float(r["total_delta_weight"]),
-            "total_delta_amount": float(r["total_delta_amount"] or 0),
-            "funds_buying": r["funds_buying"],
-            "funds_selling": r["funds_selling"],
-        }
-        if r["bucket"] == "top_accumulated":
-            top_accumulated.append(item)
+        akey = r["akey"]
+        cell = per_fund[(r["fund_id"], akey)]
+        cell["dw"] += float(r["delta_weight"] or 0)
+        cell["flow"] += _position_flow_rub(
+            r["curr_positions"], r["prev_positions"], r["curr_amount"], r["prev_amount"]
+        )
+        # Имя per akey: каноническое из securities_ref (по ISIN), fallback — самое
+        # короткое свободное. Различает ао/ап, схлопывает написания.
+        if r["short_name"]:
+            akey_short[akey] = r["short_name"]
+        nm = r["asset_name"]
+        if nm and (akey not in akey_name or (len(nm), nm) < (len(akey_name[akey]), akey_name[akey])):
+            akey_name[akey] = nm
+
+    by_akey = defaultdict(lambda: {"w": 0.0, "a": 0.0, "buy": 0, "sell": 0})
+    for (_fid, akey), cell in per_fund.items():
+        if cell["dw"] == 0:
+            continue
+        g = by_akey[akey]
+        g["w"] += cell["dw"]
+        g["a"] += cell["flow"]
+        if cell["dw"] > 0:
+            g["buy"] += 1
         else:
-            top_reduced.append(item)
+            g["sell"] += 1
+
+    items = [{
+        "akey": akey,
+        "asset_name": akey_short.get(akey) or akey_name.get(akey) or akey,
+        "total_delta_weight": g["w"],
+        "total_delta_amount": g["a"],
+        "funds_buying": g["buy"],
+        "funds_selling": g["sell"],
+    } for akey, g in by_akey.items()]
+
+    # sort=weight → знак и ранг по дельте доли, sort=amount → по ₽-потоку (как в SQL).
+    _key = (lambda it: it["total_delta_amount"]) if sort == "amount" else (lambda it: it["total_delta_weight"])
+    top_accumulated = sorted([i for i in items if _key(i) > 0], key=_key, reverse=True)[:limit]
+    top_reduced = sorted([i for i in items if _key(i) < 0], key=_key)[:limit]
 
     # Доступные месяцы для month-picker и календаря периода: один пункт на
     # КАЛЕНДАРНЫЙ месяц. У разных УК разные дни конца месяца (27/28/30/31) →
