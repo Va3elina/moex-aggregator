@@ -14,7 +14,6 @@
  * мельче, чем в «Деньги в фондах», поэтому отдельная единица — только здесь.
  */
 import {
-    useEffect,
     useLayoutEffect,
     useMemo,
     useRef,
@@ -167,7 +166,10 @@ export default function CompanyFlowsHistogram({
     const dispRef = useRef<number[]>([]);
     const wavedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
-    useEffect(() => {
+    // useLayoutEffect + синхронный сет стартового кадра: с useEffect между
+    // приходом данных и первым rAF-кадром успевал отрисоваться кадр со
+    // старыми значениями на новой шкале — вспышка гигантских баров.
+    useLayoutEffect(() => {
         if (!netMln.length) {
             setAnimated([]);
             dispRef.current = [];
@@ -185,6 +187,9 @@ export default function CompanyFlowsHistogram({
         const from = wave
             ? new Array<number>(target.length).fill(0)
             : resampleVals(dispRef.current, target.length).map(v => (v / oldMax) * newMax);
+        // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
+        dispRef.current = from;
+        setAnimated(from);
         const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
         const staggerDelay = wave ? ANIMATION.waveStagger : 0;
         let start: number | null = null;

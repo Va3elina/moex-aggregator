@@ -559,7 +559,13 @@ export default function FundsMoneyPage() {
     // Без этого при переходе 3Г → 1М старые потоки (млрды) в новой шкале
     // (сотни млн) давали высоту в разы больше холста — график «дёргался в
     // разные стороны», пока бары не сходились к целям.
-    useEffect(() => {
+    //
+    // useLayoutEffect + синхронный сет стартового кадра: rAF рисует первый
+    // кадр морфа только на СЛЕДУЮЩЕМ кадре, и с useEffect между приходом
+    // данных и стартом анимации успевал отрисоваться один кадр со старыми
+    // отображаемыми значениями на новой шкале — «25-й кадр» гигантских баров
+    // при смене категории (облигации → золото).
+    useLayoutEffect(() => {
         if (!flowsData?.flows?.length) return;
 
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
@@ -573,6 +579,11 @@ export default function FundsMoneyPage() {
         const fromFlows = wave
             ? new Array(targetFlows.length).fill(0)
             : resampleVals(dispFlowsRef.current, targetFlows.length).map(v => (v / oldMax) * newMax);
+
+        // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
+        dispFlowsRef.current = fromFlows;
+        setAnimatedBarsIn(fromFlows.map(v => Math.max(0, v)));
+        setAnimatedBarsOut(fromFlows.map(v => Math.min(0, v)));
 
         // Волна: каскад слева направо; морф: все бары синхронно (как в OI).
         // Параметры из единого конфига chartTheme.ANIMATION.
