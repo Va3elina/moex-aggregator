@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION, cssVar } from '../../config/chartTheme';
+import { resampleVals } from '../../utils/chartAnimation';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
@@ -21,7 +22,7 @@ interface SeriesMeta {
 
 interface SeasonalityHistogramProps {
   bars: SeasonalityResponse['bars'];
-  /** Legacy prop (не используется — анимация переехала на CSS transition) */
+  /** Legacy prop (не используется — анимацию ведёт внутренний rAF-морф) */
   animatedHeights?: number[];
   maxAbs: number;
   tooltip: TooltipState | null;
@@ -42,11 +43,8 @@ interface SeasonalityHistogramProps {
   niceXLabels?: boolean;
 }
 
-// Параметры волны из единого конфига — совпадают с FlowsHistogram.
-// Per-bar длительность = waveDuration − waveStagger.
-const ANIM_DURATION_MS = ANIMATION.waveDuration - ANIMATION.waveStagger;
-const STAGGER_TOTAL_MS = ANIMATION.waveStagger;
-const ANIM_EASING = ANIMATION.waveEasing;
+// Параметры волны/морфа из единого конфига — совпадают с FlowsHistogram.
+const easeOutCubic = ANIMATION.easing;
 
 export default function SeasonalityHistogram({
   bars,
@@ -63,18 +61,84 @@ export default function SeasonalityHistogram({
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
 
-  // grown — флаг «волны слева направо» на первом рендере с данными.
-  // Ремоунта по key больше нет (схема как в OI: анимация один раз при
-  // открытии): grown стартует false, rAF переключает в true, CSS transition
-  // со staggered delay рисует волну. Последующие смены данных морфятся тем же
-  // CSS transition'ом на y/height — бары «перетекают» к новым значениям.
-  const [grown, setGrown] = useState(false);
-  useLayoutEffect(() => {
-    if (bars.length > 0 && !grown) {
-      const id = requestAnimationFrame(() => setGrown(true));
-      return () => cancelAnimationFrame(id);
+  // ── Анимация баров — эталонная схема «Деньги в фондах» (FundsMoneyPage). ──
+  // Волна с нуля (каскад слева направо) один раз — на первом рендере с
+  // данными. Дальнейшие смены (режим месяцы/дни/часы, период, серии) морфят
+  // из текущих отображаемых значений: ресемпл к новой длине числа баров.
+  // Морф идёт в НОРМАЛИЗОВАННОМ пространстве (val / effectiveMaxAbs ∈ [-1..1]),
+  // т.е. в визуальном — смена шкалы не дёргает бары. Серии спариваются по
+  // ключам seriesMeta: новая серия растёт с нуля, исчезнувшая пропадает.
+  // useLayoutEffect + синхронный стартовый кадр — без вспышки «25-го кадра».
+  const targetKeys = useMemo<string[]>(() => {
+    const count = monthlySeries && seriesMeta
+      ? Math.min(monthlySeries.length, seriesMeta.length)
+      : 0;
+    if (count >= 2) return seriesMeta!.slice(0, count).map(m => m.key);
+    return ['single'];
+  }, [monthlySeries, seriesMeta]);
+  const targetSeries = useMemo<number[][]>(() => {
+    const count = monthlySeries && seriesMeta
+      ? Math.min(monthlySeries.length, seriesMeta.length)
+      : 0;
+    if (count >= 2) {
+      const series = monthlySeries!.slice(0, count);
+      const em = Math.max(
+        ...series.flatMap(s => s.bars.map(b => Math.abs(b.avg_change))),
+        0.01,
+      );
+      return series.map(s => bars.map((_, i) => (s.bars[i]?.avg_change ?? 0) / em));
     }
-  }, [bars.length, grown]);
+    const em = maxAbs || 0.01;
+    return [bars.map(b => b.avg_change / em)];
+  }, [bars, monthlySeries, seriesMeta, maxAbs]);
+  const [dispSeries, setDispSeries] = useState<number[][]>([]);
+  const dispRef = useRef<number[][]>([]);
+  const dispKeysRef = useRef<string[]>([]);
+  const wavedRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (bars.length === 0) {
+      dispRef.current = [];
+      dispKeysRef.current = [];
+      setDispSeries([]);
+      return;
+    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const targets = targetSeries;
+    const wave = !wavedRef.current || dispRef.current.length === 0;
+    wavedRef.current = true;
+    const from = targets.map((t, s) => {
+      if (wave) return new Array<number>(t.length).fill(0);
+      const oldIdx = dispKeysRef.current.indexOf(targetKeys[s]);
+      if (oldIdx === -1) return new Array<number>(t.length).fill(0);
+      return resampleVals(dispRef.current[oldIdx], t.length);
+    });
+    // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
+    dispRef.current = from;
+    dispKeysRef.current = targetKeys;
+    setDispSeries(from);
+    const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
+    const staggerDelay = wave ? ANIMATION.waveStagger : 0;
+    const n = targets[0]?.length ?? 0;
+    let start: number | null = null;
+    const tick = (ts: number) => {
+      if (start == null) start = ts;
+      const elapsed = ts - start;
+      const next = targets.map((t, s) => t.map((v, i) => {
+        const barDelay = n > 0 ? (i / n) * staggerDelay : 0;
+        const barElapsed = Math.max(0, elapsed - barDelay);
+        const tt = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
+        return from[s][i] + (v - from[s][i]) * easeOutCubic(tt);
+      }));
+      dispRef.current = next;
+      setDispSeries(next);
+      if (elapsed < totalDuration) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [targetSeries, targetKeys, bars.length]);
 
   // Кэш горизонтального padding для onMouseMove — читаем CSS-токен один раз
   // на маунт и при resize, а не на каждое движение мыши (getComputedStyle
@@ -155,7 +219,7 @@ export default function SeasonalityHistogram({
   return (
     <div
       // Без chart-reveal на обёртке: бары и так растут «волной» слева направо
-      // (grown + transition-delay), а обёртка уводила вместе с ними оси и
+      // (dispSeries + rAF), а обёртка уводила вместе с ними оси и
       // подписи — обрамление видно с первого кадра.
       className="relative overflow-hidden pb-2 cursor-crosshair"
       style={{
@@ -218,8 +282,8 @@ export default function SeasonalityHistogram({
         right: 'var(--seasonality-hist-pad-x, 70px)',
       }}>
         <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
-          {/* Единый путь: волна слева направо через transition-delay = (i / n) * stagger.
-              Каждый бар стартует с задержкой пропорциональной позиции → эффект «волны».
+          {/* Высоты баров — из dispSeries (анимированные нормализованные
+              значения, rAF ведёт волну/морф — см. эффект выше).
               Outline толщина плавно уменьшается с ростом count — раньше при
               bars > 20 отключали совсем (тонкий бар становился чёрным), теперь
               0.25-1px gradient даёт hint контура без visual dominance. */}
@@ -232,11 +296,6 @@ export default function SeasonalityHistogram({
             const slotPadding = slotW * 0.1;
             const groupW = slotW - slotPadding * 2;
             const subBarW = isMulti ? groupW / nSeries : slotW * (bars.length > 12 ? 0.6 : 0.5);
-            // Волновая задержка: от 0 до STAGGER_TOTAL_MS равномерно по барам
-            const staggerDelay = bars.length > 1 ? (i / (bars.length - 1)) * STAGGER_TOTAL_MS : 0;
-            const transitionStyle = {
-              transition: `y ${ANIM_DURATION_MS}ms ${ANIM_EASING} ${staggerDelay}ms, height ${ANIM_DURATION_MS}ms ${ANIM_EASING} ${staggerDelay}ms`,
-            };
 
             return (
               <g key={bar.key}
@@ -246,11 +305,10 @@ export default function SeasonalityHistogram({
                   safeMeta.map((style, s) => {
                     const seriesBar = safeSeries[s]?.bars?.[i];
                     if (!seriesBar) return null;
-                    const val = seriesBar.avg_change;
-                    const normalized = val / effectiveMaxAbs;
-                    const h = grown ? Math.max(Math.abs(normalized) * halfH, H * 0.005) : 0;
+                    const nv = dispSeries[s]?.[i] ?? 0;
+                    const h = Math.max(Math.abs(nv) * halfH, H * 0.005);
                     const bx = i * slotW + slotPadding + s * subBarW;
-                    const y = val >= 0 ? midY - h : midY;
+                    const y = nv >= 0 ? midY - h : midY;
                     return (
                       <rect
                         key={style.key}
@@ -259,17 +317,15 @@ export default function SeasonalityHistogram({
                         fill={style.color} rx="2"
                         stroke="var(--bar-outline)" strokeWidth={outlineWidth}
                         vectorEffect="non-scaling-stroke"
-                        style={transitionStyle}
                       />
                     );
                   })
                 ) : (() => {
-                  const val = bar.avg_change;
-                  const normalized = val / (effectiveMaxAbs || 0.01);
-                  const h = grown ? Math.max(Math.abs(normalized) * halfH, H * 0.005) : 0;
+                  const nv = dispSeries[0]?.[i] ?? 0;
+                  const h = Math.max(Math.abs(nv) * halfH, H * 0.005);
                   const bx = i * slotW + (slotW - subBarW) / 2;
-                  const y = val >= 0 ? midY - h : midY;
-                  const color = val >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+                  const y = nv >= 0 ? midY - h : midY;
+                  const color = nv >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
                   return (
                     <rect
                       key="single"
@@ -278,7 +334,6 @@ export default function SeasonalityHistogram({
                       fill={color} rx="3"
                       stroke="var(--bar-outline)" strokeWidth={outlineWidth}
                       vectorEffect="non-scaling-stroke"
-                      style={transitionStyle}
                     />
                   );
                 })()}
