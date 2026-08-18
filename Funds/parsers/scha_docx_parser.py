@@ -66,6 +66,27 @@ def _col(cols: dict, row: list[str], key: str):
     return row[i] if (i is not None and i < len(row)) else None
 
 
+def _infer_isin_col(data_rows: list[list[str]], taken: set[int]) -> "int | None":
+    """Индекс колонки с ISIN, когда шапка её не назвала.
+
+    В подразделе «Иные ценные бумаги» формы 0420502 колонка озаглавлена
+    «Сведения, позволяющие установить ценные бумаги» — слова ISIN в шапке НЕТ,
+    поэтому `_detect_columns` её не находит, а требование name+isin+positions
+    роняет ВСЮ секцию молча (ГЕРОИ, июль-2026: потерялся ВЭБ2Р-58 на 51.7 млн ₽
+    = 7% фонда). Ищем колонку по ДАННЫМ: где больше всего ячеек — валидный ISIN.
+    Колонки, уже занятые шапкой (эмитент/ИНН/ОГРН/количество/стоимость),
+    пропускаем — иначе можно перехватить чужую.
+    """
+    best, best_hits = None, 0
+    for i in range(max((len(r) for r in data_rows), default=0)):
+        if i in taken:
+            continue
+        hits = sum(1 for r in data_rows if i < len(r) and _ISIN.match(_norm(r[i])))
+        if hits > best_hits:
+            best, best_hits = i, hits
+    return best if best_hits else None
+
+
 def parse_scha_docx(docx_bytes: bytes) -> dict:
     """Парсит SCHA-DOCX (форма 0420502) → result-dict как у parse_scha."""
     result = {
@@ -106,6 +127,12 @@ def parse_scha_docx(docx_bytes: bytes) -> dict:
             continue
         ncols = len(rows[0])
         cols = _detect_columns(rows[0])
+        # Шапка назвала эмитента и количество, но не ISIN («Иные ценные бумаги»)
+        # → достаём индекс колонки из самих данных, иначе секция потеряется.
+        if "isin" not in cols and all(k in cols for k in ("name", "positions")):
+            inferred = _infer_isin_col(rows[1:], set(cols.values()))
+            if inferred is not None:
+                cols["isin"] = inferred
         if all(k in cols for k in ("name", "isin", "positions")):
             last_cols, last_n = cols, ncols
             data = rows[1:]                       # пропускаем строку-шапку
