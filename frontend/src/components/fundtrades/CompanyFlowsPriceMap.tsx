@@ -22,7 +22,6 @@
  */
 import {
     Fragment,
-    useEffect,
     useMemo,
     useLayoutEffect,
     useRef,
@@ -290,15 +289,18 @@ export default function CompanyFlowsPriceMap({
     const isOverflow = (net: number) => Math.abs(net) > normAbsNet;
 
     // ── Каскадное появление кругляшей (масштаб 0→1, слева направо). ──
-    // Схема как в OI: волна играет один раз — на первом рендере с данными.
-    // Смена бумаги/фондов/окна обновляет кругляши без повторного каскада.
-    const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
+    // Волна играет на первой прогрузке И на каждой смене данных (бумага,
+    // период, набор фондов): линия перетекает морфом, а кругляши вырастают
+    // заново из нуля — тот же рисунок, что при первом открытии. Драг
+    // навигатора волну не трогает (markers не зависит от окна — visMarkers
+    // лишь слайсит). useLayoutEffect + синхронный сброс elapsed — без кадра
+    // полноразмерных кругляшей до старта волны.
+    const [elapsed, setElapsed] = useState<number>(0);
     const rafRef = useRef<number | null>(null);
-    const wavedRef = useRef(false);
-    useEffect(() => {
-        if (!markers.length || wavedRef.current) return;
-        wavedRef.current = true;
+    useLayoutEffect(() => {
+        if (!markers.length) return;
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        setElapsed(0);
         let start: number | null = null;
         const tick = (ts: number) => {
             if (start == null) start = ts;
@@ -310,7 +312,7 @@ export default function CompanyFlowsPriceMap({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [markers.length]);
+    }, [markers]);
     const popFor = (orderIdx: number, total: number) => {
         const delay = (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger;
         const t = Math.min(Math.max(elapsed - delay, 0) / (ANIMATION.waveDuration - ANIMATION.waveStagger), 1);
@@ -383,9 +385,7 @@ export default function CompanyFlowsPriceMap({
     // длине). Драг навигатора — мгновенно (snap). Смена данных приводит ещё и
     // к сбросу навигатора СЛЕДУЮЩИМ коммитом (эффект выше) — поэтому морф,
     // застигнутый сменой окна, не обрывается snap'ом, а ретаргетится в новое
-    // окно из текущих точек. lineMorphing отдаётся кругляшам: на время морфа
-    // они получают CSS-transition и скользят вместе с линией, а не прыгают
-    // на новые места раньше неё.
+    // окно из текущих точек. Кругляши при этом вырастают заново (волна выше).
     const [linePts, setLinePts] = useState<{ x: number; y: number }[]>([]);
     const linePtsRef = useRef<{ x: number; y: number }[]>([]);
     const lineRafRef = useRef<number | null>(null);
@@ -393,7 +393,6 @@ export default function CompanyFlowsPriceMap({
     // эффекта выполняется до нового тела и обнулил бы rafRef раньше проверки.
     const lineMorphActiveRef = useRef(false);
     const prevWeeksRef = useRef<string[] | null>(null);
-    const [lineMorphing, setLineMorphing] = useState(false);
     useLayoutEffect(() => {
         const dataChanged = prevWeeksRef.current !== weeks;
         prevWeeksRef.current = weeks;
@@ -408,11 +407,9 @@ export default function CompanyFlowsPriceMap({
             lineMorphActiveRef.current = false;
             linePtsRef.current = targetLinePts;
             setLinePts(targetLinePts);
-            setLineMorphing(false);
             return;
         }
         lineMorphActiveRef.current = true;
-        setLineMorphing(true);
         let start: number | null = null;
         const tick = (ts: number) => {
             if (start == null) start = ts;
@@ -425,7 +422,6 @@ export default function CompanyFlowsPriceMap({
             } else {
                 lineRafRef.current = null;
                 lineMorphActiveRef.current = false;
-                setLineMorphing(false);
             }
         };
         lineRafRef.current = requestAnimationFrame(tick);
@@ -442,14 +438,6 @@ export default function CompanyFlowsPriceMap({
             : ''),
         [linePts],
     );
-    // Скольжение кругляшей на время морфа линии (позиция и размер).
-    const glideStyle = lineMorphing
-        ? {
-              transition: ['left', 'top', 'width', 'height']
-                  .map(p => `${p} ${ANIMATION.morphDuration}ms ${ANIMATION.waveEasing}`)
-                  .join(', '),
-          }
-        : undefined;
 
     // Тики сетки/оси Y — 5 равных шагов цены.
     const priceTicks = useMemo(
@@ -653,7 +641,6 @@ export default function CompanyFlowsPriceMap({
                                                     boxSizing: 'border-box',
                                                     opacity: dim ? 0.25 : 0.55,
                                                     pointerEvents: 'none',
-                                                    ...glideStyle,
                                                 }}
                                             />
                                         )}
@@ -673,7 +660,6 @@ export default function CompanyFlowsPriceMap({
                                                 boxSizing: 'border-box',
                                                 opacity: dim ? 0.45 : 1,
                                                 pointerEvents: 'none',
-                                                ...glideStyle,
                                             }}
                                         />
                                     </Fragment>
