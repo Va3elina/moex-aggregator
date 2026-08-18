@@ -289,6 +289,13 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const morphRafRef = useRef(0);
   const prevYMaxVisRef = useRef(0);
   const prevMorphKeyRef = useRef<string | null>(null);
+  // «Морф в полёте» — отдельным ref'ом, НЕ через morphRafRef: cleanup эффекта
+  // отменяет кадр до выполнения нового тела, и проверка по rafRef всегда ложь.
+  // Нужен потому, что смена периода даёт ДВА коммита: сам период, а следом
+  // сброс окна навигатора с тем же morphKey. На втором коммите keyChanged уже
+  // false, и без этого флага ветка snap мгновенно затирала только что
+  // запущенный морф — анимации на «Потоках капитала» не было видно вовсе.
+  const morphActiveRef = useRef(false);
   useLayoutEffect(() => {
     if (!periods.length) return;
     if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
@@ -310,14 +317,21 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
     const keyChanged = prevMorphKeyRef.current !== null && prevMorphKeyRef.current !== morphKey;
     prevMorphKeyRef.current = morphKey;
     const prevDisp = dispValsRef.current;
-    if (!wavedRef.current || Object.keys(prevDisp).length === 0 || !keyChanged) {
+    // Морф в полёте продолжаем даже без смены ключа: второй коммит (сброс окна
+    // навигатора) ретаргетит его в новое окно из ТЕКУЩИХ значений, а не рвёт.
+    const shouldMorph = wavedRef.current
+      && Object.keys(prevDisp).length > 0
+      && (keyChanged || morphActiveRef.current);
+    if (!shouldMorph) {
       // Первая волна (высоты ведёт animProgress) или смена среза драгом —
       // без морфа, значения сразу целевые.
+      morphActiveRef.current = false;
       dispValsRef.current = targets;
       setDispVals(targets);
       prevYMaxVisRef.current = newMax;
       return;
     }
+    morphActiveRef.current = true;
     const oldMax = prevYMaxVisRef.current || newMax;
     prevYMaxVisRef.current = newMax;
     const n = periods.length;
@@ -342,8 +356,12 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       }
       dispValsRef.current = next;
       setDispVals(next);
-      if (t < 1) morphRafRef.current = requestAnimationFrame(tick);
-      else morphRafRef.current = 0;
+      if (t < 1) {
+        morphRafRef.current = requestAnimationFrame(tick);
+      } else {
+        morphRafRef.current = 0;
+        morphActiveRef.current = false;
+      }
     };
     morphRafRef.current = requestAnimationFrame(tick);
     return () => {
@@ -366,6 +384,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       // Морф тоже досрочно доводим до целевых значений.
       if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
       morphRafRef.current = 0;
+      morphActiveRef.current = false;
       const targets: Record<string, number[]> = {};
       for (const cat of categories) targets[cat] = periods.map(p => p.values[cat] ?? 0);
       dispValsRef.current = targets;
