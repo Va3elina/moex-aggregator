@@ -48,7 +48,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { useChartReveal } from '../chart/useChartReveal';
-import { resampleVals } from '../../utils/chartAnimation';
+import { resampleVals, morphPts } from '../../utils/chartAnimation';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -326,21 +326,83 @@ export default function CompanyShareChart({
     const shareY = (v: number) => (1 - v / shareMax) * 1000;
 
     // Линия цены: недели видимых месяцев, дробно внутри слотов.
-    const linePath = useMemo(() => {
-        if (!hasPrice) return '';
-        const pts: string[] = [];
+    const targetLinePts = useMemo(() => {
+        if (!hasPrice) return [] as { x: number; y: number }[];
+        const pts: { x: number; y: number }[] = [];
         for (const mi of visMonthIdx) {
             const wk = weeksByMonth.get(months[mi]);
             if (!wk) continue;
             for (let k = 0; k < wk.length; k++) {
-                const x = slotX(mi, (k + 0.5) / wk.length);
-                const y = priceY(closesAll[wk[k]]);
-                pts.push(`${pts.length === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`);
+                pts.push({
+                    x: slotX(mi, (k + 0.5) / wk.length),
+                    y: priceY(closesAll[wk[k]]),
+                });
             }
         }
-        return pts.length >= 2 ? pts.join(' ') : '';
+        return pts;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasPrice, visMonthIdx, months, weeksByMonth, closesAll, priceLo, priceHi, visStart, visCount]);
+
+    // ── Морф линии при смене данных (бумага/период/режим) — как в OI:
+    // из текущих отображаемых точек в новые (morphPts ресемплирует). Драг
+    // навигатора — мгновенно. Смена данных тянет за собой сброс навигатора
+    // следующим коммитом (эффект navRange выше) — морф в полёте ретаргетится
+    // в новое окно, а не обрывается snap'ом.
+    const [linePts, setLinePts] = useState<{ x: number; y: number }[]>([]);
+    const linePtsRef = useRef<{ x: number; y: number }[]>([]);
+    const lineRafRef = useRef<number | null>(null);
+    // Отдельный ref, НЕ lineRafRef: cleanup эффекта обнуляет rafRef до
+    // выполнения нового тела — проверка «морф в полёте» через него всегда ложь.
+    const lineMorphActiveRef = useRef(false);
+    const prevLineDataRef = useRef<unknown[] | null>(null);
+    useLayoutEffect(() => {
+        const dataKey = [months, weeksAll, closesAll];
+        const prev = prevLineDataRef.current;
+        const dataChanged = !prev || prev.some((v, i) => v !== dataKey[i]);
+        prevLineDataRef.current = dataKey;
+        const morphInFlight = lineMorphActiveRef.current;
+        if (lineRafRef.current) cancelAnimationFrame(lineRafRef.current);
+        lineRafRef.current = null;
+        const from = linePtsRef.current;
+        const needMorph = (dataChanged || morphInFlight)
+            && from.length >= 2 && targetLinePts.length >= 2;
+        if (!needMorph) {
+            // Стартовый кадр/драг — мгновенно, до paint.
+            lineMorphActiveRef.current = false;
+            linePtsRef.current = targetLinePts;
+            setLinePts(targetLinePts);
+            return;
+        }
+        lineMorphActiveRef.current = true;
+        let start: number | null = null;
+        const tick = (ts: number) => {
+            if (start == null) start = ts;
+            const t = Math.min((ts - start) / ANIMATION.morphDuration, 1);
+            const pts = morphPts(from, targetLinePts, easeOutCubic(t));
+            linePtsRef.current = pts;
+            setLinePts(pts);
+            if (t < 1) {
+                lineRafRef.current = requestAnimationFrame(tick);
+            } else {
+                lineRafRef.current = null;
+                lineMorphActiveRef.current = false;
+            }
+        };
+        lineRafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (lineRafRef.current) {
+                cancelAnimationFrame(lineRafRef.current);
+                lineRafRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [targetLinePts]);
+    const linePath = useMemo(
+        () => (linePts.length >= 2
+            ? linePts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+            : ''),
+        [linePts],
+    );
 
     // Тики цены (4) и доли (максимум / середина / 0).
     const priceTicks = useMemo(

@@ -273,52 +273,59 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   }, [animKey]);
 
   // ── Морф после первой волны — эталонная схема «Деньги в фондах». ──
-  // dispVals: cat → отображаемые значения ПОЛНОГО набора периодов (sigPeriods);
-  // навигатор лишь слайсит их (render берёт dispOffset + i). Смена данных
-  // (type/период/срез, набор категорий) морфит из текущих значений: ресемпл к
-  // новой длине + нормализация со старой полношкальной вершины стека на новую
-  // (морф в визуальном пространстве — год суммирует 12 месяцев, без
-  // нормализации старые значения на новой шкале вылетали бы за холст).
-  // Категория спаривается по имени: новая растёт с нуля, снятая исчезает.
-  // useLayoutEffect + синхронный стартовый кадр — без вспышки «25-го кадра».
+  // dispVals: cat → отображаемые значения ВИДИМОГО среза (periods). Морфим
+  // именно срез: в «Потоках капитала» пресет периода (1г/3г/Всё) не меняет
+  // данные, а лишь окно полного набора — морф полного набора «старое→старое»
+  // выглядел отсутствием анимации. Триггер морфа — animKey (type/период) или
+  // состав категорий; смена среза БЕЗ смены триггера (драг таймлайна) — snap
+  // без анимации. Старые значения ресемплируются к новой длине и нормализуются
+  // со старой видимой вершины стека на новую (морф в визуальном пространстве —
+  // год суммирует 12 месяцев, без нормализации старые значения на новой шкале
+  // вылетали бы за холст). Категория спаривается по имени: новая растёт с
+  // нуля. useLayoutEffect + синхронный стартовый кадр — без «25-го кадра».
   const catKey = categories.join('|');
   const [dispVals, setDispVals] = useState<Record<string, number[]>>({});
   const dispValsRef = useRef<Record<string, number[]>>({});
   const morphRafRef = useRef(0);
-  const prevYMaxFullRef = useRef(0);
+  const prevYMaxVisRef = useRef(0);
+  const prevMorphKeyRef = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (!sigPeriods.length) return;
+    if (!periods.length) return;
     if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
     const targets: Record<string, number[]> = {};
-    for (const cat of categories) targets[cat] = sigPeriods.map(p => p.values[cat] ?? 0);
-    // Полношкальный максимум стека — для нормализации морфа.
-    let newMaxFull = 0;
-    sigPeriods.forEach((_, i) => {
+    for (const cat of categories) targets[cat] = periods.map(p => p.values[cat] ?? 0);
+    // Видимая вершина стека — для нормализации морфа.
+    let newMax = 0;
+    periods.forEach((_, i) => {
       let pos = 0, neg = 0;
       for (const cat of categories) {
         const v = targets[cat][i];
         if (v >= 0) pos += v; else neg += -v;
       }
-      newMaxFull = Math.max(newMaxFull, pos, neg);
+      newMax = Math.max(newMax, pos, neg);
     });
-    newMaxFull = newMaxFull || 1;
+    newMax = newMax || 1;
 
+    const morphKey = `${animKey}|${catKey}`;
+    const keyChanged = prevMorphKeyRef.current !== null && prevMorphKeyRef.current !== morphKey;
+    prevMorphKeyRef.current = morphKey;
     const prevDisp = dispValsRef.current;
-    if (!wavedRef.current || Object.keys(prevDisp).length === 0) {
-      // Первая волна: высоты ведёт animProgress — disp сразу в целевые.
+    if (!wavedRef.current || Object.keys(prevDisp).length === 0 || !keyChanged) {
+      // Первая волна (высоты ведёт animProgress) или смена среза драгом —
+      // без морфа, значения сразу целевые.
       dispValsRef.current = targets;
       setDispVals(targets);
-      prevYMaxFullRef.current = newMaxFull;
+      prevYMaxVisRef.current = newMax;
       return;
     }
-    const oldMaxFull = prevYMaxFullRef.current || newMaxFull;
-    prevYMaxFullRef.current = newMaxFull;
-    const n = sigPeriods.length;
+    const oldMax = prevYMaxVisRef.current || newMax;
+    prevYMaxVisRef.current = newMax;
+    const n = periods.length;
     const from: Record<string, number[]> = {};
     for (const cat of categories) {
       const old = prevDisp[cat];
       from[cat] = old?.length
-        ? resampleVals(old, n).map(v => (v / oldMaxFull) * newMaxFull)
+        ? resampleVals(old, n).map(v => (v / oldMax) * newMax)
         : new Array<number>(n).fill(0);
     }
     // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
@@ -343,15 +350,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animKey, catKey]);
-  // Смещение видимого среза внутри полного набора — для чтения dispVals.
-  const dispOffset = useMemo(() => {
-    if (!periods.length) return 0;
-    const sig = periods[0]?.end_date || periods[0]?.label || '';
-    const idx = sigPeriods.findIndex(p => (p.end_date || p.label || '') === sig);
-    return idx >= 0 ? idx : 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periods, sigPeriods]);
+  }, [periods, animKey, catKey]);
 
   // Экспорт-хук: обрывает reveal-wave и досрочно доводит все бары до progress=1,
   // а заодно пере-читает РЕАЛЬНУЮ ширину контейнера в обход ResizeObserver —
@@ -368,7 +367,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       if (morphRafRef.current) cancelAnimationFrame(morphRafRef.current);
       morphRafRef.current = 0;
       const targets: Record<string, number[]> = {};
-      for (const cat of categories) targets[cat] = sigPeriods.map(p => p.values[cat] ?? 0);
+      for (const cat of categories) targets[cat] = periods.map(p => p.values[cat] ?? 0);
       dispValsRef.current = targets;
       setDispVals(targets);
       const el = containerRef.current;
@@ -376,7 +375,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
       if (w && w > 0) setContainerW(Math.round(w));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [periods.length, categories, sigPeriods]);
+  }), [periods, categories]);
   // Y-axis симметричный max
   const yMax = useMemo(() => {
     if (!periods.length) return niceMax ? niceMax(0) : 10;
@@ -605,9 +604,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                   style={{ transition: 'opacity 150ms' }}
                 >
                   {categories.map((cat) => {
-                    // Отображаемое значение — из морф-состояния (полный набор
-                    // периодов, слайс через dispOffset); fallback на сырое.
-                    const v = dispVals[cat]?.[dispOffset + i] ?? (p.values[cat] ?? 0);
+                    // Отображаемое значение — из морф-состояния видимого
+                    // среза; fallback на сырое.
+                    const v = dispVals[cat]?.[i] ?? (p.values[cat] ?? 0);
                     if (v === 0) return null;
                     // Final height в % (без scaling)
                     const hPctFinal = Math.max((Math.abs(v) / yMax) * 50, MIN_BAR_H);
