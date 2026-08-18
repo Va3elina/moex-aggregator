@@ -35,6 +35,7 @@
  * переоценка.
  */
 import {
+    useEffect,
     useMemo,
     useLayoutEffect,
     useRef,
@@ -220,6 +221,19 @@ export default function CompanyShareChart({
 
     const hasPrice = !priceMissing && weeksAll.length > 1;
 
+    // ── Резерв панели цены на время загрузки. ──
+    // При смене бумаги родитель сразу отдаёт weeks=[] (гард по тикеру), и
+    // hasPrice падает в false до прихода новой цены: верхняя панель
+    // схлопывалась (topH=0), гистограмма на полсекунды раздувалась во весь
+    // холст, а затем «падала вниз». Пока грузится цена, держим место панели,
+    // если у ПРЕДЫДУЩЕЙ бумаги цена была (облигация → облигация место не
+    // резервирует — панели не было и не будет).
+    const prevHadPriceRef = useRef(false);
+    useEffect(() => {
+        if (!loading) prevHadPriceRef.current = hasPrice;
+    }, [loading, hasPrice]);
+    const showPricePanel = hasPrice || (loading && !priceMissing && prevHadPriceRef.current);
+
     // Высоты секций: из общего бюджета вычитаем хром второй секции (её легенда
     // с зазором + разделитель) и полосу подписей X; остальное делим 2:1 в
     // пользу цены — как в «Силе рынка» (--strength-chart-top-height 300 /
@@ -231,7 +245,7 @@ export default function CompanyShareChart({
     // Обе формулы линейны по height, поэтому поправка — константа.
     const CHROME_H = 45;
     const inner = Math.max(height - CHROME_H - XLABEL_H, 240);
-    const topH = hasPrice ? Math.round(inner * (2 / 3)) : 0;
+    const topH = showPricePanel ? Math.round(inner * (2 / 3)) : 0;
     const botH = inner - topH;
 
     // ── Недели цены, разложенные по слотам месяцев. ──
@@ -706,7 +720,7 @@ export default function CompanyShareChart({
                         margin, НЕ padding: отрицательный calc-padding невалиден
                         и молча схлопывается в 0 — легенда стояла на 12px ниже,
                         чем в OI, и прыгала при смене режима. */}
-                    {hasPrice && (
+                    {showPricePanel && (
                         <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
@@ -780,10 +794,10 @@ export default function CompanyShareChart({
                     {/* ── Нижняя секция: гистограмма доли (как Breadth). ──
                         Без цены секция первая в карточке — та же margin-компенсация
                         p-5, что у верхней, чтобы легенда стояла как в OI. */}
-                    <div className="relative overflow-hidden" style={hasPrice ? { paddingTop: 'var(--sp-2)' } : { marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
+                    <div className="relative overflow-hidden" style={showPricePanel ? { paddingTop: 'var(--sp-2)' } : { marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                         {/* Зазор под легендой = зазору над ней (--sp-2 от разделителя):
                             легенда сидит ровно посередине между полосой и графиком. */}
-                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: hasPrice ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
+                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: showPricePanel ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
                                 items={[{ color: BAR_COLOR, label: `${shareModeLabel} (${shareMode === 'rub' ? '₽' : shareMode === 'overhang' ? 'дни' : '%'})` }]}
                                 fontWeight={600}
