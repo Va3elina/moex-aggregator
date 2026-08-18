@@ -35,7 +35,6 @@
  * переоценка.
  */
 import {
-    useEffect,
     useMemo,
     useLayoutEffect,
     useRef,
@@ -49,6 +48,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { useChartReveal } from '../chart/useChartReveal';
+import { resampleVals } from '../../utils/chartAnimation';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -357,61 +357,61 @@ export default function CompanyShareChart({
         [shareMax],
     );
 
-    // ── Каскадное появление баров (высота 0→1, слева направо). ──
-    // Схема как в OI: волна играет один раз — на первом рендере с данными.
-    // Дальнейшие смены (режим, бумага, период) морфят бары CSS-transition'ом
-    // (см. barsMorphing ниже), а не переигрывают каскад.
-    const [elapsed, setElapsed] = useState<number>(ANIMATION.waveDuration);
-    const rafRef = useRef<number | null>(null);
+    // ── Анимация баров — эталонная схема «Деньги в фондах» (FundsMoneyPage). ──
+    // Волна с нуля (каскад слева направо) один раз — на первом рендере с
+    // данными. Дальнейшие смены (режим, бумага, период) морфят из текущих
+    // отображаемых значений: ресемпл к новой длине + нормализация со старой
+    // шкалы на новую (морф в визуальном пространстве — иначе при смене режима
+    // ₽→% старые значения в новой шкале вылетали бы за холст). useLayoutEffect
+    // + синхронный стартовый кадр до paint — без вспышки «25-го кадра».
+    // Драг навигатора shareVals не меняет — окно слайсит уже готовые бары.
+    const [dispVals, setDispVals] = useState<number[]>([]);
+    const dispRef = useRef<number[]>([]);
     const wavedRef = useRef(false);
-    useEffect(() => {
-        if (!hasData || wavedRef.current) return;
-        wavedRef.current = true;
+    const rafRef = useRef<number | null>(null);
+    const targetVals = useMemo(
+        () => shareVals.map(v => (v != null && v > 0 ? v : 0)),
+        [shareVals],
+    );
+    useLayoutEffect(() => {
+        if (!hasData) {
+            dispRef.current = [];
+            setDispVals([]);
+            return;
+        }
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        const target = targetVals;
+        const wave = !wavedRef.current || dispRef.current.length === 0;
+        wavedRef.current = true;
+        const newMax = Math.max(...target, 0.0001);
+        const oldMax = Math.max(...dispRef.current, 0.0001);
+        const from = wave
+            ? new Array<number>(target.length).fill(0)
+            : resampleVals(dispRef.current, target.length).map(v => (v / oldMax) * newMax);
+        // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
+        dispRef.current = from;
+        setDispVals(from);
+        const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
+        const staggerDelay = wave ? ANIMATION.waveStagger : 0;
         let start: number | null = null;
         const tick = (ts: number) => {
             if (start == null) start = ts;
-            const e = ts - start;
-            setElapsed(e);
-            if (e < ANIMATION.waveDuration) rafRef.current = requestAnimationFrame(tick);
+            const elapsed = ts - start;
+            const next = target.map((v, i) => {
+                const barDelay = (i / target.length) * staggerDelay;
+                const barElapsed = Math.max(0, elapsed - barDelay);
+                const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
+                return from[i] + (v - from[i]) * easeOutCubic(t);
+            });
+            dispRef.current = next;
+            setDispVals(next);
+            if (elapsed < totalDuration) rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [hasData]);
-    const popFor = (orderIdx: number, total: number) => {
-        const delay = (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger;
-        const t = Math.min(Math.max(elapsed - delay, 0) / (ANIMATION.waveDuration - ANIMATION.waveStagger), 1);
-        return easeOutCubic(t);
-    };
-
-    // ── Морф баров при смене режима/бумаги/периода (не окна навигатора). ──
-    // CSS-transition на x/y/width/height включается только на время морфа:
-    // держать его постоянно нельзя — драг навигатора двигает бары каждый тик
-    // и transition давал бы «желейное» отставание. Паттерн «adjust state
-    // during render»: setState до коммита → новая геометрия рендерится уже
-    // с transition-стилем, и браузер анимирует от прежних значений.
-    const morphKey = `${shareMode}|${months[0] ?? ''}|${months.length}`;
-    const [prevMorphKey, setPrevMorphKey] = useState(morphKey);
-    const [barsMorphing, setBarsMorphing] = useState(false);
-    if (morphKey !== prevMorphKey) {
-        setPrevMorphKey(morphKey);
-        // Во время первой волны морф не включаем — rAF сам ведёт высоты.
-        if (wavedRef.current && elapsed >= ANIMATION.waveDuration) setBarsMorphing(true);
-    }
-    useEffect(() => {
-        if (!barsMorphing) return;
-        const t = window.setTimeout(() => setBarsMorphing(false), ANIMATION.morphDuration + 100);
-        return () => window.clearTimeout(t);
-    }, [barsMorphing]);
-    const barMorphStyle: React.CSSProperties | undefined = barsMorphing
-        ? {
-              transition: ['x', 'y', 'width', 'height']
-                  .map(p => `${p} ${ANIMATION.morphDuration}ms ${ANIMATION.waveEasing}`)
-                  .join(', '),
-          }
-        : undefined;
+    }, [targetVals, hasData]);
 
     // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
     // Стартует, когда цена впервые готова, и играет один раз — как в OI.
@@ -618,7 +618,7 @@ export default function CompanyShareChart({
 
                 {/* Обёртка обеих секций — общий курсор, тултип и пилюля даты. */}
                 {/* Без chart-reveal на обёртке: линия цены рисуется reveal-клипом
-                    в своём SVG, бары растут «волной» (popFor) — оси, пилюли и
+                    в своём SVG, бары растут «волной» (dispVals) — оси, пилюли и
                     подписи видны с первого кадра. */}
                 <div
                     ref={wrapRef}
@@ -734,14 +734,13 @@ export default function CompanyShareChart({
                                     {shareTicks.map((v, i) => (
                                         <line key={`sg-${i}`} x1="0" y1={shareY(v)} x2="1000" y2={shareY(v)} stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
                                     ))}
-                                    {/* Бары: null → пропуск (разрыв данных), 0 → пустой слот. */}
-                                    {visMonthIdx.map((mi, order) => {
-                                        const v = shareVals[mi];
-                                        if (v == null || v <= 0) return null;
-                                        const grow = popFor(order, visMonthIdx.length);
-                                        if (grow <= 0.01) return null;
+                                    {/* Бары: высоты из dispVals (анимированные значения);
+                                        0 → пустой слот (пропуск/разрыв данных). */}
+                                    {visMonthIdx.map((mi) => {
+                                        const v = dispVals[mi] ?? 0;
+                                        if (v <= 0) return null;
                                         const x = slotX(mi);
-                                        const yTop = 1000 - (1000 - shareY(v)) * grow;
+                                        const yTop = shareY(v);
                                         const dim = hoveredMi !== null && hoveredMi !== mi;
                                         return (
                                             <rect
@@ -752,7 +751,6 @@ export default function CompanyShareChart({
                                                 height={1000 - yTop}
                                                 fill={BAR_COLOR}
                                                 opacity={dim ? 0.45 : 0.92}
-                                                style={barMorphStyle}
                                             />
                                         );
                                     })}
