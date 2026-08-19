@@ -968,6 +968,15 @@ export default function CompanyFlowsTab({
             {/* Карта сделок: недельная цена + кругляши месячных нетто.
                 Доля: та же цена сверху + гистограмма доли снизу. Оба чарта
                 получают одинаковое окно месяцев — режимы синхронны. */}
+            {/* Недели/закрытия отдаются БЕЗ гарда по тикеру: на время загрузки
+                новой бумаги чарты держат линию ПРОШЛОЙ цены (весь остальной
+                контент — flows/weights — в этот момент тоже прошлый), и когда
+                цена приезжает, линия перетекает морфом старая → новая, как при
+                смене периода. С гардом weeks на кадр становились [], морф терял
+                стартовые точки и новая линия просто появлялась без анимации.
+                Числовые производные (оборот для «Навеса») тикерный гард
+                сохраняют — см. turnoverAll: стыковать величины разных бумаг
+                нельзя, а линия на переходный момент — можно. */}
             {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
                 позиционируется absolute относительно этой обёртки). */}
             <div
@@ -981,8 +990,8 @@ export default function CompanyFlowsTab({
                     <CompanyFlowsPriceMap
                         months={visibleMonths}
                         series={visibleSeries}
-                        weeks={price && price.ticker === selectedTicker ? price.weeks : []}
-                        closes={price && price.ticker === selectedTicker ? price.closes : []}
+                        weeks={price?.weeks ?? []}
+                        closes={price?.closes ?? []}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
                         loading={flowsLoading || priceLoading || priceStale}
@@ -997,8 +1006,8 @@ export default function CompanyFlowsTab({
                         funds={visibleShareFunds}
                         ffcap={visibleFfcap}
                         turnover={visibleTurnover}
-                        weeks={price && price.ticker === selectedTicker ? price.weeks : []}
-                        closes={price && price.ticker === selectedTicker ? price.closes : []}
+                        weeks={price?.weeks ?? []}
+                        closes={price?.closes ?? []}
                         shareMode={effectiveMode as ShareMode}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
