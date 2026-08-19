@@ -829,6 +829,15 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // должен создаваться посреди рисования.
     boxes.forEach((box, i) => {
       if (!box) return;
+      // Отпускание кнопки ПОСЛЕ драга (за шкалу цены — масштаб, за поле — пан)
+      // браузер всё равно оформляет как click по общему предку down/up, а
+      // хит-тест «плюса» смотрит только на точку ОТПУСКАНИЯ. Тянул шкалу и
+      // отпустил над «+» — открывалась модалка уведомления (фидбек Вадима).
+      // Жест отличаем от клика пройденным расстоянием.
+      let downAt: { x: number; y: number } | null = null;
+      const onDown = (e: MouseEvent) => { downAt = { x: e.clientX, y: e.clientY }; };
+      box.addEventListener('mousedown', onDown);
+      unsubs.push(() => box.removeEventListener('mousedown', onDown));
       const onPillClick = (e: MouseEvent) => {
         if ((e.target as HTMLElement | null)?.tagName !== 'CANVAS') return;
         // Вне режима рисования фигуры выделяются обычным кликом (как в
@@ -841,6 +850,9 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
           const br = box.getBoundingClientRect();
           if (layer.click(e.clientX - br.left, e.clientY - br.top)) { e.stopPropagation(); return; }
         }
+        // Курсор проехал заметное расстояние между нажатием и отпусканием —
+        // это был жест (пан/масштаб), а не клик: алерт из него не рождается.
+        if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 5) return;
         const per = pillsRef.current[i];
         if (!per) return;
         for (const sd of ['left', 'right'] as const) {
