@@ -412,8 +412,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
 
   // ── кнопка «Прокрутить до текущего бара» (модель TradingView) ─────────────
   // Живёт в правом нижнем углу и видна, только когда ОБА условия сразу:
-  // последний бар ушёл с экрана (в любую сторону) И курсор в правом нижнем
-  // углу графика. Клик возвращает к актуальному краю, сохраняя зум.
+  // последний бар ушёл с экрана (в любую сторону) И курсор в правой полосе
+  // графика. Клик возвращает к актуальному краю, сохраняя зум.
   const [jumpAvail, setJumpAvail] = useState(false);
   const [jumpHover, setJumpHover] = useState(false);
   // Через ref (идиома paintRowValuesRef): проверку зовут и подписка на диапазон
@@ -444,12 +444,14 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // разносит каждый кадр по остальным панелям стека.
     try { lead?.timeScale().scrollToRealTime(); } catch { /* чарт снят */ }
   }, []);
-  // Ховер-зона: правый нижний угол корня (160×120). Отслеживаем move'ом по
-  // корню, а не отдельным div'ом — зона НЕ должна перехватывать пан/зум графика.
+  // Ховер-зона: правая полоса графика (240px от правого края, ВСЯ высота —
+  // Вадим попросил шире и на полную высоту, чтобы кнопку было проще поймать).
+  // Отслеживаем move'ом по корню, а не отдельным div'ом — зона НЕ должна
+  // перехватывать пан/зум графика.
   const onRootPointerMove = useCallback((e: React.PointerEvent) => {
     const rc = rootRef.current?.getBoundingClientRect();
     if (!rc) return;
-    const inBR = rc.right - e.clientX <= 160 && rc.bottom - e.clientY <= 120;
+    const inBR = rc.right - e.clientX <= 240;
     setJumpHover((v) => (v === inBR ? v : inBR));
   }, []);
   const onRootPointerLeave = useCallback(() => setJumpHover(false), []);
