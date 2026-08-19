@@ -59,6 +59,7 @@ import AssetPickerModal from './AssetPickerModal';
 import PortfolioFundPicker, { indexFundTickers } from './PortfolioFundPicker';
 import SegmentedControl from '../SegmentedControl';
 import Dropdown from '../Dropdown';
+import HelpTooltip from '../HelpTooltip';
 import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import ChartSettings from '../chart/ChartSettings';
@@ -841,10 +842,13 @@ export default function CompanyFlowsTab({
 
                 {/* Режим — выпадающий список (4 пункта в ряд уже не влезали).
                     «% в обращении» и «Навес» появляются только у бумаг со
-                    своими данными (free-float капа / оборот торгов). Подсказка
-                    «?» — при каждом пункте списка. Обёртка — якорь
-                    онбординг-тура (шаг «Четыре взгляда на бумагу»);
-                    display:flex, чтобы в flex-ряду контролов ничего не поехало. */}
+                    своими данными (free-float капа / оборот торгов). Подсказки
+                    «?» две и они про разное: в закрытом состоянии trailing-«?»
+                    внутри пилюли объясняет ТЕКУЩИЙ режим (что сейчас на
+                    графике), а «?» у пунктов списка помогает выбрать из
+                    остальных. Обёртка — якорь онбординг-тура (шаг «Четыре
+                    взгляда на бумагу»); display:flex, чтобы в flex-ряду
+                    контролов ничего не поехало. */}
                 {embedded ? (
                     <PillGroup<ChartMode>
                         value={effectiveMode}
@@ -862,6 +866,13 @@ export default function CompanyFlowsTab({
                     }))}
                     value={effectiveMode}
                     onChange={setMode}
+                    trailing={
+                        <HelpTooltip
+                            title={MODE_LABELS[effectiveMode]}
+                            content={MODE_HELP[effectiveMode]}
+                            size={18}
+                        />
+                    }
                 />
                 </div>
                 )}

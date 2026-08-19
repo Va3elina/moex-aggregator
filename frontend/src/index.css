@@ -965,7 +965,7 @@
   transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease !important;
 }
 [data-theme^="editorial"] .editorial-press:hover:not(:disabled),
-[data-theme^="editorial"] .frame-dropdown-trigger:hover:not(:disabled),
+[data-theme^="editorial"] .frame-dropdown-trigger:not(.frame-dropdown-trigger--bare):hover:not(:disabled),
 [data-theme^="editorial"] .instrument-modal-chip:hover:not(:disabled),
 [data-theme^="editorial"] button.widget-flat:hover:not(:disabled),
 [data-theme^="editorial"] .btn-control:hover:not(:disabled) {
@@ -973,7 +973,7 @@
   box-shadow: 4px 4px 0 var(--text-primary) !important;
 }
 [data-theme^="editorial"] .editorial-press:active:not(:disabled),
-[data-theme^="editorial"] .frame-dropdown-trigger:active:not(:disabled),
+[data-theme^="editorial"] .frame-dropdown-trigger:not(.frame-dropdown-trigger--bare):active:not(:disabled),
 [data-theme^="editorial"] .instrument-modal-chip:active:not(:disabled),
 [data-theme^="editorial"] button.widget-flat:active:not(:disabled),
 [data-theme^="editorial"] .btn-control:active:not(:disabled) {
