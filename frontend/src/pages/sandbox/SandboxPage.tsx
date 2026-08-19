@@ -325,6 +325,15 @@ export default function SandboxPage() {
   const saveTimer = useRef<number | undefined>(undefined);
 
   const panels = st.bySheet[st.activeSheet] || [];
+  // Листы, которые уже открывали в этой сессии: их панели остаются
+  // СМОНТИРОВАННЫМИ при переключении листа (слой прячется visibility:hidden),
+  // чтобы возврат на лист не перезагружал графики заново (фидбек Вадима:
+  // «переключился на второй лист, вернулся — всё грузится заново»).
+  // Демонтаж (и chart.remove()) — только при закрытии панели или листа.
+  // Ref, а не state: пополняется в рендере идемпотентно и сам перерисовку
+  // не вызывает; удалённые листы отфильтровываются итерацией по st.sheets.
+  const mountedSheetsRef = useRef<Set<string>>(new Set());
+  mountedSheetsRef.current.add(st.activeSheet);
   const maximizedPanel = maximizedId ? panels.find((p) => p.id === maximizedId) ?? null : null;
   const prefs = st.prefs ?? DEF_PREFS;
   const setPrefs = useCallback((patch: Partial<SbPrefs>) => {
@@ -820,7 +829,21 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           </div>
         )}
 
-        {panels.map((p) => {
+        {/* Панели ВСЕХ уже открывавшихся листов, по слою на лист. Неактивный
+            слой спрятан visibility:hidden (НЕ display:none — размеры панелей
+            сохраняются, autoSize чартов не пересчитывает раскладку в ноль)
+            и не ловит мышь. Раньше неактивный лист демонтировался целиком, и
+            возврат на него перезагружал все графики. chart.remove() по-прежнему
+            зовётся при закрытии панели/листа — течь из §2 не возвращается,
+            просто инстансов живёт больше (по числу открывавшихся листов). */}
+        {st.sheets.filter((sh) => mountedSheetsRef.current.has(sh.id)).map((sh) => {
+          const sheetOn = sh.id === st.activeSheet;
+          return (
+          <div
+            key={sh.id}
+            style={{ position: 'absolute', inset: 0, visibility: sheetOn ? 'visible' : 'hidden', pointerEvents: sheetOn ? 'auto' : 'none' }}
+          >
+          {(st.bySheet[sh.id] || []).map((p) => {
           const eff = p.themeOverride || st.sbTheme;
           return (
           <div
@@ -846,6 +869,9 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
               <div key={hd.dir} onPointerDown={(e) => onResizeStart(e, p.id, hd.dir)} style={{ position: 'absolute', zIndex: 2, ...hd.style }} />
             ))}
             <div key={N_HANDLE.dir} onPointerDown={(e) => onResizeStart(e, p.id, N_HANDLE.dir)} style={{ position: 'absolute', ...N_HANDLE.style }} />
+          </div>
+          );
+          })}
           </div>
           );
         })}
