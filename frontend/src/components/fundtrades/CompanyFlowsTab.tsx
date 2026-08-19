@@ -688,6 +688,18 @@ export default function CompanyFlowsTab({
     // только на первом рендере с данными — схема как в OI.
     const animTrigger = `${selectedAsset?.key ?? ''}|${[...effectiveFunds].sort().join(',')}|${period}|${effectiveMode}`;
 
+    // Смена бумаги видна в рендере СРАЗУ (гарды по тикеру/ключу отдают чартам
+    // weeks=[] и т.п.), а *Loading-флаги выставляются эффектами только ПОСЛЕ
+    // первого коммита. Без синхронных stale-флагов между сменой и эффектами
+    // есть кадр «данные старые, loading=false»: CompanyShareChart в этот кадр
+    // запоминал «у бумаги нет цены» (prevHadPriceRef), схлопывал панель цены —
+    // и до прихода новой цены гистограмма растягивалась во всю высоту холста.
+    // Тот же кадр со stale priceError показывал «Нет истории цены» при
+    // переходе облигация → акция.
+    const priceStale = !!selectedTicker && price?.ticker !== selectedTicker;
+    const weightsStale = !!selectedAsset && weightsKey !== selectedAsset.key;
+    const priceMissing = !priceLoading && !priceStale && priceError === 'NO_PRICE_HISTORY';
+
     // ── Рендер ──
     if (assetsLoading) {
         // Высота skeleton'а держит примерный размер финального контента (ряд
@@ -973,9 +985,9 @@ export default function CompanyFlowsTab({
                         closes={price && price.ticker === selectedTicker ? price.closes : []}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
-                        loading={flowsLoading || priceLoading}
+                        loading={flowsLoading || priceLoading || priceStale}
                         noFundsSelected={noFundsSelected}
-                        priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
+                        priceMissing={priceMissing}
                         animTrigger={animTrigger}
                         bare={embedded}
                     />
@@ -990,9 +1002,9 @@ export default function CompanyFlowsTab({
                         shareMode={effectiveMode as ShareMode}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
-                        loading={weightsLoading || priceLoading || flowsLoading}
+                        loading={weightsLoading || weightsStale || priceLoading || priceStale || flowsLoading}
                         noFundsSelected={noFundsSelectedShare}
-                        priceMissing={!priceLoading && (priceError === 'NO_PRICE_HISTORY')}
+                        priceMissing={priceMissing}
                         animTrigger={animTrigger}
                         bare={embedded}
                     />

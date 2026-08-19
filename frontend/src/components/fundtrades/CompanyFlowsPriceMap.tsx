@@ -288,25 +288,32 @@ export default function CompanyFlowsPriceMap({
     // Выше нормы — кругляш упёрся в потолок, рисуем внешнее кольцо.
     const isOverflow = (net: number) => Math.abs(net) > normAbsNet;
 
-    // ── Каскадное появление кругляшей (масштаб 0→1, слева направо). ──
-    // Волна играет на первой прогрузке И на каждой смене данных (бумага,
-    // период, набор фондов): линия перетекает морфом, а кругляши вырастают
-    // заново из нуля — тот же рисунок, что при первом открытии. Драг
-    // навигатора волну не трогает (markers не зависит от окна — visMarkers
+    // ── Появление кругляшей (масштаб 0→1). ──
+    // Каскад слева направо — ТОЛЬКО на первом рендере с данными, в паре с
+    // reveal-клипом линии. Все последующие смены данных (бумага, период,
+    // набор фондов) — без каскада: кругляши вырастают заново из нуля, но
+    // одновременно и за morphDuration, синхронно с морфом линии (повторная
+    // волна слева направо читалась как «график грузится заново»). Драг
+    // навигатора рост не трогает (markers не зависит от окна — visMarkers
     // лишь слайсит). useLayoutEffect + синхронный сброс elapsed — без кадра
-    // полноразмерных кругляшей до старта волны.
+    // полноразмерных кругляшей до старта.
     const [elapsed, setElapsed] = useState<number>(0);
     const rafRef = useRef<number | null>(null);
+    const wavedRef = useRef(false);
+    const staggerRef = useRef(true);
     useLayoutEffect(() => {
         if (!markers.length) return;
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        staggerRef.current = !wavedRef.current;
+        wavedRef.current = true;
+        const total = staggerRef.current ? ANIMATION.waveDuration : ANIMATION.morphDuration;
         setElapsed(0);
         let start: number | null = null;
         const tick = (ts: number) => {
             if (start == null) start = ts;
             const e = ts - start;
             setElapsed(e);
-            if (e < ANIMATION.waveDuration) rafRef.current = requestAnimationFrame(tick);
+            if (e < total) rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
         return () => {
@@ -314,8 +321,11 @@ export default function CompanyFlowsPriceMap({
         };
     }, [markers]);
     const popFor = (orderIdx: number, total: number) => {
-        const delay = (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger;
-        const t = Math.min(Math.max(elapsed - delay, 0) / (ANIMATION.waveDuration - ANIMATION.waveStagger), 1);
+        const delay = staggerRef.current ? (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger : 0;
+        const dur = staggerRef.current
+            ? ANIMATION.waveDuration - ANIMATION.waveStagger
+            : ANIMATION.morphDuration;
+        const t = Math.min(Math.max(elapsed - delay, 0) / dur, 1);
         return easeOutCubic(t);
     };
 
@@ -414,7 +424,11 @@ export default function CompanyFlowsPriceMap({
         const tick = (ts: number) => {
             if (start == null) start = ts;
             const t = Math.min((ts - start) / ANIMATION.morphDuration, 1);
-            const pts = morphPts(from, targetLinePts, easeOutCubic(t));
+            // Финальный кадр — ТОЧНЫЕ целевые точки, не morphPts(…, 1):
+            // morphPts ресемплирует оба ряда к общей длине, и при разной длине
+            // линия навсегда оставалась сглаженной копией — вершина острого V
+            // срезалась, а кругляш висел под линией (кейс Озон, ноябрь 2025).
+            const pts = t >= 1 ? targetLinePts : morphPts(from, targetLinePts, easeOutCubic(t));
             linePtsRef.current = pts;
             setLinePts(pts);
             if (t < 1) {
@@ -438,6 +452,27 @@ export default function CompanyFlowsPriceMap({
             : ''),
         [linePts],
     );
+
+    // Y кругляша — с ТЕКУЩЕЙ отрисованной линии (интерполяция linePts по X),
+    // а не из целевого close: пока линия едет морфом, кругляш едет вместе с
+    // ней, а не ждёт её в целевой точке в отрыве от линии. После морфа linePts
+    // совпадают с целевыми — кругляш стоит ровно на вершине своей недели.
+    // x — юниты viewBox (0..1000). Нет линии (< 2 точек) → null, рендер падает
+    // на yFrac(close).
+    const lineYAtX = (x: number): number | null => {
+        const pts = linePts;
+        if (pts.length < 2) return null;
+        if (x <= pts[0].x) return pts[0].y;
+        for (let i = 1; i < pts.length; i++) {
+            if (pts[i].x >= x) {
+                const a = pts[i - 1];
+                const b = pts[i];
+                const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+                return a.y + (b.y - a.y) * t;
+            }
+        }
+        return pts[pts.length - 1].y;
+    };
 
     // Тики сетки/оси Y — 5 равных шагов цены.
     const priceTicks = useMemo(
@@ -621,7 +656,8 @@ export default function CompanyFlowsPriceMap({
                                 const dim = hoveredIdx !== null && hoveredIdx !== i;
                                 const color = m.net > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
                                 const left = `${xFrac(m.wi) * 100}%`;
-                                const top = `${yFrac(close) * 100}%`;
+                                const yLine = lineYAtX(xFrac(m.wi) * 1000);
+                                const top = `${(yLine ?? yFrac(close) * 1000) / 10}%`;
                                 return (
                                     <Fragment key={m.mi}>
                                         {/* Кольцо-«зашкал»: месяц крупнее нормы окна, кругляш

@@ -392,7 +392,10 @@ export default function CompanyShareChart({
         const tick = (ts: number) => {
             if (start == null) start = ts;
             const t = Math.min((ts - start) / ANIMATION.morphDuration, 1);
-            const pts = morphPts(from, targetLinePts, easeOutCubic(t));
+            // Финальный кадр — ТОЧНЫЕ целевые точки, не morphPts(…, 1): при
+            // разной длине рядов morphPts ресемплирует и линия оставалась
+            // сглаженной копией (срезанные вершины) до следующего драга.
+            const pts = t >= 1 ? targetLinePts : morphPts(from, targetLinePts, easeOutCubic(t));
             linePtsRef.current = pts;
             setLinePts(pts);
             if (t < 1) {
