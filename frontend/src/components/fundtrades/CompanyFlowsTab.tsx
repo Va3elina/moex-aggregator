@@ -867,10 +867,17 @@ export default function CompanyFlowsTab({
                     value={effectiveMode}
                     onChange={setMode}
                     trailing={
+                        // float — поповер уезжает порталом в body (position:fixed).
+                        // Без него подсказка пряталась ПОД карточкой графика: пилюля
+                        // выпадашки несёт editorial-press с transform, а он создаёт
+                        // stacking context, и z-index поповера заперт внутри пилюли —
+                        // карточка графика идёт следующим позиционированным соседом и
+                        // выигрывает по порядку в дереве.
                         <HelpTooltip
                             title={MODE_LABELS[effectiveMode]}
                             content={MODE_HELP[effectiveMode]}
                             size={18}
+                            float
                         />
                     }
                 />
