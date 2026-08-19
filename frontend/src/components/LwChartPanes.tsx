@@ -20,7 +20,7 @@
  * вместо единственного chartRef, и paneLeftW=0 всегда (левая шкала здесь
  * везде скрыта, в отличие от LwChart, где бывает видимой).
  */
-import { forwardRef, useContext, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   createChart, ColorType, LineStyle, CrosshairMode,
   LineSeries, AreaSeries, HistogramSeries, CandlestickSeries, BarSeries,
@@ -293,6 +293,20 @@ function ellipseSolve(f: { c: Pt2; u: Pt2; v: Pt2 }, p: Pt2): { a: number; b: nu
   return { a: (dx * v.y - dy * v.x) / det, b: (u.x * dy - u.y * dx) / det };
 }
 
+/** Первое время «оси» = минимум первых времён всех серий (== spine[0] для
+ *  стека). ЕДИНОЕ определение якоря prevFirstTimeRef: детект доклейки истории
+ *  сравнивает старое значение с новым, и оба обязаны считаться одинаково —
+ *  якорь по series[0] давал ЛОЖНЫЙ детект, когда первая серия начинается позже
+ *  соседней (ОИ короче цены, цена скрыта и т.п.). */
+function minFirstTime(ps: LwPane[]): number | null {
+  let min: number | null = null;
+  for (const p of ps) for (const d of p.series) {
+    const t = d.data[0]?.time;
+    if (t != null && (min == null || t < min)) min = t;
+  }
+  return min;
+}
+
 // За сколько баров до начала ряда просить догрузку истории. На 1200px
 // помещается ~200 свечей, то есть запрос уходит примерно за два экрана до
 // края — кусок (0.4 с) успевает доехать раньше, чем пользователь долистает,
@@ -395,6 +409,50 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // слетел бы на fit ровно в момент, когда пользователь этого не просил.
   // Читаем его при восстановлении, если у свежесозданного чарта своего ещё нет.
   const lastRangeRef = useRef<LogicalRange | null>(null);
+
+  // ── кнопка «Прокрутить до текущего бара» (модель TradingView) ─────────────
+  // Живёт в правом нижнем углу и видна, только когда ОБА условия сразу:
+  // последний бар ушёл с экрана (в любую сторону) И курсор в правом нижнем
+  // углу графика. Клик возвращает к актуальному краю, сохраняя зум.
+  const [jumpAvail, setJumpAvail] = useState(false);
+  const [jumpHover, setJumpHover] = useState(false);
+  // Через ref (идиома paintRowValuesRef): проверку зовут и подписка на диапазон
+  // (живёт от создания чартов), и эффект серий — после каждого обновления данных.
+  const updateJumpRef = useRef<(() => void) | null>(null);
+  updateJumpRef.current = () => {
+    let avail = false;
+    if (!staticViewRef.current) {
+      const lead = chartsRef.current[chartsRef.current.length - 1];
+      // Число баров оси — по самой длинной серии (нижняя граница объединения
+      // дат: серии почти всегда делят одни даты, а недооценка лишь чуть раньше
+      // показала бы кнопку — не наоборот).
+      let total = 0;
+      for (const p of panesRef.current) for (const d of p.series) total = Math.max(total, d.data.length);
+      if (lead && total > 0) {
+        try {
+          const lr = lead.timeScale().getVisibleLogicalRange();
+          // Последний бар (индекс total-1) видим, когда лежит внутри окна.
+          avail = !!lr && (lr.to < total - 1 || lr.from > total - 1);
+        } catch { avail = false; }
+      }
+    }
+    setJumpAvail(avail);
+  };
+  const jumpToLatest = useCallback(() => {
+    const lead = chartsRef.current[chartsRef.current.length - 1];
+    // Анимированный скролл к правому краю с сохранением зума; синк диапазона
+    // разносит каждый кадр по остальным панелям стека.
+    try { lead?.timeScale().scrollToRealTime(); } catch { /* чарт снят */ }
+  }, []);
+  // Ховер-зона: правый нижний угол корня (160×120). Отслеживаем move'ом по
+  // корню, а не отдельным div'ом — зона НЕ должна перехватывать пан/зум графика.
+  const onRootPointerMove = useCallback((e: React.PointerEvent) => {
+    const rc = rootRef.current?.getBoundingClientRect();
+    if (!rc) return;
+    const inBR = rc.right - e.clientX <= 160 && rc.bottom - e.clientY <= 120;
+    setJumpHover((v) => (v === inBR ? v : inBR));
+  }, []);
+  const onRootPointerLeave = useCallback(() => setJumpHover(false), []);
   // Сигнатура СОСТАВА серий (всё, кроме самих точек) — по ней эффект решает,
   // можно ли обновить данные на месте (setData) вместо полного пересоздания.
   const seriesSigRef = useRef<string>('');
@@ -680,6 +738,13 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         };
         chart.timeScale().subscribeVisibleLogicalRangeChange(edge);
         unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(edge));
+      }
+      // Кнопка «К текущему бару»: пересчитать видимость на каждый пан/зум.
+      // Подписка на ВЕДУЩЕЙ (нижней) панели — по ней же меряется и диапазон.
+      if (i === charts.length - 1) {
+        const jumpCheck = () => updateJumpRef.current?.();
+        chart.timeScale().subscribeVisibleLogicalRangeChange(jumpCheck);
+        unsubs.push(() => chart.timeScale().unsubscribeVisibleLogicalRangeChange(jumpCheck));
       }
     });
 
@@ -2013,6 +2078,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     seriesSigRef.current = seriesSig;
 
     if (sameShape) {
+      // Первое время оси ДО обновления — по паре (prevFirst, newFirst) ниже
+      // ловим доклейку истории слева и компенсируем сдвиг индексов.
+      const prevFirst = prevFirstTimeRef.current;
       const rcFast = (i: number, col: string | undefined) => resolveColor(boxes[i] ?? root, col);
       panes.forEach((pane, i) => {
         pane.series.forEach((def, j) => {
@@ -2050,29 +2118,42 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       // Первое время оси запоминаем и здесь: по нему МЕДЛЕННЫЙ путь считает
       // сдвиг логических индексов после догрузки истории. Не обновишь — сдвиг
       // посчитается от устаревшей даты и вернёт вид не туда.
-      prevFirstTimeRef.current = (() => {
-        let min: number | null = null;
-        for (const p of panes) for (const d of p.series) {
-          const t = d.data[0]?.time;
-          if (t != null && (min == null || t < min)) min = t;
-        }
-        return min;
-      })();
-      requestAnimationFrame(() => drawExpRef.current?.());
+      prevFirstTimeRef.current = minFirstTime(panes);
+      requestAnimationFrame(() => { drawExpRef.current?.(); updateJumpRef.current?.(); });
       paintRowValuesRef.current?.(null);
       drawShapesRef.current?.();
-      // Статичный вид обязан переподгоняться под новые данные; обычный — нет:
-      // серии живы, диапазон движок держит сам, трогать его нечем и незачем.
+      // Статичный вид обязан переподгоняться под новые данные. Обычный —
+      // ЗАВИСИТ ОТ ТОГО, ЧТО ИМЕННО ПРИШЛО. Реалтайм-тик дописывает бары
+      // СПРАВА, индексы старых баров не меняются — движок держит вид сам,
+      // трогать его нечем и незачем. А вот доклейка истории СЛЕВА (префетч
+      // запаса через полсекунды после первого показа, догрузка на краю) сдвигает
+      // индексы ВСЕХ старых баров на размер куска: движок хранит логический
+      // диапазон, и те же номера теперь указывают на даты полугодовой давности —
+      // терминал открывался «в марте» вместо сегодняшнего края (фидбек Вадима).
+      // Сдвигаем окно на число добавленных баров — те же даты, что и до склейки.
+      const newFirst = prevFirstTimeRef.current;
+      const lead0 = charts[charts.length - 1];
       if (staticView) charts.forEach((ch) => ch.timeScale().fitContent());
       else if (fitKey !== lastFitRef.current) {
         lastFitRef.current = fitKey;
         const total = Math.max(0, ...panes.flatMap((p) => p.series.map((x) => x.data.length)));
-        const lead0 = charts[charts.length - 1];
         if (initialBars && total > initialBars) {
           lead0.timeScale().setVisibleLogicalRange({ from: total - initialBars, to: total + 2 });
         } else {
           charts.forEach((ch) => ch.timeScale().fitContent());
         }
+      } else if (savedRange && prevFirst != null && newFirst != null && newFirst < prevFirst) {
+        // Индекс прежнего первого бара в НОВОМ объединении дат = сколько баров
+        // приклеилось слева (у стека это же пространство держит хребет).
+        const set = new Set<number>();
+        for (const p of panes) for (const d of p.series) for (const pt of d.data) set.add(pt.time);
+        const axisTimes = Array.from(set).sort((a, b) => a - b);
+        const idx = axisTimes.findIndex((t) => t >= prevFirst);
+        if (idx > 0) lead0.timeScale().setVisibleLogicalRange({ from: savedRange.from + idx, to: savedRange.to + idx });
+      } else if (savedTimeRange && prevFirst != null && newFirst != null && newFirst > prevFirst) {
+        // Ряд стал КОРОЧЕ с того же состава (тихий полный рефетч окна после
+        // SSE-фолбэка): прежние индексы указывают мимо данных — якорь по времени.
+        try { lead0.timeScale().setVisibleRange(savedTimeRange); } catch { /* вне данных */ }
       }
       return;
     }
@@ -2363,7 +2444,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     // Метки экспираций пересчитываем здесь же: expirations в депсах этого
     // эффекта, иначе тумблер «Экспирации» не давал бы эффекта до следующего
     // пана (ровно та дыра, что была бы у priceLines).
-    requestAnimationFrame(() => drawExpRef.current?.());
+    requestAnimationFrame(() => { drawExpRef.current?.(); updateJumpRef.current?.(); });
 
     // Значения в строках индикаторов: в покое (курсор вне графика) показываем
     // последний бар. Иначе после смены данных строка стояла бы пустой до
@@ -2385,6 +2466,11 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       } else {
         charts.forEach((ch) => ch.timeScale().fitContent());
       }
+      // Якорь детекта доклейки истории обязателен И ЗДЕСЬ: ветка выполняется на
+      // маунте, и без якоря первый же префетч запаса (через полсекунды после
+      // первого показа) не распознавался как «слева добавились бары»
+      // (prevFirst = null) — вид уезжал в прошлое на размер куска.
+      prevFirstTimeRef.current = minFirstTime(panes);
     } else if (savedTimeRange) {
       // Тот же участок ИСТОРИИ, что и был. Если новый ряд его не покрывает,
       // движок бросит — тогда падаем на логический диапазон ниже.
@@ -2405,10 +2491,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       if (!okByTime && (savedRange ?? lastRangeRef.current)) {
         lead.timeScale().setVisibleLogicalRange((savedRange ?? lastRangeRef.current)!);
       }
-      const axisTimesT = spineTimes.length
-        ? spineTimes
-        : (panes[0]?.series[0]?.data.map((pt) => pt.time) ?? []);
-      prevFirstTimeRef.current = axisTimesT[0] ?? null;
+      prevFirstTimeRef.current = minFirstTime(panes);
     } else if (savedRange ?? lastRangeRef.current) {
       // ⚠️ Догрузка истории сдвигает ЛОГИЧЕСКИЕ индексы: бар, который был
       // нулевым, после склейки стоит N-м. Восстановить диапазон «как был»
@@ -2425,17 +2508,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const idx = axisTimes.findIndex((t) => t >= prevFirstT);
         if (idx > 0) shift = idx;
       }
-      prevFirstTimeRef.current = firstT;
+      prevFirstTimeRef.current = minFirstTime(panes);
 
       const r = (savedRange ?? lastRangeRef.current)!;
       lead.timeScale().setVisibleLogicalRange(
         shift ? { from: r.from + shift, to: r.to + shift } : r,
       );
     } else {
-      const axisTimes = spineTimes.length
-        ? spineTimes
-        : (panes[0]?.series[0]?.data.map((pt) => pt.time) ?? []);
-      prevFirstTimeRef.current = axisTimes[0] ?? null;
+      prevFirstTimeRef.current = minFirstTime(panes);
     }
     drawShapesRef.current?.();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations, staticView]);
@@ -2538,11 +2618,58 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
   // Отступ водяного знака слева = ширина ЛЕВОЙ шкалы первой панели: иначе знак
   // ложится на подписи оси (та же логика, что в LwChart).
   const hasLeftAxis = panes[0]?.series.some((x) => x.scale === 'left');
+  // Кнопка «К текущему бару»: место — над осью дат и левее правой шкалы. Их
+  // размеры берём у ведущего (нижнего) чарта в момент рендера: рендер случается
+  // ровно на флипах jumpAvail/jumpHover, к этому времени чарты давно живут.
+  const jumpBtn = (() => {
+    if (!jumpAvail || staticView) return null;
+    let right = 14, bottom = 40;
+    const lead = chartsRef.current[chartsRef.current.length - 1];
+    try {
+      if (lead) {
+        right = (lead.priceScale('right').width() || 0) + 10;
+        bottom = (lead.timeScale().height() || 26) + 10;
+      }
+    } catch { /* чарт снят — дефолты */ }
+    const c = themeColors(dark);
+    return (
+      <button
+        type="button"
+        onClick={jumpToLatest}
+        title="Прокрутить до текущего бара"
+        aria-label="Прокрутить до текущего бара"
+        style={{
+          position: 'absolute', right, bottom, zIndex: 8,
+          width: 28, height: 28, borderRadius: '50%', padding: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${dark ? 'rgba(245,241,232,0.18)' : 'rgba(10,10,10,0.16)'}`,
+          background: c.lab, color: c.text, cursor: 'pointer',
+          boxShadow: dark ? '0 4px 12px rgba(0,0,0,0.35)' : '0 4px 12px rgba(0,0,0,0.14)',
+          // Появление — только под курсором в правом нижнем углу (как в
+          // TradingView). Вне ховера элемент невидим И прозрачен для кликов,
+          // чтобы не мешать пану/рисованию в этом же углу.
+          opacity: jumpHover ? 1 : 0,
+          pointerEvents: jumpHover ? 'auto' : 'none',
+          transition: 'opacity 140ms ease',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="5 6 11 12 5 18" />
+          <polyline points="13 6 19 12 13 18" />
+        </svg>
+      </button>
+    );
+  })();
   return (
     // position:relative — якорь для водяного знака. ⚠️ Пейны ищутся по
     // data-lw-pane, а НЕ по root.children: раньше любой лишний ребёнок корня
     // сдвигал бы индексы боксов, и чарт создался бы поверх водяного знака.
-    <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+    <div
+      ref={rootRef}
+      onPointerMove={onRootPointerMove}
+      onPointerLeave={onRootPointerLeave}
+      style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
+    >
       {panes.map((p, i) => (
         <div key={i} data-lw-pane="" style={{ position: 'relative', minHeight: 0, flex: `${p.flex ?? 1} 1 0%` }}>
           {/* Оверлей ВНУТРИ панели: строка индикатора должна жить над своим
@@ -2554,6 +2681,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       {watermark !== false && chartPrefs?.watermark !== false && (
         <ChartWatermark bottom={30} left={hasLeftAxis ? 62 : 12} size={26} minSize={16} opacity={0.4} />
       )}
+      {jumpBtn}
     </div>
   );
 });
