@@ -2645,6 +2645,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         bottom = (lead.timeScale().height() || 26) + 10;
       }
     } catch { /* чарт снят — дефолты */ }
+    // Диаметр — от размера графика (Вадим: кнопка должна быть адаптивной):
+    // на тесной панели терминала фиксированные 28px громоздки, на развёрнутом
+    // окне — теряются. ~8.5% меньшей стороны, зажато в разумные пределы.
+    const rcRoot = rootRef.current?.getBoundingClientRect();
+    const d = rcRoot
+      ? Math.round(Math.max(22, Math.min(40, Math.min(rcRoot.width, rcRoot.height) * 0.085)))
+      : 28;
+    const icon = Math.round(d * 0.5);
     const c = themeColors(dark);
     return (
       <button
@@ -2654,7 +2662,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         aria-label="Прокрутить до текущего бара"
         style={{
           position: 'absolute', right, bottom, zIndex: 8,
-          width: 28, height: 28, borderRadius: '50%', padding: 0,
+          width: d, height: d, borderRadius: '50%', padding: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           border: `1px solid ${dark ? 'rgba(245,241,232,0.18)' : 'rgba(10,10,10,0.16)'}`,
           background: c.lab, color: c.text, cursor: 'pointer',
@@ -2667,7 +2675,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           transition: 'opacity 140ms ease',
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width={icon} height={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="5 6 11 12 5 18" />
           <polyline points="13 6 19 12 13 18" />
         </svg>
