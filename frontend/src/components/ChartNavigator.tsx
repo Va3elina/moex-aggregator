@@ -152,6 +152,15 @@ export default function ChartNavigator({
         return { bars, bw, mid };
     }, [data, height]);
 
+    // При очень узком окне 48px-хитзоны ручек накладываются, и верхняя по DOM
+    // (правая) полностью перекрывает нижнюю — окно нельзя раздвинуть обратно.
+    // В этом случае не верим тому, какая ручка поймала mousedown, а выбираем её
+    // по направлению первого движения: влево → левая, вправо → правая.
+    const knobsOverlap = useCallback(
+        () => (selFrac[1] - selFrac[0]) * width < KNOB_HIT,
+        [selFrac, width]
+    );
+
     // Перетаскивание
     const startDrag = useCallback((
         e: React.MouseEvent,
@@ -164,11 +173,18 @@ export default function ChartNavigator({
         isDraggingRef.current = true;
         const startX = e.clientX;
         const startFrac: [number, number] = [selFrac[0], selFrac[1]];
+        let ambiguous = type !== 'window' && knobsOverlap();
 
         const onMove = (me: MouseEvent) => {
             const df = (me.clientX - startX) / width;
             const [s, en] = startFrac;
             const winSize = en - s;
+
+            if (ambiguous) {
+                if (df === 0) return;
+                type = df < 0 ? 'left' : 'right';
+                ambiguous = false;
+            }
 
             if (type === 'left') {
                 const newS = Math.max(0, Math.min(s + df, en - MIN_WIN_FRAC));
@@ -203,12 +219,19 @@ export default function ChartNavigator({
         isDraggingRef.current = true;
         const startX = e.touches[0].clientX;
         const startFrac: [number, number] = [selFrac[0], selFrac[1]];
+        let ambiguous = type !== 'window' && knobsOverlap();
 
         const onMove = (te: TouchEvent) => {
             if (!te.touches.length) return;
             const df = (te.touches[0].clientX - startX) / width;
             const [s, en] = startFrac;
             const winSize = en - s;
+
+            if (ambiguous) {
+                if (df === 0) return;
+                type = df < 0 ? 'left' : 'right';
+                ambiguous = false;
+            }
 
             if (type === 'left') {
                 setSelFrac([Math.max(0, Math.min(s + df, en - MIN_WIN_FRAC)), en]);
