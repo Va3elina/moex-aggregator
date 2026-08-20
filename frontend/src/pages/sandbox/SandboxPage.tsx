@@ -835,13 +835,16 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             и не ловит мышь. Раньше неактивный лист демонтировался целиком, и
             возврат на него перезагружал все графики. chart.remove() по-прежнему
             зовётся при закрытии панели/листа — течь из §2 не возвращается,
-            просто инстансов живёт больше (по числу открывавшихся листов). */}
+            просто инстансов живёт больше (по числу открывавшихся листов).
+            ⚠️ Сам слой всегда pointerEvents:'none' (мышь ловят только панели
+            внутри): слой растянут на весь холст и лежит НАД пустым состоянием —
+            с 'auto' он съедал клик по кнопке «Добавить индикатор». */}
         {st.sheets.filter((sh) => mountedSheetsRef.current.has(sh.id)).map((sh) => {
           const sheetOn = sh.id === st.activeSheet;
           return (
           <div
             key={sh.id}
-            style={{ position: 'absolute', inset: 0, visibility: sheetOn ? 'visible' : 'hidden', pointerEvents: sheetOn ? 'auto' : 'none' }}
+            style={{ position: 'absolute', inset: 0, visibility: sheetOn ? 'visible' : 'hidden', pointerEvents: 'none' }}
           >
           {(st.bySheet[sh.id] || []).map((p) => {
           const eff = p.themeOverride || st.sbTheme;
@@ -851,7 +854,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             className="sb-panel"
             data-sbtheme={eff}
             data-theme={eff === 'light' ? 'editorial-light' : 'editorial-dark'}
-            style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, ...panelStyle }}
+            style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, pointerEvents: sheetOn ? 'auto' : 'none', ...panelStyle }}
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
