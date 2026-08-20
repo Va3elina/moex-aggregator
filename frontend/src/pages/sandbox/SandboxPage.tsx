@@ -307,7 +307,25 @@ export default function SandboxPage() {
   const avatarInitial = (user?.display_name?.trim()?.[0] || user?.email?.[0] || '?').toUpperCase();
   const [st, setSt] = useState<Persisted>(loadState);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Меню «＋ Индикатор» прикреплено к САМОЙ кнопке: её x «плавает» вместе с
+  // рядом вкладок листов (чем больше листов, тем правее кнопка), поэтому
+  // координата берётся из getBoundingClientRect, а не из константы.
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+  const [menuLeft, setMenuLeft] = useState(220);
   const [signalsOpen, setSignalsOpen] = useState(false);
+  // Пересчёт якоря: левый край меню = левый край кнопки, но так, чтобы меню не
+  // вылезло за правый край экрана (кнопка уезжает вправо на длинном ряду листов).
+  const syncMenuLeft = useCallback(() => {
+    const r = addBtnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setMenuLeft(Math.max(8, Math.min(r.left, window.innerWidth - ADD_MENU_W - 8)));
+  }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const on = () => syncMenuLeft();
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, [menuOpen, syncMenuLeft]);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [signalCount, setSignalCount] = useState(0);
   // Операции с листом: контекст-меню и инлайн-переименование (§3.3).
@@ -769,7 +787,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
 
         {/* ＋ Индикатор */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
-          <button type="button" onClick={() => setMenuOpen((v) => !v)} style={addBtnStyle}>
+          <button type="button" ref={addBtnRef} onClick={() => { syncMenuLeft(); setMenuOpen((v) => !v); }} style={addBtnStyle}>
             <Plus size={15} strokeWidth={2.4} /> Индикатор
           </button>
         </div>
@@ -823,7 +841,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             <div style={{ fontSize: 13.5, color: 'var(--muted)', maxWidth: 340, textAlign: 'center', lineHeight: 1.5 }}>
               Добавьте индикатор — он появится как окно-панель. Панели можно двигать, тянуть за края и прилеплять друг к другу.
             </div>
-            <button type="button" onClick={() => setMenuOpen(true)} style={{ ...addBtnStyle, padding: '11px 18px', fontSize: 13.5 }}>
+            <button type="button" onClick={() => { syncMenuLeft(); setMenuOpen(true); }} style={{ ...addBtnStyle, padding: '11px 18px', fontSize: 13.5 }}>
               <PlusCircle size={15} /> Добавить индикатор
             </button>
           </div>
@@ -916,7 +934,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       {menuOpen && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z }} onClick={() => setMenuOpen(false)} />
-          <div className="sb-scroll" style={addMenuStyle}>
+          <div className="sb-scroll" style={{ ...addMenuStyle, left: menuLeft }}>
             {(['instrument', 'market'] as Group[]).map((g) => (
               <div key={g}>
                 <div className="sb-uc" style={{ padding: '8px 10px 4px' }}>
@@ -1204,8 +1222,10 @@ const panelStyle: CSSProperties = {
   borderRadius: 8, boxShadow: 'var(--shadow)', overflow: 'hidden',
 };
 const panelBodyStyle: CSSProperties = { flex: '1 1 auto', position: 'relative', minHeight: 0, background: 'var(--bg)' };
+// Ширина меню «＋ Индикатор»: нужна и стилю, и расчёту якоря (syncMenuLeft).
+const ADD_MENU_W = 300;
 const addMenuStyle: CSSProperties = {
-  position: 'absolute', top: TOPBAR_H + 4, left: 220, zIndex: OVERLAY_Z + 1, width: 300, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
+  position: 'absolute', top: TOPBAR_H + 4, zIndex: OVERLAY_Z + 1, width: ADD_MENU_W, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
   background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 6,
   animation: 'sb-pop .15s ease',
 };
