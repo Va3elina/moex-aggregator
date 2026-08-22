@@ -25,7 +25,7 @@
  * ⚙ общий Формат, per-panel cfg, клик по сигналу → spawn индикатора, общие
  * настройки §9, листы (переименование/дубль/удаление/reorder).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity, ArrowLeftRight, Bell, CalendarDays, Grid3x3, Layers, LayoutGrid,
   ListFilter, LogOut, Plus, PlusCircle, Scale, SlidersHorizontal, TrendingUp, Wallet, Waves, X as XIcon,
@@ -132,11 +132,20 @@ const ROUTE_TO_KIND: Record<string, IndKind> = {
   '/heatmap': 'heatmap',
 };
 
+/** Пилот водяного знака в песочнице: поверх дефолтов (watermark: false) включает
+ *  знак «Фрейм» — тот же ChartWatermark в левом нижнем углу, что на сайте.
+ *  Пока только панель ОИ; если формат ок — override уходит, знак включается везде. */
+function WithWatermark({ children }: { children: ReactNode }) {
+  const base = useContext(ChartPrefsCtx);
+  const value = useMemo<ChartPrefs>(() => ({ ...(base ?? {}), watermark: true }), [base]);
+  return <ChartPrefsCtx.Provider value={value}>{children}</ChartPrefsCtx.Provider>;
+}
+
 // type → embed-компонент (наш реальный индикатор).
 function renderIndicator(type: IndKind, cfg: PanelCfg | undefined, onSignal: (dl: AnomalyDeepLink) => void): ReactNode {
   switch (type) {
     case 'signals': return <EmbedSignals onPick={onSignal} />;
-    case 'oi': return <EmbedOpenInterest initialInstrument={cfg?.instrument} />;
+    case 'oi': return <WithWatermark><EmbedOpenInterest initialInstrument={cfg?.instrument} /></WithWatermark>;
     case 'seasonality': return <EmbedSeasonality initialInstrument={cfg?.instrument} />;
     case 'screener': return <EmbedScreener onPick={(r) => onSignal({ route: '/oi', secid: r.sectype })} />;
     case 'buffett': return <EmbedBuffett />;
@@ -361,8 +370,8 @@ export default function SandboxPage() {
   // Дефолты графиков → во все панели (мемо, чтобы не пересоздавать чарты каждый рендер).
   const chartPrefsValue = useMemo<ChartPrefs>(() => ({
     lineWidth: prefs.lineW, crosshair: prefs.crosshair, grid: prefs.chartGrid, lastValue: prefs.lastValue,
-    // Песочница — приватный конструктор-терминал (не сайтовая витрина), водяной
-    // знак «Фрейм» на графиках здесь ни к чему (панелей и так тесно).
+    // Водяной знак «Фрейм» раскатываем поэтапно: пилот на панели ОИ
+    // (WithWatermark выше), остальные панели пока без него.
     watermark: false,
   }), [prefs.lineW, prefs.crosshair, prefs.chartGrid, prefs.lastValue]);
 
