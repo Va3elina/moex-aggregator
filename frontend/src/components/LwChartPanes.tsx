@@ -444,14 +444,15 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
     // разносит каждый кадр по остальным панелям стека.
     try { lead?.timeScale().scrollToRealTime(); } catch { /* чарт снят */ }
   }, []);
-  // Ховер-зона: правая полоса графика (240px от правого края, ВСЯ высота —
-  // Вадим попросил шире и на полную высоту, чтобы кнопку было проще поймать).
+  // Ховер-зона: правые 25% ширины графика, ВСЯ высота. Доля вместо фиксированных
+  // пикселей — виджет живёт и в маленьком превью, и на весь экран, зона должна
+  // масштабироваться вместе с ним (просьба Вадима).
   // Отслеживаем move'ом по корню, а не отдельным div'ом — зона НЕ должна
   // перехватывать пан/зум графика.
   const onRootPointerMove = useCallback((e: React.PointerEvent) => {
     const rc = rootRef.current?.getBoundingClientRect();
     if (!rc) return;
-    const inBR = rc.right - e.clientX <= 240;
+    const inBR = rc.right - e.clientX <= rc.width * 0.25;
     setJumpHover((v) => (v === inBR ? v : inBR));
   }, []);
   const onRootPointerLeave = useCallback(() => setJumpHover(false), []);
