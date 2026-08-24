@@ -25,6 +25,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
 import { API_CSV_ENABLED } from '../config/features';
+import { FEATURE_HINTS, FeatureHintRow } from '../components/pricing/featureHints';
 
 interface PlanVariant {
   plan_id: string;
@@ -591,9 +592,9 @@ export default function PricingPage() {
                   // приняли за уже доступную.
                   const soon = included && f.soon === true;
                   return (
-                    <li
+                    <FeatureHintRow
                       key={i}
-                      className="flex items-start gap-2"
+                      hint={FEATURE_HINTS[f.key]}
                       style={included && !soon
                         ? { color: 'var(--text-secondary)' }
                         : { color: 'var(--text-muted)', opacity: soon ? 0.8 : 0.55 }}
@@ -606,7 +607,7 @@ export default function PricingPage() {
                         <X size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       )}
                       <span>{label}</span>
-                    </li>
+                    </FeatureHintRow>
                   );
                 })}
               </ul>
@@ -1400,33 +1401,35 @@ function PaymentMethods() {
  * строки с soon, которые прямо помечены как ещё не запущенные.
  */
 const CARD_FEATURES: Array<{
+  /** Ключ подсказки в FEATURE_HINTS (components/pricing/featureHints.tsx). */
+  key: string;
   label: string;
   free: boolean | string;
   basic: boolean | string;
   pro: boolean | string;
   soon?: boolean;
 }> = [
-  { label: 'Все 9 индикаторов',            free: true,  basic: true, pro: true },
-  { label: 'Все активы и таймфреймы',      free: true,  basic: true, pro: true },
-  { label: 'Вся история',                  free: true,  basic: true, pro: true },
+  { key: 'indicators', label: 'Все 9 индикаторов',            free: true,  basic: true, pro: true },
+  { key: 'assets',     label: 'Все активы и таймфреймы',      free: true,  basic: true, pro: true },
+  { key: 'history',    label: 'Вся история',                  free: true,  basic: true, pro: true },
   // Задержка 24 ч на free есть только в Открытых позициях (features.py).
-  { label: 'Открытые позиции без задержки', free: false, basic: true, pro: true },
+  { key: 'delay',      label: 'Открытые позиции без задержки', free: false, basic: true, pro: true },
   // Два флага матрицы (clgroup_yur + metric_traders) одной строкой — оба
   // открываются вместе на Basic, разделять их в карточке незачем.
-  { label: 'Юрлица и число трейдеров',     free: false, basic: true, pro: true },
-  { label: 'Скринер сигналов',             free: false, basic: true, pro: true },
-  { label: 'Фильтры сезонности',           free: false, basic: true, pro: true },
-  { label: 'Свой набор фондов',            free: false, basic: true, pro: true },
-  { label: 'Свой период сравнения',        free: false, basic: true, pro: true },
-  { label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
-  { label: 'Терминал',                     free: false, basic: false, pro: true },
+  { key: 'yur',        label: 'Юрлица и число трейдеров',     free: false, basic: true, pro: true },
+  { key: 'screener',   label: 'Скринер сигналов',             free: false, basic: true, pro: true },
+  { key: 'seasonality', label: 'Фильтры сезонности',          free: false, basic: true, pro: true },
+  { key: 'funds',      label: 'Свой набор фондов',            free: false, basic: true, pro: true },
+  { key: 'range',      label: 'Свой период сравнения',        free: false, basic: true, pro: true },
+  { key: 'alerts',     label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
+  { key: 'terminal',   label: 'Терминал',                     free: false, basic: false, pro: true },
   // KILL-SWITCH (config/features.ts): пока выключен — в Pro стоит анонс
   // «скоро», чтобы направление было видно и никто не считал функцию рабочей.
   // Когда включим — анонс заменяется двумя настоящими строками.
   ...(API_CSV_ENABLED ? [
-    { label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
-    { label: 'API-доступ',          free: false, basic: false, pro: true },
+    { key: 'download', label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
+    { key: 'download', label: 'API-доступ',          free: false, basic: false, pro: true },
   ] : [
-    { label: 'Скачивание данных', free: false, basic: false, pro: 'Скачивание данных — скоро', soon: true },
+    { key: 'download', label: 'Скачивание данных', free: false, basic: false, pro: 'Скачивание данных — скоро', soon: true },
   ]),
 ];
