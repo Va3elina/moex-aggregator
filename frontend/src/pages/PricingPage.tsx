@@ -421,11 +421,14 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* Карточки тарифов — 3 колонки на десктопе, в стек на мобилке.
-          Раньше было grid-cols-4 для 4-х тарифов (Free/Basic/Pro/Premium),
-          теперь Premium удалён → 3 равные колонки. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 max-w-5xl mx-auto">
-        {data.tiers.map((tier) => {
+      {/* Карточки тарифов — только платные (Basic/Pro), 2 колонки на десктопе,
+          в стек на мобилке. Free-карточка убрана целиком (решение владельца
+          2026-08-24): страница тарифов продаёт подписку, а бесплатный доступ
+          не рекламирует. Что входит во Free, по-прежнему видно в сравнительной
+          таблице ниже. Бэкенд продолжает отдавать free в /api/billing/plans —
+          фильтруем на рендере, чтобы вернуть карточку одной строкой. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 max-w-3xl mx-auto">
+        {data.tiers.filter((t) => t.tier !== 'free').map((tier) => {
           const meta = TIER_META[tier.tier] || TIER_META.free;
           const variant = tier.tier === 'free' ? null : (period === 'yearly' ? tier.yearly : tier.monthly);
 
