@@ -575,10 +575,14 @@ export default function PricingPage() {
                 </div>
               )}
 
-              {/* Features list — TradingView-формат: ЕДИНЫЙ список фич во всех
+              {/* Features list — TradingView-формат: ЕДИНЫЙ список фич в платных
                   карточках (Pro повторяет пункты Basic), включённое — с галкой,
-                  недоступное — приглушённый крест. Так тарифы сравниваются
-                  «в лоб» по одинаковым строкам. Источник — CARD_FEATURES. */}
+                  недоступное — приглушённый крест. Источник — CARD_FEATURES.
+                  У Free списка НЕТ намеренно (решение владельца 2026-08-24):
+                  карточка не раскрывает, что входит в бесплатный тариф, —
+                  содержимое Free видно только в сравнительной таблице ниже. */}
+              {tier.tier === 'free' && <div className="flex-1 mb-5" />}
+              {tier.tier !== 'free' && (
               <ul className="flex-1 space-y-2 mb-5 text-sm">
                 {CARD_FEATURES.map((f, i) => {
                   const v = f[(tier.tier === 'basic' || tier.tier === 'pro' ? tier.tier : 'free')];
@@ -602,6 +606,7 @@ export default function PricingPage() {
                   );
                 })}
               </ul>
+              )}
 
               {/* Кнопка */}
               {tier.tier === 'free' ? (
