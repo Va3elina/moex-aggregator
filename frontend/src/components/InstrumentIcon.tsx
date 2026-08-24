@@ -60,6 +60,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   MV: 'raw_093', // М.Видео (corrected)
   NB: 'raw_082', // НоваБев (бывш. Белуга Групп)
   NM: 'NLMK', NV: 'NVTK',
+  ON: 'OZON', // Озон
   PH: 'raw_076', // ФосАгро (corrected)
   PI: 'PIKK', PS: 'POSI', PX: 'PLZL',
   RA: 'raw_072', // Распадская (corrected)
