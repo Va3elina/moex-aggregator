@@ -106,6 +106,29 @@ export default function MobileSeasonalityPage() {
   // single year (только X, без настроек).
   const [periods, setPeriods] = useState<PeriodConfig[]>([]);
   const [exactYears, setExactYears] = useState<number[]>([]);
+
+  // Basic-гейт фильтров серии («Без выбросов» / «Без дивидендных гэпов»):
+  // тумблеры для free выглядят как обычно, но попытка ВКЛЮЧИТЬ фильтр открывает
+  // upgrade-модалку. Выключение проходит всегда. Зеркало applyPeriodPatch в
+  // десктопной SeasonalityPage; бэкенд дублирует гейт (тихо гасит параметры).
+  const applyPeriodPatch = (id: string, patch: Partial<Pick<PeriodConfig, 'median' | 'excludeDividends'>>) => {
+    if (!seasonAccess.isLoading) {
+      const flag = patch.median ? ('filter_no_outliers' as const)
+        : patch.excludeDividends ? ('filter_no_dividends' as const) : null;
+      if (flag && !seasonAccess.canUseFlag(flag)) {
+        const tier = seasonAccess.requiredTierFor({ flag });
+        if (tier) {
+          showUpgrade({
+            tier,
+            featureName: patch.median ? 'фильтр «Без выбросов»' : 'фильтр «Без дивидендных гэпов»',
+            indicator: 'seasonality',
+          });
+          return;
+        }
+      }
+    }
+    setPeriods((prev) => prev.map((x) => x.id === id ? { ...x, ...patch } : x));
+  };
   // Histogram extra series (для каждого compareYear + exactYear).
   const [compareHistData, setCompareHistData] = useState<SeasonalityResponse[]>([]);
   const [exactHistData, setExactHistData] = useState<SeasonalityResponse[]>([]);
@@ -619,7 +642,7 @@ export default function MobileSeasonalityPage() {
                         key={p.id}
                         period={p}
                         hasDividends={hasDividends}
-                        onChange={(patch) => setPeriods((prev) => prev.map((x) => x.id === p.id ? { ...x, ...patch } : x))}
+                        onChange={(patch) => applyPeriodPatch(p.id, patch)}
                         onRemove={() => setPeriods((prev) => prev.filter((x) => x.id !== p.id))}
                       />
                     ))}

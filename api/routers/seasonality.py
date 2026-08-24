@@ -795,7 +795,17 @@ async def get_seasonality(
     # Вызов оставлен осознанно: он обобщённый, читает матрицу и сам оживёт, если
     # ограничение когда-нибудь вернут.
     matrix_mode = "intraday" if mode == "intraday" else ("yearly" if mode == "monthly" else "histogram")
-    enforce_tier_limits(user, "seasonality", asset=secid, mode=matrix_mode)
+    limits = enforce_tier_limits(user, "seasonality", asset=secid, mode=matrix_mode)
+
+    # Фильтры серий «Без выбросов» (median) и «Без дивидендных гэпов» — с Basic
+    # (features.py). Не 403: тихо гасим параметры до дефолтов, как custom_range
+    # в fund_trades — иначе фронтовый замок обходится правкой URL. Гасить нужно
+    # ДО cache_key, чтобы free-запрос попадал в кэш free-варианта, а не читал
+    # прогретый платный ключ.
+    if agg_type == "median" and limits.get("filter_no_outliers") is False:
+        agg_type = "avg"
+    if exclude_dividends and limits.get("filter_no_dividends") is False:
+        exclude_dividends = False
 
     cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
 
@@ -1127,6 +1137,14 @@ async def get_yearly_seasonality(
             excl_list = [int(y.strip()) for y in exclude_years.split(",") if y.strip()]
         except ValueError:
             raise HTTPException(400, "exclude_years must be comma-separated integers")
+
+    # Тот же Basic-гейт фильтров, что в GET "" (см. коммент там): тихо гасим
+    # median/exclude_dividends до дефолтов ДО cache_key.
+    limits = enforce_tier_limits(user, "seasonality", asset=secid)
+    if agg_type == "median" and limits.get("filter_no_outliers") is False:
+        agg_type = "avg"
+    if exclude_dividends and limits.get("filter_no_dividends") is False:
+        exclude_dividends = False
 
     cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
     cached = get_or_set(cache_key)
