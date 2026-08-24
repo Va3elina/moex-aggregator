@@ -465,6 +465,29 @@ export default function SeasonalityPage() {
   const totalCompareSelected = periods.length;
   const compareLimitReached = totalCompareSelected >= MAX_COMPARE_SERIES;
 
+  // Basic-гейт фильтров серии («Без выбросов» / «Без дивидендных гэпов»):
+  // тумблеры для free выглядят как обычно, но попытка ВКЛЮЧИТЬ фильтр открывает
+  // upgrade-модалку. Выключение (patch=false) проходит всегда. Бэкенд дублирует
+  // гейт (api/routers/seasonality.py тихо гасит параметры).
+  const applyPeriodPatch = (id: string, patch: Partial<Pick<PeriodConfig, 'median' | 'excludeDividends'>>) => {
+    if (!seasonAccess.isLoading) {
+      const flag = patch.median ? ('filter_no_outliers' as const)
+        : patch.excludeDividends ? ('filter_no_dividends' as const) : null;
+      if (flag && !seasonAccess.canUseFlag(flag)) {
+        const tier = seasonAccess.requiredTierFor({ flag });
+        if (tier) {
+          showUpgrade({
+            tier,
+            featureName: patch.median ? 'фильтр «Без выбросов»' : 'фильтр «Без дивидендных гэпов»',
+            indicator: 'seasonality',
+          });
+          return;
+        }
+      }
+    }
+    setPeriods(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+  };
+
   // Блок фильтров («Период с» + настройки серий) — вынесен в callback, чтобы
   // можно было рендерить и на главной row2, и внутри test-модалки. Логика тут.
   const renderFilters = (): React.ReactNode => (
@@ -498,7 +521,7 @@ export default function SeasonalityPage() {
               removable={!isOnly}
               onRemove={() => setPeriods(prev => prev.filter(x => x.id !== p.id))}
               hasDividends={hasDividends}
-              onChange={(patch) => setPeriods(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } : x))}
+              onChange={(patch) => applyPeriodPatch(p.id, patch)}
               title={isOnly
                 ? `Период с ${p.sinceYear} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».`
                 : `Серия "Период с ${p.sinceYear} г." — клик открывает настройки (медиана / без дивидендов). Значения по годам от ${p.sinceYear} до сегодня.`}
