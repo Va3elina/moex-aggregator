@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, Zap, Crown, Sparkles, X, Gift, Heart,
+  Check, Zap, Crown, Sparkles, X, Gift, Heart, Clock,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
@@ -302,24 +302,9 @@ export default function PricingPage() {
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
       </div>
 
-      {/* Плашка: тарифный план на пересмотре. Оплата действующих тарифов работает
-          как обычно (карта / T-Pay / СБП); пробный период на время пересмотра снят. */}
-      <div
-        className="mb-6 md:mb-8 mx-auto max-w-3xl text-center"
-        style={{
-          background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
-          border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
-          borderRadius: 12,
-          padding: '14px 18px',
-        }}
-      >
-        <p style={{ fontWeight: 700, fontSize: 'var(--fs-base, 1rem)', color: 'var(--text-primary)', margin: 0 }}>
-          Мы пересматриваем тарифный план
-        </p>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm, 0.9rem)', margin: '4px 0 0', lineHeight: 1.5 }}>
-          Действующие тарифы можно оформить — оплата картой, T&#8209;Pay и СБП.
-        </p>
-      </div>
+      {/* Плашка «Мы пересматриваем тарифный план» убрана 2026-08-24: тарифы
+          зафиксированы, предупреждать не о чем. Способы оплаты раскрыты в
+          блоке PaymentMethods внизу страницы. */}
 
       {/* Founder-оффер: персональный подарок (whitelist через env). Виден ТОЛЬКО
           юзеру, кому backend вернул founder_offer. Это fallback для глобального
@@ -386,16 +371,22 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Переключатель Месяц / Год — увеличен, более заметный CTA-уровень */}
-      <div className="flex justify-center mb-8">
+      {/* Переключатель Месяц / Год — компактный (2026-08-24): раньше был
+          CTA-размера и перетягивал внимание с карточек. Размеры в px inline,
+          а не Tailwind-классами: root font-size 20px делает rem-классы в 1.25x,
+          и text-xs/py-1 дали бы не тот масштаб. */}
+      <div className="flex justify-center mb-6">
         <div
-          className="inline-flex rounded-2xl border p-1.5"
-          style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}
+          className="inline-flex rounded-full border"
+          style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)', padding: 2 }}
         >
           <button
             onClick={() => setPeriod('monthly')}
-            className="px-6 py-3 rounded-xl text-base font-semibold transition-colors"
+            className="rounded-full font-semibold transition-colors"
             style={{
+              padding: '4px 12px',
+              fontSize: 13,
+              lineHeight: 1.3,
               backgroundColor: period === 'monthly' ? 'var(--bg-tertiary)' : 'transparent',
               color: period === 'monthly' ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
@@ -404,16 +395,20 @@ export default function PricingPage() {
           </button>
           <button
             onClick={() => setPeriod('yearly')}
-            className="px-6 py-3 rounded-xl text-base font-semibold transition-colors inline-flex items-center gap-2"
+            className="rounded-full font-semibold transition-colors inline-flex items-center"
             style={{
+              padding: '4px 12px',
+              fontSize: 13,
+              lineHeight: 1.3,
+              gap: 5,
               backgroundColor: period === 'yearly' ? 'var(--bg-tertiary)' : 'transparent',
               color: period === 'yearly' ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
           >
             Год
             <span
-              className="px-2 py-0.5 rounded-full text-xs font-bold"
-              style={{ background: 'var(--accent)', color: 'var(--bg-primary)' }}
+              className="rounded-full font-bold"
+              style={{ background: 'var(--accent)', color: 'var(--bg-primary)', padding: '1px 6px', fontSize: 11 }}
             >
               −20%
             </span>
@@ -591,15 +586,21 @@ export default function PricingPage() {
                   const v = f[(tier.tier === 'basic' || tier.tier === 'pro' ? tier.tier : 'free')];
                   const included = v !== false;
                   const label = typeof v === 'string' ? v : f.label;
+                  // soon = фича в этом тарифе заявлена, но ещё не работает:
+                  // часы вместо галки и приглушённый текст, чтобы её не
+                  // приняли за уже доступную.
+                  const soon = included && f.soon === true;
                   return (
                     <li
                       key={i}
                       className="flex items-start gap-2"
-                      style={included
+                      style={included && !soon
                         ? { color: 'var(--text-secondary)' }
-                        : { color: 'var(--text-muted)', opacity: 0.55 }}
+                        : { color: 'var(--text-muted)', opacity: soon ? 0.8 : 0.55 }}
                     >
-                      {included ? (
+                      {soon ? (
+                        <Clock size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      ) : included ? (
                         <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: meta.color }} />
                       ) : (
                         <X size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
@@ -1056,8 +1057,9 @@ function ComparisonMatrix() {
         ['Активов', 'Все 65', 'Все 65', 'Все 65'],
         ['Таймфреймы', '5 мин + часовой + дневной', '5 мин + часовой + дневной', '5 мин + часовой + дневной'],
         ['История', 'Вся', 'Вся', 'Вся'],
-        ['Данные по юрлицам', '—', 'Да', 'Да'],
-        ['Число трейдеров', '—', 'Да', 'Да'],
+        // Два флага матрицы (clgroup_yur + metric_traders) одной строкой —
+        // открываются вместе на Basic, как и в карточках выше.
+        ['Данные по юрлицам и число трейдеров', '—', 'Да', 'Да'],
         ['Задержка данных', '24 часа', 'Без задержки', 'Без задержки'],
         // Лента сигналов закрыта для free с 2026-08-09 (features.py: oi_screener).
         ['Скринер сигналов', '—', 'Да', 'Да'],
@@ -1392,23 +1394,27 @@ function PaymentMethods() {
  * Одна строка = одна фича во всех трёх карточках, в одинаковом порядке.
  * Значение per-tier: true = включено (галка), false = недоступно (серый крест),
  * строка = включено с кастомной формулировкой («20 алертов» / «Безлимит алертов»).
+ * soon = фича заявлена, но ещё не работает: вместо галки часы, текст приглушён.
  *
  * Источник истины — api/billing/features.py: сюда попадают только реально
- * работающие гейты. Не обещать здесь то, что матрица не энфорсит.
+ * работающие гейты. Не обещать здесь то, что матрица не энфорсит; исключение —
+ * строки с soon, которые прямо помечены как ещё не запущенные.
  */
 const CARD_FEATURES: Array<{
   label: string;
   free: boolean | string;
   basic: boolean | string;
   pro: boolean | string;
+  soon?: boolean;
 }> = [
   { label: 'Все 9 индикаторов',            free: true,  basic: true, pro: true },
   { label: 'Все активы и таймфреймы',      free: true,  basic: true, pro: true },
   { label: 'Вся история',                  free: true,  basic: true, pro: true },
   // Задержка 24 ч на free есть только в Открытых позициях (features.py).
   { label: 'Открытые позиции без задержки', free: false, basic: true, pro: true },
-  { label: 'Юрлица в Открытых позициях',   free: false, basic: true, pro: true },
-  { label: 'Число трейдеров',              free: false, basic: true, pro: true },
+  // Два флага матрицы (clgroup_yur + metric_traders) одной строкой — оба
+  // открываются вместе на Basic, разделять их в карточке незачем.
+  { label: 'Юрлица и число трейдеров',     free: false, basic: true, pro: true },
   { label: 'Скринер сигналов',             free: false, basic: true, pro: true },
   { label: 'Фильтры сезонности',           free: false, basic: true, pro: true },
   { label: 'Свой набор фондов',            free: false, basic: true, pro: true },
@@ -1416,9 +1422,13 @@ const CARD_FEATURES: Array<{
   { label: 'Экспорт без водяного знака',   free: false, basic: true, pro: true },
   { label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
   { label: 'Терминал',                     free: false, basic: false, pro: true },
-  // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts).
+  // KILL-SWITCH (config/features.ts): пока выключен — в Pro стоит анонс
+  // «скоро», чтобы направление было видно и никто не считал функцию рабочей.
+  // Когда включим — анонс заменяется двумя настоящими строками.
   ...(API_CSV_ENABLED ? [
     { label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
     { label: 'API-доступ',          free: false, basic: false, pro: true },
-  ] : []),
+  ] : [
+    { label: 'Скачивание данных', free: false, basic: false, pro: 'Скачивание данных — скоро', soon: true },
+  ]),
 ];
