@@ -15,6 +15,57 @@ export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color:
   // Крипто (нет лого в стикерпаке) — биткоин-фьючерсы IBIT (IB) и индекс МосБиржи (BT)
   IB: { icon: '₿', bg: '#F7931A', color: '#fff' },
   BT: { icon: '₿', bg: '#F7931A', color: '#fff' },
+  EH: { icon: 'Ξ', bg: '#627EEA', color: '#fff' },   // Эфириум (Индекс МосБиржи)
+  ET: { icon: 'Ξ', bg: '#627EEA', color: '#fff' },   // Эфириум (ETHA)
+  S3: { icon: 'SOL', bg: '#9945FF', color: '#fff' }, // Солана
+  XR: { icon: 'XRP', bg: '#23292F', color: '#fff' },
+  TX: { icon: 'TRX', bg: '#EF0027', color: '#fff' }, // TRON
+  // Валюты без лого в стикерпаке
+  I2: { icon: '₹', bg: '#F97316', color: '#fff' },   // INR/RUB
+  BY: { icon: 'Br', bg: '#16A34A', color: '#fff' },  // BYN/RUB
+  AR: { icon: 'AMD', bg: '#D97706', color: '#fff' }, // AMD/RUB (армянский драм)
+  // Сырьё без лого
+  '92': { icon: '92', bg: '#475569', color: '#fff' },  // Бензин АИ-92
+  '95': { icon: '95', bg: '#475569', color: '#fff' },  // Бензин АИ-95
+  DL: { icon: 'ДТ', bg: '#334155', color: '#fff' },    // Дизельное топливо
+  // Зарубежные индексы/ETF (лого в стикерпаке нет — текстовые бейджи, как был SF)
+  NA: { icon: 'NDX', bg: '#0891B2', color: '#fff' },     // NASDAQ 100
+  QQQF: { icon: 'NDX', bg: '#0891B2', color: '#fff' },   // NASDAQ 100 (вечн)
+  DJ: { icon: 'DJ', bg: '#1E3A8A', color: '#fff' },      // Dow Jones 30
+  DX: { icon: 'DAX', bg: '#7F1D1D', color: '#fff' },
+  N2: { icon: 'NIK', bg: '#B91C1C', color: '#fff' },     // Nikkei 225
+  HS: { icon: 'HSI', bg: '#B45309', color: '#fff' },     // Hang Seng
+  SX: { icon: 'SX5', bg: '#1D4ED8', color: '#fff' },     // EURO STOXX 50
+  R2: { icon: 'RUT', bg: '#0F766E', color: '#fff' },     // Russell 2000
+  SQ: { icon: 'SOX', bg: '#6D28D9', color: '#fff' },     // Полупроводники США
+  TL: { icon: 'TLT', bg: '#374151', color: '#fff' },     // Гособлигации США
+  EM: { icon: 'EM', bg: '#0E7490', color: '#fff' },      // MSCI Emerging Markets
+  RF: { icon: '%', bg: '#14B8A6', color: '#fff' },       // Ставка RUONIA
+  // Страновые MSCI ETF
+  AA: { icon: 'ЮАР', bg: '#166534', color: '#fff' },
+  AG: { icon: 'АРГ', bg: '#38BDF8', color: '#fff' },
+  BZ: { icon: 'БРА', bg: '#15803D', color: '#fff' },
+  CI: { icon: 'КИТ', bg: '#DC2626', color: '#fff' },
+  ND: { icon: 'ИНД', bg: '#EA580C', color: '#fff' },
+  KR: { icon: 'КОР', bg: '#1E40AF', color: '#fff' },
+  SD: { icon: 'САУ', bg: '#065F46', color: '#fff' },
+  // Иностранные акции (лого в стикерпаке нет — бренд-бейджи)
+  BB: { icon: 'BABA', bg: '#FF6A00', color: '#fff' },  // Alibaba
+  BD: { icon: 'BIDU', bg: '#2932E1', color: '#fff' },  // Baidu
+  JD: { icon: 'JD', bg: '#E1251B', color: '#fff' },    // JD.com
+  DD: { icon: 'PDD', bg: '#E02E24', color: '#fff' },   // Pinduoduo
+  TC: { icon: 'TEN', bg: '#0052D9', color: '#fff' },   // Tencent
+  XI: { icon: 'MI', bg: '#FF6900', color: '#fff' },    // Xiaomi
+  TS: { icon: 'TSMC', bg: '#C4122F', color: '#fff' },
+  SK: { icon: 'SAM', bg: '#1428A0', color: '#fff' },   // Samsung
+  HX: { icon: 'SKH', bg: '#EA5404', color: '#fff' },   // SK Hynix
+  SY: { icon: 'SONY', bg: '#111827', color: '#fff' },
+  TO: { icon: 'TM', bg: '#EB0A1E', color: '#fff' },    // Toyota
+  A2: { icon: 'ASML', bg: '#0F172A', color: '#fff' },
+  AP: { icon: 'SAP', bg: '#0070F2', color: '#fff' },
+  NO: { icon: 'NVS', bg: '#0460A9', color: '#fff' },   // Novartis
+  // Российские акции без лого в стикерпаке
+  IV: { icon: 'ИВА', bg: '#7C3AED', color: '#fff' },   // ИВА (IVAT)
   // Секторные индексы МосБиржи (CS/FN/HO/MA/OG) — теперь через FUT_BASE_TO_LOGO
   // (секторные иконки-плитки TradingView, файлы SECT_*). Здесь остаётся только
   // RVI — индекс волатильности без лого в стикерпаке.
@@ -83,27 +134,48 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   VK: 'VKCO',
   WU: 'raw_067', // Whoosh (corrected)
   X5: 'X5',   YD: 'YDEX',
+  // Новые серии 2026 (полное покрытие FORTS): лого уже в стикерпаке
+  EA: 'ENPG',     // ЭН+
+  MD: 'MDMG',     // Мать и дитя
+  LN: 'LENT',     // Лента
+  FI: 'FIXR',     // Фикс Прайс
+  DR: 'DOMRF',    // ДОМ.РФ
+  RZ: 'raw_073',  // Русагро — как STOCK_LOGO_OVERRIDE.RAGR
+  RQ: 'raw_034',  // Ростелеком (прив) — лого обычки, как RT
+  AB: 'raw_012',  // Астра (мини) — как AS
+  NE: 'raw_082',  // Novabev (мини) — как NB
   // Перпетуалы
   SBERF: 'SBER', GAZPF: 'GAZP',
   // Сырьё
   BR: 'BRENT', BM: 'BRENT',
+  WT: 'BRENT',  // Нефть WTI — общий знак нефти
   GD: 'GOLD',  GL: 'GOLD',  GLDRUBF: 'GOLD',
+  GN: 'GOLD',   // Золото (мини)
   SV: 'SILVER',
+  S1: 'SILVER', S2: 'SILVER', SLVRUBF: 'SILVER', // Серебро мини / руб/г / вечн
   PT: 'PLATINUM',
+  LT: 'PLATINUM', // Платина (мини)
   PD: 'PALLADIUM',
+  LD: 'PALLADIUM', // Палладий (мини)
   NG: 'GAS', NR: 'GAS', FF: 'GAS',
   W4: 'raw_174', // Пшеница (corrected — раньше был WHEAT generic icon)
+  Su: 'SUGAR', // Сахар (Su-серия SUGAR); SA-серия (SUGR) — ниже в общем списке
   // Валюты
   Si: 'USD',   USDRUBF: 'USD', UC: 'USD',
+  UM: 'USD',    // USD/RUB (мини)
   Eu: 'EUR',   EURRUBF: 'EUR', ED: 'EUR',
+  ER: 'EUR',    // EUR/RUB (мини)
   CR: 'CNY',   CNYRUBF: 'CNY',
   JP: 'JPY',
   GU: 'GBP',
+  TY: 'TRY',    // TRY/RUB (серия TY; старый USD/TRY был TR)
   // Индексы
   MX: 'MOEX_IDX', MM: 'MOEX_IDX', MY: 'MOEX_IDX',
   IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX',
   RI: 'RTS_IDX',  RM: 'RTS_IDX',
   SF: 'SP500_IDX',  // фьючерс на индекс S&P 500 (SPYF) — лого из стикерпака
+  SP500F: 'SP500_IDX',  // однодневный фьючерс на S&P 500 с автопролонгацией
+  RGBIF: 'OFZ_GERB',    // однодневный фьючерс на индекс RGBI (вечн)
   // Секторные индексы МосБиржи — секторные иконки-плитки TradingView
   // (s3-symbol-logo.tradingview.com/sector/*), растеризованы в SECT_*.png.
   CS: 'SECT_CONSUMER',  // Потребительский сектор

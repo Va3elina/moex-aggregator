@@ -29,24 +29,42 @@ SUBTYPE_MAP: dict[str, str] = {
     # FX RUB — пары к рублю (momentum, в РФ это устойчивый trend)
     "USDRUBF": "fx_rub", "EURRUBF": "fx_rub", "CNYRUBF": "fx_rub",
     "Si": "fx_rub", "Eu": "fx_rub", "CR": "fx_rub",
+    "TY": "fx_rub", "I2": "fx_rub", "BY": "fx_rub", "AR": "fx_rub",
+    "UM": "fx_rub", "ER": "fx_rub",
     # FX cross — не-рублевые валютные пары (тоже momentum, но иная динамика)
     "ED": "fx_cross", "AU": "fx_cross", "UC": "fx_cross",
-    "DX": "fx_cross", "MY": "fx_cross",
+    "MY": "fx_cross",
 
     # ── Индексы — фондовые индексы (mean-reversion, российский рынок) ──
     "MX": "index", "MM": "index", "RI": "index",
     "IMOEXF": "index", "IB": "index", "VI": "index",
     "SF": "index",  # фьючерс на индекс S&P 500 (зарубежный индекс)
+    # Зарубежные индексы/ETF. DX раньше был Dollar Index (fx_cross) —
+    # с 2026 MOEX использует код DX для фьючерса на DAX.
+    "NA": "index", "QQQF": "index", "SP500F": "index", "DJ": "index",
+    "DX": "index", "N2": "index", "HS": "index", "SX": "index",
+    "R2": "index", "SQ": "index", "TL": "index", "EM": "index",
+    # Страновые MSCI ETF
+    "AA": "index", "AG": "index", "BZ": "index", "CI": "index",
+    "ND": "index", "KR": "index", "SD": "index",
+    # Ставки/облигации
+    "RGBIF": "index", "RF": "index",
+    # Крипто — как IB/BT (индексные прокси)
+    "EH": "index", "ET": "index", "S3": "index", "XR": "index", "TX": "index",
 
     # ── Сырьё (group="Сырьё") разделяется на металлы/энерго/с.х. ──
     # Metals — драгоценные металлы (momentum, gold-style trends)
     "GD": "metal", "GL": "metal", "GLDRUBF": "metal",
     "SV": "metal", "PT": "metal", "PD": "metal", "HK": "metal",
+    "GN": "metal", "S1": "metal", "S2": "metal", "SLVRUBF": "metal",
+    "LT": "metal", "LD": "metal",
     # Energy — нефть/газ (mean-reversion, кризисные циклы)
     "BR": "energy", "BM": "energy", "NG": "energy",
     "FF": "energy", "NR": "energy",
+    "WT": "energy", "92": "energy", "95": "energy", "DL": "energy",
     # Soft — с.х. товары (mean-reversion, сильные циклы спрос-предложение)
     "CC": "soft", "KC": "soft", "OJ": "soft", "W4": "soft",
+    "Su": "soft",  # сахар (Su-серия; SA-серия классифицируется по group)
 }
 
 
