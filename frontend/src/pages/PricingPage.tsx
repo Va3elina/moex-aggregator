@@ -44,7 +44,7 @@ interface TierCard {
 }
 
 interface PlansResponse {
-  provider: 'stub' | 'tbank';
+  provider: 'stub' | 'tbank' | 'tbank_demo';
   currency: string;
   tiers: TierCard[];
   /** Только для provider=tbank — публичный terminalKey для SDK init (SpeedPay). */
@@ -135,7 +135,9 @@ export default function PricingPage() {
 
   // Загружаем план при mount
   useEffect(() => {
-    fetch('/api/billing/plans')
+    // apiFetch, а не голый fetch: terminal_key для SpeedPay backend отдаёт
+    // ПО ЮЗЕРУ (новым — демо-терминал), для этого нужен Authorization.
+    apiFetch('/api/billing/plans')
       .then(r => r.json())
       .then((d: PlansResponse) => {
         setData(d);

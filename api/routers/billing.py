@@ -25,14 +25,18 @@ from sqlalchemy.orm import Session
 from api.billing import service as billing_service
 from api.billing import invites as invite_service
 from api.billing import trial as trial_service
-from api.billing.factory import get_payment_provider, get_yookassa_provider
+from api.billing.factory import (
+    get_payment_provider,
+    get_provider_for,
+    get_yookassa_provider,
+)
 from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.user import User
-from api.routers.auth import get_current_user, require_admin
+from api.routers.auth import get_current_user, get_current_user_optional, require_admin
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +111,7 @@ async def features_matrix():
 
 
 @router.get("/plans")
-async def list_plans():
+async def list_plans(user: User | None = Depends(get_current_user_optional)):
     """
     Возвращает все тарифы для отображения на Pricing-странице.
     Структура — сгруппировано по tier (free / basic / pro),
@@ -118,7 +122,10 @@ async def list_plans():
     PaymentIntegration.init() при подключении JS SDK (SpeedPay кнопок).
     Password остаётся серверным секретом.
     """
-    provider = get_payment_provider()
+    # Роутинг как на checkout: новому юзеру отдаём terminal_key ДЕМО-терминала,
+    # иначе SpeedPay-кнопки инициализировались бы боевым ключом, а Init шёл бы
+    # на демо-терминал. Гостю — дефолт (оплатить он всё равно не может).
+    provider = get_provider_for(user) if user is not None else get_payment_provider()
     response: dict = {
         "provider": provider.name,
         "currency": "RUB",
@@ -128,7 +135,7 @@ async def list_plans():
         "trial_enabled": trial_service.TRIAL_ENABLED,
         "trial_days": dict(TRIAL_DAYS),
     }
-    if provider.name == "tbank":
+    if provider.name in ("tbank", "tbank_demo"):
         # terminalKey — публичный (зашит в каждый Init request, отображается
         # в URL платежей). Безопасно отдавать на фронт для SDK init.
         response["terminal_key"] = getattr(provider, "terminal_key", None)

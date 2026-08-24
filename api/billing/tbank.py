@@ -1074,3 +1074,23 @@ class TBankProvider:
             payment_id, data.get("Status"),
         )
         return True
+
+
+class TBankDemoProvider(TBankProvider):
+    """
+    Демо-терминал T-Bank (витрина оплаты без реального приёма денег).
+
+    Отличается от боевого TBankProvider ТОЛЬКО именем: сеть, подпись Token,
+    Init/GetState — всё то же самое, просто на тестовом терминале, где деньги
+    не списываются. Имя выделено, чтобы биллинг мог отличить такой платёж от
+    боевого и НИКОГДА не активировать по нему подписку:
+
+      • service._verify_with_provider → False для 'tbank_demo';
+      • service.activate_from_webhook → ранний выход;
+      • service.sync_pending_for_user → закрывает pending как неоплаченный.
+
+    Продления существующих карт сюда не попадают: они роутятся по
+    pm.provider ('tbank') через factory.get_provider_by_name.
+    """
+
+    name = "tbank_demo"
