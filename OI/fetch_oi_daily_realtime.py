@@ -34,6 +34,10 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
 
+# iss.moex.com пока на международном CA, но биржа переезжает на цепочку
+# Минцифры — контекст = certifi + корень, то есть надмножество. См. moex_tls.py.
+from moex_tls import moex_ssl_context
+
 try:
     from moex_calendar import (
         get_moscow_time,
@@ -448,7 +452,7 @@ class OIDailyUpdater:
         log.info(f"  Логи: {LOG_DIR.absolute()}")
         log.info("=" * 60)
 
-        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT)
+        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT, ssl=moex_ssl_context())
         timeout = aiohttp.ClientTimeout(total=300)
 
         retry_count = 0
@@ -561,7 +565,7 @@ async def main():
 
         if args.once:
             # Однократное обновление
-            connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT)
+            connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT, ssl=moex_ssl_context())
             async with aiohttp.ClientSession(connector=connector) as session:
                 instr_count, ins = await updater.update_all(session)
                 log.info(f"✓ Инструментов: {instr_count}, записей: +{ins}")

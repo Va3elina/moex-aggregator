@@ -36,6 +36,10 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 DB_URL = os.getenv("DB_URL")
 ALGOPACK_API_KEY = os.getenv("ALGOPACK_API_KEY")
 
+# Цепочка Минцифры: apim.moex.com живёт на Russian Trusted Root CA, которого
+# нет в certifi. См. moex_tls.py.
+from moex_tls import moex_ssl_context
+
 try:
     from moex_calendar import (
         get_moscow_time,
@@ -700,7 +704,9 @@ class OI5minUpdater:
         log.info(f"  Логи: {LOG_DIR.absolute()}")
         log.info("=" * 60)
 
-        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_REALTIME, ssl=False)
+        connector = aiohttp.TCPConnector(
+            limit=MAX_CONCURRENT_REALTIME, ssl=moex_ssl_context()
+        )
         timeout = aiohttp.ClientTimeout(total=120)
 
         retry_count = 0
@@ -808,7 +814,9 @@ async def main():
 
         if args.once:
             # Однократное обновление
-            connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_BACKFILL, ssl=False)
+            connector = aiohttp.TCPConnector(
+                limit=MAX_CONCURRENT_BACKFILL, ssl=moex_ssl_context()
+            )
             async with aiohttp.ClientSession(connector=connector) as session:
                 att, ins = await updater.update_all(session)
                 log.info(f"✓ Загружено: {att}, сохранено: +{ins}")

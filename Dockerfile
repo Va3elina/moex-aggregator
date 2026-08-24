@@ -99,6 +99,7 @@ COPY Crypto/ ./Crypto/
 COPY main_orchestrator.py .
 COPY pipeline_heartbeat.py .
 COPY moex_calendar.py .
+COPY moex_tls.py .
 COPY tg_bot.py .
 COPY backup_db.sh .
 
