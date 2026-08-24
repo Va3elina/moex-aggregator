@@ -575,14 +575,32 @@ export default function PricingPage() {
                 </div>
               )}
 
-              {/* Features list — пока placeholder, реальные появятся потом */}
+              {/* Features list — TradingView-формат: ЕДИНЫЙ список фич во всех
+                  карточках (Pro повторяет пункты Basic), включённое — с галкой,
+                  недоступное — приглушённый крест. Так тарифы сравниваются
+                  «в лоб» по одинаковым строкам. Источник — CARD_FEATURES. */}
               <ul className="flex-1 space-y-2 mb-5 text-sm">
-                {getFeaturesList(tier.tier).map((feat, i) => (
-                  <li key={i} className="flex items-start gap-2 text-theme-secondary">
-                    <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: meta.color }} />
-                    <span>{feat}</span>
-                  </li>
-                ))}
+                {CARD_FEATURES.map((f, i) => {
+                  const v = f[(tier.tier === 'basic' || tier.tier === 'pro' ? tier.tier : 'free')];
+                  const included = v !== false;
+                  const label = typeof v === 'string' ? v : f.label;
+                  return (
+                    <li
+                      key={i}
+                      className="flex items-start gap-2"
+                      style={included
+                        ? { color: 'var(--text-secondary)' }
+                        : { color: 'var(--text-muted)', opacity: 0.55 }}
+                    >
+                      {included ? (
+                        <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: meta.color }} />
+                      ) : (
+                        <X size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      )}
+                      <span>{label}</span>
+                    </li>
+                  );
+                })}
               </ul>
 
               {/* Кнопка */}
@@ -1119,6 +1137,10 @@ function ComparisonMatrix() {
       icon: Settings,
       rows: [
         ['Водяной знак на экспорте', 'Да', '—', '—'],
+        // Квоты features.py: telegram_alerts_quota 0/20/безлимит.
+        ['Алерты в Telegram', '—', '20', 'Безлимит'],
+        // Вход в /sandbox гейтится на Pro (SandboxEntryButton).
+        ['Терминал (рабочий стол с индикаторами)', '—', '—', 'Да'],
         // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
         ...(API_CSV_ENABLED ? ([
           ['Экспорт CSV / Excel', '—', '—', 'Да'],
@@ -1357,39 +1379,38 @@ function PaymentMethods() {
 }
 
 /**
- * Список фичей для каждого tier'а — отражает api/billing/features.py.
- * Premium удалён (упразднён в пользу 3-уровневой схемы).
+ * CARD_FEATURES — единый список фич для карточек тарифов (TradingView-формат).
+ *
+ * Одна строка = одна фича во всех трёх карточках, в одинаковом порядке.
+ * Значение per-tier: true = включено (галка), false = недоступно (серый крест),
+ * строка = включено с кастомной формулировкой («20 алертов» / «Безлимит алертов»).
+ *
+ * Источник истины — api/billing/features.py: сюда попадают только реально
+ * работающие гейты. Не обещать здесь то, что матрица не энфорсит.
  */
-function getFeaturesList(tier: string): string[] {
-  switch (tier) {
-    case 'free':
-      return [
-        'Все 9 индикаторов с базовой функциональностью',
-        'Все фьючерсы в Открытых позициях (базовый вид), вся Сезонность целиком',
-        'Только режим IMOEX в Карте рынка',
-        'Дневные данные, глубина истории ограничена',
-        'Задержка данных 24 часа',
-        'Водяной знак на экспорте',
-      ];
-    case 'basic':
-      return [
-        'Всё из Free, плюс:',
-        'Все категории и режимы в Открытых позициях (физлица и юрлица)',
-        '«Все акции» в Карте рынка и Силе рынка',
-        'Долларовый режим в Силе рынка',
-        'История до 10 лет, без задержки данных',
-      ];
-    case 'pro':
-      return [
-        'Всё из Basic, плюс:',
-        '5-минутные таймфреймы в Открытых позициях',
-        // «Внутридневная сезонность» убрана 2026-08: сезонность бесплатна целиком.
-        'Вся история без ограничений',
-        // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
-        ...(API_CSV_ENABLED ? ['Экспорт в CSV/Excel', 'API-доступ для автоматизации'] : []),
-        'Без водяного знака на экспорте',
-      ];
-    default:
-      return [];
-  }
-}
+const CARD_FEATURES: Array<{
+  label: string;
+  free: boolean | string;
+  basic: boolean | string;
+  pro: boolean | string;
+}> = [
+  { label: 'Все 9 индикаторов',            free: true,  basic: true, pro: true },
+  { label: 'Все активы и таймфреймы',      free: true,  basic: true, pro: true },
+  { label: 'Вся история',                  free: true,  basic: true, pro: true },
+  // Задержка 24 ч на free есть только в Открытых позициях (features.py).
+  { label: 'Открытые позиции без задержки', free: false, basic: true, pro: true },
+  { label: 'Юрлица в Открытых позициях',   free: false, basic: true, pro: true },
+  { label: 'Число трейдеров',              free: false, basic: true, pro: true },
+  { label: 'Скринер сигналов',             free: false, basic: true, pro: true },
+  { label: 'Фильтры сезонности',           free: false, basic: true, pro: true },
+  { label: 'Свой набор фондов',            free: false, basic: true, pro: true },
+  { label: 'Свой период сравнения',        free: false, basic: true, pro: true },
+  { label: 'Экспорт без водяного знака',   free: false, basic: true, pro: true },
+  { label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
+  { label: 'Терминал',                     free: false, basic: false, pro: true },
+  // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts).
+  ...(API_CSV_ENABLED ? [
+    { label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
+    { label: 'API-доступ',          free: false, basic: false, pro: true },
+  ] : []),
+];
