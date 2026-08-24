@@ -14,6 +14,7 @@ import asyncio
 import aiohttp
 import logging
 import os
+import sys
 import argparse
 from pathlib import Path
 from datetime import datetime, date
@@ -24,6 +25,11 @@ from sqlalchemy import create_engine, text
 
 PROJECT_DIR = Path(__file__).parent.parent
 load_dotenv(PROJECT_DIR / ".env")
+
+# Цепочка Минцифры: apim.moex.com живёт на Russian Trusted Root CA, которого
+# нет в certifi. См. moex_tls.py.
+sys.path.insert(0, str(PROJECT_DIR))
+from moex_tls import moex_ssl_context
 
 DB_URL = os.getenv("DB_URL")
 ALGOPACK_API_KEY = os.getenv("ALGOPACK_API_KEY", "")
@@ -201,7 +207,8 @@ async def main():
                 log.info(f"  {ticker:8s} ({name:15s}) — свечей: {count:>6}, последняя: {last_str}")
             continue
 
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(ssl=moex_ssl_context())
+        async with aiohttp.ClientSession(connector=connector) as session:
             semaphore = asyncio.Semaphore(MAX_CONCURRENT)
             grand_total = 0
 
