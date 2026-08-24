@@ -211,6 +211,12 @@ services:
       - TBANK_RECEIPT_ENABLED=${TBANK_RECEIPT_ENABLED:-}
       - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
       - TBANK_VAT=${TBANK_VAT:-none}
+      # Демо-терминал для НОВЫХ юзеров (регистрация с BILLING_DEMO_SINCE): форма
+      # оплаты настоящая, подписки по ней не бывает. Только api — авто-продления
+      # в orchestrator идут по payment_methods.provider='tbank' и демо не касаются.
+      - TBANK_DEMO_TERMINAL_KEY=${TBANK_DEMO_TERMINAL_KEY:-}
+      - TBANK_DEMO_PASSWORD=${TBANK_DEMO_PASSWORD:-}
+      - BILLING_DEMO_SINCE=${BILLING_DEMO_SINCE:-}
       # Почта (SMTP Yandex 360) — письма-подтверждения email при регистрации.
       # Отправитель — noreply@framedata.ru (переезд 12.08.2026, ящик прежний).
       # Адрес держать в ASCII: SMTP AUTH и From — ASCII-протокол, кириллический
