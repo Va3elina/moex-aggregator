@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from api.billing.factory import (
     get_payment_provider,
     get_provider_by_name,
+    get_provider_for,
     get_provider_for_user,
 )
 from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
@@ -120,6 +121,21 @@ def _upsert_payment_method(
 #  1. CHECKOUT — создание платёжной сессии для пользователя
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _demo_return_url(return_url: str) -> str:
+    """
+    Куда демо-терминал вернёт юзера после ввода карты: /billing/unavailable
+    вместо /billing/success. И SuccessURL, и FailURL там одинаковы — исход у
+    демо-платежа всегда один, «приём оплаты ещё не запущен».
+    """
+    for tail in ("/billing/success", "/billing/fail", "/billing/sbp"):
+        if tail in return_url:
+            return return_url.replace(tail, "/billing/unavailable")
+    # Неизвестный шаблон — собираем из origin'а.
+    parts = return_url.split("/")
+    origin = "/".join(parts[:3]) if return_url.startswith("http") else ""
+    return f"{origin}/billing/unavailable"
+
+
 def create_checkout_for_user(
     db: Session,
     user: User,
@@ -187,9 +203,22 @@ def create_checkout_for_user(
                     "Этот план уже активен. Сменить период — после окончания текущего."
                 )
 
-    # Роутинг: тест-юзеры ЮKassa (env YOOKASSA_TEST_USER_IDS) чекаутятся через
-    # ЮKassa, остальные — через дефолт (T-Bank). Без env — прежнее поведение.
-    provider = get_provider_for_user(user.id)
+    # Роутинг: новые юзеры (env BILLING_DEMO_SINCE) — на демо-терминал T-Bank,
+    # тест-юзеры ЮKassa (env YOOKASSA_TEST_USER_IDS) — в ЮKassa, остальные —
+    # через дефолт (T-Bank). Без env — прежнее поведение.
+    provider = get_provider_for(user)
+
+    # Демо-терминал: форма оплаты настоящая, но подписки по ней не будет
+    # (см. _verify_with_provider / activate_from_webhook). Карту не привязываем
+    # — RebillId демо-терминала на боевом всё равно нерабочий, а юзер вернётся
+    # на /billing/unavailable с текстом «оплата временно недоступна».
+    if provider.name == "tbank_demo":
+        # СБП на демо-терминале смысла не имеет: фронт увёл бы юзера на
+        # /billing/sbp ждать подтверждения, которого не будет. Честный отказ.
+        if rail == "sbp":
+            raise ValueError("Оплата через СБП временно недоступна")
+        recurrent = False
+        return_url = _demo_return_url(return_url)
 
     # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
     # глобальный override (реальный юзер не должен купить Basic за 5₽).
@@ -304,6 +333,14 @@ def _verify_with_provider(sub: Subscription, provider_name: str | None = None) -
     провайдерах платёж ЮKassa нельзя проверять T-Bank'ом GetState.
     """
     provider = get_provider_by_name(provider_name) if provider_name else get_payment_provider()
+    if provider.name == "tbank_demo":
+        # Демо-терминал: витрина оплаты без реального приёма денег. Даже
+        # CONFIRMED там не должен активировать подписку — жёсткий отказ.
+        log.info(
+            "verify: sub=%s оплачена на демо-терминале — подписка не активируется",
+            sub.id,
+        )
+        return False
     if provider.name == "stub":
         return True  # stub доверяем всегда
     if provider.name not in ("tbank", "yookassa"):
@@ -325,6 +362,15 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     Активирует подписку после webhook.payment.succeeded.
     Идемпотентна — повторный вызов с тем же event ничего не сломает.
     """
+    # Демо-терминал: сюда события попадать не должны (его webhook у T-Bank не
+    # зарегистрирован, а чужой Token не проходит проверку подписи), но гасим
+    # явно — активации по демо-платежу не бывает никогда.
+    if event.provider_name == "tbank_demo":
+        log.info(
+            "activate_from_webhook: demo-платёж %s игнорируется", event.payment_id
+        )
+        return None
+
     sub = db.query(Subscription).filter(
         Subscription.yk_payment_id == event.payment_id
     ).first()
@@ -848,8 +894,9 @@ def sync_pending_for_user(
 
     Возвращает summary {activated, cancelled, skipped, checked}.
     """
-    # Роутинг как на checkout: тест-юзеры ЮKassa поллятся в ЮKassa.
-    provider = get_provider_for_user(user.id)
+    # Роутинг как на checkout: новые юзеры — демо-терминал, тест-юзеры ЮKassa
+    # поллятся в ЮKassa.
+    provider = get_provider_for(user)
     summary = {"activated": 0, "cancelled": 0, "skipped": 0, "checked": 0}
 
     # Stub провайдер не имеет внешнего state — нет смысла верифицировать.
@@ -891,9 +938,13 @@ def sync_pending_for_user(
 
         # yookassa.verify_payment нормализует ответ к той же форме, что tbank
         # ({"Status", "Amount" в копейках, "PaymentMethod"}) — ветка общая.
-        if provider.name in ("tbank", "yookassa"):
+        if provider.name in ("tbank", "tbank_demo", "yookassa"):
             status = info.get("Status", "").upper()
-            if status == "CONFIRMED":
+            if provider.name == "tbank_demo":
+                # Демо-терминал: любой исход трактуем как неоплату — подписки
+                # по нему не бывает, а pending не должен висеть час.
+                event_type = "payment.canceled"
+            elif status == "CONFIRMED":
                 event_type = "payment.succeeded"
             elif status in ("REJECTED", "CANCELED", "REVERSED", "DEADLINE_EXPIRED"):
                 event_type = "payment.canceled"

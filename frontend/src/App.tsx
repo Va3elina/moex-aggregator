@@ -36,6 +36,7 @@ import BillingSbpPage from './pages/BillingSbpPage';
 import TrialSuccessPage from './pages/TrialSuccessPage';
 import TrialFailPage from './pages/TrialFailPage';
 import BillingStubPage from './pages/BillingStubPage';
+import BillingUnavailablePage from './pages/BillingUnavailablePage';
 import BillingRedeemPage from './pages/BillingRedeemPage';
 import OIMethodologyPage from './pages/methodology/OIMethodologyPage';
 import HeatmapMethodologyPage from './pages/methodology/HeatmapMethodologyPage';
@@ -303,6 +304,7 @@ export default function App() {
             <Route path="/billing/trial-success" element={<TrialSuccessPage />} />
             <Route path="/billing/trial-fail" element={<TrialFailPage />} />
             <Route path="/billing/stub" element={<BillingStubPage />} />
+            <Route path="/billing/unavailable" element={<BillingUnavailablePage />} />
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
             {/* Privacy + Legal */}
             <Route path="/privacy" element={<PrivacyPage />} />

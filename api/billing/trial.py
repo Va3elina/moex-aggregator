@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
-from api.billing.factory import get_payment_provider
+from api.billing.factory import get_payment_provider, is_demo_billing_user
 from api.billing.plans import TRIAL_BIND_AMOUNT, TRIAL_CONSENT_VERSION, get_plan, trial_days
 from api.billing.provider import WebhookEvent
 from api.models.subscription import Subscription
@@ -141,6 +141,11 @@ def _identity_hashes(user: User) -> tuple[str | None, str | None]:
 # ─────────────────────────── Eligibility ───────────────────────────
 def check_trial_eligibility(db: Session, user: User) -> dict:
     """{eligible, reason}. Серверная проверка — клиенту не доверяем."""
+    # Новые юзеры на демо-терминале: приём оплаты ещё не запущен. Триал тоже
+    # закрыт — он идёт через РЕАЛЬНУЮ привязку карты на боевом терминале
+    # (1₽ Init + Recurrent), а этого сейчас быть не должно.
+    if is_demo_billing_user(user):
+        return {"eligible": False, "reason": "Оплата временно недоступна"}
     if getattr(user, "role", None) == "admin":
         return {"eligible": False, "reason": "admin"}
     email = getattr(user, "email", "") or ""
@@ -185,6 +190,10 @@ def start_trial(
     """
     if not TRIAL_ENABLED:
         raise ValueError("Пробный период временно недоступен")
+    # Демо-режим для новых юзеров: привязка карты идёт на боевом терминале,
+    # поэтому триал им закрыт целиком (в т.ч. founder-ветке ниже).
+    if is_demo_billing_user(user):
+        raise ValueError("Оплата временно недоступна")
     _require_salt()
     if not consent:
         raise ValueError("Требуется согласие на условия пробного периода")
