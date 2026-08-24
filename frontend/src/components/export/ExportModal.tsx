@@ -21,7 +21,7 @@
  *   - Phase 4 добавит back-navigation с preserve drawings (display:none toggle).
  */
 
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, Loader2, AlertCircle, Pencil, Copy, Check } from 'lucide-react';
 import type { ExportModalState, ExportMetadata } from './types';
@@ -35,9 +35,7 @@ import AnnotationCanvas, {
     type AnnotationTool,
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
-import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
-import { SandboxWindowCtx } from '../../pages/embed/EmbedToolbar';
 
 /** Ждать N кадров подряд (не N независимых rAF-промисов запущенных разом —
  *  каждый следующий rAF планируется ТОЛЬКО после того, как разрешился предыдущий).
@@ -91,14 +89,9 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
-    // Tier features — Free → watermark on export.
-    const commonFeatures = useCommonFeatures();
-
-    // Песочница — приватный конструктор-терминал, а не витрина сайта: большая
-    // косая надпись поперёк графика здесь лишняя, ровно по той же причине, по
-    // которой в ней отключён и watermark на живых графиках (SandboxPage,
-    // chartPrefsValue). Подпись домена в подвале кадра остаётся в любом случае.
-    const inSandbox = useContext(SandboxWindowCtx) !== null;
+    // Косая надпись «framedata.ru» поверх графика на Free убрана 2026-08-24
+    // (решение владельца): экспорт одинаковый на всех тарифах. Подпись домена
+    // и дата в подвале кадра остаются — это часть рамки, а не гейт.
 
     // Модалка уходит порталом в body — вне .sb-panel, на которой в песочнице
     // висит собственный data-theme панели. Без явного атрибута окно красилось бы
@@ -215,7 +208,6 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     accentColor: accent,
                     dpr,
                     metadata,
-                    watermark: commonFeatures.watermark_on_export && !inSandbox,
                     scaleWithWidth: usesWidthScaledFrame(),
                 });
 
@@ -239,7 +231,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         return () => {
             ac.abort();
         };
-    }, [targetElement, commonFeatures.watermark_on_export, inSandbox]);
+    }, [targetElement]);
 
     // ESC to close. Если есть annotations — confirm (защита от случайного потерь).
     useEffect(() => {

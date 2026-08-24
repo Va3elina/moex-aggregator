@@ -1144,7 +1144,6 @@ function ComparisonMatrix() {
       title: 'Общие фичи',
       icon: Settings,
       rows: [
-        ['Водяной знак на экспорте', 'Да', '—', '—'],
         // Квоты features.py: telegram_alerts_quota 0/20/безлимит.
         ['Алерты в Telegram', '—', '20', 'Безлимит'],
         // Вход в /sandbox гейтится на Pro (SandboxEntryButton).
@@ -1413,7 +1412,6 @@ const CARD_FEATURES: Array<{
   { label: 'Фильтры сезонности',           free: false, basic: true, pro: true },
   { label: 'Свой набор фондов',            free: false, basic: true, pro: true },
   { label: 'Свой период сравнения',        free: false, basic: true, pro: true },
-  { label: 'Экспорт без водяного знака',   free: false, basic: true, pro: true },
   { label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
   { label: 'Терминал',                     free: false, basic: false, pro: true },
   // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts).

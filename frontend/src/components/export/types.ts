@@ -56,9 +56,6 @@ export interface FrameOptions {
     aspectRatio?: number;
     /** Метаданные для header/footer. Если null — фрейм без header/footer. */
     metadata?: ExportMetadata;
-    /** Free tier — добавляем большой полупрозрачный watermark "framedata.ru"
-     *  поверх chart area. Pro/Basic — без watermark. */
-    watermark?: boolean;
     /** Масштабировать шапку/футер/поля пропорционально ширине снимка
      *  (см. computeLayoutScale). Включено только в песочнице и эмбедах —
      *  на сайте шапка остаётся прежнего, мелкого кегля. */
