@@ -256,6 +256,7 @@ export const SEO_META: Record<string, SeoMeta> = {
     '/billing/sbp': { title: 'Оплата через СБП | FRAME', description: '', noindex: true },
     '/billing/fail': { title: 'Оплата не прошла | FRAME', description: '', noindex: true },
     '/billing/stub': { title: 'Подписка | FRAME', description: '', noindex: true },
+    '/billing/unavailable': { title: 'Оплата временно недоступна | FRAME', description: '', noindex: true },
     '/billing/redeem': { title: 'Активация промо-кода | FRAME', description: '', noindex: true },
     // Внутренние инструменты — никогда не индексируем.
     '/signal-export': { title: 'Signal Export | FRAME', description: '', noindex: true },
