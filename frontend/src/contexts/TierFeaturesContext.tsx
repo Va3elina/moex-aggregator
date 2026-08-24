@@ -64,7 +64,6 @@ export interface IndicatorLimits {
 }
 
 export interface CommonFeatures {
-    watermark_on_export: boolean;
     csv_export: boolean;
     api_access: boolean;
     fund_trades_access: boolean;
@@ -294,7 +293,6 @@ export function useCommonFeatures(): CommonFeatures {
     const tier = normalizeTier(user?.role);
     const effective = effectiveTierForLimits(tier);
     return matrix?.common[effective] ?? {
-        watermark_on_export: true,
         csv_export: false,
         api_access: false,
         fund_trades_access: true,
