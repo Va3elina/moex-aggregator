@@ -256,15 +256,22 @@ export function FeatureHintRow({ hint, style, children }: FeatureHintRowProps) {
   const popRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<number | null>(null);
   // Попап позиционируется fixed над строкой; если сверху места нет — под ней.
-  const [pos, setPos] = useState<{ top: number; left: number; below: boolean } | null>(null);
+  // Над строкой якоримся через `bottom` (высота попапа заранее неизвестна),
+  // НЕ через transform: translateY(-100%) — входная анимация period-popover-in
+  // сама анимирует transform и перебила бы позиционирование на время
+  // проигрывания (попап показался бы не там и прыгнул).
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
 
   const place = useCallback(() => {
     const r = liRef.current?.getBoundingClientRect();
     if (!r) return;
     const left = Math.max(8, Math.min(r.left, window.innerWidth - POPOVER_WIDTH - 8));
-    // ~240px — верхняя оценка высоты попапа с мокапом.
-    const below = r.top < 250;
-    setPos({ top: below ? r.bottom + 8 : r.top - 8, left, below });
+    // ~260px — верхняя оценка высоты попапа с мокапом.
+    if (r.top < 270) {
+      setPos({ top: r.bottom + 8, left });
+    } else {
+      setPos({ bottom: window.innerHeight - r.top + 8, left });
+    }
   }, []);
 
   const show = useCallback(() => { place(); setOpen(true); }, [place]);
@@ -328,9 +335,9 @@ export function FeatureHintRow({ hint, style, children }: FeatureHintRowProps) {
           className="fh-pop"
           style={{
             top: pos.top,
+            bottom: pos.bottom,
             left: pos.left,
             width: POPOVER_WIDTH,
-            transform: pos.below ? undefined : 'translateY(-100%)',
           }}
         >
           {Visual && <Visual />}
