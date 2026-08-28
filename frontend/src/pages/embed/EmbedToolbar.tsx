@@ -591,12 +591,16 @@ export function Dropdown<T extends string | number>({
         }}
         onClick={() => { if (single) return; if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
       >
-        {resolvedIcon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{resolvedIcon}</span>}
+        {/* При сокращённой подписи иконку НЕ рисуем: «часы + 5м» читались как два
+            контрола (фидбек Вадима), само сокращение уже говорит, что это ТФ. */}
+        {resolvedIcon && !shortLabel && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{resolvedIcon}</span>}
         {shortLabel && (
           // Сокращённое значение прямо на кнопке (ТФ). Ширину под самый длинный
           // вариант тут НЕ резервируем: сокращения одноразмерные («5м»/«1ч»/«1Д»),
           // а лишний воздух в узкой панели дороже, чем идеально ровный край.
-          <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{shortLabel}</span>
+          // textAlign по центру + flex:1 — текст стоит ровно посередине кнопки,
+          // а не прижат к левому краю на месте убранной иконки.
+          <span style={{ flex: 1, whiteSpace: 'nowrap', textAlign: 'center' }}>{shortLabel}</span>
         )}
         {!iconOnly && !shortLabel && (
           // Кнопка резервирует ширину под САМЫЙ ДЛИННЫЙ пункт, а не под текущий:
