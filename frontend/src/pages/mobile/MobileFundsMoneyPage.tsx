@@ -287,9 +287,16 @@ export default function MobileFundsMoneyPage() {
   // loadData — для refresh / pull-to-refresh. Зависит ТОЛЬКО от выбора
   // категории/периода/режима — не от hiddenFunds, чтобы toggle фонда
   // не триггерил refetch + loading-skeleton.
-  // Для flows visibleFundIds читаем через ref внутри callback'а.
-  const visibleFundIdsRef = useRef(visibleFundIds);
-  useEffect(() => { visibleFundIdsRef.current = visibleFundIds; }, [visibleFundIds]);
+  // Для flows фильтр внутри callback'а считаем из СВЕЖЕГО chartResult +
+  // hiddenFundsRef: ref на visibleFundIds на первом заходе ещё undefined
+  // (data не отрендерена) — flows уходил за ВСЕМИ фондами, бары анимировались
+  // полной категорией и через секунду морфили на персистнутую подвыборку.
+  const hiddenFundsRef = useRef(hiddenFunds);
+  useEffect(() => { hiddenFundsRef.current = hiddenFunds; }, [hiddenFunds]);
+  // Ключ последнего выданного flows-запроса — дедуп между loadData и
+  // flows-refetch effect'ом (иначе после загрузки data effect повторил бы
+  // тот же запрос из-за новой identity visibleFundIds).
+  const lastFlowsKeyRef = useRef('');
 
   // Stale-guard от out-of-order гонки при быстром переключении категории/периода/
   // режима. ДВА счётчика (как desktop FundsMoneyPage):
@@ -317,8 +324,15 @@ export default function MobileFundsMoneyPage() {
         if (dataStale()) return;
         setData(chartResult);
         // flowsData — только в flows-режиме (для гистограммы притоков-оттоков).
-        if (viewMode === 'flows') {
-          const flowsResult = await getFundsFlows(category, flowTimeframe, period, visibleFundIdsRef.current);
+        // flowsStale() до фетча: если refetch-effect уже перебил счётчик (маунт
+        // с пустым hiddenFunds), наш запрос всё равно выкинут — не дублируем.
+        if (viewMode === 'flows' && !flowsStale()) {
+          const accessible = chartResult.funds.filter((f) => !f.tier_locked);
+          const hidden = hiddenFundsRef.current;
+          const visible = accessible.filter((f) => !hidden.has(f.fund_id));
+          const ids = visible.length === accessible.length ? undefined : visible.map((f) => f.fund_id);
+          lastFlowsKeyRef.current = `${category}|${flowTimeframe}|${period}|${ids?.join(',') ?? 'all'}`;
+          const flowsResult = await getFundsFlows(category, flowTimeframe, period, ids);
           if (flowsStale()) return;
           setFlowsData(flowsResult);
         }
@@ -343,8 +357,18 @@ export default function MobileFundsMoneyPage() {
 
   // Дополнительный refetch для flows-режима при toggle фондов.
   // Не зависит от loadData identity → не триггерит мигание в AUM режиме.
+  // Есть персистнутые скрытые фонды, а список фондов ещё не загружен →
+  // visibleFundIds не вычислить; не пускаем refetch-effect фетчить без фильтра
+  // (флеш «всех фондов»). Первый запрос сделает loadData из свежего chartResult.
+  const awaitingFundsList = hiddenFunds.size > 0 && !data?.funds;
   useEffect(() => {
     if (viewMode !== 'flows') return;
+    if (awaitingFundsList) return;
+    // Дедуп: тот же запрос уже выдан (loadData из chartResult, либо новая
+    // identity visibleFundIds при том же составе) — не повторяем.
+    const key = `${category}|${flowTimeframe}|${period}|${visibleFundIds?.join(',') ?? 'all'}`;
+    if (key === lastFlowsKeyRef.current) return;
+    lastFlowsKeyRef.current = key;
     // flowsReqIdRef ОБЩИЙ с loadData: оба пишут flowsData → сериализуем, иначе
     // медленный ранний запрос (старый visibleFundIds/категория) мог перезаписать
     // свежий результат. data НЕ трогаем — у неё свой dataReqIdRef.
@@ -366,7 +390,7 @@ export default function MobileFundsMoneyPage() {
     })();
     // Зависимость от visibleFundIds — единственный триггер этого effect'а
     // в режиме flows. В режиме AUM этот effect возвращается early.
-  }, [visibleFundIds, viewMode, category, flowTimeframe, period, showUpgrade]);
+  }, [visibleFundIds, viewMode, category, flowTimeframe, period, showUpgrade, awaitingFundsList]);
 
   // Series: суммарная СЧА (млрд ₽) + индекс.
   //
