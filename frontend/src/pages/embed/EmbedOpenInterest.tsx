@@ -43,6 +43,14 @@ const TF_COMPACT: { id: number; label: string }[] = [
   { id: 24, label: '1 день' },
 ];
 
+/**
+ * Сокращения ТФ для узкой панели: единственный контрол тулбара, чьё значение
+ * надо видеть НЕ открывая список (как «5м» на кнопке в TradingView) — срез
+ * (участники/режим/показатель) читается прямо по графику, а таймфрейм нет.
+ * Схлопывать до иконки-часов, как остальные, здесь нельзя.
+ */
+const TF_SHORT: Record<number, string> = { 5: '5м', 60: '1ч', 24: '1Д' };
+
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
 type OiPoint = ChartData['open_interest'][number];
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -840,7 +848,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       {/* Список ТФ фильтруется по tfOptions — неликвидные EOD-only фьючерсы
           (напр. PXU6 «Полюс мини») интрадей-ОИ не отдают вовсе, так что 5м/1ч
           для них просто не предлагаем, а не молча гасим линию после выбора. */}
-      <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={compact} />
+      <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={compact} compactLabel={(v) => TF_SHORT[v]} />
       <Dropdown value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} title="Участники" icon={CLGROUP_ICON} compact={compact} />
       <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICON} compact={compact} />
       <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель" icon={variantIcon} compact={compact} />

@@ -538,6 +538,7 @@ export function Dropdown<T extends string | number>({
   title,
   icon,
   compact,
+  compactLabel,
 }: {
   value: T;
   options: { id: T; label: string }[];
@@ -548,6 +549,11 @@ export function Dropdown<T extends string | number>({
   icon?: ReactNode | ((value: T) => ReactNode);
   /** Узкая панель: лейбл не помещается — показываем только иконку (label уходит в title). */
   compact?: boolean;
+  /** Сокращённая подпись, которая ОСТАЁТСЯ рядом с иконкой даже в compact
+   *  (как «5м» у таймфрейма в TradingView). Только для контролов, где текущее
+   *  значение надо читать НЕ открывая список: у таймфрейма это так, у среза
+   *  (участники/режим/показатель) — нет, там иконки достаточно. */
+  compactLabel?: (value: T) => string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [btnW, setBtnW] = useState<number>();   // ширина кнопки → ширина списка (Вадим)
@@ -558,7 +564,13 @@ export function Dropdown<T extends string | number>({
   // попап по клику.
   const single = options.length <= 1;
   const resolvedIcon = typeof icon === 'function' ? icon(value) : icon;
-  const iconOnly = compact && resolvedIcon;
+  // Сокращённая подпись живёт только в compact: в полном режиме на кнопке и так
+  // полный лейбл («5 мин»), дублировать его коротким нечем и незачем.
+  const shortLabel = compact ? compactLabel?.(value) : undefined;
+  const iconOnly = compact && resolvedIcon && !shortLabel;
+  // Кнопка схлопнута (иконка или иконка+«5м») — узкая геометрия и полное
+  // значение в title/aria, потому что на самой кнопке оно сокращено или скрыто.
+  const terse = !!iconOnly || !!shortLabel;
   return (
     // display:inline-flex — без него это блочный контейнер с одним inline-block
     // ребёнком (кнопкой): браузер резервирует ~3px «фантомного» подстрочного
@@ -570,17 +582,23 @@ export function Dropdown<T extends string | number>({
       <button
         ref={btnRef}
         type="button"
-        title={iconOnly ? [title, cur?.label].filter(Boolean).join(': ') : title}
-        aria-label={iconOnly ? [title, cur?.label].filter(Boolean).join(': ') : undefined}
+        title={terse ? [title, cur?.label].filter(Boolean).join(': ') : title}
+        aria-label={terse ? [title, cur?.label].filter(Boolean).join(': ') : undefined}
         style={{
           ...ddBtnStyle(open),
           cursor: single ? 'default' : 'pointer',
-          ...(iconOnly ? { padding: 'var(--emb-dd-pad-icon, 4px 8px)' } : {}),
+          ...(terse ? { padding: 'var(--emb-dd-pad-icon, 4px 8px)' } : {}),
         }}
         onClick={() => { if (single) return; if (!open) setBtnW(btnRef.current?.offsetWidth); setOpen((v) => !v); }}
       >
         {resolvedIcon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{resolvedIcon}</span>}
-        {!iconOnly && (
+        {shortLabel && (
+          // Сокращённое значение прямо на кнопке (ТФ). Ширину под самый длинный
+          // вариант тут НЕ резервируем: сокращения одноразмерные («5м»/«1ч»/«1Д»),
+          // а лишний воздух в узкой панели дороже, чем идеально ровный край.
+          <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{shortLabel}</span>
+        )}
+        {!iconOnly && !shortLabel && (
           // Кнопка резервирует ширину под САМЫЙ ДЛИННЫЙ пункт, а не под текущий:
           // список ниже открывается ровно по её ширине, и его правый край больше
           // не «заступает» за кнопку на длинных лейблах («Покупки + Продажи»).
@@ -611,10 +629,10 @@ export function Dropdown<T extends string | number>({
           anchorEl={btnRef.current}
           align="left"
           compact
-          width={!iconOnly && btnW ? `${btnW}px` : 'max-content'}
+          width={!terse && btnW ? `${btnW}px` : 'max-content'}
           onClose={() => setOpen(false)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: iconOnly ? btnW : undefined }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: terse ? btnW : undefined }}>
             {options.map((o) => {
               const on = o.id === value;
               return (
