@@ -697,13 +697,27 @@ def _compute_yearly_seasonality(
         pcts = [(p - base_close) / base_close * 100 for _, p in points]
 
         if yr == current_year:
+            # Текущий год маппим в bucket по ДОЛЕ КАЛЕНДАРНОГО года, а не по
+            # номеру сессии. С выходными торгами (сб/вс с 2025) к концу августа
+            # набегает ~240 сессий — сырой индекс сессии попадал в bucket
+            # ноября, и точка «сегодня» уезжала на 2+ месяца вперёд.
+            # Исторические годы ресемплятся равномерно на N_BUCKETS (доля года),
+            # поэтому календарная доля — единственное консистентное выравнивание.
+            year_start = dt(yr, 1, 1).toordinal()
+            year_days = dt(yr, 12, 31).toordinal() - year_start or 1
+            by_bucket: dict[int, dict] = {}
             for td_idx, (td, _) in enumerate(points):
-                current_series.append({
-                    "td": td_idx,
+                frac = (td.toordinal() - year_start) / year_days
+                bucket = max(0, min(N_BUCKETS - 1, round(frac * (N_BUCKETS - 1))))
+                # Несколько дат в одном bucket'е (365 дней → 252 корзины):
+                # оставляем последнюю по дате.
+                by_bucket[bucket] = {
+                    "td": bucket,
                     "month": td.month,
                     "pct": round(pcts[td_idx], 2),
                     "date": td.isoformat(),
-                })
+                }
+            current_series.extend(by_bucket[b] for b in sorted(by_bucket))
         else:
             if min_year is None:
                 min_year = yr
