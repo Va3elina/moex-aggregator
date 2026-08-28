@@ -377,11 +377,18 @@ export default function FundsMoneyPage() {
     // visibleFundIds, затем reset hiddenFunds). Без reqId медленный РАННИЙ ответ
     // (старая категория) мог перезаписать свежий → «график не обновился до рефреша».
     const flowsReqIdRef = useRef(0);
+    // Есть персистнутые скрытые фонды, а список фондов ещё не загружен →
+    // visibleFundIds пока нельзя вычислить, и первый flows-запрос ушёл бы без
+    // фильтра (за ВСЕМИ фондами): бары анимируются по полной категории, а через
+    // секунду морфят на подвыборку. Ждём data.funds; с пустым hiddenFunds
+    // фильтра нет — фетчим сразу, не сериализуя запросы.
+    const awaitingFundsList = hiddenFunds.size > 0 && !data?.funds;
     useEffect(() => {
         if (viewMode !== 'flows') return;
         // Запертый тарифом период (persisted 1Г у гостя) → не дёргаем flows (403/
         // вспышка модалки). Part B уведёт на СЧА, либо tier-коррекция опустит период.
         if (periodLocked) return;
+        if (awaitingFundsList) { setFlowsLoading(true); return; }
 
         // Все фонды выключены — не дёргаем backend, ставим пустой результат.
         // FlowsHistogram по noFundsSelected покажет «Выберите фонды».
@@ -419,7 +426,7 @@ export default function FundsMoneyPage() {
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked]);
+    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked, awaitingFundsList]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
