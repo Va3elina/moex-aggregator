@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -97,12 +97,6 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
 // (индекс) = forest-green из funds-flow палитры — единый visual-язык с flows.
 const INDEX_COLOR = 'var(--funds-flow-positive)';
 const NAV_COLOR   = 'var(--accent)';
-
-// Easing для анимации гистограммы
-import { ANIMATION } from '../config/chartTheme';
-import { resampleVals } from '../utils/chartAnimation';
-const easeOutCubic = ANIMATION.easing;
-
 
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
@@ -258,13 +252,7 @@ export default function FundsMoneyPage() {
     // Выбор фондов вынесен в разворачивающийся виджет-модалку (масштаб как у
     // селектора актива на ОИ): таблетка сверху → модалка со списком фондов.
     const [fundPickerOpen, setFundPickerOpen] = useState(false);
-    const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
-    // Tooltip position через STATE а не DOM-мутацию — иначе после React re-render
-    // позиция сбрасывается до следующего mousemove → визуальный "коэффициент".
-    // Паттерн как в SeasonalityHistogram (handlePointerMove → setTooltip({x,y})).
-    const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
     const [showIndex, setShowIndex] = usePersistedState('frame:funds:showIndex', true);
-    const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
 
     // Onboarding tour. Steps собираются через factory чтобы тур мог
     // автоматически переключать viewMode (СЧА ↔ Притоки) когда подсвечивает
@@ -275,18 +263,6 @@ export default function FundsMoneyPage() {
       () => buildFundsMoneyTour(setViewMode),
       [setViewMode],
     );
-    const flowChartRef = useRef<SVGSVGElement>(null);
-    const flowContainerRef = useRef<HTMLDivElement>(null);
-
-    // Анимация баров гистограммы: волна на первом рендере с данными, морф
-    // при последующих сменах данных. dispFlowsRef — текущие отображаемые
-    // значения (обновляется каждый кадр) — старт морфа при прерывании.
-    const [animatedBarsIn, setAnimatedBarsIn] = useState<number[]>([]);
-    const [animatedBarsOut, setAnimatedBarsOut] = useState<number[]>([]);
-    const dispFlowsRef = useRef<number[]>([]);
-    const barsAnimRef = useRef<number | null>(null);
-    const isFirstBarsRender = useRef(true);
-
     // Загрузка данных
     // Stale-guard: при быстром переключении категории/периода медленный ранний
     // ответ мог перезаписать свежий. reqId фиксирует «последний» запрос.
@@ -504,127 +480,6 @@ export default function FundsMoneyPage() {
             return next;
         });
     };
-
-    const handleFlowMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!flowsData?.flows?.length || !flowContainerRef.current || !flowChartRef.current) return;
-        // ВАЖНО: измеряем РЕАЛЬНУЮ геометрию через SVG-элемент, а не через
-        // parseFloat(getComputedStyle(--chart-pad-left)). На mobile чарт-pad
-        // задан через clamp() — getPropertyValue вернёт сырую строку
-        // "clamp(34px, 11vw, 58px)", parseFloat = NaN → fallback 100. Реальный
-        // pad на mobile ~41px → mismatch создаёт "коэффициент 2x" между
-        // движением пальца и cursor'ом. SVG getBoundingClientRect даёт точные
-        // computed pixels.
-        const containerRect = flowContainerRef.current.getBoundingClientRect();
-        const svgRect = flowChartRef.current.getBoundingClientRect();
-        const xInChart = e.clientX - svgRect.left;
-        if (xInChart < 0 || xInChart > svgRect.width) return;
-        const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
-        const barWidth = svgRect.width / visibleCount;
-        const idx = Math.floor(xInChart / barWidth);
-        if (idx >= 0 && idx < visibleCount) {
-            setHoveredFlowIndex(idx);
-            // x в координатах outer-container'а: offset до SVG + позиция в SVG
-            const slotCenterInContainer = (svgRect.left - containerRect.left) + idx * barWidth + barWidth / 2;
-            const y = e.clientY - containerRect.top;
-            setFlowTooltipPos({ x: slotCenterInContainer, y });
-        }
-    };
-
-    const handleFlowMouseLeave = useCallback(() => {
-        setHoveredFlowIndex(null);
-        setFlowTooltipPos(null);
-    }, []);
-
-    // Сброс анимации при выходе из режима flows — следующее появление будет fade-in из нуля
-    useEffect(() => {
-        if (viewMode !== 'flows') {
-            if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-            setAnimatedBarsIn([]);
-            setAnimatedBarsOut([]);
-            dispFlowsRef.current = [];
-            isFirstBarsRender.current = true;
-        }
-    }, [viewMode]);
-
-    // Сброс навигатора при смене данных — useLayoutEffect (а не useEffect) чтобы
-    // обновление срабатывало ДО первого paint'a после прихода данных, иначе rect
-    // селект-окна моментально мелькает с width=0 → full width.
-    useLayoutEffect(() => {
-        if (flowsData?.flows?.length) {
-            setFlowNavRange([0, flowsData.flows.length - 1]);
-        }
-    }, [flowsData]);
-
-    // Анимация гистограммы при смене flowsData — схема как в OI (SimpleChart):
-    // волна с нуля только на ПЕРВОМ рендере с данными, дальше морф из текущих
-    // отображаемых значений. При смене день/неделя/месяц число баров другое —
-    // старые значения ресемплируются к новой длине (resampleVals), иначе морф
-    // выглядел «хаотичной перестановкой баров» (прежняя причина отказа от него).
-    //
-    // Морф идёт в ВИЗУАЛЬНОМ пространстве, как в BreadthChart: стартовые
-    // значения нормализуются со старой шкалы на новую (v / oldMax * newMax).
-    // Без этого при переходе 3Г → 1М старые потоки (млрды) в новой шкале
-    // (сотни млн) давали высоту в разы больше холста — график «дёргался в
-    // разные стороны», пока бары не сходились к целям.
-    //
-    // useLayoutEffect + синхронный сет стартового кадра: rAF рисует первый
-    // кадр морфа только на СЛЕДУЮЩЕМ кадре, и с useEffect между приходом
-    // данных и стартом анимации успевал отрисоваться один кадр со старыми
-    // отображаемыми значениями на новой шкале — «25-й кадр» гигантских баров
-    // при смене категории (облигации → золото).
-    useLayoutEffect(() => {
-        if (!flowsData?.flows?.length) return;
-
-        if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-
-        const targetFlows = flowsData.flows.map(f => f.flow);
-        const wave = isFirstBarsRender.current || dispFlowsRef.current.length === 0;
-        isFirstBarsRender.current = false;
-
-        const newMax = Math.max(...targetFlows.map(Math.abs), 0.001);
-        const oldMax = Math.max(...dispFlowsRef.current.map(Math.abs), 0.001);
-        const fromFlows = wave
-            ? new Array(targetFlows.length).fill(0)
-            : resampleVals(dispFlowsRef.current, targetFlows.length).map(v => (v / oldMax) * newMax);
-
-        // Стартовый кадр — до первого paint, чтобы не мигнуть старыми барами.
-        dispFlowsRef.current = fromFlows;
-        setAnimatedBarsIn(fromFlows.map(v => Math.max(0, v)));
-        setAnimatedBarsOut(fromFlows.map(v => Math.min(0, v)));
-
-        // Волна: каскад слева направо; морф: все бары синхронно (как в OI).
-        // Параметры из единого конфига chartTheme.ANIMATION.
-        const totalDuration = wave ? ANIMATION.waveDuration : ANIMATION.morphDuration;
-        const staggerDelay = wave ? ANIMATION.waveStagger : 0;
-        let startTime: number | null = null;
-
-        const animate = (timestamp: number) => {
-            if (!startTime) startTime = timestamp;
-            const elapsed = timestamp - startTime;
-
-            const flows = targetFlows.map((v, i) => {
-                const barDelay = (i / targetFlows.length) * staggerDelay;
-                const barElapsed = Math.max(0, elapsed - barDelay);
-                const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-                return fromFlows[i] + (v - fromFlows[i]) * easeOutCubic(t);
-            });
-
-            dispFlowsRef.current = flows;
-            // Разделяем на in/out по знаку текущего анимированного значения
-            setAnimatedBarsIn(flows.map(v => Math.max(0, v)));
-            setAnimatedBarsOut(flows.map(v => Math.min(0, v)));
-
-            if (elapsed < totalDuration) {
-                barsAnimRef.current = requestAnimationFrame(animate);
-            }
-        };
-
-        barsAnimRef.current = requestAnimationFrame(animate);
-
-        return () => {
-            if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-        };
-    }, [flowsData]);
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
     const CatIcon = currentCategory?.icon;
@@ -862,12 +717,20 @@ export default function FundsMoneyPage() {
                     (паттерн OI). Через portal монтируется в обёртку графика
                     (containerRef=chartAnchorRef). Слои зависят от режима. */}
                 <ChartActionsMenu containerRef={chartAnchorRef} tourId="funds-export">
-                {viewMode === 'aum' && (
+                {/* Слой «Индекс» доступен в обоих режимах: в СЧА — линия на левой
+                    оси, в Притоках-Оттоках — верхняя панель бенчмарка. */}
                 <LayersButton
                     tourId="funds-layers"
-                    layers={[{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`, checked: showIndex, onChange: setShowIndex }]}
+                    layers={[{
+                        key: 'index',
+                        label: 'Индекс',
+                        hint: viewMode === 'aum'
+                            ? `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`
+                            : `Панель ${currentCategory?.index ?? 'индекса'} над гистограммой`,
+                        checked: showIndex,
+                        onChange: setShowIndex,
+                    }]}
                 />
-                )}
                 <CsvExportButton
                     indicator="funds_money"
                     config={() => {
@@ -1078,21 +941,19 @@ export default function FundsMoneyPage() {
                 </div>
             ) : (
             <div>
+            {/* Двухпанельный вид (как «Позиции/Навес» в Сделках фондов):
+                сверху бенчмарк категории (index из nav-запроса — грузится тем же
+                периодом), снизу гистограмма потоков. Слой «Индекс» общий с СЧА. */}
             <FlowsHistogram
                         flowsData={flowsData}
                         noFundsSelected={noFundsSelected}
-                        animatedBarsIn={animatedBarsIn}
-                        animatedBarsOut={animatedBarsOut}
-                        flowNavRange={flowNavRange}
-                        hoveredFlowIndex={hoveredFlowIndex}
                         flowTitle={flowTitle}
                         loading={flowsLoading}
-                        flowContainerRef={flowContainerRef}
-                        flowChartRef={flowChartRef}
-                        flowTooltipPos={flowTooltipPos}
-                        onMouseMove={handleFlowMouseMove}
-                        onMouseLeave={handleFlowMouseLeave}
-                        onSetFlowNavRange={setFlowNavRange}
+                        indexData={data?.index?.data}
+                        indexLabel={currentCategory?.index}
+                        showIndex={showIndex}
+                        height={chartHeight}
+                        animTrigger={`${category}:${flowTimeframe}:${period}`}
                     />
             </div>
             )}
