@@ -2231,6 +2231,19 @@ a.btn-accent:active {
    ═══════════════════════════════════════════════════════════════ */
 .fh-row { cursor: help; }
 
+/* Пунктирное подчёркивание текста строки с подсказкой — как у терминов-ссылок:
+   намекает, что при наведении откроется пояснение. */
+.fh-row > span {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s ease;
+}
+.fh-row:hover > span {
+  text-decoration-color: currentColor;
+}
+
 .fh-pop {
   position: fixed;
   z-index: 1100;
