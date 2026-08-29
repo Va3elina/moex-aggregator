@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, Zap, Crown, Sparkles, X, Gift, Heart, Clock,
+  Check, X, Gift, Heart, Clock,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
@@ -59,11 +59,11 @@ interface PlansResponse {
 // Editorial palette: все цвета через CSS-vars (theme-aware: light/dark).
 // Pro выделен var(--accent) (pumpkin) — это «звезда» каталога, остальные —
 // нейтральные оттенки с возрастающим контрастом снизу вверх.
-const TIER_META: Record<string, { icon: React.ReactNode; color: string; accentBg: string }> = {
-  free:    { icon: <Check size={24} />,    color: 'var(--text-muted)',     accentBg: 'color-mix(in srgb, var(--text-muted) 12%, transparent)' },
-  basic:   { icon: <Zap size={24} />,      color: 'var(--text-secondary)', accentBg: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' },
-  pro:     { icon: <Crown size={24} />,    color: 'var(--accent)',         accentBg: 'color-mix(in srgb, var(--accent) 14%, transparent)' },
-  premium: { icon: <Sparkles size={24} />, color: 'var(--text-primary)',   accentBg: 'color-mix(in srgb, var(--text-primary) 12%, transparent)' },
+const TIER_META: Record<string, { color: string; accentBg: string }> = {
+  free:    { color: 'var(--text-muted)',     accentBg: 'color-mix(in srgb, var(--text-muted) 12%, transparent)' },
+  basic:   { color: 'var(--text-secondary)', accentBg: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' },
+  pro:     { color: 'var(--accent)',         accentBg: 'color-mix(in srgb, var(--accent) 14%, transparent)' },
+  premium: { color: 'var(--text-primary)',   accentBg: 'color-mix(in srgb, var(--text-primary) 12%, transparent)' },
 };
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
@@ -494,19 +494,12 @@ export default function PricingPage() {
                 </div>
               )}
 
-              {/* Иконка + заголовок.
+              {/* Заголовок без иконки (решение владельца 2026-08-29): плашка с
+                  пиктограммой не несла смысла и утяжеляла шапку карточки.
                   tier.description с бэка не рендерим: «Базовый доступ к сайту» /
                   «Расширенный доступ на уровне Basic» ничего не добавляют к названию,
                   содержание тарифа раскрывает список фич ниже. */}
-              <div className="mb-4">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
-                  style={{ backgroundColor: meta.accentBg, color: meta.color }}
-                >
-                  {meta.icon}
-                </div>
-                <h3 className="text-xl font-bold text-theme-primary">{tier.title}</h3>
-              </div>
+              <h3 className="text-lg font-bold text-theme-primary mb-1.5">{tier.title}</h3>
 
               {/* Цена.
                   Годовой тариф показываем в пересчёте на месяц (крупно), а полную
@@ -537,13 +530,15 @@ export default function PricingPage() {
                       </span>
                     </div>
                     {period === 'yearly' && (
-                      <div className="text-xs text-theme-muted mt-1">
-                        Оплата раз в год
-                      </div>
-                    )}
-                    {period === 'yearly' && tier.monthly && tier.monthly.amount * 12 > variant.amount && (
-                      <div className="text-xs mt-0.5" style={{ color: meta.color, fontWeight: 600 }}>
-                        Вы экономите {(tier.monthly.amount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽ в год
+                      <div className="mt-1.5 space-y-0.5">
+                        <div className="text-xs text-theme-muted">
+                          Оплата раз в год
+                        </div>
+                        {tier.monthly && tier.monthly.amount * 12 > variant.amount && (
+                          <div className="text-xs" style={{ color: meta.color, fontWeight: 600 }}>
+                            Вы экономите {(tier.monthly.amount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽ в год
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
