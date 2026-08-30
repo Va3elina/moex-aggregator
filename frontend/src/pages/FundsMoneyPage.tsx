@@ -750,30 +750,6 @@ export default function FundsMoneyPage() {
                     </div>
                 )}
 
-                {/* Сглаживание: скользящая сумма потоков за 3 месяца — формат
-                    глобальных провайдеров (Global Gold ETF Flows Rolling
-                    3-Month). Ортогонально таймфрейму: окно по датам. */}
-                {viewMode === 'flows' && (
-                    <div style={{ order: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <SegmentedControl<'none' | '3m'>
-                        options={[
-                            { key: 'none', label: 'Обычный' },
-                            { key: '3m', label: 'Сумма 3М' },
-                        ]}
-                        value={flowRolling}
-                        onChange={setFlowRolling}
-                        trailing={
-                            <HelpTooltip
-                                sections={[
-                                    { heading: 'Обычный', body: 'Чистый поток за каждый отдельный период таймфрейма.' },
-                                    { heading: 'Сумма 3М', body: 'Каждый столбец — суммарный чистый поток за скользящие 3 месяца. Так показывают потоки глобальные управляющие компании: сглаживает дневной шум и проявляет устойчивые волны притоков и оттоков.' },
-                                ]}
-                                size={18}
-                            />
-                        }
-                    />
-                    </div>
-                )}
 
                 {/* Действия (Слои/Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика
                     (паттерн OI). Через portal монтируется в обёртку графика
@@ -783,15 +759,26 @@ export default function FundsMoneyPage() {
                     оси, в Притоках-Оттоках — верхняя панель бенчмарка. */}
                 <LayersButton
                     tourId="funds-layers"
-                    layers={[{
-                        key: 'index',
-                        label: 'Индекс',
-                        hint: viewMode === 'aum'
-                            ? `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`
-                            : `Панель ${currentCategory?.index ?? 'индекса'} над гистограммой`,
-                        checked: showIndex,
-                        onChange: setShowIndex,
-                    }]}
+                    layers={[
+                        {
+                            key: 'index',
+                            label: 'Индекс',
+                            hint: viewMode === 'aum'
+                                ? `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`
+                                : `Панель ${currentCategory?.index ?? 'индекса'} над гистограммой`,
+                            checked: showIndex,
+                            onChange: setShowIndex,
+                        },
+                        // Низкочастотный тумблер — живёт в «Слоях», а не в
+                        // горячем ряду контролов (решение 2026-06-12).
+                        ...(viewMode === 'flows' ? [{
+                            key: 'rolling3m',
+                            label: 'Сумма за 3 месяца',
+                            hint: 'Столбец — суммарный чистый поток за скользящие 3 месяца, как показывают потоки глобальные управляющие компании. Сглаживает шум и проявляет устойчивые волны притоков и оттоков.',
+                            checked: flowRolling === '3m',
+                            onChange: (v: boolean) => setFlowRolling(v ? '3m' : 'none'),
+                        }] : []),
+                    ]}
                 />
                 <CsvExportButton
                     indicator="funds_money"
