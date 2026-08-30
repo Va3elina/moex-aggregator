@@ -3,12 +3,12 @@
  *
  * Раньше внизу главной был только текстовый CTA-блок «Начни разбираться в
  * рынке» с двумя кнопками. Решение владельца 2026-08-30: гость должен видеть
- * тарифы прямо на главной, не переходя на /pricing. Заголовок-легенда сохранён
- * как шапка секции, под ней — тот же блок тарифов, что и на странице тарифов:
- * переключатель Месяц/Год и карточки TierPlanCard (одна вёрстка на две
- * страницы, иначе они разъезжаются). Кнопка карточки здесь всегда ведёт на
- * /pricing: покупка и триал требуют авторизации и consent-модалки, их место —
- * на странице тарифов.
+ * тарифы прямо на главной, не переходя на /pricing, и всё это — внутри одного
+ * крупного оранжевого блока: сверху легенда, ниже переключатель Месяц/Год и
+ * карточки TierPlanCard (та же вёрстка, что на странице тарифов, иначе они
+ * разъезжаются). Отдельных кнопок «Попробовать бесплатно» и «Сравнить тарифы
+ * подробно» нет — CTA несут сами карточки; они ведут на /pricing: покупка и
+ * триал требуют авторизации и consent-модалки, их место — на странице тарифов.
  *
  * Цены тянем из публичного GET /api/billing/plans (auth не нужен, см.
  * api/routers/billing.py). Если запрос упал, секция схлопывается до
@@ -52,16 +52,17 @@ export default function LandingPricing() {
   const paid = (data?.tiers || []).filter((t) => t.tier !== 'free');
 
   return (
-    <section style={{ marginTop: 'clamp(24px, 4vw, 48px)' }}>
-      {/* Легенда на accent-фоне — бывший финальный CTA лендинга. */}
-      <div
-        className="editorial-frame text-center"
-        style={{
-          backgroundColor: 'var(--accent)',
-          borderColor: 'var(--text-primary)',
-          padding: 'clamp(32px, 5vw, 64px) clamp(20px, 4vw, 60px)',
-        }}
-      >
+    <section
+      className="editorial-frame"
+      style={{
+        backgroundColor: 'var(--accent)',
+        borderColor: 'var(--text-primary)',
+        padding: 'clamp(32px, 5vw, 64px) clamp(16px, 3vw, 48px)',
+        marginTop: 'clamp(24px, 4vw, 48px)',
+      }}
+    >
+      {/* Легенда — бывший финальный CTA лендинга, теперь шапка тарифной сетки. */}
+      <div className="text-center">
         <p
           className="mb-5 uppercase"
           style={{
@@ -99,30 +100,17 @@ export default function LandingPricing() {
           Бесплатный доступ к базовым индикаторам: без оплаты и без карты.
           Тарифы Basic и Pro пригодятся, когда понадобятся данные в реальном времени, расширенная история и продвинутые режимы.
         </p>
-        <Link
-          to="/login"
-          className="editorial-press px-7 py-4 font-bold uppercase inline-block"
-          style={{
-            backgroundColor: 'var(--text-primary)',
-            color: 'var(--text-inverse)',
-            border: '1.5px solid var(--text-primary)',
-            fontSize: 'var(--fs-sm)',
-            letterSpacing: '0.16em',
-            textDecoration: 'none',
-          }}
-        >
-          Попробовать бесплатно →
-        </Link>
       </div>
 
       {paid.length > 0 && (
-        <div style={{ marginTop: 'clamp(28px, 4vw, 48px)' }}>
+        <div>
           {/* Переключатель Месяц / Год — копия блока с /pricing (компактный,
-              размеры в px: root font-size 20px делает rem-классы в 1.25x). */}
+              размеры в px: root font-size 20px делает rem-классы в 1.25x).
+              На accent-фоне пилюля с bg-secondary читается как светлый чип. */}
           <div className="flex justify-center mb-6">
             <div
               className="inline-flex rounded-full border"
-              style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)', padding: 2 }}
+              style={{ borderColor: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: 2 }}
             >
               <button
                 onClick={() => setPeriod('monthly')}
@@ -185,22 +173,6 @@ export default function LandingPricing() {
                 </TierPlanCard>
               );
             })}
-          </div>
-
-          <div className="text-center" style={{ marginTop: 'clamp(16px, 2.5vw, 24px)' }}>
-            <Link
-              to="/pricing"
-              className="uppercase font-bold"
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: 'var(--fs-xs)',
-                letterSpacing: '0.16em',
-                textDecoration: 'underline',
-                textUnderlineOffset: 4,
-              }}
-            >
-              Сравнить тарифы подробно →
-            </Link>
           </div>
         </div>
       )}
