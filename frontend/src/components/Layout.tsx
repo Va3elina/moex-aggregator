@@ -55,6 +55,8 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/seasonality', label: 'Сезонность' },
   { path: '/cbr-flows', label: 'Поток капитала' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
+  // Экспериментальная вкладка — тест гипотезы «объём репо ≈ шорты» (5 бумаг).
+  { path: '/repo', label: 'Репо в акциях', badge: 'Тест' },
 ];
 
 export default function Layout() {

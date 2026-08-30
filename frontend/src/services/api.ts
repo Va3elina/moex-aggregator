@@ -1388,6 +1388,34 @@ export async function getCbrFlows(type: CbrInstrumentType): Promise<CbrFlowsResp
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Репо в акциях — экспериментальная вкладка (гипотеза «репо ≈ шорты»)
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface RepoVolumePoint {
+  date: string;   // ISO YYYY-MM-DD
+  close: number;  // спот-закрытие, ₽
+  repo: number;   // дневной объём РЕПО с ЦК, ₽ (0 = сделок не было)
+}
+
+export interface RepoVolumeResponse {
+  ticker: string;
+  name: string;
+  data: RepoVolumePoint[];
+  updated_at: string | null;
+}
+
+/** Объём репо + спот по одной бумаге из тестового списка. Первая загрузка
+ *  тикера медленная (бэкенд тянет историю с ISS), дальше — из кэша. */
+export async function getRepoVolume(ticker: string): Promise<RepoVolumeResponse> {
+  const response = await apiFetch(`${API_BASE}/api/repo/history?ticker=${ticker}`);
+  if (!response.ok) {
+    if (response.status === 502) throw new Error('ISS MOEX недоступен, попробуйте позже');
+    throw new Error('Не удалось получить данные');
+  }
+  return response.json();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // API Keys (Pro tier) — personal programmatic access tokens
 // ════════════════════════════════════════════════════════════════════════════
 

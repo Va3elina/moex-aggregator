@@ -19,6 +19,7 @@ from api.routers.api_keys import router as api_keys_router
 from api.routers.public_api import router as public_api_router
 from api.routers.fund_trades import router as fund_trades_router
 from api.routers.oi_intl import router as oi_intl_router
+from api.routers.repo_volume import router as repo_volume_router
 
 __all__ = [
     "instruments_router",
@@ -39,4 +40,5 @@ __all__ = [
     "public_api_router",
     "fund_trades_router",
     "oi_intl_router",
+    "repo_volume_router",
 ]
