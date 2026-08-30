@@ -2487,3 +2487,67 @@ export async function updateContentCandidateStatus(
   }
   return response.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Admin: «Перекраска» — экспериментальный индикатор (/admin/repaint)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface RepaintScreenerRow {
+  sec_id: string;
+  name: string;
+  /** Изменение CDV за месяц, % от free float (со знаком). */
+  repaint_pct: number;
+  /** Отклонение CDV от среднего за месяц, % от free float. */
+  dev_pct: number;
+  close: number;
+  ff_shares: number;
+}
+
+export interface RepaintPoint {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  delta: number;
+  cdv: number;
+  repaint_pct: number | null;
+  dev_pct: number | null;
+}
+
+export interface RepaintSeries {
+  sec_id: string;
+  name: string;
+  window_days: number;
+  ff_shares: number;
+  ff_month: string;
+  summary: {
+    repaint_pct: number | null;
+    dev_pct: number | null;
+    cdv: number;
+    close: number;
+  };
+  points: RepaintPoint[];
+}
+
+export async function getRepaintScreener(): Promise<{ window_days: number; rows: RepaintScreenerRow[] }> {
+  const response = await apiFetch(`${API_BASE}/api/admin/repaint/screener`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить скринер перекраски');
+  }
+  return response.json();
+}
+
+export async function getRepaintSeries(secId: string, days = 365): Promise<RepaintSeries> {
+  const response = await apiFetch(
+    `${API_BASE}/api/admin/repaint/series/${encodeURIComponent(secId)}?days=${days}`,
+  );
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Нет данных по этому тикеру');
+    throw new Error('Не удалось загрузить данные перекраски');
+  }
+  return response.json();
+}

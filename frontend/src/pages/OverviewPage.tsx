@@ -28,6 +28,7 @@ import {
   TrendingUp,
   TrendingDown,
   Building2,
+  Repeat2,
 } from 'lucide-react';
 import ChannelNews from '../components/ChannelNews';
 import {
@@ -37,6 +38,7 @@ import {
 } from '../services/api';
 import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { formatNumber } from '../utils/formatNumber';
 import Card from '../components/Card';
@@ -58,6 +60,13 @@ const INDICATORS: {
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
   { path: '/cbr-flows', title: 'Поток капитала', desc: 'Кто покупает и продаёт по типам активов', icon: Building2 },
   { path: '/fund-trades', title: 'Сделки фондов', desc: 'Что фонды акций накапливают и распродают (по СЧА)', icon: TrendingUp },
+];
+
+// Экспериментальные индикаторы — отдельный блок НАД основным списком,
+// виден только админам (role === 'admin'). Обкатка перед публичным релизом:
+// сами страницы тоже под admin-гардом (роут + require_admin на бэке).
+const ADMIN_INDICATORS: typeof INDICATORS = [
+  { path: '/admin/repaint', title: 'Перекраска', desc: 'Сколько % free float сменило руки за месяц (CDV 4Ч / free float)', icon: Repeat2, badge: 'Эксперимент' },
 ];
 
 /** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */
@@ -91,6 +100,9 @@ async function fetchQuotes(): Promise<Record<string, { label: string; closes: nu
 }
 
 export default function OverviewPage() {
+  // Админ-блок «Экспериментальные» над списком индикаторов.
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   // Полный список акций с heatmap — используется для movers, top volume, sectors,
   // и interactive скриннера. 1 fetch → 4 view'а из одного array.
   const [allStocks, setAllStocks] = useState<HeatmapStock[]>([]);
@@ -292,6 +304,24 @@ export default function OverviewPage() {
           : <Skeleton height={240} rounded="lg" />}
       </section>
 
+      {/* ═══ ЭКСПЕРИМЕНТАЛЬНЫЕ (только админ) ═══ */}
+      {isAdmin && (
+        <section className="mb-10 md:mb-12">
+          <div className="flex items-center gap-3 mb-5 md:mb-6">
+            <p
+              className="text-xs uppercase"
+              style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+            >
+              Экспериментальные · только админ
+            </p>
+            <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+            {ADMIN_INDICATORS.map(ind => <IndicatorCard key={ind.path} ind={ind} />)}
+          </div>
+        </section>
+      )}
+
       {/* ═══ INDICATOR GRID ═══ */}
       <section>
         <div className="flex items-center gap-3 mb-5 md:mb-6">
@@ -305,71 +335,75 @@ export default function OverviewPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-          {INDICATORS.map(ind => (
-            <Link
-              key={ind.path}
-              to={ind.path}
-              className="group block p-4 md:p-5 border transition-all"
-              style={{
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-color)',
-                borderRadius: 'var(--radius-lg, 12px)',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)')}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
-            >
-              <div className="flex items-start gap-3 mb-2">
-                <div
-                  className="flex items-center justify-center flex-shrink-0"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 'var(--radius-md, 8px)',
-                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  <ind.icon size={18} strokeWidth={1.8} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3
-                    className="font-semibold text-sm md:text-base truncate flex items-center gap-2"
-                    style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
-                  >
-                    <span className="truncate">{ind.title}</span>
-                    {ind.badge && (
-                      <span
-                        className="uppercase font-bold flex-shrink-0"
-                        style={{
-                          fontSize: '0.62rem',
-                          letterSpacing: '0.06em',
-                          color: 'var(--accent)',
-                          border: '1px solid var(--accent)',
-                          borderRadius: '3px',
-                          padding: '1px 5px',
-                          lineHeight: 1.2,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {ind.badge}
-                      </span>
-                    )}
-                  </h3>
-                </div>
-                <ArrowRight
-                  size={16}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1"
-                  style={{ color: 'var(--accent)' }}
-                />
-              </div>
-              <p className="text-xs md:text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                {ind.desc}
-              </p>
-            </Link>
-          ))}
+          {INDICATORS.map(ind => <IndicatorCard key={ind.path} ind={ind} />)}
         </div>
       </section>
     </div>
+  );
+}
+
+/** Карточка индикатора в гриде (общая для основного и админ-списков). */
+function IndicatorCard({ ind }: { ind: (typeof INDICATORS)[number] }) {
+  return (
+    <Link
+      to={ind.path}
+      className="group block p-4 md:p-5 border transition-all"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+    >
+      <div className="flex items-start gap-3 mb-2">
+        <div
+          className="flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 'var(--radius-md, 8px)',
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            color: 'var(--accent)',
+          }}
+        >
+          <ind.icon size={18} strokeWidth={1.8} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3
+            className="font-semibold text-sm md:text-base truncate flex items-center gap-2"
+            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+          >
+            <span className="truncate">{ind.title}</span>
+            {ind.badge && (
+              <span
+                className="uppercase font-bold flex-shrink-0"
+                style={{
+                  fontSize: '0.62rem',
+                  letterSpacing: '0.06em',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                  borderRadius: '3px',
+                  padding: '1px 5px',
+                  lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ind.badge}
+              </span>
+            )}
+          </h3>
+        </div>
+        <ArrowRight
+          size={16}
+          className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1"
+          style={{ color: 'var(--accent)' }}
+        />
+      </div>
+      <p className="text-xs md:text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        {ind.desc}
+      </p>
+    </Link>
   );
 }
 
