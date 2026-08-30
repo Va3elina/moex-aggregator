@@ -731,6 +731,16 @@ async def get_funds_flows(
     if not fund_ids:
         return {"category": category, "timeframe": timeframe, "period": period, "flows": []}
 
+    from api.cache import get_or_set
+    # Кэш как у /chart. Ключ tier-safe: fund_ids уже пересечены с tier-whitelist,
+    # а fund_ids_filter обнулён для тарифов без fund_picker — итоговый список
+    # фондов полностью определяет ответ вместе с параметрами агрегации.
+    ids_suffix = "ids_" + ("_".join(str(i) for i in sorted(fund_ids)) if fund_ids_filter else "all_" + ("_".join(tickers_whitelist) if tickers_whitelist else "full"))
+    flows_cache_key = f"funds_flows:{category}:{timeframe}:{period}:{rolling or 'raw'}:{ids_suffix}"
+    cached = get_or_set(flows_cache_key)
+    if cached is not None:
+        return cached
+
     # Период (с учётом min_date категории)
     days = PERIODS.get(period)
     if days:
@@ -1011,13 +1021,15 @@ async def get_funds_flows(
                 # периода, но окно каждого из них уже полное.
                 flows = [f for f in rolled if date.fromisoformat(f["period_end"]) >= requested_from]
 
-            return {
+            response = {
                 "category": category,
                 "timeframe": timeframe,
                 "period": period,
                 "rolling": rolling,
                 "flows": flows
             }
+            get_or_set(flows_cache_key, response, ttl=600)  # 10 мин, как /chart
+            return response
 
     except Exception as e:
         log.error(f"Ошибка получения flows: {e}")
