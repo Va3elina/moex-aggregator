@@ -2432,6 +2432,30 @@ a.btn-accent:active {
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent);
 }
 
+/* Расширение: панель Фрейма всплывает поверх чужого терминала */
+.fh-ext-wrap { position: relative; }
+.fh-ext-bg {
+  display: flex; align-items: flex-end; gap: 4px;
+  height: 66px; padding: 6px;
+  border-radius: 6px;
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+}
+.fh-ext-candle { flex: 1; border-radius: 2px; background: var(--text-muted); opacity: 0.35; }
+.fh-ext-panel {
+  position: absolute; right: 16px; bottom: 16px;
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border-radius: 7px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  font-size: 10px; font-weight: 700; color: var(--text-primary);
+  white-space: nowrap;
+  opacity: 0; transform: translateY(10px) scale(0.9);
+  animation: fh-ext-in 0.4s ease-out 0.35s forwards;
+}
+@keyframes fh-ext-in { to { opacity: 1; transform: translateY(0) scale(1); } }
+.fh-ext-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
 /* 9 индикаторов: плитки проявляются каскадом */
 .fh-ind-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
 .fh-ind-tile {
@@ -2448,7 +2472,7 @@ a.btn-accent:active {
   .fh-pop, .fh-scr-row, .fh-yur-chip--fiz, .fh-yur-chip--yur, .fh-yur-line--fiz,
   .fh-yur-line--yur, .fh-sea-switch, .fh-sea-knob, .fh-sea-bar--outlier,
   .fh-fund-box--on, .fh-fund-check, .fh-rng-fill, .fh-al-bell, .fh-al-toast,
-  .fh-term-panel, .fh-ind-tile {
+  .fh-term-panel, .fh-ind-tile, .fh-ext-panel {
     animation-duration: 0.001s;
     animation-delay: 0s;
   }
