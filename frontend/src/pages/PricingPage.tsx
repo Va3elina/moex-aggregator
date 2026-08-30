@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, X, Gift, Heart, Clock,
+  X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
@@ -25,7 +25,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
 import { API_CSV_ENABLED } from '../config/features';
-import { FEATURE_HINTS, FeatureHintRow } from '../components/pricing/featureHints';
+import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
 
 interface PlanVariant {
   plan_id: string;
@@ -54,17 +54,6 @@ interface PlansResponse {
   /** Длительность триала по tier'ам: {basic:14, pro:7}. */
   trial_days?: Record<string, number>;
 }
-
-// Визуал tier'ов: иконка + акцентный цвет.
-// Editorial palette: все цвета через CSS-vars (theme-aware: light/dark).
-// Pro выделен var(--accent) (pumpkin) — это «звезда» каталога, остальные —
-// нейтральные оттенки с возрастающим контрастом снизу вверх.
-const TIER_META: Record<string, { color: string; accentBg: string }> = {
-  free:    { color: 'var(--text-muted)',     accentBg: 'color-mix(in srgb, var(--text-muted) 12%, transparent)' },
-  basic:   { color: 'var(--text-secondary)', accentBg: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' },
-  pro:     { color: 'var(--accent)',         accentBg: 'color-mix(in srgb, var(--accent) 14%, transparent)' },
-  premium: { color: 'var(--text-primary)',   accentBg: 'color-mix(in srgb, var(--text-primary) 12%, transparent)' },
-};
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
 // admin=99 — у админа полный доступ, тарифы скрываются.
@@ -467,154 +456,16 @@ export default function PricingPage() {
             (!isAuthenticated || billing?.trial_eligible === true);
 
           return (
-            <div
+            <TierPlanCard
               key={tier.tier}
-              className="relative rounded-2xl border p-5 flex flex-col"
-              style={{
-                borderColor: isCurrent ? meta.color : 'var(--border-color)',
-                backgroundColor: 'var(--bg-secondary)',
-                boxShadow: isCurrent ? `0 0 0 2px ${meta.color}40` : undefined,
-              }}
+              tier={tier.tier}
+              title={tier.title}
+              variant={variant}
+              period={period}
+              monthlyAmount={tier.monthly?.amount ?? null}
+              trialDays={canTrial ? trialDays : null}
+              isCurrent={isCurrent}
             >
-              {/* Badge */}
-              {variant?.badge && (
-                <div
-                  className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap"
-                  style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
-                >
-                  {variant.badge}
-                </div>
-              )}
-              {isCurrent && (
-                <div
-                  className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-                  style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
-                >
-                  Текущий
-                </div>
-              )}
-
-              {/* Заголовок без иконки (решение владельца 2026-08-29): плашка с
-                  пиктограммой не несла смысла и утяжеляла шапку карточки.
-                  tier.description с бэка не рендерим: «Базовый доступ к сайту» /
-                  «Расширенный доступ на уровне Basic» ничего не добавляют к названию,
-                  содержание тарифа раскрывает список фич ниже. */}
-              <h3 className="text-lg font-bold text-theme-primary mb-1.5">{tier.title}</h3>
-
-              {/* Цена.
-                  Годовой тариф показываем в пересчёте на месяц (крупно), а полную
-                  периодичность списания и экономию — строками ниже. Так цены месяца
-                  и года сравнимы «в лоб»; полная сумма списания раскрывается до
-                  оплаты в consent-модалке и на форме T-Bank. */}
-              <div className="mb-5">
-                {variant ? (
-                  <>
-                    <div className="flex items-baseline gap-1.5 flex-wrap">
-                      <span
-                        className="font-bold text-theme-primary leading-none"
-                        style={{
-                          // Fluid scale: 1.5rem на узких → 2rem на широких карточках.
-                          // clamp() предотвращает overflow когда длинная цена (19 990 ₽)
-                          // не помещается в узкую карточку на грид 4-в-ряд.
-                          fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {(period === 'yearly'
-                          ? Math.round(variant.amount / 12)
-                          : variant.amount
-                        ).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
-                      </span>
-                      <span className="text-sm text-theme-secondary leading-none">
-                        /мес
-                      </span>
-                    </div>
-                    {period === 'yearly' && (
-                      <div className="mt-1.5 space-y-0.5">
-                        <div className="text-xs text-theme-muted">
-                          Оплата раз в год
-                        </div>
-                        {tier.monthly && tier.monthly.amount * 12 > variant.amount && (
-                          <div className="text-xs" style={{ color: meta.color, fontWeight: 600 }}>
-                            Вы экономите {(tier.monthly.amount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽ в год
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div
-                    className="font-bold text-theme-primary leading-none"
-                    style={{
-                      fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Бесплатно
-                  </div>
-                )}
-              </div>
-
-              {/* Бесплатный пробный период — выделенный чип, главная «фишка» карточки */}
-              {canTrial && (
-                <div
-                  className="inline-flex items-center gap-2 mb-4 -mt-1 px-3 py-2 rounded-xl font-extrabold leading-tight"
-                  style={{
-                    color: meta.color,
-                    background: meta.accentBg,
-                    border: `1.5px solid ${meta.color}`,
-                    fontSize: 'clamp(0.95rem, 1.5vw, 1.1rem)',
-                  }}
-                >
-                  <Gift size={20} strokeWidth={2.4} className="flex-shrink-0" />
-                  <span>{trialDays} дней бесплатно</span>
-                </div>
-              )}
-
-              {/* Features list — TradingView-формат: ЕДИНЫЙ список фич в платных
-                  карточках (Pro повторяет пункты Basic), включённое — с галкой,
-                  недоступное — приглушённый крест. Источник — CARD_FEATURES.
-                  У Free списка НЕТ намеренно (решение владельца 2026-08-24):
-                  карточка не раскрывает, что входит в бесплатный тариф, —
-                  содержимое Free видно только в сравнительной таблице ниже. */}
-              {tier.tier === 'free' && <div className="flex-1 mb-5" />}
-              {tier.tier !== 'free' && (
-              <ul className="flex-1 space-y-2 mb-5 text-sm">
-                {CARD_FEATURES.map((f, i) => {
-                  const v = f[(tier.tier === 'basic' || tier.tier === 'pro' ? tier.tier : 'free')];
-                  const included = v !== false;
-                  const label = typeof v === 'string' ? v : f.label;
-                  // soon = фича в этом тарифе заявлена, но ещё не работает:
-                  // часы вместо галки и приглушённый текст, чтобы её не
-                  // приняли за уже доступную.
-                  const soon = included && f.soon === true;
-                  // Строка-апгрейд: в Pro значение отличается от Basic. Общий
-                  // список фич в обеих карточках сохраняем (цены сравнимы «в
-                  // лоб»), но в Pro эти строки красим в цвет тарифа и делаем
-                  // полужирными — иначе три реальных отличия тонут среди
-                  // десятка одинаковых галок и Pro читается как «то же самое».
-                  const isUpgrade = tier.tier === 'pro' && !soon && f.pro !== f.basic;
-                  return (
-                    <FeatureHintRow
-                      key={i}
-                      hint={FEATURE_HINTS[f.key]}
-                      style={included && !soon
-                        ? { color: isUpgrade ? meta.color : 'var(--text-secondary)', fontWeight: isUpgrade ? 600 : undefined }
-                        : { color: 'var(--text-muted)', opacity: soon ? 0.8 : 0.55 }}
-                    >
-                      {soon ? (
-                        <Clock size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                      ) : included ? (
-                        <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: meta.color }} />
-                      ) : (
-                        <X size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                      )}
-                      <span>{label}</span>
-                    </FeatureHintRow>
-                  );
-                })}
-              </ul>
-              )}
 
               {/* Кнопка */}
               {tier.tier === 'free' ? (
@@ -675,7 +526,7 @@ export default function PricingPage() {
                           : 'Оформить'}
                 </button>
               )}
-            </div>
+            </TierPlanCard>
           );
         })}
       </div>
@@ -1392,58 +1243,3 @@ function PaymentMethods() {
     </div>
   );
 }
-
-/**
- * CARD_FEATURES — единый список фич для карточек тарифов (TradingView-формат).
- *
- * Одна строка = одна фича во всех трёх карточках, в одинаковом порядке.
- * Значение per-tier: true = включено (галка), false = недоступно (серый крест),
- * строка = включено с кастомной формулировкой (20 уведомлений / Безлимит).
- * soon = фича заявлена, но ещё не работает: вместо галки часы, текст приглушён.
- *
- * Строки, где pro отличается от basic, карточка Pro подсвечивает сама (см.
- * isUpgrade в рендере) — отдельного флага в данных для этого не нужно.
- *
- * Источник истины — api/billing/features.py: сюда попадают только реально
- * работающие гейты. Не обещать здесь то, что матрица не энфорсит; исключение —
- * строки с soon, которые прямо помечены как ещё не запущенные.
- */
-const CARD_FEATURES: Array<{
-  /** Ключ подсказки в FEATURE_HINTS (components/pricing/featureHints.tsx). */
-  key: string;
-  label: string;
-  free: boolean | string;
-  basic: boolean | string;
-  pro: boolean | string;
-  soon?: boolean;
-}> = [
-  { key: 'indicators', label: 'Все 9 индикаторов',            free: true,  basic: true, pro: true },
-  { key: 'assets',     label: 'Все активы и таймфреймы',      free: true,  basic: true, pro: true },
-  { key: 'history',    label: 'Вся история',                  free: true,  basic: true, pro: true },
-  // Задержка 24 ч на free есть только в Открытых позициях (features.py).
-  { key: 'delay',      label: 'Открытые позиции без задержки', free: false, basic: true, pro: true },
-  // Два флага матрицы (clgroup_yur + metric_traders) одной строкой — оба
-  // открываются вместе на Basic, разделять их в карточке незачем.
-  { key: 'yur',        label: 'Юрлица и число трейдеров',     free: false, basic: true, pro: true },
-  { key: 'screener',   label: 'Скринер сигналов',             free: false, basic: true, pro: true },
-  { key: 'seasonality', label: 'Фильтры сезонности',          free: false, basic: true, pro: true },
-  { key: 'funds',      label: 'Свой набор фондов',            free: false, basic: true, pro: true },
-  { key: 'range',      label: 'Свой период сравнения',        free: false, basic: true, pro: true },
-  { key: 'alerts',     label: 'Уведомления в Telegram',       free: false, basic: '20 уведомлений в Telegram', pro: 'Безлимит уведомлений в Telegram' },
-  { key: 'terminal',   label: 'Свой терминал с панелями индикаторов', free: false, basic: false, pro: true },
-  // Расширение для браузера (гейт require_pro, см. ExtensionTokenSection): до
-  // 2026-08-30 фича жила только в личном кабинете, то есть про неё узнавали
-  // уже после оплаты. Отдельной строкой, а не вместе с нашим терминалом:
-  // это разные сценарии (свой рабочий стол против работы поверх чужого),
-  // и Pro нужен видимый вес отличий от Basic.
-  { key: 'extension',  label: 'Индикаторы в терминале Т-Инвестиций', free: false, basic: false, pro: true },
-  // KILL-SWITCH (config/features.ts): пока выключен — в Pro стоит анонс
-  // «скоро», чтобы направление было видно и никто не считал функцию рабочей.
-  // Когда включим — анонс заменяется двумя настоящими строками.
-  ...(API_CSV_ENABLED ? [
-    { key: 'download', label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
-    { key: 'download', label: 'API-доступ',          free: false, basic: false, pro: true },
-  ] : [
-    { key: 'download', label: 'Скачивание данных', free: false, basic: false, pro: 'Скачивание данных — скоро', soon: true },
-  ]),
-];
