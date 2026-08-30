@@ -137,16 +137,21 @@ def run_once() -> dict:
             summary["errors"] += 1
             print(f"[anomaly_scan] OI {sectype} skipped: {type(e).__name__}: {e}")
 
-    # Фонды — по категориям.
-    for category in FUND_CATEGORIES:
-        summary["scanned"] += 1
-        try:
-            c = _fund_candidate(category)
-            if c:
-                candidates.append(c)
-        except Exception as e:
-            summary["errors"] += 1
-            print(f"[anomaly_scan] funds {category} skipped: {type(e).__name__}: {e}")
+    # Фонды — по категориям. Kill-switch (config.FUNDS_FLOW_ALERTS_ENABLED):
+    # при выключенных fund-сигналах категории не сканируются и в публичную
+    # ленту не попадают; OI-часть ленты продолжает работать как обычно.
+    if not config.FUNDS_FLOW_ALERTS_ENABLED:
+        print("[anomaly_scan] fund-аномалии выключены (FUNDS_FLOW_ALERTS_ENABLED=0)")
+    else:
+        for category in FUND_CATEGORIES:
+            summary["scanned"] += 1
+            try:
+                c = _fund_candidate(category)
+                if c:
+                    candidates.append(c)
+            except Exception as e:
+                summary["errors"] += 1
+                print(f"[anomaly_scan] funds {category} skipped: {type(e).__name__}: {e}")
 
     summary["found"] = len(candidates)
     if not candidates:

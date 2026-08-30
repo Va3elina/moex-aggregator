@@ -34,6 +34,7 @@ from signals.detectors.oi import (  # noqa: E402
     compute_oi_z, compute_position_atr, compute_participants_atr, min_part,
 )
 from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
+from signals import config                             # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
 from signals.email_notify import send_email          # noqa: E402
 
@@ -263,6 +264,12 @@ def compute_value(a: Alert):
         #     вся категория (backward-compat со старыми fund-алертами).
         # direction: 'up' приток / 'down' отток. Дневная метрика → signal_date для
         # гейта «новый торговый день» (как у oi_move).
+        # Kill-switch (config.FUNDS_FLOW_ALERTS_ENABLED, .env на хосте): не
+        # считаем значение → вызывающий код уводит алерт в skipped, ничего не
+        # шлёт и не пишет alert_fires. Подписка остаётся active: после снятия
+        # флага рассылка продолжится сама, ручного восстановления не нужно.
+        if not config.FUNDS_FLOW_ALERTS_ENABLED:
+            return None, None
         fund_ids = _parse_fund_ids(a.fund_ids)
         category = None if a.asset in ("all", "custom") else a.asset
         r = compute_fund_flow_atr(fund_ids, category)
