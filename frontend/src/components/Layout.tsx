@@ -59,6 +59,9 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   // adminOnly: обкатка перед возможным публичным релизом (сама страница и API
   // тоже гейтятся по role=admin).
   { path: '/repo', label: 'Репо в акциях', badge: 'Тест', adminOnly: true },
+  // «Перекраска» — % free float, сменивший руки за месяц (CDV 4Ч / free float).
+  // adminOnly-обкатка, как и «Репо»: страница и API под role=admin.
+  { path: '/admin/repaint', label: 'Перекраска', badge: 'Тест', adminOnly: true },
 ];
 
 export default function Layout() {
