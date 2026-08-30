@@ -3,19 +3,24 @@
  *
  * Раньше внизу главной был только текстовый CTA-блок «Начни разбираться в
  * рынке» с двумя кнопками. Решение владельца 2026-08-30: гость должен видеть
- * тарифы прямо на главной, не переходя на /pricing, и всё это — внутри одного
- * крупного оранжевого блока: сверху легенда, ниже переключатель Месяц/Год и
- * карточки TierPlanCard (та же вёрстка, что на странице тарифов, иначе они
- * разъезжаются). Отдельных кнопок «Попробовать бесплатно» и «Сравнить тарифы
- * подробно» нет — CTA несут сами карточки; они ведут на /pricing: покупка и
- * триал требуют авторизации и consent-модалки, их место — на странице тарифов.
+ * тарифы прямо на главной, не переходя на /pricing. Оранжевый блок-легенда и
+ * тарифная сетка — раздельные блоки (класть карточки внутрь accent-фона
+ * пробовали и откатили). Карточки — TierPlanCard, та же вёрстка, что на
+ * странице тарифов, иначе они разъезжаются.
+ *
+ * Кнопка карточки запускает обычный цикл оформления, а не ведёт на /pricing:
+ * лендинг виден только гостям (App.tsx редиректит залогиненных с «/»), поэтому
+ * клик — это всегда первый шаг цикла «нет аккаунта → регистрация»: тот же
+ * navigate('/login?next=/pricing'), что делает handleCheckout/handleTrialStart
+ * на странице тарифов для гостя. После входа юзер попадает на /pricing уже
+ * авторизованным и завершает оплату там (consent-модалка, T-Bank).
  *
  * Цены тянем из публичного GET /api/billing/plans (auth не нужен, см.
  * api/routers/billing.py). Если запрос упал, секция схлопывается до
  * заголовка-легенды: пустые карточки без цен хуже, чем их отсутствие.
  */
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import TierPlanCard, { TIER_META, type PlanVariant } from '../pricing/TierPlanCard';
 import { apiFetch } from '../../services/api';
 
@@ -34,6 +39,7 @@ interface PlansResponse {
 }
 
 export default function LandingPricing() {
+  const navigate = useNavigate();
   const [data, setData] = useState<PlansResponse | null>(null);
   // Годовой по умолчанию — как на /pricing (выгоднее, и цена сопоставима «в лоб»).
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly');
@@ -51,18 +57,23 @@ export default function LandingPricing() {
   // текст легенды выше, а карточки — платные тарифы.
   const paid = (data?.tiers || []).filter((t) => t.tier !== 'free');
 
+  // Первый шаг цикла оформления для гостя — регистрация с возвратом на
+  // страницу тарифов, где уже авторизованным завершается оплата/триал
+  // (зеркало guest-ветки handleCheckout/handleTrialStart в PricingPage).
+  const startSignup = () => navigate('/login?next=/pricing');
+
   return (
-    <section
-      className="editorial-frame"
-      style={{
-        backgroundColor: 'var(--accent)',
-        borderColor: 'var(--text-primary)',
-        padding: 'clamp(32px, 5vw, 64px) clamp(16px, 3vw, 48px)',
-        marginTop: 'clamp(24px, 4vw, 48px)',
-      }}
-    >
-      {/* Легенда — бывший финальный CTA лендинга, теперь шапка тарифной сетки. */}
-      <div className="text-center">
+    <>
+      {/* Легенда на accent-фоне — бывший финальный CTA лендинга. */}
+      <section
+        className="editorial-frame text-center"
+        style={{
+          backgroundColor: 'var(--accent)',
+          borderColor: 'var(--text-primary)',
+          padding: 'clamp(32px, 5vw, 64px) clamp(20px, 4vw, 60px)',
+          marginTop: 'clamp(24px, 4vw, 48px)',
+        }}
+      >
         <p
           className="mb-5 uppercase"
           style={{
@@ -89,7 +100,7 @@ export default function LandingPricing() {
           <span style={{ fontStyle: 'italic' }}>в рынке</span>
         </h2>
         <p
-          className="mb-8 max-w-xl mx-auto"
+          className="max-w-xl mx-auto"
           style={{
             color: 'var(--text-inverse)',
             opacity: 0.85,
@@ -100,17 +111,16 @@ export default function LandingPricing() {
           Бесплатный доступ к базовым индикаторам: без оплаты и без карты.
           Тарифы Basic и Pro пригодятся, когда понадобятся данные в реальном времени, расширенная история и продвинутые режимы.
         </p>
-      </div>
+      </section>
 
       {paid.length > 0 && (
-        <div>
+        <section style={{ marginTop: 'clamp(28px, 4vw, 48px)' }}>
           {/* Переключатель Месяц / Год — копия блока с /pricing (компактный,
-              размеры в px: root font-size 20px делает rem-классы в 1.25x).
-              На accent-фоне пилюля с bg-secondary читается как светлый чип. */}
+              размеры в px: root font-size 20px делает rem-классы в 1.25x). */}
           <div className="flex justify-center mb-6">
             <div
               className="inline-flex rounded-full border"
-              style={{ borderColor: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: 2 }}
+              style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)', padding: 2 }}
             >
               <button
                 onClick={() => setPeriod('monthly')}
@@ -163,19 +173,21 @@ export default function LandingPricing() {
                   monthlyAmount={tier.monthly?.amount ?? null}
                   trialDays={trialDays}
                 >
-                  <Link
-                    to="/pricing"
-                    className="w-full py-3 rounded-xl text-sm font-semibold text-center block"
-                    style={{ backgroundColor: meta.color, color: 'var(--bg-primary)', textDecoration: 'none' }}
+                  {/* Текст кнопки — как у гостя на /pricing: триал начинается
+                      с регистрации, покупка — тоже. */}
+                  <button
+                    onClick={startSignup}
+                    className="w-full py-3 rounded-xl text-sm font-semibold transition-colors"
+                    style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                   >
-                    {trialDays ? `Попробовать ${trialDays} дней бесплатно` : 'Оформить'}
-                  </Link>
+                    {trialDays ? 'Зарегистрироваться и попробовать' : 'Оформить'}
+                  </button>
                 </TierPlanCard>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
-    </section>
+    </>
   );
 }
