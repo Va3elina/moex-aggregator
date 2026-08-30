@@ -697,10 +697,14 @@ export interface FlowDataPoint {
   flow_pct: number;   // Нетто в %
 }
 
+/** Сглаживание потоков: '3m' — скользящая сумма за 3 месяца (rolling). */
+export type FlowRolling = '3m';
+
 export interface FundsFlowsResponse {
   category: string;
   timeframe: FlowTimeframe;
   period: string;
+  rolling?: FlowRolling | null;
   flows: FlowDataPoint[];
 }
 
@@ -708,12 +712,14 @@ export async function getFundsFlows(
   category: FundCategory,
   timeframe: FlowTimeframe = '1w',
   period: FundPeriod = '1y',
-  fundIds?: number[]
+  fundIds?: number[],
+  rolling?: FlowRolling
 ): Promise<FundsFlowsResponse> {
   const params = new URLSearchParams({ category, timeframe, period });
   if (fundIds && fundIds.length > 0) {
     params.set('fund_ids', fundIds.join(','));
   }
+  if (rolling) params.set('rolling', rolling);
   const response = await apiFetch(`${API_BASE}/api/funds/flows?${params}`);
   // tier-403 ловит apiFetch (см. выше). Здесь — только НЕ-403 ошибки: detail/
   // error.message вместо генерик-текста.

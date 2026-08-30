@@ -134,6 +134,10 @@ export default function FundsMoneyPage() {
     // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
     const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
     const [flowTimeframe, setFlowTimeframeRaw] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1d');
+    // Сглаживание потоков: 'none' — поток за период ТФ, '3m' — скользящая
+    // сумма за 3 месяца (формат глобальных провайдеров, напр. Global Gold ETF
+    // Flows Rolling 3-Month). Считается на беке с догрузкой окна до периода.
+    const [flowRolling, setFlowRolling] = usePersistedState<'none' | '3m'>('frame:funds:flowRolling', 'none');
     const fundsAccess = useTierAccess('funds_money');
     const { showUpgrade } = useUpgradePrompt();
     // Алерты в мессенджере — квота по тарифу (0=Free/гость → апселл, как у OI-колокола).
@@ -382,7 +386,7 @@ export default function FundsMoneyPage() {
         async function loadFlowsData() {
             try {
                 setFlowsLoading(true);
-                const result = await getFundsFlows(category, flowTimeframe, period as FundPeriod, visibleFundIds);
+                const result = await getFundsFlows(category, flowTimeframe, period as FundPeriod, visibleFundIds, flowRolling === '3m' ? '3m' : undefined);
                 if (isStale()) return;
                 setFlowsData(result);
             } catch (err) {
@@ -403,7 +407,7 @@ export default function FundsMoneyPage() {
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked, awaitingFundsList]);
+    }, [viewMode, category, flowTimeframe, flowRolling, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked, awaitingFundsList]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
@@ -529,9 +533,16 @@ export default function FundsMoneyPage() {
     // ещё помещается в типичный mobile-card padding ~16px по бокам).
     const vw = useViewportWidth();
     const useShortFlowLabels = vw < 540;
-    const flowTitle = useShortFlowLabels
-        ? 'Чистые притоки и оттоки (млрд ₽)'
-        : `Чистые притоки и оттоки из фондов ${pairCategory?.genitive ?? ''} (млрд ₽)`;
+    // Режим сглаживания — от ОТОБРАЖАЕМОЙ пары (эхо бека), не от контрола:
+    // при переключении заголовок не должен опережать бары.
+    const pairRolling = flowsPair?.flows.rolling === '3m';
+    const flowTitle = pairRolling
+        ? (useShortFlowLabels
+            ? 'Потоки за скользящие 3 месяца (млрд ₽)'
+            : `Потоки из фондов ${pairCategory?.genitive ?? ''} за скользящие 3 месяца (млрд ₽)`)
+        : (useShortFlowLabels
+            ? 'Чистые притоки и оттоки (млрд ₽)'
+            : `Чистые притоки и оттоки из фондов ${pairCategory?.genitive ?? ''} (млрд ₽)`);
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -739,6 +750,31 @@ export default function FundsMoneyPage() {
                     </div>
                 )}
 
+                {/* Сглаживание: скользящая сумма потоков за 3 месяца — формат
+                    глобальных провайдеров (Global Gold ETF Flows Rolling
+                    3-Month). Ортогонально таймфрейму: окно по датам. */}
+                {viewMode === 'flows' && (
+                    <div style={{ order: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <SegmentedControl<'none' | '3m'>
+                        options={[
+                            { key: 'none', label: 'Обычный' },
+                            { key: '3m', label: 'Сумма 3М' },
+                        ]}
+                        value={flowRolling}
+                        onChange={setFlowRolling}
+                        trailing={
+                            <HelpTooltip
+                                sections={[
+                                    { heading: 'Обычный', body: 'Чистый поток за каждый отдельный период таймфрейма.' },
+                                    { heading: 'Сумма 3М', body: 'Каждый столбец — суммарный чистый поток за скользящие 3 месяца. Так показывают потоки глобальные управляющие компании: сглаживает дневной шум и проявляет устойчивые волны притоков и оттоков.' },
+                                ]}
+                                size={18}
+                            />
+                        }
+                    />
+                    </div>
+                )}
+
                 {/* Действия (Слои/Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика
                     (паттерн OI). Через portal монтируется в обёртку графика
                     (containerRef=chartAnchorRef). Слои зависят от режима. */}
@@ -894,6 +930,7 @@ export default function FundsMoneyPage() {
                             viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки',
                             PERIOD_LABELS[period] ?? period,
                             viewMode === 'flows' ? (flowTimeframe === '1d' ? 'День' : flowTimeframe === '1w' ? 'Неделя' : 'Месяц') : null,
+                            viewMode === 'flows' && flowRolling === '3m' ? 'Сумма 3М' : null,
                         ].filter(Boolean) as string[],
                     }}
                     getExportStyles={(): Record<string, string> => {
