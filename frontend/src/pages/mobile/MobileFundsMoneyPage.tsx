@@ -13,6 +13,7 @@ import { Wallet, Lock, AlarmClock } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
+import { FUND_ALERTS_ENABLED } from '../../config/alertsConfig';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
@@ -668,12 +669,14 @@ export default function MobileFundsMoneyPage() {
             </div>
           )}
 
-          {/* Сигналы по фондам — рабочая кнопка (только в режиме притоков).
+          {/* Сигналы по фондам (только в режиме притоков).
               Открывает CreateFundAlertModal БЕЗ привязки к текущей категории —
               фонды/категории выбираются внутри (дефолт — все фонды).
               Tier-гейт как у OI: quota=0 (Free/гость) → upgrade-промпт + замочек;
-              иначе закрываем sheet и открываем модалку создания. */}
-          {viewMode === 'flows' && (
+              иначе закрываем sheet и открываем модалку создания.
+              FUND_ALERTS_ENABLED=false — рассылка погашена на бэке, вход в
+              конструктор прячем (парно с десктопом). */}
+          {FUND_ALERTS_ENABLED && viewMode === 'flows' && (
             <div>
               <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 Сигналы
@@ -871,7 +874,7 @@ export default function MobileFundsMoneyPage() {
 
       {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ
           модалки (дефолт — все фонды), без привязки к текущей категории. */}
-      {fundAlertOpen && (
+      {FUND_ALERTS_ENABLED && fundAlertOpen && (
         <CreateFundAlertModal
           onClose={() => setFundAlertOpen(false)}
         />
