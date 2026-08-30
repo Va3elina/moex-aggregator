@@ -39,6 +39,7 @@ import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContex
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
 import CreateFundAlertModal from '../components/alerts/CreateFundAlertModal';
+import { FUND_ALERTS_ENABLED } from '../config/alertsConfig';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -847,15 +848,18 @@ export default function FundsMoneyPage() {
                       };
                     }}
                 />
-                {/* Сигналы по фондам — рабочая кнопка-колокол. Только в режиме
-                    притоков-оттоков. Открывает CreateFundAlertModal БЕЗ привязки к
-                    текущей категории — фонды/категории выбираются внутри (дефолт —
+                {/* Сигналы по фондам. Только в режиме притоков-оттоков.
+                    Открывает CreateFundAlertModal БЕЗ привязки к текущей
+                    категории — фонды/категории выбираются внутри (дефолт —
                     все фонды).
                     Tier-гейт как у OI-колокола: quota=0 (Free/гость) → замочек +
                     upgrade-промпт; иначе — модалка создания. Стиль зеркалит
                     AlertBellButton (paper pill, 2px border), с подписью «Сигнал»
-                    инлайн (в kebab-стеке бейдж-overlay задевал бы соседей). */}
-                {viewMode === 'flows' && (
+                    инлайн (в kebab-стеке бейдж-overlay задевал бы соседей).
+                    FUND_ALERTS_ENABLED=false — рассылка погашена на бэке
+                    (FUNDS_FLOW_ALERTS_ENABLED=0), кнопку прячем, чтобы не
+                    обещать уведомления, которые не придут. */}
+                {FUND_ALERTS_ENABLED && viewMode === 'flows' && (
                     <span
                         data-export-ignore="true"
                         className="relative inline-flex"
@@ -1041,7 +1045,7 @@ export default function FundsMoneyPage() {
 
             {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ
                 модалки (дефолт — все фонды), без привязки к текущей категории. */}
-            {fundAlertOpen && (
+            {FUND_ALERTS_ENABLED && fundAlertOpen && (
                 <CreateFundAlertModal
                     onClose={() => setFundAlertOpen(false)}
                 />
