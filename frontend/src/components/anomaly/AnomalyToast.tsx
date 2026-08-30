@@ -19,6 +19,7 @@ const TYPE_META: Record<string, { label: string; dot: string }> = {
   oi_participants: { label: 'Открытый интерес', dot: 'var(--accent-orange, #FF9100)' },
   funds_flow:      { label: 'Деньги в фондах',  dot: 'var(--accent-cyan, #00BCD4)' },
   promo:           { label: 'Канал Фрейма',     dot: 'var(--accent, #00E676)' },
+  data_release:    { label: 'Новые данные',     dot: 'var(--accent, #00E676)' },
 };
 
 interface Props {
@@ -39,8 +40,11 @@ export function AnomalyToast({
 }: Props) {
   const meta = TYPE_META[item.type] ?? { label: 'Сигнал', dot: 'var(--text-muted)' };
   const isPromo = item.type === 'promo';
+  // «Инфо»-типы без направления/подписки (промо канала, релиз данных): вместо
+  // строки «стрелка + ×N» показываем текст context, кнопку «Получать» прячем.
+  const isInfo = isPromo || item.type === 'data_release';
   const up = item.direction === 'up';
-  const dirColor = isPromo ? 'var(--accent, #00E676)'
+  const dirColor = isInfo ? 'var(--accent, #00E676)'
     : (up ? 'var(--success, #00E676)' : 'var(--danger, #FF5252)');
   const DirIcon = up ? TrendingUp : TrendingDown;
   const sev = item.severity_value != null ? `×${item.severity_value.toFixed(1)}` : '';
@@ -93,7 +97,7 @@ export function AnomalyToast({
         {item.headline}
       </div>
 
-      {isPromo ? (
+      {isInfo ? (
         item.context && (
           <div style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.4, marginBottom: 12 }}>
             {item.context}
@@ -123,11 +127,11 @@ export function AnomalyToast({
             fontSize: 13, fontWeight: 500, padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
           }}
         >
-          {locked && !isPromo && <Lock size={14} />}
-          {isPromo ? 'Открыть канал' : 'Открыть график'}
+          {locked && !isInfo && <Lock size={14} />}
+          {isPromo ? 'Открыть канал' : isInfo ? 'Открыть' : 'Открыть график'}
           {isPromo ? <ExternalLink size={15} /> : (!locked && <ArrowRight size={15} />)}
         </button>
-        {!isPromo && (
+        {!isInfo && (
         <button
           onClick={onSubscribe}
           disabled={subscribing || subscribed}

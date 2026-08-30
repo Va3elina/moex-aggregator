@@ -106,7 +106,7 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(item.created_at)}</span>
               </div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13, marginBottom: 3 }}>{item.headline}</div>
-              {item.type === 'promo' ? (
+              {item.type === 'promo' || item.type === 'data_release' ? (
                 item.context && (
                   <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{item.context}</div>
                 )
