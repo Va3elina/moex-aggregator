@@ -11,9 +11,9 @@
  * Кнопка карточки запускает обычный цикл оформления, а не ведёт на /pricing:
  * лендинг виден только гостям (App.tsx редиректит залогиненных с «/»), поэтому
  * клик — это всегда первый шаг цикла «нет аккаунта → регистрация»: тот же
- * navigate('/login?next=/pricing'), что делает handleCheckout/handleTrialStart
- * на странице тарифов для гостя. После входа юзер попадает на /pricing уже
- * авторизованным и завершает оплату там (consent-модалка, T-Bank).
+ * signupUrlForIntent, что зовёт handleCheckout/handleTrialStart на странице
+ * тарифов для гостя. Выбранный тариф едет в ?next= (см. utils/checkoutIntent),
+ * и после регистрации /pricing сразу открывает окно согласий на нём.
  *
  * Цены тянем из публичного GET /api/billing/plans (auth не нужен, см.
  * api/routers/billing.py). Если запрос упал, секция схлопывается до
@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TierPlanCard, { TIER_META, type PlanVariant } from '../pricing/TierPlanCard';
 import { apiFetch } from '../../services/api';
+import { signupUrlForIntent, type CheckoutIntent } from '../../utils/checkoutIntent';
 
 interface TierCard {
   tier: string;
@@ -60,7 +61,9 @@ export default function LandingPricing() {
   // Первый шаг цикла оформления для гостя — регистрация с возвратом на
   // страницу тарифов, где уже авторизованным завершается оплата/триал
   // (зеркало guest-ветки handleCheckout/handleTrialStart в PricingPage).
-  const startSignup = () => navigate('/login?next=/pricing');
+  // Выбранный тариф едет вместе с ним: на /pricing он сразу превращается в
+  // окно согласий, а не в просьбу нажать ту же кнопку второй раз.
+  const startSignup = (intent: CheckoutIntent | null) => navigate(signupUrlForIntent(intent));
 
   return (
     <>
@@ -176,7 +179,13 @@ export default function LandingPricing() {
                   {/* Текст кнопки — как у гостя на /pricing: триал начинается
                       с регистрации, покупка — тоже. */}
                   <button
-                    onClick={startSignup}
+                    onClick={() => startSignup(
+                      trialDays
+                        ? { kind: 'trial', tier: tier.tier, period }
+                        : variant
+                          ? { kind: 'plan', planId: variant.plan_id }
+                          : null,
+                    )}
                     className="w-full py-3 rounded-xl text-sm font-semibold transition-colors"
                     style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                   >
