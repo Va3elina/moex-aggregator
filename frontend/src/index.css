@@ -2073,14 +2073,6 @@ a.btn-accent:active {
 }
 
 
-/* Live-точка "данные обновляются" — расширяющийся ring effect каждые 2с.
-   Используется в OverviewPage рядом с timestamp. */
-@keyframes frame-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); }
-  70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%, transparent); }
-}
-
 /* Skeleton loader — breathing pulse для placeholder'ов.
    Используется в <Skeleton /> компоненте когда данные ещё не загружены.
    Opacity от 0.5 до 1 → визуально "дышащий" прямоугольник = "грузится". */

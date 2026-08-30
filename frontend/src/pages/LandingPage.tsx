@@ -12,7 +12,7 @@
  *        — «Закономерности и текущая картина» (Сезонность, Карта рынка)
  *   3. FINAL CTA — «Начни разбираться в рынке» + тарифная сетка (LandingPricing)
  *
- * Залогиненные users видят OverviewPage (dashboard). Роутер делает conditional.
+ * Залогиненных роутер редиректит с "/" на /heatmap (conditional в App.tsx).
  */
 import { Link } from 'react-router-dom';
 import {
