@@ -1395,6 +1395,8 @@ export interface RepoVolumePoint {
   date: string;   // ISO YYYY-MM-DD
   close: number;  // спот-закрытие, ₽
   repo: number;   // дневной объём РЕПО с ЦК, ₽ (0 = сделок не было)
+  rate: number | null;    // ставка стакана EQRP, % годовых (null = сделок не было)
+  rusfar: number | null;  // RUSFAR — бенчмарк цены денег, % годовых
 }
 
 export interface RepoVolumeResponse {
