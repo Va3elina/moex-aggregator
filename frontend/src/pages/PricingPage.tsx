@@ -588,12 +588,18 @@ export default function PricingPage() {
                   // часы вместо галки и приглушённый текст, чтобы её не
                   // приняли за уже доступную.
                   const soon = included && f.soon === true;
+                  // Строка-апгрейд: в Pro значение отличается от Basic. Общий
+                  // список фич в обеих карточках сохраняем (цены сравнимы «в
+                  // лоб»), но в Pro эти строки красим в цвет тарифа и делаем
+                  // полужирными — иначе три реальных отличия тонут среди
+                  // десятка одинаковых галок и Pro читается как «то же самое».
+                  const isUpgrade = tier.tier === 'pro' && !soon && f.pro !== f.basic;
                   return (
                     <FeatureHintRow
                       key={i}
                       hint={FEATURE_HINTS[f.key]}
                       style={included && !soon
-                        ? { color: 'var(--text-secondary)' }
+                        ? { color: isUpgrade ? meta.color : 'var(--text-secondary)', fontWeight: isUpgrade ? 600 : undefined }
                         : { color: 'var(--text-muted)', opacity: soon ? 0.8 : 0.55 }}
                     >
                       {soon ? (
@@ -1145,9 +1151,11 @@ function ComparisonMatrix() {
       icon: Settings,
       rows: [
         // Квоты features.py: telegram_alerts_quota 0/20/безлимит.
-        ['Алерты в Telegram', '—', '20', 'Безлимит'],
+        ['Уведомления в Telegram', '—', '20', 'Безлимит'],
         // Вход в /sandbox гейтится на Pro (SandboxEntryButton).
-        ['Терминал (рабочий стол с индикаторами)', '—', '—', 'Да'],
+        ['Свой терминал (рабочий стол с индикаторами)', '—', '—', 'Да'],
+        // Токен расширения выдаётся только Pro (require_pro, ExtensionTokenSection).
+        ['Индикаторы в терминале Т-Инвестиций (расширение)', '—', '—', 'Да'],
         // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
         ...(API_CSV_ENABLED ? ([
           ['Экспорт CSV / Excel', '—', '—', 'Да'],
@@ -1390,8 +1398,11 @@ function PaymentMethods() {
  *
  * Одна строка = одна фича во всех трёх карточках, в одинаковом порядке.
  * Значение per-tier: true = включено (галка), false = недоступно (серый крест),
- * строка = включено с кастомной формулировкой («20 алертов» / «Безлимит алертов»).
+ * строка = включено с кастомной формулировкой (20 уведомлений / Безлимит).
  * soon = фича заявлена, но ещё не работает: вместо галки часы, текст приглушён.
+ *
+ * Строки, где pro отличается от basic, карточка Pro подсвечивает сама (см.
+ * isUpgrade в рендере) — отдельного флага в данных для этого не нужно.
  *
  * Источник истины — api/billing/features.py: сюда попадают только реально
  * работающие гейты. Не обещать здесь то, что матрица не энфорсит; исключение —
@@ -1418,8 +1429,14 @@ const CARD_FEATURES: Array<{
   { key: 'seasonality', label: 'Фильтры сезонности',          free: false, basic: true, pro: true },
   { key: 'funds',      label: 'Свой набор фондов',            free: false, basic: true, pro: true },
   { key: 'range',      label: 'Свой период сравнения',        free: false, basic: true, pro: true },
-  { key: 'alerts',     label: 'Алерты в Telegram',            free: false, basic: '20 алертов в Telegram', pro: 'Безлимит алертов в Telegram' },
-  { key: 'terminal',   label: 'Терминал',                     free: false, basic: false, pro: true },
+  { key: 'alerts',     label: 'Уведомления в Telegram',       free: false, basic: '20 уведомлений в Telegram', pro: 'Безлимит уведомлений в Telegram' },
+  { key: 'terminal',   label: 'Свой терминал с панелями индикаторов', free: false, basic: false, pro: true },
+  // Расширение для браузера (гейт require_pro, см. ExtensionTokenSection): до
+  // 2026-08-30 фича жила только в личном кабинете, то есть про неё узнавали
+  // уже после оплаты. Отдельной строкой, а не вместе с нашим терминалом:
+  // это разные сценарии (свой рабочий стол против работы поверх чужого),
+  // и Pro нужен видимый вес отличий от Basic.
+  { key: 'extension',  label: 'Индикаторы в терминале Т-Инвестиций', free: false, basic: false, pro: true },
   // KILL-SWITCH (config/features.ts): пока выключен — в Pro стоит анонс
   // «скоро», чтобы направление было видно и никто не считал функцию рабочей.
   // Когда включим — анонс заменяется двумя настоящими строками.

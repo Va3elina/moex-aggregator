@@ -128,6 +128,23 @@ function VisualAlerts() {
   );
 }
 
+/** Расширение: панель Фрейма всплывает поверх графика чужого терминала. */
+function VisualExtension() {
+  return (
+    <div className="fh-visual fh-ext-wrap">
+      <div className="fh-ext-bg">
+        {[38, 64, 47, 72, 55, 83, 61].map((h, i) => (
+          <span key={i} className="fh-ext-candle" style={{ height: `${h}%` }} />
+        ))}
+      </div>
+      <div className="fh-ext-panel">
+        <span className="fh-ext-dot" />
+        <span>Открытые позиции</span>
+      </div>
+    </div>
+  );
+}
+
 /** Терминал: панели рабочего стола собираются на экране одна за другой. */
 function VisualTerminal() {
   return (
@@ -165,6 +182,7 @@ const VISUALS: Record<string, () => ReactNode> = {
   range: VisualRange,
   alerts: VisualAlerts,
   terminal: VisualTerminal,
+  extension: VisualExtension,
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -222,14 +240,19 @@ export const FEATURE_HINTS: Record<string, FeatureHint> = {
     visual: 'range',
   },
   alerts: {
-    title: 'Алерты в Telegram',
-    text: 'Личные условия на цену, открытый интерес и потоки фондов. Срабатывания приходят в Telegram и на сайт.',
+    title: 'Уведомления в Telegram',
+    text: 'Личные условия на цену, открытый интерес и потоки фондов. Срабатывания приходят в Telegram и на сайт. На Pro число условий не ограничено.',
     visual: 'alerts',
   },
   terminal: {
-    title: 'Терминал',
+    title: 'Свой терминал',
     text: 'Рабочий стол с панелями индикаторов на одном экране: своя раскладка, вкладки, несколько графиков рядом.',
     visual: 'terminal',
+  },
+  extension: {
+    title: 'Индикаторы в терминале Т-Инвестиций',
+    text: 'Браузерное расширение показывает панели Фрейма плавающими окнами поверх терминала. Стакан и заявки остаются на месте, аналитика рядом.',
+    visual: 'extension',
   },
   download: {
     title: 'Скачивание данных',
