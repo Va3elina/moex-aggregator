@@ -8,6 +8,7 @@ from sqlalchemy import text
 from typing import Literal, Optional, List
 from datetime import date, timedelta
 from collections import defaultdict
+from bisect import bisect_right
 import time
 
 from api.billing.features import get_indicator_limits
@@ -845,16 +846,19 @@ async def get_funds_flows(
                 if best_day is not None:
                     corrections[(fid, best_day)] = corrections.get((fid, best_day), 0.0) + impact_bln * 1e9
 
-            flows = []
-
-            if timeframe == "1d":
-                # Строим date -> (nav, pay) per fund
+            # Дневные чистые потоки в рублях — базовая, самая точная
+            # дискретизация: поток = ΔСЧА − переоценка, где переоценка берётся
+            # от СЧА на начало ШАГА. На крупном слоте (неделя/месяц) переоценка
+            # считается от СЧА начала слота и занижается, если СЧА росла внутри
+            # него, поэтому величина НЕ складывается из подпериодов. Отсюда же
+            # считается скользящая сумма (см. rolling ниже).
+            def compute_daily_rows():
                 fund_date_map: dict = {
                     fid: {d: (nav, pay) for d, nav, pay in rows}
                     for fid, rows in fund_series.items()
                 }
                 all_dates = sorted(set(d for rows in fund_series.values() for d, _, _ in rows))
-
+                out = []
                 for i in range(1, len(all_dates)):
                     prev_d = all_dates[i - 1]
                     curr_d = all_dates[i]
@@ -884,6 +888,13 @@ async def get_funds_flows(
                         else:
                             gross_out += net_flow
 
+                    out.append((prev_d, curr_d, total_net, gross_in, gross_out, prev_total))
+                return out
+
+            flows = []
+
+            if timeframe == "1d":
+                for prev_d, curr_d, total_net, gross_in, gross_out, prev_total in compute_daily_rows():
                     flows.append({
                         "period_start": prev_d.isoformat(),
                         "period_end": curr_d.isoformat(),
@@ -961,35 +972,44 @@ async def get_funds_flows(
                             "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
                         })
 
-            # Скользящая сумма за 3 месяца: окно (period_end - 92д, period_end]
-            # по уже посчитанным слотам, префикс-суммы + two-pointer (O(n)).
-            # flow_pct — сумма слотовых процентов (аппроксимация без компаунда).
-            # После свёртки обрезаем лукбэк: наружу уходят только слоты
-            # запрошенного периода, но их окна уже полные.
+            # Скользящая сумма за 3 месяца. Считается ВСЕГДА по ДНЕВНЫМ потокам
+            # за настоящие 92 дня до даты столбца; таймфрейм остаётся только
+            # сеткой отрисовки. Иначе окно набиралось бы целыми слотами (на
+            # месячном ТФ майский слот попадал в него целиком → 115 дней вместо
+            # 92), и значение скользящей суммы зависело бы от выбранного
+            # таймфрейма — на золоте расхождение неделя/месяц доходило до 53%.
+            # Дневная база заодно снимает ошибку переоценки на крупных слотах.
+            # flow_pct — доля от суммарной СЧА фондов на начало окна.
             if rolling == "3m" and flows:
                 win = timedelta(days=92)
-                ends = [date.fromisoformat(f["period_end"]) for f in flows]
-                pref_net, pref_in, pref_out, pref_pct = [0.0], [0.0], [0.0], [0.0]
-                for f in flows:
-                    pref_net.append(pref_net[-1] + f["flow"])
-                    pref_in.append(pref_in[-1] + f["gross_in"])
-                    pref_out.append(pref_out[-1] + f["gross_out"])
-                    pref_pct.append(pref_pct[-1] + f["flow_pct"])
+                daily = compute_daily_rows()
+                d_ends = [r[1] for r in daily]
+                pref_net, pref_in, pref_out = [0.0], [0.0], [0.0]
+                for r in daily:
+                    pref_net.append(pref_net[-1] + r[2])
+                    pref_in.append(pref_in[-1] + r[3])
+                    pref_out.append(pref_out[-1] + r[4])
                 rolled = []
-                j = 0
-                for i, f in enumerate(flows):
-                    lo = ends[i] - win
-                    while ends[j] <= lo:
-                        j += 1
+                for f in flows:
+                    end_d = date.fromisoformat(f["period_end"])
+                    lo_d = end_d - win
+                    hi_i = bisect_right(d_ends, end_d)   # дневные шаги ≤ конца слота
+                    lo_i = bisect_right(d_ends, lo_d)    # первый шаг внутри окна
+                    if hi_i <= lo_i:
+                        continue  # окно без единого дневного шага — столбца нет
+                    net = pref_net[hi_i] - pref_net[lo_i]
+                    base = daily[lo_i][5]  # СЧА фондов на начало окна
                     rolled.append({
-                        "period_start": flows[j]["period_start"],
+                        "period_start": (lo_d + timedelta(days=1)).isoformat(),
                         "period_end": f["period_end"],
-                        "flow": round(pref_net[i + 1] - pref_net[j], 4),
-                        "gross_in": round(pref_in[i + 1] - pref_in[j], 4),
-                        "gross_out": round(pref_out[i + 1] - pref_out[j], 4),
-                        "flow_pct": round(pref_pct[i + 1] - pref_pct[j], 2),
+                        "flow": round(net / 1e9, 4),
+                        "gross_in": round((pref_in[hi_i] - pref_in[lo_i]) / 1e9, 4),
+                        "gross_out": round((pref_out[hi_i] - pref_out[lo_i]) / 1e9, 4),
+                        "flow_pct": round((net / base) * 100, 2) if base > 0 else 0,
                     })
-                flows = [f for i, f in enumerate(rolled) if ends[i] >= requested_from]
+                # Обрезаем лукбэк: наружу уходят только слоты запрошенного
+                # периода, но окно каждого из них уже полное.
+                flows = [f for f in rolled if date.fromisoformat(f["period_end"]) >= requested_from]
 
             return {
                 "category": category,
