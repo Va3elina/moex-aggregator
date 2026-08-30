@@ -92,6 +92,9 @@ const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
 // ветка с lazy() выпадает при сборке и на прод не уезжает.
 const ChartLabPage = lazy(() => import('./pages/dev/ChartLabPage'));
 const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
+// Репо в акциях — экспериментальная вкладка (тест гипотезы «репо ≈ шорты»),
+// desktop-only: мобильной версии нет, на телефоне отдаётся fallback-chrome.
+const RepoVolumePage = lazy(() => import('./pages/RepoVolumePage'));
 
 /** "/" conditional: auth → карта рынка, guest → Landing. */
 function HomeRoute() {
@@ -278,6 +281,7 @@ export default function App() {
                 desktop={<CbrFlowsPage />}
               />
             } />
+            <Route path="/repo" element={<RepoVolumePage />} />
             {/* Методология индикаторов */}
             <Route path="/methodology/oi" element={<OIMethodologyPage />} />
             <Route path="/methodology/heatmap" element={<HeatmapMethodologyPage />} />

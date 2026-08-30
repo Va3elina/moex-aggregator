@@ -37,6 +37,7 @@ from api.routers import (
     public_api_router,
     fund_trades_router,
     oi_intl_router,
+    repo_volume_router,
 )
 from api.routers import stats
 from api.routers import health_monitor  # ← /api/health/data (барометр свежести, admin/X-API-Key)
@@ -505,6 +506,7 @@ app.include_router(breadth_router)
 app.include_router(buffett_router)
 app.include_router(seasonality_router)
 app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участников)
+app.include_router(repo_volume_router)  # ← /api/repo/* (репо в акциях — тест гипотезы о шортах)
 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
 app.include_router(health_monitor.router)  # ← /api/health/data (always-on, НЕ под kill-switch)
 # KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска.
