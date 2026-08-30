@@ -669,6 +669,7 @@ async def get_funds_flows(
     timeframe: FlowTimeframeType = Query("1w", description="Таймфрейм агрегации"),
     period: PeriodType = Query("1y", description="Общий период данных"),
     fund_ids_filter: Optional[str] = Query(None, alias="fund_ids", description="ID фондов через запятую (если не указаны — все)"),
+    rolling: Optional[str] = Query(None, description="Сглаживание: '3m' — скользящая сумма потоков за 3 месяца"),
     user = Depends(get_current_user_optional)
 ):
     """
@@ -677,7 +678,14 @@ async def get_funds_flows(
     Возвращает гистограмму:
     - flow > 0 → приток (зелёный)
     - flow < 0 → отток (красный)
+
+    rolling=3m: каждый слот — суммарный чистый поток за скользящие 92 дня
+    (формат глобальных провайдеров, напр. Global Gold ETF Flows Rolling
+    3-Month). История догружается на 92 дня ДО начала периода, чтобы окно
+    первых слотов было полным, — иначе левый край занижен.
     """
+    if rolling not in (None, "3m"):
+        raise HTTPException(status_code=400, detail="rolling: поддерживается только '3m'")
     # Tier-gating: timeframe (Free → только 1w/1m) + period + tickers_whitelist
     enforce_tier_limits(user, "funds_money", period=period, timeframe=timeframe)
 
@@ -731,6 +739,15 @@ async def get_funds_flows(
     min_date_str = CATEGORY_INDEX_MAP.get(category, {}).get("min_date")
     if min_date_str:
         date_from = max(date_from, date.fromisoformat(min_date_str))
+
+    # Скользящее окно требует истории ДО начала периода — расширяем выборку на
+    # ширину окна (с повторным клампом по min_date категории); requested_from
+    # запоминает исходную границу — по ней обрезается финальный ответ.
+    requested_from = date_from
+    if rolling == "3m":
+        date_from = date_from - timedelta(days=92)
+        if min_date_str:
+            date_from = max(date_from, date.fromisoformat(min_date_str))
 
     engine = get_engine()
 
@@ -944,10 +961,41 @@ async def get_funds_flows(
                             "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
                         })
 
+            # Скользящая сумма за 3 месяца: окно (period_end - 92д, period_end]
+            # по уже посчитанным слотам, префикс-суммы + two-pointer (O(n)).
+            # flow_pct — сумма слотовых процентов (аппроксимация без компаунда).
+            # После свёртки обрезаем лукбэк: наружу уходят только слоты
+            # запрошенного периода, но их окна уже полные.
+            if rolling == "3m" and flows:
+                win = timedelta(days=92)
+                ends = [date.fromisoformat(f["period_end"]) for f in flows]
+                pref_net, pref_in, pref_out, pref_pct = [0.0], [0.0], [0.0], [0.0]
+                for f in flows:
+                    pref_net.append(pref_net[-1] + f["flow"])
+                    pref_in.append(pref_in[-1] + f["gross_in"])
+                    pref_out.append(pref_out[-1] + f["gross_out"])
+                    pref_pct.append(pref_pct[-1] + f["flow_pct"])
+                rolled = []
+                j = 0
+                for i, f in enumerate(flows):
+                    lo = ends[i] - win
+                    while ends[j] <= lo:
+                        j += 1
+                    rolled.append({
+                        "period_start": flows[j]["period_start"],
+                        "period_end": f["period_end"],
+                        "flow": round(pref_net[i + 1] - pref_net[j], 4),
+                        "gross_in": round(pref_in[i + 1] - pref_in[j], 4),
+                        "gross_out": round(pref_out[i + 1] - pref_out[j], 4),
+                        "flow_pct": round(pref_pct[i + 1] - pref_pct[j], 2),
+                    })
+                flows = [f for i, f in enumerate(rolled) if ends[i] >= requested_from]
+
             return {
                 "category": category,
                 "timeframe": timeframe,
                 "period": period,
+                "rolling": rolling,
                 "flows": flows
             }
 
