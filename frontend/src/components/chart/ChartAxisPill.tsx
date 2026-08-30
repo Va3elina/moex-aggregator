@@ -14,6 +14,7 @@
  * масштабом, что и подписи тиков. По горизонтали таблетка встаёт так, чтобы её
  * ТЕКСТ стоял в колонке тиков (textLeft), а заливка выходила левее на padX.
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import { cssVar } from '../../config/chartTheme';
 import { measureText } from './measureText';
 
@@ -41,7 +42,21 @@ export default function ChartAxisPill({
     const padX = 6;
     const padY = 2;
     const h = fs + padY * 2;
-    const w = Math.ceil(measureText(value, fs, 700)) + padX * 2;
+    // canvas.measureText не знает про font-variant-numeric: tabular-nums, а текст
+    // рендерится именно табличными цифрами (они шире пропорциональных). Из-за этого
+    // прикидка занижала ширину и правый воздух схлопывался — «-1.6» стоял впритык к
+    // правому краю заливки. Прикидка нужна только для ПЕРВОГО кадра; на втором берём
+    // точную ширину отрисованного <text> (тот же приём, что у пилюль SimpleChart).
+    const textRef = useRef<SVGTextElement | null>(null);
+    const [measuredW, setMeasuredW] = useState<number | null>(null);
+    useLayoutEffect(() => {
+        const el = textRef.current;
+        if (!el) return;
+        const exact = el.getComputedTextLength();
+        setMeasuredW((prev) => (prev != null && Math.abs(prev - exact) < 0.5 ? prev : exact));
+    }, [value, fs]);
+    const textW = measuredW != null ? measuredW : measureText(value, fs, 700);
+    const w = Math.ceil(textW) + padX * 2;
 
     return (
         <div
@@ -58,6 +73,7 @@ export default function ChartAxisPill({
             <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
                 <rect x={0} y={0} width={w} height={h} rx={4} ry={4} fill={color} />
                 <text
+                    ref={textRef}
                     x={padX}
                     y={h / 2}
                     textAnchor="start"
