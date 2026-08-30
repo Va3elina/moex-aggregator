@@ -361,7 +361,6 @@
 | FearIndex | 400 | #6366f1 | #C8FF2E | true | true | top |
 | OpenInterest | 450 | #6366f1 | varies | true | true | top |
 | FundsMoneyPage (СЧА) | 450 | #6366f1 | INDEX_COLOR | true | true | top |
-| OverviewPage | varies | #6366f1 | — | false | false | — |
 
 ---
 

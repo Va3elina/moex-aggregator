@@ -12,8 +12,8 @@
  *   GET /api/admin/repaint/screener       — метрики по всем акциям (таблица)
  *   GET /api/admin/repaint/series/{secid} — 4Ч-ряд: цена + CDV + метрики
  *
- * Пока индикатор экспериментальный: ссылка на него — только в admin-блоке
- * на главной (OverviewPage), в общий nav не выводится.
+ * Пока индикатор экспериментальный: ссылка на него — только в admin-вкладке
+ * навигации, обычным пользователям не показывается.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
