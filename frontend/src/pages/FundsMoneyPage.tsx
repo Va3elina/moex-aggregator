@@ -14,6 +14,7 @@ import {
     getFundsFlows,
     type FundsChartResponse,
     type FundsFlowsResponse,
+    type IndexDataPoint,
     type FundCategory,
     type FundPeriod,
     type FlowTimeframe
@@ -497,6 +498,31 @@ export default function FundsMoneyPage() {
     }
     const fundsHasStale = !!(fundsLaggardDate && fundsMaxDate && fundsLaggardDate < fundsMaxDate);
 
+    // ── Согласованная пара «потоки + индекс» для двухпанельного графика. ──
+    // flows и nav-данные (источник линии бенчмарка) грузятся независимо, и при
+    // смене периода/категории между их приходами диапазоны расходятся: линия
+    // индекса нового периода ложилась на слоты потоков СТАРОГО (сжималась в
+    // часть панели), а затем морф «растягивал» её к полной ширине. Пропускаем
+    // в график только пары одного (category, period) — бек эхоит оба поля;
+    // пока свежая пара не собралась, показываем предыдущую согласованную
+    // целиком (спиннер «Обновление...» это время висит по flowsLoading), и
+    // бары с линией обновляются одним атомарным морфом.
+    const [flowsPair, setFlowsPair] = useState<{
+        flows: FundsFlowsResponse;
+        index?: IndexDataPoint[];
+    } | null>(null);
+    useEffect(() => {
+        if (!flowsData) return;
+        // Нет nav-данных вовсе (ранний рендер / ошибка nav-запроса) — пара без
+        // индекса: гистограмма не должна ждать линию, которой не будет.
+        if (!data || (data.category === flowsData.category && data.period === flowsData.period)) {
+            setFlowsPair({ flows: flowsData, index: data?.index?.data });
+        }
+    }, [flowsData, data]);
+    // Подписи (легенда индекса, заголовок гистограммы) — от категории ПАРЫ, а
+    // не текущей: пока держим старую пару, «RGBITR» над линией IMOEX — ложь.
+    const pairCategory = CATEGORIES.find(c => c.key === flowsPair?.flows.category) ?? currentCategory;
+
     // Обобщающий заголовок гистограммы притоков/оттоков. Единица — в скобках
     // «(млрд ₽)». На узких viewport'ах убираем подробности категории, чтобы
     // строка влезала в одну линию (540px — порог, на котором длинный заголовок
@@ -505,7 +531,7 @@ export default function FundsMoneyPage() {
     const useShortFlowLabels = vw < 540;
     const flowTitle = useShortFlowLabels
         ? 'Чистые притоки и оттоки (млрд ₽)'
-        : `Чистые притоки и оттоки из фондов ${currentCategory?.genitive ?? ''} (млрд ₽)`;
+        : `Чистые притоки и оттоки из фондов ${pairCategory?.genitive ?? ''} (млрд ₽)`;
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -945,15 +971,15 @@ export default function FundsMoneyPage() {
                 сверху бенчмарк категории (index из nav-запроса — грузится тем же
                 периодом), снизу гистограмма потоков. Слой «Индекс» общий с СЧА. */}
             <FlowsHistogram
-                        flowsData={flowsData}
+                        flowsData={flowsPair?.flows ?? null}
                         noFundsSelected={noFundsSelected}
                         flowTitle={flowTitle}
                         loading={flowsLoading}
-                        indexData={data?.index?.data}
-                        indexLabel={currentCategory?.index}
+                        indexData={flowsPair?.index}
+                        indexLabel={pairCategory?.index}
                         showIndex={showIndex}
                         height={chartHeight}
-                        animTrigger={`${category}:${flowTimeframe}:${period}`}
+                        animTrigger={`${flowsPair?.flows.category}:${flowTimeframe}:${flowsPair?.flows.period}`}
                     />
             </div>
             )}
