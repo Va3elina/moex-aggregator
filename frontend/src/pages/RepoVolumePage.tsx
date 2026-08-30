@@ -3,22 +3,32 @@
  *
  * Гипотеза: объём сделок РЕПО с ЦК по бумаге — прокси шортов (бумагу берут
  * в репо, чтобы продать в короткую). На одном графике: спот-котировка
- * (левая ось) + дневной объём репо (правая ось), 5 тестовых бумаг.
+ * (левая ось) + правая ось в двух режимах:
+ *   «Объём» — дневной объём репо EQRP+PSRP, млрд ₽;
+ *   «Ставка» — ставка стакана EQRP + бенчмарк RUSFAR (цена денег), % годовых.
+ * Ставка сильно ниже RUSFAR = бумага «special», её берут ради шорта, а не
+ * ради денег; ставка ≈ RUSFAR = обычное фондирование под залог.
  *
  * Источник репо — ISS MOEX (рынок ccp), бэкенд тянет историю on-demand:
  * первая загрузка тикера занимает несколько секунд, дальше из кэша.
  *
+ * Admin-only (обкатка перед возможным публичным релизом): не-админ
+ * редиректится на главную, nav-таб скрыт (adminOnly в Layout), API под
+ * require_admin.
+ *
  * Структура (упрощённый вариант Buffett-страницы):
  *   • PageHeader
- *   • Editorial frame: чипы бумаг + сглаживание + период, SimpleChart
+ *   • Editorial frame: чипы бумаг + режим + сглаживание + период, SimpleChart
  */
 
 import { useMemo, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
 import { Repeat } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SimpleChart from '../components/SimpleChart';
 import SegmentedControl from '../components/SegmentedControl';
 import { getRepoVolume, type RepoVolumeResponse } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
@@ -49,13 +59,25 @@ const SMOOTH_OPTIONS: { key: SmoothMode; label: string; window: number }[] = [
   { key: 'ma20', label: 'МА 20', window: 20 },
 ];
 
+// Правая ось: объём репо или ставки (репо EQRP + RUSFAR).
+type ViewMode = 'volume' | 'rate';
+const MODE_OPTIONS: { key: ViewMode; label: string }[] = [
+  { key: 'volume', label: 'Объём' },
+  { key: 'rate', label: 'Ставка' },
+];
+
 const fmtBillions = (v: number) =>
   `${(v / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: v >= 1e10 ? 1 : 2 })} млрд ₽`;
 
+const fmtPercent = (v: number) =>
+  `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}%`;
+
 export default function RepoVolumePage() {
+  const { user, loading: authLoading } = useAuth();
   const [ticker, setTicker] = usePersistedState<AssetKey>('frame:repo:ticker', 'SFIN');
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:repo:period', '3y');
   const [smooth, setSmooth] = usePersistedState<SmoothMode>('frame:repo:smooth', 'ma5');
+  const [mode, setMode] = usePersistedState<ViewMode>('frame:repo:mode', 'volume');
 
   const { data, loading, error } = useIndicatorData<RepoVolumeResponse>({
     fetcher: () => getRepoVolume(ticker),
@@ -100,7 +122,30 @@ export default function RepoVolumePage() {
     });
   }, [visiblePoints, smooth]);
 
+  // Ставки: дни без сделок в стакане EQRP — пропуск точки, НЕ ноль (ноль
+  // означал бы «бумага стоит как деньги» и врал бы на неликвиде).
+  const rateData = useMemo(
+    () =>
+      visiblePoints
+        .filter((p) => p.rate !== null)
+        .map((p) => ({ time: p.date, value: p.rate as number })),
+    [visiblePoints],
+  );
+  const rusfarData = useMemo(
+    () =>
+      visiblePoints
+        .filter((p) => p.rusfar !== null)
+        .map((p) => ({ time: p.date, value: p.rusfar as number })),
+    [visiblePoints],
+  );
+
   const assetName = ASSETS.find((a) => a.key === ticker)?.label ?? ticker;
+  const isRateMode = mode === 'rate';
+
+  // Admin-only: гость/не-админ — на главную. Проверка ПОСЛЕ всех хуков
+  // (React hooks rule). Пока auth грузится — ничего не рендерим.
+  if (authLoading) return null;
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -119,11 +164,19 @@ export default function RepoVolumePage() {
             value={ticker}
             onChange={setTicker}
           />
-          <SegmentedControl<SmoothMode>
-            options={SMOOTH_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
-            value={smooth}
-            onChange={setSmooth}
+          <SegmentedControl<ViewMode>
+            options={MODE_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+            value={mode}
+            onChange={setMode}
           />
+          {/* Сглаживание применимо только к объёму (ставки не шумят так). */}
+          {!isRateMode && (
+            <SegmentedControl<SmoothMode>
+              options={SMOOTH_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+              value={smooth}
+              onChange={setSmooth}
+            />
+          )}
           <SegmentedControl<PeriodFilter>
             options={PERIOD_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
             value={period}
@@ -160,18 +213,28 @@ export default function RepoVolumePage() {
           ) : (
             <SimpleChart
               data={priceData}
-              secondaryData={repoData}
+              secondaryData={isRateMode ? rateData : repoData}
+              thirdData={isRateMode ? rusfarData : undefined}
               showSecondary={true}
+              showThird={isRateMode}
+              // RUSFAR — приглушённый ориентир, ставка бумаги — главная линия.
+              thirdColor="var(--text-muted)"
               height={chartHeight}
               loading={loading}
               formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
-              formatSecondaryValue={fmtBillions}
-              // Короткий формат для оси — «12,3» без юнита, юнит в легенде/тултипе.
-              formatSecondaryAxis={(v) => (v / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}
+              formatSecondaryValue={isRateMode ? fmtPercent : fmtBillions}
+              formatThirdValue={fmtPercent}
+              // Короткий формат для оси — без юнита, юнит в легенде/тултипе.
+              formatSecondaryAxis={(v) =>
+                isRateMode
+                  ? v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })
+                  : (v / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })
+              }
               niceTicks={true}
               niceTicksSecondary={true}
               primaryLabel={assetName}
-              secondaryLabel="Объём репо, млрд ₽"
+              secondaryLabel={isRateMode ? 'Ставка репо (EQRP), %' : 'Объём репо, млрд ₽'}
+              thirdLabel="RUSFAR (цена денег), %"
               showValueHeader={false}
               legendPosition="top"
               showDownloadButton={false}

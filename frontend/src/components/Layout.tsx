@@ -44,7 +44,7 @@ const PAGE_TOUR_KEYS: Record<string, string> = {
 
 // Порядок задан Вадимом (04.07.2026): частые/продуктовые впереди,
 // Баффетт в конце. Мобильный rail (MobileBottomRail) — отдельный список.
-const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
+const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string; adminOnly?: boolean }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   // NEW — внутри появилась вкладка «Скринер сигналов» (04.07.2026).
   { path: '/oi', label: 'Открытые позиции', badge: 'New' },
@@ -56,7 +56,9 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/cbr-flows', label: 'Поток капитала' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   // Экспериментальная вкладка — тест гипотезы «объём репо ≈ шорты» (5 бумаг).
-  { path: '/repo', label: 'Репо в акциях', badge: 'Тест' },
+  // adminOnly: обкатка перед возможным публичным релизом (сама страница и API
+  // тоже гейтятся по role=admin).
+  { path: '/repo', label: 'Репо в акциях', badge: 'Тест', adminOnly: true },
 ];
 
 export default function Layout() {
@@ -75,6 +77,10 @@ export default function Layout() {
   // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
   // Первый hit отправляется автоматически через init() в index.html.
   useYandexMetrica();
+
+  // adminOnly-вкладки видны только роли admin (оба места рендера: desktop и
+  // мобильное меню используют этот список, не NAV_ITEMS напрямую).
+  const navItems = NAV_ITEMS.filter((i) => !i.adminOnly || user?.role === 'admin');
 
   // Анонс «Новое: Терминал» (разовый, на весь сайт — см. JSX ниже).
   // ВАЖНО: хук здесь, ДО мобильного conditional return — правило хуков.
@@ -180,7 +186,7 @@ export default function Layout() {
                 пункта приходился впритык к кнопке «Терминал» и выглядел как
                 наложение кнопки на список индикаторов. */}
             <div className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0.5 xl:gap-1 overflow-hidden pr-2">
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.disabled ? '#' : item.path}
@@ -430,7 +436,7 @@ export default function Layout() {
             }}
           >
             <div className="px-4 py-3 space-y-1">
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.disabled ? '#' : item.path}
