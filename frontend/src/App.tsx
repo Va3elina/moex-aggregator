@@ -85,6 +85,8 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
 const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
 const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
+// Экспериментальная «Перекраска» (admin-only): % free float, сменивший руки за месяц.
+const RepaintPage = lazy(() => import('./pages/RepaintPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
 // Стенд геометрии графика. ТОЛЬКО dev: в прод-сборке import.meta.env.DEV = false,
 // ветка с lazy() выпадает при сборке и на прод не уезжает.
@@ -331,6 +333,7 @@ export default function App() {
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/content-news" element={<AdminContentNewsPage />} />
+            <Route path="/admin/repaint" element={<RepaintPage />} />
           </Route>
         </Routes>
         </Suspense>
