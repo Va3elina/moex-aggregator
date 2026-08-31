@@ -11,9 +11,11 @@
 VALUE в другой валюте — смешивать нельзя (проверено на SBER 2026-08).
 Все строки идут с TRADINGSESSION=3 (итог дня) — дублей по сессиям нет.
 
-В БД репо-объёмы не ингестятся (фича тестовая, 5 бумаг) — история тянется
-с ISS on-demand и держится в Redis. Первая загрузка тикера ~40-60 страниц
-ISS (пагинация по 100 строк), дальше отдаётся из кэша.
+Бумаги — любая акция из instruments, по которой у нас есть свежий дневной
+спот (~130 штук). В БД репо-объёмы не ингестятся: история тянется с ISS
+on-demand и держится в Redis. Холодная загрузка ликвидной бумаги — до ~100
+страниц ISS (SBER с 2013 ≈ 9.8к строк, 8-10 секунд), дальше из кэша. Если
+вкладку будут открывать публично, тут нужен нормальный ингест в таблицу.
 
 Спот — дневные свечи из candles (как в breadth), со split-adjustment из
 общего реестра KNOWN_SPLITS (SFIN 1.93 обязателен — иначе разрыв цены).
@@ -46,38 +48,14 @@ log = get_logger()
 
 router = APIRouter(prefix="/api/repo", tags=["repo"])
 
-# Тестовая пятёрка: SFIN — исходный кейс гипотезы (сквиз-история), SBER/GAZP —
-# ликвидные бенчмарки, MGNT/MVID — бумаги с известными шорт-историями.
-# Имена — по единому стандарту (instruments/ОИ).
-REPO_ASSETS: dict[str, str] = {
-    "SFIN": "ЭсЭфАй",
-    "SBER": "Сбербанк",
-    "GAZP": "Газпром",
-    "MGNT": "Магнит",
-    "MVID": "М.Видео",
-}
-
 # Рублёвые борды РЕПО с ЦК (см. docstring — почему только эти два).
 RUB_BOARDS = frozenset({"EQRP", "PSRP"})
 
-# Ковид-обвал 2020 включён в окно намеренно — интересная точка для гипотезы.
-HISTORY_FROM = date(2020, 1, 1)
+# Рынок РЕПО с ЦК запущен MOEX в 2013 (первые строки ISS — июль 2013), раньше
+# данных нет вообще. Спред считается только с 2018 — RUSFAR начинается там.
+HISTORY_FROM = date(2013, 1, 1)
 
 ISS_URL = "https://iss.moex.com/iss/history/engines/stock/markets/ccp/securities/{ticker}.json"
-
-
-async def _fetch_iss_page(client: httpx.AsyncClient, ticker: str, start: int) -> dict:
-    resp = await client.get(
-        ISS_URL.format(ticker=ticker),
-        params={
-            "iss.meta": "off",
-            "from": HISTORY_FROM.isoformat(),
-            "till": date.today().isoformat(),
-            "start": start,
-        },
-    )
-    resp.raise_for_status()
-    return resp.json()
 
 
 def _collect_rub_boards(pages: list[dict], vol: dict[str, float], rate: dict[str, float]) -> None:
@@ -106,7 +84,11 @@ def _collect_rub_boards(pages: list[dict], vol: dict[str, float], rate: dict[str
 async def _fetch_iss_history(
     client: httpx.AsyncClient, url: str, params: dict
 ) -> list[dict]:
-    """Все страницы ISS-history эндпоинта (cursor TOTAL/PAGESIZE, конкуренция 4)."""
+    """Все страницы ISS-history эндпоинта (cursor TOTAL/PAGESIZE, конкуренция 6).
+
+    История с 2013 — до ~100 страниц на ликвидную бумагу (SBER ≈ 9.8к строк),
+    порядка 8-10 секунд на холодную загрузку. Конкуренцию выше 6 не поднимаем:
+    ISS начинает резать запросы."""
     resp0 = await client.get(url, params={**params, "start": 0})
     resp0.raise_for_status()
     first = resp0.json()
@@ -115,7 +97,7 @@ async def _fetch_iss_history(
     total = int(cursor_row[cursor_cols.index("TOTAL")])
     page_size = int(cursor_row[cursor_cols.index("PAGESIZE")]) or 100
 
-    sem = asyncio.Semaphore(4)
+    sem = asyncio.Semaphore(6)
 
     async def fetch_limited(start: int) -> dict:
         async with sem:
@@ -129,7 +111,7 @@ async def _fetch_iss_history(
 
 async def _fetch_repo_series(ticker: str) -> dict[str, dict[str, float]]:
     """{"vol": {дата: объём ₽}, "rate": {дата: ставка EQRP %}}. Кэш 6ч."""
-    cache_key = f"repo_shorts:iss:v2:{ticker}"
+    cache_key = f"repo_shorts:iss:v3:{ticker}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -139,7 +121,7 @@ async def _fetch_repo_series(ticker: str) -> dict[str, dict[str, float]]:
         "from": HISTORY_FROM.isoformat(),
         "till": date.today().isoformat(),
     }
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         pages = await _fetch_iss_history(client, ISS_URL.format(ticker=ticker), params)
     vol: dict[str, float] = {}
     rate: dict[str, float] = {}
@@ -155,7 +137,7 @@ RUSFAR_URL = "https://iss.moex.com/iss/history/engines/stock/markets/index/secur
 
 async def _fetch_rusfar_series() -> dict[str, float]:
     """{ISO-дата: RUSFAR % годовых} с ISS (борд MMIX, CLOSE). Кэш 6ч, общий."""
-    cache_key = "repo_shorts:rusfar"
+    cache_key = "repo_shorts:rusfar:v3"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -165,7 +147,7 @@ async def _fetch_rusfar_series() -> dict[str, float]:
         "from": HISTORY_FROM.isoformat(),
         "till": date.today().isoformat(),
     }
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         pages = await _fetch_iss_history(client, RUSFAR_URL, params)
     acc: dict[str, float] = {}
     for page in pages:
@@ -195,10 +177,36 @@ def _load_spot_closes(ticker: str) -> list[tuple]:
     return _adjust_for_split(ticker, dated)
 
 
+def _resolve_stock(ticker: str) -> str | None:
+    """Имя акции из instruments, если такая бумага у нас есть. Иначе None.
+
+    Заодно это валидация: тикер уходит в URL запроса к ISS, поэтому в фетчер
+    пускаем только то, что реально лежит в нашей таблице инструментов."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT COALESCE(NULLIF(name, ''), sec_id)
+            FROM instruments
+            WHERE sec_id = :ticker AND type = 'stock'
+            LIMIT 1
+        """), {"ticker": ticker}).fetchone()
+    return row[0] if row else None
+
+
 @router.get("/assets")
 async def get_repo_assets(user=Depends(require_admin)):
-    """Тестовый шорт-лист бумаг вкладки."""
-    return {"assets": [{"ticker": t, "name": n} for t, n in REPO_ASSETS.items()]}
+    """Акции, по которым вкладка может построить график — те, у кого есть
+    дневной спот за последние 2 месяца (репо тянется с ISS уже по факту)."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT DISTINCT i.sec_id, COALESCE(NULLIF(i.name, ''), i.sec_id) AS name
+            FROM instruments i
+            JOIN candles c ON c.secid = i.sec_id AND c.interval = 24 AND c.type = 'stock'
+            WHERE i.type = 'stock' AND c.begin_time > CURRENT_DATE - 60
+            ORDER BY name
+        """)).fetchall()
+    return {"assets": [{"ticker": r[0], "name": r[1]} for r in rows]}
 
 
 @router.get("/history")
@@ -210,11 +218,12 @@ async def get_repo_history(ticker: str = "SFIN", user=Depends(require_admin)):
     rusfar — бенчмарк цены денег (% годовых, null для дат без фиксинга).
     """
     ticker = ticker.upper()
-    if ticker not in REPO_ASSETS:
-        raise HTTPException(status_code=404, detail="Бумага не входит в тестовый список")
+    name = _resolve_stock(ticker)
+    if not name:
+        raise HTTPException(status_code=404, detail="Бумага не найдена среди акций")
 
     # Кэш готового ответа короче кэша ISS-серии: спот-свечи обновляются intraday.
-    cache_key = f"repo_shorts:hist:v2:{ticker}"
+    cache_key = f"repo_shorts:hist:v3:{ticker}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -245,9 +254,12 @@ async def get_repo_history(ticker: str = "SFIN", user=Depends(require_admin)):
 
     result = {
         "ticker": ticker,
-        "name": REPO_ASSETS[ticker],
+        "name": name,
         "data": data,
         "updated_at": data[-1]["date"] if data else None,
+        # Ноль репо-сделок за всю историю — у многих неликвидов; фронт по
+        # этому флагу говорит «репо не торгуется», а не рисует пустую линию.
+        "has_repo": any(p["repo"] > 0 for p in data),
     }
     get_or_set(cache_key, result, ttl=1800)
     return result

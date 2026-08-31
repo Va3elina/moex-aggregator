@@ -2,8 +2,9 @@
  * /repo — Репо в акциях (экспериментальная вкладка, тест гипотезы).
  *
  * Гипотеза: объём сделок РЕПО с ЦК по бумаге — прокси шортов (бумагу берут
- * в репо, чтобы продать в короткую). На одном графике: спот-котировка
- * (левая ось) + правая ось в двух режимах:
+ * в репо, чтобы продать в короткую). Бумага — любая наша акция (пикер тот же,
+ * что на Сезонности), история с июля 2013. На одном графике: спот-котировка
+ * (левая ось) + правая ось в трёх режимах:
  *   «Объём» — дневной объём репо EQRP+PSRP, млрд ₽;
  *   «Ставка» — ставка стакана EQRP + бенчмарк RUSFAR (цена денег), % годовых;
  *   «Спред» — их разница в п.п. с нулевой отметкой (сам сигнал).
@@ -24,32 +25,32 @@
  *   • Editorial frame: чипы бумаг + режим + сглаживание + период, SimpleChart
  */
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Repeat } from 'lucide-react';
+import { Repeat, ChevronDown } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SimpleChart from '../components/SimpleChart';
 import SegmentedControl from '../components/SegmentedControl';
+import InstrumentSearchModal from '../components/InstrumentSearchModal';
+import InstrumentIcon from '../components/InstrumentIcon';
 import { getRepoVolume, type RepoVolumeResponse } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 
-// Держать в синхроне с REPO_ASSETS в api/routers/repo_volume.py.
-const ASSETS = [
-  { key: 'SFIN', label: 'ЭсЭфАй' },
-  { key: 'SBER', label: 'Сбербанк' },
-  { key: 'GAZP', label: 'Газпром' },
-  { key: 'MGNT', label: 'Магнит' },
-  { key: 'MVID', label: 'М.Видео' },
-] as const;
-type AssetKey = (typeof ASSETS)[number]['key'];
+// Бумага любая из наших акций — выбор через общий InstrumentSearchModal
+// (тот же пикер, что на Сезонности). Дефолт — исходный кейс гипотезы.
+const DEFAULT_TICKER = 'SFIN';
+const DEFAULT_NAME = 'ЭсЭфАй';
 
-type PeriodFilter = '1y' | '3y' | 'all';
+// История репо с ЦК начинается в июле 2013 (раньше рынка не было), RUSFAR —
+// с 2018, поэтому спред на длинных периодах короче объёма.
+type PeriodFilter = '1y' | '3y' | '5y' | 'all';
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; days: number | null }[] = [
   { key: '1y', label: '1Г', days: 365 },
   { key: '3y', label: '3Г', days: 1095 },
+  { key: '5y', label: '5Л', days: 1825 },
   { key: 'all', label: 'Всё', days: null },
 ];
 
@@ -98,7 +99,10 @@ function movingAverage(points: { time: string; value: number }[], win: number) {
 
 export default function RepoVolumePage() {
   const { user, loading: authLoading } = useAuth();
-  const [ticker, setTicker] = usePersistedState<AssetKey>('frame:repo:ticker', 'SFIN');
+  const [ticker, setTicker] = usePersistedState<string>('frame:repo:ticker', DEFAULT_TICKER);
+  // Имя держим отдельно, чтобы кнопка пикера была подписана до ответа API.
+  const [tickerName, setTickerName] = usePersistedState<string>('frame:repo:name', DEFAULT_NAME);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:repo:period', '3y');
   const [smooth, setSmooth] = usePersistedState<SmoothMode>('frame:repo:smooth', 'ma5');
   const [mode, setMode] = usePersistedState<ViewMode>('frame:repo:mode', 'volume');
@@ -169,7 +173,7 @@ export default function RepoVolumePage() {
     [visiblePoints, smoothWindow],
   );
 
-  const assetName = ASSETS.find((a) => a.key === ticker)?.label ?? ticker;
+  const assetName = data?.name ?? tickerName;
   const isRateMode = mode === 'rate';
   const isSpreadMode = mode === 'spread';
   // Нулевая линия — та самая «цена денег»: всё что под ней, дешевле фондирования.
@@ -189,17 +193,56 @@ export default function RepoVolumePage() {
         icon={Repeat}
         title="Репо в акциях"
         subtitle="Объём и ставка РЕПО с ЦК против котировки — тест гипотезы «репо как прокси шортов»"
-        sourceNote="Источник: Московская биржа (ISS, рынок РЕПО с ЦК) · экспериментальный индикатор, 5 тестовых бумаг"
+        sourceNote="Источник: Московская биржа (ISS, рынок РЕПО с ЦК) · экспериментальный индикатор, история с июля 2013"
       />
 
       <div className="editorial-frame">
         {/* Контролы: бумага + сглаживание + период */}
         <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
-          <SegmentedControl<AssetKey>
-            options={ASSETS.map((a) => ({ key: a.key, label: a.label }))}
-            value={ticker}
-            onChange={setTicker}
-          />
+          {/* Пикер бумаги — общий InstrumentSearchModal (как на Сезонности):
+              акций больше сотни, чипами такой список не показать. */}
+          <div className="relative">
+            <button
+              onClick={() => setPickerOpen(true)}
+              title={assetName}
+              className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
+              style={{
+                color: 'var(--text-primary)',
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-4)',
+                gap: 'var(--sp-3)',
+                minWidth: 'clamp(140px, 22vw, 170px)',
+                maxWidth: 220,
+              }}
+            >
+              <InstrumentIcon sectype={ticker} size={28} rounded="full" eager />
+              <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+                <div
+                  className="font-medium"
+                  style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {assetName}
+                </div>
+                <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
+                  {ticker}
+                </div>
+              </div>
+              <ChevronDown size={14} className="text-theme-secondary" />
+            </button>
+
+            {pickerOpen && (
+              <InstrumentSearchModal
+                filterType="stock"
+                showIntradayBadge={false}
+                onSelect={(sectype, name) => {
+                  setTicker(sectype);
+                  setTickerName(name);
+                  setPickerOpen(false);
+                }}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
           <SegmentedControl<ViewMode>
             options={MODE_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
             value={mode}
@@ -245,6 +288,26 @@ export default function RepoVolumePage() {
               <div>
                 <div className="font-bold mb-2">Не удалось загрузить данные</div>
                 <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.8 }}>{error}</div>
+              </div>
+            </div>
+          ) : data && !loading && !data.has_repo ? (
+            // Репо есть далеко не у всех бумаг: у неликвида сделок может не быть
+            // вовсе. Честно говорим об этом, а не рисуем линию по нулям.
+            <div
+              className="flex items-center justify-center"
+              style={{
+                height: `${chartHeight}px`,
+                color: 'var(--text-secondary)',
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-4)',
+                textAlign: 'center',
+              }}
+            >
+              <div>
+                <div className="font-bold mb-2">По этой бумаге репо не торгуется</div>
+                <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.8 }}>
+                  За всю историю с 2013 года по {assetName} нет ни одной сделки РЕПО с ЦК
+                </div>
               </div>
             </div>
           ) : (
