@@ -1404,6 +1404,8 @@ export interface RepoVolumeResponse {
   name: string;
   data: RepoVolumePoint[];
   updated_at: string | null;
+  /** false — по бумаге за всю историю нет ни одной сделки репо с ЦК. */
+  has_repo: boolean;
 }
 
 /** Объём репо + спот по одной бумаге из тестового списка. Первая загрузка
