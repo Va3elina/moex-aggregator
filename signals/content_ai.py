@@ -636,14 +636,29 @@ def _story_frame(signal_date, news_date) -> str:
             f"запрещены как факт.")
 
 
-def _step_c_payload(db, row, internal_token: str) -> str:
-    """Бриф v2 (JSON). Из v1 УБРАНЫ market_rank и recent_signals: оба порождали
-    дефекты — recent_signals дал в черновике 773 список 📌 из пяти чужих тикеров,
-    который тот же пост следующей строкой сам и дисклеймил, а market_rank дал
-    «второе по резкости среди 72 активов» там, где это ничего не добавляло. Поле,
-    попавшее в бриф, модель считает обязанной израсходовать — поэтому лишние поля
-    убираются, а не запрещаются очередным правилом."""
-    import json as _json
+def _build_brief(db, row) -> dict:
+    """ЕДИНСТВЕННЫЙ сборщик брифа — для Шага В (писатель) и Шага Г (судья).
+
+    ⚠️ Почему один. Бриф собирался дважды, руками, в _step_c_payload и
+    _step_g_payload, и версии разъехались: судья не получал блок цена_акции,
+    добавленный в v3. Итог на кандидате 1104 — вердикт «брак» с провалом
+    numbers_traceable и no_invented_facts по абзацу «акция подешевела примерно на
+    25%, стоит около 92 рублей». Числа были ВЕРНЫЕ и взяты из брифа, но судья
+    этого брифа не видел, поэтому честно назвал их выдуманными. Вердикт был
+    корректен относительно своего входа и неверен относительно мира.
+
+    Асимметрия контекста — тихий отказ LLM-as-judge: судья не ошибается, он
+    отвечает на другой вопрос. Лечится закрытием разрыва входов, а НЕ смягчением
+    рубрики: ослабь numbers_traceable — и потеряешь единственную проверку,
+    которая ловит настоящие выдумки.
+
+    Из v1 УБРАНЫ market_rank и recent_signals: оба порождали дефекты —
+    recent_signals дал в черновике 773 список 📌 из пяти чужих тикеров, который тот
+    же пост следующей строкой сам и дисклеймил, а market_rank дал «второе по
+    резкости среди 72 активов» там, где это ничего не добавляло. Поле, попавшее в
+    бриф, модель считает обязанной израсходовать — поэтому лишние поля убираются,
+    а не запрещаются очередным правилом.
+    """
     created_at = row.get("created_at")
     news_date = created_at.date() if created_at else row["signal_date"]
     reused_signal = bool(created_at and row["signal_date"] < news_date)
@@ -670,35 +685,30 @@ def _step_c_payload(db, row, internal_token: str) -> str:
     prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     if prior and not prior.startswith("(нет"):
         brief["предыдущий_пост_этого_треда"] = prior
-    return (_json.dumps(brief, ensure_ascii=False, indent=2)
+    return brief
+
+
+def _payload(obj, internal_token: str) -> str:
+    """JSON + служебный хвост с токеном и хостом — общий формат обоих шагов."""
+    import json as _json
+    return (_json.dumps(obj, ensure_ascii=False, indent=2)
             + f"\ninternal_token: {internal_token}"
             + f"\napi_host: {INTERNAL_API_HOST}")
+
+
+def _step_c_payload(db, row, internal_token: str) -> str:
+    return _payload(_build_brief(db, row), internal_token)
 
 
 def _step_g_payload(db, row, internal_token: str) -> str:
-    """Судье нужны РОВНО те же данные, что были у писателя, плюс сам черновик.
-    Иначе он не сможет проверить главное — трассируется ли каждое число в бриф.
-    Поэтому бриф собирается тем же кодом, а не пересказывается."""
-    import json as _json
-    created_at = row.get("created_at")
-    news_date = created_at.date() if created_at else row["signal_date"]
-    payload = {
+    """Судье — РОВНО тот же бриф, что был у писателя, плюс сам черновик. Бриф
+    берётся тем же кодом (_build_brief), а не пересказывается: см. историю 1104
+    в докстринге _build_brief."""
+    return _payload({
         "candidate_id": row["id"],
-        "бриф": {
-            "headline": row["headline"],
-            "raw_text": row["raw_text"] or row["headline"],
-            "tickers": row["tickers"] or [],
-            "дата_новости": str(news_date),
-            "дата_сигнала": str(row["signal_date"]),
-            "рамка_сюжета": _story_frame(row["signal_date"], news_date),
-            "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"],
-                                                as_of=row["signal_date"]),
-        },
+        "бриф": _build_brief(db, row),
         "черновик_на_проверку": row["draft_text"],
-    }
-    return (_json.dumps(payload, ensure_ascii=False, indent=2)
-            + f"\ninternal_token: {internal_token}"
-            + f"\napi_host: {INTERNAL_API_HOST}")
+    }, internal_token)
 
 
 def run_once() -> dict:

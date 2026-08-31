@@ -90,3 +90,65 @@ def test_money_drops_meaningless_kopecks():
     assert _money_ru(91.81) == "около 92"       # было «₽91,81»
     assert _money_ru(1234.7) == "около 1 230"
     assert _money_ru(4.55) == "4,55", "у дешёвой бумаги копейки — основная часть цены"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Инвариант «судья видит то же, что писатель»
+# ─────────────────────────────────────────────────────────────────────────────
+
+import datetime as _dt  # noqa: E402
+import json as _json  # noqa: E402
+
+from signals import content_ai as CA  # noqa: E402
+
+_ROW = {
+    "id": 1104, "headline": "Газпром отчитался по РСБУ", "raw_text": "Газпром…",
+    "tickers": ["GAZP"], "event_type": "earnings", "asset_id": "GAZPF",
+    "asset_name": "Газпром", "anomaly_clgroup": "FIZ", "severity_value": 4.69,
+    "signal_date": _dt.date(2026, 7, 30), "created_at": None,
+    "thread_key": "GAZP:earnings", "draft_text": "Черновик",
+}
+
+
+def _stub_brief_sources(monkeypatch):
+    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
+    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "в 3 раза"})
+    monkeypatch.setattr(CA, "_price_context", lambda *a: {"цена_сейчас": "около 92"})
+    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+
+
+def _brief_of(payload: str) -> dict:
+    return _json.loads(payload.rsplit("\ninternal_token:", 1)[0])
+
+
+def test_judge_receives_exactly_the_writers_brief(monkeypatch):
+    """Судья обязан видеть РОВНО тот бриф, по которому написан черновик.
+
+    Регрессия кандидата 1104: бриф собирался дважды руками, и в версию судьи не
+    попал блок цена_акции из v3. Судья честно назвал верные числа «выдуманными»
+    — он не ошибся, он отвечал на другой вопрос. Асимметрия контекста в
+    LLM-as-judge не видна по вердикту: он выглядит осмысленным и обоснованным.
+    Поэтому проверяем совпадение входов кодом, а не глазами по логу.
+    """
+    _stub_brief_sources(monkeypatch)
+    writer = _brief_of(CA._step_c_payload(None, _ROW, "tok"))
+    judge = _brief_of(CA._step_g_payload(None, _ROW, "tok"))["бриф"]
+    assert judge == writer, (
+        "бриф судьи разошёлся с брифом писателя по полям: "
+        + ", ".join(sorted(set(writer) ^ set(judge)))
+    )
+
+
+def test_price_block_is_in_both_briefs(monkeypatch):
+    """Именно этого поля не хватало судье — фиксируем отдельно и явно."""
+    _stub_brief_sources(monkeypatch)
+    for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
+                          ("судья", CA._step_g_payload(None, _ROW, "tok"))):
+        assert "цена_акции" in payload, f"{name} не получил блок цена_акции"
+
+
+def test_judge_payload_carries_the_draft(monkeypatch):
+    _stub_brief_sources(monkeypatch)
+    out = _json.loads(CA._step_g_payload(None, _ROW, "tok").rsplit("\ninternal_token:", 1)[0])
+    assert out["черновик_на_проверку"] == "Черновик"
+    assert out["candidate_id"] == 1104
