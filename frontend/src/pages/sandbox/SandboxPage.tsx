@@ -860,7 +860,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             data-sbtheme={eff}
             data-theme={eff === 'light' ? 'editorial-light' : 'editorial-dark'}
             style={isMax
-              ? { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: GUIDE_Z, ...panelStyle, border: 'none', borderRadius: 0, boxShadow: 'none' }
+              // pointerEvents:'auto' обязателен: слой листа — pointerEvents:'none'
+              // (мышь ловят только панели), и без явного auto развёрнутая панель
+              // была полностью некликабельной.
+              ? { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: GUIDE_Z, pointerEvents: 'auto', ...panelStyle, border: 'none', borderRadius: 0, boxShadow: 'none' }
               : { position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, pointerEvents: sheetOn && !hiddenByMax ? 'auto' : 'none', visibility: hiddenByMax ? 'hidden' : undefined, ...panelStyle }}
             onPointerDown={isMax ? undefined : (e) => onDragStart(e, p.id)}
           >
