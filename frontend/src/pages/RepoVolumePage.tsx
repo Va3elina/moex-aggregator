@@ -5,9 +5,12 @@
  * в репо, чтобы продать в короткую). На одном графике: спот-котировка
  * (левая ось) + правая ось в двух режимах:
  *   «Объём» — дневной объём репо EQRP+PSRP, млрд ₽;
- *   «Ставка» — ставка стакана EQRP + бенчмарк RUSFAR (цена денег), % годовых.
+ *   «Ставка» — ставка стакана EQRP + бенчмарк RUSFAR (цена денег), % годовых;
+ *   «Спред» — их разница в п.п. с нулевой отметкой (сам сигнал).
  * Ставка сильно ниже RUSFAR = бумага «special», её берут ради шорта, а не
- * ради денег; ставка ≈ RUSFAR = обычное фондирование под залог.
+ * ради денег; ставка ≈ RUSFAR = обычное фондирование под залог. Две линии
+ * рядом («Ставка») показывают уровни, но разницу глаз не вычитает — для этого
+ * отдельный режим «Спред».
  *
  * Источник репо — ISS MOEX (рынок ccp), бэкенд тянет историю on-demand:
  * первая загрузка тикера занимает несколько секунд, дальше из кэша.
@@ -59,11 +62,14 @@ const SMOOTH_OPTIONS: { key: SmoothMode; label: string; window: number }[] = [
   { key: 'ma20', label: 'МА 20', window: 20 },
 ];
 
-// Правая ось: объём репо или ставки (репо EQRP + RUSFAR).
-type ViewMode = 'volume' | 'rate';
+// Правая ось: объём репо, две ставки рядом, или их разница.
+// «Ставка» отвечает на вопрос «сколько стоит», «Спред» — «дороже или дешевле
+// денег», то есть собственно сигнал: две линии рядом глазом не вычитаются.
+type ViewMode = 'volume' | 'rate' | 'spread';
 const MODE_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'volume', label: 'Объём' },
   { key: 'rate', label: 'Ставка' },
+  { key: 'spread', label: 'Спред' },
 ];
 
 const fmtBillions = (v: number) =>
@@ -71,6 +77,24 @@ const fmtBillions = (v: number) =>
 
 const fmtPercent = (v: number) =>
   `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}%`;
+
+// Спред всегда со знаком: «-8,4 п.п.» читается как «на 8,4 дешевле денег».
+const fmtSpread = (v: number) =>
+  `${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} п.п.`;
+
+/** Скользящее среднее по имеющимся точкам (без выравнивания по календарю).
+ *  Первые win-1 точек считаются по накопленному окну — иначе начало пустует. */
+function movingAverage(points: { time: string; value: number }[], win: number) {
+  if (win <= 1) return points;
+  let sum = 0;
+  const queue: number[] = [];
+  return points.map((p) => {
+    queue.push(p.value);
+    sum += p.value;
+    if (queue.length > win) sum -= queue.shift() as number;
+    return { time: p.time, value: sum / queue.length };
+  });
+}
 
 export default function RepoVolumePage() {
   const { user, loading: authLoading } = useAuth();
@@ -107,20 +131,12 @@ export default function RepoVolumePage() {
     [visiblePoints],
   );
 
-  const repoData = useMemo(() => {
-    const win = SMOOTH_OPTIONS.find((o) => o.key === smooth)?.window ?? 1;
-    if (win <= 1) return visiblePoints.map((p) => ({ time: p.date, value: p.repo }));
-    // Скользящее среднее по торговым дням; первые win-1 точек — по факту
-    // накопленного окна (иначе начало графика пустует).
-    let sum = 0;
-    const queue: number[] = [];
-    return visiblePoints.map((p) => {
-      queue.push(p.repo);
-      sum += p.repo;
-      if (queue.length > win) sum -= queue.shift() as number;
-      return { time: p.date, value: sum / queue.length };
-    });
-  }, [visiblePoints, smooth]);
+  const smoothWindow = SMOOTH_OPTIONS.find((o) => o.key === smooth)?.window ?? 1;
+
+  const repoData = useMemo(
+    () => movingAverage(visiblePoints.map((p) => ({ time: p.date, value: p.repo })), smoothWindow),
+    [visiblePoints, smoothWindow],
+  );
 
   // Ставки: дни без сделок в стакане EQRP — пропуск точки, НЕ ноль (ноль
   // означал бы «бумага стоит как деньги» и врал бы на неликвиде).
@@ -139,8 +155,28 @@ export default function RepoVolumePage() {
     [visiblePoints],
   );
 
+  // Спред = ставка бумаги минус RUSFAR, в процентных пунктах. Считается только
+  // там, где есть обе ставки. Ниже нуля — за бумагу платят премию к деньгам,
+  // то есть её берут ради бумаги (шорт), а не ради денег.
+  const spreadData = useMemo(
+    () =>
+      movingAverage(
+        visiblePoints
+          .filter((p) => p.rate !== null && p.rusfar !== null)
+          .map((p) => ({ time: p.date, value: (p.rate as number) - (p.rusfar as number) })),
+        smoothWindow,
+      ),
+    [visiblePoints, smoothWindow],
+  );
+
   const assetName = ASSETS.find((a) => a.key === ticker)?.label ?? ticker;
   const isRateMode = mode === 'rate';
+  const isSpreadMode = mode === 'spread';
+  // Нулевая линия — та самая «цена денег»: всё что под ней, дешевле фондирования.
+  const zeroLine = useMemo(
+    () => (isSpreadMode ? [{ value: 0, color: 'var(--text-muted)', axis: 'secondary' as const }] : undefined),
+    [isSpreadMode],
+  );
 
   // Admin-only: гость/не-админ — на главную. Проверка ПОСЛЕ всех хуков
   // (React hooks rule). Пока auth грузится — ничего не рендерим.
@@ -152,7 +188,7 @@ export default function RepoVolumePage() {
       <PageHeader
         icon={Repeat}
         title="Репо в акциях"
-        subtitle="Объём сделок РЕПО с ЦК против котировки — тест гипотезы «репо как прокси шортов»"
+        subtitle="Объём и ставка РЕПО с ЦК против котировки — тест гипотезы «репо как прокси шортов»"
         sourceNote="Источник: Московская биржа (ISS, рынок РЕПО с ЦК) · экспериментальный индикатор, 5 тестовых бумаг"
       />
 
@@ -169,7 +205,8 @@ export default function RepoVolumePage() {
             value={mode}
             onChange={setMode}
           />
-          {/* Сглаживание применимо только к объёму (ставки не шумят так). */}
+          {/* Сглаживание — для объёма и спреда. В режиме «Ставка» линии
+              показываем сырыми: там важен сам уровень относительно RUSFAR. */}
           {!isRateMode && (
             <SegmentedControl<SmoothMode>
               options={SMOOTH_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
@@ -213,7 +250,7 @@ export default function RepoVolumePage() {
           ) : (
             <SimpleChart
               data={priceData}
-              secondaryData={isRateMode ? rateData : repoData}
+              secondaryData={isRateMode ? rateData : isSpreadMode ? spreadData : repoData}
               thirdData={isRateMode ? rusfarData : undefined}
               showSecondary={true}
               showThird={isRateMode}
@@ -222,18 +259,28 @@ export default function RepoVolumePage() {
               height={chartHeight}
               loading={loading}
               formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
-              formatSecondaryValue={isRateMode ? fmtPercent : fmtBillions}
+              formatSecondaryValue={
+                isSpreadMode ? fmtSpread : isRateMode ? fmtPercent : fmtBillions
+              }
               formatThirdValue={fmtPercent}
               // Короткий формат для оси — без юнита, юнит в легенде/тултипе.
               formatSecondaryAxis={(v) =>
-                isRateMode
+                isRateMode || isSpreadMode
                   ? v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })
                   : (v / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })
               }
+              // Нулевая отметка спреда — граница «дороже/дешевле денег».
+              horizontalLines={zeroLine}
               niceTicks={true}
               niceTicksSecondary={true}
               primaryLabel={assetName}
-              secondaryLabel={isRateMode ? 'Ставка репо (EQRP), %' : 'Объём репо, млрд ₽'}
+              secondaryLabel={
+                isRateMode
+                  ? 'Ставка репо (EQRP), %'
+                  : isSpreadMode
+                    ? 'Спред к RUSFAR, п.п.'
+                    : 'Объём репо, млрд ₽'
+              }
               thirdLabel="RUSFAR (цена денег), %"
               showValueHeader={false}
               legendPosition="top"
