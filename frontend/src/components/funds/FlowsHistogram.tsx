@@ -444,8 +444,11 @@ export default function FlowsHistogram({
     // SVG-<circle> стал бы эллипсом — кружки рисуем HTML-оверлеем поверх области
     // серий, позиция в процентах той же системы координат. Без transform:
     // html2canvas его игнорирует и в PNG-экспорте кружок уехал бы от линии.
-    const END_DOT_R = 3;                              // как linePrimaryW * 1.5 в SimpleChart
-    const HOVER_DOT_R = cssVar('--dot-primary-r', 5);
+    // Радиус общий у обоих кружков — как в «Открытых позициях»: там маркер конца
+    // линии считается как linePrimaryW * 1.5 (3.3 * 1.5 ≈ 5) и совпадает с
+    // --dot-primary-r у курсорного. Здесь линия тоньше, поэтому берём тот же
+    // токен напрямую, иначе кружки выходят разного размера.
+    const DOT_R = cssVar('--dot-primary-r', 5);
 
     const endDot = useMemo(
         () => (hasPrice && linePts.length > 0 ? linePts[linePts.length - 1] : null),
@@ -617,12 +620,12 @@ export default function FlowsHistogram({
                                     не дошла до последней точки, кружок скрыт. */}
                                 <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, left: padArea.left, right: padArea.right }}>
                                     {endDot && (revealW == null || revealW >= endDot.x) && (
-                                        <div style={dotStyle(endDot.x, endDot.y, END_DOT_R)} />
+                                        <div style={dotStyle(endDot.x, endDot.y, DOT_R)} />
                                     )}
                                     {hoverDot && (
                                         <div
                                             className="chart-hover-ui"
-                                            style={{ ...dotStyle(hoverDot.x, hoverDot.y, HOVER_DOT_R), boxShadow: '0 0 0 2px #0B0D12' }}
+                                            style={{ ...dotStyle(hoverDot.x, hoverDot.y, DOT_R), boxShadow: '0 0 0 2px #0B0D12' }}
                                         />
                                     )}
                                 </div>
