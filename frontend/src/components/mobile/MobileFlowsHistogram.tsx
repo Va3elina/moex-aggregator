@@ -307,23 +307,13 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
           <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.02em' }}>
             {fmtDate(hovered.period_start)} — {fmtDate(hovered.period_end)}
           </div>
-          {/* Минималистичный: только нетто и процент изменения СЧА */}
+          {/* Минималистичный: только нетто */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
             <span
               className="mono"
               style={{ color: hovered.flow >= 0 ? COLOR_IN : COLOR_OUT, fontWeight: 800, fontSize: 'var(--fs-base)' }}
             >
               {hovered.flow >= 0 ? '+' : ''}{fmtBillions(hovered.flow)} ₽
-            </span>
-            <span
-              className="mono"
-              style={{
-                color: hovered.flow_pct >= 0 ? COLOR_IN : COLOR_OUT,
-                fontWeight: 700,
-                fontSize: 'var(--fs-xs)',
-              }}
-            >
-              {hovered.flow_pct >= 0 ? '+' : ''}{hovered.flow_pct.toFixed(2)}%
             </span>
           </div>
         </div>

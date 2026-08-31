@@ -26,7 +26,7 @@ import {
 } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { FundsFlowsResponse, IndexDataPoint } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
+import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -668,7 +668,6 @@ export default function FlowsHistogram({
                                     </div>
                                 )}
                                 <TooltipRow color={color} label={f.flow >= 0 ? 'Приток' : 'Отток'} value={fmtFlowVal(f.flow)} />
-                                <TooltipRow color={CHART_COLORS.primary} label="Изменение" value={`${f.flow_pct > 0 ? '+' : ''}${f.flow_pct.toFixed(2)}%`} />
                             </ChartTooltip>
                         );
                     })()}
