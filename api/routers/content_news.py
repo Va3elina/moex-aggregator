@@ -590,6 +590,11 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     return {"status": "pending", "futures_ticker": futures_ticker}
 
 
+# Версия контракта брифа — держать в согласии с signals/content_ai.py:BRIEF_VERSION.
+# Поднимать при каждом изменении набора полей брифа.
+_BRIEF_VERSION = 2
+
+
 # ── Шаг Г: судья ───────────────────────────────────────────────────────────
 # Рубрика и обоснование групп — research/content_pipeline_v2/RUBRIC.md.
 # ВОРОТА A (фактура): любой провал = брак.
@@ -689,12 +694,18 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         # (см. research/content_pipeline_v2/RESEARCH_2026-08-31.md §2).
         # Повторный fire Шага В перезаписывает ОБА: новый черновик — это новый
         # вывод ИИ, а не правка человека.
+        # brief_version помечается ЗДЕСЬ: только эта точка знает, что черновик
+        # написан по актуальному контракту брифа. Судья (Шаг Г) берёт лишь
+        # актуальную версию — иначе он валит старые черновики на воротах фактуры
+        # за поля, которых в новом брифе уже нет (миграция 059).
         db.execute(text("""
             UPDATE content_candidates
             SET draft_text = :draft_text, draft_text_ai = :draft_text,
+                brief_version = :brief_version,
                 synth_declined_reason = NULL, updated_at = now()
             WHERE id = :id
-        """), {"id": candidate_id, "draft_text": body.draft_text})
+        """), {"id": candidate_id, "draft_text": body.draft_text,
+                "brief_version": _BRIEF_VERSION})
         db.commit()
         return {"status": "draft_ready", "has_draft": True}
 
