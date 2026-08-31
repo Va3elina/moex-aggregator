@@ -152,3 +152,67 @@ def test_judge_payload_carries_the_draft(monkeypatch):
     out = _json.loads(CA._step_g_payload(None, _ROW, "tok").rsplit("\ninternal_token:", 1)[0])
     assert out["черновик_на_проверку"] == "Черновик"
     assert out["candidate_id"] == 1104
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Парная связка «позиция ↔ цена»
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PRICE = {"цена_сейчас": "около 92", "цена_за_месяц": "упала на 7%",
+          "цена_за_полгода": "упала примерно на 30%", "цена_за_год": "упала примерно на 25%"}
+
+
+def test_pair_uses_the_same_window_as_the_lead_number():
+    """Одинаковое окно у позиции и цены — иначе сравнение не сравнение."""
+    out = CA._pair_price_with_position(dict(_PRICE), {
+        "_код_период_главного_числа": "за_год",
+        "_код_фраза_главного_числа": "чистый лонг вырос в 3 раза"})
+    assert out["ГЛАВНОЕ_СРАВНЕНИЕ"].startswith(
+        "за год: акция упала примерно на 25%, а чистый лонг вырос в 3 раза")
+    assert "за_полгода" in out["остальные_горизонты_упоминать_не_обязательно"]
+    assert "цена_за_год" not in out, "ведущий горизонт не должен дублироваться"
+
+
+def test_pair_names_both_windows_when_they_differ():
+    """Ведущее окно позиции — сутки; у цены суточного горизонта нет.
+
+    Нельзя выдавать разные окна за одно: «за сутки лонг втрое, акция вдвое» —
+    ложь, которую читатель не поймает. Проговариваем оба срока явно.
+    """
+    out = CA._pair_price_with_position(dict(_PRICE), {
+        "_код_период_главного_числа": "за_сутки",
+        "_код_фраза_главного_числа": "толпа перевернулась из чистого лонга в чистый шорт"})
+    pair = out["ГЛАВНОЕ_СРАВНЕНИЕ"]
+    assert "за сутки" in pair and "за год" in pair, pair
+
+
+def test_pair_reduces_number_count():
+    """Смысл правки — плотность. Было 4 равноправных значения, стало 1 связка."""
+    before = len([k for k in _PRICE if k.startswith("цена_за_")]) + 1
+    out = CA._pair_price_with_position(dict(_PRICE), {
+        "_код_период_главного_числа": "за_год", "_код_фраза_главного_числа": "лонг вырос в 3 раза"})
+    top = [k for k in out if not k.startswith("остальные")]
+    assert len(top) < before, f"{len(top)} против {before}"
+
+
+def test_pair_survives_missing_price_data():
+    """У фьючерса без акции блок цены пустой — связки просто нет, падать нельзя."""
+    assert CA._pair_price_with_position({}, {"_код_период_главного_числа": "за_год",
+                                             "_код_фраза_главного_числа": "x"}) == {}
+    assert CA._pair_price_with_position(dict(_PRICE), {}) == _PRICE
+
+
+def test_service_keys_never_reach_the_model(monkeypatch):
+    """Ключи «_код_» — для кода. В брифе их быть не должно: любое видимое поле
+    модель считает обязанной израсходовать (тот же механизм, что убил
+    market_rank и recent_signals)."""
+    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
+    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {
+        "_код_период_главного_числа": "за_год", "_код_фраза_главного_числа": "лонг вырос в 3 раза",
+        "ГЛАВНОЕ_ЧИСЛО": "за_год: лонг вырос в 3 раза"})
+    monkeypatch.setattr(CA, "_price_context", lambda *a: dict(_PRICE))
+    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+    for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
+                          ("судья", CA._step_g_payload(None, _ROW, "tok"))):
+        assert "_код_" not in payload, f"служебный ключ утёк в бриф {name}"
+        assert "ГЛАВНОЕ_СРАВНЕНИЕ" in payload, f"{name} не получил связку"

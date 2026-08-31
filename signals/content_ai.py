@@ -94,7 +94,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 4
+BRIEF_VERSION = 5
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -598,6 +598,12 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     # net/gross — это доля чистой позиции в ОТКРЫТОМ ИНТЕРЕСЕ физлиц.
     share = abs(pcts[-1])
     return {
+        # ⚠️ Ключи с «_код_» удаляет _build_brief ДО отправки модели: они нужны
+        # только коду, чтобы собрать парную связку «позиция ↔ цена» по ОДНОМУ
+        # окну. В брифе их быть не должно — любое видимое поле модель считает
+        # обязанной израсходовать, и оно вернётся числом в текст.
+        "_код_период_главного_числа": lead,
+        "_код_фраза_главного_числа": periods[lead][0],
         "направление_позиции": f"чистый {word.upper()}",
         "ГЛАВНОЕ_ЧИСЛО": f"{lead}: {periods[lead][0]}",
         "фон_упоминать_не_обязательно": {k: v[0] for k, v in periods.items() if k != lead},
@@ -636,6 +642,49 @@ def _story_frame(signal_date, news_date) -> str:
             f"запрещены как факт.")
 
 
+_HORIZON_ORDER = ["за_месяц", "за_полгода", "за_год"]
+
+
+def _pair_price_with_position(price: dict, pos: dict) -> dict:
+    """Одна готовая связка «позиция ↔ цена» по ОДНОМУ окну вместо четырёх
+    равноправных горизонтов.
+
+    ⚠️ Зачем. Судья на кандидате 1104 поставил дефект numbers_density: во втором
+    абзаце оказалось четыре числа («в 3 раза», «84%», «на 25%», «около 92») против
+    одного-двух у канала. Правило «не больше двух чисел» в промпте уже было — и не
+    сработало, потому что дело не в правиле: блок цена_акции выкладывал цену
+    сейчас и три горизонта равным весом, а любое поле брифа модель считает
+    обязанной израсходовать. Это ровно та болезнь, от которой для позиций спасло
+    ГЛАВНОЕ_ЧИСЛО; здесь тот же приём.
+
+    ⚠️ Окна называем оба и явно. Если у позиции ведущее окно «за_сутки», парного
+    окна у цены нет — тогда берём самый длинный горизонт цены и проговариваем ОБА
+    срока, а не выдаём разные окна за одно («за сутки лонг втрое, акция вдвое» —
+    ложь, которую читатель не поймает).
+    """
+    lead = pos.get("_код_период_главного_числа")
+    phrase = pos.get("_код_фраза_главного_числа")
+    if not price or not lead or not phrase:
+        return price
+    horizons = {k[len("цена_"):]: v for k, v in price.items() if k.startswith("цена_за_")}
+    if not horizons:
+        return price
+    matched = lead in horizons
+    key = lead if matched else max(horizons, key=lambda k: _HORIZON_ORDER.index(k))
+    window = key.replace("за_", "за ")
+    if matched:
+        pair = f"{window}: акция {horizons[key]}, а {phrase}"
+    else:
+        pair = (f"{phrase} ({lead.replace('за_', 'за ')}), "
+                f"а акция {horizons[key]} {window}")
+    out = {"цена_сейчас": price.get("цена_сейчас", ""),
+           "ГЛАВНОЕ_СРАВНЕНИЕ": pair + " — это и есть связка для поста"}
+    rest = {k: v for k, v in horizons.items() if k != key}
+    if rest:
+        out["остальные_горизонты_упоминать_не_обязательно"] = rest
+    return out
+
+
 def _build_brief(db, row) -> dict:
     """ЕДИНСТВЕННЫЙ сборщик брифа — для Шага В (писатель) и Шага Г (судья).
 
@@ -662,6 +711,8 @@ def _build_brief(db, row) -> dict:
     created_at = row.get("created_at")
     news_date = created_at.date() if created_at else row["signal_date"]
     reused_signal = bool(created_at and row["signal_date"] < news_date)
+    pos = _position_phrases(row["asset_id"], row["anomaly_clgroup"],
+                            as_of=row["signal_date"])
     brief = {
         "candidate_id": row["id"],
         "headline": row["headline"],
@@ -672,10 +723,10 @@ def _build_brief(db, row) -> dict:
         "дата_новости": str(news_date),
         "дата_сигнала": str(row["signal_date"]),
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
-        "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"],
-                                            as_of=row["signal_date"]),
-        "цена_акции": _price_context(db, row["asset_id"], row["tickers"],
-                                      row["signal_date"]),
+        "позиции_физлиц": pos,
+        "цена_акции": _pair_price_with_position(
+            _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
+            pos),
         "служебное": {
             "atr_множитель": float(row["severity_value"]),
             "пояснение": ("ВНУТРЕННЕЕ. Отношение дневного изменения к обычному "
@@ -685,6 +736,8 @@ def _build_brief(db, row) -> dict:
     prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     if prior and not prior.startswith("(нет"):
         brief["предыдущий_пост_этого_треда"] = prior
+    for k in [k for k in pos if k.startswith("_код_")]:
+        pos.pop(k)
     return brief
 
 
