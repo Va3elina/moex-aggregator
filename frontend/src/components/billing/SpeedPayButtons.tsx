@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTbankIntegration } from '../../hooks/useTbankIntegration';
 import { apiFetch } from '../../services/api';
+import { signupUrlForIntent } from '../../utils/checkoutIntent';
 import type { TBankPaymentsApi } from '../../types/tbank';
 
 interface Props {
@@ -69,7 +70,8 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
         // Гость не может купить — отправляем на login и кидаем error
         // чтобы SDK не пытался редиректить дальше.
         if (!isAuthenticated) {
-          navigate(`/login?next=/pricing`);
+          const pending = planIdRef.current;
+          navigate(signupUrlForIntent(pending ? { kind: 'plan', planId: pending } : null));
           throw new Error('Auth required');
         }
         const pid = planIdRef.current;

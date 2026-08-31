@@ -16,14 +16,22 @@
  * слать чек на реальный адрес.
  */
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { addEmail, ApiError } from '../services/api';
+import { safeInternalPath } from '../utils/postLoginRedirect';
+import { emailStepUrl } from '../utils/checkoutIntent';
 
 export default function AddEmailPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // ?next= — цель, ради которой юзера сюда прислали (обычно оформление
+  // подписки). Передаём её дальше на /verify-email, иначе после ввода кода
+  // человек окажется на главной и начнёт покупку заново.
+  const next = safeInternalPath(searchParams.get('next'));
+  const verifyUrl = next ? emailStepUrl('/verify-email', next) : '/verify-email';
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [errorIsConflict, setErrorIsConflict] = useState(false);
@@ -33,7 +41,7 @@ export default function AddEmailPage() {
   // редирект на главную. Иначе можно зациклиться.
   if (user && !user.requires_email_setup) {
     // email уже реальный: если не подтверждён — на ввод кода, иначе на главную
-    navigate(user.is_verified ? '/' : '/verify-email', { replace: true });
+    navigate(user.is_verified ? (next || '/') : verifyUrl, { replace: true });
     return null;
   }
 
@@ -50,7 +58,7 @@ export default function AddEmailPage() {
     try {
       await addEmail(trimmed);
       await refreshUser();
-      navigate('/verify-email', { replace: true });  // дальше — ввод кода из письма
+      navigate(verifyUrl, { replace: true });  // дальше — ввод кода из письма
     } catch (err) {
       const isConflict = err instanceof ApiError && err.status === 409;
       setErrorIsConflict(isConflict);

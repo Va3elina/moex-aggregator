@@ -12,8 +12,8 @@
  * Premium tier удалён 2026-05-19. Премиум-юзеры мигрированы в pro,
  * Вадим (id 2/4) и Тория (id 3/11) — в admin (полный доступ).
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
@@ -26,6 +26,14 @@ import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
 import { API_CSV_ENABLED } from '../config/features';
 import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
+import {
+  INTENT_PARAM_NAMES,
+  emailStepUrl,
+  pricingUrlWithIntent,
+  readCheckoutIntent,
+  signupUrlForIntent,
+  type CheckoutIntent,
+} from '../utils/checkoutIntent';
 
 interface PlanVariant {
   plan_id: string;
@@ -85,6 +93,7 @@ interface BillingStatus {
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { track } = useAnalytics();
   const [data, setData] = useState<PlansResponse | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
@@ -160,17 +169,23 @@ export default function PricingPage() {
   }, [user, isAuthenticated]);
 
   // Клик "Купить" — открываем модалку согласий (НЕ создаём checkout сразу).
-  // Гость → редирект на логин с next=/pricing (модалка не нужна).
+  // Гость → регистрация, но выбранный план едет с ним в ?next= и доигрывается
+  // на возврате (см. эффект намерения ниже), а не теряется, как раньше.
   const handleCheckout = (planId: string) => {
+    const intent: CheckoutIntent = { kind: 'plan', planId };
     if (!isAuthenticated) {
-      navigate(`/login?next=/pricing`);
+      navigate(signupUrlForIntent(intent));
       return;
     }
     // Гейт: оплатить можно только с подтверждённым email. Неподтверждённых ведём
     // подтверждать — synthetic (Telegram/VK без email) сначала на /add-email,
     // остальных на /verify-email (ввод кода). Бэкенд дублирует проверку.
+    // next тащим с собой: после кода из письма юзер возвращается к своему плану.
     if (user && !user.is_verified) {
-      navigate(user.requires_email_setup ? '/add-email' : '/verify-email');
+      navigate(emailStepUrl(
+        user.requires_email_setup ? '/add-email' : '/verify-email',
+        pricingUrlWithIntent(intent),
+      ));
       return;
     }
     setError(null);
@@ -188,12 +203,16 @@ export default function PricingPage() {
   // Старт триала: гость → регистрация; неподтверждённый email → верификация;
   // иначе открываем consent-модалку в trial-режиме (tier+period с карточки).
   const handleTrialStart = (tier: string, trialPeriod: 'monthly' | 'yearly') => {
+    const intent: CheckoutIntent = { kind: 'trial', tier, period: trialPeriod };
     if (!isAuthenticated) {
-      navigate('/login?next=/pricing');
+      navigate(signupUrlForIntent(intent));
       return;
     }
     if (user && !user.is_verified) {
-      navigate(user.requires_email_setup ? '/add-email' : '/verify-email');
+      navigate(emailStepUrl(
+        user.requires_email_setup ? '/add-email' : '/verify-email',
+        pricingUrlWithIntent(intent),
+      ));
       return;
     }
     setError(null);
@@ -201,6 +220,39 @@ export default function PricingPage() {
     setPendingPlanId(null);
     setPendingTrial({ tier, period: trialPeriod });
   };
+
+  // === Намерение из ?plan= / ?trial= ===
+  // Человек уже нажал «Оформить» — до регистрации или до подтверждения почты.
+  // Просить его нажать ту же кнопку второй раз не за что: доигрываем клик за
+  // него, то есть открываем окно согласий на выбранном тарифе. Если почта ещё
+  // не подтверждена, handleCheckout сам уведёт на ввод кода и вернёт сюда же.
+  const intentApplied = useRef(false);
+  useEffect(() => {
+    if (intentApplied.current || !data) return;
+    const intent = readCheckoutIntent(searchParams);
+    if (!intent) return;
+    intentApplied.current = true;
+    // Параметр одноразовый: перезагрузка страницы не должна открывать окно снова.
+    const cleaned = new URLSearchParams(searchParams);
+    INTENT_PARAM_NAMES.forEach((name) => cleaned.delete(name));
+    setSearchParams(cleaned, { replace: true });
+
+    if (intent.kind === 'trial') {
+      setPeriod(intent.period);
+      handleTrialStart(intent.tier, intent.period);
+      return;
+    }
+    // План ищем в загруженной сетке: по мусорному ?plan= открывать окно, из
+    // которого бэкенд ответит 400, хуже, чем просто показать тарифы. Заодно
+    // подтягиваем переключатель Месяц/Год к тому периоду, что человек выбрал.
+    const owner = data.tiers.find(
+      (t) => t.monthly?.plan_id === intent.planId || t.yearly?.plan_id === intent.planId,
+    );
+    if (!owner) return;
+    setPeriod(owner.yearly?.plan_id === intent.planId ? 'yearly' : 'monthly');
+    handleCheckout(intent.planId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, searchParams]);
 
   // Подтверждение триала: создаём триал + привязку карты → редирект на T-Bank.
   const confirmTrial = async () => {

@@ -19,6 +19,7 @@ import { apiFetch } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { trackEvent } from '../../hooks/useYandexMetrica';
+import { signupUrlForIntent } from '../../utils/checkoutIntent';
 
 type Tier = 'basic' | 'pro';
 type Period = 'monthly' | 'yearly';
@@ -114,7 +115,13 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 </div>
                 <button
                     type="button"
-                    onClick={() => navigate('/login?next=/pricing')}
+                    onClick={() => navigate(signupUrlForIntent(
+                        // Тариф известен только у замка (lockedTier), но период
+                        // гость тут не выбирал — в намерение его не зашиваем,
+                        // иначе на /pricing откроется окно с ценой, которую
+                        // человек не выбирал. Ведём на тарифы, там один клик.
+                        null,
+                    ))}
                     className="editorial-press"
                     style={{
                         width: '100%', padding: '12px 20px', borderRadius: 8, border: 'none',

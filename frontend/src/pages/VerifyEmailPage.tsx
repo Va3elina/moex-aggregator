@@ -10,14 +10,21 @@
  * профиле тоже ведёт сюда. Бэкенд: POST /api/auth/verify-email, /resend-verification.
  */
 import { useState, useEffect, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MailCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { verifyEmail, resendVerification, ApiError } from '../services/api';
+import { safeInternalPath } from '../utils/postLoginRedirect';
+import { emailStepUrl } from '../utils/checkoutIntent';
 
 export default function VerifyEmailPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // ?next= — куда вернуть после кода. Сюда приходят из цикла оформления
+  // подписки, и без next выбранный тариф терялся: юзер оказывался на главной
+  // и начинал покупку заново.
+  const next = safeInternalPath(searchParams.get('next'));
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -34,10 +41,12 @@ export default function VerifyEmailPage() {
 
   // Гварды — навигация в эффекте (нельзя делать early-return до хуков)
   useEffect(() => {
-    if (!user) navigate('/login', { replace: true });
-    else if (user.is_verified) navigate('/', { replace: true });
-    else if (user.requires_email_setup) navigate('/add-email', { replace: true });
-  }, [user, navigate]);
+    if (!user) navigate(next ? `/login?next=${encodeURIComponent(next)}` : '/login', { replace: true });
+    else if (user.is_verified) navigate(next || '/', { replace: true });
+    else if (user.requires_email_setup) {
+      navigate(next ? emailStepUrl('/add-email', next) : '/add-email', { replace: true });
+    }
+  }, [user, navigate, next]);
 
   if (!user || user.is_verified || user.requires_email_setup) return null;
 
@@ -54,7 +63,7 @@ export default function VerifyEmailPage() {
     try {
       await verifyEmail(trimmed);
       await refreshUser();
-      navigate('/', { replace: true });
+      navigate(next || '/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось подтвердить email');
     } finally {
