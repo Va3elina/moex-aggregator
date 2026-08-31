@@ -68,6 +68,44 @@ check(f11[2].endswith("+00:00") and "T" in f11[2],
 check(f11[6] == '{"SBER"}', "тикер распознан из хэштега")
 check(f10[7] == "tg_export", "источник помечен")
 
+print("entities — JSON с переносом строки внутри ссылки (живой сбой на проде):")
+with tempfile.TemporaryDirectory() as td:
+    # Реальный случай: смартлаб, строка 13329 — href с переносом строки. Ручная
+    # сборка JSON экранировала только кавычки и слэши, перенос доезжал внутрь
+    # JSON-строки и COPY падал на «invalid input syntax for type json».
+    json.dump({"name": "СМАРТЛАБ", "type": "public_channel", "messages": [
+        {"id": 1, "type": "message", "date": "2026-08-30T10:00:00",
+         "text_entities": [{"type": "plain", "text": "новость достаточной длины тут "},
+                            {"type": "text_link", "text": "ссылка",
+                             "href": "https://smartlab.news/i/36911\n"}]},
+    ]}, open(os.path.join(td, "result.json"), "w"), ensure_ascii=False)
+    row = list(N.parse_export(td))[0]
+ents_field = row.split("\t")[5]
+check("\\n" in ents_field or "\\u000a" in ents_field.lower(),
+      "перенос строки внутри href экранирован, а не пролез в JSON сырым")
+# То, что реально проверяет Postgres: после разэкранирования COPY это валидный JSON.
+# ⚠️ Разэкранировать НАДО одним проходом слева направо. Наивная цепочка
+# .replace(r"\t","\t").replace(r"\n","\n").replace(r"\\","\\") ломается на
+# последовательности \\n: она сначала съест хвостовые \n и оставит висячий слэш.
+# Это ровно та же ошибка порядка, от которой предостерегает docstring esc().
+def copy_unescape(v: str) -> str:
+    out, i = [], 0
+    m = {"t": "\t", "n": "\n", "r": "\r", "\\": "\\"}
+    while i < len(v):
+        if v[i] == "\\" and i + 1 < len(v):
+            out.append(m.get(v[i + 1], v[i + 1]))
+            i += 2
+        else:
+            out.append(v[i])
+            i += 1
+    return "".join(out)
+
+try:
+    parsed = json.loads(copy_unescape(ents_field))
+    check(parsed["links"][0].endswith("\n"), "после разэкранирования JSON валиден и ссылка цела")
+except Exception as e:
+    check(False, f"после разэкранирования JSON невалиден: {type(e).__name__}: {e}")
+
 print("parse_export — защита от личной переписки:")
 with tempfile.TemporaryDirectory() as td:
     json.dump({"name": "Тория", "type": "personal_chat",
