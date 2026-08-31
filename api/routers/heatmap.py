@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from api.database import get_engine
 from api.routers.auth import require_admin, get_current_user_optional
-from api.services.market_delay import price_cutoff
+from api.services.market_delay import cutoff_for_interval
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
@@ -243,7 +243,7 @@ async def get_heatmap_prices():
                 ORDER BY begin_time DESC
                 LIMIT 1
             ) c
-        """), {"cutoff": price_cutoff()}).fetchall()
+        """), {"cutoff": cutoff_for_interval(5)}).fetchall()
 
     result = {row[0]: round(float(row[1]), 2) for row in rows}
     get_or_set(cache_key, result, ttl=30)  # кэш 30 сек (не 5 мин)

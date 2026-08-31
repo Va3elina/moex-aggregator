@@ -59,7 +59,12 @@ intraday_close AS (
     FROM candles
     WHERE type = 'stock' AND interval = 5
       AND begin_time::date = CURRENT_DATE
-      AND begin_time <= (now() AT TIME ZONE 'Europe/Moscow') - interval '15 minutes'
+      -- 20 = 15 минут лицензии + 5 минут длины бара. Бар помечен НАЧАЛОМ, а
+      -- покрывает [begin, begin+5): при потолке '15 minutes' бар 14:20
+      -- выпускался в 14:35 вместе со сделкой 14:25 — то есть через десять
+      -- минут вместо пятнадцати. Держать в согласии с
+      -- api/services/market_delay.cutoff_for_interval.
+      AND begin_time <= (now() AT TIME ZONE 'Europe/Moscow') - interval '20 minutes'
     ORDER BY secid, begin_time DESC
 ),
 -- Дата «снимка» карты per-секция: если сегодня уже были сделки (есть 5-мин

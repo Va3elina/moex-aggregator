@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from api.services.market_delay import price_cutoff
+from api.services.market_delay import cutoff_for_interval
 from api.database import get_db
 from api.models import User, Alert, AlertEvent
 from api.models.telegram_link_token import TelegramLinkToken
@@ -179,7 +179,7 @@ def alert_context(
             ORDER BY begin_time DESC, volume DESC NULLS LAST
             LIMIT 1
         """),
-        {"asset": asset, "cutoff": price_cutoff()},
+        {"asset": asset, "cutoff": cutoff_for_interval(5)},
     ).first()
 
     if row is None:

@@ -26,7 +26,7 @@ from sqlalchemy import text
 
 from api.logger import get_logger
 from api.services.contract_calendar import front_sec_id
-from api.services.market_delay import price_cutoff
+from api.services.market_delay import cutoff_for_interval
 
 log = get_logger()
 
@@ -195,9 +195,9 @@ def append_live_points(db, response: dict) -> bool:
             ORDER BY c.begin_time DESC, c.volume DESC
             LIMIT 1
         """)
-        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids, "cutoff": price_cutoff()}).fetchone()
+        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
         if (not row or not row[0]) and live_sec_ids is not sec_ids:
-            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids, "cutoff": price_cutoff()}).fetchone()
+            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
 
         if not row or not row[0]:
             return False
