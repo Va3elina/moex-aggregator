@@ -43,6 +43,14 @@ CORPUS = os.path.join(HERE, "dataset", "corpus.json.gz")
 VECTORS = os.path.join(HERE, "dataset", "corpus_vectors.npz")
 MODEL_NAME = "minishlab/potion-multilingual-128M"
 GENRE_TAGS = ("#открытыйинтерес", "#открытыепозиции")
+# Тикер в хэштеге: латиница 3-6 букв. #SBER/#GAZP/#VKCO — да, #дкп/#россия — нет.
+TICKER_RE = re.compile(r"^#([A-Z]{3,6})$")
+
+
+def tickers_of(post) -> set:
+    """Тикеры поста — из хэштегов. У Thor разметка по тикерам плотная (#IMOEX 213,
+    #SBER 173), у FRAME — реже, там теги по рубрике индикатора."""
+    return {m.group(1) for t in post["hashtags"] if (m := TICKER_RE.match(t.upper()))}
 
 
 def load_corpus():
@@ -129,7 +137,13 @@ POOLS = {
 
 
 class Retriever:
-    def __init__(self, pool="genre"):
+    """Решение Вадима 31.08: **FRAME как основа, Thor только для редких тикеров.**
+    Причина: у Thor голос личный («я», ценовые цели, оффтопы), а нам нужен голос
+    Frame (команда, «мы»). Его 1377 постов берём не ради стиля, а ради покрытия —
+    когда по нужному тикеру у FRAME нет вообще ничего.
+    """
+
+    def __init__(self, pool="genre", fallback_thor=True):
         corpus = load_corpus()
         vecs = load_vectors()
         keep = [i for i, p in enumerate(corpus) if POOLS[pool](p)]
@@ -137,6 +151,25 @@ class Retriever:
         self.vecs = vecs[keep]
         self.bm25 = BM25([p["text"] for p in self.posts])
         self._model = None
+        self.frame_tickers = {t for p in self.posts for t in tickers_of(p)}
+        self._thor = None
+        if fallback_thor:
+            thor_idx = [i for i, p in enumerate(corpus) if POOLS["thor"](p)]
+            self._thor = [corpus[i] for i in thor_idx]
+            self._thor_vecs = vecs[thor_idx]
+
+    def rare_ticker_backup(self, tickers, k=1) -> list:
+        """Посты Thor по тикерам, которых у FRAME нет вообще. Не «дополнить
+        выдачу», а именно закрыть дыру покрытия: если Thor начнёт подмешиваться
+        к тикерам, которые FRAME освещает, мы затащим в примеры чужой голос."""
+        if not self._thor or not tickers:
+            return []
+        missing = {t.upper() for t in tickers} - self.frame_tickers
+        if not missing:
+            return []
+        hits = [p for p in self._thor if tickers_of(p) & missing]
+        hits.sort(key=lambda p: p["date"], reverse=True)
+        return hits[:k]
 
     def embed(self, text: str) -> np.ndarray:
         if self._model is None:
@@ -144,6 +177,14 @@ class Retriever:
             self._model = StaticModel.from_pretrained(MODEL_NAME)
         v = self._model.encode([text]).astype(np.float32)[0]
         return v / (np.linalg.norm(v) + 1e-9)
+
+    def search_with_backup(self, query: str, tickers=None, k=3, mode="hybrid") -> tuple:
+        """Основная выдача — FRAME. Если тикер запроса FRAME не покрывает вообще,
+        ОДИН пост Thor добавляется как запасной и помечается: он для покрытия,
+        а не для подражания голосу."""
+        hits, _ = self.search(query, k=k, mode=mode)
+        backup = self.rare_ticker_backup(tickers or [], k=1)
+        return hits, backup
 
     def search(self, query: str, k=3, mode="hybrid", exclude=None) -> list:
         exclude = exclude if exclude is not None else set()
