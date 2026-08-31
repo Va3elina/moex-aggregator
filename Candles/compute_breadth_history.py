@@ -7,7 +7,9 @@
 
 Поддерживает две вселенные:
 - all: все акции из БД
-- imoex: только акции из индекса IMOEX
+- imoex: акции из индекса IMOEX, состав берётся НА КАЖДУЮ ДАТУ из
+  index_composition (см. Candles/fetch_index_composition.py). Если таблица
+  пуста — фолбэк на сегодняшний состав из ISS (как было исторически).
 
 Таблица: breadth_history(trade_date, ema_period, universe, percent_above, count_above, count_total)
 
@@ -61,6 +63,10 @@ KNOWN_SPLITS: dict[str, tuple[date, float]] = {
 }
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
+
+# Индекс, чья историческая база расчёта лежит в index_composition
+# (наполняет Candles/fetch_index_composition.py).
+INDEX_ID = "IMOEX"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -159,6 +165,60 @@ def get_imoex_tickers() -> list[str]:
     except Exception as e:
         log.error(f"Ошибка загрузки тикеров IMOEX: {e}")
         return []
+
+
+def load_index_composition(engine, index_id: str, date_from: date) -> dict[date, set[str]]:
+    """
+    История базы расчёта индекса: {trade_date: {tickers}}.
+
+    Наполняется Candles/fetch_index_composition.py. Пустой словарь = таблицы
+    ещё нет или бэкфилл не прогонялся → вызывающий падает на фолбэк.
+    """
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT trade_date, ticker
+                FROM index_composition
+                WHERE index_id = :i AND trade_date >= :date_from
+                ORDER BY trade_date
+            """), {"i": index_id, "date_from": date_from}).fetchall()
+    except Exception as e:
+        log.warning(f"index_composition недоступна ({e}) — фолбэк на текущий состав ISS")
+        return {}
+
+    composition: dict[date, set[str]] = {}
+    for d, ticker in rows:
+        composition.setdefault(d, set()).add(ticker)
+    if composition:
+        days = sorted(composition)
+        log.info(f"Состав {index_id}: {len(days)} дней ({days[0]} … {days[-1]}), "
+                 f"уникальных бумаг {len(set().union(*composition.values()))}")
+    return composition
+
+
+def build_member_dates(
+    composition: dict[date, set[str]],
+    candle_dates: set[date],
+) -> dict[str, set[date]]:
+    """
+    Инвертирует состав в {ticker: {даты, когда бумага была в индексе}}.
+
+    Состав есть только на торговые дни основной сессии. Даты, у которых своего
+    среза нет (выходные сессии MOEX, праздники, день до публикации свежего
+    среза), наследуют последний известный состав на дату <= d. Даты раньше
+    первого среза членства не дают вовсе — там состав индекса неизвестен.
+    """
+    import bisect
+
+    comp_days = sorted(composition)
+    member_dates: dict[str, set[date]] = {}
+    for d in sorted(candle_dates):
+        pos = bisect.bisect_right(comp_days, d) - 1
+        if pos < 0:
+            continue
+        for ticker in composition[comp_days[pos]]:
+            member_dates.setdefault(ticker, set()).add(d)
+    return member_dates
 
 
 def load_usd_rates(engine, date_from: date) -> dict[date, float]:
@@ -299,9 +359,15 @@ def ema_numpy(prices: np.ndarray, span: int) -> np.ndarray:
 def compute_all(
     ticker_data: dict[str, tuple[list, list]],
     periods: list[int],
+    member_dates: dict[str, set[date]] | None = None,
 ) -> dict[int, dict[date, list[int]]]:
     """
     Для каждого периода и каждой даты считает [above, total].
+
+    member_dates (для вселенной с исторической базой расчёта индекса): бумага
+    попадает в знаменатель ТОЛЬКО за те дни, когда она реально была в индексе.
+    EMA при этом считается по всей доступной серии цен — членство в индексе на
+    саму цену и её среднюю не влияет.
 
     Returns:
         {period: {date: [above_count, total_count]}}
@@ -319,6 +385,10 @@ def compute_all(
             continue
 
         prices = np.array(prices_list, dtype=np.float64)
+        member = member_dates.get(ticker) if member_dates is not None else None
+        if member_dates is not None and not member:
+            skipped += 1
+            continue
 
         for period in periods:
             if len(prices) < period:
@@ -329,6 +399,8 @@ def compute_all(
             # Считаем от (period-1) — EMA «прогрелась»
             for i in range(period - 1, len(dates)):
                 d = dates[i]
+                if member is not None and d not in member:
+                    continue  # в этот день бумаги не было в базе расчёта индекса
                 counts[period][d][1] += 1  # total
                 if prices[i] > ema[i]:
                     counts[period][d][0] += 1  # above
@@ -416,9 +488,6 @@ def main() -> None:
         log.error("Нет тикеров в БД — выход")
         return
 
-    # ── 2. IMOEX тикеры ──
-    imoex_tickers = get_imoex_tickers()
-
     max_period = max(EMA_PERIODS)
     # Окно прогрева EMA. Эмпирически при 2×N+100 дней точность ~0.1% от
     # «идеала» (EMA на полной истории). Раньше было max_period+50 —
@@ -442,6 +511,20 @@ def main() -> None:
             date_from = date(2007, 1, 1) - timedelta(days=warmup)
             log.info(f"Режим: первый запуск — полный расчёт с {date_from}")
 
+    # ── 2. IMOEX: историческая база расчёта (фолбэк — сегодняшний состав ISS) ──
+    #
+    # С историей состава широта по индексу считается честно: в каждый день в
+    # знаменатель идут те бумаги, которые в этот день реально входили в IMOEX.
+    # Без неё (пустая index_composition) остаётся старое поведение — весь график
+    # по сегодняшнему составу, т.е. look-ahead.
+    composition = load_index_composition(engine, INDEX_ID, date_from)
+    if composition:
+        imoex_tickers = sorted(set().union(*composition.values()))
+    else:
+        log.warning("index_composition пуста — считаем IMOEX по текущему составу ISS "
+                    "(запустите Candles/fetch_index_composition.py --full)")
+        imoex_tickers = get_imoex_tickers()
+
     # Загружаем все свечи одним запросом (union тикеров)
     all_unique_tickers = list(set(all_tickers) | set(imoex_tickers))
     all_candle_data = load_candles(engine, all_unique_tickers, date_from)
@@ -454,10 +537,22 @@ def main() -> None:
     upsert(engine, records_all)
 
     # ── Вычисление для IMOEX ──
-    if imoex_tickers:
+    imoex_ticker_data = {t: all_candle_data[t] for t in imoex_tickers if t in all_candle_data}
+    member_dates = None
+    if composition:
+        candle_dates = {d for dates, _ in imoex_ticker_data.values() for d in dates}
+        member_dates = build_member_dates(composition, candle_dates)
+        missing = [t for t in imoex_tickers if t not in all_candle_data]
+        if missing:
+            # Обычное дело для делистнутых бумаг: их дневных свечей в БД нет,
+            # значит в исторической широте они не участвуют (знаменатель тех
+            # лет чуть меньше реального состава индекса).
+            log.warning(f"Нет свечей для {len(missing)} бумаг из истории состава: "
+                        f"{', '.join(missing[:15])}{'…' if len(missing) > 15 else ''}")
+
+    if imoex_ticker_data:
         log.info("=== Вычисление breadth для IMOEX ===")
-        imoex_ticker_data = {t: all_candle_data[t] for t in imoex_tickers if t in all_candle_data}
-        counts_imoex = compute_all(imoex_ticker_data, EMA_PERIODS)
+        counts_imoex = compute_all(imoex_ticker_data, EMA_PERIODS, member_dates)
         records_imoex = build_records(counts_imoex, "imoex")
         upsert(engine, records_imoex)
     else:
@@ -472,13 +567,10 @@ def main() -> None:
         records_all_usd = build_records(counts_all_usd, "all_usd")
         upsert(engine, records_all_usd)
 
-        if imoex_tickers:
+        if imoex_ticker_data:
             log.info("=== Вычисление breadth для IMOEX_USD ===")
-            imoex_usd_data = convert_to_usd(
-                {t: all_candle_data[t] for t in imoex_tickers if t in all_candle_data},
-                usd_rates
-            )
-            counts_imoex_usd = compute_all(imoex_usd_data, EMA_PERIODS)
+            imoex_usd_data = convert_to_usd(imoex_ticker_data, usd_rates)
+            counts_imoex_usd = compute_all(imoex_usd_data, EMA_PERIODS, member_dates)
             records_imoex_usd = build_records(counts_imoex_usd, "imoex_usd")
             upsert(engine, records_imoex_usd)
     else:
