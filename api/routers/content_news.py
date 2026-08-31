@@ -590,6 +590,83 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     return {"status": "pending", "futures_ticker": futures_ticker}
 
 
+# ── Шаг Г: судья ───────────────────────────────────────────────────────────
+# Рубрика и обоснование групп — research/content_pipeline_v2/RUBRIC.md.
+# ВОРОТА A (фактура): любой провал = брак.
+_JUDGE_GATES_A = ("numbers_traceable", "no_invented_facts", "no_self_contradiction",
+                   "time_arrow_ok")
+# ВОРОТА B (смысл): два провала = брак, один = спорно.
+_JUDGE_GATES_B = ("has_thesis", "link_earned", "no_redundancy")
+# ЧЕК-ЛИСТ ПРОИЗВОДСТВА C: на вердикт НЕ влияет. Эти пункты срабатывают и на
+# реальных постах канала (длинное тире у 11%, плотность >2 у 18%) — браковать по
+# ним значило бы забраковать сам канал. Но именно они говорят, что чинить.
+_JUDGE_CHECKLIST_C = ("conclusion_not_boilerplate", "no_brand_selfref",
+                       "numbers_density", "format_ok", "no_methodology_talk",
+                       "length_ok")
+
+
+class JudgeResult(BaseModel):
+    """Модель заполняет ТОЛЬКО пункты. Вердикт считает код — так он воспроизводим
+    и видно, из чего собран."""
+    items: dict[str, bool]
+    evidence: dict[str, str] = {}
+    note: Optional[str] = None
+
+
+def _derive_judge_verdict(items: dict) -> tuple:
+    failed_a = [k for k in _JUDGE_GATES_A if items.get(k) is False]
+    failed_b = [k for k in _JUDGE_GATES_B if items.get(k) is False]
+    defects = [k for k in _JUDGE_CHECKLIST_C if items.get(k) is False]
+    if failed_a:
+        return "брак", failed_a + failed_b, defects
+    if len(failed_b) >= 2:
+        return "брак", failed_b, defects
+    if len(failed_b) == 1:
+        return "спорно", failed_b, defects
+    return "годится", [], defects
+
+
+@internal_router.patch("/{candidate_id}/step-g", dependencies=[Depends(_require_internal_token)])
+def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get_db)):
+    """Приёмка результата Шага Г. Судья НЕ меняет статус кандидата: он размечает,
+    а решение остаётся за человеком (автоотбраковка с переписыванием жгла бы
+    облачные сессии по кругу и могла зациклиться).
+
+    Пункты, которых модель не прислала, считаются ПРОЙДЕННЫМИ: иначе забытый в
+    ответе ключ превращался бы в провал ворот и в ложный «брак»."""
+    row = db.execute(
+        text("SELECT draft_text FROM content_candidates WHERE id = :id"),
+        {"id": candidate_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+    if not row["draft_text"]:
+        raise HTTPException(status_code=409,
+                            detail="У кандидата нет черновика — судить нечего")
+
+    known = set(_JUDGE_GATES_A) | set(_JUDGE_GATES_B) | set(_JUDGE_CHECKLIST_C)
+    unknown = sorted(set(body.items) - known)
+    items = {k: bool(v) for k, v in body.items.items() if k in known}
+    verdict, failed, defects = _derive_judge_verdict(items)
+
+    db.execute(text("""
+        UPDATE content_candidates
+        SET judge_items = CAST(:items AS jsonb), judge_verdict = :verdict,
+            judge_failed = :failed, judge_defects = :defects, judge_note = :note,
+            judge_checked_at = now(), updated_at = now()
+        WHERE id = :id
+    """), {
+        "id": candidate_id,
+        "items": json.dumps({"items": items, "evidence": body.evidence},
+                             ensure_ascii=False),
+        "verdict": verdict, "failed": failed, "defects": defects,
+        "note": body.note,
+    })
+    db.commit()
+    return {"verdict": verdict, "failed_gates": failed, "defects": defects,
+            "ignored_unknown_keys": unknown}
+
+
 @internal_router.patch("/{candidate_id}/step-c", dependencies=[Depends(_require_internal_token)])
 def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага В (синтез). Если модель отказалась писать

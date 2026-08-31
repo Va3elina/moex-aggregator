@@ -125,9 +125,20 @@ def answer_cb(callback_query_id, text_msg: str = "") -> None:
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────
+# ⚠️ Карточка ждёт Шага Г, но НЕ бесконечно.
+# Если отправлять сразу по появлению черновика, человек увидит «судья ещё не
+# смотрел» и решит без вердикта — карточка это статичное сообщение, само оно не
+# обновится. Если же ждать судью безусловно, то при ненастроенном триггере Шага Г
+# (judge_dispatch_attempts так и остаётся 0, до MAX не доходит, give-up не
+# срабатывает) карточки потерялись бы МОЛЧА — тот же класс тихой потери, что уже
+# был у Шага Н (см. content_ai.py и миграцию 048).
+# Поэтому: ждём вердикт или явный отказ судьи, но не дольше 30 минут.
 _SELECT_NEW_DRAFTS = text("""
     SELECT id FROM content_candidates
     WHERE status = 'draft_ready' AND draft_text IS NOT NULL AND reviewer_notified_at IS NULL
+      AND (judge_verdict IS NOT NULL
+           OR judge_gave_up_at IS NOT NULL
+           OR updated_at < now() - interval '30 minutes')
     ORDER BY id
 """)
 
@@ -135,7 +146,8 @@ _SELECT_NEW_DRAFTS = text("""
 # читает row[3]=draft_text, row[4]=status). Новые поля — ТОЛЬКО в конец.
 _SELECT_CANDIDATE = text("""
     SELECT id, headline, tickers, draft_text, status,
-           reviewer_reason_code, reviewer_reason
+           reviewer_reason_code, reviewer_reason,
+           judge_verdict, judge_failed, judge_defects
     FROM content_candidates WHERE id = :id
 """)
 
@@ -186,6 +198,24 @@ _TO_REJECTED = text("""
 """)
 
 
+_JUDGE_MARK = {"годится": "✅", "спорно": "🟡", "брак": "⛔️"}
+
+
+def _judge_line(verdict, failed, defects) -> str:
+    """Вердикт Шага Г прямо в карточке — судья не блокирует ревью, его задача в том,
+    чтобы дефект не прошёл НЕЗАМЕЧЕННЫМ. Провалы ворот и дефекты производства
+    показываются РАЗДЕЛЬНО: первые определяют вердикт, вторые — нет (пункты
+    чек-листа срабатывают и на реальных постах канала)."""
+    if not verdict:
+        return "\n\n🔍 судья ещё не смотрел"
+    out = f"\n\n{_JUDGE_MARK.get(verdict, '')} судья: {html.escape(verdict)}"
+    if failed:
+        out += "\nпровалены ворота: " + html.escape(", ".join(failed))
+    if defects:
+        out += "\nдефекты производства: " + html.escape(", ".join(defects))
+    return out
+
+
 def _reason_line(reason_code, reason_text) -> str:
     """Причина в карточке — чтобы повторно открытая карточка показывала не только
     ЧТО решили, но и ПОЧЕМУ (иначе решение снова становится неразмеченным)."""
@@ -218,10 +248,12 @@ def _card_view(row):
     и реальная публикация (apply_custom_emoji), чтобы «Одобрить» не преподносил
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
-    cid, headline, tickers, draft_text, status, reason_code, reason_text = row
+    (cid, headline, tickers, draft_text, status, reason_code, reason_text,
+     j_verdict, j_failed, j_defects) = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
+    txt += _judge_line(j_verdict, j_failed, j_defects)
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
