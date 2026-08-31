@@ -92,24 +92,109 @@ function buildBreadcrumb(path: string, meta: SeoMeta, canonical: string): object
 // внутренних ссылок). Добавляем настоящие <a> на 7 индикаторов; React заменяет
 // #root при гидрации, так что для пользователя блок невидим. Источник истины —
 // SEO_META (breadcrumb==='Индикаторы'), новый индикатор подхватится сам.
-const NAV_LINKS = Object.entries(SEO_META)
-    .filter(([, m]) => m.breadcrumb === 'Индикаторы' && !m.noindex)
-    .map(([p, m]) => {
-        const label = escapeText(m.title.split(' | ')[0].split(' — ')[0]);
-        return (
-            '<li style="margin:0">' +
-            `<a href="${p}" style="color:#F5F1E8;text-decoration:underline;` +
-            'text-underline-offset:3px;display:inline-block;padding:4px 0">' +
-            `${label}</a></li>`
-        );
-    })
-    .join('');
-const NAV_BLOCK =
-    '<nav aria-label="Индикаторы Фрейма" style="margin-top:32px">' +
-    '<ul style="list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;' +
-    'gap:8px 24px;font-size:1rem;line-height:1.5">' +
-    NAV_LINKS +
-    '</ul></nav>';
+// ⚠️ Тап-зона. Единственный зритель этого блока — краулер: у людей его прячет
+// синхронный inline-script сразу после разметки. Но YandexMobileBot JS не
+// исполняет, ВИДИТ блок и судит по нему мобилопригодность — а NOT_MOBILE_FRIENDLY
+// уже висит в диагностике Вебмастера. Поэтому ссылки держим одного кегля и с
+// запасом по высоте, мельчить нельзя.
+const LINK_STYLE =
+    'color:#F5F1E8;text-decoration:underline;text-underline-offset:3px;' +
+    'display:inline-block;padding:8px 0';
+
+/** Короткая подпись страницы: «Карта российского рынка акций | FRAME» → «Карта…». */
+function labelOf(meta: SeoMeta): string {
+    return escapeText(meta.title.split(' | ')[0].split(' — ')[0]);
+}
+
+function linkItem(path: string, meta: SeoMeta): string {
+    return (
+        '<li style="margin:0">' +
+        `<a href="${path}" style="${LINK_STYLE}">${labelOf(meta)}</a></li>`
+    );
+}
+
+function linkList(entries: [string, SeoMeta][]): string {
+    return (
+        '<ul style="list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;' +
+        'gap:8px 24px;font-size:1rem;line-height:1.5">' +
+        entries.map(([p, m]) => linkItem(p, m)).join('') +
+        '</ul>'
+    );
+}
+
+const INDICATORS = Object.entries(SEO_META)
+    .filter(([, m]) => m.breadcrumb === 'Индикаторы' && !m.noindex) as [string, SeoMeta][];
+const METHODOLOGIES = Object.entries(SEO_META)
+    .filter(([, m]) => m.breadcrumb === 'Методология' && !m.noindex) as [string, SeoMeta][];
+
+// Справочные и правовые страницы. Без этого блока на них НЕ ВЕДЁТ НИ ОДНОЙ
+// ссылки в том HTML, который краулер парсит до JS: вся навигация и подвал
+// рисуются React'ом. GSC 31.08.2026 показал ровно это — /faq, /contacts,
+// /glossary, /methodology/* и правовые висели в sitemap со статусом
+// «URL is unknown to Google», ни разу не обойденные. Sitemap сам по себе —
+// самый слабый сигнал обнаружения, ссылки нужны настоящие.
+const SECONDARY = ['/pricing', '/faq', '/glossary', '/contacts'] as const;
+const LEGAL = ['/offer', '/recurring', '/refund', '/delivery', '/agreement', '/privacy'] as const;
+
+function pickExisting(paths: readonly string[], exclude: string): [string, SeoMeta][] {
+    return paths
+        .filter((p) => p !== exclude && SEO_META[p] && !SEO_META[p].noindex)
+        .map((p) => [p, SEO_META[p]] as [string, SeoMeta]);
+}
+
+/** Парная страница: индикатор ↔ его методология (`/heatmap` ↔ `/methodology/heatmap`). */
+function relatedPath(path: string): string | null {
+    const pair = path.startsWith('/methodology/')
+        ? path.slice('/methodology'.length)
+        : `/methodology${path}`;
+    return SEO_META[pair] && !SEO_META[pair].noindex ? pair : null;
+}
+
+/** Блок ссылок под текстом. Состав ЗАВИСИТ ОТ СТРАНИЦЫ — это важно дважды:
+ *  перелинковка (см. SECONDARY) и различие разметки между страницами. Раньше
+ *  все страницы отдавали байт в байт одинаковый список из семи индикаторов, и
+ *  Google склеил /heatmap с главной («Duplicate, Google chose different
+ *  canonical than user», GSC 31.08.2026) — при уникальном тексте вся остальная
+ *  разметка совпадала. Текущая страница из списка исключается: само-ссылка
+ *  бесполезна, а её отсутствие делает набор ссылок уникальным на каждой. */
+function linksBlock(path: string): string {
+    const related = relatedPath(path);
+    const relatedHtml = related
+        ? '<p style="margin:24px 0 0;font-size:1rem;line-height:1.5">' +
+          `<a href="${related}" style="${LINK_STYLE}">` +
+          `${labelOf(SEO_META[related])}</a></p>`
+        : '';
+
+    // На методологии показываем соседние методологии, на остальных — индикаторы.
+    // Сиблинги нужны не для красоты: /methodology/funds-catalog индексируемая, но
+    // её индикатор /funds-catalog помечен noindex (редиректит на закрытый
+    // /fund-trades), поэтому парной ссылки на неё не возникает ниоткуда — без
+    // этого блока она осталась бы сиротой, как все методологии до 31.08.2026.
+    const isMethodology = path.startsWith('/methodology/');
+    const group = isMethodology ? METHODOLOGIES : INDICATORS;
+    const others = group.filter(([p]) => p !== path);
+    const navHtml = others.length
+        ? `<nav aria-label="${isMethodology ? 'Методология Фрейма' : 'Индикаторы Фрейма'}"` +
+          ' style="margin-top:32px">' +
+          linkList(others) +
+          '</nav>'
+        : '';
+
+    const secondary = pickExisting(SECONDARY, path);
+    const legal = pickExisting(LEGAL, path);
+    const footerHtml =
+        secondary.length || legal.length
+            ? '<nav aria-label="Справка и документы" style="margin-top:28px;' +
+              'font-size:1rem;opacity:0.8">' +
+              (secondary.length ? linkList(secondary) : '') +
+              (legal.length
+                  ? '<div style="margin-top:8px">' + linkList(legal) + '</div>'
+                  : '') +
+              '</nav>'
+            : '';
+
+    return relatedHtml + navHtml + footerHtml;
+}
 
 function renderRoute(path: string, meta: SeoMeta): string {
     const canonical = `${CANONICAL_HOST}${path}`;
@@ -227,7 +312,7 @@ function renderRoute(path: string, meta: SeoMeta): string {
                 ? '<p style="font-size:clamp(1rem,0.95rem+0.3vw,1.125rem);' +
                   `line-height:1.65;color:#9A9A9A;margin:0">${intro}</p>`
                 : '') +
-            NAV_BLOCK +
+            linksBlock(path) +
             '</div>' +
             '<script>document.getElementById("seo-prerender").style.display="none"</script>';
         html = html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
