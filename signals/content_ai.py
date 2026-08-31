@@ -338,7 +338,7 @@ def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
     return f"{note}пост от {when}:\n{row['draft_text'] or row['headline']}"
 
 
-def _position_phrases(asset_id: str, clgroup: str | None) -> dict:
+def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     """Изменение позиции ЧЕЛОВЕЧЕСКОЙ фразой + выбор главного числа.
 
     ⚠️ Почему не ATR-множитель. Детектор считает ratio = |Δ за день| / ATR(14):
@@ -355,7 +355,12 @@ def _position_phrases(asset_id: str, clgroup: str | None) -> dict:
     работает; это тот же провал, что и с раздутым промптом."""
     from signals.db import get_position_series
     clg = clgroup or "FIZ"
-    series = get_position_series(asset_id, clg, days=45)
+    # ⚠️ as_of ОБЯЗАТЕЛЕН. Без него ряд заканчивается СЕГОДНЯШНИМ днём, а не датой
+    # сигнала: поймано тестом на историческом кандидате 793 — бриф сообщал
+    # «дата_сигнала 2026-07-16» и при этом позицию на 2026-08-31 (58 489 контрактов
+    # вместо 38 943). В живой работе Шаг В стреляет сразу после сигнала и даты почти
+    # совпадают, но «почти» недопустимо там, где весь смысл в корректности дат.
+    series = get_position_series(asset_id, clg, days=45, as_of_date=as_of)
     if len(series) < 3:
         return {"ошибка": "недостаточно истории по инструменту"}
 
@@ -454,7 +459,8 @@ def _step_c_payload(db, row, internal_token: str) -> str:
         "дата_новости": str(news_date),
         "дата_сигнала": str(row["signal_date"]),
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
-        "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"]),
+        "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"],
+                                            as_of=row["signal_date"]),
         "служебное": {
             "atr_множитель": float(row["severity_value"]),
             "пояснение": ("ВНУТРЕННЕЕ. Отношение дневного изменения к обычному "
