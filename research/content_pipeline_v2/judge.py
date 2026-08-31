@@ -30,8 +30,8 @@ DATASET = os.path.join(HERE, "dataset", "drafts.json")
 OUT = os.path.join(HERE, "dataset", "judge_results.json")
 
 GROUP_A = ["numbers_traceable", "no_invented_facts", "no_self_contradiction", "time_arrow_ok"]
-GROUP_B = ["has_thesis", "link_earned", "conclusion_concrete", "no_redundancy"]
-GROUP_C = ["format_ok", "no_methodology_talk", "length_ok", "numbers_sparse"]
+GROUP_B = ["has_thesis", "link_earned", "conclusion_not_boilerplate", "no_redundancy"]
+GROUP_C = ["format_ok", "no_methodology_talk", "length_ok", "no_brand_selfref"]
 ALL_KEYS = GROUP_A + GROUP_B + GROUP_C
 
 RUBRIC_TEXT = """
@@ -67,8 +67,13 @@ RUBRIC_TEXT = """
 - has_thesis: есть один внятный тезис, а не перечисление фактов.
 - link_earned: связь новости и сигнала заявлена не сильнее, чем позволяют данные; нет
   каузальности там, где есть только совпадение по времени.
-- conclusion_concrete: вывод называет конкретный вероятный сценарий с хеджем («часто
-  приводит к развороту»), а не отделывается голым «стоит последить»/«покажут ближайшие дни».
+- conclusion_not_boilerplate: финал — вывод ИЗ ЦИФР ЭТОГО поста, а не заготовка,
+  которую можно переставить в любой другой пост. Хедж сам по себе НЕ провал — интонация
+  Frame его допускает. Провал — когда финал собран из штампов: «один сигнал - не
+  приговор», «стоит последить», «покажут ближайшие дни», «однозначно трактовать не
+  будем», «совпадение по времени ничего не говорит о том, кто что знал заранее».
+  Спроси себя: если подставить в этот финал другой тикер и другое число, изменится ли
+  что-нибудь? Если нет — это заготовка.
 - no_redundancy: нет предложений и абзацев, пересказывающих уже сказанное; нет списка
   чужих тикеров, который тут же сам дисклеймится.
 
@@ -78,11 +83,12 @@ RUBRIC_TEXT = """
 - no_methodology_talk: нет языка методологии — «сильнее обычного дневного шага»,
   «к обычному дневному шагу», z-score, ATR.
 - length_ok: длина поста 400-1200 знаков.
-- numbers_sparse: не больше ТРЁХ чисел на абзац. (Порог 3, а не 2: правило промпта
-  «одна-две цифры на абзац» нарушает сам образец канала — «взлетело на 172% всего за
-  12 часов... вырос лишь на 42%» это три числа в одном абзаце. Правило и образцы в
-  промпте противоречат друг другу, а образцы сильнее.) Даты и время в счёт НЕ идут —
-  считаются только показатели: проценты, множители, суммы, уровни.
+- no_brand_selfref: пост НЕ называет Frame и платформу по имени — «данные Frame»,
+  «данные с платформы Frame», «индикатор Frame». Читателю канала и так очевидно, чей
+  это сервис и чей пост (решение Вадима 31.08). Писать «наш индикатор» / «индикатор»
+  можно — запрещено именно имя бренда в теле поста.
+  ⚠️ Образец 2 внутри промпта Шага В учит ровно обратному («Данные с платформы Frame
+  показывают поразительную картину») — образец придётся править вместе с правилом.
 """
 
 PROMPT = """Ты — редакционный контролёр Telegram-канала @FrameTool. Оцени ЧЕРНОВИК поста
@@ -108,12 +114,12 @@ PROMPT = """Ты — редакционный контролёр Telegram-кан
   "time_arrow_ok": {{"pass": true|false, "evidence": "..."}},
   "has_thesis": {{"pass": true|false, "evidence": "..."}},
   "link_earned": {{"pass": true|false, "evidence": "..."}},
-  "conclusion_concrete": {{"pass": true|false, "evidence": "..."}},
+  "conclusion_not_boilerplate": {{"pass": true|false, "evidence": "..."}},
   "no_redundancy": {{"pass": true|false, "evidence": "..."}},
   "format_ok": {{"pass": true|false, "evidence": "..."}},
   "no_methodology_talk": {{"pass": true|false, "evidence": "..."}},
   "length_ok": {{"pass": true|false, "evidence": "..."}},
-  "numbers_sparse": {{"pass": true|false, "evidence": "..."}},
+  "no_brand_selfref": {{"pass": true|false, "evidence": "..."}},
   "model_verdict": "годится"|"спорно"|"брак",
   "one_line": "чем этот пост плох или хорош, одной фразой"
 }}
@@ -175,6 +181,20 @@ def build_brief(x: dict, all_rows: list) -> str:
     ])
 
 
+# Штампы концовок, найденные в реальном корпусе 31.08 (11 из 23 черновиков
+# заканчивались одним из них). Правило механическое — модель для него не нужна,
+# и код надёжнее: он не «передумает» между прогонами.
+STOCK_PHRASES = [
+    (r"[Оо]дин сигнал\s*[-—]\s*не приговор", "один сигнал - не приговор"),
+    (r"покажут\s+(?:не\s+)?ближайшие дни", "покажут ближайшие дни"),
+    (r"стоит последить", "стоит последить"),
+    (r"[Оо]днозначно (?:не )?трактов", "однозначно трактовать"),
+    (r"совпадение по времени ничего не говорит", "совпадение по времени ничего не говорит"),
+    (r"[Нн]е панацея", "не панацея"),
+]
+BRAND_RE = r"(?:данн\w*\s+(?:с\s+платформы\s+)?Frame|платформ\w*\s+Frame|индикатор\w*\s+Frame|Frame\s+показ\w+|Frame\s+отмеча\w+|Frame\s+зафиксирова\w+)"
+
+
 def code_checks(draft: str) -> dict:
     """Механические пункты считаем кодом — там модель не нужна. Возвращаем ТОЛЬКО
     для сверки с моделью: расхождение показывает, насколько судья внимателен."""
@@ -182,7 +202,11 @@ def code_checks(draft: str) -> dict:
     max_nums = 0
     for p in paras:
         max_nums = max(max_nums, len(re.findall(r"\d+(?:[.,]\d+)?", p)))
+    stock = [name for pat, name in STOCK_PHRASES if re.search(pat, draft)]
+    brand = re.findall(BRAND_RE, draft, re.I)
     return {
+        "stock_phrases": stock,
+        "brand_mentions": brand,
         "length": len(draft),
         "length_ok": 400 <= len(draft) <= 1200,
         "numbers_sparse": max_nums <= 3,
@@ -239,8 +263,20 @@ def judge_one(x: dict, model: str, all_rows: list) -> dict:
         out["error"] = f"{type(e).__name__}: {e}"
         return out
     items = {k: bool(raw.get(k, {}).get("pass")) for k in ALL_KEYS if k in raw}
+    # Механические пункты решает КОД, не модель: штамп и имя бренда находятся
+    # регуляркой однозначно, а модель на них то срабатывает, то нет.
+    ev_override = {}
+    if out["code"]["stock_phrases"]:
+        items["conclusion_not_boilerplate"] = False
+        ev_override["conclusion_not_boilerplate"] = "штамп: " + "; ".join(out["code"]["stock_phrases"])
+    if out["code"]["brand_mentions"]:
+        items["no_brand_selfref"] = False
+        ev_override["no_brand_selfref"] = "бренд в теле: " + "; ".join(out["code"]["brand_mentions"])
+    items.setdefault("no_brand_selfref", True)
+    items.setdefault("conclusion_not_boilerplate", True)
     out["items"] = items
-    out["evidence"] = {k: raw[k].get("evidence", "") for k in items if items[k] is False}
+    out["evidence"] = {k: raw.get(k, {}).get("evidence", "") for k in items if items[k] is False}
+    out["evidence"].update(ev_override)
     out["model_verdict"] = raw.get("model_verdict")
     out["one_line"] = raw.get("one_line")
     out["verdict"], out["failed"] = derive_verdict(items)
