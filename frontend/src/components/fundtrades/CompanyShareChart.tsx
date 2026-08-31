@@ -49,6 +49,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { useChartReveal } from '../chart/useChartReveal';
+import { useNoChartAnim } from '../chart/chartAnim';
 import { resampleVals, morphPts } from '../../utils/chartAnimation';
 
 const easeOutCubic = ANIMATION.easing;
@@ -452,6 +453,7 @@ export default function CompanyShareChart({
         () => shareVals.map(v => (v != null && v > 0 ? v : 0)),
         [shareVals],
     );
+    const noAnim = useNoChartAnim();
     useLayoutEffect(() => {
         if (!hasData) {
             dispRef.current = [];
@@ -462,6 +464,12 @@ export default function CompanyShareChart({
         const target = targetVals;
         const wave = !wavedRef.current || dispRef.current.length === 0;
         wavedRef.current = true;
+        // Песочница: без волны появления (см. chart/chartAnim.ts).
+        if (wave && noAnim) {
+            dispRef.current = target;
+            setDispVals(target);
+            return;
+        }
         const newMax = Math.max(...target, 0.0001);
         const oldMax = Math.max(...dispRef.current, 0.0001);
         const from = wave
@@ -490,7 +498,7 @@ export default function CompanyShareChart({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [targetVals, hasData]);
+    }, [targetVals, hasData, noAnim]);
 
     // ── Reveal линии цены слева направо (rAF clip-rect, юниты viewBox 0..1000).
     // Стартует, когда цена впервые готова, и играет один раз — как в OI.

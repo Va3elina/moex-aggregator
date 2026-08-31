@@ -34,6 +34,7 @@ import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { useChartReveal } from '../chart/useChartReveal';
 import { resampleVals, morphPts } from '../../utils/chartAnimation';
+import { useNoChartAnim } from '../chart/chartAnim';
 
 const easeOutCubic = ANIMATION.easing;
 
@@ -298,6 +299,8 @@ export default function FlowsHistogram({
     const wavedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
     const targetVals = useMemo(() => flows.map(f => f.flow), [flows]);
+    // Песочница: волна появления выключена (см. chart/chartAnim.ts).
+    const noAnim = useNoChartAnim();
     useLayoutEffect(() => {
         if (!hasData) {
             dispRef.current = [];
@@ -308,6 +311,11 @@ export default function FlowsHistogram({
         const target = targetVals;
         const wave = !wavedRef.current || dispRef.current.length === 0;
         wavedRef.current = true;
+        if (wave && noAnim) {
+            dispRef.current = target;
+            setDispVals(target);
+            return;
+        }
         const newMax = Math.max(...target.map(Math.abs), 0.001);
         const oldMax = Math.max(...dispRef.current.map(Math.abs), 0.001);
         const from = wave
@@ -336,7 +344,7 @@ export default function FlowsHistogram({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [targetVals, hasData]);
+    }, [targetVals, hasData, noAnim]);
 
     // ── Reveal линии индекса слева направо — один раз, когда линия готова.
     const revealW = useChartReveal(hasPrice && linePath !== '', 1000);

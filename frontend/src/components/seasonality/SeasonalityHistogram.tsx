@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION, cssVar } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
+import { useNoChartAnim } from '../chart/chartAnim';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
@@ -96,6 +97,8 @@ export default function SeasonalityHistogram({
   const dispKeysRef = useRef<string[]>([]);
   const wavedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+  // Песочница: волна появления выключена (см. chart/chartAnim.ts).
+  const noAnim = useNoChartAnim();
   useLayoutEffect(() => {
     if (bars.length === 0) {
       dispRef.current = [];
@@ -107,6 +110,12 @@ export default function SeasonalityHistogram({
     const targets = targetSeries;
     const wave = !wavedRef.current || dispRef.current.length === 0;
     wavedRef.current = true;
+    if (wave && noAnim) {
+      dispRef.current = targets;
+      dispKeysRef.current = targetKeys;
+      setDispSeries(targets);
+      return;
+    }
     const from = targets.map((t, s) => {
       if (wave) return new Array<number>(t.length).fill(0);
       const oldIdx = dispKeysRef.current.indexOf(targetKeys[s]);
@@ -138,7 +147,7 @@ export default function SeasonalityHistogram({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [targetSeries, targetKeys, bars.length]);
+  }, [targetSeries, targetKeys, bars.length, noAnim]);
 
   // Кэш горизонтального padding для onMouseMove — читаем CSS-токен один раз
   // на маунт и при resize, а не на каждое движение мыши (getComputedStyle

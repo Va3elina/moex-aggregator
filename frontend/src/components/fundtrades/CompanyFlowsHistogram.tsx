@@ -22,6 +22,7 @@ import {
 import { BarChart3 } from 'lucide-react';
 import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
+import { useNoChartAnim } from '../chart/chartAnim';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -166,6 +167,8 @@ export default function CompanyFlowsHistogram({
     const dispRef = useRef<number[]>([]);
     const wavedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
+    // Песочница: волна появления выключена (см. chart/chartAnim.ts).
+    const noAnim = useNoChartAnim();
     // useLayoutEffect + синхронный сет стартового кадра: с useEffect между
     // приходом данных и первым rAF-кадром успевал отрисоваться кадр со
     // старыми значениями на новой шкале — вспышка гигантских баров.
@@ -179,6 +182,11 @@ export default function CompanyFlowsHistogram({
         const target = netMln;
         const wave = !wavedRef.current || dispRef.current.length === 0;
         wavedRef.current = true;
+        if (wave && noAnim) {
+            dispRef.current = target;
+            setAnimated(target);
+            return;
+        }
         // Морф в визуальном пространстве: стартовые значения нормализуются со
         // старой шкалы на новую (v / oldMax * newMax) — иначе при смене бумаги
         // с крупными потоками на мелкую бары стартовали бы выше холста.
@@ -212,7 +220,7 @@ export default function CompanyFlowsHistogram({
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
         // netMln (стабилен через useMemo) + animTrigger — старт морфа/волны.
-    }, [netMln, animTrigger]);
+    }, [netMln, animTrigger, noAnim]);
 
     // ── Hover ──
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);

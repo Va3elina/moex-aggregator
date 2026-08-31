@@ -37,6 +37,7 @@ import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow, ChartDatePill, ChartAxisPill } from '../chart';
 import { computeChartTopLineY } from '../chart/datePillLayout';
 import { useChartReveal } from '../chart/useChartReveal';
+import { useNoChartAnim } from '../chart/chartAnim';
 import type { CompanyFlowsSeries } from './CompanyFlowsHistogram';
 
 const easeOutCubic = ANIMATION.easing;
@@ -301,8 +302,16 @@ export default function CompanyFlowsPriceMap({
     const rafRef = useRef<number | null>(null);
     const wavedRef = useRef(false);
     const staggerRef = useRef(true);
+    // Песочница: без роста кругляшей при появлении (см. chart/chartAnim.ts).
+    const noAnim = useNoChartAnim();
     useLayoutEffect(() => {
         if (!markers.length) return;
+        if (noAnim) {
+            wavedRef.current = true;
+            staggerRef.current = false;
+            setElapsed(Number.MAX_SAFE_INTEGER);
+            return;
+        }
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         staggerRef.current = !wavedRef.current;
         wavedRef.current = true;
@@ -319,7 +328,7 @@ export default function CompanyFlowsPriceMap({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [markers]);
+    }, [markers, noAnim]);
     const popFor = (orderIdx: number, total: number) => {
         const delay = staggerRef.current ? (orderIdx / Math.max(total, 1)) * ANIMATION.waveStagger : 0;
         const dur = staggerRef.current

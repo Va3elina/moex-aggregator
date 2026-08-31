@@ -27,6 +27,7 @@ import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartDatePill from '../chart/ChartDatePill';
 import { TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
+import { useNoChartAnim } from '../chart/chartAnim';
 
 interface Props {
   periods: CbrFlowsPeriod[];
@@ -214,8 +215,11 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
     `${sigPeriods.length}|${sigOf(sigPeriods[0])}` +
     `|${sigOf(sigPeriods[sigPeriods.length - 1])}`;
   const animKey = `${animTrigger ?? ''}|${dataSig}`;
+  // Песочница: волна появления выключена (см. chart/chartAnim.ts) — бары сразу
+  // на полной высоте, иначе ремонт панели после ⤢ переигрывает каскад.
+  const noAnim = useNoChartAnim();
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
-    new Array(periods.length).fill(0),
+    new Array(periods.length).fill(noAnim ? 1 : 0),
   );
   // Волна играет ОДИН раз — на первом рендере с данными (схема как в OI):
   // смена type/period/среза (animKey) после этого ставит бары сразу на полную
@@ -230,7 +234,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const [animatedKey, setAnimatedKey] = useState(animKey);
   if (animKey !== animatedKey) {
     setAnimatedKey(animKey);
-    setAnimProgress(new Array(periods.length).fill(wavedRef.current ? 1 : 0));
+    setAnimProgress(new Array(periods.length).fill(wavedRef.current || noAnim ? 1 : 0));
   }
   // rafRef хранит ID текущего кадра СНАРУЖИ эффекта — нужен settleForCapture
   // (imperative handle ниже), чтобы отменить цикл и не дать следующему tick()
@@ -238,6 +242,11 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   const rafRef = useRef(0);
   useEffect(() => {
     if (periods.length === 0) return;
+    if (noAnim) {
+      wavedRef.current = true;
+      setAnimProgress(new Array(periods.length).fill(1));
+      return;
+    }
     if (wavedRef.current) {
       // Волна уже отыграла — новые данные встают сразу на полную высоту.
       setAnimProgress(new Array(periods.length).fill(1));
