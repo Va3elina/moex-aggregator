@@ -94,7 +94,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 3
+BRIEF_VERSION = 4
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -369,6 +369,73 @@ def _ru(x) -> str:
     return str(x).replace(".", ",")
 
 
+def _raz(n: int) -> str:
+    """«в 2 раза» / «в 5 раз» — русское согласование числительного."""
+    return "раза" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "раз"
+
+
+def _times(r: float) -> str:
+    """Кратность КРУГЛЫМ человеческим числом: 3,03 → «в 3 раза», 1,46 → «примерно
+    в полтора раза», 12,7 → «более чем в 13 раз».
+
+    ⚠️ Почему округляем в брифе, а не просим в промпте. Модель Шага В дословно
+    копирует числа брифа (тот же механизм, что с точкой вместо запятой в _ru).
+    Бриф v3 отдал «в 3,03 раза» и «на 46,2%» — модель напечатала ровно это.
+    Вадим 31.08: «стараться искать крупные круглые числа — это в 3 раза больше».
+    Точность до сотых в тексте про толпу не несёт смысла и выдаёт машину.
+    """
+    if r < 1.4:
+        return ""  # мелкий рост — кратность не говорят, отдаём проценты
+    if r < 1.75:
+        return "примерно в полтора раза"
+    # Прижимаем к ближайшей половинке (до 10× — «в 2,5 раза» ещё круглое и точнее,
+    # чем «почти в 3 раза»), выше — к целому: «в 12,5 раза» уже не читается.
+    step = 1.0 if r >= 10 else 0.5
+    h = round(r / step) * step
+    if h == 2 and abs(r - 2) > 0.15:
+        return "почти вдвое" if r < 2 else "более чем вдвое"
+    label = (f"{int(h)} {_raz(int(h))}" if h == int(h) else f"{_ru(f'{h:.1f}')} раза")
+    if abs(r - h) <= 0.15:
+        return f"в {label}"
+    return f"почти в {label}" if r < h else f"более чем в {label}"
+
+
+def _pct(p: float) -> str:
+    """Процент округлённо. Крупное движение — до 5%, среднее — до целого, мелкое
+    оставляем как есть: «на 3,2%» честно, а «примерно на 5%» из 3,2% — враньё."""
+    a = abs(p)
+    if a >= 20:
+        return f"примерно на {round(a / 5) * 5}%"
+    if a >= 5:
+        return f"на {round(a)}%"
+    return f"на {_ru(f'{a:.1f}')}%"
+
+
+def _window_ru(days: int) -> str:
+    """Окно наблюдения словами. 400 дн. в тексте — протёкшая техническая деталь:
+    бриф v3 дал «за последние 400 дней», и модель это напечатала."""
+    if days >= 330:
+        years = days / 365
+        return "год" if years < 1.25 else f"{years:.0f} года"
+    if days >= 150:
+        return "полгода"
+    if days >= 75:
+        return "квартал"
+    return f"{max(1, round(days / 30))} мес."
+
+
+def _money_ru(v: float) -> str:
+    """Цена без копеечной точности: ₽91,81 → «около ₽92». Копейки значимы только
+    для дешёвых бумаг, где они и есть основная часть цены."""
+    if v >= 1000:
+        return f"около {round(v / 10) * 10:,.0f}".replace(",", " ")
+    if v >= 100:
+        return f"около {v:,.0f}".replace(",", " ")
+    if v >= 10:
+        return f"около {_ru(f'{v:.0f}')}"
+    return _ru(f"{v:.2f}")
+
+
 def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
     """Более ранний опубликованный/готовый пост по этому же треду — фактура
     для честного «продолжение истории» вместо повторного изобретения того же
@@ -424,7 +491,7 @@ def _price_context(db, asset_id: str, tickers, as_of) -> dict:
     if not px:
         return {}
     last_d = dates[-1]
-    out = {"цена_сейчас": _ru(f"{px[last_d]:.2f}")}
+    out = {"цена_сейчас": _money_ru(px[last_d])}
     for days, label in ((30, "за_месяц"), (180, "за_полгода"), (365, "за_год")):
         target = last_d - timedelta(days=days)
         base_d = min((d for d in dates if d >= target and d in px), default=None)
@@ -433,12 +500,10 @@ def _price_context(db, asset_id: str, tickers, as_of) -> dict:
         chg = (px[last_d] - px[base_d]) / px[base_d] * 100
         # Круглое сравнение, если движение крупное: «упала вдвое» читается лучше,
         # чем «упала на 51,3%». Вадим 31.08: «стараться привязать всё к простому».
-        if abs(chg) >= 45:
-            r = px[base_d] / px[last_d] if chg < 0 else px[last_d] / px[base_d]
-            word = "упала" if chg < 0 else "выросла"
-            out[f"цена_{label}"] = f"{word} примерно в {_ru(f'{r:.1f}')} раза"
-        else:
-            out[f"цена_{label}"] = f"{'+' if chg >= 0 else ''}{_ru(f'{chg:.0f}')}%"
+        word = "упала" if chg < 0 else "выросла"
+        r = px[base_d] / px[last_d] if chg < 0 else px[last_d] / px[base_d]
+        t = _times(r) if abs(chg) >= 40 else ""
+        out[f"цена_{label}"] = f"{word} {t}" if t else f"{word} {_pct(chg)}"
     return out
 
 
@@ -481,15 +546,30 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
         if not old_v:
             return "не с чем сравнить — позиции не было"
         if (old_v > 0) != (new_v > 0):
-            return (f"развернулась: было {'лонг' if old_v > 0 else 'шорт'} {abs(old_v)}, "
-                    f"стало {'лонг' if new_v > 0 else 'шорт'} {abs(new_v)}")
+            # ⚠️ Без голых контрактов. Бриф v3 отдавал «было лонг 4142, стало шорт
+            # 2333» — и черновик 1357 напечатал именно это. Вадим 31.08: «просто
+            # количество контрактов никому не интересно, нужна интерпретация».
+            was, now = ("лонг", "шорт") if old_v > 0 else ("шорт", "лонг")
+            r = abs(new_v) / abs(old_v)
+            base = f"толпа перевернулась из чистого {was}а в чистый {now}"
+            if r >= 1.4:
+                return f"{base}, причём новый {now} крупнее прежнего {was}а {_times(r)}"
+            if r <= 0.7:
+                return f"{base}, но новый {now} меньше прежнего {was}а {_times(1 / r)}"
+            return f"{base} примерно того же размера"
         grew = abs(new_v) > abs(old_v)
         r = abs(new_v) / abs(old_v)
         verb = "вырос" if grew else "сократился"
-        if grew and r >= 1.5:
-            return f"чистый {word} {verb} в {_ru(f'{r:.2f}')} раза"
         chg = abs(abs(new_v) - abs(old_v)) / abs(old_v) * 100
-        return f"чистый {word} {verb} на {_ru(f'{chg:.1f}')}%"
+        if grew:
+            t = _times(r)
+            if t:
+                return f"чистый {word} {verb} {t}"
+        else:
+            t = _times(1 / r) if r else ""
+            if t and chg >= 50:
+                return f"чистый {word} {verb} {t}"
+        return f"чистый {word} {verb} {_pct(chg)}"
 
     def strength(new_v, old_v) -> float:
         if not old_v:
@@ -525,9 +605,11 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
             f"чистый {word} — {_ru(f'{share:.0f}')}% открытого интереса физлиц"),
         # ⚠️ Окно в НАЗВАНИИ поля: прежнее «перекос_диапазон_за_ряд» модель прочла
         # как «за всё время наблюдений» и написала «максимум за всё время».
-        f"эта_доля_в_рамках_{span}_дней": (
+        f"эта_доля_за_{_window_ru(span).replace(' ', '_').replace('.', '')}": (
             f"диапазон от {_ru(f'{min(pcts):.0f}')}% до {_ru(f'{max(pcts):.0f}')}% — "
-            f"это окно в {span} дн., НЕ исторический экстремум"),
+            f"это окно за {_window_ru(span)}, НЕ исторический экстремум. "
+            f"Если пишешь про рекорд — обязательно с оговоркой про окно, "
+            f"и окно называй словами («за год»), а не в днях."),
         "служебное_не_для_текста": {
             "чистая_позиция_контрактов": abs(last),
             "пояснение": ("Голое число контрактов читателю ничего не говорит "
