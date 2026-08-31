@@ -366,7 +366,33 @@ def save_fund_holdings(
     """
     if not holdings:
         return 0
+
+    date_clause = ":snap_date" if snapshot_date else "CURRENT_DATE"
+    params_base: dict = {"fid": fund_id, "source": source}
+    if snapshot_date:
+        params_base["snap_date"] = snapshot_date
+
     with engine.connect() as conn:
+        # 0. Замена снапшота, в отличие от прежнего append'а, теряет одно
+        # полезное свойство: сломавшийся парсер (ВИМ отдал половину таблицы)
+        # раньше просто ничего не дописывал, а теперь затёр бы уже собранные
+        # строки — а у дневных данных ВИМ другого источника нет. Поэтому если
+        # входящих строк вдвое меньше, чем уже лежит за эту дату, снапшот не
+        # трогаем вовсе. Для первого прогона за новую дату (existing=0) защита
+        # неактивна, но там и терять нечего — ровно как было до замены.
+        existing = conn.execute(text(f"""
+            SELECT count(*) FROM fund_holdings_history
+            WHERE fund_id = :fid AND source = :source
+              AND snapshot_date = {date_clause}
+        """), params_base).scalar() or 0
+        if existing and len(holdings) * 2 < existing:
+            log.warning(
+                "  fund_id=%s source=%s snap=%s: подозрительно короткий состав "
+                "(%d строк против %d уже сохранённых) — снапшот НЕ заменён",
+                fund_id, source, snapshot_date or "today", len(holdings), existing,
+            )
+            return 0
+
         # 1. Current snapshot — DELETE + INSERT. Сохраняем weight / 100
         # для backwards-compat (legacy /funds-catalog UI домножает на 100).
         conn.execute(text("DELETE FROM fund_holdings WHERE fund_id = :fid"), {"fid": fund_id})
@@ -383,11 +409,6 @@ def save_fund_holdings(
             n += 1
 
         # 2. History — weight в процентах (0-100), как пришёл.
-        date_clause = ":snap_date" if snapshot_date else "CURRENT_DATE"
-        params_base: dict = {"fid": fund_id, "source": source}
-        if snapshot_date:
-            params_base["snap_date"] = snapshot_date
-
         # 2a. Карта asset_name → isin из истории ЭТОГО фонда и источника.
         # Только однозначные имена: у interfax_manual одно имя эмитента может
         # нести несколько выпусков (Сбербанк ао/ап, разные ОФЗ Минфина) —
