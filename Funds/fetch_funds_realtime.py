@@ -350,8 +350,19 @@ def save_fund_holdings(
         source: 'cbonds' / 'vim' / 'pervaya' etc. — для трекинга
             источника данных в analytics.
 
-    History append идёт через INSERT ... ON CONFLICT DO NOTHING чтобы
-    повторные запуски с тем же snapshot'ом не плодили дубли.
+    History — АТОМАРНАЯ ЗАМЕНА снапшота (DELETE+INSERT в одной транзакции)
+    по ключу (fund_id, snapshot_date, source). Именно замена, а не append
+    с ON CONFLICT DO NOTHING: `isin` входит в uq_fund_holdings_history, но
+    проставляется задним числом бэкфиллом (backfill_holdings_isin.py) —
+    после обогащения ключ строки менялся с ('', name) на (isin, name), и
+    повторный прогон за тот же день уже не ловил конфликт и дописывал
+    строку-двойник без ISIN. Замена идемпотентна независимо от того, кто и
+    когда трогал isin, и вдобавок повторный прогон теперь ИСПРАВЛЯЕТ
+    weight/positions, а не оставляет протухшие (DO NOTHING их не обновлял).
+
+    Уже известные ISIN'ы переносятся в новые строки по asset_name (только
+    однозначные — если у имени в истории фонда больше одного ISIN, не
+    гадаем), чтобы замена не откатывала обогащение.
     """
     if not holdings:
         return 0
@@ -371,21 +382,45 @@ def save_fund_holdings(
             })
             n += 1
 
-        # 2. History append — weight в процентах (0-100), как пришёл.
-        # Идемпотентно через UNIQUE constraint.
+        # 2. History — weight в процентах (0-100), как пришёл.
         date_clause = ":snap_date" if snapshot_date else "CURRENT_DATE"
         params_base: dict = {"fid": fund_id, "source": source}
         if snapshot_date:
             params_base["snap_date"] = snapshot_date
 
+        # 2a. Карта asset_name → isin из истории ЭТОГО фонда и источника.
+        # Только однозначные имена: у interfax_manual одно имя эмитента может
+        # нести несколько выпусков (Сбербанк ао/ап, разные ОФЗ Минфина) —
+        # такие не переносим, пусть их проставляет бэкфилл по рег-номеру.
+        known_isin = {
+            row[0]: row[1]
+            for row in conn.execute(text("""
+                SELECT asset_name, min(isin)
+                FROM fund_holdings_history
+                WHERE fund_id = :fid AND source = :source AND isin IS NOT NULL
+                GROUP BY asset_name
+                HAVING count(DISTINCT isin) = 1
+            """), {"fid": fund_id, "source": source}).fetchall()
+        }
+
+        # 2b. Снапшот заменяем целиком — см. docstring.
+        conn.execute(text(f"""
+            DELETE FROM fund_holdings_history
+            WHERE fund_id = :fid AND source = :source
+              AND snapshot_date = {date_clause}
+        """), params_base)
+
+        # ON CONFLICT оставлен на случай, если сам парсер вернёт две строки с
+        # одинаковым именем: после DELETE это был бы уже не тихий пропуск, а
+        # падение всей транзакции и потеря снапшота целиком.
         for h in holdings:
             conn.execute(text(f"""
                 INSERT INTO fund_holdings_history
                     (fund_id, asset_name, weight, positions, amount_rub,
-                     snapshot_date, source, created_at)
+                     snapshot_date, source, isin, created_at)
                 VALUES
                     (:fid, :name, :weight, :positions, :amount_rub,
-                     {date_clause}, :source, NOW())
+                     {date_clause}, :source, :isin, NOW())
                 ON CONFLICT (fund_id, (COALESCE(isin,'')), asset_name, snapshot_date, source) DO NOTHING
             """), {
                 **params_base,
@@ -393,6 +428,7 @@ def save_fund_holdings(
                 "weight": h["weight"],  # проценты as-is
                 "positions": h.get("positions"),
                 "amount_rub": h.get("amount_rub"),
+                "isin": h.get("isin") or known_isin.get(h["name"]),
             })
 
         conn.commit()
