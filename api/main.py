@@ -50,6 +50,7 @@ from api.routers import alerts  # ← /api/alerts/* (Telegram alert-bot: при�
 from api.routers import anomalies  # ← /api/anomalies/* (лента всплывающих аномалий: тосты+колокол)
 from api.routers import content_news  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 from api.routers import mandate_scan  # ← /api/internal/mandate-scan/* (еженедельный Routine-скаут вынужденных потоков)
+from api.routers import content_corpus  # ← /api/internal/content-corpus/* (примеры постов для Шага В)
 from api.routers import user_settings  # ← /api/settings (синк настроек юзера между устройствами)
 from api.routers import repaint  # ← /api/admin/repaint/* (экспериментальная «Перекраска», admin-only)
 
@@ -532,6 +533,7 @@ app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всп�
 app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, shared secret)
 app.include_router(mandate_scan.internal_router)  # ← /api/internal/mandate-scan/* (Routine-скаут, shared secret)
+app.include_router(content_corpus.internal_router)  # ← /api/internal/content-corpus/* (примеры постов канала, shared secret)
 app.include_router(user_settings.router)  # ← /api/settings (синк настроек юзера между устройствами)
 
 # ═══════════════════════════════════════════════════════════════

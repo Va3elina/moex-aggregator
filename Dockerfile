@@ -88,6 +88,10 @@ sys.exit(f'rosstat-bundle.pem: в бандле нет {gone}') if gone else None
 sys.exit(0) if len(c) > 100 else sys.exit(f'rosstat-bundle.pem: только {len(c)} сертификатов')"
 
 # Код приложения
+# Корпус постов канала для /api/internal/content-corpus (0,75 МБ). Лежит в
+# research/, но research/ в образ НЕ копируется целиком — берём один файл по
+# стабильному пути, который ищет api/services/corpus_examples.py.
+COPY research/content_pipeline_v2/dataset/corpus.json.gz /app/data/corpus/corpus.json.gz
 COPY api/ ./api/
 COPY OI/ ./OI/
 COPY Candles/ ./Candles/
