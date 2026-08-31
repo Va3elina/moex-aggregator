@@ -94,7 +94,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 2
+BRIEF_VERSION = 3
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -391,6 +391,57 @@ def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
     return f"{note}пост от {when}:\n{row['draft_text'] or row['headline']}"
 
 
+_SELECT_STOCK_FOR_FUTURES = text(
+    "SELECT stock_ticker FROM ticker_futures_map WHERE futures_sectype = :f LIMIT 1")
+_SELECT_PRICE_SERIES = text("""
+    SELECT begin_time::date AS d, close
+    FROM candles
+    WHERE secid = :secid AND interval = 24 AND type = 'stock'
+      AND begin_time::date BETWEEN :since AND :as_of
+    ORDER BY begin_time
+""")
+
+
+def _price_context(db, asset_id: str, tickers, as_of) -> dict:
+    """Цена за длинные горизонты — чтобы позицию можно было привязать к простому
+    сравнению («цена упала вдвое, а лонг вырос втрое»). Именно так пишет канал:
+    «за 10 дней сложились в 2 раза», «с начала года потеряли около 60%».
+
+    Без этого блока модель оперирует только позициями, и текст получается про
+    контракты вместо истории."""
+    secid = (tickers or [None])[0]
+    if not secid:
+        secid = db.execute(_SELECT_STOCK_FOR_FUTURES, {"f": asset_id}).scalar()
+    if not secid:
+        return {}
+    rows = db.execute(_SELECT_PRICE_SERIES, {
+        "secid": secid, "since": as_of - timedelta(days=400), "as_of": as_of,
+    }).fetchall()
+    if len(rows) < 20:
+        return {}
+    dates = [r[0] for r in rows]
+    px = {r[0]: float(r[1]) for r in rows if r[1] is not None}
+    if not px:
+        return {}
+    last_d = dates[-1]
+    out = {"цена_сейчас": _ru(f"{px[last_d]:.2f}")}
+    for days, label in ((30, "за_месяц"), (180, "за_полгода"), (365, "за_год")):
+        target = last_d - timedelta(days=days)
+        base_d = min((d for d in dates if d >= target and d in px), default=None)
+        if not base_d or base_d == last_d or not px[base_d]:
+            continue
+        chg = (px[last_d] - px[base_d]) / px[base_d] * 100
+        # Круглое сравнение, если движение крупное: «упала вдвое» читается лучше,
+        # чем «упала на 51,3%». Вадим 31.08: «стараться привязать всё к простому».
+        if abs(chg) >= 45:
+            r = px[base_d] / px[last_d] if chg < 0 else px[last_d] / px[base_d]
+            word = "упала" if chg < 0 else "выросла"
+            out[f"цена_{label}"] = f"{word} примерно в {_ru(f'{r:.1f}')} раза"
+        else:
+            out[f"цена_{label}"] = f"{'+' if chg >= 0 else ''}{_ru(f'{chg:.0f}')}%"
+    return out
+
+
 def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     """Изменение позиции ЧЕЛОВЕЧЕСКОЙ фразой + выбор главного числа.
 
@@ -413,7 +464,7 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     # «дата_сигнала 2026-07-16» и при этом позицию на 2026-08-31 (58 489 контрактов
     # вместо 38 943). В живой работе Шаг В стреляет сразу после сигнала и даты почти
     # совпадают, но «почти» недопустимо там, где весь смысл в корректности дат.
-    series = get_position_series(asset_id, clg, days=45, as_of_date=as_of)
+    series = get_position_series(asset_id, clg, days=400, as_of_date=as_of)
     if len(series) < 3:
         return {"ошибка": "недостаточно истории по инструменту"}
 
@@ -448,7 +499,8 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
         return abs(abs(new_v) - abs(old_v)) / abs(old_v)
 
     periods = {"за_сутки": (phrase(last, prev), strength(last, prev))}
-    for days, label in ((7, "за_неделю"), (30, "за_месяц")):
+    for days, label in ((7, "за_неделю"), (30, "за_месяц"),
+                        (180, "за_полгода"), (365, "за_год")):
         target = last_d - timedelta(days=days)
         base_d = min((d for d in dates if d >= target), default=None)
         if base_d and base_d != last_d:
@@ -460,17 +512,28 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
         gross = (pl or 0) - (ps or 0)
         pcts.append((n / gross * 100) if gross else 0.0)
     span = (dates[-1] - dates[0]).days
+    # ⚠️ Терминология — тоже интерфейс. Вадим 31.08: «перекос net/gross» в пост
+    # писать нельзя, это жаргон. Модель писала его дословно, потому что дословно
+    # так называлось поле брифа. Переименовываем и переводим на человеческий:
+    # net/gross — это доля чистой позиции в ОТКРЫТОМ ИНТЕРЕСЕ физлиц.
+    share = abs(pcts[-1])
     return {
         "направление_позиции": f"чистый {word.upper()}",
         "ГЛАВНОЕ_ЧИСЛО": f"{lead}: {periods[lead][0]}",
         "фон_упоминать_не_обязательно": {k: v[0] for k, v in periods.items() if k != lead},
-        "чистая_позиция_контрактов": abs(last),
-        "перекос_net_gross": f"{_ru(f'{pcts[-1]:.1f}')}%",
+        "доля_чистой_позиции_в_ои": (
+            f"чистый {word} — {_ru(f'{share:.0f}')}% открытого интереса физлиц"),
         # ⚠️ Окно в НАЗВАНИИ поля: прежнее «перекос_диапазон_за_ряд» модель прочла
         # как «за всё время наблюдений» и написала «максимум за всё время».
-        f"перекос_диапазон_только_за_{span}_дней": (
-            f"от {_ru(f'{min(pcts):.1f}')}% до {_ru(f'{max(pcts):.1f}')}% — это НЕ "
-            f"исторический экстремум, а лишь окно в {span} дн."),
+        f"эта_доля_в_рамках_{span}_дней": (
+            f"диапазон от {_ru(f'{min(pcts):.0f}')}% до {_ru(f'{max(pcts):.0f}')}% — "
+            f"это окно в {span} дн., НЕ исторический экстремум"),
+        "служебное_не_для_текста": {
+            "чистая_позиция_контрактов": abs(last),
+            "пояснение": ("Голое число контрактов читателю ничего не говорит "
+                           "(Вадим 31.08). В текст выносить НЕ надо — нужна "
+                           "интерпретация: во сколько раз или на сколько процентов."),
+        },
     }
 
 
@@ -514,6 +577,8 @@ def _step_c_payload(db, row, internal_token: str) -> str:
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
         "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"],
                                             as_of=row["signal_date"]),
+        "цена_акции": _price_context(db, row["asset_id"], row["tickers"],
+                                      row["signal_date"]),
         "служебное": {
             "atr_множитель": float(row["severity_value"]),
             "пояснение": ("ВНУТРЕННЕЕ. Отношение дневного изменения к обычному "
