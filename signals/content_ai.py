@@ -128,14 +128,6 @@ _SELECT_DRAFT_READY = text("""
     LIMIT :batch_limit
 """)
 
-_SELECT_RECENT_SIGNALS = text("""
-    SELECT asset_name, direction, severity_value, signal_date
-    FROM anomalies
-    WHERE scope = 'public' AND type = 'oi_move' AND id != :exclude_id
-    ORDER BY signal_date DESC, id DESC
-    LIMIT 5
-""")
-
 _SELECT_PRIOR_POST = text("""
     SELECT headline, draft_text, published_at, updated_at
     FROM content_candidates
@@ -324,73 +316,6 @@ def _ru(x) -> str:
     return str(x).replace(".", ",")
 
 
-def _oi_context_line(asset_id: str, clgroup: str | None) -> str:
-    """История позиции физлиц по инструменту — рамка «где мы относительно
-    исторического макс/мин», ту же самую подсвечивает скринер сигналов. Без
-    неё Шаг В брал историческую аналогию из памяти модели (галлюцинация);
-    с ней есть настоящая фактура для честного «как было раньше»."""
-    from signals.db import get_position_series
-    clg = clgroup or "FIZ"
-    series = get_position_series(asset_id, clg, days=730)
-    if len(series) < 30:
-        return "(недостаточно истории по этому инструменту для контекста)"
-    pcts = []
-    for _d, net, _npart, plong, pshort in series:
-        gross = (plong or 0) - (pshort or 0)
-        pcts.append((net / gross * 100) if gross else 0.0)
-    today_pct = pcts[-1]
-    hist_max, hist_min = max(pcts), min(pcts)
-    trend_30 = pcts[-30]
-    trend = "растёт" if today_pct > trend_30 else "снижается" if today_pct < trend_30 else "без изменений"
-    return (f"текущий перекос физлиц (net/gross): {_ru(f'{today_pct:.1f}')}%; "
-            f"диапазон за 2 года: [{_ru(f'{hist_min:.1f}')}%; {_ru(f'{hist_max:.1f}')}%]; "
-            f"тенденция за 30 дней: {trend}")
-
-
-def _market_rank_line(db, asset_id: str, clgroup: str | None) -> str:
-    """Место инструмента по резкости СЕГОДНЯШНЕГО движения среди ВСЕХ
-    отслеживаемых активов — тот же скринер, что /api/oi/screener и вкладка
-    «Скринер сигналов» на /oi (api/services/oi_screener.py::compute_screener).
-    Честная фактура для «самое аномальное движение на рынке» (найдено
-    вручную 2026-07-17 на посте VK) — без неё Шаг В либо не сможет
-    утверждать масштаб, либо, хуже, придумает его сам.
-
-    Best-effort: compute_screener изнутри тянет api.cache (redis), которого
-    нет в host venv (signals/.venv) — при сбое возвращаем честную заглушку,
-    падение здесь НЕ должно ронять весь _step_c_payload."""
-    try:
-        from api.services import oi_screener
-        clg = clgroup or "FIZ"
-        data = oi_screener.compute_screener(db, clg)
-        ranked = sorted(
-            (r for r in data["rows"] if r["ratio"] is not None),
-            key=lambda r: r["ratio"], reverse=True,
-        )
-        total = len(ranked)
-        for i, r in enumerate(ranked, start=1):
-            if r["sectype"] == asset_id:
-                return f"№{i} по резкости движения из {total} отслеживаемых активов рынка"
-        return "(инструмент не найден в скринере)"
-    except Exception as e:
-        print(f"[content_ai] market_rank compute failed: {type(e).__name__}: {e}")
-        return "(сравнение с рынком недоступно)"
-
-
-def _recent_signals_line(db, exclude_anomaly_id: int) -> str:
-    """Сравнимые недавние публичные OI-сигналы по ДРУГИМ тикерам — фактура
-    для «для масштаба: N был ×M», вместо выдуманного сравнения."""
-    rows = db.execute(
-        _SELECT_RECENT_SIGNALS, {"exclude_id": exclude_anomaly_id}
-    ).fetchall()
-    if not rows:
-        return "(нет сравнимых недавних сигналов)"
-    parts = []
-    for name, direction, severity, sig_date in rows:
-        word = "лонг" if direction == "up" else "шорт"
-        parts.append(f"{name}: ×{_ru(f'{severity:g}')} {word} ({sig_date})")
-    return "; ".join(parts)
-
-
 def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
     """Более ранний опубликованный/готовый пост по этому же треду — фактура
     для честного «продолжение истории» вместо повторного изобретения того же
@@ -413,35 +338,135 @@ def _prior_post_line(db, thread_key, self_id: int, reused_signal: bool) -> str:
     return f"{note}пост от {when}:\n{row['draft_text'] or row['headline']}"
 
 
+def _position_phrases(asset_id: str, clgroup: str | None) -> dict:
+    """Изменение позиции ЧЕЛОВЕЧЕСКОЙ фразой + выбор главного числа.
+
+    ⚠️ Почему не ATR-множитель. Детектор считает ratio = |Δ за день| / ATR(14):
+    ×4,69 означает «дневное изменение в 4,69 раза крупнее обычного дневного», а НЕ
+    рост позиции. Канал говорит «лонг вырос в 5 раз» — это отношение «было → стало»
+    за период. Подмена дала фактические ошибки в двух ОПУБЛИКОВАННЫХ постах (793:
+    «выросла в 3,53 раза за один день», хотя за день было +37%). Множитель остаётся
+    служебным признаком аномальности и в текст поста не идёт.
+    См. research/content_pipeline_v2/METRIC_MISMATCH.md.
+
+    ⚠️ Почему ГЛАВНОЕ_ЧИСЛО выбирает код, а не модель. Замер: когда бриф выкладывал
+    шесть равноправных чисел, модель добросовестно брала все — плотность оставалась
+    5 показателей на абзац против 1-2 у канала. «Дай всё и надейся, что выберет» не
+    работает; это тот же провал, что и с раздутым промптом."""
+    from signals.db import get_position_series
+    clg = clgroup or "FIZ"
+    series = get_position_series(asset_id, clg, days=45)
+    if len(series) < 3:
+        return {"ошибка": "недостаточно истории по инструменту"}
+
+    dates = [r[0] for r in series]
+    net = {r[0]: r[1] for r in series}
+    last_d, last = dates[-1], net[dates[-1]]
+    prev = net[dates[-2]]
+    word = "лонг" if last > 0 else "шорт"
+
+    def phrase(new_v, old_v) -> str:
+        # ⚠️ Процент через смену знака бессмыслен: VK (лонг → шорт) давал «−369,9%»,
+        # и модель написала «позиция изменилась на −369,9%» — человек прочтёт
+        # «упало на 370%». При развороте отдаём описание разворота.
+        if not old_v:
+            return "не с чем сравнить — позиции не было"
+        if (old_v > 0) != (new_v > 0):
+            return (f"развернулась: было {'лонг' if old_v > 0 else 'шорт'} {abs(old_v)}, "
+                    f"стало {'лонг' if new_v > 0 else 'шорт'} {abs(new_v)}")
+        grew = abs(new_v) > abs(old_v)
+        r = abs(new_v) / abs(old_v)
+        verb = "вырос" if grew else "сократился"
+        if grew and r >= 1.5:
+            return f"чистый {word} {verb} в {_ru(f'{r:.2f}')} раза"
+        chg = abs(abs(new_v) - abs(old_v)) / abs(old_v) * 100
+        return f"чистый {word} {verb} на {_ru(f'{chg:.1f}')}%"
+
+    def strength(new_v, old_v) -> float:
+        if not old_v:
+            return 0.0
+        if (old_v > 0) != (new_v > 0):
+            return (abs(new_v) + abs(old_v)) / abs(old_v)
+        return abs(abs(new_v) - abs(old_v)) / abs(old_v)
+
+    periods = {"за_сутки": (phrase(last, prev), strength(last, prev))}
+    for days, label in ((7, "за_неделю"), (30, "за_месяц")):
+        target = last_d - timedelta(days=days)
+        base_d = min((d for d in dates if d >= target), default=None)
+        if base_d and base_d != last_d:
+            periods[label] = (phrase(last, net[base_d]), strength(last, net[base_d]))
+
+    lead = max(periods, key=lambda k: periods[k][1])
+    pcts = []
+    for _d, n, _npart, pl, ps in series:
+        gross = (pl or 0) - (ps or 0)
+        pcts.append((n / gross * 100) if gross else 0.0)
+    span = (dates[-1] - dates[0]).days
+    return {
+        "направление_позиции": f"чистый {word.upper()}",
+        "ГЛАВНОЕ_ЧИСЛО": f"{lead}: {periods[lead][0]}",
+        "фон_упоминать_не_обязательно": {k: v[0] for k, v in periods.items() if k != lead},
+        "чистая_позиция_контрактов": abs(last),
+        "перекос_net_gross": f"{_ru(f'{pcts[-1]:.1f}')}%",
+        # ⚠️ Окно в НАЗВАНИИ поля: прежнее «перекос_диапазон_за_ряд» модель прочла
+        # как «за всё время наблюдений» и написала «максимум за всё время».
+        f"перекос_диапазон_только_за_{span}_дней": (
+            f"от {_ru(f'{min(pcts):.1f}')}% до {_ru(f'{max(pcts):.1f}')}% — это НЕ "
+            f"исторический экстремум, а лишь окно в {span} дн."),
+    }
+
+
+def _story_frame(signal_date, news_date) -> str:
+    """Рамка сюжета из порядка дат. Её отсутствие дало черновик 845: сигнал был
+    датирован на 3 дня ПОЗЖЕ новости, а пост утверждал «толпа шла в шорт ещё до
+    ралли». Порядок дат известен точно — значит и говорить о нём должен код, а не
+    модель по догадке."""
+    d = (signal_date - news_date).days
+    if d < 0:
+        return (f"УПРЕЖДЕНИЕ: позиции менялись за {abs(d)} дн. ДО новости. Только в "
+                f"этой рамке можно говорить, что толпа встала заранее.")
+    if d == 0:
+        return ("СОВПАДЕНИЕ: позиции и новость в один день. Утверждать, что толпа "
+                "встала ЗАРАНЕЕ, нельзя — данных на это нет.")
+    return (f"РЕАКЦИЯ: позиции менялись на {d} дн. ПОЗЖЕ новости. Это отклик на "
+            f"событие, а не предвидение. Фразы «знали заранее», «встали до» "
+            f"запрещены как факт.")
+
+
 def _step_c_payload(db, row, internal_token: str) -> str:
-    oi_context = _oi_context_line(row["asset_id"], row["anomaly_clgroup"])
-    recent_signals = _recent_signals_line(db, row["anomaly_id"])
-    market_rank = _market_rank_line(db, row["asset_id"], row["anomaly_clgroup"])
+    """Бриф v2 (JSON). Из v1 УБРАНЫ market_rank и recent_signals: оба порождали
+    дефекты — recent_signals дал в черновике 773 список 📌 из пяти чужих тикеров,
+    который тот же пост следующей строкой сам и дисклеймил, а market_rank дал
+    «второе по резкости среди 72 активов» там, где это ничего не добавляло. Поле,
+    попавшее в бриф, модель считает обязанной израсходовать — поэтому лишние поля
+    убираются, а не запрещаются очередным правилом."""
+    import json as _json
     created_at = row.get("created_at")
-    reused_signal = bool(created_at and row["signal_date"] < created_at.date())
-    prior_post = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
-    return (
-        f"candidate_id: {row['id']}\n"
-        f"headline: {row['headline']}\n"
-        f"raw_text: {row['raw_text'] or row['headline']}\n"
-        f"tickers: {', '.join(row['tickers'] or [])}\n"
-        f"event_type: {row['event_type'] or ''}\n"
-        f"reasoning (Шаг А): {row['reasoning'] or ''}\n"
-        f"forwards_count: {row['forwards_count'] if row['forwards_count'] is not None else '(нет данных)'}\n"
-        f"matched_anomaly:\n"
-        f"  asset: {row['asset_id']} ({row['asset_name'] or ''})\n"
-        f"  type: {row['anomaly_type']}\n"
-        f"  direction: {row['direction']}\n"
-        f"  multiplier: x{_ru(row['severity_value'])}\n"
-        f"  signal_date: {row['signal_date']}\n"
-        f"  headline: {row['anomaly_headline']}\n"
-        f"oi_context: {oi_context}\n"
-        f"recent_signals: {recent_signals}\n"
-        f"market_rank: {market_rank}\n"
-        f"prior_post: {prior_post}\n"
-        f"internal_token: {internal_token}\n"
-        f"api_host: {INTERNAL_API_HOST}"
-    )
+    news_date = created_at.date() if created_at else row["signal_date"]
+    reused_signal = bool(created_at and row["signal_date"] < news_date)
+    brief = {
+        "candidate_id": row["id"],
+        "headline": row["headline"],
+        "raw_text": row["raw_text"] or row["headline"],
+        "tickers": row["tickers"] or [],
+        "event_type": row["event_type"] or "",
+        "инструмент": f"{row['asset_id']} ({row['asset_name'] or ''})",
+        "дата_новости": str(news_date),
+        "дата_сигнала": str(row["signal_date"]),
+        "рамка_сюжета": _story_frame(row["signal_date"], news_date),
+        "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"]),
+        "служебное": {
+            "atr_множитель": float(row["severity_value"]),
+            "пояснение": ("ВНУТРЕННЕЕ. Отношение дневного изменения к обычному "
+                           "дневному, а НЕ рост позиции. В текст поста не выносить."),
+        },
+    }
+    prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
+    if prior and not prior.startswith("(нет"):
+        brief["предыдущий_пост_этого_треда"] = prior
+    return (_json.dumps(brief, ensure_ascii=False, indent=2)
+            + f"\ninternal_token: {internal_token}"
+            + f"\napi_host: {INTERNAL_API_HOST}")
 
 
 def run_once() -> dict:
