@@ -1784,7 +1784,8 @@ export default function SimpleChart({
                   (_forecastCount > 0) не рисуем: у пунктира свои end-кружки.
                   Порядок кружков повторяет порядок линий (цена → third →
                   secondary), иначе кружок ОИ уходит под кружок цены, хотя сама
-                  линия ОИ лежит поверх. */}
+                  линия ОИ лежит поверх. Радиус общий для всех линий (по
+                  толщине основной), иначе кружки выходят разного размера. */}
               {_forecastCount === 0 && (
                 <>
                   {showPrimary && (primaryEffType === 'line' || primaryEffType === 'area') && animatedPaths.endPrimary && (
@@ -1799,7 +1800,7 @@ export default function SimpleChart({
                     <circle
                       cx={animatedPaths.endThird.x}
                       cy={animatedPaths.endThird.y}
-                      r={tokens.lineSecondaryW * 1.5}
+                      r={tokens.linePrimaryW * 1.5}
                       fill={thirdColor}
                       opacity={oiOpacity}
                     />
@@ -1808,7 +1809,7 @@ export default function SimpleChart({
                     <circle
                       cx={animatedPaths.endSecondary.x}
                       cy={animatedPaths.endSecondary.y}
-                      r={tokens.lineSecondaryW * 1.5}
+                      r={tokens.linePrimaryW * 1.5}
                       fill={secondaryColor}
                       opacity={oiOpacity}
                     />
