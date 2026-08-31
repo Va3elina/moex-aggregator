@@ -1,37 +1,57 @@
 #!/usr/bin/env python3
 """
-Бэкфилл дневных свечей ДЕЛИСТИНГОВАННЫХ бумаг, которые держали фонды.
+Бэкфилл дневных свечей ДЕЛИСТИНГОВАННЫХ бумаг: холдинги фондов и бывшие
+участники базы расчёта индекса МосБиржи.
 
-Зачем. «Карта сделок» в «Потоках по компании» рисует сделки фондов на линии
-цены. У переехавших в РФ компаний история до редомициляции лежит на бирже под
+Зачем (фонды). «Карта сделок» в «Потоках по компании» рисует сделки фондов на
+линии цены. У переехавших в РФ компаний история до редомициляции лежит на бирже под
 СТАРЫМ тикером (HEAD ← HHRU, YDEX ← YNDX, X5 ← FIVE, RAGR ← AGRO, CNRU ← CIAN,
 VKCO ← MAIL), а у делистингованных (POGR, POLY, RSTI, DSKY) — только под их
 собственным. Ни тех, ни других нет в instruments, поэтому обычный
 backfill_daily_history.py (он идёт по instruments) их не качает, и на карте
 зияли дыры до 46 месяцев.
 
-Что делает. Берёт из securities_ref бумаги, которые (а) встречаются в составах
-whitelist-фондов акций, (б) имеют secid, (в) НЕ торгуются сейчас (is_traded =
-false), и докачивает их дневные свечи с ISS в candles (type='stock').
+Зачем (индекс). «Сила рынка» со вселенной imoex считает широту по составу
+индекса НА КАЖДУЮ ДАТУ (index_composition). Бумаги, выбывшие из индекса и с
+биржи — Уралкалий, Мегафон, РАО ЕЭС, Дикси, ОГК-3 — в candles не лежат, и
+знаменатель ранних лет получался вдвое меньше реального состава: в 2008 году
+в индексе было 30 бумаг, а в широте участвовало 14.
+
+Что делает. Берёт кандидатов из двух источников (--source):
+  funds — securities_ref: бумаги из составов whitelist-фондов акций, у которых
+          есть secid и is_traded = false;
+  index — index_composition: бумаги, входившие когда-либо в базу расчёта
+          индекса, но не имеющие ни одной дневной свечи в candles.
+Докачивает их дневные свечи с ISS в candles (type='stock') и записывает сами
+бумаги в реестр delisted_securities — пометку «этот secid в candles не
+действующий инструмент, а история».
 
 ВАЖНО: в instruments эти бумаги НЕ добавляются — иначе делистингованный YNDX
 всплыл бы в пикерах сезонности и остальных индикаторов как живой актив. Карта
-рынка строится FROM instruments, ширина рынка берёт свечи за последние 30 дней,
-поэтому старые свечи в candles им безразличны. Склейку старой и новой серии
+рынка строится FROM instruments, вселенная «все акции» у ширины рынка берёт
+свечи за последние 30 дней, поэтому старые свечи в candles им безразличны.
+Пометка о делистинге живёт в delisted_securities. Склейку старой и новой серии
 делает /api/fund-trades/price-weekly по securities_ref.canonical_isin.
 
 Использование:
-  python Candles/backfill_delisted_history.py            # докачать недостающее
-  python Candles/backfill_delisted_history.py --all      # перезалить всё
-  python Candles/backfill_delisted_history.py --dry-run  # только показать план
+  python Candles/backfill_delisted_history.py                  # фонды (как раньше)
+  python Candles/backfill_delisted_history.py --source index   # бывшие участники IMOEX
+  python Candles/backfill_delisted_history.py --source all     # и те, и другие
+  python Candles/backfill_delisted_history.py --all            # перезалить всё
+  python Candles/backfill_delisted_history.py --dry-run        # только показать план
+
+После загрузки бумаг источника index пересчитать широту:
+  python Candles/compute_breadth_history.py --full
 """
 
 import asyncio
 import aiohttp
+import json
 import logging
 import os
 import sys
 import argparse
+import urllib.request
 from pathlib import Path
 from datetime import date
 
@@ -49,6 +69,12 @@ DB_URL = os.getenv("DB_URL")
 ISS_URL = "https://iss.moex.com/iss/engines/stock/markets/shares/securities"
 MAX_CONCURRENT = 3
 START_YEAR = 2007
+
+# Метаданные бумаги (короткое имя, ISIN) для реестра delisted_securities.
+ISS_SECURITY = "https://iss.moex.com/iss/securities/{secid}.json?iss.meta=off&iss.only=description"
+
+# Индекс, чью историческую базу расчёта разбираем при --source index.
+INDEX_ID = "IMOEX"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +116,102 @@ def get_delisted_holdings(engine) -> list[tuple[str, str, int]]:
             ORDER BY sr.secid
         """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).fetchall()
     return [(r[0], r[1], r[2]) for r in rows]
+
+
+def get_index_delisted(engine, index_id: str = INDEX_ID) -> list[tuple[str, str, int]]:
+    """Бывшие участники базы расчёта индекса без единой дневной свечи.
+
+    Возвращает (secid, short_name, свечей=0) — тот же кортеж, что и у
+    источника funds, чтобы дальше обрабатывать их одинаково. Имя берём с ISS
+    (в index_composition хранятся только тикеры и веса).
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT ic.ticker, COUNT(DISTINCT ic.trade_date) AS days
+            FROM index_composition ic
+            WHERE ic.index_id = :idx
+              AND NOT EXISTS (
+                    SELECT 1 FROM candles c
+                    WHERE c.secid = ic.ticker AND c.type = 'stock' AND c.interval = 24
+              )
+            GROUP BY ic.ticker
+            ORDER BY days DESC
+        """), {"idx": index_id}).fetchall()
+
+    out = []
+    for secid, days in rows:
+        name, _ = fetch_security_meta(secid)
+        log.info(f"  кандидат {secid:8s} ({name}) — дней в индексе: {days}")
+        out.append((secid, name, 0))
+    return out
+
+
+def fetch_security_meta(secid: str) -> tuple[str, str]:
+    """(short_name, isin) бумаги с ISS. Пустые строки, если ISS промолчал."""
+    try:
+        req = urllib.request.Request(ISS_SECURITY.format(secid=secid),
+                                     headers={"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+        cols = data["description"]["columns"]
+        i_name, i_val = cols.index("name"), cols.index("value")
+        meta = {row[i_name]: row[i_val] for row in data["description"]["data"]}
+        return (meta.get("SHORTNAME") or meta.get("NAME") or secid, meta.get("ISIN") or "")
+    except Exception as e:
+        log.warning(f"  {secid}: метаданные ISS недоступны ({e})")
+        return (secid, "")
+
+
+def ensure_registry(engine) -> None:
+    """Схема delisted_securities — как в db/migrations/053 (идемпотентно)."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS delisted_securities (
+                secid         VARCHAR(16) PRIMARY KEY,
+                short_name    VARCHAR(120),
+                isin          VARCHAR(20),
+                source        VARCHAR(32),
+                first_candle  DATE,
+                last_candle   DATE,
+                candles_count INTEGER,
+                note          TEXT,
+                updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_delisted_securities_last
+            ON delisted_securities(last_candle DESC)
+        """))
+
+
+def mark_delisted(engine, secid: str, name: str, source: str) -> None:
+    """Отмечает бумагу в реестре историй: границы серии берём из candles.
+
+    Вызывается ПОСЛЕ загрузки свечей — иначе границы окажутся пустыми.
+    """
+    _, isin = fetch_security_meta(secid)
+    with engine.begin() as conn:
+        row = conn.execute(text("""
+            SELECT MIN(begin_time)::date, MAX(begin_time)::date, COUNT(*)
+            FROM candles
+            WHERE secid = :s AND type = 'stock' AND interval = 24
+        """), {"s": secid}).fetchone()
+        first, last, cnt = (row[0], row[1], row[2]) if row else (None, None, 0)
+        conn.execute(text("""
+            INSERT INTO delisted_securities
+                (secid, short_name, isin, source, first_candle, last_candle, candles_count, updated_at)
+            VALUES (:s, :n, :i, :src, :f, :l, :c, now())
+            ON CONFLICT (secid) DO UPDATE SET
+                short_name    = COALESCE(EXCLUDED.short_name, delisted_securities.short_name),
+                isin          = COALESCE(NULLIF(EXCLUDED.isin, ''), delisted_securities.isin),
+                source        = EXCLUDED.source,
+                first_candle  = EXCLUDED.first_candle,
+                last_candle   = EXCLUDED.last_candle,
+                candles_count = EXCLUDED.candles_count,
+                updated_at    = now()
+        """), {"s": secid, "n": name, "i": isin, "src": source,
+               "f": first, "l": last, "c": cnt})
+    log.info(f"  ✓ {secid} помечен делистингованным: {first} … {last}, свечей {cnt}")
 
 
 async def fetch_candles_for_year(session, secid: str, year: int) -> list:
@@ -169,12 +291,30 @@ async def backfill_secid(session, engine, secid: str, name: str) -> int:
 async def main():
     parser = argparse.ArgumentParser(description='Backfill daily candles for delisted fund holdings')
     parser.add_argument('--secid', type=str, help='Конкретная бумага')
+    parser.add_argument('--source', choices=['funds', 'index', 'all'], default='funds',
+                        help='Источник кандидатов: холдинги фондов, база расчёта индекса или оба')
     parser.add_argument('--all', action='store_true', help='Перезалить все, а не только пустые')
     parser.add_argument('--dry-run', action='store_true', help='Только показать план')
     args = parser.parse_args()
 
     engine = get_engine()
-    secs = get_delisted_holdings(engine)
+    ensure_registry(engine)
+
+    # Источник помним по бумаге: он идёт в delisted_securities.source.
+    source_of: dict[str, str] = {}
+    secs: list = []
+    if args.source in ('funds', 'all'):
+        for row in get_delisted_holdings(engine):
+            source_of[row[0]] = 'fund_holdings'
+            secs.append(row)
+    if args.source in ('index', 'all'):
+        log.info(f"Кандидаты из истории базы расчёта {INDEX_ID}:")
+        known = {r[0] for r in secs}
+        for row in get_index_delisted(engine):
+            source_of.setdefault(row[0], 'index_composition')
+            if row[0] not in known:
+                secs.append(row)
+
     if args.secid:
         secs = [s for s in secs if s[0] == args.secid]
         if not secs:
@@ -200,7 +340,12 @@ async def main():
 
         async def process(secid, nm):
             async with semaphore:
-                return await backfill_secid(session, engine, secid, nm)
+                loaded = await backfill_secid(session, engine, secid, nm)
+                # Пометка в реестре — после загрузки: границы серии читаются
+                # из candles. Ставим её и когда свечей не прибавилось: строка
+                # реестра нужна как факт «это историческая бумага».
+                mark_delisted(engine, secid, nm, source_of.get(secid, 'unknown'))
+                return loaded
 
         results = await asyncio.gather(
             *[process(s[0], s[1]) for s in todo], return_exceptions=True
