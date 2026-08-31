@@ -18,6 +18,7 @@
  * watermark) — 1-в-1 с CompanyShareChart.
  */
 import {
+    useCallback,
     useEffect,
     useMemo,
     useLayoutEffect,
@@ -49,6 +50,11 @@ const FLOW_NEG = 'var(--funds-flow-negative)';
 const XLABEL_H = 40;
 
 interface FlowsHistogramProps {
+    /** Панельный режим (песочница/окно терминала): без карточки-рамки и
+     *  внутренних отступов — график занимает всю площадь панели. Тот же приём,
+     *  что в CompanyShareChart.bare (см. CompanyFlowsTab embedded).
+     *  На сайте не задаётся → вид прежний. */
+    bare?: boolean;
     flowsData: FundsFlowsResponse | null;
     /** Все фонды категории выключены пользователем — empty-state. */
     noFundsSelected?: boolean;
@@ -88,6 +94,7 @@ function fmtFlowVal(v: number): string {
 }
 
 export default function FlowsHistogram({
+    bare = false,
     flowsData,
     noFundsSelected = false,
     loading,
@@ -103,6 +110,26 @@ export default function FlowsHistogram({
     const wrapRef = useRef<HTMLDivElement>(null);
     const priceSvgRef = useRef<SVGSVGElement>(null);
     const flowSvgRef = useRef<SVGSVGElement>(null);
+
+    // Ширина обёртки — числом подписей на оси X правит РЕАЛЬНОЕ место, а не
+    // только viewport: в панели песочницы окно широкое, а график узкий, и шесть
+    // дат слипались в сплошную строку («01.09.2510.11.25…»).
+    // Callback-ref, а НЕ useEffect: узел живёт в ветке «данные приехали» и на
+    // первом рендере (скелет/пусто) его ещё нет — однократный эффект уходил бы
+    // ни с чем (тот же урок, что в CompanyFlowsTab.setChartAnchor).
+    const [wrapW, setWrapW] = useState(0);
+    const wrapRoRef = useRef<ResizeObserver | null>(null);
+    const setWrapEl = useCallback((el: HTMLDivElement | null) => {
+        wrapRef.current = el;
+        wrapRoRef.current?.disconnect();
+        wrapRoRef.current = null;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        setWrapW(el.clientWidth);
+        const ro = new ResizeObserver(() => setWrapW(el.clientWidth));
+        ro.observe(el);
+        wrapRoRef.current = ro;
+    }, []);
+    useEffect(() => () => wrapRoRef.current?.disconnect(), []);
 
     const flows = useMemo(() => flowsData?.flows ?? [], [flowsData?.flows]);
     const hasData = flows.length > 0;
@@ -440,7 +467,7 @@ export default function FlowsHistogram({
     // ─────────────────────────────────────────────────────────────────────
     return (
         <div
-            className="rounded-2xl p-5 bg-theme-primary border border-theme relative"
+            className={bare ? 'relative' : 'rounded-2xl p-5 bg-theme-primary border border-theme relative'}
             style={{ ['--chart-height' as string]: `${height}px` }}
         >
             {noFundsSelected ? (
@@ -488,7 +515,7 @@ export default function FlowsHistogram({
 
                 {/* Обёртка обеих секций — общий курсор, тултип и пилюля даты. */}
                 <div
-                    ref={wrapRef}
+                    ref={setWrapEl}
                     className="relative cursor-crosshair"
                     style={{ touchAction: 'none' }}
                     onMouseMove={handleMouseMove}
@@ -632,7 +659,12 @@ export default function FlowsHistogram({
                             <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 8, left: padArea.left, right: padArea.right, fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
                                 {(() => {
                                     if (!visIdx.length) return null;
-                                    const tickCount = Math.min(isMobile ? 3 : 6, visIdx.length);
+                                    // Порог 760px — ширина, на которой шесть дат
+                                    // «02.09.25» ещё стоят с зазором: плот у́же
+                                    // обёртки на ~150px оси Y, а сама подпись
+                                    // занимает ~60px.
+                                    const narrow = isMobile || (wrapW > 0 && wrapW < 760);
+                                    const tickCount = Math.min(narrow ? 3 : 6, visIdx.length);
                                     return Array.from({ length: tickCount }, (_, i) => {
                                         const idx = Math.min(Math.round(i * (visIdx.length - 1) / Math.max(tickCount - 1, 1)), visIdx.length - 1);
                                         const f = flows[visIdx[idx]];
@@ -644,10 +676,14 @@ export default function FlowsHistogram({
                                     });
                                 })()}
                             </div>
-                            <ChartWatermark
-                                left={`calc(${padArea.left} + 5px)`}
-                                bottom={`${XLABEL_H + 5}px`}
-                            />
+                            {/* В панели (bare) не рисуем: места мало, знак лезет
+                                на бары — так же, как в CompanyShareChart. */}
+                            {!bare && (
+                                <ChartWatermark
+                                    left={`calc(${padArea.left} + 5px)`}
+                                    bottom={`${XLABEL_H + 5}px`}
+                                />
+                            )}
                         </div>
                     </div>
 

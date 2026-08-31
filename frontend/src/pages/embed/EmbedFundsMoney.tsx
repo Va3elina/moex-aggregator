@@ -1,17 +1,18 @@
 /**
- * EmbedFundsMoney — виджет «Фонды» (рыночный). Движок — общий LwChart (как ОИ/
- * Баффетт), без SVG. Два режима (`viewMode`):
- *   • flows → чистые притоки/оттоки: одна histogram-серия, per-bar цвет по знаку
- *             (зел приток / крас отток), нулевая линия. Легенда «Приток/Отток».
- *   • aum   → суммарная СЧА (area, правая ось) + индекс (line, левая ось).
- * Категория / период / таймфрейм / тоглы — в тулбаре и ⚙.
+ * EmbedFundsMoney — виджет «Фонды» (рыночный). Два режима (`viewMode`):
+ *   • flows → двухпанельный вид сайта (FlowsHistogram, bare): сверху линия
+ *             бенчмарка категории (IMOEX/RGBITR/…), снизу биполярная
+ *             гистограмма чистых притоков/оттоков. Курсор и тултип общие.
+ *   • aum   → суммарная СЧА (area, правая ось) + индекс (line, левая ось),
+ *             движок LwChart (как ОИ/Баффетт).
+ * Категория / период / таймфрейм — в тулбаре, слои и формат — за ⚙.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Wallet, Landmark, TrendingUp, Coins, Banknote, Clock, Columns3, Grid3x3, CalendarRange, ListFilter, Lock } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle } from '../../components/LwChartPanes';
-import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import FlowsHistogram from '../../components/funds/FlowsHistogram';
 import FundPickerModal from '../../components/funds/FundPickerModal';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -20,8 +21,9 @@ import {
   type FundPeriod,
   type FundCategory,
   type FlowTimeframe,
+  type FlowRolling,
   type FundsFlowsResponse,
-  type CbrFlowsPeriod,
+  type IndexDataPoint,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
@@ -53,8 +55,6 @@ const CATS: { id: Category; label: string; genitive: string; index: string; icon
 const CAT_ICONS: Record<Category, ReactNode> = Object.fromEntries(CATS.map((c) => [c.id, c.icon])) as Record<Category, ReactNode>;
 /** Период истории потоков. «Авто» = как было: глубина выводится из шага
  *  столбца (день → год, неделя → 3 года, месяц → всё). */
-const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-const MONTHS_SHORT_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
   { id: 'auto', label: 'Авто' },
   { id: '1m', label: '1 месяц' },
@@ -62,9 +62,6 @@ const FLOW_PERIODS: { id: FundPeriod | 'auto'; label: string }[] = [
   { id: '3y', label: '3 года' },
   { id: 'all', label: 'Всё время' },
 ];
-// Стабильная ссылка: массив уходит в депсы мемо внутри гистограммы (yMax,
-// легенда) — инлайновый литерал пересоздавал их на каждый рендер embed'а.
-const FLOW_CATEGORIES = ['Приток', 'Отток'];
 // Иконки шага столбца НАРОЧНО без календарей: в компакт-режиме тулбара
 // подписи скрыты, и CalendarDays/CalendarRange на 14px были близнецами —
 // и между собой, и с календарём соседнего дропдауна «Период» (он остаётся
@@ -136,7 +133,13 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   const period: FundPeriod = fundsAccess.isLoading || fundsAccess.canUsePeriod(wantPeriod)
     ? wantPeriod
     : (['3y', '1y', '1m', '1w'] as FundPeriod[]).find((p) => fundsAccess.canUsePeriod(p)) ?? '1y';
+  // Слой «Индекс» — общий на оба режима, как на сайте: в СЧА это линия на левой
+  // оси, в потоках — верхняя панель бенчмарка. По умолчанию ВКЛЮЧЁН: панель
+  // «Деньги в фондах» открывается сразу с бенчмарком.
   const [showIndex, setShowIndex] = useState<boolean>(() => rd('frame:embed:funds:showIndex', '1') !== '0');
+  // Сглаживание потоков — скользящая сумма за 3 месяца (тот же слой, что на
+  // сайте: низкочастотный тумблер живёт за ⚙, а не в горячем ряду тулбара).
+  const [flowRolling, setFlowRolling] = useState<FlowRolling | 'none'>(() => (rd('frame:embed:funds:flowRolling', 'none') === '3m' ? '3m' : 'none'));
 
   // Скрытые фонды — персист ПО КАТЕГОРИИ, как на сайте (frame:funds:hidden:<cat>):
   // наборы фондов в категориях не пересекаются, общий список бессмыслен.
@@ -166,7 +169,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // проигрывается сначала на старом наборе, потом ещё раз на новом.
   const [data, setData] = useState<{ res: FundsResp; key: string } | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
-  const [flowsLoaded, setFlowsLoaded] = useState<{ res: FundsFlowsResponse; key: string; tf: FlowTimeframe } | null>(null);
+  // Потокам свой ключ запроса не нужен: и волна баров, и подписи заводятся от
+  // ЭХА бека в ответе (category/timeframe/period/rolling) — см. flowsPair ниже.
+  const [flowsLoaded, setFlowsLoaded] = useState<FundsFlowsResponse | null>(null);
   const [flowsStatus, setFlowsStatus] = useState<LoadStatus>('idle');
 
   // Persist
@@ -175,6 +180,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   useEffect(() => { wr('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
   useEffect(() => { wr('frame:embed:funds:flowPeriod', flowPeriod); }, [flowPeriod]);
   useEffect(() => { wr('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
+  useEffect(() => { wr('frame:embed:funds:flowRolling', flowRolling); }, [flowRolling]);
 
   // Реалтайм: ингест фондов обновил данные (SSE 'funds'/'daily') → тихий
   // рефетч обоих режимов. Тихий = без setStatus('loading'), панель не мигает.
@@ -224,12 +230,10 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     let cancelled = false;
     if (!silentRef.current) setFlowsStatus('loading');
     const ids = fundIdsKey ? fundIdsKey.split(',').map(Number) : undefined;
-    getFundsFlows(category, flowTimeframe, period, ids)
+    getFundsFlows(category, flowTimeframe, period, ids, flowRolling === '3m' ? '3m' : undefined)
       .then((res) => {
         if (cancelled) return;
-        // ⚠️ Фильтр фондов в ключ НЕ входит: волна не должна переигрываться на
-        // каждый чекбокс — ровно как toggle категорий у потоков ЦБ.
-        setFlowsLoaded({ res, key: `${category}|${flowTimeframe}|${period}`, tf: flowTimeframe });
+        setFlowsLoaded(res);
         setFlowsStatus((res?.flows?.length ?? 0) > 0 ? 'ok' : 'empty');
       })
       .catch((err) => {
@@ -239,7 +243,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
       });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, category, flowTimeframe, period, fundIdsKey, refreshTick]);
+  }, [viewMode, category, flowTimeframe, period, fundIdsKey, flowRolling, refreshTick]);
 
   // Сброс «тихого» флага ПОСЛЕ обоих load-эффектов (они читают его в порядке
   // объявления в этом же коммите): сбрось его первый — второй бы мигнул.
@@ -255,13 +259,9 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
 
   // Высоту не считаем: LwChartPanes всегда 100% родителя (absolute inset:0).
 
-  // Серии LwChart.
-  // Потоки → формат движка ЦБ (StackedBidirectionalHistogram): не временной ряд,
-  // а ПЛИТКА ПЕРИОДОВ. Приток и отток — две «категории», они и складываются в
-  // столбец вверх/вниз от нуля. Цвета лежат в общей палитре (CBR_CATEGORY_COLORS),
-  // поэтому берутся тем же путём, что у категорий ЦБ, и остаются тема-зависимыми.
-  // Движку ЦБ нужна ЯВНАЯ высота в пикселях (он рисует SVG в фиксированный
-  // бокс, а не тянется по родителю) — меряем контейнер, как в потоках ЦБ.
+  // Потоки рисует FlowsHistogram — тот же компонент, что на сайте: ему нужна
+  // ЯВНАЯ высота в пикселях (SVG в фиксированном боксе, а не тянется по
+  // родителю) — меряем контейнер, как в потоках ЦБ.
   const [chartH, setChartH] = useState(300);
   // Ширину меряем ради заголовка легенды: на сайте он сокращается по viewport,
   // а в панели песочницы viewport — это окно браузера, а не панель.
@@ -278,35 +278,29 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return () => ro.disconnect();
   }, []);
 
-  // Подписи считаем по таймфрейму ЗАГРУЖЕННЫХ данных (flowsLoaded.tf), а не по
-  // текущему значению контрола: пока едет новый запрос, на экране ещё старый
-  // набор, и подписывать его новым шагом нельзя.
-  const flowPeriods = useMemo<CbrFlowsPeriod[]>(() => {
-    const flows = flowsLoaded?.res.flows ?? [];
-    return flows.map((f) => {
-      const d = new Date(f.period_end);
-      const label = flowsLoaded?.tf === '1m'
-        ? MONTHS_RU[d.getUTCMonth()]
-        : `${d.getUTCDate()} ${MONTHS_SHORT_RU[d.getUTCMonth()]}`;
-      return {
-        year: d.getUTCFullYear(),
-        label,
-        // Движок различает только месяц и квартал; день и неделя для него —
-        // «месяц» (влияет лишь на подпись сравнения в тултипе).
-        kind: 'month' as const,
-        end_date: f.period_end,
-        // ⚠️ ЧИСТЫЙ поток, как на сайте: ОДИН столбец на период. Приток и отток
-        // одновременно (gross_in + gross_out) рисовали два столбика в разные
-        // стороны и не отвечали на главный вопрос — «сколько в итоге пришло».
-        // Ненулевая всегда ровно одна «категория», поэтому цвет = направление.
-        values: (f.flow ?? 0) >= 0
-          ? { 'Приток': f.flow ?? 0, 'Отток': 0 }
-          : { 'Приток': 0, 'Отток': f.flow ?? 0 },
-      };
-    });
-  }, [flowsLoaded]);
+  // ── Согласованная пара «потоки + индекс» (как на сайте, PR #1248). ──
+  // flows и nav-данные (источник линии бенчмарка) грузятся независимо, и между
+  // их приходами диапазоны расходятся: линия нового периода ложилась бы на
+  // слоты потоков старого. Пропускаем в график только пары одного
+  // (category, period) — бек эхоит оба поля; пока свежая не собралась, на
+  // экране целиком держится предыдущая, и бары с линией обновляются одним
+  // атомарным морфом.
+  const [flowsPair, setFlowsPair] = useState<{ flows: FundsFlowsResponse; index?: IndexDataPoint[] } | null>(null);
+  useEffect(() => {
+    const flows = flowsLoaded;
+    if (!flows) return;
+    const nav = data?.res;
+    // Нет nav-данных вовсе (ранний рендер / ошибка запроса) — пара без индекса:
+    // гистограмма не должна ждать линию, которой не будет.
+    if (!nav || (nav.category === flows.category && nav.period === flows.period)) {
+      setFlowsPair({ flows, index: nav?.index?.data });
+    }
+  }, [flowsLoaded, data]);
+  // Подписи (легенда бенчмарка, заголовок гистограммы) — от категории ПАРЫ, а
+  // не текущей: пока держим старую пару, «RGBITR» над линией IMOEX — ложь.
+  const pairCat = CATS.find((c) => c.id === flowsPair?.flows.category) ?? CATS.find((c) => c.id === category);
 
-  // Ряды LwChart нужны только режиму СЧА: потоки рисует движок ЦБ.
+  // Ряды LwChart нужны только режиму СЧА: потоки рисует FlowsHistogram.
   const lwSeries = useMemo<LwSeries[]>(() => {
     if (viewMode === 'flows') return [];
     // aum: индекс (линия, левая, синий) + СЧА (область, правая, зелёная).
@@ -337,45 +331,17 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     return out;
   }, [viewMode, data, showIndex, fmt, category]);
 
-  // Легенда потоков — как на сайте (FundsMoneyPage): ОДИН заголовок вместо двух
-  // записей «Приток»/«Отток». Маркер 'split' — кружок из двух половин,
-  // зелёная/красная: направление кодируется цветом одной серии, а два отдельных
-  // пункта читались как две разные серии. Короткий вариант — только когда полный
-  // заголовок реально не влезает: порог сайта (540px по viewport) в песочнице
-  // срабатывал почти всегда, хотя шрифт легенды тут мельче и строка помещалась.
-  const flowsLegend = useMemo(() => {
-    const gen = CATS.find((c) => c.id === category)?.genitive ?? '';
-    const label = (containerW > 0 && containerW < 420)
-      ? 'Чистые притоки и оттоки (млрд ₽)'
-      : `Чистые притоки и оттоки из фондов ${gen} (млрд ₽)`;
-    return [{ label, color: 'var(--oi-green)', colorRight: 'var(--oi-red)', marker: 'split' as const }];
-  }, [category, containerW]);
-
-  // Шкала потоков под ЛЮБУЮ категорию. Дефолт движка — округление вверх до
-  // десятков с полом 10 (млрд ₽): он списан с потоков ЦБ, где сотни миллиардов
-  // и есть натуральный масштаб. У фондов акций/золота/юаня недельный поток —
-  // единицы и доли млрд, шкала залипала на 10, и столбцы схлопывались в пиксель
-  // (money_market с его сотнями это скрывал). Берём «красивый» шаг СВОЕГО
-  // порядка величины: мантиссы 1 / 2 / 2.5 / 5 / 10 — все делятся пополам без
-  // мусора, а движок рисует именно половинки (yTicks = ±max, ±max/2).
-  // Пол — 0,02 млрд: у совсем пустой недели иначе log10(0) = -Infinity.
-  // ⚠️ useCallback обязателен: ссылка уходит в депсы useMemo шкалы внутри
-  // гистограммы, инлайновая стрелка пересчитывала бы её каждый рендер.
-  const flowsNiceMax = useCallback((maxAbs: number) => {
-    const target = Math.max(maxAbs, 0.02) * 1.12;
-    const pow = Math.pow(10, Math.floor(Math.log10(target)));
-    const step = [1, 2, 2.5, 5, 10].find((s) => s * pow >= target) ?? 10;
-    return step * pow;
-  }, []);
-
-  // Подпись оси. Дефолт движка — Math.round, он рассчитан на те же миллиарды:
-  // на шкале в единицах и долях млрд «2,5» превращалось бы в «3», а «0,025» —
-  // в «0», и все пять тиков читались одинаково. Даём минимум знаков, при
-  // котором число НЕ округляется (шаг всегда 1/2/2.5/5×10^n → хватает трёх).
-  const flowsFmtAxis = useCallback((v: number) => {
-    const d = [0, 1, 2, 3].find((n) => Number(v.toFixed(n)) === v) ?? 3;
-    return v.toFixed(d).replace('.', ',');
-  }, []);
+  // Заголовок гистограммы — как на сайте, но короткий вариант включается по
+  // ШИРИНЕ ПАНЕЛИ, а не по viewport: в песочнице viewport это окно браузера, а
+  // строка живёт в панели. Режим сглаживания берём из эха бека (отображаемая
+  // пара), а не из контрола: заголовок не должен опережать бары.
+  const flowTitle = useMemo(() => {
+    const gen = pairCat?.genitive ?? '';
+    const short = containerW > 0 && containerW < 420;
+    return flowsPair?.flows.rolling === '3m'
+      ? (short ? 'Потоки за скользящие 3 месяца (млрд ₽)' : `Потоки из фондов ${gen} за скользящие 3 месяца (млрд ₽)`)
+      : (short ? 'Чистые притоки и оттоки (млрд ₽)' : `Чистые притоки и оттоки из фондов ${gen} (млрд ₽)`);
+  }, [pairCat, containerW, flowsPair]);
 
   // Фильтр фондов — кнопка тулбара с чек-листом (тот же приём, что «Участники»
   // у потоков ЦБ). ⚠️ Только для режима потоков: /api/funds/flows принимает
@@ -414,7 +380,7 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
   // нарезка без похода на бэкенд. Раньше любой клик по таймфрейму/периоду ронял
   // flowsStatus в 'loading', а на нём висел рендер и графика, и кнопок справа:
   // ось значений и весь правый блок мигали и «возвращались» вместе с волной.
-  const hasView = viewMode === 'flows' ? flowPeriods.length > 0 : lwSeries.length > 0;
+  const hasView = viewMode === 'flows' ? (flowsPair?.flows.flows.length ?? 0) > 0 : lwSeries.length > 0;
   const showChart = hasView && st !== 'error';
 
   return (
@@ -454,31 +420,58 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
         </div>
       }
       actions={<DrawExportActions draw={draw} visible={showChart} />}
-      more={viewMode === 'aum' ? (
+      // ⚙ есть в ОБОИХ режимах (раньше — только в СЧА): слой «Индекс» на сайте
+      // общий, и в потоках он включает верхнюю панель бенчмарка. Формат линии
+      // относится к серии СЧА — он только в своём режиме.
+      more={
         <>
-          <DrawerSection label="Отображение">
-            <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
+          <DrawerSection label="Слои">
+            <ToggleRow
+              label="Индекс"
+              checked={showIndex}
+              onChange={setShowIndex}
+              hint={viewMode === 'aum'
+                ? `Линия ${pairCat?.index ?? 'индекса'} на второй оси`
+                : `Панель ${pairCat?.index ?? 'индекса'} над гистограммой`}
+            />
+            {viewMode === 'flows' && (
+              <ToggleRow
+                label="Сумма за 3 месяца"
+                checked={flowRolling === '3m'}
+                onChange={(v) => setFlowRolling(v ? '3m' : 'none')}
+                hint="Столбец — суммарный чистый поток за скользящие 3 месяца: сглаживает шум и проявляет устойчивые волны"
+              />
+            )}
           </DrawerSection>
-          <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} onOpacity={setOpacity} onWidth={setWidth} defaultColor="var(--chart-line-3)" />
+          {viewMode === 'aum' && (
+            <FormatSection fmt={fmt} onKind={setKind} onColor={setColor} onOpacity={setOpacity} onWidth={setWidth} defaultColor="var(--chart-line-3)" />
+          )}
         </>
-      ) : undefined}
+      }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {viewMode === 'flows' && showChart && (
-          <StackedBidirectionalHistogram
-            periods={flowPeriods}
-            categories={FLOW_CATEGORIES}
-            unit="млрд ₽"
-            height={chartH}
-            animTrigger={flowsLoaded?.key ?? ''}
-            legendOverride={flowsLegend}
-            niceMax={flowsNiceMax}
-            fmtAxis={flowsFmtAxis}
-            // Пилс на шкале даёт число, но не даёт подписи — в песочнице
-            // тултип был скрыт правилом .sb-panel .chart-tooltip-root, и
-            // потоки оставались единственной плиткой из трёх без него.
-            tooltipInSandbox
-          />
+          // emb-tooltip-ok — тултип этого графика в панели ОСТАВЛЯЕМ (см.
+          // sandbox.css): значений в легенде нет, разбивку по бенчмарку и
+          // потоку показывает только подсказка под курсором.
+          // PAD_TOP — воздух под легенду: карточки с её паддингом в панели нет
+          // (bare), а компонент подтягивает легенду на 20px вверх (компенсация
+          // p-5 сайта). CHART_CHROME — легенды, подписи дат и навигатор:
+          // --chart-height задаёт только поле графика (та же арифметика, что в
+          // CompanyFlowsTab embedded).
+          <div className="emb-tooltip-ok" style={{ position: 'absolute', inset: 0, paddingTop: 12, boxSizing: 'border-box' }}>
+            <FlowsHistogram
+              bare
+              flowsData={flowsPair?.flows ?? null}
+              loading={flowsStatus === 'loading'}
+              flowTitle={flowTitle}
+              indexData={flowsPair?.index}
+              indexLabel={pairCat?.index}
+              showIndex={showIndex}
+              height={Math.max(160, chartH - 12 - 56)}
+              animTrigger={`${flowsPair?.flows.category}|${flowsPair?.flows.timeframe}|${flowsPair?.flows.period}|${flowsPair?.flows.rolling ?? 'none'}`}
+            />
+          </div>
         )}
         {viewMode !== 'flows' && showChart && (
           <LwChartPanes
