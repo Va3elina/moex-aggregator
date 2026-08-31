@@ -1781,9 +1781,20 @@ export default function SimpleChart({
               {/* Кружки на конце линий — маркер последнего актуального дня данных.
                   Координаты идут из animatedPaths → следуют за морфингом и reveal
                   (clipPath открывает их в конце entrance-анимации). При прогнозе
-                  (_forecastCount > 0) не рисуем: у пунктира свои end-кружки. */}
+                  (_forecastCount > 0) не рисуем: у пунктира свои end-кружки.
+                  Порядок кружков повторяет порядок линий (цена → third →
+                  secondary), иначе кружок ОИ уходит под кружок цены, хотя сама
+                  линия ОИ лежит поверх. */}
               {_forecastCount === 0 && (
                 <>
+                  {showPrimary && (primaryEffType === 'line' || primaryEffType === 'area') && animatedPaths.endPrimary && (
+                    <circle
+                      cx={animatedPaths.endPrimary.x}
+                      cy={animatedPaths.endPrimary.y}
+                      r={tokens.linePrimaryW * 1.5}
+                      fill={primaryColor}
+                    />
+                  )}
                   {showThird && chartMode === 'line' && !oiAsColumns && animatedPaths.endThird && (
                     <circle
                       cx={animatedPaths.endThird.x}
@@ -1800,14 +1811,6 @@ export default function SimpleChart({
                       r={tokens.lineSecondaryW * 1.5}
                       fill={secondaryColor}
                       opacity={oiOpacity}
-                    />
-                  )}
-                  {showPrimary && (primaryEffType === 'line' || primaryEffType === 'area') && animatedPaths.endPrimary && (
-                    <circle
-                      cx={animatedPaths.endPrimary.x}
-                      cy={animatedPaths.endPrimary.y}
-                      r={tokens.linePrimaryW * 1.5}
-                      fill={primaryColor}
                     />
                   )}
                 </>
