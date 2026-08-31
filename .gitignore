@@ -121,3 +121,4 @@ frontend/src/pages/sw.js
 # (research/content_pipeline_v2/corpus.py). Сырой json — 3,6 МБ, в git идёт только .gz
 research/content_pipeline_v2/dataset/corpus.json
 research/content_pipeline_v2/__pycache__/
+research/content_pipeline_v2/.venv/
