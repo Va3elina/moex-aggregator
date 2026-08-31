@@ -10,7 +10,15 @@
     0.9 — индикаторы (главный продукт)
     0.7 — тарифы
     0.6 — методологии
-    0.3 — legal/служебные
+    0.4-0.5 — справка (контакты, FAQ, глоссарий)
+
+  Правовые страницы (/offer, /refund, /delivery, /recurring, /agreement,
+  /privacy) в sitemap НЕ включаются осознанно (31.08.2026): в выдаче они не
+  нужны и только размывали краулинговый бюджет — Google на молодом домене успел
+  обойти лишь 13 URL из 26. Сами страницы остаются публичными и доступными:
+  на них ведут ссылки из подвала пререндера (см. prerender-meta.ts), так что
+  сиротами они не становятся и требования эквайринга к доступности выполнены.
+  ⚠️ Удаление из sitemap НЕ деиндексирует — оно лишь снимает приоритет обхода.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
@@ -44,13 +52,7 @@
   <url><loc>https://framedata.ru/methodology/cbr-flows</loc><lastmod>2026-05-27</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
 
   <!-- Legal / служебные — обязательны для коммерческого сайта (требование Яндекса) -->
-  <url><loc>https://framedata.ru/privacy</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://framedata.ru/agreement</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://framedata.ru/offer</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://framedata.ru/recurring</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://framedata.ru/contacts</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://framedata.ru/refund</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://framedata.ru/delivery</loc><lastmod>2026-05-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://framedata.ru/faq</loc><lastmod>2026-05-27</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://framedata.ru/glossary</loc><lastmod>2026-06-23</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
 
