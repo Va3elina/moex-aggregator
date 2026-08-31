@@ -34,7 +34,7 @@ from api.schemas.validators import (
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points, append_stretched_price
-from api.services.market_delay import price_cutoff, cutoff_for_interval
+from api.services.market_delay import cutoff_for_interval
 from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids, stable_runs
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
