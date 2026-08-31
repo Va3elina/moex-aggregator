@@ -147,6 +147,10 @@ SCRIPTS = {
     # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
     # знаменатель режима «От капитализации» в «Потоках по компании»
     'freefloat_cap_daily': BASE_DIR / 'Macro' / 'fetch_freefloat_cap.py',
+    # Историческая база расчёта IMOEX (index_composition) — состав индекса на
+    # каждый торговый день, знаменатель вселенной imoex у «Силы рынка».
+    # ДОЛЖЕН идти перед breadth_daily: тот читает свежий состав из БД.
+    'index_composition_daily': BASE_DIR / 'Candles' / 'fetch_index_composition.py',
     # Market Breadth (% акций выше EMA — предвычисление)
     'breadth_daily': BASE_DIR / 'Candles' / 'compute_breadth_history.py',
     # Дивиденды (загрузка с ISS + определение экс-дат)
@@ -227,6 +231,7 @@ TIMEOUTS = {
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
+    'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
     'commodity_daily': 600,  # 10 минут (9 тикеров × Yahoo HTTP, обычно <1 мин)
@@ -385,7 +390,8 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 RETRYABLE_DAILY = {
     'oi_daily', 'funds_daily', 'indices_daily', 'contract_calendar',
     'index_candles_hourly', 'macro_daily', 'market_cap_daily',
-    'freefloat_cap_daily', 'breadth_daily', 'dividends_daily', 'commodity_daily',
+    'freefloat_cap_daily', 'index_composition_daily', 'breadth_daily',
+    'dividends_daily', 'commodity_daily',
 }
 RETRY_BACKOFF = [30, 120]  # сек между попытками (итого до 3 попыток)
 
@@ -533,6 +539,9 @@ class MainOrchestrator:
             # Free-float Cap
             'freefloat_cap_daily_runs': 0,
             'freefloat_cap_daily_success': 0,
+            # Index Composition
+            'index_composition_daily_runs': 0,
+            'index_composition_daily_success': 0,
             # Breadth
             'breadth_daily_runs': 0,
             'breadth_daily_success': 0,
@@ -1106,6 +1115,26 @@ class MainOrchestrator:
 
         return success
 
+    async def run_index_composition_update(self) -> bool:
+        """Догоняет историю базы расчёта IMOEX (index_composition).
+
+        Запускать ДО run_breadth_update: широта по вселенной imoex берёт
+        состав индекса на каждую дату именно оттуда.
+        """
+        log.info("  🧾 Index Composition Daily...")
+        self.stats['index_composition_daily_runs'] += 1
+
+        success, msg, dur = await run_script('index_composition_daily', ['--once'])
+
+        if success:
+            self.stats['index_composition_daily_success'] += 1
+            log.info(f"    ✓ Index Composition Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Index Composition Daily: {msg}")
+
+        return success
+
     async def run_breadth_update(self) -> bool:
         """Запускает предвычисление Market Breadth (инкрементально)"""
         log.info("  📊 Breadth Daily...")
@@ -1184,6 +1213,7 @@ class MainOrchestrator:
             self.run_index_candles_hourly_update,
             self.run_macro_update,
             self.run_market_cap_update,
+            self.run_index_composition_update,
             self.run_breadth_update,
             self.run_dividends_update,
             self.run_commodity_update,
@@ -1261,6 +1291,8 @@ class MainOrchestrator:
         log.info(f"    Daily: {self.stats['market_cap_daily_success']}/{self.stats['market_cap_daily_runs']}")
         log.info("  --- Free-float Cap ---")
         log.info(f"    Daily: {self.stats['freefloat_cap_daily_success']}/{self.stats['freefloat_cap_daily_runs']}")
+        log.info("  --- Index Composition ---")
+        log.info(f"    Daily: {self.stats['index_composition_daily_success']}/{self.stats['index_composition_daily_runs']}")
         log.info("  --- Breadth ---")
         log.info(f"    Daily: {self.stats['breadth_daily_success']}/{self.stats['breadth_daily_runs']}")
         log.info("  --- Dividends ---")
@@ -1333,6 +1365,7 @@ class MainOrchestrator:
             await self.run_macro_update()
             await self.run_market_cap_update()
             await self.run_freefloat_cap_update()
+            await self.run_index_composition_update()
             await self.run_breadth_update()
             await self.run_dividends_update()
             await self.run_commodity_update()
@@ -1484,6 +1517,7 @@ class MainOrchestrator:
                     await self.run_macro_update()
                     await self.run_market_cap_update()
                     await self.run_freefloat_cap_update()
+                    await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
                     await self.run_analytics_cleanup()

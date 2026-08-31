@@ -75,6 +75,30 @@ def _adjust_for_split(ticker: str, dated_prices: list[tuple]) -> list[tuple]:
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
 
+def _imoex_tickers_from_db() -> set[str]:
+    """
+    Последний сохранённый состав IMOEX из index_composition.
+
+    Durable-фолбэк на случай недоступности ISS (тех.работы, блок сети MOEX).
+    Раньше при сбое ISS возвращался пустой set — вселенная imoex молча
+    схлопывалась в ноль бумаг. База расчёта меняется раз в квартал, поэтому
+    вчерашний срез полностью допустим.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT ticker FROM index_composition
+                WHERE index_id = 'IMOEX'
+                  AND trade_date = (SELECT MAX(trade_date) FROM index_composition
+                                    WHERE index_id = 'IMOEX')
+            """)).fetchall()
+        return {r[0] for r in rows}
+    except Exception as e:
+        log.warning(f"IMOEX composition fallback failed: {e}")
+        return set()
+
+
 async def get_imoex_tickers() -> set[str]:
     """Получает список тикеров, входящих в индекс IMOEX. Кеш 1 час."""
     cache_key = "imoex_tickers_set"
@@ -91,11 +115,19 @@ async def get_imoex_tickers() -> set[str]:
         rows_data = data["analytics"]["data"]
         idx_ticker = cols.index("ticker")
         tickers = [row[idx_ticker] for row in rows_data]
-        get_or_set(cache_key, tickers, ttl=3600)
-        return set(tickers)
+        if tickers:
+            get_or_set(cache_key, tickers, ttl=3600)
+            return set(tickers)
+        log.warning("ISS вернул пустой состав IMOEX — берём последний срез из БД")
     except Exception as e:
         log.warning(f"Failed to fetch IMOEX tickers: {e}")
-        return set()
+
+    # Фолбэк: последний срез из index_composition. Кэшируем на 5 минут, чтобы
+    # при живом ISS быстро вернуться к свежему составу.
+    fallback = _imoex_tickers_from_db()
+    if fallback:
+        get_or_set(cache_key, sorted(fallback), ttl=300)
+    return fallback
 
 
 def _load_usd_rates(engine, date_from: date) -> dict[date, float]:
