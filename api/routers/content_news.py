@@ -605,9 +605,17 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         raise HTTPException(status_code=409, detail=f"Ожидался статус 'draft_ready', сейчас '{row['status']}'")
 
     if body.draft_text:
+        # draft_text_ai пишется ЗДЕСЬ и только здесь (миграция 054): это
+        # единственная точка, где текст заведомо принадлежит ИИ. Дальше его
+        # может править человек — но правит он draft_text, а draft_text_ai
+        # остаётся нетронутым, и дифф между ними и есть обратная связь
+        # (см. research/content_pipeline_v2/RESEARCH_2026-08-31.md §2).
+        # Повторный fire Шага В перезаписывает ОБА: новый черновик — это новый
+        # вывод ИИ, а не правка человека.
         db.execute(text("""
             UPDATE content_candidates
-            SET draft_text = :draft_text, synth_declined_reason = NULL, updated_at = now()
+            SET draft_text = :draft_text, draft_text_ai = :draft_text,
+                synth_declined_reason = NULL, updated_at = now()
             WHERE id = :id
         """), {"id": candidate_id, "draft_text": body.draft_text})
         db.commit()

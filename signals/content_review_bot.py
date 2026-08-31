@@ -25,6 +25,19 @@ draft_ready-с-черновиком кандидаты (reviewer_notified_at IS 
                  статус НЕ меняется (остаётся draft_ready, снова на ревью).
   ❌ Отклонить → draft_ready → in_review → rejected, без публикации.
 
+⭐ Обратная связь (миграция 054, research/content_pipeline_v2/ §2). До неё ревью
+было разовым решением, а не размеченным примером: правка человека затирала
+draft_text (оригинал ИИ терялся), причина отказа не писалась никуда. Из-за этого
+единственным каналом человеческого суждения в систему был Вадим, дописывающий
+правило в промпт Шага В — так промпт и дорос до журнала багов на ~13 тыс. знаков.
+Теперь:
+  • оригинал ИИ живёт в draft_text_ai и НЕ перезаписывается — дифф с draft_text
+    показывает, что именно редактор счёл нужным исправить;
+  • после ❌ и после ✏️ бот спрашивает ПРИЧИНУ кнопками из
+    config.REVIEW_REASON_CODES (+ необязательный свободный комментарий).
+Решение (reject) применяется СРАЗУ, до вопроса о причине: если Вадим не ответит,
+теряется причина, а не само решение.
+
 ЗАПУСК НА ХОСТЕ (не в контейнере — тот же резон, что и alert_bot.py, релей
 теперь и для api.anthropic.com, см. signals/relay/):
   /opt/frame/signals/.venv/bin/python -m signals.content_review_bot
@@ -118,15 +131,39 @@ _SELECT_NEW_DRAFTS = text("""
     ORDER BY id
 """)
 
+# ⚠️ Порядок колонок значим: индексы 0-4 используются позиционно (_approve
+# читает row[3]=draft_text, row[4]=status). Новые поля — ТОЛЬКО в конец.
 _SELECT_CANDIDATE = text("""
-    SELECT id, headline, tickers, draft_text, status
+    SELECT id, headline, tickers, draft_text, status,
+           reviewer_reason_code, reviewer_reason
     FROM content_candidates WHERE id = :id
 """)
 
 _MARK_NOTIFIED = text("UPDATE content_candidates SET reviewer_notified_at = now() WHERE id = :id")
 
+# ⚠️ draft_text_ai здесь НАМЕРЕННО не трогается (миграция 054): в нём лежит
+# оригинал ИИ, и его сохранность — весь смысл обратной связи. Дифф
+# (draft_text_ai → draft_text) и есть то, чему система должна учиться.
 _UPDATE_DRAFT = text("""
     UPDATE content_candidates SET draft_text = :t, updated_at = now() WHERE id = :id
+""")
+
+_SET_REVIEW_REASON = text("""
+    UPDATE content_candidates
+    SET reviewer_reason_code = :code, updated_at = now()
+    WHERE id = :id
+""")
+
+# Свободный комментарий ДОПОЛНЯЕТ код, не заменяет: код нужен для агрегации,
+# текст — для деталей, которые в код не влезают.
+_APPEND_REVIEW_REASON = text("""
+    UPDATE content_candidates
+    SET reviewer_reason = CASE
+            WHEN reviewer_reason IS NULL OR reviewer_reason = '' THEN :t
+            ELSE reviewer_reason || E'\n' || :t
+        END,
+        updated_at = now()
+    WHERE id = :id
 """)
 
 _TO_IN_REVIEW = text("""
@@ -149,19 +186,46 @@ _TO_REJECTED = text("""
 """)
 
 
+def _reason_line(reason_code, reason_text) -> str:
+    """Причина в карточке — чтобы повторно открытая карточка показывала не только
+    ЧТО решили, но и ПОЧЕМУ (иначе решение снова становится неразмеченным)."""
+    if not reason_code and not reason_text:
+        return ""
+    label = config.REVIEW_REASON_LABELS.get(reason_code or "", reason_code or "")
+    out = f"\n[причина: {html.escape(label)}]" if label else ""
+    if reason_text:
+        out += f"\n{html.escape(reason_text)}"
+    return out
+
+
+def _reason_kb(cid: int) -> list:
+    """Клавиатура причин — по две в ряд, чтобы влезало на телефоне.
+    callback_data = 'r:<code>:<cid>' (лимит Telegram 64 байта, самый длинный
+    код 17 символов — с запасом)."""
+    rows, pair = [], []
+    for code, label in config.REVIEW_REASON_CODES:
+        pair.append({"text": label, "callback_data": f"r:{code}:{cid}"})
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    return rows
+
+
 def _card_view(row):
     """Превью карточки — тело поста рендерится ТЕМИ ЖЕ premium custom-emoji, что
     и реальная публикация (apply_custom_emoji), чтобы «Одобрить» не преподносил
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
-    cid, headline, tickers, draft_text, status = row
+    cid, headline, tickers, draft_text, status, reason_code, reason_text = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
-        return txt + f"\n\n[статус: {status}]", []
+        return txt + f"\n\n[статус: {status}]{_reason_line(reason_code, reason_text)}", []
     kb = [
         [{"text": "✅ Одобрить и опубликовать", "callback_data": f"a:{cid}"}],
         [{"text": "✏️ Править", "callback_data": f"e:{cid}"},
@@ -230,6 +294,12 @@ def _reject(db, cid: int) -> tuple:
 
 # ── in-memory состояние «ждём текст правки от этого чата» (v1, простое) ────
 _awaiting_edit: dict = {}   # chat_id -> candidate_id
+# Ждём СВОБОДНЫЙ комментарий к причине. Отдельный словарь, а не флаг внутри
+# _awaiting_edit: правка и комментарий — разные вещи, и путать их значило бы
+# записать текст поста в reviewer_reason (или наоборот). Ставится только по
+# явному действию («другое» / кнопка «добавить комментарий»), иначе бот
+# проглатывал бы любое следующее сообщение админа.
+_awaiting_reason: dict = {}  # chat_id -> candidate_id
 
 
 def process_callback(cb: dict) -> None:
@@ -244,9 +314,15 @@ def process_callback(cb: dict) -> None:
             answer_cb(cb_id)
         return
 
-    op, _, raw_id = data.partition(":")
+    # 'r:<code>:<cid>' несёт ДВА поля, остальные операции — только id.
+    # Без этой развилки int("stretched_link:845") падал бы в ValueError и
+    # кнопка причины молча ничего не делала.
+    op, _, rest = data.partition(":")
+    reason_code = ""
+    if op == "r":
+        reason_code, _, rest = rest.partition(":")
     try:
-        cid = int(raw_id)
+        cid = int(rest)
     except ValueError:
         answer_cb(cb_id)
         return
@@ -265,6 +341,29 @@ def process_callback(cb: dict) -> None:
             txt, kb = _card_view(row) if row else (note, [])
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
+            # Причину спрашиваем ПОСЛЕ применённого решения: если Вадим не
+            # ответит, теряется причина, а не сам отказ.
+            if ok:
+                send_kb(chat_id, f"Почему #{cid} не годится?", _reason_kb(cid))
+        elif op == "r":
+            db.execute(_SET_REVIEW_REASON, {"code": reason_code, "id": cid})
+            db.commit()
+            label = config.REVIEW_REASON_LABELS.get(reason_code, reason_code)
+            answer_cb(cb_id, f"Причина: {label}"[:190])
+            if reason_code == "other":
+                _awaiting_reason[chat_id] = cid
+                edit_kb(chat_id, message_id,
+                        f"#{cid} — жду причину текстом следующим сообщением ✍️", [])
+            else:
+                # Комментарий не навязываем, но даём в один клик: свободный текст
+                # часто содержит то, ради чего вся эта разметка и затевалась.
+                edit_kb(chat_id, message_id, f"#{cid} — причина: {label}",
+                        [[{"text": "✍️ добавить комментарий",
+                           "callback_data": f"c:{cid}"}]])
+        elif op == "c":
+            _awaiting_reason[chat_id] = cid
+            answer_cb(cb_id, "Жду комментарий ✍️")
+            send(chat_id, f"Пришлите комментарий к #{cid} следующим сообщением.")
         elif op == "e":
             _awaiting_edit[chat_id] = cid
             answer_cb(cb_id, "Жду текст следующим сообщением ✏️")
@@ -293,6 +392,22 @@ def process_update(update: dict) -> None:
     if not txt:
         return
 
+    # Комментарий проверяем ПЕРВЫМ: если оба состояния как-то окажутся
+    # выставлены разом, текст скорее относится к последнему вопросу бота.
+    if chat_id in _awaiting_reason:
+        cid = _awaiting_reason.pop(chat_id)
+        db = SessionLocal()
+        try:
+            db.execute(_APPEND_REVIEW_REASON, {"t": txt, "id": cid})
+            db.commit()
+            send(chat_id, f"Записал причину к #{cid} 👍")
+        except Exception as e:
+            db.rollback()
+            send(chat_id, f"Не удалось записать причину: {_redact(e)}")
+        finally:
+            db.close()
+        return
+
     if chat_id in _awaiting_edit:
         cid = _awaiting_edit.pop(chat_id)
         db = SessionLocal()
@@ -305,9 +420,12 @@ def process_update(update: dict) -> None:
                 send_kb(chat_id, "Черновик обновлён ✏️\n\n" + card_txt, kb)
             else:
                 send(chat_id, "Черновик обновлён, но кандидат не найден при повторном чтении")
+            # Правка — тоже суждение человека: оригинал ИИ остался в
+            # draft_text_ai, но БЕЗ причины дифф не объясняет, что было не так.
+            send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
         except Exception as e:
             db.rollback()
-            send(chat_id, f"Не удалось обновить черновик: {e}")
+            send(chat_id, f"Не удалось обновить черновик: {_redact(e)}")
         finally:
             db.close()
         return
