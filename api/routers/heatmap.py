@@ -32,10 +32,23 @@ def _persist_imoex_weights(weights: dict) -> None:
                 "ticker text PRIMARY KEY, weight double precision NOT NULL, "
                 "updated_at timestamptz DEFAULT now())"
             ))
-            conn.execute(text("DELETE FROM imoex_weights"))
+            # ⚠️ Идемпотентный upsert, НЕ DELETE+INSERT: писать сюда могут два
+            # запроса разом (прогрев кеша и живой /heatmap/imoex — ровно так
+            # поймали 30.08: «duplicate key ... (ticker)=(AFKS)»). Обе
+            # транзакции удаляли каждая в своём снимке и вставляли один и тот
+            # же набор тикеров, второй падал на первичном ключе.
             conn.execute(
-                text("INSERT INTO imoex_weights(ticker, weight) VALUES (:t, :w)"),
+                text("INSERT INTO imoex_weights(ticker, weight, updated_at) "
+                     "VALUES (:t, :w, now()) "
+                     "ON CONFLICT (ticker) DO UPDATE "
+                     "SET weight = EXCLUDED.weight, updated_at = now()"),
                 [{"t": str(t), "w": float(w)} for t, w in weights.items()],
+            )
+            # Выбывшие из индекса подчищаем тем же заходом — иначе fallback
+            # накапливал бы тикеры, которых в базе расчёта давно нет.
+            conn.execute(
+                text("DELETE FROM imoex_weights WHERE ticker <> ALL(:keep)"),
+                {"keep": [str(t) for t in weights.keys()]},
             )
     except Exception as e:
         logger.warning(f"persist IMOEX weights failed: {type(e).__name__}: {e}")

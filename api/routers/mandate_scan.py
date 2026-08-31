@@ -20,6 +20,7 @@ Server-to-server: НЕ require_admin (Routine не залогинен как п�
 GET /known — Routine читает это ПЕРЕД поиском, чтобы не тратить эффект на уже
 известное (растущий список в БД, а не замороженный снимок в промпте триггера).
 """
+import logging
 import os
 import re
 from typing import Optional
@@ -32,11 +33,53 @@ from sqlalchemy.orm import Session
 
 from api.database import get_db
 
+logger = logging.getLogger("moex_api")
+
 _DEDUP_STRIP_RE = re.compile(r"[^0-9A-Za-zА-Яа-яЁё]")
 
 
 def _dedup_key(source_key: str) -> str:
     return _DEDUP_STRIP_RE.sub("", source_key).upper()
+
+
+# Длины varchar-колонок mandate_candidates. Скаут — языковая модель, и она
+# периодически пишет в короткое поле развёрнутую фразу: 31.08.2026 в asset
+# (varchar 120) приехало «TMOS, EQMX, AMIX; для средней/малой капитализации —
+# SBSC; для потребсектора — AKCN (Альфа-Капитал).» → 22001 value too long →
+# 500 на весь эндпоинт, находка недели потеряна. Обрезаем по границе колонки:
+# укороченная строка в поле лучше, чем выпавший кандидат, а полный текст акта
+# всё равно лежит в hypothesis/trigger_description (они text, без лимита).
+_FIELD_LIMITS = {
+    "source_ref": 200,
+    "source_key": 64,
+    "dedup_key": 64,
+    "sector": 64,
+    "asset": 120,
+}
+
+
+def _fit(field: str, value: Optional[str]) -> Optional[str]:
+    """Подрезать значение под лимит колонки, шумнув в лог.
+
+    Режем по последнему разделителю перед лимитом, а не посреди слова: поле
+    asset обычно перечисление тикеров через «;» или «,», и обрыв на «...в
+    индекс сре» читается как мусор. Многоточие в конце — явный признак, что
+    значение неполное; полный текст остаётся в логе и в пуше админу (он
+    формируется из тела запроса, до подрезки).
+    """
+    limit = _FIELD_LIMITS.get(field)
+    if value is None or limit is None or len(value) <= limit:
+        return value
+
+    head = value[:limit - 1]
+    cut = max(head.rfind("; "), head.rfind(", "))
+    if cut > limit // 2:            # граница нашлась и не съела больше половины
+        head = head[:cut]
+    logger.warning(
+        f"mandate_scan: поле {field} длиной {len(value)} > {limit}, обрезано. "
+        f"Исходное значение: {value!r}"
+    )
+    return head + "…"
 
 internal_router = APIRouter(prefix="/api/internal/mandate-scan", tags=["internal-mandate-scan"])
 
@@ -167,7 +210,7 @@ def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
     ON CONFLICT DO NOTHING, повторная находка того же акта не шлёт уведомление
     заново, даже если сформулирована другими словами. Уведомляем только на
     свежей вставке."""
-    dedup_key = _dedup_key(body.source_key)
+    dedup_key = _fit("dedup_key", _dedup_key(body.source_key))
     row = db.execute(text("""
         INSERT INTO mandate_candidates (
             source_ref, source_key, dedup_key, source_url, mandate_type, participant, sector, asset,
@@ -181,10 +224,12 @@ def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
         ON CONFLICT (dedup_key) DO NOTHING
         RETURNING id
     """), {
-        "source_ref": body.source_ref, "source_key": body.source_key, "dedup_key": dedup_key,
+        "source_ref": _fit("source_ref", body.source_ref),
+        "source_key": _fit("source_key", body.source_key), "dedup_key": dedup_key,
         "source_url": body.source_url,
         "mandate_type": body.mandate_type, "participant": body.participant,
-        "sector": body.sector, "asset": body.asset, "status_now": body.status_now,
+        "sector": _fit("sector", body.sector),
+        "asset": _fit("asset", body.asset), "status_now": body.status_now,
         "mechanical_trigger": body.mechanical_trigger, "trigger_description": body.trigger_description,
         "pine_testable": body.pine_testable, "hypothesis": body.hypothesis,
         "durability_note": body.durability_note,

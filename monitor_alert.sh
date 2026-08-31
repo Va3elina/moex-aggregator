@@ -15,12 +15,21 @@ set -euo pipefail
 # Источник правды — pipeline_runs (пишется оркестратором/демонами через
 # pipeline_heartbeat). «Проблемный» = last_status<>'ok' ИЛИ не запускался дольше
 # своего порога (ловит и упавший скрипт, и полностью вставший оркестратор/SPOF).
-# Порог: 26ч по умолчанию, НЕДЕЛЬНЫМ (distributions, пн-cron) — 9 дней.
+# Порог тишины раздан ПО КАДЕНСУ пайплайна (см. CASE в запросе ниже).
 # ⚠️ Урок 07.2026: единый порог 26ч сделал недельный distributions «проблемным»
 # каждые вт-вс → он навечно осел в state-файле, и когда его cron реально умер
 # (frame-api-1 → frame-api-N), edge-а не было — алерт так и не ушёл. Порог
 # обязан быть >= худшего легитимного разрыва КАЖДОГО пайплайна, иначе
 # edge-trigger насыщается шумом и слепнет.
+# ⚠️ Урок 08.2026 (тот же грабль, шире): дневной каскад ходит в 19:10 ТОЛЬКО
+# по торговым дням, то есть с пятницы до понедельника молчит 72 часа штатно.
+# Под порогом 26ч он падал в «проблемные» КАЖДОЕ воскресенье 23:15 и
+# восстанавливался в понедельник — за две недели три ложных 🔴 подряд одним и
+# тем же списком из десяти пайплайнов. Ровно то насыщение шумом, от которого
+# ослеп distributions. Поэтому дневным — 76ч (72 + запас на поздний прогон).
+# Новогодние каникулы всё равно дадут пару ложных срабатываний в январе: это
+# осознанный размен, порог «9 дней» дневному каскаду ослепил бы нас на реальный
+# трёхдневный простой.
 # ─────────────────────────────────────────────────────────────
 
 cd /opt/frame
@@ -54,8 +63,18 @@ ROWS=$(docker exec "$CONTAINER" psql -U postgres -d moex_db -tA -F'|' -c \
   "SELECT pipeline, last_status, round(EXTRACT(EPOCH FROM now()-last_run_at)/3600, 1)
    FROM pipeline_runs
    WHERE last_status <> 'ok'
-      OR last_run_at < now() - (CASE pipeline
-           WHEN 'distributions' THEN interval '9 days'
+      OR last_run_at < now() - (CASE
+           -- Месячные: freefloat_cap снимается раз в месяц.
+           WHEN pipeline IN ('freefloat_cap_daily') THEN interval '35 days'
+           -- Недельные: distributions (пн-cron), mandate_scan (Routine-скаут).
+           WHEN pipeline IN ('distributions', 'mandate_scan') THEN interval '9 days'
+           -- Дневной каскад 19:10 — только по торговым дням, выходные = 72ч тишины.
+           WHEN pipeline IN ('breadth_daily', 'contract_calendar', 'dividends_daily',
+                             'funds_daily', 'macro_daily', 'market_cap_daily',
+                             'index_composition_daily', 'commodity_daily',
+                             'indices_daily', 'index_candles_hourly')
+                THEN interval '76 hours'
+           -- Остальное (5-минутные фетчеры, oi_*) крутится непрерывно.
            ELSE interval '26 hours' END)
    ORDER BY pipeline" 2>/dev/null || true)
 
