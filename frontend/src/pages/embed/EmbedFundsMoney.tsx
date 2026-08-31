@@ -290,12 +290,16 @@ export default function EmbedFundsMoney({ initialCategory }: { initialCategory?:
     const flows = flowsLoaded;
     if (!flows) return;
     const nav = data?.res;
-    // Нет nav-данных вовсе (ранний рендер / ошибка запроса) — пара без индекса:
-    // гистограмма не должна ждать линию, которой не будет.
-    if (!nav || (nav.category === flows.category && nav.period === flows.period)) {
-      setFlowsPair({ flows, index: nav?.index?.data });
+    if (nav && nav.category === flows.category && nav.period === flows.period) {
+      setFlowsPair({ flows, index: nav.index?.data });
+      return;
     }
-  }, [flowsLoaded, data]);
+    // nav-данных нет. Пока запрос ЕЩЁ ЕДЕТ — ждём: иначе первый кадр рисуется
+    // без панели бенчмарка (гистограмма во всю высоту), а через секунду
+    // приезжает индекс и всё прыгает. Ждать нечего, если запрос уже отработал
+    // и данных не будет (ошибка) или слой бенчмарка выключен вовсе.
+    if (!nav && (status === 'error' || !showIndex)) setFlowsPair({ flows });
+  }, [flowsLoaded, data, status, showIndex]);
   // Подписи (легенда бенчмарка, заголовок гистограммы) — от категории ПАРЫ, а
   // не текущей: пока держим старую пару, «RGBITR» над линией IMOEX — ложь.
   const pairCat = CATS.find((c) => c.id === flowsPair?.flows.category) ?? CATS.find((c) => c.id === category);

@@ -518,12 +518,16 @@ export default function FundsMoneyPage() {
     } | null>(null);
     useEffect(() => {
         if (!flowsData) return;
-        // Нет nav-данных вовсе (ранний рендер / ошибка nav-запроса) — пара без
-        // индекса: гистограмма не должна ждать линию, которой не будет.
-        if (!data || (data.category === flowsData.category && data.period === flowsData.period)) {
-            setFlowsPair({ flows: flowsData, index: data?.index?.data });
+        if (data && data.category === flowsData.category && data.period === flowsData.period) {
+            setFlowsPair({ flows: flowsData, index: data.index?.data });
+            return;
         }
-    }, [flowsData, data]);
+        // nav-данных нет. Пока запрос ЕЩЁ ЕДЕТ — ждём: иначе первый кадр
+        // рисуется без панели бенчмарка (гистограмма во всю высоту), а через
+        // секунду приезжает индекс и всё прыгает. Ждать нечего, если запрос уже
+        // отработал и данных не будет (ошибка) или слой «Индекс» выключен.
+        if (!data && (!loading || !showIndex)) setFlowsPair({ flows: flowsData });
+    }, [flowsData, data, loading, showIndex]);
     // Подписи (легенда индекса, заголовок гистограммы) — от категории ПАРЫ, а
     // не текущей: пока держим старую пару, «RGBITR» над линией IMOEX — ложь.
     const pairCategory = CATEGORIES.find(c => c.key === flowsPair?.flows.category) ?? currentCategory;
