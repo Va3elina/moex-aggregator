@@ -68,6 +68,14 @@ IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index
 # (наполняет Candles/fetch_index_composition.py).
 INDEX_ID = "IMOEX"
 
+# На сколько дней вперёд разрешено тянуть последний известный состав индекса.
+# Нужно для дней без своего среза: выходные сессии MOEX, праздники, свежий
+# день до публикации analytics. Ограничение обязательно: без него дырявая
+# index_composition (оборванный бэкфилл) молча растягивает состав, скажем,
+# 2008 года на всю последующую историю — широта считается по бумагам,
+# которых в индексе давно нет.
+MAX_FFILL_DAYS = 30
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  БД: создание таблицы и индексов
@@ -205,19 +213,30 @@ def build_member_dates(
 
     Состав есть только на торговые дни основной сессии. Даты, у которых своего
     среза нет (выходные сессии MOEX, праздники, день до публикации свежего
-    среза), наследуют последний известный состав на дату <= d. Даты раньше
-    первого среза членства не дают вовсе — там состав индекса неизвестен.
+    среза), наследуют последний известный состав на дату <= d, но не дальше
+    MAX_FFILL_DAYS. Даты раньше первого среза и даты в дырах покрытия
+    членства не дают вовсе — там состав индекса неизвестен, и лучше не
+    посчитать день вообще, чем посчитать его по протухшему составу.
     """
     import bisect
 
     comp_days = sorted(composition)
     member_dates: dict[str, set[date]] = {}
+    stale = 0
     for d in sorted(candle_dates):
         pos = bisect.bisect_right(comp_days, d) - 1
         if pos < 0:
             continue
-        for ticker in composition[comp_days[pos]]:
+        src = comp_days[pos]
+        if (d - src).days > MAX_FFILL_DAYS:
+            stale += 1
+            continue
+        for ticker in composition[src]:
             member_dates.setdefault(ticker, set()).add(d)
+    if stale:
+        log.warning(f"Дней без состава индекса в пределах {MAX_FFILL_DAYS} дней: {stale} "
+                    f"— эти даты выпадут из широты по индексу (дыра в index_composition, "
+                    f"добейте Candles/fetch_index_composition.py)")
     return member_dates
 
 
