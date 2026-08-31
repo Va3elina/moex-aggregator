@@ -83,6 +83,13 @@ TRIGGER_ID_STEP_C = "trig_01KPtMNbEYNfqewKvwhdo4rj"   # frame-content-step-c
 # событие"). env, не хардкод — из .env читает ТОЛЬКО tg_hype_scan.py (host-side),
 # деплоить код заново не нужно, когда Вадим создаст Routine в UI.
 TRIGGER_ID_HYPE_FILTER = os.environ.get("TRIGGER_ID_HYPE_FILTER", "")
+# Шаг Г (судья, добавлен 31.08). Вставлен между Шагом В и человеком после живого
+# прогона: короткий промпт сам по себе фактуру не гарантирует — в черновике 1104
+# новость «против прибыли ₽147,55 млрд ГОДОМ ранее» превратилась в «КВАРТАЛОМ
+# ранее», и самопроверка внутри промпта подмену не поймала. Судья НЕ блокирует, а
+# размечает: решение остаётся за человеком. Как и у Шага Н — из env, не хардкод,
+# чтобы деплой кода не зависел от того, создан ли уже триггер.
+TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -162,6 +169,36 @@ _MARK_DISPATCHED = text("""
 # — та же граница, что и у "давно не проверялось", защищает от гонки с ЕЩЁ НЕ
 # случившейся первой попыткой tg_hype_scan.py (крон раз в 2 мин, cutoff здесь
 # 15 мин — с большим запасом).
+# Судить есть что, когда черновик уже есть, а вердикта ещё нет. Отдельный
+# счётчик попыток и своя терминальная метка (judge_gave_up_at) — статус кандидата
+# Шаг Г не трогает, значит выводить строку из выборки должен собственный признак,
+# ровно как у Шага Н (см. миграцию 048 и её разбор).
+_SELECT_JUDGE_PENDING = text("""
+    SELECT c.id, c.headline, c.raw_text, c.tickers, c.event_type, c.draft_text,
+           c.thread_key, c.created_at, c.judge_dispatch_attempts,
+           a.asset_id, a.asset_name, a.clgroup AS anomaly_clgroup,
+           a.direction, a.severity_value, a.signal_date
+    FROM content_candidates c
+    JOIN anomalies a ON a.id = c.matched_anomaly_id
+    WHERE c.draft_text IS NOT NULL
+      AND c.judge_verdict IS NULL
+      AND c.judge_gave_up_at IS NULL
+      AND c.judge_dispatch_attempts < :max_attempts
+      AND (c.judge_checked_at IS NULL OR c.judge_checked_at < :cutoff)
+    ORDER BY c.id
+    LIMIT :batch_limit
+""")
+_MARK_JUDGE_DISPATCHED = text("""
+    UPDATE content_candidates
+    SET judge_dispatch_attempts = judge_dispatch_attempts + 1, judge_checked_at = now()
+    WHERE id = :id
+""")
+_GIVE_UP_JUDGE = text("""
+    UPDATE content_candidates
+    SET judge_checked_at = now(), judge_gave_up_at = now()
+    WHERE id = :id
+""")
+
 _SELECT_HYPE_FILTER_PENDING = text("""
     SELECT id, source, headline, raw_text, hype_filter_dispatch_attempts
     FROM content_candidates
@@ -475,10 +512,37 @@ def _step_c_payload(db, row, internal_token: str) -> str:
             + f"\napi_host: {INTERNAL_API_HOST}")
 
 
+def _step_g_payload(db, row, internal_token: str) -> str:
+    """Судье нужны РОВНО те же данные, что были у писателя, плюс сам черновик.
+    Иначе он не сможет проверить главное — трассируется ли каждое число в бриф.
+    Поэтому бриф собирается тем же кодом, а не пересказывается."""
+    import json as _json
+    created_at = row.get("created_at")
+    news_date = created_at.date() if created_at else row["signal_date"]
+    payload = {
+        "candidate_id": row["id"],
+        "бриф": {
+            "headline": row["headline"],
+            "raw_text": row["raw_text"] or row["headline"],
+            "tickers": row["tickers"] or [],
+            "дата_новости": str(news_date),
+            "дата_сигнала": str(row["signal_date"]),
+            "рамка_сюжета": _story_frame(row["signal_date"], news_date),
+            "позиции_физлиц": _position_phrases(row["asset_id"], row["anomaly_clgroup"],
+                                                as_of=row["signal_date"]),
+        },
+        "черновик_на_проверку": row["draft_text"],
+    }
+    return (_json.dumps(payload, ensure_ascii=False, indent=2)
+            + f"\ninternal_token: {internal_token}"
+            + f"\napi_host: {INTERNAL_API_HOST}")
+
+
 def run_once() -> dict:
     summary = {"step_a_fired": 0, "step_c_fired": 0, "errors": 0, "skipped_no_token": 0,
                "step_a_gave_up": 0, "step_c_gave_up": 0,
-               "hype_filter_fired": 0, "hype_filter_gave_up": 0}
+               "hype_filter_fired": 0, "hype_filter_gave_up": 0,
+               "judge_fired": 0, "judge_gave_up": 0}
 
     internal_token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
     token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
@@ -487,6 +551,10 @@ def run_once() -> dict:
     # не создан в UI, и наоборот — см. skill moex-content-routines).
     token_hype = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_HYPE_FILTER", "")
     can_fire_hype = bool(internal_token and token_hype and TRIGGER_ID_HYPE_FILTER)
+    # Шаг Г — тоже свой токен и своя проверка: пока триггер не создан, судья просто
+    # не запускается, а Шаги А/В/Н работают как раньше.
+    token_g = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_G", "")
+    can_fire_judge = bool(internal_token and token_g and TRIGGER_ID_STEP_G)
     if not internal_token or not token_a or not token_c:
         summary["skipped_no_token"] = 1
         print("[content_ai] отсутствует CONTENT_AI_INTERNAL_TOKEN / "
@@ -551,6 +619,46 @@ def run_once() -> dict:
         # BATCH_LIMIT, как у А/В) + тот же FIRE_STAGGER_SEC между вызовами:
         # Вадим попросил не заваливать Routine параллельными запросами разом
         # (риск конкуренции за облачный контейнер, см. FIRE_STAGGER_SEC выше).
+        # ── Шаг Г: судья по свежим черновикам ─────────────────────────
+        if can_fire_judge:
+            judge_rows = db.execute(
+                _SELECT_JUDGE_PENDING,
+                {"cutoff": cutoff, "batch_limit": BATCH_LIMIT,
+                 "max_attempts": MAX_DISPATCH_ATTEMPTS},
+            ).mappings().all()
+            for row in judge_rows:
+                try:
+                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_payload(db, row, internal_token))
+                    db.execute(_MARK_JUDGE_DISPATCHED, {"id": row["id"]})
+                    db.commit()
+                    summary["judge_fired"] += 1
+                    time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                except Exception as e:
+                    summary["errors"] += 1
+                    print(f"[content_ai] step-g fire failed for candidate {row['id']}: "
+                          f"{type(e).__name__}: {e}")
+
+            # Тот же бэкстоп, что у остальных шагов: исчерпанные попытки → сдаёмся
+            # с терминальной меткой, иначе алерт уходил бы каждый прогон крона
+            # (живой случай Шага Н, миграция 048).
+            judge_gave_up = db.execute(text("""
+                SELECT id FROM content_candidates
+                WHERE draft_text IS NOT NULL AND judge_verdict IS NULL
+                  AND judge_gave_up_at IS NULL
+                  AND judge_dispatch_attempts >= :max_attempts
+                  AND judge_checked_at < :cutoff
+            """), {"max_attempts": MAX_DISPATCH_ATTEMPTS, "cutoff": cutoff}).scalars().all()
+            g_reason = (f"Судья (Шаг Г) не ответил за {MAX_DISPATCH_ATTEMPTS} попыток "
+                        f"бэкстопа — черновик уходит на ревью БЕЗ проверки")
+            g_list = []
+            for cid in judge_gave_up:
+                db.execute(_GIVE_UP_JUDGE, {"id": cid})
+                summary["judge_gave_up"] += 1
+                g_list.append((cid, g_reason))
+            if g_list:
+                db.commit()
+                _notify_pipeline_stuck("Г", g_list)
+
         if can_fire_hype:
             hype_pending = db.execute(_SELECT_HYPE_FILTER_PENDING, {
                 "cutoff": cutoff, "max_attempts": MAX_DISPATCH_ATTEMPTS,
@@ -607,7 +715,8 @@ def main():
     # degraded: были ошибки, но что-то всё же прошло (напр. хайп-фильтр
     # отстрелялся, пока Шаг А/В цеплял 401) — не топим статус в общий "fail"
     # неотличимо от полного отказа, см. pipeline_heartbeat.record_pipeline_run.
-    fired_any = s["step_a_fired"] + s["step_c_fired"] + s["hype_filter_fired"] > 0
+    fired_any = (s["step_a_fired"] + s["step_c_fired"]
+                 + s["hype_filter_fired"] + s["judge_fired"]) > 0
     pipeline_heartbeat.record_pipeline_run(
         "content_ai_backstop", ok, str(s), dur, degraded=(not ok and fired_any)
     )
