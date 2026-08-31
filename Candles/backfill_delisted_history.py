@@ -71,7 +71,8 @@ MAX_CONCURRENT = 3
 START_YEAR = 2007
 
 # Метаданные бумаги (короткое имя, ISIN) для реестра delisted_securities.
-ISS_SECURITY = "https://iss.moex.com/iss/securities/{secid}.json?iss.meta=off&iss.only=description"
+ISS_SECURITY = ("https://iss.moex.com/iss/securities/{secid}.json"
+                "?iss.meta=off&iss.only=description,boards")
 
 # Индекс, чью историческую базу расчёта разбираем при --source index.
 INDEX_ID = "IMOEX"
@@ -140,14 +141,20 @@ def get_index_delisted(engine, index_id: str = INDEX_ID) -> list[tuple[str, str,
 
     out = []
     for secid, days in rows:
-        name, _ = fetch_security_meta(secid)
+        name, _, _ = fetch_security_meta(secid)
         log.info(f"  кандидат {secid:8s} ({name}) — дней в индексе: {days}")
         out.append((secid, name, 0))
     return out
 
 
-def fetch_security_meta(secid: str) -> tuple[str, str]:
-    """(short_name, isin) бумаги с ISS. Пустые строки, если ISS промолчал."""
+def fetch_security_meta(secid: str) -> tuple[str, str, bool | None]:
+    """(short_name, isin, торгуется ли) бумаги с ISS.
+
+    Третий элемент — True, если хоть одна доска бумаги ещё активна (is_traded).
+    None = ISS промолчал, факт неизвестен. Нужен, чтобы не пометить
+    делистингованной живую бумагу: среди бывших участников индекса такие
+    попадаются — они выпали из базы расчёта, но торгуются до сих пор.
+    """
     try:
         req = urllib.request.Request(ISS_SECURITY.format(secid=secid),
                                      headers={"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"})
@@ -156,10 +163,16 @@ def fetch_security_meta(secid: str) -> tuple[str, str]:
         cols = data["description"]["columns"]
         i_name, i_val = cols.index("name"), cols.index("value")
         meta = {row[i_name]: row[i_val] for row in data["description"]["data"]}
-        return (meta.get("SHORTNAME") or meta.get("NAME") or secid, meta.get("ISIN") or "")
+        b_cols = data.get("boards", {}).get("columns", [])
+        b_rows = data.get("boards", {}).get("data", [])
+        traded = None
+        if b_cols and "is_traded" in b_cols:
+            i_tr = b_cols.index("is_traded")
+            traded = any(row[i_tr] for row in b_rows)
+        return (meta.get("SHORTNAME") or meta.get("NAME") or secid, meta.get("ISIN") or "", traded)
     except Exception as e:
         log.warning(f"  {secid}: метаданные ISS недоступны ({e})")
-        return (secid, "")
+        return (secid, "", None)
 
 
 def ensure_registry(engine) -> None:
@@ -188,8 +201,16 @@ def mark_delisted(engine, secid: str, name: str, source: str) -> None:
     """Отмечает бумагу в реестре историй: границы серии берём из candles.
 
     Вызывается ПОСЛЕ загрузки свечей — иначе границы окажутся пустыми.
+    Бумагу, которая на бирже ещё торгуется, в реестр НЕ пишем: выпасть из
+    базы расчёта индекса и уйти с биржи — разные события (Соллерс и
+    Мостотрест выбыли из IMOEX, но торгуются до сих пор).
     """
-    _, isin = fetch_security_meta(secid)
+    _, isin, traded = fetch_security_meta(secid)
+    if traded:
+        log.warning(f"  ⚠ {secid} ({name}) торгуется на бирже — в реестр делистинга не пишем. "
+                    f"Свечи загружены; если бумага нужна на сайте как актив, "
+                    f"её надо завести в instruments.")
+        return
     with engine.begin() as conn:
         row = conn.execute(text("""
             SELECT MIN(begin_time)::date, MAX(begin_time)::date, COUNT(*)

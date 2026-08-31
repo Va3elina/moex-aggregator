@@ -187,12 +187,18 @@ def _load_usd_rates(engine, date_from: date) -> dict[date, float]:
 
 
 def get_stock_tickers() -> list[dict]:
-    """Получает список тикеров акций из БД с секторами (без фьючерсов и индексов)"""
+    """Тикеры акций с секторами (без фьючерсов и индексов).
+
+    JOIN с instruments не LEFT, а обычный: вселенная «все акции» — это то, что
+    заведено на сайте как актив. В candles помимо них лежат исторические серии
+    (бэкфилл бывших участников индекса, холдингов фондов), и часть таких бумаг
+    ещё торгуется — с LEFT JOIN они молча попадали бы в индикатор.
+    """
     engine = get_engine()
     query = text("""
         SELECT DISTINCT c.secid, COALESCE(i.sector, 'Другое') as sector
         FROM candles c
-        LEFT JOIN instruments i ON i.sec_id = c.secid AND i.type = 'stock'
+        JOIN instruments i ON i.sec_id = c.secid AND i.type = 'stock'
         WHERE c.interval = 24
           AND c.begin_time > CURRENT_DATE - 30
           AND c.secid NOT SIMILAR TO '%[0-9]%'
