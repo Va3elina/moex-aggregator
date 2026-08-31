@@ -29,9 +29,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATASET = os.path.join(HERE, "dataset", "drafts.json")
 OUT = os.path.join(HERE, "dataset", "judge_results.json")
 
+# ⭐ Группы по РОЛИ, а не по теме (найдено 31.08, EVAL_RUN1.md прогон 2): у рубрики
+# две несовместимые работы. GROUP_A/B — ВОРОТА, решают «публиковать или нет».
+# GROUP_C — ЧЕК-ЛИСТ ПРОИЗВОДСТВА: эти пункты срабатывают и на реальных постах
+# канала (длинное тире у 11%, показателей >2 у 18%), поэтому браковать по ним
+# нельзя — но именно они показывают, что чинить в генераторе.
 GROUP_A = ["numbers_traceable", "no_invented_facts", "no_self_contradiction", "time_arrow_ok"]
-GROUP_B = ["has_thesis", "link_earned", "conclusion_not_boilerplate", "no_redundancy"]
-GROUP_C = ["format_ok", "no_methodology_talk", "length_ok", "no_brand_selfref"]
+GROUP_B = ["has_thesis", "link_earned", "no_redundancy"]
+GROUP_C = ["conclusion_not_boilerplate", "no_brand_selfref", "numbers_density",
+           "format_ok", "no_methodology_talk", "length_ok"]
 ALL_KEYS = GROUP_A + GROUP_B + GROUP_C
 
 RUBRIC_TEXT = """
@@ -82,7 +88,13 @@ RUBRIC_TEXT = """
   начинаются с ◽️; тире одинарное «-», а не «—»; нет маркдауна (**жирный**) и капса.
 - no_methodology_talk: нет языка методологии — «сильнее обычного дневного шага»,
   «к обычному дневному шагу», z-score, ATR.
-- length_ok: длина поста 400-1200 знаков.
+- length_ok: длина поста 350-1450 знаков. (Порог из КОРПУСА, жанровый срез
+  «позиции толпы», 38 постов: p10 365, медиана 684, p90 1379. Правило промпта
+  «400-1200» сужало верх — у канала есть посты и на 1779.)
+- numbers_density: не больше ТРЁХ показателей в одном абзаце. (Корпус: медиана 1,
+  p90 3, p95 4. Правило промпта «одна-две — потолок» нарушают 18% постов канала,
+  так что потолок 2 неверен, но направление верное: наши черновики держат медиану
+  3 против 1 у канала — втрое плотнее.) Даты, время и годы НЕ считаются.
 - no_brand_selfref: пост НЕ называет Frame и платформу по имени — «данные Frame»,
   «данные с платформы Frame», «индикатор Frame». Читателю канала и так очевидно, чей
   это сервис и чей пост (решение Вадима 31.08). Писать «наш индикатор» / «индикатор»
@@ -119,6 +131,7 @@ PROMPT = """Ты — редакционный контролёр Telegram-кан
   "format_ok": {{"pass": true|false, "evidence": "..."}},
   "no_methodology_talk": {{"pass": true|false, "evidence": "..."}},
   "length_ok": {{"pass": true|false, "evidence": "..."}},
+  "numbers_density": {{"pass": true|false, "evidence": "..."}},
   "no_brand_selfref": {{"pass": true|false, "evidence": "..."}},
   "model_verdict": "годится"|"спорно"|"брак",
   "one_line": "чем этот пост плох или хорош, одной фразой"
@@ -208,8 +221,8 @@ def code_checks(draft: str) -> dict:
         "stock_phrases": stock,
         "brand_mentions": brand,
         "length": len(draft),
-        "length_ok": 400 <= len(draft) <= 1200,
-        "numbers_sparse": max_nums <= 3,
+        "length_ok": 350 <= len(draft) <= 1450,
+        "numbers_density": max_nums <= 3,
         "max_numbers_in_para": max_nums,
         "has_signature": "@FrameTool" in draft,
         "has_hashtag": "#открытыйинтерес" in draft,
@@ -220,16 +233,21 @@ def code_checks(draft: str) -> dict:
 
 
 def derive_verdict(items: dict) -> tuple:
-    """Вердикт выводит КОД (RUBRIC.md): любой провал группы A = брак; иначе 2+
-    провала B/C = брак; 1 провал = спорно; ноль = годится."""
+    """Вердикт выводит КОД, а не модель. Правило (RUBRIC.md):
+       • любой провал ВОРОТ группы A (фактура) → брак;
+       • 2+ провала ворот группы B (смысл) → брак, один → спорно;
+       • группа C НЕ влияет на вердикт — это чек-лист производства.
+    Почему C не гейт: её пункты срабатывают и на реальных постах канала
+    (длинное тире 11%, плотность >2 у 18%), значит браковать по ним значило бы
+    забраковать сам канал."""
     failed = [k for k in ALL_KEYS if items.get(k) is False]
-    fa = [k for k in failed if k in GROUP_A]
-    if fa:
+    defects = [k for k in failed if k in GROUP_C]
+    if any(k in GROUP_A for k in failed):
         return "брак", failed
-    rest = [k for k in failed if k not in GROUP_A]
-    if len(rest) >= 2:
+    gate_b = [k for k in failed if k in GROUP_B]
+    if len(gate_b) >= 2:
         return "брак", failed
-    if len(rest) == 1:
+    if len(gate_b) == 1:
         return "спорно", failed
     return "годится", failed
 
@@ -280,6 +298,7 @@ def judge_one(x: dict, model: str, all_rows: list) -> dict:
     out["model_verdict"] = raw.get("model_verdict")
     out["one_line"] = raw.get("one_line")
     out["verdict"], out["failed"] = derive_verdict(items)
+    out["defects"] = [k for k in out["failed"] if k in GROUP_C]
     return out
 
 
