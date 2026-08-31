@@ -28,6 +28,7 @@ research-venv без sqlalchemy/pg8000.
 import argparse
 import datetime as _dt
 import glob
+import json as _json
 import os
 import re
 import sys
@@ -139,9 +140,13 @@ def parse_export(path: str, min_len: int = 15, tz_suffix: str = "+03:00"):
                 continue
             tags = HASHTAG_RE.findall(text)
             tickers = sorted({m.group(1) for t in tags if (m := TICKER_RE.match(t.upper()))})
-            ents = "{}" if not links else \
-                '{"links": [' + ",".join('"' + l.replace('\\', '\\\\').replace('"', '\\"') + '"'
-                                          for l in links) + "]}"
+            # ⚠️ JSON собираем json.dumps, а НЕ вручную. Живой сбой на проде:
+            # COPY упал на 13329-й строке смартлаба — href содержал ПЕРЕНОС
+            # СТРОКИ, а ручная сборка экранировала только кавычки и слэши.
+            # После COPY-разэкранирования перенос попадал внутрь JSON-строки,
+            # где он недопустим → «invalid input syntax for type json».
+            # json.dumps закрывает переносы, табуляции и управляющие символы разом.
+            ents = _json.dumps({"links": links}, ensure_ascii=False) if links else "{}"
             kept += 1
             stamp = date if is_unix else f"{date}{tz_suffix}"
             yield "\t".join([
