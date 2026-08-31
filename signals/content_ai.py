@@ -90,6 +90,11 @@ TRIGGER_ID_HYPE_FILTER = os.environ.get("TRIGGER_ID_HYPE_FILTER", "")
 # размечает: решение остаётся за человеком. Как и у Шага Н — из env, не хардкод,
 # чтобы деплой кода не зависел от того, создан ли уже триггер.
 TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
+# Версия контракта брифа (миграция 059). Поднимать при КАЖДОМ изменении набора полей
+# брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
+# получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
+# которых осмысленными оказались 2.
+BRIEF_VERSION = 2
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -191,6 +196,7 @@ _SELECT_JUDGE_PENDING = text("""
     JOIN anomalies a ON a.id = c.matched_anomaly_id
     WHERE c.draft_text IS NOT NULL
       AND c.status = 'draft_ready'
+      AND c.brief_version = :brief_version
       AND c.judge_verdict IS NULL
       AND c.judge_gave_up_at IS NULL
       AND c.judge_dispatch_attempts < :max_attempts
@@ -634,7 +640,8 @@ def run_once() -> dict:
             judge_rows = db.execute(
                 _SELECT_JUDGE_PENDING,
                 {"cutoff": cutoff, "batch_limit": BATCH_LIMIT,
-                 "max_attempts": MAX_DISPATCH_ATTEMPTS},
+                 "max_attempts": MAX_DISPATCH_ATTEMPTS,
+                 "brief_version": BRIEF_VERSION},
             ).mappings().all()
             for row in judge_rows:
                 try:
