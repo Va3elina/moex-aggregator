@@ -143,15 +143,24 @@ def get_last_computed_date(engine, universe: str = "all") -> date | None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_stock_tickers(engine) -> list[str]:
-    """Список акций из БД (активные за последние 30 дней, без фьючерсов)."""
+    """Список акций для вселенной «все акции».
+
+    Активные за последние 30 дней И заведённые в instruments. Требование
+    instruments — защита от случайного расширения вселенной: в candles
+    попадают исторические серии бумаг, которых на сайте нет (бэкфилл бывших
+    участников индекса, холдингов фондов), и часть таких бумаг на бирже ещё
+    торгуется. Без фильтра они молча меняли бы индикатор «все акции».
+    """
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT DISTINCT secid
-            FROM candles
-            WHERE interval = 24
-              AND begin_time > CURRENT_DATE - 30
-              AND secid NOT SIMILAR TO '%[0-9]%'
-            ORDER BY secid
+            SELECT DISTINCT c.secid
+            FROM candles c
+            WHERE c.interval = 24
+              AND c.begin_time > CURRENT_DATE - 30
+              AND c.secid NOT SIMILAR TO '%[0-9]%'
+              AND EXISTS (SELECT 1 FROM instruments i
+                          WHERE i.sec_id = c.secid AND i.type = 'stock')
+            ORDER BY c.secid
         """)).fetchall()
     tickers = [r[0] for r in rows if r[0] not in EXCLUDED]
     log.info(f"Тикеры (all): {len(tickers)} акций")
