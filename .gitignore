@@ -116,3 +116,8 @@ signals/*.session
 frontend/src/pages/sw.js
 # Локальные секреты скиллов (ключи эквайринга и т.п.) — НИКОГДА не коммитить
 .claude/skills/**/secrets.local.md
+
+# Корпус постов: пересобирается из выгрузок Telegram одной командой
+# (research/content_pipeline_v2/corpus.py). Сырой json — 3,6 МБ, в git идёт только .gz
+research/content_pipeline_v2/dataset/corpus.json
+research/content_pipeline_v2/__pycache__/
