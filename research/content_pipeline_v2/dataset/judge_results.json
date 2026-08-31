@@ -1,60 +1,5 @@
 [
   {
-    "id": 559,
-    "status": "published",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 1426,
-      "length_ok": false,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 3,
-      "has_signature": false,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": false,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": false,
-      "format_ok": false,
-      "no_methodology_talk": false,
-      "length_ok": false,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "2022 год (заморозка дивидендов) и 2015 год (начало переговоров по трубе) — дат нет в брифе",
-      "no_invented_facts": "придуманы история 2022 года с дивидендами и обвалом, и что переговоры идут с 2015 года с повторяющимся паттерном",
-      "no_self_contradiction": "пост: цена привязана к «внутренним тарифам на газ в КНР»; бриф: Китай требует цену по внутреннему рынку РОССИИ — противоположный смысл",
-      "conclusion_not_boilerplate": "финал «то ли розница снова ловит нож, то ли чувствует разворот раньше остальных» — заготовка, подставима под любой тикер",
-      "no_redundancy": "абзацы 3 и 4 дважды прогоняют одну и ту же придуманную историческую параллель с Газпромом",
-      "format_ok": "нет подписи «😀😀😀/@FrameTool»; тире «—» вместо «-» в нескольких местах поста",
-      "no_methodology_talk": "«шаг открытого интереса превысил обычный в 3,49 раза» — методологический язык",
-      "length_ok": "текст ориентировочно ~1500 знаков, выше лимита 1200"
-    },
-    "model_verdict": "брак",
-    "one_line": "Пост держится на выдуманной истории Газпрома (2022, 2015), путает чей внутренний рынок, плюс без подписи, с методологическим языком и длиннее лимита",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "no_invented_facts",
-      "no_self_contradiction",
-      "conclusion_not_boilerplate",
-      "no_redundancy",
-      "format_ok",
-      "no_methodology_talk",
-      "length_ok"
-    ]
-  },
-  {
     "id": 563,
     "status": "rejected",
     "signal_minus_news_days": 0,
@@ -63,7 +8,7 @@
       "brand_mentions": [],
       "length": 1532,
       "length_ok": false,
-      "numbers_sparse": true,
+      "numbers_density": true,
       "max_numbers_in_para": 2,
       "has_signature": false,
       "has_hashtag": true,
@@ -77,385 +22,36 @@
       "no_self_contradiction": true,
       "time_arrow_ok": true,
       "has_thesis": true,
-      "link_earned": true,
+      "link_earned": false,
+      "no_redundancy": true,
       "conclusion_not_boilerplate": true,
-      "no_redundancy": false,
+      "no_brand_selfref": true,
+      "numbers_density": true,
       "format_ok": false,
       "no_methodology_talk": false,
-      "length_ok": false,
-      "no_brand_selfref": true
+      "length_ok": false
     },
     "evidence": {
-      "no_invented_facts": "«такой почерк... мы видим не в первый раз — история здесь скорее рифмуется» — заявка на прошлые аналогии/историю, которых нет в брифе",
-      "no_redundancy": "абзац 4 «рынок в очередной раз проголосовал ногами заранее, не дожидаясь официальной даты» пересказывает уже сказанное в абзаце 3 про заблаговременное закрытие позиций",
-      "format_ok": "нет подписи «😀😀😀/@FrameTool»; тире оформлено как «—», а не «-» (минимум 5 случаев)",
-      "no_methodology_talk": "дословно «движение ×4.47 к обычному дневному шагу» — запрещённая формулировка методологии",
-      "length_ok": "оценка ~1450-1500 знаков, превышает верхнюю границу 1200"
+      "no_invented_facts": "«мы видим не в первый раз — история здесь скорее рифмуется» — заявлен паттерн из прошлого, которого нет в брифе",
+      "link_earned": "механика дивидендных фьючерсов подана как установленная традиция («опытные участники традиционно закрывают позиции заранее»), а не как одна из версий",
+      "format_ok": "нет подписи «😀😀😀/@FrameTool»; тире везде «—», а не «-»",
+      "no_methodology_talk": "«×4.47 к обычному дневному шагу» — прямой методологический язык",
+      "length_ok": "≈1550-1600 знаков, выше потолка 1450"
     },
     "model_verdict": "брак",
-    "one_line": "Сильный тезис про механику дивидендных фьючерсов утоплен в перебор длины, самодельной формулировке методологии и отсутствии подписи/форматных требований.",
-    "verdict": "брак",
-    "failed": [
-      "no_invented_facts",
-      "no_redundancy",
-      "format_ok",
-      "no_methodology_talk",
-      "length_ok"
-    ]
-  },
-  {
-    "id": 567,
-    "status": "rejected",
-    "signal_minus_news_days": 0,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 1550,
-      "length_ok": false,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 2,
-      "has_signature": false,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": true
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": false,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": true,
-      "no_redundancy": true,
-      "format_ok": false,
-      "no_methodology_talk": false,
-      "length_ok": false,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "no_invented_facts": "«вернулась к выплатам недавно, после нескольких лет паузы» и «известный паттерн... регулярно видим у других дивидендных фишек» — история компании/рынка, которой нет в брифе",
-      "format_ok": "нет подписи «😀😀😀/@FrameTool»; тире «—» использовано вместо одинарного «-» (минимум 6 раз)",
-      "no_methodology_talk": "«просел в ×4.12 к обычному дневному шагу» — прямая формулировка методологии",
-      "length_ok": "~1550 знаков, превышает лимит 1200"
-    },
-    "model_verdict": "брак",
-    "one_line": "Тезис и хедж в финале сильные, но пост выдаёт методологию, тянет на историю компании из ниоткуда, ломает формат подписи/тире и вдвое длиннее лимита",
-    "verdict": "брак",
-    "failed": [
-      "no_invented_facts",
-      "format_ok",
-      "no_methodology_talk",
-      "length_ok"
-    ]
-  },
-  {
-    "id": 700,
-    "status": "rejected",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [],
-      "length": 1469,
-      "length_ok": false,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 3,
-      "has_signature": false,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": true
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": false,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": false,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": false,
-      "format_ok": false,
-      "no_methodology_talk": false,
-      "length_ok": false,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "«2022-м» (отмена дивидендов) — год не встречается в брифе",
-      "no_invented_facts": "абзац 3 целиком — история отмены дивидендов 2022 и предыдущих «дон» с разгоном физлиц, этого нет в брифе",
-      "link_earned": "выдуманная историческая аналогия (2022) усиливает связь новости и сигнала сильнее, чем позволяют данные",
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни",
-      "no_redundancy": "абзац 5 пересказывает уже сказанное в абзацах 1-2 (рост ОИ + минимум цены) перед штампом-концовкой",
-      "format_ok": "нет подписи «😀😀😀/@FrameTool»; используется тире «—» вместо «-» (дважды в абзаце 1)",
-      "no_methodology_talk": "«к обычному дневному шагу» — прямой методологический язык",
-      "length_ok": "~1500 знаков, превышает лимит 1200"
-    },
-    "model_verdict": "брак",
-    "one_line": "выдуманная история 2022 года, методологический жаргон, штамп в концовке, нет подписи и пост длиннее лимита",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "no_invented_facts",
-      "link_earned",
-      "conclusion_not_boilerplate",
-      "no_redundancy",
-      "format_ok",
-      "no_methodology_talk",
-      "length_ok"
-    ]
-  },
-  {
-    "id": 722,
-    "status": "published",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [
-        "стоит последить"
-      ],
-      "brand_mentions": [],
-      "length": 1643,
-      "length_ok": false,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 2,
-      "has_signature": false,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": true
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": false,
-      "no_self_contradiction": true,
-      "time_arrow_ok": false,
-      "has_thesis": true,
-      "link_earned": false,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": false,
-      "format_ok": false,
-      "no_methodology_talk": false,
-      "length_ok": false,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "год «2022» и сделка с My.Games отсутствуют в брифе — не проверяемы",
-      "no_invented_facts": "выдуманная историческая аналогия: продажа My.Games в 2022 году менеджменту — этого нет в брифе",
-      "time_arrow_ok": "«новость... уже лежала на столе у рынка» в момент сигнала 15 июля — это утверждение, что рынок знал новость ДО её публикации 16 июля, а не просто фиксация порядка дат",
-      "link_earned": "движение OI подано как реакция на уже известную рынку новость — каузальность сильнее, чем позволяет порядок дат (сигнал раньше публикации)",
-      "conclusion_not_boilerplate": "штамп: стоит последить",
-      "no_redundancy": "первое предложение абзаца 4 повторяет вывод уже сделанной аналогии с 2022 годом из абзаца 3",
-      "format_ok": "нет подписи «😀😀😀/@FrameTool»; используется тире «—» вместо «-» (минимум 4 раза)",
-      "no_methodology_talk": "«сильнее обычного дневного шага» — прямая методологическая формулировка",
-      "length_ok": "~1800+ знаков, заметно превышает лимит 1200"
-    },
-    "model_verdict": "брак",
-    "one_line": "Хороший тезис тонет в выдуманной аналогии 2022 года, ложном упреждении знания и превышении длины/формата вдвое",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "no_invented_facts",
-      "time_arrow_ok",
-      "link_earned",
-      "conclusion_not_boilerplate",
-      "no_redundancy",
-      "format_ok",
-      "no_methodology_talk",
-      "length_ok"
-    ]
-  },
-  {
-    "id": 741,
-    "status": "rejected",
-    "signal_minus_news_days": 0,
-    "code": {
-      "stock_phrases": [
-        "стоит последить"
-      ],
-      "brand_mentions": [],
-      "length": 663,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 5,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": false,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": false,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "no_invented_facts": "Брифе только 'MAX удалён из Google Play', а черновик добавляет 'VK и Одноклассниками, пропавшими из Google Play' — не подтверждённый брифом факт",
-      "link_earned": "Тезис опирается на выдуманное расширение новости (VK и ОК тоже удалены) плюс неподкреплённое обобщение 'рекордный минимум часто предвещает разворот'",
-      "conclusion_not_boilerplate": "штамп: стоит последить"
-    },
-    "model_verdict": "брак",
-    "one_line": "Сильная цифровая часть смазана выдуманным расширением новости (ОК и VK-приложение) и штампованной концовкой",
+    "one_line": "Фактура из брифа не искажена, но пост тонет в выдуманной истории повторов, методологическом языке, длине за потолком и неверном формате тире/подписи",
     "verdict": "брак",
     "failed": [
       "no_invented_facts",
       "link_earned",
-      "conclusion_not_boilerplate"
-    ]
-  },
-  {
-    "id": 742,
-    "status": "rejected",
-    "signal_minus_news_days": 0,
-    "code": {
-      "stock_phrases": [
-        "стоит последить"
-      ],
-      "brand_mentions": [],
-      "length": 881,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 5,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "conclusion_not_boilerplate": "штамп: стоит последить"
-    },
-    "model_verdict": "спорно",
-    "one_line": "Фактура и семантика в порядке, но финал собран из шаблонных фраз, прямо указанных в рубрике как брак",
-    "verdict": "спорно",
-    "failed": [
-      "conclusion_not_boilerplate"
-    ]
-  },
-  {
-    "id": 744,
-    "status": "published",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [
-        "стоит последить"
-      ],
-      "brand_mentions": [],
-      "length": 980,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 6,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": true
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": false,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": false,
-      "no_methodology_talk": false,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "времена 10:24 и 10:54, а также факт «вчера VK избавилась от RuStore» отсутствуют в брифе",
-      "no_invented_facts": "«Вчера VK избавилась от RuStore» — факт из истории компании, которого нет в брифе",
-      "no_self_contradiction": "диапазон [-12,9%; 87,5%] противоречит уже опубликованному в треде посту #742, где нижний край того же диапазона -40,5%",
-      "conclusion_not_boilerplate": "штамп: стоит последить",
-      "format_ok": "тире «—» вместо «-» использовано трижды (MAX — в 10:24; Play — тогда; заранее — индикатор)",
-      "no_methodology_talk": "фраза «сильнее обычного дневного шага» — язык методологии из запрещённого списка"
-    },
-    "model_verdict": "брак",
-    "one_line": "выдуманные детали (RuStore, точное время) и методологический жаргон поверх штампованной концовки и противоречия с диапазоном из предыдущего поста треда",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "no_invented_facts",
-      "no_self_contradiction",
-      "conclusion_not_boilerplate",
       "format_ok",
-      "no_methodology_talk"
-    ]
-  },
-  {
-    "id": 745,
-    "status": "rejected",
-    "signal_minus_news_days": 4,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [
-        "Индикатор Frame"
-      ],
-      "length": 725,
-      "length_ok": true,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 3,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": false
-    },
-    "evidence": {
-      "no_self_contradiction": "перекос net/gross указан как +68,2% (положительный = позиция ещё чистый лонг), но абзацем выше утверждается, что чистая позиция «ушла глубже в минус» — это ровно запрещённый случай «нарастили шорт» при положительном перекосе",
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни",
-      "no_brand_selfref": "бренд в теле: Индикатор Frame"
-    },
-    "model_verdict": "брак",
-    "one_line": "Самоупоминание бренда, знаковое противоречие (перекос-лонг vs «ушла в минус») и штампованный финал «покажут ближайшие дни»",
-    "verdict": "брак",
-    "failed": [
-      "no_self_contradiction",
-      "conclusion_not_boilerplate",
-      "no_brand_selfref"
+      "no_methodology_talk",
+      "length_ok"
+    ],
+    "defects": [
+      "format_ok",
+      "no_methodology_talk",
+      "length_ok"
     ]
   },
   {
@@ -471,7 +67,7 @@
       ],
       "length": 929,
       "length_ok": true,
-      "numbers_sparse": false,
+      "numbers_density": false,
       "max_numbers_in_para": 7,
       "has_signature": true,
       "has_hashtag": true,
@@ -486,70 +82,37 @@
       "time_arrow_ok": true,
       "has_thesis": true,
       "link_earned": true,
-      "conclusion_not_boilerplate": false,
       "no_redundancy": true,
+      "conclusion_not_boilerplate": false,
+      "no_brand_selfref": false,
+      "numbers_density": false,
       "format_ok": false,
       "no_methodology_talk": false,
-      "length_ok": true,
-      "no_brand_selfref": false
+      "length_ok": true
     },
     "evidence": {
       "conclusion_not_boilerplate": "штамп: один сигнал - не приговор",
-      "format_ok": "тире «—» вместо «-» в трёх местах (у 2060,51 —; Мосбиржа —; сигнал —)",
-      "no_methodology_talk": "«в ×3.36 раза сильнее обычного» - сравнение с базовым уровнем, язык методологии",
-      "no_brand_selfref": "бренд в теле: Данные Frame"
+      "no_brand_selfref": "бренд в теле: Данные Frame",
+      "numbers_density": "абзац 2 содержит 6 показателей (×3.36, ×4.69, ×4.47, ×3.39, ×4.12, ×3.11) при лимите 3",
+      "format_ok": "тире «—» вместо одинарного «-» минимум трижды: после «2060,51», после «Мосбиржа», в финальном абзаце",
+      "no_methodology_talk": "«в ×3.36 раза сильнее обычного» — язык методологии, объясняющий множитель через «обычное» значение"
     },
     "model_verdict": "брак",
-    "one_line": "Называет бренд «Frame» напрямую, ставит длинное тире вместо дефиса и закрывает пост дословным штампом «один сигнал - не приговор».",
-    "verdict": "брак",
+    "one_line": "Фактура держится (доп. цифры по другим тикерам и перекосу — legit-исключение), но пост тонет в собственной плотности: 6 множителей в одном абзаце, штампованный финал, брендинг «Frame» и тире вместо дефиса.",
+    "verdict": "годится",
     "failed": [
       "conclusion_not_boilerplate",
+      "no_brand_selfref",
+      "numbers_density",
       "format_ok",
-      "no_methodology_talk",
-      "no_brand_selfref"
-    ]
-  },
-  {
-    "id": 773,
-    "status": "rejected",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 915,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 6,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": true,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": true,
-      "no_redundancy": true,
-      "format_ok": false,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "«в тот же день» подразумевает, что сигнал ОИ (16 июля) совпадает по дате с обвалом/новостью, но по брифу новость — 17 июля, сигнал на день раньше; дата-привязка искажена",
-      "format_ok": "многократно использовано длинное тире «—» вместо одинарного «-» (обвалился на 17% —, сигнал ×3.91 —, VK —, причину — но день, гэп — вопрос, ясности — нет и др.)"
-    },
-    "model_verdict": "брак",
-    "one_line": "Фактура и хедж выстроены аккуратно, но пост систематически нарушает формат (длинное тире вместо короткого) и смазывает дату сигнала как «тот же день», хотя он на сутки раньше новости.",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "format_ok"
+      "no_methodology_talk"
+    ],
+    "defects": [
+      "conclusion_not_boilerplate",
+      "no_brand_selfref",
+      "numbers_density",
+      "format_ok",
+      "no_methodology_talk"
     ]
   },
   {
@@ -564,7 +127,7 @@
       "brand_mentions": [],
       "length": 1076,
       "length_ok": true,
-      "numbers_sparse": false,
+      "numbers_density": false,
       "max_numbers_in_para": 5,
       "has_signature": true,
       "has_hashtag": true,
@@ -579,61 +142,32 @@
       "time_arrow_ok": true,
       "has_thesis": true,
       "link_earned": true,
-      "conclusion_not_boilerplate": false,
       "no_redundancy": true,
+      "conclusion_not_boilerplate": false,
+      "no_brand_selfref": true,
+      "numbers_density": false,
       "format_ok": false,
       "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
+      "length_ok": true
     },
     "evidence": {
       "conclusion_not_boilerplate": "штамп: один сигнал - не приговор; однозначно трактовать",
-      "format_ok": "Многократно использовано тире «—» вместо требуемого одинарного «-» (Причина —, 69,2% —, Полюсе —, Один сигнал —)"
+      "numbers_density": "абзац про другие тикеры содержит 5 множителей (VK, Сбер-преф, АЛРОСА, Аэрофлот, Самолет) в одном абзаце",
+      "format_ok": "тире оформлено как «—» минимум 4 раза вместо «-»; последняя строка-вопрос идёт отдельным абзацем без ◽️"
     },
-    "model_verdict": "спорно",
-    "one_line": "Фактура чистая и тезис держится, но концовка собрана из хеджирующих штампов, а тире набрано неправильным символом",
-    "verdict": "брак",
+    "model_verdict": "брак",
+    "one_line": "Факты чистые и без выдумок, но финал — штамп, тире оформлено неправильно, а абзац с чужими тикерами перегружен пятью числами.",
+    "verdict": "годится",
     "failed": [
       "conclusion_not_boilerplate",
+      "numbers_density",
+      "format_ok"
+    ],
+    "defects": [
+      "conclusion_not_boilerplate",
+      "numbers_density",
       "format_ok"
     ]
-  },
-  {
-    "id": 797,
-    "status": "rejected",
-    "signal_minus_news_days": 3,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 849,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 5,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": true,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {},
-    "model_verdict": "годится",
-    "one_line": "Даты и цифры согласованы, тезис конкретный, финал завязан на цифры, а не штамп",
-    "verdict": "годится",
-    "failed": []
   },
   {
     "id": 845,
@@ -646,7 +180,7 @@
       ],
       "length": 597,
       "length_ok": true,
-      "numbers_sparse": true,
+      "numbers_density": true,
       "max_numbers_in_para": 2,
       "has_signature": true,
       "has_hashtag": true,
@@ -661,288 +195,26 @@
       "time_arrow_ok": false,
       "has_thesis": true,
       "link_earned": true,
-      "conclusion_not_boilerplate": true,
       "no_redundancy": true,
+      "conclusion_not_boilerplate": true,
+      "no_brand_selfref": false,
+      "numbers_density": true,
       "format_ok": true,
       "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": false
+      "length_ok": true
     },
     "evidence": {
-      "time_arrow_ok": "«Толпа шла в шорт ещё до ралли» — сигнал ОИ датирован 23 июля, новость 20 июля, то есть шорт нарастили ПОСЛЕ ралли (реакция), а не до него",
+      "time_arrow_ok": "«Толпа шла в шорт ещё до ралли» — сигнал датирован 23.07, новость 20.07, шорт нарастили ПОСЛЕ ралли, а не до",
       "no_brand_selfref": "бренд в теле: индикатор Frame"
     },
     "model_verdict": "брак",
-    "one_line": "Сильный тезис про шорт-сквиз испорчен ложным порядком событий (шорт назван добраллийным при сигнале спустя 3 дня после новости) и прямым упоминанием бренда Frame",
+    "one_line": "Сильный сигнал и тезис, но пост переворачивает порядок дат (шорт выдан за опережающий, хотя это реакция) и называет бренд по имени",
     "verdict": "брак",
     "failed": [
       "time_arrow_ok",
       "no_brand_selfref"
-    ]
-  },
-  {
-    "id": 879,
-    "status": "draft_ready",
-    "signal_minus_news_days": 2,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [],
-      "length": 988,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 4,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": false,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "no_self_contradiction": "Заголовок «Инфляция бьёт рекорд» переигрывает бриф: там речь об ОЖИДАНИЯХ (не инфляции) и о максимуме С НАЧАЛА ГОДА (не рекорде), а тело поста это формулирует верно — заголовок расходится с собственным телом",
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни",
-      "no_redundancy": "Абзац про РТС/Яндекс/Мечел/Астру — список чужих тикеров, тут же сам себя дисклеймящий фразой «нервничает явно не только рынок ОФЗ»"
-    },
-    "model_verdict": "брак",
-    "one_line": "Заголовок переигрывает данные (ожидания→«инфляция», годовой максимум→«рекорд»), а финал и список чужих тикеров собраны из штампов и самодисклейма",
-    "verdict": "брак",
-    "failed": [
-      "no_self_contradiction",
-      "conclusion_not_boilerplate",
-      "no_redundancy"
-    ]
-  },
-  {
-    "id": 1031,
-    "status": "draft_ready",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [],
-      "length": 984,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 6,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни"
-    },
-    "model_verdict": "спорно",
-    "one_line": "фактура, формат и тезис в порядке, но финал — штамп «покажут ближайшие дни», дословно повторённый из прошлого поста",
-    "verdict": "спорно",
-    "failed": [
-      "conclusion_not_boilerplate"
-    ]
-  },
-  {
-    "id": 1034,
-    "status": "draft_ready",
-    "signal_minus_news_days": 3,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 840,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 10,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": true,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {},
-    "model_verdict": "годится",
-    "one_line": "Числа и порядок дат корректны, положительный перекос верно трактован как сохраняющийся чистый лонг, вывод завязан на конкретные цифры поста.",
-    "verdict": "годится",
-    "failed": []
-  },
-  {
-    "id": 1102,
-    "status": "draft_ready",
-    "signal_minus_news_days": 2,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [],
-      "length": 745,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 4,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": false,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "no_self_contradiction": "Заголовок «снова в лонге» подразумевает, что физлица выходили из лонга и вернулись, но по своим же цифрам поста перекос net/gross весь месяц оставался положительным (83,8% против максимума 91,6%, просто снижался) - позиция ни разу не переставала быть чистым лонгом.",
-      "link_earned": "«Срочка отреагировала сразу» подаёт связь отчётности и скачка ОИ как прямую причинность, хотя сигнал датирован на 2 дня позже новости и данные - это только совпадение по времени.",
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни"
-    },
-    "model_verdict": "брак",
-    "one_line": "Цифры отслеживаются к брифу, но заголовок противоречит собственным данным поста, связь новости и сигнала подана как прямая причинность, а концовка - штамп из запрещённого списка.",
-    "verdict": "брак",
-    "failed": [
-      "no_self_contradiction",
-      "link_earned",
-      "conclusion_not_boilerplate"
-    ]
-  },
-  {
-    "id": 1104,
-    "status": "draft_ready",
-    "signal_minus_news_days": 2,
-    "code": {
-      "stock_phrases": [
-        "покажут ближайшие дни"
-      ],
-      "brand_mentions": [],
-      "length": 811,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 5,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": true,
-      "no_self_contradiction": false,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "«14 июля» — точная дата, которой нет ни в брифе, ни в prior_post (там только «две недели назад» от 28.07, без даты)",
-      "no_self_contradiction": "перекос описан как выросший «против тренда» (т.е. в сторону лонга), и тот же скачок 5,31х 30 июля в prior_post прямо назван «однозначно лонговым», но черновик утверждает, что направление скачка не определить",
-      "conclusion_not_boilerplate": "штамп: покажут ближайшие дни"
-    },
-    "model_verdict": "брак",
-    "one_line": "Хорошая фактура по отчёту, но пост сам себе противоречит по направлению позиции и закрывается тем же клише, что и предыдущий пост",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "no_self_contradiction",
-      "conclusion_not_boilerplate"
-    ]
-  },
-  {
-    "id": 1185,
-    "status": "draft_ready",
-    "signal_minus_news_days": 0,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [
-        "индикатор Frame"
-      ],
-      "length": 792,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 6,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": false
-    },
-    "evidence": {
-      "conclusion_not_boilerplate": "Финал «сигнал заметный, но не однозначный... Стоит последить» — штамп из запрещённого списка, переставляется в любой пост",
-      "no_brand_selfref": "бренд в теле: индикатор Frame"
-    },
-    "model_verdict": "брак",
-    "one_line": "Фактура и логика в порядке, но пост называет бренд по имени и закрывается штампованным хеджем вместо вывода из конкретных цифр",
-    "verdict": "брак",
-    "failed": [
-      "conclusion_not_boilerplate",
+    ],
+    "defects": [
       "no_brand_selfref"
     ]
   },
@@ -955,7 +227,7 @@
       "brand_mentions": [],
       "length": 682,
       "length_ok": true,
-      "numbers_sparse": false,
+      "numbers_density": false,
       "max_numbers_in_para": 5,
       "has_signature": true,
       "has_hashtag": true,
@@ -970,108 +242,19 @@
       "time_arrow_ok": true,
       "has_thesis": true,
       "link_earned": true,
-      "conclusion_not_boilerplate": true,
       "no_redundancy": true,
+      "conclusion_not_boilerplate": true,
+      "no_brand_selfref": true,
+      "numbers_density": true,
       "format_ok": true,
       "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
+      "length_ok": true
     },
     "evidence": {},
     "model_verdict": "годится",
-    "one_line": "Факты сведены к брифу, перекос трактован верно (положительный = лонг), связь новости и сигнала подана как совпадение, а не причинность, вывод опирается на конкретные цифры поста.",
+    "one_line": "Тезис ясен (физики уже в лонге и есть куда расти), связь новости и сигнала захеджирована через 'совпало', вывод завязан на конкретные цифры поста, а не на штамп.",
     "verdict": "годится",
-    "failed": []
-  },
-  {
-    "id": 1357,
-    "status": "draft_ready",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [],
-      "brand_mentions": [],
-      "length": 855,
-      "length_ok": true,
-      "numbers_sparse": true,
-      "max_numbers_in_para": 3,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": true,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": true,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": false,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "conclusion_not_boilerplate": "Финальная фраза «покажут не сегодняшние проценты, а ближайшие дни» почти дословно совпадает с запрещённым штампом «покажут ближайшие дни» — подставь любой другой тикер, ничего не изменится",
-      "no_redundancy": "Последние два предложения абзаца дублируют одну и ту же мысль (тренд может дойти до дна / а может выдохнуться — куда пойдёт дальше, покажут дни)"
-    },
-    "model_verdict": "спорно",
-    "one_line": "Фактура и тезис в порядке, но финал скатывается в штамп «покажут ближайшие дни», да ещё и задвоен соседним предложением",
-    "verdict": "брак",
-    "failed": [
-      "conclusion_not_boilerplate",
-      "no_redundancy"
-    ]
-  },
-  {
-    "id": 1488,
-    "status": "draft_ready",
-    "signal_minus_news_days": -1,
-    "code": {
-      "stock_phrases": [
-        "стоит последить",
-        "однозначно трактовать"
-      ],
-      "brand_mentions": [],
-      "length": 623,
-      "length_ok": true,
-      "numbers_sparse": false,
-      "max_numbers_in_para": 4,
-      "has_signature": true,
-      "has_hashtag": true,
-      "has_em_dash": false,
-      "has_markdown": false,
-      "methodology_phrase": false
-    },
-    "items": {
-      "numbers_traceable": false,
-      "no_invented_facts": true,
-      "no_self_contradiction": true,
-      "time_arrow_ok": true,
-      "has_thesis": true,
-      "link_earned": false,
-      "conclusion_not_boilerplate": false,
-      "no_redundancy": true,
-      "format_ok": true,
-      "no_methodology_talk": true,
-      "length_ok": true,
-      "no_brand_selfref": true
-    },
-    "evidence": {
-      "numbers_traceable": "«31 июля» как дата предыдущего поста не совпадает с брифом (пост #1104 датирован 2026-07-28)",
-      "link_earned": "дипломатический запрос ЕС к Турции назван «новым санкционным витком», хотя бриф (Шаг А) явно указывает: «это пока лишь дипломатический запрос, а не введённые санкции»",
-      "conclusion_not_boilerplate": "штамп: стоит последить; однозначно трактовать"
-    },
-    "model_verdict": "брак",
-    "one_line": "Готовый шаблонный финал из двух запрещённых штампов плюс завышение статуса новости до «санкционного витка», которого сам бриф не подтверждает",
-    "verdict": "брак",
-    "failed": [
-      "numbers_traceable",
-      "link_earned",
-      "conclusion_not_boilerplate"
-    ]
+    "failed": [],
+    "defects": []
   }
 ]
