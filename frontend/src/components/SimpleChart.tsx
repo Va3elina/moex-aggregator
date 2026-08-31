@@ -4,6 +4,7 @@ import ChartNavigator from './ChartNavigator';
 import ChartWatermark from './ChartWatermark';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnimation';
 import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
+import { useNoChartAnim } from './chart/chartAnim';
 import { fluid } from '../config/fluidScale';
 import { computeChartTopLineY } from './chart/datePillLayout';
 import ChartDatePill from './chart/ChartDatePill';
@@ -435,6 +436,9 @@ export default function SimpleChart({
   // берёт полный chartWidth (и продолжает следовать за resize'ом).
   const [revealW, setRevealW] = useState<number | null>(null);
   const revealAnimRef = useRef<number | null>(null);
+  // Песочница: entrance-reveal выключен (см. chart/chartAnim.ts) — ремонт панели
+  // после ⤢/свернуть иначе переигрывает «рисование» линии на всех графиках.
+  const noAnim = useNoChartAnim();
   const chartWidthRef = useRef(0);
 
   // === Pill width — точное измерение через getBBox (не canvas-предсказание).
@@ -547,6 +551,7 @@ export default function SimpleChart({
   // с данными (см. animateMorph). Длительность/изинг — как у прежнего CSS
   // .chart-reveal (1s), финал — revealW=null (rect следует за chartWidth).
   useEffect(() => {
+    if (noAnim) { setRevealW(null); return; }
     if (!revealed) return;
     // ⚠️ Нарочно БЕЗ prefers-reduced-motion: на Windows настройка «эффекты
     // анимации» выключена у многих по умолчанию и матчится reduce во всех
@@ -570,7 +575,7 @@ export default function SimpleChart({
     return () => {
       if (revealAnimRef.current) cancelAnimationFrame(revealAnimRef.current);
     };
-  }, [revealed]);
+  }, [revealed, noAnim]);
 
   // Непрерывный зум-вьюпорт (TradingView-style): колесо над ЦЕНОВОЙ осью (лев/прав
   // полосы) → верт. масштаб (yZoom); над ТЕЛОМ/ОСЬЮ ДАТ → плавно зумит окно navRange

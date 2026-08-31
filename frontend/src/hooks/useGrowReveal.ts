@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNoChartAnim } from '../components/chart/chartAnim';
 
 /**
  * useGrowReveal — «grow-from-zero» волна прогресса для entrance-анимаций графиков.
@@ -38,7 +39,9 @@ export function useGrowReveal(
   opts: GrowRevealOptions = {},
 ): number[] {
   const { stagger = 70, duration = 900, maxStagger = 800 } = opts;
-  const reduced = prefersReducedMotion();
+  // noAnim (песочница, см. chartAnim.ts) читается как reduced: прогресс сразу 1.
+  const noAnim = useNoChartAnim();
+  const reduced = noAnim || prefersReducedMotion();
 
   const [progress, setProgress] = useState<number[]>(
     () => new Array(Math.max(0, count)).fill(reduced ? 1 : 0),

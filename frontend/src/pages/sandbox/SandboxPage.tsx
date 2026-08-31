@@ -36,6 +36,7 @@ import ThemeGlyph from '../../components/ThemeGlyph';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { EmbedPidCtx } from '../embed/embedPersist';
 import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
+import { NoChartAnimCtx } from '../../components/chart/chartAnim';
 import FrameLogo from '../../components/FrameLogo';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -679,6 +680,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
   }, [confirmSheet]);
 
   return (
+    <NoChartAnimCtx.Provider value={true}>
     <ChartPrefsCtx.Provider value={chartPrefsValue}>
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
       {maximizedPanel ? (
@@ -1062,6 +1064,7 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       {!maximizedPanel && <div style={footNote}>песочница · приватный превью</div>}
     </div>
     </ChartPrefsCtx.Provider>
+    </NoChartAnimCtx.Provider>
   );
 }
 

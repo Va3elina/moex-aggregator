@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ANIMATION } from '../../config/chartTheme';
+import { useNoChartAnim } from './chartAnim';
 
 /**
  * Entrance-reveal только серий графика (оси/сетка/легенда видны сразу):
@@ -28,7 +29,9 @@ export function useChartReveal(
   fullWidth: number,
   restartKey?: unknown,
 ): number | null {
-  const [revealW, setRevealW] = useState<number | null>(0);
+  // Песочница: entrance-анимаций нет — сразу полная ширина (см. chartAnim.ts).
+  const noAnim = useNoChartAnim();
+  const [revealW, setRevealW] = useState<number | null>(noAnim ? null : 0);
   const widthRef = useRef(fullWidth);
   widthRef.current = fullWidth;
   const rafRef = useRef<number | null>(null);
@@ -41,6 +44,7 @@ export function useChartReveal(
   const keyRef = useRef(restartKey);
 
   useEffect(() => {
+    if (noAnim) { setRevealW(null); return; }
     if (!start) return;
     const keyChanged = keyRef.current !== restartKey;
     keyRef.current = restartKey;
@@ -63,7 +67,7 @@ export function useChartReveal(
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [start, restartKey]);
+  }, [start, restartKey, noAnim]);
 
   return revealW;
 }
