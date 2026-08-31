@@ -439,6 +439,46 @@ export default function FlowsHistogram({
         return null;
     }, [visIdx, flows]);
 
+    // ── Кружки на линии индекса: маркер конца линии + бегущий под курсором. ──
+    // Панель растянута (viewBox 1000×1000 при preserveAspectRatio="none"), так что
+    // SVG-<circle> стал бы эллипсом — кружки рисуем HTML-оверлеем поверх области
+    // серий, позиция в процентах той же системы координат. Без transform:
+    // html2canvas его игнорирует и в PNG-экспорте кружок уехал бы от линии.
+    const END_DOT_R = 3;                              // как linePrimaryW * 1.5 в SimpleChart
+    const HOVER_DOT_R = cssVar('--dot-primary-r', 5);
+
+    const endDot = useMemo(
+        () => (hasPrice && linePts.length > 0 ? linePts[linePts.length - 1] : null),
+        [hasPrice, linePts],
+    );
+
+    // Кружок обязан лежать НА линии, поэтому Y берём интерполяцией ломаной под
+    // вертикалью курсора, а не закрытием слота (внутри слота точек несколько).
+    const hoverDot = useMemo(() => {
+        if (!hasPrice || hoveredI == null || linePts.length === 0) return null;
+        const x = slotX(hoveredI);
+        if (x <= linePts[0].x) return { x, y: linePts[0].y };
+        const last = linePts[linePts.length - 1];
+        if (x >= last.x) return { x, y: last.y };
+        let k = 0;
+        while (k < linePts.length - 2 && linePts[k + 1].x < x) k++;
+        const a = linePts[k];
+        const b = linePts[k + 1];
+        const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+        return { x, y: a.y + (b.y - a.y) * t };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasPrice, hoveredI, linePts, visStart, visCount]);
+
+    const dotStyle = (x: number, y: number, r: number): React.CSSProperties => ({
+        position: 'absolute',
+        left: `calc(${(x / 10).toFixed(3)}% - ${r}px)`,
+        top: `calc(${(y / 10).toFixed(3)}% - ${r}px)`,
+        width: r * 2,
+        height: r * 2,
+        borderRadius: '50%',
+        background: INDEX_LINE_COLOR,
+    });
+
     // Ширина бара: 66% слота, но не шире 22 юнитов (узкое окно → не распухают).
     const barHalf = Math.min((0.33 / visCount) * 1000, 22);
     // Минимальная видимая высота ненулевого бара (юниты viewBox) — как прежние 1.2%.
@@ -570,6 +610,21 @@ export default function FlowsHistogram({
                                         )}
                                         {hoveredI !== null && crosshair(hoveredI)}
                                     </svg>
+                                </div>
+                                {/* Кружки линии индекса — оверлеем над областью серий
+                                    (в растянутом viewBox круг превратился бы в эллипс).
+                                    Конец линии проявляется вместе с reveal: пока штора
+                                    не дошла до последней точки, кружок скрыт. */}
+                                <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, left: padArea.left, right: padArea.right }}>
+                                    {endDot && (revealW == null || revealW >= endDot.x) && (
+                                        <div style={dotStyle(endDot.x, endDot.y, END_DOT_R)} />
+                                    )}
+                                    {hoverDot && (
+                                        <div
+                                            className="chart-hover-ui"
+                                            style={{ ...dotStyle(hoverDot.x, hoverDot.y, HOVER_DOT_R), boxShadow: '0 0 0 2px #0B0D12' }}
+                                        />
+                                    )}
                                 </div>
                                 {/* Ось Y индекса — справа. */}
                                 <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 14px)', bottom: 0, right: 0, width: padArea.right }}>
