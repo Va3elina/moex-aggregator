@@ -687,40 +687,14 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
     <NoChartAnimCtx.Provider value={true}>
     <ChartPrefsCtx.Provider value={chartPrefsValue}>
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
-      {maximizedPanel ? (
-        // ⤢ Развернуть — полный оверлей на весь sb-root (не «окно покрупнее»):
-        // шапка песочницы и остальные панели не рендерятся вообще, вместо шапки —
-        // собственный тулбар индикатора (ассет/таймфрейм/… + кнопка «Свернуть» на
-        // месте «Развернуть», см. SandboxWindowCtx.maximized в EmbedToolbar).
-        // data-sbtheme/data-theme ОБЯЗАТЕЛЬНЫ и здесь: без них CSS-переменные
-        // наследовались бы от .sb-root, а SandboxThemeScope обновляет только
-        // React-контекст (LwChart.dark) — фон/токены разъехались бы с графиком.
-        // У обычной панели эти атрибуты есть (см. ниже), у развёрнутой их забыли.
-        <div
-          className="sb-max"
-          data-sbtheme={maximizedPanel.themeOverride || st.sbTheme}
-          data-theme={(maximizedPanel.themeOverride || st.sbTheme) === 'light' ? 'editorial-light' : 'editorial-dark'}
-          style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}
-        >
-          <SandboxWindowCtx.Provider
-            value={{
-              onExpand: () => toggleMaximize(maximizedPanel.id),
-              maximized: true,
-              onClose: () => close(maximizedPanel.id),
-              onResize: (w, h) => resizePanel(maximizedPanel.id, w, h),
-            }}
-          >
-            <EmbedPidCtx.Provider value={maximizedPanel.id}>
-              <SandboxThemeScope eff={maximizedPanel.themeOverride || st.sbTheme}>
-                {renderIndicator(maximizedPanel.type, maximizedPanel.cfg, onSignal)}
-              </SandboxThemeScope>
-            </EmbedPidCtx.Provider>
-          </SandboxWindowCtx.Provider>
-        </div>
-      ) : (
-      <>
+      {/* ⤢ Развернуть — НЕ отдельное дерево-оверлей: раньше maximized рендерил
+          свой .sb-max и размонтировал обычный холст, а «Свернуть» — наоборот,
+          и каждый тоггл перезагружал ВСЕ графики листа (рефетч + «Загрузка…»).
+          Теперь холст смонтирован всегда: развёрнутая панель растягивается
+          CSS'ом на весь sb-root, остальные прячутся visibility:hidden — тот же
+          приём, что со слоями листов (см. mountedSheetsRef, #1221). */}
       {/* ── Топбар 56px (§3.1) ── */}
-      <div style={topbarStyle}>
+      <div style={maximizedPanel ? { ...topbarStyle, display: 'none' } : topbarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {/* Бренд-марк как в шапке сайта: глиф + wordmark «FRAME» (латиница, акцент).
               Клик по логотипу — выход на главный сайт. */}
@@ -835,7 +809,8 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
       </div>
 
       {/* ── Холст (§3.2) ── */}
-      <div ref={canvasRef} style={canvasStyle}>
+      {/* При maximized холст забирает и полосу топбара (тот скрыт). */}
+      <div ref={canvasRef} style={maximizedPanel ? { ...canvasStyle, top: 0 } : canvasStyle}>
         <div style={gridBgStyle(prefs.grid)} />
 
         {panels.length === 0 && (
@@ -872,17 +847,25 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
           >
           {(st.bySheet[sh.id] || []).map((p) => {
           const eff = p.themeOverride || st.sbTheme;
+          // Развёрнутая панель (⤢): та же нода растягивается на весь холст —
+          // без рамки/тени/скругления, поверх остальных (они прячутся, но
+          // остаются смонтированными — графики не перезагружаются). Класс
+          // sb-max добавляем ей же: css-правила тултипов написаны и на него.
+          const isMax = maximizedId === p.id;
+          const hiddenByMax = !!maximizedPanel && !isMax;
           return (
           <div
             key={p.id}
-            className="sb-panel"
+            className={isMax ? 'sb-panel sb-max' : 'sb-panel'}
             data-sbtheme={eff}
             data-theme={eff === 'light' ? 'editorial-light' : 'editorial-dark'}
-            style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, pointerEvents: sheetOn ? 'auto' : 'none', ...panelStyle }}
-            onPointerDown={(e) => onDragStart(e, p.id)}
+            style={isMax
+              ? { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: GUIDE_Z, ...panelStyle, border: 'none', borderRadius: 0, boxShadow: 'none' }
+              : { position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, pointerEvents: sheetOn && !hiddenByMax ? 'auto' : 'none', visibility: hiddenByMax ? 'hidden' : undefined, ...panelStyle }}
+            onPointerDown={isMax ? undefined : (e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: false, onClose: () => close(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => toggleMaximize(p.id), maximized: isMax, onClose: () => close(p.id), onResize: (w, h) => resizePanel(p.id, w, h) }}>
                 {/* EmbedPidCtx: настройки embed'а неймспейсятся по id панели —
                     две панели одного индикатора живут независимо (§2 мокапа). */}
                 <EmbedPidCtx.Provider value={p.id}>
@@ -892,10 +875,10 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
                 </EmbedPidCtx.Provider>
               </SandboxWindowCtx.Provider>
             </div>
-            {HANDLES.map((hd) => (
+            {!isMax && HANDLES.map((hd) => (
               <div key={hd.dir} onPointerDown={(e) => onResizeStart(e, p.id, hd.dir)} style={{ position: 'absolute', zIndex: 2, ...hd.style }} />
             ))}
-            <div key={N_HANDLE.dir} onPointerDown={(e) => onResizeStart(e, p.id, N_HANDLE.dir)} style={{ position: 'absolute', ...N_HANDLE.style }} />
+            {!isMax && <div key={N_HANDLE.dir} onPointerDown={(e) => onResizeStart(e, p.id, N_HANDLE.dir)} style={{ position: 'absolute', ...N_HANDLE.style }} />}
           </div>
           );
           })}
@@ -910,8 +893,6 @@ const edgesX = others.flatMap((q) => [q.x, q.x + q.w]);
             : { position: 'absolute', top: g.pos, left: 0, right: 0, height: 1, background: 'var(--accent)', opacity: 0.7, pointerEvents: 'none', zIndex: GUIDE_Z }} />
         ))}
       </div>
-      </>
-      )}
 
       {/* ── Контекст-меню листа (§3.3) ── */}
       {sheetMenu && (
