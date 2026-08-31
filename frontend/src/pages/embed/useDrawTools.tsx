@@ -12,7 +12,7 @@
  * ключ из ref (без гонки при быстром переключении).
  */
 import {
-  useCallback, useEffect, useLayoutEffect, useRef, useState, Suspense, lazy,
+  useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, Suspense, lazy,
   type ComponentType, type CSSProperties, type ReactNode,
 } from 'react';
 import {
@@ -69,6 +69,30 @@ const PALETTE_ROWS: string[][] = [
 ];
 const DASH_NAME: Record<LwDash, string> = { solid: 'Линия', dashed: 'Штриховой пунктир', dotted: 'Точечный пунктир' };
 
+// ── Общий «взведённый инструмент» на все графики окна ──
+// В песочнице открыто несколько панелей, и у каждой свой рейл рисования. Раньше
+// выбранный инструмент жил в стейте конкретной панели: взял «Тренд» на одном
+// графике, повёл мышью по соседнему — там рисование не взведено, и жест уходил
+// в панораму («ничего не рисуется»). Теперь инструмент и стиль общие на окно:
+// тул, взведённый на любом рейле, рисует на том графике, по которому кликнули.
+// Фигуры, выделение и персист при этом остаются у каждой панели свои.
+type SharedDrawStyle = {
+  tool: LwDrawTool; keep: boolean;
+  color: string; width: number; dash: LwDash; opacity: number;
+  fill: boolean; fillColor: string | null; fillOpacity: number;
+};
+let sharedDraw: SharedDrawStyle = {
+  tool: 'select', keep: false, color: '#FF5C2B', width: 2, dash: 'solid', opacity: 1,
+  fill: true, fillColor: null, fillOpacity: DEF_FILL_OPACITY,
+};
+const sharedDrawSubs = new Set<() => void>();
+const getSharedDraw = () => sharedDraw;
+const subscribeSharedDraw = (fn: () => void) => { sharedDrawSubs.add(fn); return () => { sharedDrawSubs.delete(fn); }; };
+const patchSharedDraw = (p: Partial<SharedDrawStyle>) => {
+  sharedDraw = { ...sharedDraw, ...p };
+  sharedDrawSubs.forEach((fn) => fn());
+};
+
 function drawToolBtn(active: boolean): CSSProperties {
   return {
     width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -79,7 +103,10 @@ function drawToolBtn(active: boolean): CSSProperties {
 }
 
 export interface DrawTools {
+  /** Слой рисования взведён (свой рейл ИЛИ инструмент, взятый на другом графике). */
   drawMode: boolean;
+  /** Рейл инструментов открыт именно НА ЭТОЙ панели (кнопка ✎). */
+  railOpen: boolean;
   setDrawMode: (v: boolean) => void;
   drawTool: LwDrawTool;
   drawColor: string;
@@ -140,20 +167,23 @@ export function useDrawTools(persistKey: string): DrawTools {
   const { rd, wr } = useEmbedPersist();
 
   const [exportOpen, setExportOpen] = useState(false);
-  const [drawMode, setDrawMode] = useState(false);
-  const [drawTool, setDrawTool] = useState<LwDrawTool>('select');
-  const [drawColor, setDrawColor] = useState('#FF5C2B');
+  // Инструмент и стиль — ОБЩИЕ на все панели окна (см. sharedDraw выше);
+  // локально панель помнит только, открыт ли на ней рейл (railOpen).
+  const sh = useSyncExternalStore(subscribeSharedDraw, getSharedDraw);
+  const [railOpen, setRailOpen] = useState(false);
+  const setDrawMode = useCallback((v: boolean) => {
+    setRailOpen(v);
+    // Закрыли рейл — разоружаем и общий инструмент: иначе все графики остались
+    // бы в перекрестье без единого видимого рейла.
+    if (!v) patchSharedDraw({ tool: 'select' });
+  }, []);
+  const setDrawTool = useCallback((t: LwDrawTool) => patchSharedDraw({ tool: t }), []);
+  const setDrawKeep = useCallback((v: boolean | ((p: boolean) => boolean)) =>
+    patchSharedDraw({ keep: typeof v === 'function' ? v(getSharedDraw().keep) : v }), []);
   const [drawings, setDrawings] = useState<LwDrawing[]>([]);
   const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
-  const [drawKeep, setDrawKeep] = useState(false);
   const [drawHidden, setDrawHidden] = useState(false);
   const [drawLocked, setDrawLocked] = useState(false);
-  const [drawWidth, setDrawWidth] = useState(2);
-  const [drawDash, setDrawDash] = useState<LwDash>('solid');
-  const [drawOpacity, setDrawOpacity] = useState(1);
-  const [drawFill, setDrawFill] = useState(true);
-  const [drawFillColor, setDrawFillColor] = useState<string | null>(null);
-  const [drawFillOpacity, setDrawFillOpacity] = useState(0.13);
   const [layersOpen, setLayersOpen] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -181,13 +211,15 @@ export function useDrawTools(persistKey: string): DrawTools {
     setDrawings((ds) => ds.map((d) => (d.id === selectedDrawId ? { ...d, ...patch } : d)));
     // Стиль последней правки запоминаем как дефолт для НОВЫХ фигур (как в
     // TradingView): раскрасил одну стрелку — следующая рисуется тем же цветом.
-    if (patch.color !== undefined) setDrawColor(patch.color);
-    if (patch.width !== undefined) setDrawWidth(patch.width);
-    if (patch.dash !== undefined) setDrawDash(patch.dash);
-    if (patch.opacity !== undefined) setDrawOpacity(patch.opacity);
-    if (patch.fill !== undefined) setDrawFill(patch.fill);
-    if (patch.fillColor !== undefined) setDrawFillColor(patch.fillColor);
-    if (patch.fillOpacity !== undefined) setDrawFillOpacity(patch.fillOpacity);
+    const sp: Partial<SharedDrawStyle> = {};
+    if (patch.color !== undefined) sp.color = patch.color;
+    if (patch.width !== undefined) sp.width = patch.width;
+    if (patch.dash !== undefined) sp.dash = patch.dash;
+    if (patch.opacity !== undefined) sp.opacity = patch.opacity;
+    if (patch.fill !== undefined) sp.fill = patch.fill;
+    if (patch.fillColor !== undefined) sp.fillColor = patch.fillColor;
+    if (patch.fillOpacity !== undefined) sp.fillOpacity = patch.fillOpacity;
+    if (Object.keys(sp).length) patchSharedDraw(sp);
   };
   const deleteSelected = () => {
     if (!selectedDrawId) return;
@@ -286,7 +318,7 @@ export function useDrawTools(persistKey: string): DrawTools {
   // Клавиатура в режиме рисования (как в TradingView) — e.code надёжнее e.key
   // (Alt+буква на Mac даёт диакритику через e.key).
   useEffect(() => {
-    if (!drawMode) return;
+    if (!railOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
         setDrawings((ds) => ds.filter((d) => d.id !== selectedDrawId)); setSelectedDrawId(null); return;
@@ -314,16 +346,20 @@ export function useDrawTools(persistKey: string): DrawTools {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drawMode, selectedDrawId, undoDraw, copyDraw, pasteDraw]);
+  }, [railOpen, selectedDrawId, undoDraw, copyDraw, pasteDraw]);
 
-  const onToolReset = useCallback(() => { if (!drawKeep) setDrawTool('select'); }, [drawKeep]);
+  const onToolReset = useCallback(() => { if (!getSharedDraw().keep) patchSharedDraw({ tool: 'select' }); }, []);
 
   return {
-    drawMode, setDrawMode, drawTool, drawColor, drawings, setDrawings, drawWidth, drawDash, drawOpacity,
-    drawFill, drawFillColor, drawFillOpacity,
+    // drawMode (взведённость слоя) шире railOpen: инструмент, взятый на рейле
+    // ЛЮБОЙ панели, должен рисовать и на этой — иначе жест уходит в панораму.
+    drawMode: railOpen || sh.tool !== 'select', railOpen,
+    setDrawMode, drawTool: sh.tool, drawColor: sh.color, drawings, setDrawings,
+    drawWidth: sh.width, drawDash: sh.dash, drawOpacity: sh.opacity,
+    drawFill: sh.fill, drawFillColor: sh.fillColor, drawFillOpacity: sh.fillOpacity,
     selectedDrawId, setSelectedDrawId, drawHidden, setDrawHidden, drawLocked, setDrawLocked,
     onToolReset, exportOpen, setExportOpen,
-    drawKeep, setDrawKeep, setDrawTool, layersOpen, setLayersOpen,
+    drawKeep: sh.keep, setDrawKeep, setDrawTool, layersOpen, setLayersOpen,
     dragLayerId, setDragLayerId, reorderLayer,
     railOffset, setRailOffset, saveRailOffset,
     selRect, setSelRect, panelOffset, setPanelOffset, settingsOpen, setSettingsOpen,
@@ -346,11 +382,11 @@ export function DrawExportActions({ draw, visible, drawable = true }: {
       {drawable && (
       <button
         type="button"
-        onClick={() => { draw.setDrawMode(!draw.drawMode); draw.setSelectedDrawId(null); }}
+        onClick={() => { draw.setDrawMode(!draw.railOpen); draw.setSelectedDrawId(null); }}
         title="Рисование на графике"
         aria-label="Рисование на графике"
         className="emb-iconbtn"
-        style={iconBtnStyle(draw.drawMode)}
+        style={iconBtnStyle(draw.railOpen)}
       >
         <Pencil size={15} />
       </button>
@@ -831,7 +867,7 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
     const ro = new ResizeObserver(place);
     ro.observe(host);
     return () => ro.disconnect();
-  }, [draw.railOffset, draw.drawMode, visible]);
+  }, [draw.railOffset, draw.railOpen, visible]);
 
   const onRailGripDown = (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -851,10 +887,11 @@ export function DrawToolsOverlay({ draw, visible }: { draw: DrawTools; visible: 
   };
 
   if (!visible) return null;
-  // ВНЕ режима рисования оверлей не исчезает целиком: фигуры выделяются обычным
+  // БЕЗ своего рейла оверлей не исчезает целиком: фигуры выделяются обычным
   // кликом (как в TradingView), и панель свойств обязана открываться для правки.
-  // Рейл инструментов при этом не нужен — он про создание новых фигур.
-  if (!draw.drawMode) {
+  // Рейл инструментов при этом не нужен — он про создание новых фигур (и мог
+  // быть открыт на соседней панели — общий взведённый тул дорисует и здесь).
+  if (!draw.railOpen) {
     // Панель свойств + модалка настроек фигуры. Рейл инструментов не нужен —
     // он про создание новых фигур, а вне режима мы только правим готовые.
     return (
