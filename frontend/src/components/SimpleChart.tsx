@@ -140,6 +140,14 @@ const interpolatePoints = morphPts;
 const pointsToPath = ptsToPath;
 const pointsToAreaPath = ptsToArea;
 
+// Небольшой «воздух» справа от последней точки данных: раньше линия упиралась
+// ровно в правый край plot-области и последний день визуально обрезался клипом.
+// Зазор оставляет место под кружок на конце линии (см. end-dot в рендере).
+const CHART_END_GAP = 10;
+
+const lastPoint = (pts: { x: number; y: number }[]) =>
+  pts.length > 0 ? pts[pts.length - 1] : null;
+
 // Клампит стартовый индекс навигатора в [0, len-1]. undefined → 0 (вся история).
 const clampNavStart = (n: number | undefined, len: number) =>
   n != null && len > 0 ? Math.min(Math.max(0, Math.floor(n)), len - 1) : 0;
@@ -374,13 +382,27 @@ export default function SimpleChart({
 
   // Анимированные пути (area* — заливки под линиями для типа «Область»;
   // secondary/third area используются только при scope='all')
-  const [animatedPaths, setAnimatedPaths] = useState({
+  const [animatedPaths, setAnimatedPaths] = useState<{
+    primary: string;
+    area: string;
+    secondary: string;
+    areaSecondary: string;
+    third: string;
+    areaThird: string;
+    // Концы линий для end-dot'ов: кружки следуют за морфингом вместе с путями
+    endPrimary: { x: number; y: number } | null;
+    endSecondary: { x: number; y: number } | null;
+    endThird: { x: number; y: number } | null;
+  }>({
     primary: '',
     area: '',
     secondary: '',
     areaSecondary: '',
     third: '',
     areaThird: '',
+    endPrimary: null,
+    endSecondary: null,
+    endThird: null,
   });
 
   // Opacity для OI линий (для fade-in эффекта)
@@ -688,7 +710,10 @@ export default function SimpleChart({
       }
     }
 
-    const scaleX = (index: number, total: number) => (index / Math.max(total - 1, 1)) * chartWidth;
+    // plotW < chartWidth: последняя точка не долетает до края plot-области,
+    // чтобы её не резал chartClip и оставалось место под end-dot.
+    const plotW = Math.max(chartWidth - CHART_END_GAP, 1);
+    const scaleX = (index: number, total: number) => (index / Math.max(total - 1, 1)) * plotW;
     const scaleY = (value: number) => chartHeight - ((value - yMinVal) / (yMaxVal - yMinVal)) * chartHeight;
     const scaleSecondaryY = (value: number) =>
       chartHeight - ((value - secYMin) / (secYMax - secYMin)) * chartHeight;
@@ -775,7 +800,7 @@ export default function SimpleChart({
     // только сама дата, позиция метки и gridline остаётся фиксированной.
     const xTicks = Array.from({ length: xTickCount }, (_, i) => {
       const xRatio = i / Math.max(xTickCount - 1, 1);
-      const x = xRatio * chartWidth;
+      const x = xRatio * plotW; // тот же масштаб, что у точек — даты стоят под данными
       const index = Math.round(xRatio * (displayData.length - 1));
       return { time: displayData[index].time, x };
     });
@@ -806,6 +831,9 @@ export default function SimpleChart({
         areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
         areaThird: pointsToAreaPath(targetThird, chartHeight),
+        endPrimary: lastPoint(targetPrimary),
+        endSecondary: lastPoint(targetSecondary),
+        endThird: lastPoint(targetThird),
       });
       prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
       currentPointsRef.current = { primary: [], secondary: [], third: [] };
@@ -846,6 +874,9 @@ export default function SimpleChart({
         areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
         areaThird: pointsToAreaPath(targetThird, chartHeight),
+        endPrimary: lastPoint(targetPrimary),
+        endSecondary: lastPoint(targetSecondary),
+        endThird: lastPoint(targetThird),
       });
       prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
       currentPointsRef.current = { primary: [], secondary: [], third: [] };
@@ -871,6 +902,9 @@ export default function SimpleChart({
         areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
         areaThird: pointsToAreaPath(targetThird, chartHeight),
+        endPrimary: lastPoint(targetPrimary),
+        endSecondary: lastPoint(targetSecondary),
+        endThird: lastPoint(targetThird),
       });
       setOiOpacity(1);
       setRevealed(true);
@@ -938,6 +972,9 @@ export default function SimpleChart({
         areaSecondary: pointsToAreaPath(interpolatedSecondary, chartHeight),
         third: pointsToPath(interpolatedThird),
         areaThird: pointsToAreaPath(interpolatedThird, chartHeight),
+        endPrimary: lastPoint(interpolatedPrimary),
+        endSecondary: lastPoint(interpolatedSecondary),
+        endThird: lastPoint(interpolatedThird),
       });
 
       if (t < 1) {
@@ -1741,6 +1778,41 @@ export default function SimpleChart({
                 />
               )}
 
+              {/* Кружки на конце линий — маркер последнего актуального дня данных.
+                  Координаты идут из animatedPaths → следуют за морфингом и reveal
+                  (clipPath открывает их в конце entrance-анимации). При прогнозе
+                  (_forecastCount > 0) не рисуем: у пунктира свои end-кружки. */}
+              {_forecastCount === 0 && (
+                <>
+                  {showThird && chartMode === 'line' && !oiAsColumns && animatedPaths.endThird && (
+                    <circle
+                      cx={animatedPaths.endThird.x}
+                      cy={animatedPaths.endThird.y}
+                      r={tokens.lineSecondaryW * 1.5}
+                      fill={thirdColor}
+                      opacity={oiOpacity}
+                    />
+                  )}
+                  {showSecondary && chartMode === 'line' && !oiAsColumns && animatedPaths.endSecondary && (
+                    <circle
+                      cx={animatedPaths.endSecondary.x}
+                      cy={animatedPaths.endSecondary.y}
+                      r={tokens.lineSecondaryW * 1.5}
+                      fill={secondaryColor}
+                      opacity={oiOpacity}
+                    />
+                  )}
+                  {showPrimary && (primaryEffType === 'line' || primaryEffType === 'area') && animatedPaths.endPrimary && (
+                    <circle
+                      cx={animatedPaths.endPrimary.x}
+                      cy={animatedPaths.endPrimary.y}
+                      r={tokens.linePrimaryW * 1.5}
+                      fill={primaryColor}
+                    />
+                  )}
+                </>
+              )}
+
               {/* Затемнение области после курсора — только в plot (не в жёлобе). */}
               {tooltip.visible && !tooltip.inGutter && (
                 <rect
@@ -2216,7 +2288,7 @@ export default function SimpleChart({
                 }
               }
               if (dataIdx === -1) return null;
-              const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+              const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * Math.max(chartWidth - CHART_END_GAP, 1);
               return { ...ann, x, origIdx: idx };
             })
             .filter(Boolean) as (ChartAnnotation & { x: number; origIdx: number })[];
@@ -2286,7 +2358,7 @@ export default function SimpleChart({
           if (!ann) return null;
           const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
           if (dataIdx === -1) return null;
-          const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+          const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * Math.max(chartWidth - CHART_END_GAP, 1);
           return (
             <div className="absolute pointer-events-none" style={{ left: x, top: padding.top, height: chartHeight, width: 1 }}>
               <div className="w-full h-full" style={{ borderLeft: '1px dashed rgba(156, 163, 184, 0.4)' }} />
@@ -2304,7 +2376,7 @@ export default function SimpleChart({
         if (!wrap) return null;
         const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
         if (dataIdx === -1) return null;
-        const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+        const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * Math.max(chartWidth - CHART_END_GAP, 1);
         const annDate = new Date(ann.time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
