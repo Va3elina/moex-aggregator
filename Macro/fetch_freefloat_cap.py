@@ -143,7 +143,24 @@ def fetch_tickers(d: date) -> list:
 
 
 def fetch_ticker_ffcap(t: str, d: date):
-    """FF-капа бумаги t на дату d: cap_total × ff_factor, руб. None = нет данных."""
+    """FF-капа бумаги t на дату d + сами коэффициенты.
+
+    Возвращает (ffcap, ff_factor, w_factor) либо None, если данных нет.
+
+    ⚠️ Коэффициенты СОХРАНЯЮТСЯ, а не только их произведение (миграция 066). Раньше
+    здесь бралось cap_total × ff_factor и оба множителя выбрасывались — из-за этого
+    01.09.2026 нельзя было проверить своими данными строчку мандата «free-float
+    Татнефти с 32% до 49%», пришлось идти в ISS руками.
+
+    Ещё важнее w_factor: именно он решил исход прошлого мандата по Сберу —
+      18.06: ff=0,48  w=0,3000  вес 13,96%
+      19.06: ff=0,48  w=0,2759  вес 13,03%
+    free-float не менялся, срезали ограничивающий коэффициент, и вес ушёл за ним.
+    Без истории w_factor такие вещи видны только вручную и постфактум.
+
+    w_factor может отсутствовать или быть нулём — тогда он просто None, ffcap это не
+    ломает: он считается по ff_factor, как и раньше.
+    """
     data = _iss_json(ISS_TICKER.format(idx=INDEX_ID, t=t, d=d.isoformat()))
     cols = data["ticker"]["columns"]
     rows = data["ticker"]["data"]
@@ -153,7 +170,12 @@ def fetch_ticker_ffcap(t: str, d: date):
     cap, ff = rows[0][ci], rows[0][fi]
     if not cap or not ff or float(cap) <= 0 or float(ff) <= 0:
         return None
-    return float(cap) * float(ff)
+    wf = None
+    if "w_factor" in cols:
+        raw = rows[0][cols.index("w_factor")]
+        if raw not in (None, "") and float(raw) > 0:
+            wf = float(raw)
+    return float(cap) * float(ff), float(ff), wf
 
 
 def month_end(m: date) -> date:
@@ -203,7 +225,8 @@ def load_month(engine, m: date) -> int:
     if len(ffcaps) < MIN_TICKERS:
         log.error(f"  {m:%Y-%m}: валидных бумаг {len(ffcaps)} < {MIN_TICKERS} — пропуск месяца")
         return 0
-    basket = sum(ffcaps.values())
+    # ffcaps[t] = (ffcap, ff_factor, w_factor) — санити и корзина считаются по ffcap.
+    basket = sum(v[0] for v in ffcaps.values())
     if not (BASKET_MIN_RUB <= basket <= BASKET_MAX_RUB):
         log.error(f"  {m:%Y-%m}: Σ FF-кап {basket:.3e} вне санити-диапазона — пропуск")
         return 0
@@ -214,9 +237,11 @@ def load_month(engine, m: date) -> int:
         conn.execute(text("DELETE FROM freefloat_cap WHERE month = :m"), {"m": m})
         for secid, v in ffcaps.items():
             conn.execute(text("""
-                INSERT INTO freefloat_cap (sec_id, month, as_of, ffcap)
-                VALUES (:s, :m, :d, :c)
-            """), {"s": secid, "m": m, "d": as_of, "c": round(v, 2)})
+                INSERT INTO freefloat_cap (sec_id, month, as_of, ffcap,
+                                            ff_factor, w_factor)
+                VALUES (:s, :m, :d, :c, :ff, :wf)
+            """), {"s": secid, "m": m, "d": as_of, "c": round(v[0], 2),
+                    "ff": v[1], "wf": v[2]})
     log.info(f"  {m:%Y-%m}: {len(ffcaps)}/{len(tickers)} бумаг, срез {as_of}, "
              f"Σ FF-кап {basket / 1e12:.2f} трлн ₽")
     return len(ffcaps)
