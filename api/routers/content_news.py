@@ -593,7 +593,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
 
 # Версия контракта брифа — держать в согласии с signals/content_ai.py:BRIEF_VERSION.
 # Поднимать при каждом изменении набора полей брифа.
-_BRIEF_VERSION = 12
+_BRIEF_VERSION = 13
 
 
 # ── Шаг Г: судья ───────────────────────────────────────────────────────────
