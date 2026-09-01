@@ -568,3 +568,46 @@ def test_context_blocks_declare_volume_limit():
         src = inspect.getsource(fn)
         assert "ОБЪЁМ" in src, fn.__name__
         assert "ФОН" in src, fn.__name__
+
+
+def test_position_size_never_uses_percent_of_open_interest():
+    """Вадим 01.09: «формулировка процентов от ОИ очень не понятна и странная, так
+    вообще не пишем». Замер по корпусу подтвердил дословно: «% открытого интереса» —
+    0 постов из 1459, «доля … открытого интереса» — 0. Само словосочетание «открытый
+    интерес» встречается 6 раз, и в жанровом примере это НАЗВАНИЕ нашего индикатора.
+
+    Канал говорит про размер сравнением с пиком («приближается к пикам 2021 г.») или
+    местом среди бумаг («самый густонаселённый трейд»).
+    """
+    for args in ((("лонг", 5, [-24, 10, 50, 5], 3451, "год")),
+                 (("лонг", 45, [50, 45], 3451, "год")),
+                 (("шорт", 8, [-24, -8], -2333, "год"))):
+        out = CA._size_vs_peak(*args)
+        assert "открыт" not in out.lower(), out
+        assert "%" not in out, out
+        assert "доля" not in out.lower(), out
+
+
+def test_thin_position_compared_to_peak_as_round_multiple():
+    out = CA._size_vs_peak("лонг", 5, [-24, 10, 50, 5], 3451, "год")
+    assert out == "чистый лонг сейчас в 10 раз меньше, чем на пике за год", out
+
+
+def test_position_at_peak_says_so():
+    assert CA._size_vs_peak("лонг", 45, [50, 45], 3451, "год") == \
+        "чистый лонг — у своего максимума за год"
+
+
+def test_peak_is_taken_within_the_same_direction():
+    """Сравнивать лонг с пиковым шортом нельзя: это разные состояния толпы."""
+    out = CA._size_vs_peak("лонг", 5, [-90, 6], 3451, "год")
+    assert "в 18 раз" not in out, out
+    assert out == "чистый лонг — у своего максимума за год"
+
+
+def test_field_name_followed_the_content():
+    """Имя поля — интерфейс: «доля_..._в_ои» тянула обратно к процентам."""
+    import inspect
+    src = inspect.getsource(CA._position_phrases)
+    assert "размер_позиции_против_пика" in src
+    assert "доля_чистой_позиции_в_ои" not in src
