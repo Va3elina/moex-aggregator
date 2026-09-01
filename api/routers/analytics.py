@@ -755,6 +755,65 @@ async def list_users(
     }
 
 
+# Максимальный зазор между heartbeat'ами одного спана. Пульс идёт раз в 60с,
+# но вкладка в фоне молчит — 5 минут прощают короткие отлучки, а всё что
+# дольше честно рвёт спан на два «был на сайте».
+_HB_GAP_SEC = 300
+
+
+def _collapse_heartbeats(rows: list) -> list:
+    """Схлопывает подряд идущие session_heartbeat в один спан.
+
+    Вход/выход — кортежи формата timeline-запроса:
+    (event_type, event_path, payload, server_ts, ip_country, device, session_id),
+    отсортированные по server_ts DESC.
+
+    Без этого таймлайн юзера в админке — монотонная простыня «сидит на сайте»:
+    heartbeat идёт раз в минуту с КАЖДОЙ открытой вкладки (у каждой свой
+    session_id), поэтому схлопываем по времени, не по сессии. Любое другое
+    событие между пульсами рвёт спан — так виден переход между страницами.
+    Спан наследует форму обычного события; факт агрегации и границы — в payload
+    {beats, mins, from, to}, фронт рисует по нему «на сайте ~N мин».
+    """
+    out: list = []
+    run: list = []  # текущая пачка heartbeat'ов (DESC: [0] — самый свежий)
+
+    def flush() -> None:
+        if not run:
+            return
+        if len(run) == 1:
+            out.append(run[0])
+        else:
+            newest, oldest = run[0], run[-1]
+            mins = max(1, round((newest[3] - oldest[3]).total_seconds() / 60))
+            out.append((
+                newest[0],
+                newest[1],
+                {
+                    "beats": len(run),
+                    "mins": mins,
+                    "from": oldest[3].isoformat(),
+                    "to": newest[3].isoformat(),
+                },
+                newest[3],
+                newest[4],
+                newest[5],
+                newest[6],
+            ))
+        run.clear()
+
+    for row in rows:
+        if row[0] == "session_heartbeat":
+            if run and (run[-1][3] - row[3]).total_seconds() > _HB_GAP_SEC:
+                flush()
+            run.append(row)
+        else:
+            flush()
+            out.append(row)
+    flush()
+    return out
+
+
 @router.get("/users/{user_id}")
 async def user_detail(
     user_id: int,
@@ -825,14 +884,18 @@ async def user_detail(
             SELECT COALESCE(AVG(dur), 0)::int, COALESCE(SUM(dur), 0)::int FROM sess
         """), {"id": user_id, "cutoff": cutoff}).fetchone()
 
-        # Activity timeline (последние 100 events)
-        timeline = conn.execute(text("""
+        # Activity timeline. Сырых событий берём с запасом: heartbeat идёт раз в
+        # минуту с каждой открытой вкладки, и лимит в 100 строк целиком съедался
+        # монотонной простынёй «сидит на сайте». Подряд идущие heartbeat'ы ниже
+        # схлопываются в один спан (см. _collapse_heartbeats), 100 — уже после.
+        timeline_raw = conn.execute(text("""
             SELECT event_type, event_path, payload, server_ts, ip_country, device, session_id
             FROM analytics_events
             WHERE user_id = :id AND server_ts >= :cutoff
             ORDER BY server_ts DESC
-            LIMIT 100
+            LIMIT 2000
         """), {"id": user_id, "cutoff": cutoff}).fetchall()
+        timeline = _collapse_heartbeats(timeline_raw)[:100]
 
         # Top pages
         top_pages = conn.execute(text("""
