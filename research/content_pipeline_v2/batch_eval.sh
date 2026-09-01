@@ -45,6 +45,29 @@ $PSQL -At -c "SELECT id||' | '||judge_verdict||' | '||length(draft_text)||' зн
   ||coalesce(array_to_string(judge_defects,','),'—')
   FROM content_candidates WHERE id IN ($LIST) ORDER BY id;"
 
+echo; echo "== профиль стиля по батчу (эталон жанрового среза канала n=44)"
+# ⚠️ Профиль берётся из style_profile, который считает сам step-c при приёмке, то есть
+# он относится к тексту ПИСАТЕЛЯ. Если судья потом правил черновик, текст в базе уже
+# другой — это намеренно: мерить надо писателя, иначе правки судьи маскируют дрейф.
+#
+# ⚠️ Плотность чисел — главный признак, найденный 01.09. У канала 0,40 на 100 знаков;
+# черновики давали 1,13, а после дня сокращений 1,35 (стало ХУЖЕ, хотя каждый запрет
+# был верным). Самопроверка Шага В опустила до 0,52-0,72. Смотреть надо на неё в
+# первую очередь: она ловит «вырезали прозу, оставили цифры».
+$PSQL -At -c "
+WITH p AS (SELECT style_profile pr FROM content_candidates
+           WHERE id IN ($LIST) AND style_profile IS NOT NULL)
+SELECT 'признак              наш батч   эталон   отклонение'
+  || E'\n' || 'знаков              '||lpad(round(percentile_disc(0.5) WITHIN GROUP (ORDER BY (pr->'профиль'->>'знаков')::numeric))::text,8)||'      661'
+  || E'\n' || 'слов в предложении  '||lpad(round(percentile_disc(0.5) WITHIN GROUP (ORDER BY (pr->'профиль'->>'слов_в_предл')::numeric))::text,8)||'       11'
+  || E'\n' || 'чисел на 100 знаков '||lpad(round(percentile_disc(0.5) WITHIN GROUP (ORDER BY (pr->'профиль'->>'чисел_на_100зн')::numeric),2)::text,8)||'     0.40   << главный признак'
+  || E'\n' || 'доля предл. с числом'||lpad(round(percentile_disc(0.5) WITHIN GROUP (ORDER BY (pr->'профиль'->>'доля_предл_с_числом')::numeric),2)::text,8)||'     0.29'
+  || E'\n' || 'среднее отклонение  '||lpad(round(percentile_disc(0.5) WITHIN GROUP (ORDER BY (pr->>'среднее_отклонение')::numeric),2)::text,8)||'σ    0σ'
+FROM p;"
+$PSQL -At -c "
+SELECT 'без профиля (Шаг В не считал): '||count(*) FROM content_candidates
+WHERE id IN ($LIST) AND style_profile IS NULL;"
+
 echo; echo "== сводка (эталон канала: медиана 661 зн., четверть 559-833)"
 $PSQL -At -c "SELECT judge_verdict||': '||count(*) FROM content_candidates
   WHERE id IN ($LIST) GROUP BY judge_verdict ORDER BY count(*) DESC;"
