@@ -59,7 +59,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import FAQPage from './pages/FAQPage';
 import GlossaryPage from './pages/GlossaryPage';
-import { API_CSV_ENABLED } from './config/features';
+import { PUBLIC_API_ENABLED } from './config/features';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
 const MobileOpenInterestPage = lazy(() => import('./pages/mobile/MobileOpenInterestPage'));
@@ -325,7 +325,7 @@ export default function App() {
             {/* /security удалён 2026-05-18, редирект на главную для старых bookmark'ов */}
             <Route path="/security" element={<Navigate to="/" replace />} />
             {/* API docs — KILL-SWITCH: скрыто до официального запуска (config/features.ts) */}
-            {API_CSV_ENABLED && <Route path="/api-docs" element={<ApiDocsPage />} />}
+            {PUBLIC_API_ENABLED && <Route path="/api-docs" element={<ApiDocsPage />} />}
             {/* Fund trades — открыт для всех тиров; что покупают/продают БПИФы */}
             <Route path="/fund-trades" element={
               <ResponsiveRoute

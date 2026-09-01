@@ -11,7 +11,7 @@ import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
 import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
-import { API_CSV_ENABLED, PAYMENT_METHODS_UI_ENABLED } from '../config/features';
+import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED, PAYMENT_METHODS_UI_ENABLED } from '../config/features';
 
 interface BillingStatus {
   tier: string;
@@ -60,28 +60,27 @@ const TIER_LABELS: Record<string, string> = {
 // Здесь только incremental — что добавляется к предыдущему уровню.
 const TIER_FEATURES: Record<string, { tagline: string; features: string[] }> = {
   basic: {
-    tagline: 'Данные в реальном времени и расширенная история (10 лет).',
+    tagline: 'Свежие данные и полные срезы во всех индикаторах.',
     features: [
-      'Все 65 фьючерсов в Открытых позициях',
-      'Режим «Все акции» в Карте рынка и Силе рынка',
-      'Долларовый режим в Силе рынка',
-      'История до 10 лет, без задержки данных',
+      'Открытые позиции без суточной задержки',
+      'Срез «Юрлица» и показатель «Число трейдеров» в Открытых позициях',
+      'Скринер сигналов ОИ',
+      'Выбор конкретных фондов в Деньгах в фондах и Сделках фондов',
+      'Фильтры «без выбросов» и «без дивидендов» в Сезонности',
       '20 уведомлений в Telegram',
     ],
   },
   pro: {
-    tagline: API_CSV_ENABLED
-      ? 'Максимум: 5-минутные данные, API и безлимиты.'
-      : 'Максимум: 5-минутные данные и безлимиты.',
+    tagline: 'Максимум: свой терминал, индикаторы в Т-Инвестициях и безлимиты.',
     features: [
       'Всё из Basic',
-      '5-минутные таймфреймы в Открытых позициях',
-      // «Внутридневная сезонность» убрана 2026-08: сезонность бесплатна целиком
-      // (features.py: seasonality — все режимы на всех тирах).
-      'Вся история без ограничений',
-      // API + CSV скрыты до официального запуска (config/features.ts),
-      // как на PricingPage — вернутся сами при включении флага.
-      ...(API_CSV_ENABLED ? ['Экспорт CSV / Excel', 'API-доступ для автоматизации'] : []),
+      // Состав выверен по api/billing/features.py 01.09.2026. Таймфреймы и
+      // глубина истории тут НЕ упоминаются: лимиты сняты со всех тиров
+      // 2026-08-10, и называть их отличием Pro — неправда.
+      'Свой терминал — рабочий стол с индикаторами',
+      'Индикаторы Фрейма в терминале Т-Инвестиций',
+      ...(CSV_EXPORT_ENABLED ? ['Экспорт CSV / Excel'] : []),
+      ...(PUBLIC_API_ENABLED ? ['API-доступ для автоматизации'] : []),
       'Безлимитные уведомления в Telegram',
     ],
   },
@@ -866,7 +865,7 @@ export default function ProfilePage() {
 
       {/* ============ Секция: API-ключи ============
           KILL-SWITCH: скрыто до официального запуска (config/features.ts). */}
-      {API_CSV_ENABLED && (
+      {PUBLIC_API_ENABLED && (
         <div className="rounded-2xl border p-6" style={cardStyle}>
           <ApiKeysSection />
         </div>

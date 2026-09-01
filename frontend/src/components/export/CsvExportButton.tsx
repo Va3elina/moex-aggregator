@@ -17,7 +17,7 @@ import { apiFetch } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { CsvExportConfig } from './CsvExportModal';
-import { API_CSV_ENABLED } from '../../config/features';
+import { CSV_EXPORT_ENABLED } from '../../config/features';
 
 // Lazy-load модалки — chunk выделяется отдельно.
 const CsvExportModal = lazy(() => import('./CsvExportModal'));
@@ -51,9 +51,9 @@ export default function CsvExportButton(props: Props) {
     const [modalOpen, setModalOpen] = useState(false);
     const [resolvedConfig, setResolvedConfig] = useState<CsvExportConfig | null>(null);
 
-    // KILL-SWITCH: CSV-экспорт скрыт до официального запуска — кнопки нет нигде
-    // (все 7 индикатор-страниц). Возврат после хуков → rules-of-hooks ок.
-    if (!API_CSV_ENABLED) return null;
+    // KILL-SWITCH экспорта (config/features.ts). Включён 01.09.2026 — оставлен
+    // как рубильник на случай отката. Возврат после хуков → rules-of-hooks ок.
+    if (!CSV_EXPORT_ENABLED) return null;
 
     const locked = !common.csv_export;
     const title = props.title ?? 'Скачать CSV';

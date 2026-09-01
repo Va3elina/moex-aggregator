@@ -24,7 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
-import { API_CSV_ENABLED } from '../config/features';
+import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../config/features';
 import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
 import {
   INTENT_PARAM_NAMES,
@@ -1059,11 +1059,14 @@ function ComparisonMatrix() {
         ['Свой терминал (рабочий стол с индикаторами)', '—', '—', 'Да'],
         // Токен расширения выдаётся только Pro (require_pro, ExtensionTokenSection).
         ['Индикаторы в терминале Т-Инвестиций (расширение)', '—', '—', 'Да'],
-        // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
-        ...(API_CSV_ENABLED ? ([
-          ['Экспорт CSV / Excel', '—', '—', 'Да'],
-          ['API-доступ', '—', '—', 'Да'],
-        ] as [string, string, string, string][]) : []),
+        // KILL-SWITCH (config/features.ts) — раздельный: экспорт включён
+        // 01.09.2026, публичный API ещё скрыт до запуска.
+        ...(CSV_EXPORT_ENABLED
+          ? ([['Экспорт CSV / Excel', '—', '—', 'Да']] as [string, string, string, string][])
+          : []),
+        ...(PUBLIC_API_ENABLED
+          ? ([['API-доступ', '—', '—', 'Да']] as [string, string, string, string][])
+          : []),
       ],
     },
   ];

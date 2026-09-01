@@ -358,11 +358,22 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import os
-# KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска
-# (конкуренты). Когда выключено (default) — csv_export/api_access=False даже
-# для Pro, а роутеры /api/export, /api/keys, /api/v1/public не монтируются (см. main.py).
-# Вернуть: env PUBLIC_API_CSV_ENABLED=1 + фронт config/features.ts API_CSV_ENABLED=true.
-PUBLIC_API_CSV_ENABLED = os.getenv("PUBLIC_API_CSV_ENABLED", "").lower() in ("1", "true", "yes")
+# KILL-SWITCH — раздельный для экспорта и публичного API (было одним флагом
+# PUBLIC_API_CSV_ENABLED до 01.09.2026; разделено, чтобы вернуть экспорт, не
+# открывая API). Каждый гейтит и матрицу фич, и монтирование роутера в main.py.
+#
+# CSV-экспорт — ВКЛЮЧЁН (01.09.2026). Отключить: env CSV_EXPORT_ENABLED=0.
+#   Лицензия MOEX соблюдена и после включения: heatmap.csv читает
+#   mv_heatmap_stocks (потолок 20 мин зашит в матвьюху), oi.csv отдаёт только
+#   позиции без цены (ОИ под задержку не подпадает), остальные выгрузки —
+#   дневные свечи (interval=24), которые под 15-минутный потолок не попадают.
+#   ⚠️ Любая НОВАЯ выгрузка с 5-минутной ценой обязана звать
+#   market_delay.cutoff_for_interval — в exports.py такого вызова нет.
+CSV_EXPORT_ENABLED = os.getenv("CSV_EXPORT_ENABLED", "1").lower() in ("1", "true", "yes")
+
+# Публичный API (ключи + /api/v1/public/*) — ВЫКЛЮЧЕН до официального запуска.
+# Вернуть: env PUBLIC_API_ENABLED=1 + фронт config/features.ts PUBLIC_API_ENABLED=true.
+PUBLIC_API_ENABLED = os.getenv("PUBLIC_API_ENABLED", "").lower() in ("1", "true", "yes")
 
 COMMON_FEATURES: dict[str, dict] = {
     "free": {
@@ -378,8 +389,8 @@ COMMON_FEATURES: dict[str, dict] = {
         "telegram_alerts_quota": 20,    # 20 алертов
     },
     "pro": {
-        "csv_export": PUBLIC_API_CSV_ENABLED,   # kill-switch: скрыто до запуска
-        "api_access": PUBLIC_API_CSV_ENABLED,   # kill-switch: скрыто до запуска
+        "csv_export": CSV_EXPORT_ENABLED,   # включён 01.09.2026
+        "api_access": PUBLIC_API_ENABLED,   # kill-switch: скрыто до запуска
         "fund_trades_access": True,     # smart-money tracking — открыт для всех тиров (2026-07-05, было Pro-only)
         "telegram_alerts_quota": None,  # unlimited
     },
