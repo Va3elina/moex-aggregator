@@ -599,15 +599,22 @@ def test_previous_rating_level_names_month_and_year_in_words():
         out["ПРЕЖНИЙ_УРОВЕНЬ"]
 
 
-def test_context_blocks_ask_for_one_short_sentence():
-    """Было «по одной фразе на компанию, обе в одном абзаце» — модель втиснула три
-    факта в одно предложение со вставкой в скобках. Замер: канал 11 слов в
-    предложении и скобки в 3% абзацев; тот черновик — 17 слов и скобки в трети."""
+def test_context_blocks_ask_for_short_sentences_not_crammed_phrases():
+    """Граница объёма измеряется ПРЕДЛОЖЕНИЯМИ, и её пришлось калибровать дважды.
+
+    Сначала «по одной ФРАЗЕ на компанию, обе в одном абзаце» — модель втиснула три
+    факта в одно предложение со вставкой в скобках (17 слов против 11 у канала,
+    скобки в трети абзацев против 3%). Ужал до одного предложения — оказалось слишком
+    туго: в абзаце, который Вадим назвал лучшим, про Озон было ДВА факта (сорванная
+    сделка со Сбером и залог пакета). Итог — одно-два коротких предложения.
+    """
     import inspect
-    for fn in (CA._related_context, CA._rating_history):
-        src = inspect.getsource(fn)
-        assert "ОДНИМ КОРОТКИМ ПРЕДЛОЖЕНИЕМ" in src, fn.__name__
-        assert "скобк" in src, fn.__name__
+    src = inspect.getsource(CA._related_context)
+    assert "ОДНИМ-ДВУМЯ КОРОТКИМИ ПРЕДЛОЖЕНИЯМИ" in src
+    assert "скобк" in src
+    rat = inspect.getsource(CA._rating_history)
+    assert "ОДНИМ КОРОТКИМ ПРЕДЛОЖЕНИЕМ" in rat, "прежний уровень — одна фраза, этого хватает"
+    assert "скобк" in rat
 
 
 def test_frame_tells_the_model_to_stay_silent_about_the_one_day_gap():
