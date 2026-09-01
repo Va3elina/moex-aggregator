@@ -31,7 +31,7 @@ from typing import Optional
 
 import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy import text
 from api.services import style_profile
 from sqlalchemy.orm import Session
@@ -311,7 +311,18 @@ class StepAResult(BaseModel):
 
 
 class StepCResult(BaseModel):
-    draft_text: Optional[str] = None
+    """⚠️ `draft` — синоним `draft_text`, и он здесь не для красоты.
+
+    Живой случай 01.09: у эндпоинта /style-check поле называлось `draft`, у step-c —
+    `draft_text`. Писатель собрал один JSON-файл и естественно переиспользовал его для
+    обоих вызовов — черновик молча потерялся, а кандидат уехал в pending как «модель
+    отказалась писать». Два соседних эндпоинта одного потока не должны называть одну и
+    ту же вещь по-разному; пока имена расходятся, принимаем оба.
+    """
+    model_config = {"populate_by_name": True}
+
+    draft_text: Optional[str] = Field(default=None, validation_alias=AliasChoices(
+        "draft_text", "draft"))
     declined_reason: Optional[str] = None
 
 
@@ -692,7 +703,10 @@ _SELECT_REAL_REJECTIONS = text("""
 
 
 class StyleCheckIn(BaseModel):
-    draft: str
+    """Принимает и `draft`, и `draft_text` — см. докстринг StepCResult."""
+    model_config = {"populate_by_name": True}
+
+    draft: str = Field(validation_alias=AliasChoices("draft", "draft_text"))
 
 
 @internal_router.post("/style-check", dependencies=[Depends(_require_internal_token)])
@@ -875,6 +889,18 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Кандидат не найден")
     if row["status"] != "draft_ready":
         raise HTTPException(status_code=409, detail=f"Ожидался статус 'draft_ready', сейчас '{row['status']}'")
+
+    # ⚠️ Отказ писать должен быть ЯВНЫМ. Раньше пустой draft_text молча трактовался
+    # как «модель отказалась» и откатывал кандидата в pending — и именно это спрятало
+    # расхождение имён полей (draft против draft_text): черновик был написан, прошёл
+    # style-check чисто, но исчез, а в базе осталось «модель не указала причину».
+    # Молчаливая интерпретация ошибки как решения — худший вид сбоя: он выглядит
+    # штатным.
+    if not body.draft_text and not body.declined_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Нужен либо draft_text с текстом поста, либо declined_reason с "
+                   "причиной отказа. Пустое тело отказом НЕ считается.")
 
     if body.draft_text:
         # draft_text_ai пишется ЗДЕСЬ и только здесь (миграция 054): это

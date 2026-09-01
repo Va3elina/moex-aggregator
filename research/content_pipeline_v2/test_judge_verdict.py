@@ -335,3 +335,34 @@ def test_own_take_is_optional_and_stored():
     r = JudgeResult(items={})
     assert r.own_take is None
     assert JudgeResult(items={}, own_take="лонг за год, цена вдвое").own_take
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Потерянный черновик: расхождение имён полей между соседними эндпоинтами
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_both_endpoints_accept_both_field_names():
+    """Живой случай 01.09, и он стоил потерянного черновика.
+
+    У /style-check поле звалось `draft`, у /step-c — `draft_text`. Писатель собрал
+    один JSON и переиспользовал его для обоих вызовов — совершенно естественно.
+    Черновик прошёл style-check чисто (что_поправить пустое, отклонение 0,35σ — лучший
+    результат за сессию) и ИСЧЕЗ: step-c увидел пустой draft_text.
+    """
+    from api.routers.content_news import StepCResult, StyleCheckIn
+    for cls, attr in ((StepCResult, "draft_text"), (StyleCheckIn, "draft")):
+        for key in ("draft", "draft_text"):
+            assert getattr(cls(**{key: "текст"}), attr) == "текст", (cls, key)
+
+
+def test_decline_must_be_explicit():
+    """⚠️ Молчаливая интерпретация ошибки как решения — худший вид сбоя: он выглядит
+    штатным. Пустой draft_text откатывал кандидата в pending с причиной «модель не
+    указала причину», и именно это спрятало расхождение имён полей на несколько часов.
+    """
+    import inspect
+    from api.routers import content_news as CN
+    src = inspect.getsource(CN.apply_step_c)
+    assert "not body.draft_text and not body.declined_reason" in src
+    assert "422" in src
+    assert "отказом НЕ считается" in src
