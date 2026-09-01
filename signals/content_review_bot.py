@@ -147,7 +147,8 @@ _SELECT_NEW_DRAFTS = text("""
 _SELECT_CANDIDATE = text("""
     SELECT id, headline, tickers, draft_text, status,
            reviewer_reason_code, reviewer_reason,
-           judge_verdict, judge_failed, judge_defects, judge_paragraphs
+           judge_verdict, judge_failed, judge_defects, judge_paragraphs,
+           judge_fixed_at, judge_fix_note
     FROM content_candidates WHERE id = :id
 """)
 
@@ -257,6 +258,25 @@ def _judge_line(verdict, failed, defects) -> str:
     return out
 
 
+def _fix_line(fixed_at, note) -> str:
+    """Отметка «текст правил судья» — обязательна, а не для красоты.
+
+    ⚠️ Сегодня уже было наглядно, чего стоит вердикт, относящийся к ДРУГОМУ тексту
+    (гонка Шага В, лечится draft_hash). Путать «текст писателя» и «текст судьи» —
+    та же ошибка: человек читает пост, думая, что видит работу писателя, и его
+    решение относится не к тому, к чему он думает.
+
+    Вердикт при этом выдан на ИСХОДНЫЙ текст — судья себя не перепроверяет, — и в
+    карточке это тоже должно быть сказано прямо.
+    """
+    if not fixed_at:
+        return ""
+    out = "\n\n✏️ текст выше ПОПРАВЛЕН СУДЬЁЙ (вердикт ниже — на исходный текст)"
+    if note:
+        out += "\n" + html.escape(str(note)[:300])
+    return out
+
+
 def _doubts_line(paragraphs) -> str:
     """Сомнения судьи по абзацам — прямо в карточке.
 
@@ -321,11 +341,13 @@ def _card_view(row):
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
-     j_verdict, j_failed, j_defects, j_paragraphs) = row
+     j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note) = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
-    txt += _judge_line(j_verdict, j_failed, j_defects) + _doubts_line(j_paragraphs)
+    txt += (_fix_line(j_fixed_at, j_fix_note)
+            + _judge_line(j_verdict, j_failed, j_defects)
+            + _doubts_line(j_paragraphs))
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.

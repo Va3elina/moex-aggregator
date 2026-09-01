@@ -147,11 +147,36 @@ curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
 Абзац без опоры — это провал ворот B, и считается он поштучно: один такой абзац
 даёт «спорно», два и больше — «брак».
 
+# ПРАВКА — если вердикт получается НЕ «годится»
+
+Ты не только размечаешь, но и правишь. Прикинь вердикт по своим же пунктам: если он
+выходит «спорно» или «брак» — пришли исправленный текст в поле fixed_draft, а в
+fix_note одной фразой скажи, что именно поправил. Если «годится» — fixed_draft НЕ
+присылай, править нечего.
+
+Правила правки, все важные:
+
+1. МИНИМАЛЬНО. Меняй только то, что требуют проваленные пункты. Не переписывай пост
+   заново и не улучшай то, к чему претензий нет: остальной текст писателя оставь
+   дословно.
+2. ТОЛЬКО ИЗ БРИФА. Новых чисел, дат, названий и событий у тебя взяться негде — у
+   тебя нет доступа к базе, только бриф. Если проваленный абзац держится на том,
+   чего в брифе нет, — УДАЛИ этот абзац, а не придумывай ему опору.
+3. ФОРМАТ сохраняй: ◽️ в начале абзацев, одинарное тире, последняя строка — хэштег
+   рубрики, подписи в тексте нет.
+4. КОРОЧЕ, А НЕ ДЛИННЕЕ. Правка не повод дописать: если материала нет, пост станет
+   короче — так и надо.
+5. СЕБЯ НЕ ПЕРЕПРОВЕРЯЙ. Пункты и абзацы заполняй по ИСХОДНОМУ тексту, который тебе
+   прислали, а не по своей правке. Вердикт относится к исходному тексту — это
+   намеренно: судья, оценивающий свою же работу, поставит себе «годится», и второй
+   проход потеряет смысл.
+6. ОДНА ПОПЫТКА. Никаких повторных кругов «поправил — перепроверил — снова поправил».
+
 # ЧЕМ ЗАКОНЧИТЬ — ровно один вызов
 
 curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-g \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
-  -d '{"draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой"}'
+  -d '{"draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой","fixed_draft":"исправленный текст ЦЕЛИКОМ — только если вердикт не «годится», иначе не присылай","fix_note":"что поправил, одной фразой"}'
 
 Присылай ВСЕ шестнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
 проваленных пунктов, doubt — у всех абзацев.
