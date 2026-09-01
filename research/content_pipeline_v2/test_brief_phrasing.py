@@ -428,3 +428,119 @@ def test_links_block_states_where_it_goes(monkeypatch):
     assert "МЕСТО В ТЕКСТЕ" in blk["ПОЯСНЕНИЕ"]
     assert "РАНЬШЕ" in blk["ПОЯСНЕНИЕ"]
     assert "НЕ ПРИЧИНА" in blk["ПОЯСНЕНИЕ"], "старое предупреждение не должно пропасть"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Прежний уровень рейтинга из архива
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Дословные строки из news_archive по AFKS.
+_L_ACRA = 'АКРА подтвердило рейтинг АФК "Система" и ее облигаций на уровне AA-(RU)*, прогноз негативный'
+_L_EXPERT = 'Эксперт РА понизил кредитный рейтинг АФК «Система» и её облигаций с ruAA- до ruA+ и изменило прогноз'
+_L_SUBSIDIARY = 'Эксперт РА присвоил кредитный рейтинг агрохолдингу «Степь» на уровне ruBBB+ - АФК "Система"'
+
+
+def _levels(line):
+    return [x for x in CA._RE_SCALE.findall(line) if CA._plausible_level(x)]
+
+
+def test_last_level_in_a_prior_action_is_the_level_in_force():
+    """У подтверждения уровень один; у понижения последний — тот, что действовал ДО
+    нынешней новости. Именно он и есть «прежний уровень»."""
+    assert _levels(_L_ACRA) == ["AA-(RU)"]
+    assert _levels(_L_EXPERT)[-1] == "ruA+"
+    assert _levels('S&P ПОВЫСИЛО РЕЙТИНГИ С "B+" ДО "BB-"')[-1] == "BB-"
+
+
+def test_stray_latin_letters_are_not_levels():
+    """«B» из «B2B» проходит границы слова и стала бы «прежним уровнем» — цифра
+    выглядела бы правдоподобно, и ошибку никто бы не заметил."""
+    assert _levels("АКРА про сегмент B2B и рейтинг AA(RU)") == ["AA(RU)"]
+    assert not CA._plausible_level("B") and not CA._plausible_level("C")
+    assert CA._plausible_level("ruA") and CA._plausible_level("AA-") and CA._plausible_level("A+")
+
+
+def test_name_stems_survive_declension_and_quotes():
+    assert CA._name_stems("АФК Система") == ["Систе"]
+    for form in ('АФК "Система"', "АФК «Системы»", "СИСТЕМЫ"):
+        assert any(st.lower() in form.lower() for st in CA._name_stems("АФК Система")), form
+
+
+def _rating_db(lines, name="АФК Система"):
+    class _DB:
+        def execute(self, q, params=None):
+            sql = str(q)
+
+            class _R:
+                @staticmethod
+                def scalar():
+                    return name
+
+                @staticmethod
+                def fetchall():
+                    return lines if "news_archive" in sql else []
+            return _R()
+    return _DB()
+
+
+def test_previous_level_comes_from_the_same_agency():
+    """⚠️ Ключевая защита. У АКРА уровень AA-(RU), у Эксперт РА — ruAA-: разные шкалы.
+    Подставить прежний уровень другого агентства = фактическая ошибка, которую никто
+    не заметит, потому что цифра выглядит правдоподобно.
+    """
+    import datetime as _d
+    db = _rating_db([(_d.date(2026, 6, 30), _L_EXPERT), (_d.date(2025, 12, 30), _L_ACRA)])
+    out = CA._rating_history(db, "АКРА ПОНИЗИЛО КРЕДИТНЫЙ РЕЙТИНГ АФК СИСТЕМА ДО A+(RU)",
+                             "", ["AFKS"], _d.date(2026, 9, 1))
+    assert "AA-(RU)" in out["ПРЕЖНИЙ_УРОВЕНЬ"], out["ПРЕЖНИЙ_УРОВЕНЬ"]
+    assert "ruA+" not in out["ПРЕЖНИЙ_УРОВЕНЬ"], "взят уровень другого агентства"
+    assert "АКРА" in out["ПРЕЖНИЙ_УРОВЕНЬ"]
+
+
+def test_no_previous_level_when_agency_never_acted_before():
+    """Нет прошлого действия того же агентства — поля нет, и промпт запрещает
+    называть уровень. Молчание честнее подстановки."""
+    import datetime as _d
+    db = _rating_db([(_d.date(2026, 6, 30), _L_EXPERT)])
+    out = CA._rating_history(db, "НКР понизило рейтинг АФК Система", "", ["AFKS"],
+                             _d.date(2026, 9, 1))
+    assert "ПРЕЖНИЙ_УРОВЕНЬ" not in out
+    assert out["прошлые_действия"], "сами действия всё равно полезны как контекст"
+    assert "НЕЛЬЗЯ" in out["ПОЯСНЕНИЕ"]
+
+
+def test_subsidiary_action_is_filtered_out():
+    """В старых постах под тем же тикером попадаются действия по ДОЧКАМ."""
+    import datetime as _d
+    db = _rating_db([(_d.date(2026, 5, 1), _L_SUBSIDIARY)])
+    out = CA._rating_history(db, "АКРА понизило рейтинг Системы", "", ["AFKS"],
+                             _d.date(2026, 9, 1))
+    assert "ruBBB+" not in json_dumps(out), out
+
+
+def json_dumps(o):
+    import json
+    return json.dumps(o, ensure_ascii=False)
+
+
+def test_block_absent_for_non_rating_news():
+    """История рейтингов в брифе про отчётность — насыпанное поле, которое модель
+    обязана израсходовать."""
+    import datetime as _d
+    db = _rating_db([(_d.date(2025, 12, 30), _L_ACRA)])
+    assert CA._rating_history(db, "Убыток Газпрома по РСБУ во 2кв 2026", "", ["GAZP"],
+                              _d.date(2026, 9, 1)) == {}
+
+
+def test_issuer_must_be_named_before_the_level():
+    """Признак настоящего действия — порядок: «агентство … рейтинг КОМУ … уровень X».
+
+    На строке про дочку «Система» стоит в подписи, уже ПОСЛЕ уровня — простая
+    проверка «имя есть в строке» её пропускала, и ruBBB+ уходил бы в бриф как
+    прежний уровень Системы.
+    """
+    stems = CA._name_stems("АФК Система")
+    assert CA._issuer_named_before_level(_L_ACRA, stems)
+    assert CA._issuer_named_before_level(_L_EXPERT, stems)
+    assert CA._issuer_named_before_level('S&P ПОВЫСИЛО РЕЙТИНГИ "СИСТЕМЫ" С "B+" ДО "BB-"', stems)
+    assert not CA._issuer_named_before_level(_L_SUBSIDIARY, stems)

@@ -95,7 +95,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 6
+BRIEF_VERSION = 7
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -814,6 +814,155 @@ def _related_context(db, tickers, as_of) -> dict:
     return out
 
 
+# Рейтинговые агентства и шкалы. ⚠️ Шкала у каждого агентства СВОЯ: AA-(RU) у АКРА и
+# ruAA- у Эксперт РА — разные системы, и сравнивать их между собой нельзя.
+_RATING_AGENCIES = ("АКРА", "Эксперт РА", "ЭкспертРА", "НКР", "НРА", "АК&М",
+                    "Fitch", "Moody", "S&P", "Standard")
+_RE_AGENCY = re.compile("|".join(_RATING_AGENCIES), re.I)
+# Уровень: латинская лесенка, опционально с префиксом ru или суффиксом (RU).
+_RE_SCALE = re.compile(
+    r"(?<![A-Za-zА-Яа-я])(?:ru)?(?:AAA|AA[+-]?|A[+-]?|BBB[+-]?|BB[+-]?|B[+-]?"
+    r"|CCC[+-]?|CC|C|D)(?:\(RU\))?(?![A-Za-zА-Яа-я])")
+
+_SELECT_RATING_LINES = text("""
+    SELECT posted_at::date AS d, unnest(string_to_array(text, chr(10))) AS ln
+    FROM news_archive
+    WHERE :tk = ANY(tickers) AND posted_at >= :since AND posted_at < :until
+    ORDER BY posted_at DESC
+""")
+
+
+def _plausible_level(tok: str) -> bool:
+    """Отсев одиночных латинских букв, случайно похожих на уровень.
+
+    ⚠️ «B» из «B2B» проходит границы слова и стало бы «прежним уровнем» — цифра
+    выглядела бы правдоподобно, и ошибку никто бы не заметил. Требуем либо явную
+    национальную метку (ru… / …(RU)), либо минимум две буквы в ступени. Теряем
+    легитимные одиночные «B»/«C» у международных агентств — приемлемо: они и так за
+    пределами 24-месячного окна.
+    """
+    t = tok.strip()
+    has_ru = t.lower().startswith("ru") or t.upper().endswith("(RU)")
+    core = re.sub(r"^ru", "", t, flags=re.I)
+    core = re.sub(r"\(RU\)$", "", core, flags=re.I)
+    return has_ru or len(core) >= 2
+
+
+def _issuer_named_before_level(line: str, stems) -> bool:
+    """Назван ли ИМЕННО наш эмитент, а не его дочка.
+
+    ⚠️ Простой проверки «имя есть в строке» недостаточно, и это поймал тест на
+    реальной строке архива: «Эксперт РА присвоил кредитный рейтинг агрохолдингу
+    "Степь" на уровне ruBBB+ — АФК "Система"». Пост помечен тикером AFKS, имя
+    материнской компании в строке ЕСТЬ — но действие по дочке, и ruBBB+ ушёл бы в
+    бриф как прежний уровень Системы.
+
+    Признак — порядок в предложении: рейтинговое действие пишется как
+    «агентство <действие> рейтинг <КОМУ> … на уровне <УРОВЕНЬ>», то есть эмитент
+    стоит ДО уровня. В строке про дочку «Система» оказывается уже после уровня, в
+    подписи об источнике.
+    """
+    if not stems:
+        return True
+    m = _RE_SCALE.search(line)
+    if not m:
+        return False
+    head = line[:m.start()].lower()
+    return any(st.lower() in head for st in stems)
+
+
+def _name_stems(name: str) -> list:
+    """Корни названия эмитента для отсева чужих строк. «АФК Система» → ['Систе'].
+
+    Пятибуквенная обрезка — тот же приём, что в подборе примеров корпуса: снимает
+    падежи и кавычки («Системы», «Система», «"Система"») без словаря.
+    """
+    return [w[:5] for w in re.findall(r"[А-Яа-яЁёA-Za-z]{5,}", name or "")]
+
+
+def _rating_history(db, headline: str, raw_text: str, tickers, as_of) -> dict:
+    """Прошлые рейтинговые действия по эмитенту — ИЗ АРХИВА, без внешних источников.
+
+    ⚠️ Зачем. Судья по черновику 1638: «не указан прежний уровень рейтинга, поэтому
+    масштаб понижения читатель домысливает сам», и отдельно — «"срезали" звучит
+    резче одного notch-понижения». Замечание верное: сама новость прежний уровень не
+    называет (ни smartlab, ни markettwits). Зато он есть в архиве — в ПРЕДЫДУЩЕМ
+    действии того же агентства.
+
+    ⚠️ Агентство обязано совпадать. У АКРА уровень AA-(RU), у Эксперт РА — ruAA-;
+    это разные шкалы. Подставить прежний уровень другого агентства значило бы выдать
+    фактическую ошибку, которую никто не заметит: цифра выглядит правдоподобно.
+    Поэтому прежний уровень отдаётся ТОЛЬКО когда агентство то же, что в новости.
+
+    ⚠️ Блок появляется только у рейтинговых новостей. Добавлять историю рейтингов в
+    бриф про отчётность — насыпать поле, которое модель обязана израсходовать.
+
+    ⚠️ Окно 24 месяца. Оно же снимает шум: в старых постах под тем же тикером
+    попадаются действия по ДОЧКАМ («Эксперт РА присвоил рейтинг агрохолдингу
+    "Степь" … — АФК "Система"», 2022), а прежний уровень пятилетней давности всё
+    равно бесполезен.
+    """
+    news = f"{headline or ''} {raw_text or ''}"
+    if "рейтинг" not in news.lower():
+        return {}
+    tks = [t for t in (tickers or []) if t]
+    if not tks:
+        return {}
+    m = _RE_AGENCY.search(news)
+    agency_now = m.group(0) if m else None
+
+    actions, same_agency = [], []
+    for tk in tks[:2]:
+        name = db.execute(_SELECT_TICKER_NAME, {"tk": tk}).scalar() or tk
+        stems = _name_stems(name)
+        rows = db.execute(_SELECT_RATING_LINES, {
+            "tk": tk, "since": as_of - timedelta(days=730), "until": as_of,
+        }).fetchall()
+        for d, ln in rows:
+            ln = (ln or "").strip()
+            if len(ln) < 25 or len(ln) > 400:
+                continue
+            if not (_RE_AGENCY.search(ln) and _RE_SCALE.search(ln)):
+                continue
+            if not _issuer_named_before_level(ln, stems):
+                continue
+            item = f"{d.strftime('%d.%m.%Y')}: {ln[:230]}"
+            if item in actions:
+                continue
+            actions.append(item)
+            if agency_now and agency_now.lower() in ln.lower():
+                same_agency.append((d, ln))
+            if len(actions) >= 3:
+                break
+        if actions:
+            break
+    if not actions:
+        return {}
+
+    out = {}
+    if same_agency:
+        d, ln = same_agency[0]
+        # ⚠️ Берём ПОСЛЕДНИЙ уровень в строке. У подтверждения («на уровне AA-(RU)»)
+        # он один; у понижения («с ruAA- до ruA+») последний — это уровень ПОСЛЕ того
+        # действия, то есть ровно тот, что действовал до нынешней новости.
+        levels = [x for x in _RE_SCALE.findall(ln) if _plausible_level(x)]
+        prev = levels[-1] if levels else None
+        if prev:
+            out["ПРЕЖНИЙ_УРОВЕНЬ"] = (
+                f"до этого у {agency_now} было {prev} "
+                f"(действие от {d.strftime('%d.%m.%Y')})")
+    out["прошлые_действия"] = actions
+    out["ПОЯСНЕНИЕ"] = (
+        "Прошлые рейтинговые действия по этому эмитенту из архива новостей. "
+        "⚠️ ШКАЛА У КАЖДОГО АГЕНТСТВА СВОЯ: AA-(RU) у АКРА и ruAA- у Эксперт РА — "
+        "разные системы. Уровень одного агентства НЕЛЬЗЯ приписывать другому и "
+        "нельзя сравнивать их между собой. Если поля ПРЕЖНИЙ_УРОВЕНЬ нет — значит "
+        "прошлого действия ТОГО ЖЕ агентства в архиве не нашлось, и прежний уровень "
+        "называть нельзя."
+    )
+    return out
+
+
 def _build_brief(db, row) -> dict:
     """ЕДИНСТВЕННЫЙ сборщик брифа — для Шага В (писатель) и Шага Г (судья).
 
@@ -853,6 +1002,8 @@ def _build_brief(db, row) -> dict:
         "дата_сигнала": str(row["signal_date"]),
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
         "позиции_физлиц": pos,
+        "история_рейтинга": _rating_history(db, row["headline"], row["raw_text"],
+                                             row["tickers"], row["signal_date"]),
         "связанные_компании": _related_context(db, row["tickers"], row["signal_date"]),
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
@@ -870,8 +1021,9 @@ def _build_brief(db, row) -> dict:
         pos.pop(k)
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
-    if not brief.get("связанные_компании"):
-        brief.pop("связанные_компании", None)
+    for empty in ("связанные_компании", "история_рейтинга"):
+        if not brief.get(empty):
+            brief.pop(empty, None)
     return brief
 
 
