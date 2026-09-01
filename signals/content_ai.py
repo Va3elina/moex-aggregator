@@ -51,6 +51,7 @@ MAX_DISPATCH_ATTEMPTS (028_content_candidates_dispatch_attempts) огранич�
 теряется, content_match.py может поймать более позднюю аномалию заново.
 """
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -94,7 +95,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 5
+BRIEF_VERSION = 6
 
 DISPATCH_COOLDOWN_MIN = 15   # не перевыстреливать кандидата чаще этого окна
 BATCH_LIMIT = 10             # максимум fire-вызовов НА ШАГ за один прогон (см. docstring)
@@ -700,6 +701,110 @@ def _pair_price_with_position(price: dict, pos: dict) -> dict:
     return out
 
 
+_SELECT_ENTITY_LINKS = text("""
+    SELECT entities, statement
+    FROM world_facts
+    WHERE kind = 'связь'
+      AND entities && CAST(:tickers AS text[])
+      AND valid_from <= :as_of
+      AND (valid_until IS NULL OR valid_until >= :as_of)
+      AND superseded_by IS NULL
+    ORDER BY confidence DESC, valid_from DESC
+    LIMIT 4
+""")
+
+_SELECT_TICKER_NAME = text("SELECT name FROM instruments WHERE sec_id = :tk LIMIT 1")
+
+# ⚠️ Отбор по РАЗМЕТКЕ tickers, а не по ILIKE по тексту. Поиск словом «озон» тащит
+# Озон Фармацевтику (OZPH) — другую компанию; разметка их разделяет. Индекс GIN по
+# tickers уже есть, окно 180 дней укладывается в ~20 мс на 487 тыс. строк.
+_SELECT_TICKER_NEWS = text("""
+    SELECT posted_at::date AS d, text, coalesce(array_length(tickers, 1), 0) AS nt
+    FROM news_archive
+    WHERE :tk = ANY(tickers) AND posted_at >= :since AND posted_at <= :until
+    ORDER BY posted_at DESC
+    LIMIT 40
+""")
+
+
+def _pick_snippet(body: str, nt: int, name: str) -> str:
+    """Из поста — короткий фрагмент про НУЖНУЮ компанию.
+
+    ⚠️ Почему абзац, а не пост. Самые содержательные посты архива — дайджесты
+    «Итоги дня»: медиана 1 тикер на пост, но максимум 61. Именно в дайджесте лежала
+    вся фактура по Озону (залог, атаки БПЛА). Отдать такой пост в бриф целиком —
+    залить его десятком чужих тикеров, а поле, попавшее в бриф, модель считает
+    обязанной израсходовать.
+    """
+    lines = [ln.strip() for ln in (body or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    if nt <= 3:
+        return " ".join(lines[:2])[:220]
+    # Дайджест: берём строку, где компания названа по имени. Совпадение по слову
+    # целиком, иначе «Озон» поймает «ОзонФарма».
+    pat = re.compile(rf"(?<![А-Яа-яЁёA-Za-z]){re.escape(name)}(?![А-Яа-яЁёA-Za-z])", re.I)
+    for ln in lines:
+        if pat.search(ln):
+            return ln[:220]
+    return ""
+
+
+def _related_context(db, tickers, as_of) -> dict:
+    """Связанные компании: что у них с ценой и что о них писал архив.
+
+    ⚠️ Это КОНТЕКСТ, НЕ ПРИЧИНА, и подписано так в самом брифе. Разбор кандидата
+    1638 (АКРА понизило рейтинг АФК Системы) показал соблазн: цепочка «залог Озона →
+    Озон упал на 40% → рейтинг понизили» выглядит убедительно, но обоснования АКРА
+    в наших данных НЕТ. Утверждать причину нельзя — можно показать
+    последовательность. Ворота claim_falsifiable и event_matters у судьи ловят
+    именно это.
+    """
+    tks = [t for t in (tickers or []) if t]
+    if not tks:
+        return {}
+    links = db.execute(_SELECT_ENTITY_LINKS,
+                       {"tickers": tks, "as_of": as_of}).fetchall()
+    if not links:
+        return {}
+    out = {}
+    for entities, statement in links:
+        for tk in (entities or []):
+            if tk in tks or tk in out or len(out) >= 2:
+                continue
+            name = db.execute(_SELECT_TICKER_NAME, {"tk": tk}).scalar() or tk
+            item = {"связь": statement}
+            price = _price_context(db, tk, [tk], as_of)
+            for k in ("цена_за_месяц", "цена_за_полгода"):
+                if price.get(k):
+                    item[k.replace("цена_", "цена_")] = price[k]
+            rows = db.execute(_SELECT_TICKER_NEWS, {
+                "tk": tk, "since": as_of - timedelta(days=120), "until": as_of,
+            }).fetchall()
+            seen, snippets = set(), []
+            for d, body, nt in rows:
+                sn = _pick_snippet(body, nt, name)
+                key = sn[:60]
+                if sn and key not in seen:
+                    seen.add(key)
+                    snippets.append(f"{d.strftime('%d.%m.%Y')}: {sn}")
+                if len(snippets) >= 2:
+                    break
+            if snippets:
+                item["из_архива"] = snippets
+            out[tk] = item
+    if not out:
+        return {}
+    out["ПОЯСНЕНИЕ"] = (
+        "КОНТЕКСТ, НЕ ПРИЧИНА. Это связанные компании и то, что о них писали. "
+        "Официального обоснования события у нас НЕТ. Показывать можно только "
+        "последовательность («там произошло это, здесь — то»); утверждать, что одно "
+        "вызвало другое, НЕЛЬЗЯ. Долю владения в процентах не указывать — её в "
+        "данных нет."
+    )
+    return out
+
+
 def _build_brief(db, row) -> dict:
     """ЕДИНСТВЕННЫЙ сборщик брифа — для Шага В (писатель) и Шага Г (судья).
 
@@ -739,6 +844,7 @@ def _build_brief(db, row) -> dict:
         "дата_сигнала": str(row["signal_date"]),
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
         "позиции_физлиц": pos,
+        "связанные_компании": _related_context(db, row["tickers"], row["signal_date"]),
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
             pos),
@@ -753,6 +859,10 @@ def _build_brief(db, row) -> dict:
         brief["предыдущий_пост_этого_треда"] = prior
     for k in [k for k in pos if k.startswith("_код_")]:
         pos.pop(k)
+    # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
+    # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
+    if not brief.get("связанные_компании"):
+        brief.pop("связанные_компании", None)
     return brief
 
 
