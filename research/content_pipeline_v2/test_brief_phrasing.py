@@ -638,7 +638,7 @@ def test_current_price_key_says_how_to_use_it():
 def test_links_block_defines_paragraph_order_and_disputed_handling():
     import inspect
     src = inspect.getsource(CA._related_context)
-    assert "ПОРЯДОК" in src and "КТО КОМУ КЕМ ЯВЛЯЕТСЯ" in src
+    assert "ПОРЯДОК АБЗАЦА" in src
     assert "СПОРНО" in src
 
 
@@ -819,3 +819,22 @@ def test_normal_number_level_does_not_trigger_the_floor():
           "Прогноз остался негативным.\n\n◽️За год акции упали вдвое, до 7,30 рубля. "
           "Толпа за это же время перешла в лонг.\n\n#открытыепозиции")
     assert "ЦИФР СЛИШКОМ МАЛО" not in " ".join(SP.score(ok)["что_поправить"])
+
+
+def test_links_paragraph_asks_for_chronology_and_one_company_per_sentence():
+    """Правило порядка переписано второй раз, и первая версия была слишком буквальной.
+
+    Она говорила «сначала кто кому кем является, потом что у кого произошло» — и
+    получилось: «Сегежа входит в группу Системы, а сама Система — крупный акционер
+    Озона. 28 августа… В июне…». Два родства в одном предложении и обратная
+    хронология. Вадим: «как-то не складно, будто просто факты накидал, но нет начала
+    связи».
+    """
+    import inspect
+    src = inspect.getsource(CA._related_context)
+    assert "ПОРЯДОК АБЗАЦА" in src
+    assert "зачем эти компании вообще в посте" in src
+    assert "порядке ВРЕМЕНИ" in src
+    assert "по ОДНОЙ компании на предложение" in src
+    # Прежняя формулировка не должна вернуться
+    assert "КТО КОМУ КЕМ ЯВЛЯЕТСЯ" not in src
