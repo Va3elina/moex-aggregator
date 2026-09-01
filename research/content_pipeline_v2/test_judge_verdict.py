@@ -305,3 +305,33 @@ def test_judge_prompt_requires_checking_the_headline_after_a_cut():
     # Нумерация правил не должна разъехаться при вставке
     for n in range(1, 8):
         assert f"{n}. " in md, f"правило {n} потерялось"
+
+
+def test_judge_commits_its_own_answer_before_seeing_the_draft():
+    """Anti-anchoring, arXiv:2607.05904.
+
+    Судья, которому сразу показали готовый текст, оценивает УБЕДИТЕЛЬНОСТЬ, а не
+    правильность: в работе проходимость у судьи выросла 0,72 → 0,94 при настоящей
+    точности 0,20, эффект переносится между семействами судей, и строгий ансамбль из
+    трёх всё равно принимал 55% взломанных ответов. Улучшение формулировок промпта
+    проблему не снимает.
+
+    Ломает это ровно одно: заставить судью СНАЧАЛА дать свой независимый ответ. Наш
+    случай мягче (мы не обучаем модель против судьи), но механизм тот же, а приём
+    бесплатный — та же сессия.
+    """
+    from pathlib import Path
+    md = Path("research/content_pipeline_v2/prompt_step_g_routine.md").read_text("utf-8")
+    assert "СНАЧАЛА СВОЙ ОТВЕТ, ПОТОМ ЧУЖОЙ ТЕКСТ" in md
+    assert "own_take" in md
+    assert "2607.05904" in md
+    # Порядок в файле значим: раздел обязан идти ДО ворот A, иначе судья прочитает
+    # черновик раньше, чем получит указание сформулировать своё.
+    assert md.index("СНАЧАЛА СВОЙ ОТВЕТ") < md.index("ВОРОТА A")
+    assert "написанный после, он будет пересказом" in md.lower()
+
+
+def test_own_take_is_optional_and_stored():
+    r = JudgeResult(items={})
+    assert r.own_take is None
+    assert JudgeResult(items={}, own_take="лонг за год, цена вдвое").own_take

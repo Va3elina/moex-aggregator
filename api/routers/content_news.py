@@ -644,6 +644,13 @@ class JudgeResult(BaseModel):
     # править нечего в чистом черновике, а лишняя правка вносит лишний риск.
     fixed_draft: Optional[str] = None
     fix_note: Optional[str] = None
+    # ⚠️ Независимый ответ судьи, записанный ДО чтения черновика (anti-anchoring).
+    # arXiv:2607.05904: судья, которому сразу показали готовый текст, оценивает
+    # убедительность, а не правильность — проходимость 0,72 → 0,94 при истинной
+    # точности 0,20, и ансамбль из трёх судей принимал 55% взломанных ответов.
+    # Ломает это только независимое суждение ПЕРЕД показом. Храним, чтобы можно было
+    # проверить, что судья действительно его давал, а не пересказывал черновик.
+    own_take: Optional[str] = None
 
 
 def _derive_judge_verdict(items: dict, paragraphs=()) -> tuple:
@@ -794,8 +801,8 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
         WHERE id = :id
     """), {
         "id": candidate_id,
-        "items": json.dumps({"items": items, "evidence": body.evidence},
-                             ensure_ascii=False),
+        "items": json.dumps({"items": items, "evidence": body.evidence,
+                              "own_take": body.own_take}, ensure_ascii=False),
         "verdict": verdict, "failed": failed, "defects": defects,
         "note": body.note,
         "paragraphs": json.dumps([p.model_dump() for p in body.paragraphs],
