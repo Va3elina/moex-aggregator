@@ -292,3 +292,16 @@ def test_card_marks_judge_edited_text():
     assert "на исходный текст" in out
     assert "снова" in out
     assert BOT._fix_line(None, "x") == ""
+
+
+def test_judge_prompt_requires_checking_the_headline_after_a_cut():
+    """Дефект правила «минимально», найденный на первом живом прогоне: из 1277
+    удалили предложение про дивиденды (его не было в брифе), а заголовок «Норникель
+    ожил НА ДИВИДЕНДАХ» остался и ссылался на то, чего в посте больше нет."""
+    from pathlib import Path
+    md = Path("research/content_pipeline_v2/prompt_step_g_routine.md").read_text("utf-8")
+    assert "ПРОВЕРЬ ЗАГОЛОВОК ПОСЛЕ ПРАВКИ" in md
+    assert "не висит ли заголовок в пустоте" in md
+    # Нумерация правил не должна разъехаться при вставке
+    for n in range(1, 8):
+        assert f"{n}. " in md, f"правило {n} потерялось"
