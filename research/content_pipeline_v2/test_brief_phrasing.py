@@ -216,3 +216,104 @@ def test_service_keys_never_reach_the_model(monkeypatch):
                           ("судья", CA._step_g_payload(None, _ROW, "tok"))):
         assert "_код_" not in payload, f"служебный ключ утёк в бриф {name}"
         assert "ГЛАВНОЕ_СРАВНЕНИЕ" in payload, f"{name} не получил связку"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Рамка сюжета: один день ≠ упреждение (правка Вадима по 1638)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _frame(days_offset: int) -> str:
+    """days_offset < 0 — сигнал РАНЬШЕ новости."""
+    news = _dt.date(2026, 8, 4)
+    return CA._story_frame(news + _dt.timedelta(days=days_offset), news)
+
+
+def test_one_day_lead_is_not_anticipation():
+    """Кандидат 1638 (АКРА/AFKS): отрыв в один день, а пост заявил предвидение.
+
+    Прежняя рамка при d=-1 выдавала «только в этой рамке можно говорить, что толпа
+    встала заранее» — бриф САМ выдавал лицензию, и модель ей воспользовалась.
+    Вадим: «фьючерс поменялся за день и спрогнозировало — спорное заявление».
+    """
+    assert _frame(-1).startswith("СОВПАДЕНИЕ")
+    assert "НЕЛЬЗЯ" in _frame(-1)
+
+
+def test_anticipation_needs_at_least_two_days():
+    assert _frame(-2).startswith("УПРЕЖДЕНИЕ")
+    assert _frame(0).startswith("СОВПАДЕНИЕ")
+    assert _frame(3).startswith("РЕАКЦИЯ")
+
+
+def test_no_frame_ever_licenses_foresight():
+    """Даже при большом отрыве порядок дат можно КОНСТАТИРОВАТЬ, но не толковать
+    как предвидение: «и кто знает» — это про отсутствие причинности в данных,
+    сколько бы дней ни было."""
+    for off in (-30, -5, -2, -1, 0, 1, 10):
+        f = _frame(off)
+        licensed = "заранее" in f or "спрогнозир" in f
+        forbidden = any(w in f for w in ("НЕЛЬЗЯ", "нельзя", "запрещены", "не доказывает"))
+        assert not licensed or forbidden, f
+    assert "не доказывает предвидение" in _frame(-5)
+
+
+def test_reversal_phrase_has_no_size_clause():
+    """Вадим по 1638: «ну и извращенское заявление, предыдущего хватает более чем».
+    Сам факт разворота самодостаточен; сравнение размеров позиций разного знака
+    читателю ничего не добавляет."""
+    from signals.db import get_position_series  # noqa: F401  (документируем зависимость)
+    # Ветка разворота живёт в замыкании phrase() внутри _position_phrases, поэтому
+    # проверяем по исходнику: фраза не должна содержать сравнения размеров.
+    import inspect
+    src = inspect.getsource(CA._position_phrases)
+    rev = src[src.index("if (old_v > 0) != (new_v > 0):"):src.index("grew = abs")]
+    assert "крупнее прежнего" not in rev and "меньше прежнего" not in rev, rev
+    assert "того же размера" not in rev
+    assert 'толпа перевернулась из чистого {was}а в чистый {now}' in rev
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Защита кнопки «Править» в ревью-боте
+# ─────────────────────────────────────────────────────────────────────────────
+
+from signals.content_review_bot import _looks_like_post  # noqa: E402
+
+_REAL_POST = ("АКРА режет рейтинг, толпа уже в лонге⚡\n\n"
+              "◽️АКРА понизило рейтинг АФК Системы до A+(RU).\n\n"
+              "◽️Розница развернулась из шорта в лонг.\n\n#открытыепозиции")
+# Дословно то, что Вадим отправил в поле правки кандидата 1638.
+_REAL_CRITIQUE = ("фьючерс поменялся за день  и спрогнозировало - спорное заявление и кто знает \n\n"
+                  "Хотя новая вышла в два раза меньше прежней короткой - ну и извращенское "
+                  "заявление предыдущего хватате более чем \n\n"
+                  "в рф нет культуры рейтинговых агентств - всем будет пофиг и это надо проверять")
+
+
+def test_real_critique_is_not_mistaken_for_a_post():
+    """Регрессия 1638: этот текст стал текстом поста и мог уйти в канал."""
+    assert not _looks_like_post(_REAL_CRITIQUE, _REAL_POST)
+
+
+def test_real_post_passes_unchallenged():
+    assert _looks_like_post(_REAL_POST, _REAL_POST)
+
+
+def test_post_recognised_by_format_even_when_short():
+    """Короткая, но оформленная переписка — это пост, лишний вопрос не нужен."""
+    assert _looks_like_post("◽️Коротко и по делу.\n\n#открытыйинтерес", _REAL_POST)
+    assert _looks_like_post("Заголовок\n\nОдин абзац.\n\n#открытыепозиции", _REAL_POST)
+
+
+def test_length_alone_never_decides():
+    """Длина не отличает разбор от поста — на этом и падал первый вариант.
+
+    Реальная критика 1638 длиннее, чем короткий оформленный пост. Любой запас по
+    длине пропустил бы её. Признак только один — формат.
+    """
+    assert not _looks_like_post("а" * 5000, _REAL_POST), "длина не аргумент"
+    assert len(_REAL_CRITIQUE) > len("◽️Коротко.\n\n#открытыйинтерес")
+    assert not _looks_like_post(_REAL_CRITIQUE, "◽️Коротко.\n\n#открытыйинтерес")
+
+
+def test_guard_survives_missing_current_draft():
+    assert not _looks_like_post("короткий комментарий", None)
+    assert not _looks_like_post("   ", _REAL_POST)

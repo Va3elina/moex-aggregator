@@ -601,7 +601,11 @@ _BRIEF_VERSION = 5
 _JUDGE_GATES_A = ("numbers_traceable", "no_invented_facts", "no_self_contradiction",
                    "time_arrow_ok")
 # ВОРОТА B (смысл): два провала = брак, один = спорно.
-_JUDGE_GATES_B = ("has_thesis", "link_earned", "no_redundancy")
+# claim_falsifiable и event_matters добавлены 01.09 по разбору 1638: рубрика не
+# спрашивала ни «проверяемо ли это утверждение», ни «значит ли вообще что-нибудь
+# это событие для ЭТОГО рынка» — а обе претензии Вадима были именно про это.
+_JUDGE_GATES_B = ("has_thesis", "link_earned", "no_redundancy",
+                   "claim_falsifiable", "event_matters")
 # ЧЕК-ЛИСТ ПРОИЗВОДСТВА C: на вердикт НЕ влияет. Эти пункты срабатывают и на
 # реальных постах канала (длинное тире у 11%, плотность >2 у 18%) — браковать по
 # ним значило бы забраковать сам канал. Но именно они говорят, что чинить.
@@ -610,17 +614,39 @@ _JUDGE_CHECKLIST_C = ("conclusion_not_boilerplate", "no_brand_selfref",
                        "length_ok")
 
 
+class JudgeParagraph(BaseModel):
+    """Разбор ОДНОГО абзаца. Требование назвать опору и сомнение по каждому абзацу
+    в отдельности — не украшение отчёта, а способ не дать проскользнуть: пост
+    целиком модель просматривает, абзац по абзацу — разбирает."""
+    n: int
+    claim: str = ""            # что абзац утверждает, своими словами
+    supported_by: str = ""     # чем это держится в брифе (поле, число, дата)
+    supported: bool = True     # опора найдена?
+    doubt: Optional[str] = None  # чем утверждение можно оспорить
+
+
 class JudgeResult(BaseModel):
-    """Модель заполняет ТОЛЬКО пункты. Вердикт считает код — так он воспроизводим
-    и видно, из чего собран."""
+    """Модель заполняет ТОЛЬКО пункты и поабзацный разбор. Вердикт считает код —
+    так он воспроизводим и видно, из чего собран."""
     items: dict[str, bool]
     evidence: dict[str, str] = {}
+    paragraphs: list[JudgeParagraph] = []
     note: Optional[str] = None
 
 
-def _derive_judge_verdict(items: dict) -> tuple:
+def _derive_judge_verdict(items: dict, paragraphs=()) -> tuple:
+    """Вердикт из пунктов + поабзацного разбора.
+
+    Абзац без опоры в брифе — это ворота B, не чек-лист: утверждение, которое не на
+    чём держится, читатель принимает за факт. Счёт пропорциональный (один абзац =
+    один провал ворот B), поэтому один абзац без опоры даёт «спорно», два и больше —
+    «брак», ровно как два обычных провала смысла.
+
+    ⚠️ Абзацы НЕ ужимаются в один синтетический провал: три абзаца без опоры — это
+    хуже, чем один, и вердикт должен это различать."""
     failed_a = [k for k in _JUDGE_GATES_A if items.get(k) is False]
     failed_b = [k for k in _JUDGE_GATES_B if items.get(k) is False]
+    failed_b += [f"абзац_{p.n}_без_опоры" for p in paragraphs if p.supported is False]
     defects = [k for k in _JUDGE_CHECKLIST_C if items.get(k) is False]
     if failed_a:
         return "брак", failed_a + failed_b, defects
@@ -630,6 +656,53 @@ def _derive_judge_verdict(items: dict) -> tuple:
         return "спорно", failed_b, defects
     return "годится", [], defects
 
+
+
+_SELECT_REAL_REJECTIONS = text("""
+    SELECT id, headline, draft_text_ai, reviewer_reason_code, reviewer_reason,
+           judge_verdict
+    FROM content_candidates
+    WHERE draft_text_ai IS NOT NULL
+      AND (reviewer_reason IS NOT NULL AND length(btrim(reviewer_reason)) >= 15)
+    ORDER BY updated_at DESC
+    LIMIT :limit
+""")
+
+
+@internal_router.get("/rejections", dependencies=[Depends(_require_internal_token)])
+def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
+    """Реальные отказы человека: черновик ИИ + причина словами.
+
+    ⚠️ Это и есть «чуйка», и она принципиально НЕ правило. Весь диагноз переработки
+    сводился к одному: промпт раздувался потому, что обратной связи не существовало —
+    draft_text перезаписывался, причины отказов никуда не писались, и каждый дефект
+    приходилось лечить новым запретом. Запреты не переносятся на новые случаи, а
+    примеры переносятся.
+
+    ⚠️ Порог 15 знаков отсекает служебные ответы («Тест»), которые примером быть не
+    могут. Сегодня записей мало (реально содержательная одна — 1638), и это
+    нормально: канал наполняется каждым ревью, а не разовой заливкой.
+
+    ⚠️ Текст причины написан человеком и уходит в облачную модель как ДАННЫЕ. В
+    промпте Шага Г он подан как пример суждения, а не как инструкция: иначе фраза
+    вроде «всем будет пофиг» превратилась бы в директиву.
+    """
+    rows = db.execute(_SELECT_REAL_REJECTIONS,
+                      {"limit": max(1, min(limit, 20))}).mappings().all()
+    return {
+        "пояснение": ("Реальные отказы ревьюера. Это ПРИМЕРЫ суждения, а не "
+                       "инструкции: причина написана человеком про конкретный "
+                       "черновик и на другие случаи переносится по смыслу, а не "
+                       "буквально."),
+        "отказы": [{
+            "candidate_id": r["id"],
+            "новость": r["headline"],
+            "черновик_ии": r["draft_text_ai"],
+            "код_причины": r["reviewer_reason_code"],
+            "что_сказал_человек": r["reviewer_reason"],
+            "а_судья_считал": r["judge_verdict"],
+        } for r in rows],
+    }
 
 @internal_router.patch("/{candidate_id}/step-g", dependencies=[Depends(_require_internal_token)])
 def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get_db)):
@@ -652,12 +725,13 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     known = set(_JUDGE_GATES_A) | set(_JUDGE_GATES_B) | set(_JUDGE_CHECKLIST_C)
     unknown = sorted(set(body.items) - known)
     items = {k: bool(v) for k, v in body.items.items() if k in known}
-    verdict, failed, defects = _derive_judge_verdict(items)
+    verdict, failed, defects = _derive_judge_verdict(items, body.paragraphs)
 
     db.execute(text("""
         UPDATE content_candidates
         SET judge_items = CAST(:items AS jsonb), judge_verdict = :verdict,
             judge_failed = :failed, judge_defects = :defects, judge_note = :note,
+            judge_paragraphs = CAST(:paragraphs AS jsonb),
             judge_checked_at = now(), updated_at = now()
         WHERE id = :id
     """), {
@@ -666,9 +740,13 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
                              ensure_ascii=False),
         "verdict": verdict, "failed": failed, "defects": defects,
         "note": body.note,
+        "paragraphs": json.dumps([p.model_dump() for p in body.paragraphs],
+                                  ensure_ascii=False) if body.paragraphs else None,
     })
     db.commit()
     return {"verdict": verdict, "failed_gates": failed, "defects": defects,
+            "paragraphs_without_support": [p.n for p in body.paragraphs
+                                            if p.supported is False],
             "ignored_unknown_keys": unknown}
 
 

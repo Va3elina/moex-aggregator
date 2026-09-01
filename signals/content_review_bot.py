@@ -147,7 +147,7 @@ _SELECT_NEW_DRAFTS = text("""
 _SELECT_CANDIDATE = text("""
     SELECT id, headline, tickers, draft_text, status,
            reviewer_reason_code, reviewer_reason,
-           judge_verdict, judge_failed, judge_defects
+           judge_verdict, judge_failed, judge_defects, judge_paragraphs
     FROM content_candidates WHERE id = :id
 """)
 
@@ -216,6 +216,37 @@ def _judge_line(verdict, failed, defects) -> str:
     return out
 
 
+def _doubts_line(paragraphs) -> str:
+    """Сомнения судьи по абзацам — прямо в карточке.
+
+    ⚠️ Смысл поабзацного разбора не в отчётности, а в том, чтобы человек видел, за
+    что именно зацепиться. Вердикт «годится» одной строкой ничего не даёт: на
+    кандидате 1638 он был именно таким, а к каждому абзацу была своя претензия.
+    Поэтому абзацы БЕЗ опоры показываются всегда, а сомнения по остальным — тоже,
+    но короче: «чуйка» полезна ровно настолько, насколько её видно.
+    """
+    if not paragraphs:
+        return ""
+    try:
+        items = paragraphs if isinstance(paragraphs, list) else json.loads(paragraphs)
+    except (TypeError, ValueError):
+        return ""
+    lines = []
+    for p in items:
+        if not isinstance(p, dict):
+            continue
+        n = p.get("n", "?")
+        doubt = (p.get("doubt") or "").strip()
+        if p.get("supported") is False:
+            claim = (p.get("claim") or "").strip()
+            lines.append(f"⛔ абз.{n}: не на чём держится — {html.escape(claim[:110])}")
+        elif doubt:
+            lines.append(f"• абз.{n}: {html.escape(doubt[:110])}")
+    if not lines:
+        return ""
+    return "\n\n🤔 под сомнением:\n" + "\n".join(lines)
+
+
 def _reason_line(reason_code, reason_text) -> str:
     """Причина в карточке — чтобы повторно открытая карточка показывала не только
     ЧТО решили, но и ПОЧЕМУ (иначе решение снова становится неразмеченным)."""
@@ -249,11 +280,11 @@ def _card_view(row):
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
-     j_verdict, j_failed, j_defects) = row
+     j_verdict, j_failed, j_defects, j_paragraphs) = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
-    txt += _judge_line(j_verdict, j_failed, j_defects)
+    txt += _judge_line(j_verdict, j_failed, j_defects) + _doubts_line(j_paragraphs)
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
@@ -333,6 +364,40 @@ _awaiting_edit: dict = {}   # chat_id -> candidate_id
 # проглатывал бы любое следующее сообщение админа.
 _awaiting_reason: dict = {}  # chat_id -> candidate_id
 
+# Присланный по «Править» текст, который НЕ похож на пост — ждёт уточнения.
+# ⚠️ Зачем. Кандидат 1638: Вадим нажал «✏️ Править» и написал туда РАЗБОР
+# («спрогнозировало — спорное заявление и кто знает…»). Бот честно сделал то, о
+# чём предупреждал, — заменил текст поста критикой. Кнопка «Править» стоит первой
+# на карточке, а естественный жест после плохого черновика — сказать, что не так,
+# а не переписать пост целиком. Публикация после этого отправила бы в канал
+# разбор вместо поста.
+_pending_edit: dict = {}  # chat_id -> (candidate_id, text)
+
+
+def _looks_like_post(txt: str, current: str | None) -> bool:
+    """Похож ли присланный текст на пост, а не на комментарий к нему.
+
+    Признак — только ФОРМАТ: маркеры абзацев ◽️ либо хэштег рубрики последней
+    строкой. Пост без хэштега рубрики и так не проходит format_ok у судьи, так
+    что требование не лишнее.
+
+    ⚠️ Запаса по длине здесь СОЗНАТЕЛЬНО нет, хотя он выглядел естественно
+    («переписка редко втрое короче исходника»). Тест на реальном тексте 1638
+    показал, как он обманывается: длинный комментарий против короткого поста
+    проходит по длине и молча заменяет пост. Длина не отличает разбор от текста.
+
+    Асимметрия цен решает всё: ошибка в одну сторону — лишний вопрос с двумя
+    кнопками, в другую — критика уходит в канал как пост. Поэтому по умолчанию
+    сомневаемся.
+    """
+    body = txt.strip()
+    if not body:
+        return False
+    if "◽" in body:
+        return True
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    return bool(lines) and lines[-1].startswith("#")
+
 
 def process_callback(cb: dict) -> None:
     cb_id = cb.get("id")
@@ -396,6 +461,23 @@ def process_callback(cb: dict) -> None:
             _awaiting_reason[chat_id] = cid
             answer_cb(cb_id, "Жду комментарий ✍️")
             send(chat_id, f"Пришлите комментарий к #{cid} следующим сообщением.")
+        elif op in ("ep", "ec"):
+            pending = _pending_edit.pop(chat_id, None)
+            if not pending or pending[0] != cid:
+                answer_cb(cb_id, "Текст потерялся, пришлите заново")
+                edit_kb(chat_id, message_id, f"#{cid} — текст потерялся, пришлите заново", [])
+            elif op == "ep":
+                db.execute(_UPDATE_DRAFT, {"t": pending[1], "id": cid})
+                db.commit()
+                answer_cb(cb_id, "Черновик обновлён ✏️")
+                edit_kb(chat_id, message_id, f"#{cid} — черновик заменён вашим текстом ✏️", [])
+                send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
+            else:
+                db.execute(_APPEND_REVIEW_REASON, {"t": pending[1], "id": cid})
+                db.commit()
+                answer_cb(cb_id, "Записал как комментарий ✍️")
+                edit_kb(chat_id, message_id,
+                        f"#{cid} — записал как комментарий, текст поста не тронут 👍", [])
         elif op == "e":
             _awaiting_edit[chat_id] = cid
             answer_cb(cb_id, "Жду текст следующим сообщением ✏️")
@@ -444,6 +526,18 @@ def process_update(update: dict) -> None:
         cid = _awaiting_edit.pop(chat_id)
         db = SessionLocal()
         try:
+            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
+            current = row[3] if row else None
+            if not _looks_like_post(txt, current):
+                # Не подменяем пост молча: спрашиваем, что это было.
+                _pending_edit[chat_id] = (cid, txt)
+                send_kb(chat_id,
+                        f"Текст не похож на пост: нет ни ◽️, ни хэштега рубрики. "
+                        f"Черновик #{cid} НЕ изменён.\n\n"
+                        f"Это новый текст поста или комментарий к нему?",
+                        [[{"text": "📝 это текст поста", "callback_data": f"ep:{cid}"},
+                          {"text": "✍️ это комментарий", "callback_data": f"ec:{cid}"}]])
+                return
             db.execute(_UPDATE_DRAFT, {"t": txt, "id": cid})
             db.commit()
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
