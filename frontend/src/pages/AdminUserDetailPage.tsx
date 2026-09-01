@@ -269,7 +269,12 @@ export default function AdminUserDetailPage() {
                     <div className="flex items-center min-w-0 flex-1" style={{ gap: 'var(--sp-2)' }}>
                       <Zap size={10} style={{ color: 'var(--accent)', flexShrink: 0 }} />
                       <span className="font-semibold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
-                        {ev.event_type}
+                        {/* Бэкенд схлопывает подряд идущие heartbeat'ы в один
+                            спан с payload {beats, mins} — рисуем его как
+                            человекочитаемое «на сайте», а не простыню событий. */}
+                        {ev.event_type === 'session_heartbeat' && typeof ev.payload?.mins === 'number'
+                          ? `на сайте ~${String(ev.payload?.mins)} мин`
+                          : ev.event_type}
                       </span>
                       {ev.event_path && (
                         <span className="truncate" style={{
@@ -279,7 +284,7 @@ export default function AdminUserDetailPage() {
                           {ev.event_path}
                         </span>
                       )}
-                      {ev.payload && (
+                      {ev.payload && !(ev.event_type === 'session_heartbeat') && (
                         <span className="truncate" style={{ color: 'var(--text-muted)' }}>
                           {JSON.stringify(ev.payload).slice(0, 80)}
                         </span>
