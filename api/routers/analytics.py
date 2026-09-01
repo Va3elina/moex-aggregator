@@ -2,7 +2,8 @@
 Analytics API — приём событий с фронта + admin-stats.
 
 Endpoints:
-- POST /api/analytics/event   — batch insert events (любой user, в т.ч. гость)
+- POST /api/usage/log         — batch insert events (любой user, в т.ч. гость)
+- POST /api/analytics/event   — тот же приём, легаси-путь (см. ingest_router)
 - GET  /api/analytics/stats   — aggregated metrics (admin only)
 
 Принципы:
@@ -28,9 +29,16 @@ from api.routers.auth import get_current_user_optional, require_admin
 log = get_logger()
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
+# Приём событий висит на нейтральном пути. Прежний /api/analytics/event попадал
+# под стандартные списки блокировщиков рекламы (EasyPrivacy и клоны режут URL со
+# словом analytics), из-за чего часть браузеров молчала: события не уходили, и в
+# логах это было неотличимо от отказа. Старый путь оставлен рабочим — по нему
+# ходят вкладки со старым бандлом из кэша.
+ingest_router = APIRouter(prefix="/api/usage", tags=["analytics"])
+
 
 # ════════════════════════════════════════════════════════════════════════════
-# POST /event — batch event ingestion
+# POST /usage/log — batch event ingestion
 # ════════════════════════════════════════════════════════════════════════════
 
 class AnalyticsEvent(BaseModel):
@@ -41,6 +49,9 @@ class AnalyticsEvent(BaseModel):
     payload: Optional[dict[str, Any]] = None
     client_ts: datetime
     device: Optional[str] = Field(None, max_length=20)
+    # IANA-зона браузера (Europe/Moscow). Из неё берём страну, когда прокси не
+    # прислал заголовок с кодом — точный IP по-прежнему не смотрим.
+    tz: Optional[str] = Field(None, max_length=64)
 
 
 class AnalyticsBatch(BaseModel):
@@ -64,7 +75,15 @@ ALLOWED_EVENT_TYPES = {
     "trial_start",
     "purchase_success",
     "trial_activated",
+    # Согласие: тумблер в профиле. Пишем сам факт смены выбора, без payload —
+    # иначе отказ виден только как тишина и его невозможно посчитать.
+    "consent_optout",
+    "consent_optin",
 }
+
+# Типы, которые принимаем ВНЕ зависимости от согласия: это не наблюдение за
+# поведением, а запись самого решения по приватности.
+CONSENT_EVENT_TYPES = {"consent_optout", "consent_optin"}
 
 
 # Канон ключей indicator в событиях chart_export. Ключ берётся из имени файла
@@ -124,6 +143,36 @@ def _detect_country(req: Request) -> Optional[str]:
     return None
 
 
+def _build_tz_country_map() -> dict[str, str]:
+    """IANA-зона → ISO-код страны, из таблиц pytz (обратный country_timezones).
+
+    Нужен, потому что наш nginx страну не отдаёт: geoip2-модуля в образе нет,
+    а поднимать базу MaxMind ради одного разреза не стоит. Зона браузера даёт
+    ту же географию и не требует смотреть на IP.
+    """
+    out: dict[str, str] = {}
+    try:
+        import pytz
+
+        for code, zones in pytz.country_timezones.items():
+            for zone in zones:
+                out[zone] = code.upper()
+    except Exception:  # pragma: no cover — без pytz просто остаёмся без страны
+        pass
+    return out
+
+
+_TZ_COUNTRY = _build_tz_country_map()
+
+
+def _country_from_tz(tz: Optional[str]) -> Optional[str]:
+    """Страна по зоне браузера. Неизвестная/подменённая зона → None."""
+    if not tz:
+        return None
+    return _TZ_COUNTRY.get(tz.strip())
+
+
+@ingest_router.post("/log", status_code=204)
 @router.post("/event", status_code=204)
 async def post_events(
     batch: AnalyticsBatch,
@@ -164,7 +213,9 @@ async def post_events(
                         "event_path": ev.event_path,
                         "payload": _serialize_jsonb(ev.payload),
                         "client_ts": ev.client_ts,
-                        "country": country,
+                        # Заголовок прокси приоритетнее: зона браузера легко
+                        # съезжает (VPN, ручная настройка часов).
+                        "country": country or _country_from_tz(ev.tz),
                         # Per-event device override (mobile может прислать tablet event если split-screen)
                         "device": ev.device or device,
                     },
