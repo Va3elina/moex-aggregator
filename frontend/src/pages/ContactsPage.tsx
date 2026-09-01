@@ -21,7 +21,7 @@ import { ArrowLeft, Mail, Send, MapPin, Building2 } from 'lucide-react';
 const SUPPORT_EMAIL = 'frameinfo@mail.ru';
 const SUPPORT_TELEGRAM = 'https://t.me/TorSasha';
 const LEGAL_NAME = 'ИП Тория Александр Роландович';
-const LEGAL_ADDRESS = '190020, г. Санкт-Петербург, ул. 8-я Красноармейская, д. 21А, кв. 5';
+const LEGAL_ADDRESS = '190020, г. Санкт-Петербург, ул. 8-я Красноармейская, д. 21, литера А, кв. 5';
 const INN = '782627792630';
 const OGRNIP = '325784700029296';
 

@@ -12,7 +12,7 @@
  */
 import type { ReactNode } from 'react';
 import { Check, X, Clock, Gift } from 'lucide-react';
-import { API_CSV_ENABLED } from '../../config/features';
+import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { FEATURE_HINTS, FeatureHintRow } from './featureHints';
 
 export interface PlanVariant {
@@ -77,15 +77,15 @@ export const CARD_FEATURES: Array<{
   // это разные сценарии (свой рабочий стол против работы поверх чужого),
   // и Pro нужен видимый вес отличий от Basic.
   { key: 'extension',  label: 'Индикаторы в терминале Т-Инвестиций', free: false, basic: false, pro: true },
-  // KILL-SWITCH (config/features.ts): пока выключен — в Pro стоит анонс
-  // «скоро», чтобы направление было видно и никто не считал функцию рабочей.
-  // Когда включим — анонс заменяется двумя настоящими строками.
-  ...(API_CSV_ENABLED ? [
-    { key: 'download', label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true },
-    { key: 'download', label: 'API-доступ',          free: false, basic: false, pro: true },
-  ] : [
-    { key: 'download', label: 'Скачивание данных', free: false, basic: false, pro: 'Скачивание данных — скоро', soon: true },
-  ]),
+  // KILL-SWITCH (config/features.ts) — раздельный: экспорт включён 01.09.2026,
+  // API ещё нет. Выключенная функция не должна выглядеть рабочей, поэтому
+  // строка появляется только когда её флаг поднят.
+  ...(CSV_EXPORT_ENABLED
+    ? [{ key: 'download', label: 'Экспорт CSV / Excel', free: false, basic: false, pro: true }]
+    : []),
+  ...(PUBLIC_API_ENABLED
+    ? [{ key: 'download', label: 'API-доступ', free: false, basic: false, pro: true }]
+    : []),
 ];
 
 interface Props {

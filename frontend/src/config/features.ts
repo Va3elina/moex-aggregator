@@ -1,17 +1,25 @@
 /**
  * Глобальные feature-флаги (kill-switch).
  *
- * API_CSV_ENABLED — публичный API (ключи, /api-docs, /api/v1/public/*) и
- * экспорт данных в CSV. СКРЫТО до официального запуска: пока сервис не
- * запущен официально, не предлагаем эти функции (конкуренты могут
- * использовать против нас).
+ * CSV_EXPORT_ENABLED — экспорт данных в CSV / Excel (кнопка на страницах
+ * индикаторов). ВКЛЮЧЁН 01.09.2026. Бэк: api/billing/features.py
+ * CSV_EXPORT_ENABLED (default on) + монтирование exports_router в main.py.
  *
- * Чтобы ВЕРНУТЬ на запуске:
- *   1. здесь  → export const API_CSV_ENABLED = true;
- *   2. на бэке → env PUBLIC_API_CSV_ENABLED=1 (api/billing/features.py + main.py)
+ * PUBLIC_API_ENABLED — публичный API: ключи в профиле, страница /api-docs,
+ * /api/v1/public/*. СКРЫТО до официального запуска: пока сервис не запущен
+ * официально, не предлагаем эту функцию (конкуренты могут использовать
+ * против нас).
+ *
+ * Раньше это был один флаг API_CSV_ENABLED на обе функции — разделён
+ * 01.09.2026, чтобы вернуть экспорт, не открывая API.
+ *
+ * Чтобы ВЕРНУТЬ API на запуске:
+ *   1. здесь  → export const PUBLIC_API_ENABLED = true;
+ *   2. на бэке → env PUBLIC_API_ENABLED=1 (api/billing/features.py + main.py)
  *   3. rebuild фронта + recreate api
  */
-export const API_CSV_ENABLED = false;
+export const CSV_EXPORT_ENABLED = true;
+export const PUBLIC_API_ENABLED = false;
 
 /**
  * PAYMENT_METHODS_UI_ENABLED — секция «Способы оплаты» в ЛК (/profile):

@@ -10,7 +10,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Lock } from 'lucide-react';
-import { API_CSV_ENABLED } from '../../config/features';
+import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
 import TrialOfferCard from './TrialOfferCard';
@@ -43,9 +43,12 @@ const TIER_LABELS: Record<string, { ru: string; desc: string }> = {
         // API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка.
         // TradingView убран из обеих строк (2026-08-10): интеграции нет, а в модалке
         // замочка это читалось как обещание функции, которой у нас не существует.
-        desc: API_CSV_ENABLED
-            ? 'Всё из Basic + API, экспорт CSV, индикаторы Т-терминала, безлимитные уведомления.'
-            : 'Всё из Basic + индикаторы Т-терминала, безлимитные уведомления.',
+        desc: 'Всё из Basic + ' + [
+            PUBLIC_API_ENABLED ? 'API' : null,
+            CSV_EXPORT_ENABLED ? 'экспорт CSV' : null,
+            'индикаторы Т-терминала',
+            'безлимитные уведомления',
+        ].filter(Boolean).join(', ') + '.',
     },
 };
 

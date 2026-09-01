@@ -511,13 +511,15 @@ app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — 
 app.include_router(repo_volume_router)  # ← /api/repo/* (репо в акциях — тест гипотезы о шортах)
 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
 app.include_router(health_monitor.router)  # ← /api/health/data (always-on, НЕ под kill-switch)
-# KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска.
-# По умолчанию (PUBLIC_API_CSV_ENABLED не задан) роутеры НЕ монтируются →
-# /api/export/*, /api/keys/*, /api/v1/public/* отдают 404 ДЛЯ ВСЕХ (включая
-# прямые вызовы мимо UI). Вернуть: env PUBLIC_API_CSV_ENABLED=1 + recreate api.
-from api.billing.features import PUBLIC_API_CSV_ENABLED as _API_CSV_ON
-if _API_CSV_ON:
+# KILL-SWITCH — раздельный (01.09.2026, было одним флагом на оба).
+# CSV-экспорт включён; публичный API остаётся скрытым до запуска, его роутеры
+# НЕ монтируются → /api/keys/*, /api/v1/public/* отдают 404 ДЛЯ ВСЕХ (включая
+# прямые вызовы мимо UI). Вернуть API: env PUBLIC_API_ENABLED=1 + recreate api.
+from api.billing.features import CSV_EXPORT_ENABLED as _CSV_ON
+from api.billing.features import PUBLIC_API_ENABLED as _PUBLIC_API_ON
+if _CSV_ON:
     app.include_router(exports_router)  # ← /api/export/*.csv (Pro-only data download)
+if _PUBLIC_API_ON:
     app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
     app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
 app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
