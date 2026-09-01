@@ -240,8 +240,9 @@ def test_one_day_lead_is_not_anticipation():
     встала заранее» — бриф САМ выдавал лицензию, и модель ей воспользовалась.
     Вадим: «фьючерс поменялся за день и спрогнозировало — спорное заявление».
     """
-    assert _frame(-1).startswith("СОВПАДЕНИЕ")
-    assert "НЕЛЬЗЯ" in _frame(-1)
+    f = _frame(-1)
+    assert f.startswith("СОВПАДЕНИЕ")
+    assert "НЕ заявляй предвидение" in f
 
 
 def test_anticipation_needs_at_least_two_days():
@@ -607,3 +608,28 @@ def test_context_blocks_ask_for_one_short_sentence():
         src = inspect.getsource(fn)
         assert "ОДНИМ КОРОТКИМ ПРЕДЛОЖЕНИЕМ" in src, fn.__name__
         assert "скобк" in src, fn.__name__
+
+
+def test_frame_tells_the_model_to_stay_silent_about_the_one_day_gap():
+    """Модель вынесла оговорку рамки в пост дословно: «Разворот случился за день до
+    новости — от шума такой срок почти не отличить». Вадим: «вот эта часть уже не
+    нужна, это просто шум». Запрет, попавший в бриф, модель проговаривает вслух."""
+    f = _frame(-1)
+    assert f.startswith("СОВПАДЕНИЕ")
+    assert "НЕ пиши в посте" in f and "промолчи" in f
+
+
+def test_current_price_key_says_how_to_use_it():
+    """«Акция сейчас стоит 7,30 рубля» отдельным предложением повисает в конце. В
+    понравившемся варианте цена стояла в одной фразе с изменением."""
+    import inspect
+    src = inspect.getsource(CA._price_context)
+    assert "цена_сейчас_только_вместе_с_изменением" in src
+    assert '"цена_сейчас"' not in src
+
+
+def test_links_block_defines_paragraph_order_and_disputed_handling():
+    import inspect
+    src = inspect.getsource(CA._related_context)
+    assert "ПОРЯДОК" in src and "КТО КОМУ КЕМ ЯВЛЯЕТСЯ" in src
+    assert "СПОРНО" in src
