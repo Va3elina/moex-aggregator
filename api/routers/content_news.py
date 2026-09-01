@@ -23,6 +23,7 @@ content_candidates (db/migrations/022_content_candidates.sql) — там же п
 """
 import difflib
 import html
+import hashlib
 import json
 import os
 import re
@@ -636,6 +637,9 @@ class JudgeResult(BaseModel):
     evidence: dict[str, str] = {}
     paragraphs: list[JudgeParagraph] = []
     note: Optional[str] = None
+    # Отпечаток текста, который судья реально читал (echo из payload). См. проверку
+    # в apply_step_g: без неё поздний вердикт ложится на уже переписанный черновик.
+    draft_hash: Optional[str] = None
 
 
 def _derive_judge_verdict(items: dict, paragraphs=()) -> tuple:
@@ -739,6 +743,17 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     if not row["draft_text"]:
         raise HTTPException(status_code=409,
                             detail="У кандидата нет черновика — судить нечего")
+    # ⚠️ Вердикт принимается только для ТОГО текста, который судья читал. Батч 01.09:
+    # Шаг В сработал по кандидату дважды (кулдаун был равен периоду крона), судья
+    # прочитал первый черновик, а его вердикт лёг на второй — и в карточке это
+    # выглядело как настоящая претензия к числам, которых в тексте нет. Отличить
+    # такое от реальной ошибки по логу невозможно, поэтому проверяем отпечатком.
+    if body.draft_hash:
+        current = hashlib.md5((row["draft_text"] or "").encode("utf-8")).hexdigest()
+        if body.draft_hash != current:
+            raise HTTPException(
+                status_code=409,
+                detail="Черновик изменился после отправки судье — вердикт устарел")
 
     known = set(_JUDGE_GATES_A) | set(_JUDGE_GATES_B) | set(_JUDGE_CHECKLIST_C)
     unknown = sorted(set(body.items) - known)

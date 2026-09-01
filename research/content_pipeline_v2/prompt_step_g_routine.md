@@ -7,7 +7,10 @@
 
 # ЧТО ПРИХОДИТ
 
-candidate_id, бриф (headline, raw_text, дата_новости, дата_сигнала, рамка_сюжета,
+candidate_id, draft_hash (вернуть в PATCH БЕЗ ИЗМЕНЕНИЙ — это отпечаток текста,
+который ты читаешь; по нему бэкенд проверяет, что черновик не переписали между
+отправкой и твоим ответом), бриф (headline, raw_text, дата_новости, дата_сигнала,
+рамка_сюжета,
 позиции_физлиц), черновик_на_проверку, internal_token, api_host.
 
 Если candidate_id, черновик или internal_token не переданы — сообщи явно, ничего не
@@ -145,7 +148,7 @@ curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
 
 curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-g \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
-  -d '{"items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой"}'
+  -d '{"draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой"}'
 
 Присылай ВСЕ шестнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
 проваленных пунктов, doubt — у всех абзацев.

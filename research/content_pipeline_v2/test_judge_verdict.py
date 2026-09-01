@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from api.routers.content_news import (  # noqa: E402
     _JUDGE_GATES_A, _JUDGE_GATES_B, _JUDGE_CHECKLIST_C,
-    JudgeParagraph, _derive_judge_verdict,
+    JudgeParagraph, JudgeResult, _derive_judge_verdict,
 )
 
 _ALL_OK = {k: True for k in (*_JUDGE_GATES_A, *_JUDGE_GATES_B, *_JUDGE_CHECKLIST_C)}
@@ -203,3 +203,48 @@ def test_endpoint_reads_journal_not_candidate_columns():
     sql = str(CN._SELECT_REAL_REJECTIONS)
     assert "FROM content_feedback" in sql
     assert "f.judge_verdict" in sql, "вердикт нужен НА МОМЕНТ решения, а не сегодняшний"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Вердикт привязан к тексту, который судья читал
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_judge_payload_carries_hash_of_the_draft_it_shows(monkeypatch):
+    """Батч 01.09: судья описывал абзацы («прибыль упала на 59% до $829 млн»),
+    которых в сохранённом черновике нет. Не галлюцинация — он читал ПРЕДЫДУЩУЮ
+    версию: Шаг В сработал по кандидату дважды, потому что кулдаун был равен периоду
+    крона, а draft_text остаётся NULL, пока Routine не ответила.
+
+    Отличить такой вердикт от настоящей претензии по карточке невозможно — значит
+    его нельзя принимать. Отпечаток текста едет к судье и возвращается обратно.
+    """
+    import hashlib
+    from signals import content_ai as CA2
+    import datetime as _dt
+    row = {"id": 1658, "headline": "h", "raw_text": "r", "tickers": ["PLZL"],
+           "event_type": "opinion", "asset_id": "PZ", "asset_name": "Полюс",
+           "anomaly_clgroup": "FIZ", "severity_value": 3.1, "created_at": None,
+           "signal_date": _dt.date(2026, 8, 31), "thread_key": "k",
+           "draft_text": "Черновик A"}
+    # ⚠️ Только monkeypatch: прямое присваивание CA2._build_brief утекает в другие
+    # тесты того же прогона и роняет их (проверено — уронило два).
+    monkeypatch.setattr(CA2, "_build_brief", lambda db, r: {"x": 1})
+    payload = CA2._step_g_payload(None, row, "tok")
+    assert hashlib.md5("Черновик A".encode()).hexdigest() in payload
+    assert "draft_hash" in payload
+
+
+def test_cooldown_is_longer_than_the_cron_period():
+    """Кулдаун, равный периоду крона, гарантирует повторный запуск по любой сессии,
+    которая не успела ответить за один интервал."""
+    from signals import content_ai as CA2
+    assert CA2.DISPATCH_COOLDOWN_MIN > 15, CA2.DISPATCH_COOLDOWN_MIN
+
+
+def test_verdict_model_accepts_and_defaults_hash():
+    """Старый ответ без draft_hash обрабатывается (судья в облаке может работать по
+    прежней инструкции), но тогда проверка просто не срабатывает."""
+    r = JudgeResult(items={})
+    assert r.draft_hash is None
+    r2 = JudgeResult(items={}, draft_hash="abc")
+    assert r2.draft_hash == "abc"
