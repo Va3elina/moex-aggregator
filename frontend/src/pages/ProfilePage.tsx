@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 import {
   LogOut, Lock, Mail, Calendar, Shield, Crown,
   Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink, AlertCircle, User,
@@ -919,17 +920,26 @@ function PrivacyOptOutSection() {
   })();
 
   const [optedOut, setOptedOut] = useState(isOptedOut);
+  const { setConsent, logConsentChange } = useAnalytics();
 
   const toggle = () => {
     const next = !optedOut;
     if (next) {
+      // Отказ пишем ДО установки cookie: сам факт выбора нужен нам как цифра,
+      // дальше по этому браузеру не собирается ничего.
+      logConsentChange('optout');
       // Set cookie на 10 лет
       document.cookie = 'frame_analytics_optout=1; path=/; max-age=315360000; SameSite=Lax';
-      // Также reset consent в localStorage чтобы баннер появился снова если user захочет вернуть
-      try { localStorage.removeItem('frame_consent_v1'); } catch { /* ignore */ }
+      // Согласие в localStorage НЕ трогаем: раньше его тут стирали, из-за чего
+      // человеку снова выкатывался баннер, он жал «Окей» и считал, что вернул
+      // сбор, — хотя cookie отказа продолжала всё блокировать.
     } else {
       // Удаляем cookie
       document.cookie = 'frame_analytics_optout=; path=/; max-age=0; SameSite=Lax';
+      // Снятие галочки — это и есть явное согласие: включаем сбор сразу,
+      // не гоняя человека через баннер.
+      setConsent('accepted');
+      logConsentChange('optin');
     }
     setOptedOut(next);
   };

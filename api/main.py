@@ -528,6 +528,7 @@ app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 app.include_router(events.router)  # ← SSE: /api/events/*
 app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
+app.include_router(analytics.ingest_router)  # ← Приём событий: /api/usage/log
 app.include_router(extension.router)  # ← /api/extension/* (ext-токены: генерация/обмен)
 app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих аномалий)

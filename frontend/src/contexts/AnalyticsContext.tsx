@@ -5,7 +5,7 @@
  *  1. AnalyticsProvider оборачивает <App /> — даёт доступ к hook'у везде
  *  2. session_id генерируется один раз на mount, хранится в sessionStorage
  *     (умирает при закрытии вкладки → не tracking-cookie)
- *  3. События буферизуются 5 секунд → batch POST /api/analytics/event (1 HTTP / 50 events)
+ *  3. События буферизуются 5 секунд → batch POST /api/usage/log (1 HTTP / 50 events)
  *  4. На beforeunload → navigator.sendBeacon (надёжная доставка при закрытии)
  *  5. Heartbeat каждые 60s пока document.visibilityState === 'visible'
  *  6. Opt-out check: cookie `frame_analytics_optout=1` ИЛИ user.analytics_optout=true → tracking выключен
@@ -13,7 +13,8 @@
  * Privacy:
  *  - Не отправляем PII в payload (только secid/mode/period/indicator)
  *  - Session ID — UUID v4, новый на каждое открытие сайта
- *  - Точный IP не логируется на сервере (только country code из proxy headers)
+ *  - Точный IP не логируется на сервере (страна — из заголовка прокси либо из
+ *    часовой зоны браузера)
  *  - Retention 180 дней (cleanup в orchestrator)
  *
  * Использование (любая *Page):
@@ -33,8 +34,13 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
+// Путь приёма намеренно нейтральный: адрес со словом analytics режут стандартные
+// списки блокировщиков, и события части браузеров не доходили вообще.
+const INGEST_PATH = '/api/usage/log';
 const STORAGE_SESSION_KEY = 'frame_session_id';
 const STORAGE_CONSENT_KEY = 'frame_consent_v1';   // 'accepted' | 'minimal' | null
+const COOKIE_CONSENT_NAME = 'frame_consent';      // зеркало выбора, чтобы он не терялся с localStorage
+const CONSENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 год
 const COOKIE_OPTOUT_NAME = 'frame_analytics_optout';
 const FLUSH_INTERVAL_MS = 5_000;     // batch flush каждые 5s
 const HEARTBEAT_INTERVAL_MS = 60_000; // heartbeat каждые 60s
@@ -44,6 +50,8 @@ const MAX_BATCH = 50;
 // Мёртвые (indicator_view / chart_annotate / period_change / session_end)
 // удалены 2026-06-16 — никогда не слались, бэкенд-whitelist их тоже не принимает.
 type EventType =
+  | 'consent_optout'
+  | 'consent_optin'
   | 'pageview'
   | 'instrument_select'
   | 'seasonality_mode'
@@ -63,6 +71,8 @@ interface PendingEvent {
   payload: Record<string, unknown> | null;
   client_ts: string;
   device: string;
+  /** Часовая зона браузера — из неё сервер берёт страну (IP не смотрим). */
+  tz: string | null;
 }
 
 interface AnalyticsContextValue {
@@ -70,8 +80,12 @@ interface AnalyticsContextValue {
   track: (type: EventType, payload?: Record<string, unknown>) => void;
   /** Текущий status согласия пользователя. null = ещё не выбрал → показываем banner. */
   consent: 'accepted' | 'minimal' | null;
-  /** Установить согласие — записывает в localStorage и обновляет state. */
+  /** Установить согласие — записывает в localStorage + cookie и обновляет state. */
   setConsent: (value: 'accepted' | 'minimal') => void;
+  /** Записать смену решения по сбору данных (тумблер в профиле).
+   *  Уходит сразу и в обход гейта: это не наблюдение за поведением, а сам факт
+   *  выбора — иначе отказ виден только как тишина и его нельзя посчитать. */
+  logConsentChange: (kind: 'optout' | 'optin') => void;
 }
 
 const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
@@ -106,6 +120,14 @@ function getOrCreateSessionId(): string {
   }
 }
 
+function detectTimezone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
 function detectDevice(): string {
   if (typeof window === 'undefined') return 'desktop';
   const ua = navigator.userAgent.toLowerCase();
@@ -128,13 +150,36 @@ function isOptedOut(): boolean {
   return readCookie(COOKIE_OPTOUT_NAME) === '1';
 }
 
+function isConsentValue(v: string | null): v is 'accepted' | 'minimal' {
+  return v === 'accepted' || v === 'minimal';
+}
+
+/** Выбор храним в двух местах сразу: localStorage и cookie.
+ *  Хранилища чистятся по-разному (приватный режим, настройки браузера,
+ *  вытеснение в Safari), и потеря записи возвращала баннер человеку, который
+ *  на него уже отвечал. Читаем из любого, пишем в оба. */
 function readConsent(): 'accepted' | 'minimal' | null {
   try {
     const v = localStorage.getItem(STORAGE_CONSENT_KEY);
-    if (v === 'accepted' || v === 'minimal') return v;
-    return null;
+    if (isConsentValue(v)) return v;
   } catch {
-    return null;
+    /* storage disabled — пробуем cookie */
+  }
+  const c = readCookie(COOKIE_CONSENT_NAME);
+  return isConsentValue(c) ? c : null;
+}
+
+function writeConsent(value: 'accepted' | 'minimal'): void {
+  try {
+    localStorage.setItem(STORAGE_CONSENT_KEY, value);
+  } catch {
+    /* storage disabled — остаётся cookie */
+  }
+  try {
+    document.cookie =
+      `${COOKIE_CONSENT_NAME}=${value}; path=/; max-age=${CONSENT_COOKIE_MAX_AGE}; SameSite=Lax`;
+  } catch {
+    /* cookie недоступны — остаётся localStorage */
   }
 }
 
@@ -175,6 +220,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const heartbeatTimerRef = useRef<number | null>(null);
   const lastBeatRef = useRef<number>(0);  // ms-метка последнего ОТПРАВЛЕННОГО heartbeat (дедуп)
   const deviceRef = useRef<string>(detectDevice());
+  const tzRef = useRef<string | null>(detectTimezone());
   const acqSentRef = useRef<boolean>(false);  // источник (referrer/utm) шлём 1 раз за сессию
 
   // Initialize session_id on mount (lazy, чтобы не активировать sessionStorage если consent=null)
@@ -191,7 +237,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     return true;
   }, [consent]);
 
-  /** Flush queue → POST /api/analytics/event. Если queue пуст или opt-out — no-op.
+  /** Flush queue → POST /api/usage/log. Если queue пуст или opt-out — no-op.
    *
    *  Auth: у нас JWT в localStorage.access_token, backend читает Bearer header
    *  через get_current_user_optional. Раньше слали credentials:'include' (cookie),
@@ -209,7 +255,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
-      await fetch(`${API_BASE}/api/analytics/event`, {
+      await fetch(`${API_BASE}${INGEST_PATH}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ events: batch }),
@@ -245,6 +291,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         payload: pl,
         client_ts: new Date().toISOString(),
         device: deviceRef.current,
+        tz: tzRef.current,
       });
 
       // Flush сразу если буфер полон — не ждать 5s timer
@@ -262,16 +309,40 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   /** Set consent — записывает choice. Если 'accepted' → запускает session, sends pending pageview. */
   const setConsent = useCallback(
     (value: 'accepted' | 'minimal') => {
-      try {
-        localStorage.setItem(STORAGE_CONSENT_KEY, value);
-      } catch {
-        /* storage disabled — runtime-only consent */
-      }
+      writeConsent(value);
       setConsentState(value);
       // session_id создаётся при первом track() в любом случае
     },
     []
   );
+
+  /** Отправить факт смены решения по сбору данных — сразу и в обход гейта.
+   *  Событие одно, без payload: тип, время, страница. */
+  const logConsentChange = useCallback((kind: 'optout' | 'optin') => {
+    if (!sessionIdRef.current) sessionIdRef.current = getOrCreateSessionId();
+    const event: PendingEvent = {
+      session_id: sessionIdRef.current,
+      event_type: kind === 'optout' ? 'consent_optout' : 'consent_optin',
+      event_path: typeof window !== 'undefined' ? window.location.pathname : null,
+      payload: null,
+      client_ts: new Date().toISOString(),
+      device: deviceRef.current,
+      tz: tzRef.current,
+    };
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    try {
+      void fetch(`${API_BASE}${INGEST_PATH}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ events: [event] }),
+        keepalive: true,
+      }).catch(() => undefined);
+    } catch {
+      /* сеть недоступна — теряем запись, UI не трогаем */
+    }
+  }, []);
 
   // === Periodic flush ===
   useEffect(() => {
@@ -323,7 +394,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
           [JSON.stringify({ events: batch })],
           { type: 'application/json' }
         );
-        navigator.sendBeacon(`${API_BASE}/api/analytics/event`, blob);
+        navigator.sendBeacon(`${API_BASE}${INGEST_PATH}`, blob);
       } catch {
         /* beacon unavailable — отброс */
       }
@@ -337,8 +408,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   }, [consent, isTrackable]);
 
   const value = useMemo<AnalyticsContextValue>(
-    () => ({ track, consent, setConsent }),
-    [track, consent, setConsent]
+    () => ({ track, consent, setConsent, logConsentChange }),
+    [track, consent, setConsent, logConsentChange]
   );
 
   return <AnalyticsContext.Provider value={value}>{children}</AnalyticsContext.Provider>;
@@ -352,6 +423,7 @@ export function useAnalytics(): AnalyticsContextValue {
       track: () => undefined,
       consent: null,
       setConsent: () => undefined,
+      logConsentChange: () => undefined,
     };
   }
   return ctx;
