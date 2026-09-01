@@ -99,11 +99,17 @@ curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
   Провал, если размер позиции подан ПРОЦЕНТОМ ОТ ОТКРЫТОГО ИНТЕРЕСА («5% открытого
   интереса физлиц», «доля в ОИ»). Замер: 0 постов канала из 1459. Канал говорит
   сравнением с пиком («приближается к пикам 2021 г.») или местом среди бумаг
-  («самый густонаселённый трейд»).
+  («самый густонаселённый трейд»). Провал и за сопоставление «сейчас против
+  исторического пика» — это материал для отдельного поста про макродвижения.
 - length_ok: длина 350-950 знаков. Порог по замеру жанрового среза канала (n=44):
   медиана 661, четверть постов короче 559, три четверти короче 833. Прежние 1450
   пропускали черновик на 1105 знаков, который ревьюер забраковал как «стал длиньше и
   более подробным». Абзацев (считая заголовок) в канале чаще всего ЧЕТЫРЕ.
+- sentences_short: предложения короткие и по одному факту. Замер канала: медиана
+  11 слов, три четверти короче 16, вставки в скобках лишь в 3% абзацев. Провал, если
+  предложения в среднем заметно длиннее 16 слов, есть уточнение в скобках длиннее
+  15 знаков или два разных факта втиснуты в одно предложение. Ревьюер выбрал между
+  двумя черновиками ОДИНАКОВОЙ длины тот, где предложения короче.
 
 # ПОАБЗАЦНЫЙ РАЗБОР — обязателен
 
@@ -127,9 +133,9 @@ curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
 
 curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-g \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
-  -d '{"items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой"}'
+  -d '{"items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой"}'
 
-Присылай ВСЕ пятнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
+Присылай ВСЕ шестнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
 проваленных пунктов, doubt — у всех абзацев.
 
 ⚠️ Домен в URL — строго framedata.ru (ASCII). Кириллические домены ломают curl.

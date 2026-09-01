@@ -592,7 +592,7 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
 
 # Версия контракта брифа — держать в согласии с signals/content_ai.py:BRIEF_VERSION.
 # Поднимать при каждом изменении набора полей брифа.
-_BRIEF_VERSION = 9
+_BRIEF_VERSION = 10
 
 
 # ── Шаг Г: судья ───────────────────────────────────────────────────────────
@@ -609,9 +609,13 @@ _JUDGE_GATES_B = ("has_thesis", "link_earned", "no_redundancy",
 # ЧЕК-ЛИСТ ПРОИЗВОДСТВА C: на вердикт НЕ влияет. Эти пункты срабатывают и на
 # реальных постах канала (длинное тире у 11%, плотность >2 у 18%) — браковать по
 # ним значило бы забраковать сам канал. Но именно они говорят, что чинить.
+# sentences_short — чек-лист, а не ворота: длинное предложение портит чтение, но
+# фактуру не ломает, а у самого канала медиана 11 слов при максимуме 34 — браковать
+# по нему значило бы браковать и канал. Вадим 01.09 выбрал между двумя черновиками
+# ОДИНАКОВОЙ длины тот, где предложения короче.
 _JUDGE_CHECKLIST_C = ("conclusion_not_boilerplate", "no_brand_selfref",
                        "numbers_density", "format_ok", "no_methodology_talk",
-                       "length_ok")
+                       "length_ok", "sentences_short")
 
 
 class JudgeParagraph(BaseModel):
