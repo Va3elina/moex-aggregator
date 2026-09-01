@@ -245,6 +245,9 @@ const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const ONE_PT = new Set<string>(['hline', 'vline', 'text', 'brush']);
 /** Ручка эллипса: a1/a2 — концы первой оси, b1/b2 — второй. */
 type EllipseHandle = 'a1' | 'a2' | 'b1' | 'b2';
+/** «Свободный» угол прямоугольника (его нет в pts): ab — (x первой, y второй
+ *  точки), ba — наоборот. */
+type RectCorner = 'ab' | 'ba';
 interface Pt2 { x: number; y: number }
 /** Каркас эллипса в пикселях: центр c и векторы полуосей u и v.
  *
@@ -1423,7 +1426,8 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const fo = String((d.fillOpacity == null ? 0.13 : d.fillOpacity) * (d.opacity == null ? 1 : d.opacity));
           if (d.tool === 'rect') {
             drawSvg.appendChild(svgEl('rect', { x, y, width: rw, height: rh, fill, 'fill-opacity': fo, ...S }));
-            if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
+            // Все четыре угла — тянуть можно за любой (см. rectCorners).
+            if (sel) { dot(a.x, a.y); dot(b.x, b.y); dot(a.x, b.y); dot(b.x, a.y); }
             return;
           }
           const P = d.pts.map(lp2xy); if (P.some((p) => !p)) return;
@@ -1490,8 +1494,11 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       // pending — фигура строится «кликами»: первый клик поставил начало, курсор
       // тянет её без зажатой кнопки, второй клик фиксирует. Кнопка мыши при этом
       // отпущена, но dragState жив (в отличие от обычного перетаскивания).
-      let dragState: null | { mode: 'create' | 'move' | 'vertex' | 'edge'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; edge?: EllipseHandle; startXY: { x: number; y: number }; pending?: boolean } = null;
-      const HANDLE_R = 8;
+      let dragState: null | { mode: 'create' | 'move' | 'vertex' | 'edge' | 'corner'; d: LwDrawing; orig?: LwDrawPoint[]; vi?: number; edge?: EllipseHandle; corner?: RectCorner; startXY: { x: number; y: number }; pending?: boolean } = null;
+      // Радиус захвата ручки. 8px требовали снайперской точности — в край фигуры
+      // было не попасть, курсор вместо растягивания таскал её целиком. Пальцем
+      // (coarse) нужен ещё больший запас.
+      const HANDLE_R = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 18 : 12;
       /** Попадание в ручку эллипса (null — мимо или фигура другого типа). */
       const ellipsePx = (d: LwDrawing) => {
         if (d.tool !== 'ellipse' || d.pts.length < 2) return null;
@@ -1501,6 +1508,43 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       const hitEllipseHandle = (d: LwDrawing, x: number, y: number): EllipseHandle | null => {
         const f = ellipsePx(d); if (!f) return null;
         return ellipseHandles(f).find((h) => Math.hypot(x - h.x, y - h.y) <= HANDLE_R)?.id ?? null;
+      };
+      /** Углы прямоугольника: две опорные точки (vi) и два «свободных» угла,
+       *  которых в pts нет, — за них тоже надо тянуть, иначе половина рамки
+       *  мёртвая и растянуть фигуру вверх можно только за «правильный» угол. */
+      const rectCorners = (d: LwDrawing): { x: number; y: number; vi: number; corner?: RectCorner }[] => {
+        if (d.tool !== 'rect' || d.pts.length < 2) return [];
+        const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]);
+        if (!a || !b) return [];
+        return [
+          { x: a.x, y: a.y, vi: 0 }, { x: b.x, y: b.y, vi: 1 },
+          { x: a.x, y: b.y, vi: -1, corner: 'ab' }, { x: b.x, y: a.y, vi: -1, corner: 'ba' },
+        ];
+      };
+      /** Захват ручки фигуры (край/вершина/угол) — null, если мимо. */
+      const grabHandle = (d: LwDrawing, x: number, y: number): { mode: 'edge' | 'vertex' | 'corner'; edge?: EllipseHandle; vi?: number; corner?: RectCorner } | null => {
+        if (d.hidden || d.locked) return null;
+        const edge = hitEllipseHandle(d, x, y);
+        if (edge) return { mode: 'edge', edge };
+        for (const c of rectCorners(d)) {
+          if (Math.hypot(x - c.x, y - c.y) > HANDLE_R) continue;
+          return c.vi >= 0 ? { mode: 'vertex', vi: c.vi } : { mode: 'corner', corner: c.corner };
+        }
+        if (d.tool === 'brush' || d.tool === 'rect') return null;
+        for (let k = 0; k < d.pts.length; k++) {
+          const xy = lp2xy(d.pts[k]);
+          if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) return { mode: 'vertex', vi: k };
+        }
+        return null;
+      };
+      /** Ручки ВЫДЕЛЕННОЙ фигуры важнее тела любой другой: край торчит наружу и
+       *  часто лежит на соседней фигуре, и промах по нему уводил в «тащить всё». */
+      const grabSelectedHandle = (x: number, y: number) => {
+        const sel = selectedDrawIdRef.current;
+        const d = sel ? mine(drawingsRef.current).find((q) => q.id === sel) : null;
+        if (!d) return null;
+        const g = grabHandle(d, x, y);
+        return g ? { d, ...g } : null;
       };
       const uid = () => 'dr_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
 
@@ -1654,17 +1698,20 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const { x, y } = relXY(e);
         if (tool === 'select') {
           if (drawLockedRef.current) { selectedDrawIdRef.current = null; onSelectDrawRef.current?.(null); drawShapes(); return; }
+          const grab = grabSelectedHandle(x, y);
+          if (grab) {
+            dragState = { mode: grab.mode, edge: grab.edge, vi: grab.vi, corner: grab.corner, d: { ...grab.d, pts: grab.d.pts.map((p) => ({ ...p })) }, startXY: { x, y } };
+            try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
+            drawShapes(); return;
+          }
           const hit = hitTest(x, y);
           selectedDrawIdRef.current = hit ? hit.id : null; onSelectDrawRef.current?.(hit ? hit.id : null);
           if (hit && !hit.locked) {   // per-element замок: выделить можно, двигать нельзя
-            let vi = -1;
-            const edge = hitEllipseHandle(hit, x, y);
-            if (!edge && hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
-            dragState = edge
-              ? { mode: 'edge', edge, d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, startXY: { x, y } }
-              : vi >= 0
-                ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, vi, startXY: { x, y } }
-                : { mode: 'move', d: { ...hit, pts: hit.pts.map((p) => ({ ...p })) }, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
+            const g = grabHandle(hit, x, y);
+            const copy = { ...hit, pts: hit.pts.map((p) => ({ ...p })) };
+            dragState = g
+              ? { mode: g.mode, edge: g.edge, vi: g.vi, corner: g.corner, d: copy, startXY: { x, y } }
+              : { mode: 'move', d: copy, orig: hit.pts.map((p) => ({ ...p })), startXY: { x, y } };
             try { drawHit.setPointerCapture(e.pointerId); } catch { /* нет capture */ }
           }
           drawShapes(); return;
@@ -1724,6 +1771,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         } else if (dragState.mode === 'vertex') {
           const lp = xy2lp(x, y); if (!lp) return;
           const pts = dragState.d.pts.slice(); pts[dragState.vi ?? 0] = lp; dragState.d.pts = pts;
+        } else if (dragState.mode === 'corner') {
+          // Свободный угол прямоугольника: одна его координата принадлежит
+          // первой опорной точке, другая — второй, поэтому правим обе.
+          const a = lp2xy(dragState.d.pts[0]), b = lp2xy(dragState.d.pts[1]);
+          if (!a || !b) return;
+          const p0 = dragState.corner === 'ab' ? xy2lp(x, a.y) : xy2lp(a.x, y);
+          const p1 = dragState.corner === 'ab' ? xy2lp(b.x, y) : xy2lp(x, b.y);
+          if (!p0 || !p1) return;
+          dragState.d.pts = [p0, p1];
         } else if (dragState.mode === 'edge') {
           // Ручка эллипса ходит СВОБОДНО, по обеим осям (как в TradingView):
           // конец оси тянешь — овал поворачивается вокруг противоположного конца
@@ -1820,20 +1876,20 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if ((e.target as HTMLElement | null)?.tagName !== 'CANVAS') return; // строки/кнопки/грипы — не наши
         if (!(drawingsRef.current ?? []).length) return;
         const { x, y } = relXY(e);
-        const hit = hitTest(x, y);
+        // Ручка выделенной фигуры — раньше тела: край торчит наружу фигуры, и
+        // без этого промах мимо тела означал «жест не наш» (пан графика).
+        const grab = grabSelectedHandle(x, y);
+        const hit = grab?.d ?? hitTest(x, y);
         if (!hit) return;
         e.preventDefault(); e.stopPropagation();
         swallowMouse = true;
         selectedDrawIdRef.current = hit.id; onSelectDrawRef.current?.(hit.id);
         if (hit.locked) { drawShapes(); return; }
-        let vi = -1;
-        const edge = hitEllipseHandle(hit, x, y);
-        if (!edge && hit.tool !== 'brush') for (let k = 0; k < hit.pts.length; k++) { const xy = lp2xy(hit.pts[k]); if (xy && Math.hypot(x - xy.x, y - xy.y) <= HANDLE_R) { vi = k; break; } }
-        dragState = edge
-          ? { mode: 'edge', edge, d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, startXY: { x, y } }
-          : vi >= 0
-            ? { mode: 'vertex', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, vi, startXY: { x, y } }
-            : { mode: 'move', d: { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) }, orig: hit.pts.map((pp) => ({ ...pp })), startXY: { x, y } };
+        const g = grab ?? grabHandle(hit, x, y);
+        const copy = { ...hit, pts: hit.pts.map((pp) => ({ ...pp })) };
+        dragState = g
+          ? { mode: g.mode, edge: g.edge, vi: g.vi, corner: g.corner, d: copy, startXY: { x, y } }
+          : { mode: 'move', d: copy, orig: hit.pts.map((pp) => ({ ...pp })), startXY: { x, y } };
         drawShapes();
         const mv = (ev: PointerEvent) => onDrawMove(ev);
         const up = (ev: PointerEvent) => {
