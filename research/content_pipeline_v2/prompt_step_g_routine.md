@@ -32,6 +32,25 @@ curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
 
 Если запрос не удался — работай по рубрике и скажи об этом в note.
 
+# СНАЧАЛА СВОЙ ОТВЕТ, ПОТОМ ЧУЖОЙ ТЕКСТ
+
+⚠️ ПОРЯДОК ОБЯЗАТЕЛЕН, и это не формальность. Прежде чем читать черновик, посмотри
+ТОЛЬКО бриф и запиши для себя (в поле own_take): какие 2-3 факта из брифа обязаны
+попасть в пост, какая рамка сюжета и чего утверждать нельзя. Своими словами, коротко.
+
+Только после этого читай черновик и заполняй пункты — сверяя его со СВОИМ ответом.
+
+Зачем: исследование Self-Play Reward Hacking of Reference-Free LLM Judges
+(arXiv:2607.05904) показало, что судья, которому сразу показали готовый ответ,
+оценивает УБЕДИТЕЛЬНОСТЬ, а не правильность: проходимость у судьи выросла с 0,72 до
+0,94 при настоящей точности 0,20, и строгий ансамбль из трёх судей всё равно принимал
+55% взломанных ответов. Ломает это ровно одно — заставить судью сначала дать свой
+независимый ответ. Тот же судья, который подмахивает готовому тексту, отклоняет почти
+всё то же самое, если сперва сформулировал сам.
+
+Свой ответ нужен именно ДО чтения черновика. Написанный после, он будет пересказом
+черновика, и весь смысл пропадёт.
+
 # ВОРОТА A — фактура. Здесь ошибка стоит дороже всего
 
 - numbers_traceable: каждое число, процент, дата и объём в черновике находится в
@@ -184,7 +203,7 @@ fix_note одной фразой скажи, что именно поправи�
 
 curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-g \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
-  -d '{"draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой","fixed_draft":"исправленный текст ЦЕЛИКОМ — только если вердикт не «годится», иначе не присылай","fix_note":"что поправил, одной фразой"}'
+  -d '{"own_take":"что ДОЛЖНО быть в посте по брифу — записано ДО чтения черновика","draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой","fixed_draft":"исправленный текст ЦЕЛИКОМ — только если вердикт не «годится», иначе не присылай","fix_note":"что поправил, одной фразой"}'
 
 Присылай ВСЕ шестнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
 проваленных пунктов, doubt — у всех абзацев.
