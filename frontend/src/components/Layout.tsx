@@ -597,12 +597,14 @@ export default function Layout() {
         {/* Top row — основные ссылки */}
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
           <span>© Frame · framedata.ru</span>
-          {/* Attribution к индексам MOEX (Strength + FundsMoney используют
-              IMOEX/RTSI/RGBI как benchmark). License MOEX требует видимое
-              упоминание сайтов отображающих их индексы. Свечи акций (Heatmap,
-              Seasonality, OI) — обычная market data, attribution не требуется. */}
+          {/* Указание источника Биржевой информации. Раньше здесь стояло узкое
+              «Индексы: …» — только про IMOEX/RTSI/RGBI. Расширено 01.09.2026:
+              информационный аудит МосБиржи проверяет наличие указания источника
+              на ВСЕХ страницах, содержащих Биржевую информацию, а не только на
+              тех, где показаны индексы (Порядок проведения аудита, п.3.5.5).
+              Футер общий для всех страниц — этим требование и закрывается. */}
           <span style={{ color: 'var(--text-muted)' }}>
-            Индексы:{' '}
+            Биржевая информация:{' '}
             <a
               href="https://www.moex.com"
               target="_blank"
@@ -630,6 +632,15 @@ export default function Layout() {
           </Link>
           <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             Политика обработки данных
+          </Link>
+          {/* Соглашение обязано быть доступно с ЛЮБОЙ страницы: в нём лежат
+              предупреждения об ограничениях использования Биржевой информации,
+              которые договор с МосБиржей требует довести до всех получателей
+              (п.1.2.6 Условий ИТО, абз.2 п.3.4.1.1.8 Порядка). До 01.09.2026
+              ссылка была только на /pricing — анонимный посетитель индикаторов
+              её не видел никогда. */}
+          <Link to="/agreement" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Пользовательское соглашение
           </Link>
           <a
             href="https://t.me/+vbt614-Qq1w1YWYy"
