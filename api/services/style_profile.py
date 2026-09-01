@@ -33,7 +33,28 @@ import re
 import statistics as st
 from functools import lru_cache
 
-GENRE_TAGS = ("#открытыйинтерес", "#открытыепозиции")
+# ⚠️ Эталон ЖАНРОВЫЙ, и это выяснилось на живом посте. Пост про мандат по фондам
+# получил замечание «пост длинный: 1239 знаков против 661» — а 1239 это РОВНО медиана
+# жанра «фонды». Замер по срезам:
+#                     ОИ (n=45)  фонды (n=17)  весь FRAME (n=82)
+#   знаков                 679         1239           843
+#   слов в предложении      11           12            11
+#   чисел на 100 знаков   0,38         0,43          0,41
+#   доля прозы            0,67         0,73          0,71
+# Плотность и проза у жанров почти совпадают, а ДЛИНА отличается вдвое. Сравнивать
+# пост про фонды с эталоном «ОИ» значит требовать сократить его вдвое без причины.
+#
+# Рубрика берётся из самого текста — она стоит последней строкой, так что определять
+# её отдельным параметром не нужно.
+_GENRES = {
+    "ои": ("#открытыйинтерес", "#открытыепозиции", "#ОткрытыйИнтерес"),
+    "фонды": ("#деньгивфондах", "#cделкифондов", "#сделкифондов",
+               "#Потоккапитала", "#ПотокКапитала"),
+}
+# ⚠️ Порог 15 постов. Ниже него медиана и разброс шумят: у «#сезонность» всего 8
+# постов, и эталон по ним увёл бы сильнее, чем общий по каналу.
+_MIN_SLICE = 15
+GENRE_TAGS = _GENRES["ои"]
 # Признаки, которые реально разделяют канал и черновики (см. докстринг модуля).
 KEYS = ("знаков", "слов_в_предл", "чисел_на_100зн", "доля_предл_с_числом",
         "доля_прозы")
@@ -94,21 +115,45 @@ def profile(text: str):
     }
 
 
-@lru_cache(maxsize=1)
-def channel_reference():
-    """Медиана и разброс по жанровому срезу канала. Читается раз на процесс."""
+def detect_genre(text: str):
+    """Жанр по рубрике из самого текста. None — рубрика незнакомая или отсутствует."""
+    low = (text or "").lower()
+    for name, tags in _GENRES.items():
+        if any(t.lower() in low for t in tags):
+            return name
+    return None
+
+
+@lru_cache(maxsize=8)
+def channel_reference(genre: str | None = None):
+    """Медиана и разброс по срезу канала. Читается раз на процесс, кэш по жанру.
+
+    Порядок выбора: жанровый срез → весь канал FRAME → None. Жанровый берём только
+    если постов хватает (_MIN_SLICE), иначе эталон сам станет шумом.
+    """
     path = next((p for p in _CANDIDATE_PATHS if p and os.path.exists(p)), None)
     if not path:
         return None
     with gzip.open(path, "rt", encoding="utf-8") as f:
         corpus = json.load(f)
-    prof = [p for p in (profile(x.get("text") or "") for x in corpus
-                        if any(t in (x.get("text") or "") for t in GENRE_TAGS)) if p]
+
+    def slice_prof(pred):
+        return [p for p in (profile(x.get("text") or "") for x in corpus if pred(x)) if p]
+
+    tags = _GENRES.get(genre or "", ())
+    prof, label = [], ""
+    if tags:
+        prof = slice_prof(lambda x: any(t.lower() in (x.get("text") or "").lower()
+                                         for t in tags))
+        label = f"жанр «{genre}»"
+    if len(prof) < _MIN_SLICE:
+        prof = slice_prof(lambda x: (x.get("channel") or "").upper().startswith("FRAME"))
+        label = "весь канал"
     if len(prof) < 10:
         return None
     return {"медиана": {k: st.median([x[k] for x in prof]) for k in KEYS},
             "разброс": {k: st.stdev([x[k] for x in prof]) for k in KEYS},
-            "n": len(prof)}
+            "n": len(prof), "эталон": label}
 
 
 _MIXED_TOKEN = re.compile(r"\S*[A-Za-z]\S*[А-Яа-яЁё]\S*|\S*[А-Яа-яЁё]\S*[A-Za-z]\S*")
@@ -204,7 +249,7 @@ def _guidance(dev: dict, prof: dict, ref: dict) -> list:
 
 
 def score(text: str):
-    ref = channel_reference()
+    ref = channel_reference(detect_genre(text))
     prof = profile(text)
     if not ref or not prof:
         return None
@@ -223,4 +268,5 @@ def score(text: str):
         "пояснение": ("Это похожесть на канал, НЕ качество: в корпусе нет оценок "
                        "качества. За факты отвечает судья."),
         "n_эталона": ref["n"],
+        "срез_эталона": ref.get("эталон", ""),
     }
