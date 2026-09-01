@@ -147,7 +147,7 @@ _SELECT_NEW_DRAFTS = text("""
 _SELECT_CANDIDATE = text("""
     SELECT id, headline, tickers, draft_text, status,
            reviewer_reason_code, reviewer_reason,
-           judge_verdict, judge_failed, judge_defects
+           judge_verdict, judge_failed, judge_defects, judge_paragraphs
     FROM content_candidates WHERE id = :id
 """)
 
@@ -216,6 +216,37 @@ def _judge_line(verdict, failed, defects) -> str:
     return out
 
 
+def _doubts_line(paragraphs) -> str:
+    """Сомнения судьи по абзацам — прямо в карточке.
+
+    ⚠️ Смысл поабзацного разбора не в отчётности, а в том, чтобы человек видел, за
+    что именно зацепиться. Вердикт «годится» одной строкой ничего не даёт: на
+    кандидате 1638 он был именно таким, а к каждому абзацу была своя претензия.
+    Поэтому абзацы БЕЗ опоры показываются всегда, а сомнения по остальным — тоже,
+    но короче: «чуйка» полезна ровно настолько, насколько её видно.
+    """
+    if not paragraphs:
+        return ""
+    try:
+        items = paragraphs if isinstance(paragraphs, list) else json.loads(paragraphs)
+    except (TypeError, ValueError):
+        return ""
+    lines = []
+    for p in items:
+        if not isinstance(p, dict):
+            continue
+        n = p.get("n", "?")
+        doubt = (p.get("doubt") or "").strip()
+        if p.get("supported") is False:
+            claim = (p.get("claim") or "").strip()
+            lines.append(f"⛔ абз.{n}: не на чём держится — {html.escape(claim[:110])}")
+        elif doubt:
+            lines.append(f"• абз.{n}: {html.escape(doubt[:110])}")
+    if not lines:
+        return ""
+    return "\n\n🤔 под сомнением:\n" + "\n".join(lines)
+
+
 def _reason_line(reason_code, reason_text) -> str:
     """Причина в карточке — чтобы повторно открытая карточка показывала не только
     ЧТО решили, но и ПОЧЕМУ (иначе решение снова становится неразмеченным)."""
@@ -249,11 +280,11 @@ def _card_view(row):
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
-     j_verdict, j_failed, j_defects) = row
+     j_verdict, j_failed, j_defects, j_paragraphs) = row
     body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
-    txt += _judge_line(j_verdict, j_failed, j_defects)
+    txt += _judge_line(j_verdict, j_failed, j_defects) + _doubts_line(j_paragraphs)
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
