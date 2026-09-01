@@ -198,6 +198,47 @@ _TO_REJECTED = text("""
 """)
 
 
+_INSERT_FEEDBACK = text("""
+    INSERT INTO content_feedback (candidate_id, event, draft_ai, draft_human,
+                                   reason_code, reason_text, brief_version,
+                                   judge_verdict, judge_failed, judge_defects,
+                                   judge_paragraphs, reviewer_id)
+    SELECT c.id, :event,
+           coalesce(c.draft_text_ai, c.draft_text),   -- у старых кандидатов ai пуст
+           :draft_human, :reason_code, :reason_text, c.brief_version,
+           c.judge_verdict, c.judge_failed, c.judge_defects, c.judge_paragraphs,
+           :rid
+    FROM content_candidates c WHERE c.id = :id
+""")
+
+
+def _log_feedback(db, cid: int, event: str, reason_code=None, reason_text=None,
+                  draft_human=None) -> None:
+    """Записать решение человека вместе со СНИМКОМ того, к чему оно относится.
+
+    ⚠️ Только INSERT, никогда UPDATE. Обратная связь раньше жила в колонках самого
+    кандидата, и повторный прогон Шага В стирал черновик вместе со смыслом причины
+    отказа: датасет самоуничтожался тем быстрее, чем активнее мы правили промпт.
+    «Обновлять последнюю строку» воспроизвело бы ту же ошибку в новом месте.
+
+    ⚠️ Снимок берётся SQL-выражением из самого кандидата, а не передаётся аргументом:
+    иначе вызывающий код должен помнить, что снимать ДО своего UPDATE, и рано или
+    поздно забудет. Поэтому _log_feedback вызывается ПЕРЕД изменением черновика.
+
+    ⚠️ Сбой журнала не должен ломать ревью. Человек нажал кнопку — решение обязано
+    примениться; потеря строки журнала неприятна, но обратима, а неприменённое
+    решение оставляет карточку в подвешенном состоянии.
+    """
+    try:
+        db.execute(_INSERT_FEEDBACK, {
+            "id": cid, "event": event, "reason_code": reason_code,
+            "reason_text": reason_text, "draft_human": draft_human,
+            "rid": config.CONTENT_REVIEWER_USER_ID,
+        })
+    except Exception as e:  # noqa: BLE001 — см. докстринг: журнал не блокирует ревью
+        print(f"[content_review_bot] не записал фидбек по #{cid}: {_redact(e)}")
+
+
 _JUDGE_MARK = {"годится": "✅", "спорно": "🟡", "брак": "⛔️"}
 
 
@@ -337,6 +378,7 @@ def _approve(db, cid: int) -> tuple:
         # молча в draft_ready (не даём повторный auto-triggered показ карточки).
         return False, f"Публикация не удалась: {err}. Статус: in_review (нужна ручная проверка)."
 
+    _log_feedback(db, cid, "approved")
     res = db.execute(_TO_PUBLISHED, {"id": cid, "rid": config.CONTENT_REVIEWER_USER_ID})
     db.commit()
     if not res.rowcount:
@@ -350,6 +392,7 @@ def _reject(db, cid: int) -> tuple:
         return False, "Кандидат не найден или уже не в статусе draft_ready"
     db.execute(_TO_IN_REVIEW, {"id": cid})
     db.commit()
+    _log_feedback(db, cid, "rejected")
     res = db.execute(_TO_REJECTED, {"id": cid, "rid": config.CONTENT_REVIEWER_USER_ID})
     db.commit()
     return (bool(res.rowcount), "Отклонено ❌" if res.rowcount else "Не удалось отклонить")
@@ -443,6 +486,7 @@ def process_callback(cb: dict) -> None:
             if ok:
                 send_kb(chat_id, f"Почему #{cid} не годится?", _reason_kb(cid))
         elif op == "r":
+            _log_feedback(db, cid, "comment", reason_code=reason_code)
             db.execute(_SET_REVIEW_REASON, {"code": reason_code, "id": cid})
             db.commit()
             label = config.REVIEW_REASON_LABELS.get(reason_code, reason_code)
@@ -467,12 +511,14 @@ def process_callback(cb: dict) -> None:
                 answer_cb(cb_id, "Текст потерялся, пришлите заново")
                 edit_kb(chat_id, message_id, f"#{cid} — текст потерялся, пришлите заново", [])
             elif op == "ep":
+                _log_feedback(db, cid, "edited", draft_human=pending[1])
                 db.execute(_UPDATE_DRAFT, {"t": pending[1], "id": cid})
                 db.commit()
                 answer_cb(cb_id, "Черновик обновлён ✏️")
                 edit_kb(chat_id, message_id, f"#{cid} — черновик заменён вашим текстом ✏️", [])
                 send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
             else:
+                _log_feedback(db, cid, "comment", reason_text=pending[1])
                 db.execute(_APPEND_REVIEW_REASON, {"t": pending[1], "id": cid})
                 db.commit()
                 answer_cb(cb_id, "Записал как комментарий ✍️")
@@ -512,6 +558,7 @@ def process_update(update: dict) -> None:
         cid = _awaiting_reason.pop(chat_id)
         db = SessionLocal()
         try:
+            _log_feedback(db, cid, "comment", reason_text=txt)
             db.execute(_APPEND_REVIEW_REASON, {"t": txt, "id": cid})
             db.commit()
             send(chat_id, f"Записал причину к #{cid} 👍")
@@ -538,6 +585,7 @@ def process_update(update: dict) -> None:
                         [[{"text": "📝 это текст поста", "callback_data": f"ep:{cid}"},
                           {"text": "✍️ это комментарий", "callback_data": f"ec:{cid}"}]])
                 return
+            _log_feedback(db, cid, "edited", draft_human=txt)
             db.execute(_UPDATE_DRAFT, {"t": txt, "id": cid})
             db.commit()
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()

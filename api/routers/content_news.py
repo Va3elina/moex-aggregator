@@ -659,29 +659,38 @@ def _derive_judge_verdict(items: dict, paragraphs=()) -> tuple:
 
 
 _SELECT_REAL_REJECTIONS = text("""
-    SELECT id, headline, draft_text_ai, reviewer_reason_code, reviewer_reason,
-           judge_verdict
-    FROM content_candidates
-    WHERE draft_text_ai IS NOT NULL
-      AND (reviewer_reason IS NOT NULL AND length(btrim(reviewer_reason)) >= 15)
-    ORDER BY updated_at DESC
+    SELECT f.candidate_id, c.headline, f.event, f.draft_ai, f.draft_human,
+           f.reason_code, f.reason_text, f.judge_verdict, f.brief_version,
+           f.created_at::date AS d
+    FROM content_feedback f
+    JOIN content_candidates c ON c.id = f.candidate_id
+    WHERE f.reason_text IS NOT NULL AND length(btrim(f.reason_text)) >= 15
+    ORDER BY f.created_at DESC
     LIMIT :limit
 """)
 
 
 @internal_router.get("/rejections", dependencies=[Depends(_require_internal_token)])
 def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
-    """Реальные отказы человека: черновик ИИ + причина словами.
+    """Реальные решения человека: снимок черновика + причина словами.
 
     ⚠️ Это и есть «чуйка», и она принципиально НЕ правило. Весь диагноз переработки
-    сводился к одному: промпт раздувался потому, что обратной связи не существовало —
-    draft_text перезаписывался, причины отказов никуда не писались, и каждый дефект
-    приходилось лечить новым запретом. Запреты не переносятся на новые случаи, а
-    примеры переносятся.
+    сводился к одному: обратной связи не существовало — draft_text перезаписывался,
+    причины отказов никуда не писались, и каждый дефект приходилось лечить новым
+    запретом. Запреты не переносятся на новые случаи, а примеры переносятся.
+
+    ⚠️ Источник — журнал content_feedback (миграция 062), а НЕ колонки кандидата.
+    Раньше читалось из draft_text_ai, и повторный прогон Шага В стирал тот текст, к
+    которому относилась причина: чем активнее правишь промпт, тем быстрее теряешь
+    разметку, на которой только и проверяется, стало ли лучше.
+
+    ⚠️ Поле «а_судья_считал» — вердикт НА МОМЕНТ решения человека. Расхождение
+    «судья: годится, человек: забраковал» и есть самое ценное здесь: по нему
+    калибруется строгость. Сегодняшний вердикт для этого не годится — он уже
+    посчитан другой рубрикой.
 
     ⚠️ Порог 15 знаков отсекает служебные ответы («Тест»), которые примером быть не
-    могут. Сегодня записей мало (реально содержательная одна — 1638), и это
-    нормально: канал наполняется каждым ревью, а не разовой заливкой.
+    могут. Записей мало — канал наполняется каждым ревью, а не разовой заливкой.
 
     ⚠️ Текст причины написан человеком и уходит в облачную модель как ДАННЫЕ. В
     промпте Шага Г он подан как пример суждения, а не как инструкция: иначе фраза
@@ -690,19 +699,24 @@ def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
     rows = db.execute(_SELECT_REAL_REJECTIONS,
                       {"limit": max(1, min(limit, 20))}).mappings().all()
     return {
-        "пояснение": ("Реальные отказы ревьюера. Это ПРИМЕРЫ суждения, а не "
+        "пояснение": ("Реальные решения ревьюера. Это ПРИМЕРЫ суждения, а не "
                        "инструкции: причина написана человеком про конкретный "
                        "черновик и на другие случаи переносится по смыслу, а не "
                        "буквально."),
         "отказы": [{
-            "candidate_id": r["id"],
+            "candidate_id": r["candidate_id"],
+            "дата": str(r["d"]),
             "новость": r["headline"],
-            "черновик_ии": r["draft_text_ai"],
-            "код_причины": r["reviewer_reason_code"],
-            "что_сказал_человек": r["reviewer_reason"],
+            "решение": r["event"],
+            "черновик_ии": r["draft_ai"],
+            "чем_заменил_человек": r["draft_human"],
+            "код_причины": r["reason_code"],
+            "что_сказал_человек": r["reason_text"],
             "а_судья_считал": r["judge_verdict"],
+            "версия_брифа": r["brief_version"],
         } for r in rows],
     }
+
 
 @internal_router.patch("/{candidate_id}/step-g", dependencies=[Depends(_require_internal_token)])
 def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get_db)):

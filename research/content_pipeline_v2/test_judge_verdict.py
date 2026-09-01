@@ -135,3 +135,71 @@ def test_silent_when_nothing_to_say():
 
 def test_survives_garbage_rows():
     assert "абз.2" in _doubts_line([None, 42, {"n": 2, "supported": False, "claim": "x"}])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Журнал обратной связи (content_feedback, миграция 062)
+# ─────────────────────────────────────────────────────────────────────────────
+
+import inspect  # noqa: E402
+import re as _re  # noqa: E402
+
+from signals import content_review_bot as BOT  # noqa: E402
+
+
+def test_journal_is_append_only():
+    """Перезапись по месту и была корнем проблемы — в журнале её быть не может."""
+    sql = str(BOT._INSERT_FEEDBACK)
+    assert "INSERT INTO content_feedback" in sql
+    assert not _re.search(r"\bUPDATE\b|\bDELETE\b|ON CONFLICT", sql, _re.I), sql
+
+
+def test_snapshot_is_taken_by_sql_not_by_caller():
+    """Снимок черновика берётся выражением из самого кандидата.
+
+    Если бы его передавали аргументом, вызывающий код обязан был бы помнить, что
+    снять состояние ДО своего UPDATE — и рано или поздно забыл бы. Тут это
+    структурно невозможно.
+    """
+    sql = str(BOT._INSERT_FEEDBACK)
+    assert "FROM content_candidates" in sql
+    assert "draft_text_ai" in sql and "judge_verdict" in sql
+    params = set(inspect.signature(BOT._log_feedback).parameters)
+    assert "draft_ai" not in params, "снимок не должен приходить снаружи"
+
+
+def test_snapshot_logged_before_every_overwrite():
+    """ПОРЯДОК: _log_feedback обязан идти ДО изменения черновика или статуса.
+
+    Иначе журнал запишет уже перезаписанное состояние, и мы снова потеряем текст,
+    к которому относится причина — та же потеря, только теперь молча.
+    """
+    src = inspect.getsource(BOT)
+    for stmt in ("_UPDATE_DRAFT", "_TO_PUBLISHED", "_TO_REJECTED"):
+        for m in _re.finditer(rf"db\.execute\({stmt}\b", src):
+            before = src[max(0, m.start() - 400):m.start()]
+            assert "_log_feedback(db" in before, (
+                f"{stmt} исполняется без предшествующего _log_feedback")
+
+
+def test_every_decision_point_is_logged():
+    """Все четыре события человека попадают в журнал."""
+    src = inspect.getsource(BOT)
+    events = set(_re.findall(r'_log_feedback\(db, cid, "(\w+)"', src))
+    assert events == {"approved", "rejected", "edited", "comment"}, events
+
+
+def test_journal_failure_does_not_break_review():
+    """Человек нажал кнопку — решение обязано примениться. Потеря строки журнала
+    обратима, неприменённое решение оставляет карточку подвешенной."""
+    class _Boom:
+        def execute(self, *a, **k):
+            raise RuntimeError("нет таблицы")
+    BOT._log_feedback(_Boom(), 1638, "rejected")  # не должно бросить
+
+
+def test_endpoint_reads_journal_not_candidate_columns():
+    from api.routers import content_news as CN
+    sql = str(CN._SELECT_REAL_REJECTIONS)
+    assert "FROM content_feedback" in sql
+    assert "f.judge_verdict" in sql, "вердикт нужен НА МОМЕНТ решения, а не сегодняшний"
