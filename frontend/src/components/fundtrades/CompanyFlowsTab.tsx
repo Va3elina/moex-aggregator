@@ -684,6 +684,23 @@ export default function CompanyFlowsTab({
         [capAvailable, overhangAvailable],
     );
 
+    // Подпись набора фондов для экспорта: до пяти держателей перечисляем тикерами.
+    // «3 фонда» ничего не говорит читателю поста — а «3 фонда (EQMX, TMOS, SBMX)»
+    // сразу показывает, что это индексные фонды, и картинку можно сверить с текстом.
+    // Порядок берём из flows.funds (как на графике), а не из Set — иначе тикеры
+    // прыгали бы между экспортами.
+    const FUNDS_IN_CAPTION_MAX = 5;
+    const fundsCaption = useMemo(() => {
+        const all = flows?.funds ?? [];
+        const base = effectiveFunds.size === all.length
+            ? 'Все фонды'
+            : `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`;
+        const tickers = all.filter(f => effectiveFunds.has(f.ticker)).map(f => f.ticker);
+        return tickers.length && tickers.length <= FUNDS_IN_CAPTION_MAX
+            ? `${base} (${tickers.join(', ')})`
+            : base;
+    }, [flows, effectiveFunds]);
+
     // Триггер сброса навигатора и морфа при смене бумаги, набора фондов,
     // периода, режима ИЛИ веса доли. Entrance-анимации (волна/reveal) играют
     // только на первом рендере с данными — схема как в OI.
@@ -928,10 +945,9 @@ export default function CompanyFlowsTab({
                                     MODE_LABELS[effectiveMode],
                                     PERIOD_LABELS[period],
                                     // «Все фонды» ⇔ не выключен ни один держатель;
-                                    // иначе сколько именно осталось на графике.
-                                    effectiveFunds.size === (flows?.funds.length ?? 0)
-                                        ? 'Все фонды'
-                                        : `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`,
+                                    // иначе сколько именно осталось, а до пяти —
+                                    // ещё и тикерами (см. fundsCaption).
+                                    fundsCaption,
                                 ],
                             }}
                             getExportStyles={(): Record<string, string> => ({
