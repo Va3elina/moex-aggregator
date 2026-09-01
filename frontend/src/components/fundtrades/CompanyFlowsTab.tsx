@@ -919,6 +919,13 @@ export default function CompanyFlowsTab({
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
                                 ticker: selectedTicker,
                                 details: [
+                                    // ⚠️ Режим ОБЯЗАТЕЛЕН в подписи. Вадим 01.09: на
+                                    // экспорте «Сделки фондов · 3 года · 3 фонда» —
+                                    // и непонятно, что на панели: сделки, позиция,
+                                    // доля в обращении или навес. Числа у режимов
+                                    // несопоставимы (рубли, проценты, дни), так что
+                                    // картинка без режима читается неверно.
+                                    MODE_LABELS[effectiveMode],
                                     PERIOD_LABELS[period],
                                     // «Все фонды» ⇔ не выключен ни один держатель;
                                     // иначе сколько именно осталось на графике.
