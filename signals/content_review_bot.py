@@ -333,6 +333,40 @@ _awaiting_edit: dict = {}   # chat_id -> candidate_id
 # проглатывал бы любое следующее сообщение админа.
 _awaiting_reason: dict = {}  # chat_id -> candidate_id
 
+# Присланный по «Править» текст, который НЕ похож на пост — ждёт уточнения.
+# ⚠️ Зачем. Кандидат 1638: Вадим нажал «✏️ Править» и написал туда РАЗБОР
+# («спрогнозировало — спорное заявление и кто знает…»). Бот честно сделал то, о
+# чём предупреждал, — заменил текст поста критикой. Кнопка «Править» стоит первой
+# на карточке, а естественный жест после плохого черновика — сказать, что не так,
+# а не переписать пост целиком. Публикация после этого отправила бы в канал
+# разбор вместо поста.
+_pending_edit: dict = {}  # chat_id -> (candidate_id, text)
+
+
+def _looks_like_post(txt: str, current: str | None) -> bool:
+    """Похож ли присланный текст на пост, а не на комментарий к нему.
+
+    Признак — только ФОРМАТ: маркеры абзацев ◽️ либо хэштег рубрики последней
+    строкой. Пост без хэштега рубрики и так не проходит format_ok у судьи, так
+    что требование не лишнее.
+
+    ⚠️ Запаса по длине здесь СОЗНАТЕЛЬНО нет, хотя он выглядел естественно
+    («переписка редко втрое короче исходника»). Тест на реальном тексте 1638
+    показал, как он обманывается: длинный комментарий против короткого поста
+    проходит по длине и молча заменяет пост. Длина не отличает разбор от текста.
+
+    Асимметрия цен решает всё: ошибка в одну сторону — лишний вопрос с двумя
+    кнопками, в другую — критика уходит в канал как пост. Поэтому по умолчанию
+    сомневаемся.
+    """
+    body = txt.strip()
+    if not body:
+        return False
+    if "◽" in body:
+        return True
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    return bool(lines) and lines[-1].startswith("#")
+
 
 def process_callback(cb: dict) -> None:
     cb_id = cb.get("id")
@@ -396,6 +430,23 @@ def process_callback(cb: dict) -> None:
             _awaiting_reason[chat_id] = cid
             answer_cb(cb_id, "Жду комментарий ✍️")
             send(chat_id, f"Пришлите комментарий к #{cid} следующим сообщением.")
+        elif op in ("ep", "ec"):
+            pending = _pending_edit.pop(chat_id, None)
+            if not pending or pending[0] != cid:
+                answer_cb(cb_id, "Текст потерялся, пришлите заново")
+                edit_kb(chat_id, message_id, f"#{cid} — текст потерялся, пришлите заново", [])
+            elif op == "ep":
+                db.execute(_UPDATE_DRAFT, {"t": pending[1], "id": cid})
+                db.commit()
+                answer_cb(cb_id, "Черновик обновлён ✏️")
+                edit_kb(chat_id, message_id, f"#{cid} — черновик заменён вашим текстом ✏️", [])
+                send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
+            else:
+                db.execute(_APPEND_REVIEW_REASON, {"t": pending[1], "id": cid})
+                db.commit()
+                answer_cb(cb_id, "Записал как комментарий ✍️")
+                edit_kb(chat_id, message_id,
+                        f"#{cid} — записал как комментарий, текст поста не тронут 👍", [])
         elif op == "e":
             _awaiting_edit[chat_id] = cid
             answer_cb(cb_id, "Жду текст следующим сообщением ✏️")
@@ -444,6 +495,18 @@ def process_update(update: dict) -> None:
         cid = _awaiting_edit.pop(chat_id)
         db = SessionLocal()
         try:
+            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
+            current = row[3] if row else None
+            if not _looks_like_post(txt, current):
+                # Не подменяем пост молча: спрашиваем, что это было.
+                _pending_edit[chat_id] = (cid, txt)
+                send_kb(chat_id,
+                        f"Текст не похож на пост: нет ни ◽️, ни хэштега рубрики. "
+                        f"Черновик #{cid} НЕ изменён.\n\n"
+                        f"Это новый текст поста или комментарий к нему?",
+                        [[{"text": "📝 это текст поста", "callback_data": f"ep:{cid}"},
+                          {"text": "✍️ это комментарий", "callback_data": f"ec:{cid}"}]])
+                return
             db.execute(_UPDATE_DRAFT, {"t": txt, "id": cid})
             db.commit()
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
