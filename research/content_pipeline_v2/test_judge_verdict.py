@@ -248,3 +248,47 @@ def test_verdict_model_accepts_and_defaults_hash():
     assert r.draft_hash is None
     r2 = JudgeResult(items={}, draft_hash="abc")
     assert r2.draft_hash == "abc"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Судья правит текст (решение Вадима 01.09)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_fix_fields_are_optional():
+    """Ответ без правки обрабатывается как раньше — судья в облаке может работать по
+    прежней инструкции, пока триггер не перечитал файл."""
+    r = JudgeResult(items={})
+    assert r.fixed_draft is None and r.fix_note is None
+
+
+def test_judge_prompt_forbids_grading_its_own_fix():
+    """⚠️ Главный предохранитель. Судья, оценивающий свою же правку, поставит себе
+    «годится», и независимость второго прохода — единственное, ради чего Шаг Г
+    существует — исчезнет. Поэтому вердикт остаётся выданным на ИСХОДНЫЙ текст.
+    """
+    from pathlib import Path
+    md = Path("research/content_pipeline_v2/prompt_step_g_routine.md").read_text("utf-8")
+    assert "СЕБЯ НЕ ПЕРЕПРОВЕРЯЙ" in md
+    assert "по ИСХОДНОМУ тексту" in md
+    assert "ОДНА ПОПЫТКА" in md
+
+
+def test_judge_prompt_forbids_inventing_support():
+    """У судьи нет доступа к БД — только бриф. Значит проваленный абзац надо
+    УДАЛЯТЬ, а не придумывать ему опору."""
+    from pathlib import Path
+    md = Path("research/content_pipeline_v2/prompt_step_g_routine.md").read_text("utf-8")
+    assert "ТОЛЬКО ИЗ БРИФА" in md
+    assert "УДАЛИ этот абзац" in md
+
+
+def test_card_marks_judge_edited_text():
+    """Человек должен видеть, что читает текст судьи, а не писателя: иначе его
+    решение относится не к тому, к чему он думает — та же ошибка, что вердикт на
+    устаревшем черновике."""
+    import datetime as _dt
+    out = BOT._fix_line(_dt.datetime(2026, 9, 1, 12, 0), "убрал слово «снова»")
+    assert "ПОПРАВЛЕН СУДЬЁЙ" in out
+    assert "на исходный текст" in out
+    assert "снова" in out
+    assert BOT._fix_line(None, "x") == ""

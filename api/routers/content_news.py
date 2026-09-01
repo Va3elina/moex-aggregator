@@ -640,6 +640,10 @@ class JudgeResult(BaseModel):
     # Отпечаток текста, который судья реально читал (echo из payload). См. проверку
     # в apply_step_g: без неё поздний вердикт ложится на уже переписанный черновик.
     draft_hash: Optional[str] = None
+    # Исправленный судьёй текст. Принимается ТОЛЬКО когда вердикт не «годится» —
+    # править нечего в чистом черновике, а лишняя правка вносит лишний риск.
+    fixed_draft: Optional[str] = None
+    fix_note: Optional[str] = None
 
 
 def _derive_judge_verdict(items: dict, paragraphs=()) -> tuple:
@@ -760,11 +764,32 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     items = {k: bool(v) for k, v in body.items.items() if k in known}
     verdict, failed, defects = _derive_judge_verdict(items, body.paragraphs)
 
+    # ⚠️ Правка судьи применяется, но вердикт остаётся выданным на ИСХОДНЫЙ текст:
+    # судья не перепроверяет сам себя, иначе независимость второго прохода исчезает
+    # (он ставил бы «годится» себе). Оригинал писателя остаётся в draft_text_ai, обе
+    # версии уходят в журнал content_feedback. Одна попытка, без цикла.
+    fix = (body.fixed_draft or "").strip()
+    apply_fix = bool(fix) and verdict != "годится" and fix != (row["draft_text"] or "")
+    if apply_fix:
+        db.execute(text("""
+            INSERT INTO content_feedback (candidate_id, event, draft_ai, draft_human,
+                                           reason_code, reason_text, brief_version,
+                                           judge_verdict, judge_failed, judge_defects)
+            SELECT c.id, 'judge_fixed', coalesce(c.draft_text_ai, c.draft_text), :fix,
+                   'judge', :note, c.brief_version, :verdict,
+                   CAST(:failed AS text[]), CAST(:defects AS text[])
+            FROM content_candidates c WHERE c.id = :id
+        """), {"id": candidate_id, "fix": fix, "note": body.fix_note,
+               "verdict": verdict, "failed": failed, "defects": defects})
+
     db.execute(text("""
         UPDATE content_candidates
         SET judge_items = CAST(:items AS jsonb), judge_verdict = :verdict,
             judge_failed = :failed, judge_defects = :defects, judge_note = :note,
             judge_paragraphs = CAST(:paragraphs AS jsonb),
+            draft_text = CASE WHEN :apply_fix THEN :fix ELSE draft_text END,
+            judge_fixed_at = CASE WHEN :apply_fix THEN now() ELSE judge_fixed_at END,
+            judge_fix_note = CASE WHEN :apply_fix THEN :note ELSE judge_fix_note END,
             judge_checked_at = now(), updated_at = now()
         WHERE id = :id
     """), {
@@ -775,11 +800,13 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
         "note": body.note,
         "paragraphs": json.dumps([p.model_dump() for p in body.paragraphs],
                                   ensure_ascii=False) if body.paragraphs else None,
+        "apply_fix": apply_fix, "fix": fix or None, "note": body.fix_note,
     })
     db.commit()
     return {"verdict": verdict, "failed_gates": failed, "defects": defects,
             "paragraphs_without_support": [p.n for p in body.paragraphs
                                             if p.supported is False],
+            "fix_applied": apply_fix,
             "ignored_unknown_keys": unknown}
 
 
