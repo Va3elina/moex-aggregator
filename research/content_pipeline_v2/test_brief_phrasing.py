@@ -544,3 +544,27 @@ def test_issuer_must_be_named_before_the_level():
     assert CA._issuer_named_before_level(_L_EXPERT, stems)
     assert CA._issuer_named_before_level('S&P ПОВЫСИЛО РЕЙТИНГИ "СИСТЕМЫ" С "B+" ДО "BB-"', stems)
     assert not CA._issuer_named_before_level(_L_SUBSIDIARY, stems)
+
+
+def test_share_range_is_marked_not_for_text():
+    """Диапазон доли — проверка на рекорд, а не содержание поста.
+
+    Вадим 01.09 про «а за год доля доходила до 50%»: «сложная формулировка и она не
+    понятна сразу, нужно проще». Поле существует, чтобы модель НЕ соврала про
+    рекорд, — значит имя поля должно это и говорить (имя поля есть интерфейс).
+    """
+    import inspect
+    src = inspect.getsource(CA._position_phrases)
+    assert "не_для_текста_проверка_рекорда_за_" in src
+    assert "эта_доля_за_" not in src, "прежнее имя приглашало вынести диапазон в текст"
+    assert "В ТЕКСТ ЭТОТ ДИАПАЗОН НЕ ВЫНОСИТЬ" in src
+
+
+def test_context_blocks_declare_volume_limit():
+    """Оба новых блока — фон. Без границы модель тратит по абзацу на каждый пункт,
+    и пост распухает: 1105 знаков против медианы жанра 661."""
+    import inspect
+    for fn in (CA._related_context, CA._rating_history):
+        src = inspect.getsource(fn)
+        assert "ОБЪЁМ" in src, fn.__name__
+        assert "ФОН" in src, fn.__name__
