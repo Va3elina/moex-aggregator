@@ -394,3 +394,37 @@ def test_related_block_carries_context_warning(monkeypatch):
         "ПОЯСНЕНИЕ": "КОНТЕКСТ, НЕ ПРИЧИНА. …"})
     payload = CA._step_c_payload(None, _ROW, "t")
     assert "связанные_компании" in payload and "НЕ ПРИЧИНА" in payload
+
+
+def test_links_block_states_where_it_goes(monkeypatch):
+    """Место блока в тексте — часть смысла, и указание живёт рядом с данными.
+
+    Судья по черновику 1638: «соседство с абзацем о позициях толпы может подтолкнуть
+    читателя додумать связь, которая прямо не утверждается». Причинность возникала
+    не из слов, а из порядка абзацев — значит и лечить это надо там, где данные, а
+    не очередным правилом в промпте.
+    """
+    calls = {}
+
+    class _DB:
+        def execute(self, q, params=None):
+            sql = str(q)
+            calls["sql"] = sql
+
+            class _R:
+                @staticmethod
+                def fetchall():
+                    if "world_facts" in sql:
+                        return [(["AFKS", "OZON"], "Система — крупный акционер Озона")]
+                    return []
+
+                @staticmethod
+                def scalar():
+                    return "Озон"
+            return _R()
+
+    import datetime as _d
+    blk = CA._related_context(_DB(), ["AFKS"], _d.date(2026, 9, 1))
+    assert "МЕСТО В ТЕКСТЕ" in blk["ПОЯСНЕНИЕ"]
+    assert "РАНЬШЕ" in blk["ПОЯСНЕНИЕ"]
+    assert "НЕ ПРИЧИНА" in blk["ПОЯСНЕНИЕ"], "старое предупреждение не должно пропасть"
