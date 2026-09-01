@@ -660,7 +660,7 @@ def test_no_frame_leaks_its_own_instruction_into_the_post():
 # Профиль стиля (идея Вадима: «размытое ощущение» вместо жёстких правил)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from research.content_pipeline_v2 import style_profile as SP  # noqa: E402
+from api.services import style_profile as SP  # noqa: E402
 
 
 def test_signature_is_stripped_before_measuring():
@@ -696,3 +696,38 @@ def test_rejected_features_are_not_in_the_score():
     assert "температура" not in SP.KEYS
     assert "эмодзи" not in SP.KEYS
     assert "температура" in SP.profile("З\n\n◽️Текст подлиннее для порога.\n\n#х")
+
+
+def test_guidance_talks_about_text_not_about_the_score():
+    """⚠️ «Плотность +1,4σ» модель исправила бы механически — выкинула бы число и
+    сломала мысль. Совет обязан говорить, ЧТО делать: добавить связок, а не срезать
+    факты. Иначе самопроверка станет причиной новых дефектов."""
+    dense = ("Заголовок\n\n◽️Рост 8%, до 121,28 рубля. День +6%. Лонг вырос в 3 раза "
+             "за месяц, за сутки ещё на 35%.\n\n#открытыйинтерес")
+    res = SP.score(dense)
+    assert res and res["что_поправить"], res
+    g = " ".join(res["что_поправить"])
+    assert "σ" not in g, "совет не должен оперировать сигмами"
+    assert "добавь связок" in g
+    assert "Не срезай факты" in g
+
+
+def test_short_post_is_not_told_to_pad_with_numbers():
+    """Совет про короткий пост обязан прямо запрещать дотягивание: именно требование
+    «дотяни до 550» заставило модель добирать фоном и врать (черновик 1185)."""
+    short = "Заголовок\n\n◽️Коротко и по делу, без цифр совсем.\n\n#открытыйинтерес"
+    res = SP.score(short)
+    g = " ".join(res["что_поправить"])
+    if "КОРОТКИЙ" in g:
+        assert "НЕ повод дописать" in g
+
+
+def test_snapshot_is_compact_and_has_no_advice():
+    """В базу идут только признаки и отклонения: советы — для писателя в моменте, а
+    не исторические данные."""
+    import json
+    from api.routers.content_news import _style_snapshot
+    snap = json.loads(_style_snapshot(
+        "Заголовок\n\n◽️Акции за год упали вдвое. Толпа перешла в лонг.\n\n#х"))
+    assert set(snap) == {"профиль", "отклонение_сигм", "среднее_отклонение"}
+    assert "что_поправить" not in snap
