@@ -115,6 +115,10 @@ def _stub_brief_sources(monkeypatch):
     monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "в 3 раза"})
     monkeypatch.setattr(CA, "_price_context", lambda *a: {"цена_сейчас": "около 92"})
     monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+    # ⚠️ Каждый НОВЫЙ источник данных брифа обязан попасть в эту заглушку. Именно
+    # так тест паритета и поймал добавление _related_context: без подмены он полез
+    # в db=None. Это и есть польза от проверки инварианта, а не набора полей.
+    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
 
 
 def _brief_of(payload: str) -> dict:
@@ -212,6 +216,7 @@ def test_service_keys_never_reach_the_model(monkeypatch):
         "ГЛАВНОЕ_ЧИСЛО": "за_год: лонг вырос в 3 раза"})
     monkeypatch.setattr(CA, "_price_context", lambda *a: dict(_PRICE))
     monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
     for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
                           ("судья", CA._step_g_payload(None, _ROW, "tok"))):
         assert "_код_" not in payload, f"служебный ключ утёк в бриф {name}"
@@ -317,3 +322,75 @@ def test_length_alone_never_decides():
 def test_guard_survives_missing_current_draft():
     assert not _looks_like_post("короткий комментарий", None)
     assert not _looks_like_post("   ", _REAL_POST)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Связанные компании: выбор фрагмента и ловушка Озон / ОзонФарма
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Реальный дайджест «Итоги дня» из news_archive 24.08.2026 — именно в таком посте
+# лежала вся фактура по Озону, и именно такой пост нельзя отдавать в бриф целиком.
+_DIGEST = """Атаки БПЛА на Озон⚡️Итоги дня
+
+📉Сбербанк -0.5% Многие сомневались, что дивиденды утвердят
+
+📉Система -12% 📉Сегежа -9.5% Озон тянет за собой вниз Систему. Проблемы у Системы могут стать проблемами для Сегежи🧐
+
+📈НЛМК +3% Металлурги дружно растут без явных новостей
+
+📊Полная карта рынка"""
+
+_SINGLE = """📉Озон -21%
+
+Уже третий день подряд идут атаки БПЛА на логистические центры Озона."""
+
+
+def test_digest_yields_only_the_relevant_paragraph():
+    """Из дайджеста берём строку про нужную компанию, а не весь пост."""
+    sn = CA._pick_snippet(_DIGEST, nt=12, name="Система")
+    assert "Система -12%" in sn
+    assert "НЛМК" not in sn and "Сбербанк" not in sn
+
+
+def test_single_ticker_post_taken_from_the_top():
+    sn = CA._pick_snippet(_SINGLE, nt=1, name="Озон")
+    assert "Озон -21%" in sn and "БПЛА" in sn
+
+
+def test_ozon_does_not_match_ozonfarma():
+    """Ловушка, на которую я наступил при разведке: поиск словом «озон» тащил
+    Озон Фармацевтику (OZPH) — другую компанию. Совпадение по слову целиком."""
+    assert CA._pick_snippet("📈ОзонФарма +2% отчёт за полугодие", 12, "Озон") == ""
+    assert CA._pick_snippet("📈Озон +2% выросли на новостях", 12, "Озон") != ""
+
+
+def test_snippet_is_capped_and_safe_on_junk():
+    assert len(CA._pick_snippet("а" * 5000, 1, "Озон")) <= 220
+    assert CA._pick_snippet("", 1, "Озон") == ""
+    assert CA._pick_snippet(None, 1, "Озон") == ""
+    assert CA._pick_snippet(_DIGEST, 12, "Лукойл") == "", "нет упоминания — нет фрагмента"
+
+
+def test_related_block_absent_when_no_links(monkeypatch):
+    """Пустое «связанные_компании: {}» в брифе провоцирует придумать связь —
+    поле должно исчезать целиком (тот же механизм, что убил market_rank)."""
+    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
+    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "x"})
+    monkeypatch.setattr(CA, "_price_context", lambda *a: {})
+    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
+    for payload in (CA._step_c_payload(None, _ROW, "t"), CA._step_g_payload(None, _ROW, "t")):
+        assert "связанные_компании" not in payload
+
+
+def test_related_block_carries_context_warning(monkeypatch):
+    """Если связь есть — рядом обязана быть подпись «контекст, не причина»."""
+    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
+    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "x"})
+    monkeypatch.setattr(CA, "_price_context", lambda *a: {})
+    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
+    monkeypatch.setattr(CA, "_related_context", lambda *a: {
+        "OZON": {"связь": "крупный акционер"},
+        "ПОЯСНЕНИЕ": "КОНТЕКСТ, НЕ ПРИЧИНА. …"})
+    payload = CA._step_c_payload(None, _ROW, "t")
+    assert "связанные_компании" in payload and "НЕ ПРИЧИНА" in payload
