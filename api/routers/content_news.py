@@ -33,6 +33,7 @@ import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
+from api.services import style_profile
 from sqlalchemy.orm import Session
 
 from api.database import get_db
@@ -689,6 +690,34 @@ _SELECT_REAL_REJECTIONS = text("""
 """)
 
 
+
+class StyleCheckIn(BaseModel):
+    draft: str
+
+
+@internal_router.post("/style-check", dependencies=[Depends(_require_internal_token)])
+def style_check(body: StyleCheckIn):
+    """Профиль черновика против постов канала — для САМОПРОВЕРКИ Шага В до отправки.
+
+    ⚠️ Почему это не ворота, а подсказка. Скор измеряет похожесть на канал, а не
+    качество: в корпусе нет оценок качества. Отклонять по нему PATCH значило бы
+    браковать текст за непохожесть на медиану — а канал сам разбросан широко
+    (длина 661 ± 319). Поэтому эндпоинт только считает и советует.
+
+    ⚠️ Советы намеренно про ТЕКСТ, а не про цифру. «Плотность +1,4σ» модель
+    исправила бы механически — выкинула бы число и сломала мысль. Поэтому в
+    что_поправить сказано, что именно делать: добавить связок, а не срезать факты.
+
+    Зачем вообще: замер 01.09 показал, что за день сокращений плотность чисел стала
+    ВТРОЕ выше канала (1,35 против 0,40) — при том что каждый отдельный запрет был
+    верным. Такое ловится только сравнением с профилем, и ловить надо ДО отправки.
+    """
+    res = style_profile.score(body.draft or "")
+    if not res:
+        raise HTTPException(status_code=422,
+                            detail="Не удалось разобрать текст или нет эталона канала")
+    return res
+
 @internal_router.get("/rejections", dependencies=[Depends(_require_internal_token)])
 def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
     """Реальные решения человека: снимок черновика + причина словами.
@@ -817,6 +846,22 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
             "ignored_unknown_keys": unknown}
 
 
+def _style_snapshot(draft: str):
+    """Компактный профиль стиля для хранения. None, если посчитать не удалось.
+
+    Храним только то, что нужно для агрегатов: сами признаки, отклонения в сигмах и
+    среднее. Советы (что_поправить) не храним — они для писателя в моменте, а не
+    исторические данные.
+    """
+    res = style_profile.score(draft or "")
+    if not res:
+        return None
+    return json.dumps({"профиль": res["профиль"],
+                        "отклонение_сигм": res["отклонение_сигм"],
+                        "среднее_отклонение": res["среднее_отклонение"]},
+                       ensure_ascii=False)
+
+
 @internal_router.patch("/{candidate_id}/step-c", dependencies=[Depends(_require_internal_token)])
 def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага В (синтез). Если модель отказалась писать
@@ -847,10 +892,16 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
             UPDATE content_candidates
             SET draft_text = :draft_text, draft_text_ai = :draft_text,
                 brief_version = :brief_version,
+                style_profile = CAST(:style AS jsonb),
                 synth_declined_reason = NULL, updated_at = now()
             WHERE id = :id
         """), {"id": candidate_id, "draft_text": body.draft_text,
-                "brief_version": _BRIEF_VERSION})
+                "brief_version": _BRIEF_VERSION,
+                # ⚠️ Профиль считается ЗДЕСЬ, а не доверяется модели: писатель может
+                # его не запросить или соврать. Дрейф стиля виден только на ряде
+                # черновиков (01.09: плотность чисел уехала втрое, хотя каждый
+                # отдельный запрет был верным), поэтому нужен снимок КАЖДОГО.
+                "style": _style_snapshot(body.draft_text)})
         db.commit()
         return {"status": "draft_ready", "has_draft": True}
 
