@@ -13,6 +13,9 @@ import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildBuffettExportConfig } from '../../components/export/exportConfigs';
 import {
   getBuffettCapGdp,
   getBuffettCapM2,
@@ -65,6 +68,7 @@ export default function MobileBuffettPage() {
 
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
 
   const tour = useOnboardingTour('buffett');
   // Единый паттерн: Intro → Кнопки → Время → Опции (с демо режима) → Чтение → End
@@ -414,7 +418,18 @@ export default function MobileBuffettPage() {
           </div>
 
         </div>
+        <MobileCsvExportRow
+          indicator="buffett"
+          onClose={() => setModeSheetOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildBuffettExportConfig({ viewMode, period, timeframe })}
+      />
 
       <MobileSheet
         open={periodSheetOpen}

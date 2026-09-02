@@ -34,7 +34,7 @@ import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import CsvExportButton from '../components/export/CsvExportButton';
-import { periodToQuery } from '../utils/csvPeriod';
+import { buildFundsMoneyExportConfig } from '../components/export/exportConfigs';
 import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
@@ -787,70 +787,15 @@ export default function FundsMoneyPage() {
                 />
                 <CsvExportButton
                     indicator="funds_money"
-                    config={() => {
-                      const periodDays: Record<string, number> = {
-                        '1m': 30, '3m': 90, '6m': 180, '1y': 365,
-                        '2y': 730, '3y': 1095, 'all': 7000,
-                      };
-                      const visibleTickers = data?.funds
-                        ?.filter(f => !f.tier_locked && !hiddenFunds.has(f.fund_id))
-                        ?.map(f => f.ticker) ?? [];
-                      return {
-                        indicator: 'funds_money',
-                        title: 'Экспорт: Деньги в фондах',
-                        layers: [{
-                          id: 'nav',
-                          label: 'История СЧА фондов',
-                          description: 'Daily NAV per fund по выбранной категории',
-                          defaultSelected: true,
-                        }],
-                        // Unified порядок: фонды (актив) → категории (mode) → период.
-                        selectors: [
-                          {
-                            kind: 'instrument-picker',
-                            id: 'funds',
-                            label: 'Фонды (опционально)',
-                            default: [],
-                            source: 'funds',
-                            pickerTitle: 'Выберите фонды',
-                            hint: 'Пусто = все фонды выбранных категорий. Иначе — только эти.',
-                          },
-                          {
-                            kind: 'multiselect',
-                            id: 'categories',
-                            label: 'Категории',
-                            default: [category],
-                            hint: 'Несколько → ZIP с CSV per категория',
-                            options: CATEGORIES.map(c => ({ value: c.key, label: c.name })),
-                          },
-                          {
-                            kind: 'period',
-                            id: 'period',
-                            label: 'Период',
-                            default: { type: 'preset', value: period },
-                            presets: [
-                              { value: '1m', label: '1М', days: 30 },
-                              { value: '1y', label: '1Г', days: 365 },
-                              { value: '3y', label: '3Г', days: 1095 },
-                              { value: 'all', label: 'Всё', days: 7000 },
-                            ],
-                          },
-                        ],
-                        params: [],
-                        buildUrl: (_layers, vals) => {
-                          const cats = (vals.categories as string[] ?? [category]).join(',');
-                          const periodParam = periodToQuery(vals.period, periodDays[period] ?? 365);
-                          // Picker override — если юзер выбрал → этими фондами; иначе UI hidden funds.
-                          const pickedFunds = (vals.funds as string[] ?? []);
-                          const effectiveFundsList = pickedFunds.length > 0 ? pickedFunds : visibleTickers;
-                          const fundsParam = effectiveFundsList.length > 0
-                            ? `&funds=${encodeURIComponent(effectiveFundsList.join(','))}`
-                            : '';
-                          return `/api/export/funds-money.csv?category=${cats}&${periodParam}${fundsParam}`;
-                        },
-                        buildFilename: () => `funds_${Date.now()}.zip`,
-                      };
-                    }}
+                    config={() => buildFundsMoneyExportConfig({
+                        category,
+                        period,
+                        // Picker в модалке перекрывает; иначе — фонды, видимые сейчас на графике.
+                        visibleTickers: data?.funds
+                            ?.filter(f => !f.tier_locked && !hiddenFunds.has(f.fund_id))
+                            ?.map(f => f.ticker) ?? [],
+                        categoryOptions: CATEGORIES.map(c => ({ value: c.key, label: c.name })),
+                    })}
                 />
                 {/* Сигналы по фондам. Только в режиме притоков-оттоков.
                     Открывает CreateFundAlertModal БЕЗ привязки к текущей

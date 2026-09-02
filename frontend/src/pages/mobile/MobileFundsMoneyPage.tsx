@@ -31,6 +31,9 @@ import {
   type FlowTimeframe,
 } from '../../services/api';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildFundsMoneyExportConfig } from '../../components/export/exportConfigs';
 import { resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
@@ -110,6 +113,7 @@ export default function MobileFundsMoneyPage() {
   const [loading, setLoading] = useState(true);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
   const [fundsSheetOpen, setFundsSheetOpen] = useState(false);
   // Hidden funds — Set fund_id'ов которые юзер скрыл из суммарной СЧА. Персистим
   // по категории (frame:funds:hidden:<category>, общий ключ с десктопом) — выбор
@@ -732,7 +736,26 @@ export default function MobileFundsMoneyPage() {
             </button>
           )}
         </div>
+        <MobileCsvExportRow
+          indicator="funds_money"
+          onClose={() => setOptionsSheetOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildFundsMoneyExportConfig({
+          category,
+          period,
+          // Picker в шите перекрывает; иначе — фонды, видимые сейчас на графике.
+          visibleTickers: accessibleFunds
+            .filter((f) => !hiddenFunds.has(f.fund_id))
+            .map((f) => f.ticker),
+          categoryOptions: CATEGORIES.map((c) => ({ value: c.key, label: c.label })),
+        })}
+      />
 
       {/* Funds sheet — список фондов с тогглом видимости.
           Скрытие фонда исключает его из суммарной СЧА и притоков-оттоков. */}

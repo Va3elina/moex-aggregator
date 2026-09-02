@@ -19,7 +19,7 @@ import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import CsvExportButton from '../components/export/CsvExportButton';
-import { periodToQuery } from '../utils/csvPeriod';
+import { buildOiExportConfig } from '../components/export/exportConfigs';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
@@ -1021,76 +1021,13 @@ export default function OpenInterestPage() {
           )}
           <CsvExportButton
             indicator="open_interest"
-            config={() => {
-              const periodDays: Record<string, number> = {
-                '1d': 2, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
-                '1y': 365, '2y': 730, '5y': 1825, 'all': 7000,
-              };
-              return {
-                indicator: 'open_interest',
-                title: `Экспорт: Открытые позиции · ${instrumentName}`,
-                layers: [{
-                  id: 'oi',
-                  label: 'История позиций',
-                  description: 'trade_date, trade_time, open_interest, pos_long/short, число участников',
-                  defaultSelected: true,
-                }],
-                selectors: [
-                  {
-                    kind: 'instrument-picker',
-                    id: 'instruments',
-                    label: 'Инструменты (фьючерсы)',
-                    default: [selectedInstrument],
-                    filterType: 'futures',
-                    pickerTitle: 'Выберите фьючерсы для экспорта',
-                    hint: 'Несколько → ZIP с CSV per инструмент',
-                  },
-                  {
-                    kind: 'multiselect',
-                    id: 'clgroups',
-                    label: 'Категория участников',
-                    default: [clgroup],
-                    hint: 'Оба → 2 CSV в ZIP',
-                    options: [
-                      { value: 'YUR', label: 'Юрлица' },
-                      { value: 'FIZ', label: 'Физлица' },
-                    ],
-                  },
-                  {
-                    kind: 'multiselect',
-                    id: 'intervals',
-                    label: 'Таймфрейм',
-                    default: [String(interval)],
-                    hint: 'Несколько → ZIP с CSV per таймфрейм',
-                    options: [
-                      { value: '5', label: '5 мин' },
-                      { value: '60', label: '1 час' },
-                      { value: '24', label: '1 день' },
-                    ],
-                  },
-                  {
-                    kind: 'period',
-                    id: 'period',
-                    label: 'Период',
-                    default: { type: 'preset', value: period },
-                    presets: [
-                      { value: '1m', label: '1М', days: 30 },
-                      { value: '1y', label: '1Г', days: 365 },
-                      { value: 'all', label: 'Всё', days: 7000 },
-                    ],
-                  },
-                ],
-                params: [],
-                buildUrl: (_layers, vals) => {
-                  const insts = (vals.instruments as string[] ?? [selectedInstrument]).join(',');
-                  const cls = (vals.clgroups as string[] ?? [clgroup]).join(',');
-                  const ints = (vals.intervals as string[] ?? [String(interval)]).join(',');
-                  const periodParam = periodToQuery(vals.period, periodDays[period] ?? 365);
-                  return `/api/export/oi.csv?instrument=${encodeURIComponent(insts)}&clgroup=${cls}&interval=${ints}&${periodParam}`;
-                },
-                buildFilename: () => `oi_${Date.now()}.zip`,
-              };
-            }}
+            config={() => buildOiExportConfig({
+              instrument: selectedInstrument,
+              instrumentName,
+              clgroup,
+              interval,
+              period,
+            })}
           />
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}

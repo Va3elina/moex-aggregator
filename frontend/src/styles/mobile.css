@@ -1102,3 +1102,67 @@
     height: 38px;
   }
 }
+
+/* ========== Экспорт данных: строка в шите «Опции» ==========
+   Мобильный вход в CSV/XLSX-экспорт (аналог кнопки CsvExportButton на ПК).
+   В панели действий 4 фиксированных слота, пятого нет — строка живёт в конце
+   шита «Опции», СНАРУЖИ его padded-контейнера (поэтому отступы свои). */
+.fm-export-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 32px);
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 150ms ease;
+}
+
+.fm-export-row:active {
+  transform: translate(1px, 1px);
+}
+
+.fm-export-row-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: 1.5px solid var(--text-primary);
+}
+
+.fm-export-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fm-export-row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: clamp(13px, 3.8vw, 15px);
+  letter-spacing: -0.01em;
+}
+
+.fm-export-row-sub {
+  font-size: clamp(10px, 3vw, 12px);
+  color: var(--text-secondary);
+}
+
+.fm-export-row-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.6;
+}

@@ -31,7 +31,7 @@ import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
-import { periodToQuery } from '../utils/csvPeriod';
+import { buildStrengthExportConfig } from '../components/export/exportConfigs';
 import StrengthControls from '../components/strength/StrengthControls';
 import DollarStaleHint from '../components/strength/DollarStaleHint';
 import { computeChartTopLineY } from '../components/chart/datePillLayout';
@@ -401,65 +401,11 @@ export default function StrengthPage() {
                     />
                     <CsvExportButton
                         indicator="strength"
-                        config={() => ({
-                            indicator: 'strength',
-                            title: 'Экспорт: Сила рынка',
-                            layers: [
-                                { id: 'history', label: 'История Силы рынка',
-                                  description: 'Timeseries % акций выше EMA',
-                                  defaultSelected: true },
-                                { id: 'stocks', label: 'Снапшот акций',
-                                  description: 'Текущие цены + изменения по всем акциям' },
-                            ],
-                            selectors: [
-                                {
-                                    kind: 'multiselect',
-                                    id: 'emas',
-                                    label: 'EMA периоды',
-                                    default: [String(emaPeriod)],
-                                    hint: 'Несколько EMA → ZIP с CSV per EMA',
-                                    options: [
-                                        { value: '20', label: 'EMA 20' },
-                                        { value: '50', label: 'EMA 50' },
-                                        { value: '100', label: 'EMA 100' },
-                                        { value: '200', label: 'EMA 200' },
-                                    ],
-                                },
-                                {
-                                    kind: 'multiselect',
-                                    id: 'universes',
-                                    label: 'Вселенные',
-                                    default: [universe],
-                                    hint: 'Несколько → ZIP с CSV per universe',
-                                    options: [
-                                        { value: 'imoex', label: 'IMOEX' },
-                                        { value: 'all', label: 'Все акции' },
-                                        { value: 'imoex_usd', label: 'IMOEX (USD)' },
-                                        { value: 'all_usd', label: 'Все (USD)' },
-                                    ],
-                                },
-                                {
-                                    kind: 'period',
-                                    id: 'period',
-                                    label: 'Период',
-                                    default: { type: 'preset', value: period },
-                                    presets: [
-                                        { value: '1y', label: '1Г', days: 365 },
-                                        { value: '5y', label: '5Л', days: 1825 },
-                                        { value: '10y', label: '10Л', days: 3650 },
-                                        { value: '20y', label: '20Л', days: 7300 },
-                                        { value: 'all', label: 'Всё', days: 7000 },
-                                    ],
-                                },
-                            ],
-                            params: [],
-                            buildUrl: (layers, vals) => {
-                                const emas = (vals.emas as string[] ?? [String(emaPeriod)]).join(',');
-                                const universes = (vals.universes as string[] ?? [universe]).join(',');
-                                const periodParam = periodToQuery(vals.period, PERIOD_DAYS[period]);
-                                return `/api/export/breadth.csv?ema=${emas}&universe=${universes}&${periodParam}&layers=${layers.join(',')}`;
-                            },
-                            buildFilename: () => `strength_${Date.now()}.zip`,
+                        config={() => buildStrengthExportConfig({
+                            emaPeriod,
+                            universe,
+                            period,
+                            periodDays: PERIOD_DAYS[period],
                         })}
                     />
                     <ChartCaptureButton

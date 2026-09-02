@@ -20,6 +20,9 @@ import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import DelayedDataBadge from '../../components/DelayedDataBadge';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildOiExportConfig } from '../../components/export/exportConfigs';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import OptionHelp from '../../components/OptionHelp';
 import { OI_VARIANT_HELP } from '../../data/oiVariantHelp';
@@ -201,6 +204,7 @@ export default function MobileOpenInterestPage() {
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
 
   // === Единый паттерн тура для всех индикаторов ===
   // 1. Intro — что это за индикатор
@@ -794,7 +798,24 @@ export default function MobileOpenInterestPage() {
             })}
           </div>
         </div>
+        <MobileCsvExportRow
+          indicator="open_interest"
+          onClose={() => setOptionsSheetOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildOiExportConfig({
+          instrument: selectedInstrument,
+          instrumentName,
+          clgroup,
+          interval: intervalValue,
+          period,
+        })}
+      />
 
       <OnboardingTour
         steps={tourSteps}

@@ -108,13 +108,31 @@ export interface CsvExportConfig {
     ) => string;
 }
 
-interface Props {
+export type CsvExportLayout = 'dialog' | 'sheet';
+
+interface FormProps {
     config: CsvExportConfig;
+    /** Закрыть контейнер — после успешной загрузки и по «Отмена». */
     onClose: () => void;
+    /**
+     * 'dialog' — десктопная модалка: «Отмена» + «Скачать» справа.
+     * 'sheet'  — мобильный MobileSheet: одна широкая кнопка, липнет к низу
+     *            прокручиваемого тела шита; «Отмена» не нужна (крестик/фон).
+     */
+    layout?: CsvExportLayout;
+    /** Идёт загрузка → контейнер не должен закрываться по фону/Esc. */
+    onBusyChange?: (busy: boolean) => void;
 }
 
-export default function CsvExportModal({ config, onClose }: Props) {
+/**
+ * CsvExportForm — тело конфигуратора: слои, параметры, формат, кнопка.
+ * Общее для десктопной модалки (CsvExportModal ниже) и мобильного
+ * MobileCsvExportSheet — различается только обёртка. Вынесено 02.09.2026
+ * при выводе экспорта на мобилку.
+ */
+export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange }: FormProps) {
     const { track } = useAnalytics();
+    const sheet = layout === 'sheet';
 
     // ──── Layer selection state ────
     const [selectedLayers, setSelectedLayers] = useState<Set<string>>(() => {
@@ -140,19 +158,11 @@ export default function CsvExportModal({ config, onClose }: Props) {
     const [downloading, setDownloading] = useState(false);
     const [format, setFormat] = useState<'csv' | 'xlsx'>('csv');
 
-    // Esc + body scroll lock.
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !downloading) onClose();
-        };
-        document.addEventListener('keydown', onKey);
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', onKey);
-            document.body.style.overflow = prev;
-        };
-    }, [onClose, downloading]);
+    // Загрузка — и своё состояние (кнопка), и сигнал контейнеру (не закрывать).
+    const setBusy = (busy: boolean) => {
+        setDownloading(busy);
+        onBusyChange?.(busy);
+    };
 
     const toggleLayer = (id: string) => {
         setSelectedLayers((prev) => {
@@ -201,7 +211,7 @@ export default function CsvExportModal({ config, onClose }: Props) {
             combinations: totalCombinations,
         });
 
-        setDownloading(true);
+        setBusy(true);
         try {
             const resp = await apiFetch(url);
             if (!resp.ok) {
@@ -224,9 +234,202 @@ export default function CsvExportModal({ config, onClose }: Props) {
             // eslint-disable-next-line no-alert
             alert('Ошибка скачивания. Проверьте подключение и попробуйте ещё раз.');
         } finally {
-            setDownloading(false);
+            setBusy(false);
         }
     };
+
+    return (
+        <>
+            {/* Layers */}
+            {config.layers.length > 1 && (
+                <Section title="Что включить" dense={sheet}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {config.layers.map((layer) => {
+                            const checked = selectedLayers.has(layer.id);
+                            return (
+                                <label
+                                    key={layer.id}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: 10,
+                                        padding: '10px 12px',
+                                        background: checked
+                                            ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))'
+                                            : 'var(--bg-secondary)',
+                                        border: '1.5px solid var(--text-primary)',
+                                        borderRadius: 10,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleLayer(layer.id)}
+                                        style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{layer.label}</div>
+                                        <div
+                                            style={{
+                                                fontSize: 'var(--fs-xs)',
+                                                color: 'var(--text-muted)',
+                                                marginTop: 2,
+                                                lineHeight: 1.4,
+                                            }}
+                                        >
+                                            {layer.description}
+                                        </div>
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </Section>
+            )}
+
+            {/* Selectors — параметры экспорта */}
+            {config.selectors.length > 0 && (
+                <Section title="Параметры экспорта" dense={sheet}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {config.selectors.map((sel) => (
+                            <SelectorControl
+                                key={sel.id}
+                                selector={sel}
+                                value={values[sel.id]}
+                                onChange={(v) => setValues((prev) => ({ ...prev, [sel.id]: v }))}
+                            />
+                        ))}
+                    </div>
+                </Section>
+            )}
+
+            {/* Format selector — radio: CSV vs XLSX */}
+            <Section title="Формат файла" dense={sheet}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <FormatButton
+                        active={format === 'csv'}
+                        onClick={() => setFormat('csv')}
+                        icon={isZip ? <FileArchive size={14} /> : <FileText size={14} />}
+                        label={isZip ? `ZIP · ${totalCombinations} CSV` : 'CSV'}
+                        description="UTF-8 · открывается в Excel/Numbers/любом редакторе"
+                    />
+                    <FormatButton
+                        active={format === 'xlsx'}
+                        onClick={() => setFormat('xlsx')}
+                        icon={<FileText size={14} />}
+                        label="XLSX"
+                        description={
+                            totalCombinations > 1
+                                ? `Excel · ${totalCombinations} sheet'ов в одном файле`
+                                : 'Excel · нативный формат'
+                        }
+                    />
+                </div>
+            </Section>
+
+            {/* Actions: в шите — одна широкая кнопка, липнет к низу прокрутки
+                тела MobileSheet; в модалке — «Отмена» + «Скачать» справа. */}
+            {sheet ? (
+                <div
+                    style={{
+                        position: 'sticky',
+                        bottom: 0,
+                        padding: '12px 16px',
+                        background: 'var(--bg-primary)',
+                        borderTop: '1.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                    }}
+                >
+                    <button
+                        onClick={handleDownload}
+                        disabled={downloading || selectedLayers.size === 0}
+                        style={{
+                            width: '100%',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            padding: '12px 18px',
+                            background: 'var(--accent)',
+                            color: 'var(--text-inverse)',
+                            border: '1.5px solid var(--text-primary)',
+                            borderRadius: 999,
+                            fontSize: 'var(--fs-base)',
+                            fontWeight: 700,
+                            cursor: downloading ? 'wait' : 'pointer',
+                            boxShadow: 'var(--shadow-hard-chip)',
+                        }}
+                    >
+                        <Download size={16} />
+                        {downloading ? 'Скачиваем…' : 'Скачать'}
+                    </button>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px' }}>
+                    <button
+                        onClick={onClose}
+                        disabled={downloading}
+                        style={{
+                            padding: '8px 18px',
+                            background: 'var(--bg-secondary)',
+                            border: '1.5px solid var(--text-primary)',
+                            borderRadius: 999,
+                            color: 'var(--text-primary)',
+                            fontSize: 'var(--fs-sm)',
+                            fontWeight: 700,
+                            cursor: downloading ? 'wait' : 'pointer',
+                        }}
+                    >
+                        Отмена
+                    </button>
+                    <button
+                        onClick={handleDownload}
+                        disabled={downloading || selectedLayers.size === 0}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '8px 18px',
+                            background: 'var(--accent)',
+                            color: 'var(--text-inverse)',
+                            border: '1.5px solid var(--text-primary)',
+                            borderRadius: 999,
+                            fontSize: 'var(--fs-sm)',
+                            fontWeight: 700,
+                            cursor: downloading ? 'wait' : 'pointer',
+                            boxShadow: 'var(--shadow-hard-chip)',
+                        }}
+                    >
+                        <Download size={16} />
+                        {downloading ? 'Скачиваем…' : 'Скачать'}
+                    </button>
+                </div>
+            )}
+        </>
+    );
+}
+
+interface Props {
+    config: CsvExportConfig;
+    onClose: () => void;
+}
+
+export default function CsvExportModal({ config, onClose }: Props) {
+    const [downloading, setDownloading] = useState(false);
+
+    // Esc + body scroll lock.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && !downloading) onClose();
+        };
+        document.addEventListener('keydown', onKey);
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            document.body.style.overflow = prev;
+        };
+    }, [onClose, downloading]);
 
     return (
         <div
@@ -300,138 +503,12 @@ export default function CsvExportModal({ config, onClose }: Props) {
                     </button>
                 </div>
 
-                {/* Layers */}
-                {config.layers.length > 1 && (
-                    <Section title="Что включить">
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {config.layers.map((layer) => {
-                                const checked = selectedLayers.has(layer.id);
-                                return (
-                                    <label
-                                        key={layer.id}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            gap: 10,
-                                            padding: '10px 12px',
-                                            background: checked
-                                                ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))'
-                                                : 'var(--bg-secondary)',
-                                            border: '1.5px solid var(--text-primary)',
-                                            borderRadius: 10,
-                                            cursor: 'pointer',
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={() => toggleLayer(layer.id)}
-                                            style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
-                                        />
-                                        <span style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{layer.label}</div>
-                                            <div
-                                                style={{
-                                                    fontSize: 'var(--fs-xs)',
-                                                    color: 'var(--text-muted)',
-                                                    marginTop: 2,
-                                                    lineHeight: 1.4,
-                                                }}
-                                            >
-                                                {layer.description}
-                                            </div>
-                                        </span>
-                                    </label>
-                                );
-                            })}
-                        </div>
-                    </Section>
-                )}
-
-                {/* Selectors — параметры экспорта */}
-                {config.selectors.length > 0 && (
-                    <Section title="Параметры экспорта">
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            {config.selectors.map((sel) => (
-                                <SelectorControl
-                                    key={sel.id}
-                                    selector={sel}
-                                    value={values[sel.id]}
-                                    onChange={(v) => setValues((prev) => ({ ...prev, [sel.id]: v }))}
-                                />
-                            ))}
-                        </div>
-                    </Section>
-                )}
-
-                {/* Format selector — radio: CSV vs XLSX */}
-                <Section title="Формат файла">
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <FormatButton
-                            active={format === 'csv'}
-                            onClick={() => setFormat('csv')}
-                            icon={isZip ? <FileArchive size={14} /> : <FileText size={14} />}
-                            label={isZip ? `ZIP · ${totalCombinations} CSV` : 'CSV'}
-                            description="UTF-8 · открывается в Excel/Numbers/любом редакторе"
-                        />
-                        <FormatButton
-                            active={format === 'xlsx'}
-                            onClick={() => setFormat('xlsx')}
-                            icon={<FileText size={14} />}
-                            label="XLSX"
-                            description={
-                                totalCombinations > 1
-                                    ? `Excel · ${totalCombinations} sheet'ов в одном файле`
-                                    : 'Excel · нативный формат'
-                            }
-                        />
-                    </div>
-                </Section>
-
-                {/* Actions */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px' }}>
-                    <button
-                        onClick={onClose}
-                        disabled={downloading}
-                        style={{
-                            padding: '8px 18px',
-                            background: 'var(--bg-secondary)',
-                            border: '1.5px solid var(--text-primary)',
-                            borderRadius: 999,
-                            color: 'var(--text-primary)',
-                            fontSize: 'var(--fs-sm)',
-                            fontWeight: 700,
-                            cursor: downloading ? 'wait' : 'pointer',
-                        }}
-                    >
-                        Отмена
-                    </button>
-                    <button
-                        onClick={handleDownload}
-                        disabled={downloading || selectedLayers.size === 0}
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            padding: '8px 18px',
-                            background: 'var(--accent)',
-                            color: 'var(--text-inverse)',
-                            border: '1.5px solid var(--text-primary)',
-                            borderRadius: 999,
-                            fontSize: 'var(--fs-sm)',
-                            fontWeight: 700,
-                            cursor: downloading ? 'wait' : 'pointer',
-                            boxShadow: 'var(--shadow-hard-chip)',
-                        }}
-                    >
-                        <Download size={16} />
-                        {downloading ? 'Скачиваем…' : 'Скачать'}
-                    </button>
-                </div>
+                <CsvExportForm config={config} onClose={onClose} onBusyChange={setDownloading} />
             </div>
         </div>
     );
 }
+
 
 // ────────────────────────────────────────────────────────────────────
 // Subcomponents
@@ -490,11 +567,11 @@ function FormatButton({
     );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, dense }: { title: string; children: React.ReactNode; dense?: boolean }) {
     return (
         <div
             style={{
-                padding: '16px 20px',
+                padding: dense ? '14px 16px' : '16px 20px',
                 borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)',
             }}
         >

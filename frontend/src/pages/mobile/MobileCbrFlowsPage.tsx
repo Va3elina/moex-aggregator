@@ -12,6 +12,9 @@ import { Banknote, Landmark, DollarSign, Building2, Lock } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildCbrFlowsExportConfig } from '../../components/export/exportConfigs';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { axisFontSize } from '../../components/chart/chartTypography';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
@@ -59,6 +62,7 @@ export default function MobileCbrFlowsPage() {
   const [error, setError] = useState<string | null>(null);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
   // Hidden categories — Set, исключаются из стека (как на десктопе). Персистим
   // по типу актива (frame:cbr:hidden:<type>, общий ключ с десктопом) — выбор не
   // сбрасывается на новой сессии и хранится отдельно для stocks/ofz/fx. Первый
@@ -407,7 +411,22 @@ export default function MobileCbrFlowsPage() {
             </div>
           )}
         </div>
+        <MobileCsvExportRow
+          indicator="cbr_flows"
+          onClose={() => setOptionsSheetOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildCbrFlowsExportConfig({
+          type,
+          period,
+          instrumentOptions: TYPE_TABS.map((t) => ({ value: t.key, label: t.label })),
+        })}
+      />
 
       <OnboardingTour
         steps={tourSteps}
