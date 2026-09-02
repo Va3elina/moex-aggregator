@@ -65,7 +65,7 @@ const DRAW_HOTKEY: Record<string, string> = { trend: 'Alt+T', hline: 'Alt+H', vl
  *  при смене темы/экспорте (токен бы «поплыл»). */
 const PALETTE_ROWS: string[][] = [
   ['#F5F1E8', '#C9C4B8', '#9A958C', '#6B6760', '#0A0A0A', '#EF6F6F', '#FF5C2B', '#E0A34E', '#5BD49C', '#57C7C7', '#5DA3E9', '#9B8BF0'],
-  ['#FFFFFF', '#E3DED2', '#807B72', '#3A3833', '#1C1B20', '#B14A4A', '#C2451F', '#A97B33', '#3F9E75', '#3A8C8C', '#3E7BB5', '#6E5FC0'],
+  ['#FFFFFF', '#E3DED2', '#807B72', '#3A3833', '#1C1B20', '#B14A4A', '#C2451F', '#A97B33', '#0A6B3B', '#3A8C8C', '#3E7BB5', '#6E5FC0'],
 ];
 const DASH_NAME: Record<LwDash, string> = { solid: 'Линия', dashed: 'Штриховой пунктир', dotted: 'Точечный пунктир' };
 
