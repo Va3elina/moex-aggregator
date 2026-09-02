@@ -4,7 +4,6 @@ import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import AdaptiveSegmented from '../components/AdaptiveSegmented';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
-import CsvExportButton from '../components/export/CsvExportButton';
 import ChartWatermark from '../components/ChartWatermark';
 import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
@@ -683,27 +682,6 @@ export default function HeatmapPage() {
         {/* Camera button inline, прижат к правому краю.
             captureRef = outer paper-card → snapshot включает watermark. */}
         <div data-tour="heatmap-export" className="ml-auto flex items-center gap-2">
-        <CsvExportButton
-          indicator="heatmap"
-          config={() => ({
-            indicator: 'heatmap',
-            title: 'Экспорт: Карта рынка',
-            layers: [{
-              id: 'current',
-              label: 'Снапшот всех акций',
-              description: 'Текущая цена + изменения 1д/1н/1м/1г + market cap + объём',
-              defaultSelected: true,
-            }],
-            selectors: [],
-            params: [
-              { label: 'Режим (UI)', value: mapMode === 'imoex' ? 'IMOEX' : 'Все акции' },
-              { label: 'Размер (UI)', value: SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy },
-              { label: 'Период (UI)', value: PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period },
-            ],
-            buildUrl: () => '/api/export/heatmap.csv',
-            buildFilename: () => 'heatmap.csv',
-          })}
-        />
         <ChartCaptureButton
           getTargetElement={() => captureRef.current}
           filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}
