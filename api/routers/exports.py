@@ -9,7 +9,6 @@ Auth: require_pro dependency (api/routers/auth.py) → 403 для гостей/F
 Frontend на 403 показывает UpgradeModal.
 
 Endpoints:
-  GET /api/export/heatmap.csv
   GET /api/export/breadth.csv      ?ema=200&universe=imoex&days=180
   GET /api/export/buffett.csv      ?period=10y&mode=cap-gdp&timeframe=1m
   GET /api/export/seasonality.csv  ?ticker=SBER&mode=monthly
@@ -116,33 +115,6 @@ def _date_range_clause(
         threshold = date.today() - timedelta(days=days)
         return f"AND {date_column} >= :_pthreshold", {"_pthreshold": threshold}
     return "", {}
-
-
-# ════════════════════════════════════════════════════════════════════
-# Heatmap — все акции
-# ════════════════════════════════════════════════════════════════════
-@router.get("/heatmap.csv")
-def export_heatmap(
-    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
-    user: User = Depends(require_pro),
-    db: Session = Depends(get_db),
-):
-    """Все акции с current price + change % за разные периоды + market cap."""
-    rows = db.execute(text("""
-        SELECT sec_id, name, sector, price, prev_close,
-               change_1d, change_1w, change_1m, change_1y,
-               volume_1d, value_1d, market_cap
-        FROM mv_heatmap_stocks
-        ORDER BY market_cap DESC NULLS LAST
-    """)).mappings().all()
-    fieldnames = [
-        "sec_id", "name", "sector",
-        "price", "prev_close",
-        "change_1d", "change_1w", "change_1m", "change_1y",
-        "volume_1d", "value_1d", "market_cap",
-    ]
-    files = {f"heatmap_{_ts()}.csv": ([dict(r) for r in rows], fieldnames)}
-    return _bundle_response(files, f"heatmap_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
