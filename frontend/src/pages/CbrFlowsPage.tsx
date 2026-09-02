@@ -27,7 +27,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectionalHistogram';
 import ChartNavigator from '../components/ChartNavigator';
 import { getCategoryColor } from '../components/cbr/cbrPalette';
-import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCategoryInfo';
+import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import { getDefaultHiddenCategories } from '../components/cbr/cbrDefaultVisibility';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
@@ -36,7 +36,7 @@ import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
 import ChartTabs from '../components/ChartTabs';
 import SegmentedControl from '../components/SegmentedControl';
-import { periodToQuery } from '../utils/csvPeriod';
+import { buildCbrFlowsExportConfig } from '../components/export/exportConfigs';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
@@ -440,82 +440,10 @@ export default function CbrFlowsPage() {
           <ChartActionsMenu containerRef={chartAnchorRef} tourId="cbr-export">
           <CsvExportButton
             indicator="cbr_flows"
-            config={() => ({
-              indicator: 'cbr_flows',
-              title: 'Экспорт: Поток капитала',
-              layers: [{
-                id: 'flows',
-                label: 'Потоки ОРФР',
-                description: 'period_year, label, category, value (млрд ₽)',
-                defaultSelected: true,
-              }],
-              // Unified порядок: тип инструмента (актив-эквивалент) →
-              // категории (mode-эквивалент) → период.
-              selectors: [
-                {
-                  kind: 'multiselect',
-                  id: 'instruments',
-                  label: 'Тип инструмента',
-                  default: [type],
-                  hint: 'Несколько → ZIP с CSV per тип',
-                  options: INSTRUMENT_TABS.map(t => ({ value: t.key, label: t.label })),
-                },
-                {
-                  kind: 'multiselect',
-                  id: 'categories',
-                  label: 'Категории участников',
-                  default: [], // пустой = все категории (backend не фильтрует)
-                  hint: 'Пусто = все категории',
-                  // Подписи берём из getCategoryShortLabel — единый источник
-                  // правды с легендой графика, чтобы они не разъезжались.
-                  options: [
-                    'Физические лица',
-                    'СЗКО',
-                    'Прочие Банки',
-                    'Нерезиденты',
-                    'НФО',
-                    'Нефинансовые организации',
-                    'Доверительное управление',
-                    'Банк России',
-                    'Российские кредитные организации',
-                    'Клиенты российских кредитных организаций',
-                  ].map((value) => ({ value, label: getCategoryShortLabel(value) })),
-                },
-                {
-                  kind: 'period',
-                  id: 'period',
-                  label: 'Период',
-                  default: { type: 'preset', value: period },
-                  presets: [
-                    { value: '1y', label: '1Г', days: 365 },
-                    { value: '3y', label: '3Г', days: 1095 },
-                    { value: '5y', label: '5Л', days: 1825 },
-                    { value: 'all', label: 'Всё', days: 11000 },
-                  ],
-                },
-              ],
-              params: [],
-              buildUrl: (_layers, vals) => {
-                const insts = (vals.instruments as string[] ?? [type]).join(',');
-                const cats = (vals.categories as string[] ?? []);
-                const catsParam = cats.length > 0 ? `&categories=${encodeURIComponent(cats.join(','))}` : '';
-                // ORFR хранит данные по годам, так что period конвертируется в `years`.
-                let yearsParam = '';
-                const pv = vals.period;
-                if (pv && typeof pv === 'object' && (pv as { type?: string }).type === 'range') {
-                  // Range — берём years = diff в годах.
-                  const r = pv as { type: 'range'; from: string; to: string };
-                  const fromY = parseInt(r.from.slice(0, 4), 10);
-                  const toY = parseInt(r.to.slice(0, 4), 10);
-                  yearsParam = `&years=${Math.max(1, toY - fromY + 1)}`;
-                } else {
-                  // Preset → days → years.
-                  const days = parseInt(periodToQuery(pv, 365).replace('days=', ''), 10);
-                  yearsParam = `&years=${Math.max(1, Math.round(days / 365))}`;
-                }
-                return `/api/export/cbr-flows.csv?instrument=${insts}${yearsParam}${catsParam}`;
-              },
-              buildFilename: () => `cbr_flows_${Date.now()}.zip`,
+            config={() => buildCbrFlowsExportConfig({
+              type,
+              period,
+              instrumentOptions: INSTRUMENT_TABS.map((t) => ({ value: t.key, label: t.label })),
             })}
           />
           <ChartCaptureButton

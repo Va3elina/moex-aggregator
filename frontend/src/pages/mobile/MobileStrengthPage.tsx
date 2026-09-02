@@ -16,6 +16,9 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildStrengthExportConfig } from '../../components/export/exportConfigs';
 import {
   getBreadthCurrent,
   getBreadthHistory,
@@ -89,6 +92,7 @@ export default function MobileStrengthPage() {
   const reqIdRef = useRef(0);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
 
   // Итоговый universe: добавляем _usd при долларовом режиме
   const universe: BreadthUniverse =
@@ -558,7 +562,23 @@ export default function MobileStrengthPage() {
           </div>
 
         </div>
+        <MobileCsvExportRow
+          indicator="strength"
+          onClose={() => setSettingsOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildStrengthExportConfig({
+          emaPeriod,
+          universe,
+          period,
+          periodDays: PERIOD_DAYS[period],
+        })}
+      />
 
       <OnboardingTour
         steps={tourSteps}

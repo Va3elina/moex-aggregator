@@ -17,6 +17,7 @@ import PeriodSettingsPopover from '../components/seasonality/PeriodSettingsPopov
 import { type PeriodConfig, makePeriodId } from '../components/seasonality/periodConfig';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import { buildSeasonalityExportConfig } from '../components/export/exportConfigs';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import SandboxEntryButton from '../components/SandboxEntryButton';
 import ChartSettings from '../components/chart/ChartSettings';
@@ -741,44 +742,7 @@ export default function SeasonalityPage() {
           )}
           <CsvExportButton
             indicator="seasonality"
-            config={() => ({
-              indicator: 'seasonality',
-              title: `Экспорт: Сезонность · ${selectedName}`,
-              layers: [
-                { id: 'daily', label: 'Дневные свечи',
-                  description: 'OHLCV + change_pct + декомпозиция (year/month/weekday)',
-                  defaultSelected: true },
-                { id: 'weekday_avg', label: 'Средняя по дню недели',
-                  description: 'Avg change_pct по Пн-Вс + stdev + размер выборки' },
-                { id: 'monthly_avg', label: 'Средняя по месяцам',
-                  description: 'Avg change_pct по Янв-Дек (классическая сезонность)' },
-                { id: 'monthday_avg', label: 'Средняя по дню месяца',
-                  description: 'Avg change_pct по 1-31 числу — turn-of-month' },
-              ],
-              selectors: [
-                {
-                  kind: 'instrument-picker',
-                  id: 'tickers',
-                  label: 'Тикеры (можно несколько)',
-                  default: [selectedStock],
-                  filterType: 'stock',
-                  pickerTitle: 'Выберите акции для экспорта',
-                  hint: 'Несколько → ZIP с отдельным CSV per ticker × layer',
-                },
-              ],
-              params: [],
-              buildUrl: (layers, vals) => {
-                const tickers = (vals.tickers as string[]) ?? [selectedStock];
-                return `/api/export/seasonality.csv?ticker=${encodeURIComponent(tickers.join(','))}&layers=${layers.join(',')}`;
-              },
-              buildFilename: (layers, vals) => {
-                const tickers = (vals.tickers as string[]) ?? [selectedStock];
-                if (tickers.length === 1 && layers.length === 1) {
-                  return `seasonality_${tickers[0]}_${layers[0]}.csv`;
-                }
-                return `seasonality_${Date.now()}.zip`;
-              },
-            })}
+            config={() => buildSeasonalityExportConfig({ ticker: selectedStock, name: selectedName })}
           />
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}

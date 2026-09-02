@@ -12,7 +12,7 @@ import {
 import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
-import { periodToQuery } from '../utils/csvPeriod';
+import { buildBuffettExportConfig } from '../components/export/exportConfigs';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import HelpTooltip from '../components/HelpTooltip';
@@ -380,68 +380,7 @@ export default function BuffettPage() {
                 />
                 <CsvExportButton
                     indicator="buffett"
-                    config={() => ({
-                        indicator: 'buffett',
-                        title: 'Экспорт: Индикатор Баффета',
-                        layers: [{
-                            id: 'main',
-                            label: 'Данные индикатора',
-                            description: 'date, market_cap, knex (gdp_ttm или m2), ratio',
-                            defaultSelected: true,
-                        }],
-                        // Unified порядок: режимы → период → таймфрейм.
-                        selectors: [
-                            {
-                                kind: 'multiselect',
-                                id: 'modes',
-                                label: 'Режим расчёта',
-                                default: [viewMode],
-                                hint: 'Несколько → ZIP с CSV per режим',
-                                options: [
-                                    { value: 'cap-gdp', label: 'Кап / ВВП' },
-                                    { value: 'cap-m2', label: 'Кап / M2' },
-                                ],
-                            },
-                            {
-                                kind: 'period',
-                                id: 'period',
-                                label: 'Период',
-                                default: { type: 'preset', value: period },
-                                presets: [
-                                    { value: '1y', label: '1Г', days: 365 },
-                                    { value: '5y', label: '5Л', days: 1825 },
-                                    { value: '10y', label: '10Л', days: 3650 },
-                                    { value: '20y', label: '20Л', days: 7300 },
-                                    { value: 'all', label: 'Всё', days: 15000 },
-                                ],
-                            },
-                            {
-                                kind: 'select',
-                                id: 'timeframe',
-                                label: 'Таймфрейм',
-                                default: timeframe,
-                                options: [
-                                    { value: '1d', label: 'Дневной' },
-                                    { value: '1w', label: 'Недельный' },
-                                    { value: '1m', label: 'Месячный' },
-                                ],
-                            },
-                        ],
-                        params: [],
-                        buildUrl: (_layers, vals) => {
-                            const modes = (vals.modes as string[] ?? [viewMode]).join(',');
-                            const tf = (vals.timeframe as string) ?? timeframe;
-                            const periodParam = periodToQuery(vals.period, 3650);
-                            return `/api/export/buffett.csv?mode=${modes}&timeframe=${tf}&${periodParam}`;
-                        },
-                        buildFilename: (_, vals) => {
-                            const modes = (vals.modes as string[] ?? [viewMode]);
-                            const tf = (vals.timeframe as string) ?? timeframe;
-                            return modes.length === 1
-                                ? `buffett_${modes[0]}_${tf}.csv`
-                                : `buffett_${Date.now()}.zip`;
-                        },
-                    })}
+                    config={() => buildBuffettExportConfig({ viewMode, period, timeframe })}
                 />
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}

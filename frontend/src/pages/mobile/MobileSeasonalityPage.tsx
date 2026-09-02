@@ -17,6 +17,9 @@ import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
+import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
+import { buildSeasonalityExportConfig } from '../../components/export/exportConfigs';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import MobileChart from '../../components/mobile/MobileChart';
 import { axisFontSize } from '../../components/chart/chartTypography';
@@ -198,6 +201,7 @@ export default function MobileSeasonalityPage() {
   }, [selectedStock]);
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [csvSheetOpen, setCsvSheetOpen] = useState(false);
 
   const tour = useOnboardingTour('seasonality');
   // Единый паттерн: Intro → Кнопки → Опции (с демо режимов и compare) → Чтение → End
@@ -724,7 +728,18 @@ export default function MobileSeasonalityPage() {
             </div>
           )}
         </div>
+        <MobileCsvExportRow
+          indicator="seasonality"
+          onClose={() => setModeSheetOpen(false)}
+          onOpen={() => setCsvSheetOpen(true)}
+        />
       </MobileSheet>
+
+      <MobileCsvExportSheet
+        open={csvSheetOpen}
+        onClose={() => setCsvSheetOpen(false)}
+        config={() => buildSeasonalityExportConfig({ ticker: selectedStock, name: selectedName })}
+      />
 
       <OnboardingTour
         steps={tourSteps}
