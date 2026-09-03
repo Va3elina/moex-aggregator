@@ -1,0 +1,8328 @@
+{
+ "universe": [
+  {
+   "ticker": "ROSN",
+   "name": "Роснефть",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т",
+    "Добыча газа, млрд м3"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LKOH",
+   "name": "Лукойл",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 58,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т",
+    "Добыча газа, млрд м3"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NVTK",
+   "name": "НОВАТЭК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 59,
+   "ops": [
+    "Презентация",
+    "Добыча нефти, млн т",
+    "Добыча газа, млрд м3",
+    "Экспорт газа, млрд м3"
+   ],
+   "last_report": "24.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SIBN",
+   "name": "Газпром нефть",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Презентация",
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т",
+    "Добыча газа, млрд м3"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GAZP",
+   "name": "Газпром",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т",
+    "Добыча газа, млрд м3",
+    "Экспорт газа, млрд м3"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GMKN",
+   "name": "ГМК Норникель",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Презентация",
+    "Добыча никеля, тыс т",
+    "Добыча меди, тыс т",
+    "Добыча платины, тыс тр унц",
+    "Добыча палладия, тыс тр унц"
+   ],
+   "last_report": "31.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "YDEX",
+   "name": "Яндекс",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 58,
+   "ops": [
+    "Презентация",
+    "Доля поиска, %"
+   ],
+   "last_report": "29.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PLZL",
+   "name": "Полюс",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 60,
+   "ops": [
+    "Презентация",
+    "Добыча золота, тыс тр унц",
+    "Продажи золота, тыс тр унц",
+    "Ср.цена продажи золота, $/унц",
+    "Себестоимость золота, $/унц"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TATN",
+   "name": "Татнефть",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SNGS",
+   "name": "Сургутнефтегаз",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q2",
+    "2023Q3",
+    "2023Q4",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 59,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Добыча газа, млрд м3"
+   ],
+   "last_report": "30.04.2024",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PHOR",
+   "name": "ФосАгро",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 60,
+   "ops": [
+    "Презентация",
+    "Производство удобрений, млн т",
+    "Продажа удобрений, млн т"
+   ],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AKRN",
+   "name": "Акрон",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 58,
+   "ops": [
+    "Производство удобрений, млн т",
+    "Продажа удобрений, млн т"
+   ],
+   "last_report": "21.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "OZON",
+   "name": "OZON | ОЗОН",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 59,
+   "ops": [
+    "Комментарий",
+    "Презентация",
+    "Торговый оборот GMV, млрд руб",
+    "Доля маркетплейса в продажах, %",
+    "Количество заказов, млн"
+   ],
+   "last_report": "30.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CHMF",
+   "name": "Северсталь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Презентация",
+    "Производство стали, млн т",
+    "Пр-во продукции, млн т",
+    "Продажи стали, млн т",
+    "Доля продаж на экспорт, %",
+    "Цена мет/прод, $/т"
+   ],
+   "last_report": "20.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "X5",
+   "name": "X5 | ИКС 5",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 66,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Средний чек, %",
+    "Средний чек, руб",
+    "Торговый оборот GMV, млрд руб",
+    "Количество заказов, млн"
+   ],
+   "last_report": "13.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NLMK",
+   "name": "НЛМК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [
+    "Презентация",
+    "Производство стали, млн т",
+    "Пр-во продукции, млн т",
+    "Продажи стали, млн т",
+    "Доля продаж на экспорт, %",
+    "Загрузка мощности, %"
+   ],
+   "last_report": "30.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RUAL",
+   "name": "Русал",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 63,
+   "ops": [
+    "Презентация",
+    "Производство алюминия, тыс т",
+    "Продажи алюминия, тыс т",
+    "Продажи ПДС, тыс т",
+    "Цена алюминия, $/т",
+    "Себестоимость алюминия, $/т",
+    "Загрузка мощностей, %"
+   ],
+   "last_report": "19.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PIKK",
+   "name": "ПИК СЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 62,
+   "ops": [
+    "Презентация",
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Новые площади на продажу, тыс.м2",
+    "Доля ипотечных сделок, %"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MTSS",
+   "name": "МТС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 57,
+   "ops": [
+    "Презентация",
+    "Акт. абоненты, млн чел"
+   ],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UNAC",
+   "name": "ОАК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MOEX",
+   "name": "Московская биржа",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 56,
+   "ops": [
+    "Презентация",
+    "Чист. проц. доходы, млрд руб",
+    "Чист. комисс. доход, млрд руб"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VSMO",
+   "name": "ВСМПО-АВИСМА",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MAGN",
+   "name": "ММК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 55,
+   "ops": [
+    "Презентация",
+    "Производство стали, млн т",
+    "Пр-во продукции, млн т",
+    "Продажи стали, млн т",
+    "Доля продаж на экспорт, %",
+    "Объем продаж труб, млн т",
+    "Себестоимость сляба, $/т",
+    "Цена мет/прод, $/т"
+   ],
+   "last_report": "23.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "POLY",
+   "name": "Полиметалл",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2023"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2022Q3",
+    "2022Q4",
+    "2023Q1",
+    "2023Q2",
+    "2023Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Добыча золота, тыс тр унц",
+    "Ср.цена продажи золота, $/унц",
+    "Себестоимость золота, $/унц"
+   ],
+   "last_report": "18.06.2024",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "IRAO",
+   "name": "ИнтерРАО",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "КИУМ, %"
+   ],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "IRKT",
+   "name": "Яковлев (Иркут)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q4",
+    "2025Q1",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "29.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LENT",
+   "name": "Лента",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 64,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Средний чек, %",
+    "Средний чек, руб",
+    "Онлайн продажи, млрд руб",
+    "Доля онлайн продаж, %",
+    "Количество заказов, млн"
+   ],
+   "last_report": "03.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BANE",
+   "name": "Башнефть",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q1",
+    "2024Q2",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Переработка нефти, млн т"
+   ],
+   "last_report": "31.03.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "FLOT",
+   "name": "Совкомфлот",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ENPG",
+   "name": "En+",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск тепл.энергии, млн Гкал"
+   ],
+   "last_report": "21.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "FESH",
+   "name": "ДВМП",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "HYDR",
+   "name": "Русгидро",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UGLD",
+   "name": "Южуралзолото | ЮГК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [
+    "Презентация",
+    "Добыча золота, тыс тр унц"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MGNT",
+   "name": "Магнит",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 64,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Средний чек, %",
+    "Средний чек, руб",
+    "Торговый оборот GMV, млрд руб",
+    "Количество заказов, млн"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LSNG",
+   "name": "Россети Ленэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 55,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MGTS",
+   "name": "МГТС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "21.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GCHE",
+   "name": "Черкизово",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 57,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ALRS",
+   "name": "АЛРОСА",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 58,
+   "ops": [
+    "Презентация",
+    "Добыча алмазов, млн карат",
+    "Средняя цена алмазов, $/карат"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RTKM",
+   "name": "Ростелеком",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 59,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "12.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "HEAD",
+   "name": "HeadHunter (Хэдхантер)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Презентация",
+    "Платящие клиенты, тыс шт"
+   ],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NMTP",
+   "name": "НМТП",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 60,
+   "ops": [
+    "Перевалка нефти, млн т",
+    "Перевалка Новороссийск, млн т",
+    "Перевалка Приморск, млн т",
+    "Грузооборот, млн т",
+    "Транспорт нефти, млн т",
+    "Транспорт нефтепродуктов, млн т"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AFLT",
+   "name": "Аэрофлот",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 55,
+   "ops": [
+    "Презентация",
+    "Пассажиропоток всего, млн чел",
+    "Пассажиропоток внутр, млн чел",
+    "Пассажиропоток м/нар, млн чел",
+    "Занятость пассаж.кресел, %",
+    "Грузооборот, млн т",
+    "Часы налета, ч",
+    "Число самолетов, шт"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "FEES",
+   "name": "Россети (ФСК)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MDMG",
+   "name": "Мать и Дитя (MD)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RGSS",
+   "name": "Росгосстрах",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 3,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKK",
+   "name": "Россети Северный Кавказ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RASP",
+   "name": "Распадская",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [
+    "Презентация",
+    "Добыча коксующегося угля, млн т",
+    "Реализация угля, млн т",
+    "Средняя цена на уголь, $/т"
+   ],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KZOS",
+   "name": "Казаньоргсинтез",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PRMD",
+   "name": "Промомед",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "20.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NKNC",
+   "name": "НКНХ (Нижнекамскнефтехим)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LEAS",
+   "name": "Европлан",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 37,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "20.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VMTP",
+   "name": "Владивостокский морской торговый порт (ВМТП)",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 3,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 38,
+   "ops": [],
+   "last_report": "17.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MSRS",
+   "name": "Россети Московский регион (МОЭСК)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AFKS",
+   "name": "АФК Система",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "POSI",
+   "name": "Группа Позитив",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 64,
+   "ops": [
+    "Презентация",
+    "Отгрузки ПО, млрд руб"
+   ],
+   "last_report": "27.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GEMC",
+   "name": "ЕМС | ЮМГ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 57,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VKCO",
+   "name": "ВК | VK",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Комментарий",
+    "Презентация"
+   ],
+   "last_report": "13.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RAGR",
+   "name": "Русагро (old: AGRO)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 58,
+   "ops": [
+    "Презентация",
+    "Доля продаж на экспорт, %"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KAZT",
+   "name": "КуйбышевАзот",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TRMK",
+   "name": "ТМК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 57,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UTAR",
+   "name": "Ютэйр",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [
+    "Пассажиропоток всего, млн чел",
+    "Занятость пассаж.кресел, %"
+   ],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UPRO",
+   "name": "Юнипро",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "КИУМ, %"
+   ],
+   "last_report": "27.02.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UWGN",
+   "name": "ОВК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [
+    "Продажи ТС, шт"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MOEK",
+   "name": "МОЭК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "17.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MSNG",
+   "name": "Мосэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "КИУМ, %"
+   ],
+   "last_report": "05.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VJGZ",
+   "name": "Варьеганнефтегаз",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKP",
+   "name": "Россети Центр и Приволжье",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км",
+    "Трансформаторная мощность, ГВт"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LSRG",
+   "name": "ЛСР Группа",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Презентация",
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Новые площади на продажу, тыс.м2",
+    "Доля ипотечных сделок, %",
+    "Средняя цена квадратного метра, тыс.руб/м2"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKU",
+   "name": "Россети Урал",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SGZH",
+   "name": "Сегежа Групп",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Доля продаж на экспорт, %"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "OZPH",
+   "name": "ОЗОН Фармацевтика",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Презентация",
+    "Продажи лекарств, млн уп"
+   ],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ELMT",
+   "name": "Группа Элемент",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKY",
+   "name": "Россети Юг",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [
+    "Отпуск э/э потребителям из сети, млрд кВт*ч"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CNRU",
+   "name": "ЦИАН (CIAN)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [
+    "Комментарий",
+    "Презентация"
+   ],
+   "last_report": "19.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TNSE",
+   "name": "ТНС энерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "APTK",
+   "name": "Аптечная сеть 36,6",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Сопоставимые продажи, LFL, %",
+    "Онлайн продажи, млрд руб"
+   ],
+   "last_report": "29.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ASTR",
+   "name": "Группа Астра",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [
+    "Презентация",
+    "Отгрузки ПО, млрд руб"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "FIXR",
+   "name": "ФИКС ПРАЙС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 62,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Средний чек, %"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KMAZ",
+   "name": "КАМАЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Производство авто, тыс шт",
+    "Доля рынка, %"
+   ],
+   "last_report": "17.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RENI",
+   "name": "Ренессанс Страхование",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация",
+    "Инвестиционный портфель, млрд руб"
+   ],
+   "last_report": "21.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKS",
+   "name": "Россети Сибирь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [
+    "Отпуск э/э потребителям из сети, млрд кВт*ч"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKV",
+   "name": "Россети Волга",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SELG",
+   "name": "Селигдар",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 55,
+   "ops": [
+    "Презентация",
+    "Добыча золота, тыс тр унц",
+    "Продажи золота, тыс тр унц",
+    "Ср.цена продажи золота, $/унц",
+    "Себестоимость золота, $/унц"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MFGS",
+   "name": "Славнефть Мегионнефтегаз",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2018",
+    "2019",
+    "2020",
+    "2023",
+    "2024"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2021Q2",
+    "2023Q2",
+    "2023Q4",
+    "2024Q2",
+    "2024Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "30.04.2025",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AMEZ",
+   "name": "Ашинский МЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "27.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VSEH",
+   "name": "ВсеИнструменты.ру",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Общ. площадь магазинов, тыс. м2",
+    "Средний чек, руб",
+    "Товарный ассортимент, тыс ед",
+    "Количество заказов, млн"
+   ],
+   "last_report": "28.07.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BELU",
+   "name": "НоваБев Групп (Белуга Групп)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Трафик, %",
+    "Средний чек, %"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AQUA",
+   "name": "Инарктика (Русская Аквакультура)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 59,
+   "ops": [
+    "Презентация",
+    "Биомасса в воде, тыс т",
+    "Продажи вес, тыс т",
+    "Цена лосося, руб/кг"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "JNOS",
+   "name": "Славнефть-ЯНОС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q2",
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "14.04.2025",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "OGKB",
+   "name": "ОГК-2",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "КИУМ, %"
+   ],
+   "last_report": "11.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SFIN",
+   "name": "SFI | ЭсЭфАй",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "YAKG",
+   "name": "ЯТЭК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKC",
+   "name": "Россети Центр",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "OMZZ",
+   "name": "ОМЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "05.05.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NKHP",
+   "name": "НКХП",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DVEC",
+   "name": "ДЭК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "03.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RNFT",
+   "name": "Русснефть",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Добыча нефти, млн т",
+    "Добыча газа, млрд м3"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TGKD",
+   "name": "Квадра",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2020Q2",
+    "2020Q4",
+    "2021Q2",
+    "2021Q4",
+    "2022Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 56,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "Протяженность ЛЭП, тыс.км",
+    "КИУМ, %"
+   ],
+   "last_report": "30.08.2022",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VSYDP",
+   "name": "Выборгский судостроительный завод (ВСЗ)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UCSS",
+   "name": "ОКС",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2013",
+    "2014",
+    "2015",
+    "2016",
+    "2017"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2013Q4",
+    "2014Q4",
+    "2015Q4",
+    "2016Q4",
+    "2017Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 12,
+   "ops": [],
+   "last_report": null,
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SMLT",
+   "name": "Самолет",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Презентация",
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Продажи недвижимости, тыс.м2",
+    "Доля ипотечных сделок, %",
+    "Средняя цена квадратного метра, тыс.руб/м2"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BTBR",
+   "name": "B2B-РТС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 43,
+   "ops": [
+    "Комментарий"
+   ],
+   "last_report": "24.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ELFV",
+   "name": "Эл5 Энерго (Энел)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 60,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MTLR",
+   "name": "Мечел",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [
+    "Презентация",
+    "Производство стали, млн т",
+    "Пр-во продукции, млн т"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RKKE",
+   "name": "Энергия РКК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PMSB",
+   "name": "Пермэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SOFL",
+   "name": "Софтлайн | Softline",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Отгрузки ПО, млрд руб"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DATA",
+   "name": "Аренадата",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RTSB",
+   "name": "ТНС энерго Ростов-на-Дону",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MSTT",
+   "name": "Мостотрест",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KCHE",
+   "name": "Камчатскэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "02.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UKUZ",
+   "name": "Южный Кузбасс",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KBTK",
+   "name": "КТК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2016",
+    "2017",
+    "2018",
+    "2019",
+    "2020"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2019Q1",
+    "2019Q2",
+    "2019Q3",
+    "2019Q4",
+    "2020Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 40,
+   "ops": [
+    "Презентация",
+    "Добыча коксующегося угля, млн т",
+    "Реализация угля, млн т"
+   ],
+   "last_report": "04.05.2021",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "APRI",
+   "name": "АПРИ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Продажи недвижимости, тыс.м2",
+    "Доля ипотечных сделок, %",
+    "Средняя цена квадратного метра, тыс.руб/м2"
+   ],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "WTCM",
+   "name": "ЦМТ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "error": "HTTP Error 404: Not Found"
+  },
+  {
+   "ticker": "LNZL",
+   "name": "Лензолото",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q2",
+    "2023Q4",
+    "2024Q2",
+    "2024Q3",
+    "2024Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 43,
+   "ops": [],
+   "last_report": "17.03.2025",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TGKA",
+   "name": "ТГК-1",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 60,
+   "ops": [
+    "Презентация",
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Отпуск тепл.энергии, млн Гкал",
+    "Реализация мощности, ГВт",
+    "КИУМ, %"
+   ],
+   "last_report": "04.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SPBE",
+   "name": "СПб Биржа (SPB)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "29.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BAZA",
+   "name": "БАЗИС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "04.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KBSB",
+   "name": "ТНС энерго Кубань",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NNSB",
+   "name": "ТНС энерго Нижний Новгород",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ETLN",
+   "name": "Эталон",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Презентация",
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Доля ипотечных сделок, %",
+    "Средняя цена квадратного метра, тыс.руб/м2"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VRSB",
+   "name": "ТНС энерго Воронеж",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KRSB",
+   "name": "Красноярскэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "OKEY",
+   "name": "Окей",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 52,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Средний чек, %",
+    "Онлайн продажи, млрд руб",
+    "Доля онлайн продаж, %"
+   ],
+   "last_report": "29.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ZAYM",
+   "name": "Займер",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 36,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PAZA",
+   "name": "Павловский автобус",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2018",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRKZ",
+   "name": "Россети Северо-Запад",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км",
+    "Трансформаторная мощность, ГВт"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DIAS",
+   "name": "Диасофт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 61,
+   "ops": [
+    "Комментарий",
+    "Презентация",
+    "Законтрактованная выручка, млрд руб"
+   ],
+   "last_report": "13.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "HNFG",
+   "name": "Henderson (Хэндерсон фэшн групп)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 63,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Сопоставимые продажи, LFL, %",
+    "Трафик, %",
+    "Доля онлайн продаж, %"
+   ],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TTLK",
+   "name": "Таттелеком",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GLRX",
+   "name": "ГЛОРАКС | Glorax",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Контракты на продажу м, тыс.м2",
+    "Контракты на продажу руб, млрд руб",
+    "Продажи недвижимости, тыс.м2",
+    "Доля ипотечных сделок, %",
+    "Средняя цена квадратного метра, тыс.руб/м2"
+   ],
+   "last_report": "27.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SVAV",
+   "name": "Соллерс",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "URKZ",
+   "name": "Уральская кузница",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ABRD",
+   "name": "Абрау-Дюрсо",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q1",
+    "2023Q2",
+    "2023Q4",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [],
+   "last_report": "28.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ROLO",
+   "name": "Русолово",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 3,
+   "n_indicators": 46,
+   "ops": [
+    "Добыча меди, тыс т"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "YRSB",
+   "name": "ТНС энерго Ярославль",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CHMK",
+   "name": "ЧМК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CHKZ",
+   "name": "ЧКПЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BISV",
+   "name": "Башинформсвязь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LMBZ",
+   "name": "Ламбумиз",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KROT",
+   "name": "МКФ Красный Октябрь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BRZL",
+   "name": "Бурятзолото",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 3,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KRKN",
+   "name": "Саратовский НПЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2014",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q2",
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "28.04.2025",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BLNG",
+   "name": "Белон",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 31,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DELI",
+   "name": "Делимобиль (Каршеринг Руссия)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация",
+    "Число автомобилей, тыс шт",
+    "Число минут, млн мин"
+   ],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MVID",
+   "name": "М.Видео-Эльдорадо",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 67,
+   "ops": [
+    "Презентация",
+    "Число магазинов, шт",
+    "Открыто новых магазинов, шт",
+    "Общ. площадь магазинов, тыс. м2",
+    "Средний чек, %",
+    "Средний чек, руб",
+    "Торговый оборот GMV, млрд руб",
+    "Онлайн продажи, млрд руб",
+    "Доля онлайн продаж, %",
+    "Товарный ассортимент, тыс ед",
+    "Количество заказов, млн"
+   ],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SAGO",
+   "name": "Самараэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LPSB",
+   "name": "ЛЭСК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 43,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RZSB",
+   "name": "Рязаньэнергосбыт РЭСК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TGKB",
+   "name": "ТГК-2",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч",
+    "Отпуск тепл.энергии, млн Гкал"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KZSB",
+   "name": "Кузбассэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "10.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "IVAT",
+   "name": "IVA Technologies",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MISB",
+   "name": "ТНС энерго Марий Эл",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RUSI",
+   "name": "ИК РУСС-ИНВЕСТ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 38,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SLEN",
+   "name": "Сахалинэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "10.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VGSB",
+   "name": "Волгоградэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "14.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KOGK",
+   "name": "Коршуновский ГОК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "INCB",
+   "name": "Инкаб Холдинг",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "17.06.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KGKC",
+   "name": "Курганская ГК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TGKN",
+   "name": "ТГК-14",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 51,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Установл. тепл. мощность, Гкал/ч",
+    "Выработка электроэнергии, ТВт*ч"
+   ],
+   "last_report": "13.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NAUK",
+   "name": "НПО Наука",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "05.05.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "EUTR",
+   "name": "ЕВРОТРАНС",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "31.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SARE",
+   "name": "Саратовэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "WUSH",
+   "name": "Вуш Холдинг | WHOOSH",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 53,
+   "ops": [
+    "Презентация",
+    "Флот, тыс шт",
+    "Число поездок, млн шт"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ABIO",
+   "name": "Артген биотех (ИСКЧ)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "EELT",
+   "name": "Европейская Электротехника",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 55,
+   "ops": [],
+   "last_report": "29.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RTGZ",
+   "name": "Газпром РнД (Ростовоблгаз)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "YKEN",
+   "name": "Якутскэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "10.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KMEZ",
+   "name": "КМЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "24.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "IGST",
+   "name": "Ижсталь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "STSB",
+   "name": "Ставропольэнергосбыт (ЕГП)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TORS",
+   "name": "Россети Томск (ТРК)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 55,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "27.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "HIMC",
+   "name": "Химпром",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "27.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ZVEZ",
+   "name": "Звезда",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "04.05.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NSVZ",
+   "name": "Наука-Связь",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RBCM",
+   "name": "РБК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2022",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PRFN",
+   "name": "ТЕПЛАНТ восток",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MGKL",
+   "name": "МГКЛ (Мосгорломбард)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NKSH",
+   "name": "Нижнекамскшина",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [],
+   "last_report": "27.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CARM",
+   "name": "КарМани (СТГ)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "22.05.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TASB",
+   "name": "Тамбовэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "17.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ASSB",
+   "name": "Астраханэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 43,
+   "ops": [],
+   "last_report": "14.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "UNKL",
+   "name": "ЮУНК",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 41,
+   "ops": [],
+   "last_report": "10.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "JETL",
+   "name": "Джетленд | JetLend",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "error": "HTTP Error 404: Not Found"
+  },
+  {
+   "ticker": "KLSB",
+   "name": "Калужская сбытовая компания",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 44,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KLVZ",
+   "name": "КЛВЗ Кристалл",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2024Q1",
+    "2024Q2",
+    "2024Q3",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CNTL",
+   "name": "Центральный телеграф",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "10.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "NFAZ",
+   "name": "Нефтекамский автозавод (Нефаз)",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KMTZ",
+   "name": "Косогорский МЗ",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2022Q4",
+    "2023Q1",
+    "2023Q2",
+    "2023Q4",
+    "2024Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 38,
+   "ops": [],
+   "last_report": "31.03.2025",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MRSB",
+   "name": "Мордовэнергосбыт",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 46,
+   "ops": [],
+   "last_report": "30.03.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GECO",
+   "name": "Генетико",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q1",
+    "2023Q2",
+    "2023Q4",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 39,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "27.09.2024",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ROST",
+   "name": "Росинтер",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "30.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LVHK",
+   "name": "Левенгук",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "05.05.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KRKO",
+   "name": "Красный котельщик",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KZMS",
+   "name": "КЗМС",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 36,
+   "ops": [],
+   "last_report": "03.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KTSB",
+   "name": "Костромская сбытовая компания",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023"
+   ],
+   "n_years": 3,
+   "quarters": [
+    "2021Q4",
+    "2022Q2",
+    "2022Q4",
+    "2023Q2",
+    "2023Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "27.04.2024",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "ARSA",
+   "name": "Арсагера",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2021Q4",
+    "2022Q4",
+    "2023Q4",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 40,
+   "ops": [],
+   "last_report": "31.03.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DIOD",
+   "name": "ДИОД",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q1",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "TUZA",
+   "name": "ТЗА",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "27.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VLHZ",
+   "name": "ВХЗ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "04.05.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DZRD",
+   "name": "ДЗРД - Донской завод радиодеталей",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 4,
+   "n_indicators": 51,
+   "ops": [],
+   "last_report": "29.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SVET",
+   "name": "Светофор Групп",
+   "cap": "",
+   "report": "LTM-РСБУ",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2021Q4",
+    "2022Q4",
+    "2023Q4",
+    "2024Q4",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 21,
+   "ops": [],
+   "last_report": null,
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "LIFE",
+   "name": "Фармсинтез",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2022Q4",
+    "2023Q2",
+    "2023Q3",
+    "2023Q4",
+    "2024Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "04.09.2024",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GEMA",
+   "name": "ММЦБ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 43,
+   "ops": [],
+   "last_report": "11.04.2023",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "FIAI",
+   "name": "Фабрика ПО",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 4,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "26.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MAGE",
+   "name": "Магаданэнерго",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 48,
+   "ops": [],
+   "last_report": "09.04.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KUBE",
+   "name": "Россети Кубань",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q1",
+    "2024Q2",
+    "2024Q3",
+    "2024Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 51,
+   "ops": [
+    "Установленная мощность, ГВт",
+    "Ср. цена реализации э/э, руб/кВт*ч",
+    "Отпуск э/э потребителям из сети, млрд кВт*ч",
+    "Протяженность ЛЭП, тыс.км"
+   ],
+   "last_report": "19.03.2025",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SIBR",
+   "name": "Сибур",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 42,
+   "ops": [
+    "Презентация"
+   ],
+   "last_report": "17.08.2026",
+   "has_dividend": false,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "GAZC",
+   "name": "Газкон",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q3",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 33,
+   "ops": [],
+   "last_report": "24.04.2026",
+   "has_dividend": true,
+   "is_bank": false,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MONO",
+   "name": "Монополия",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "error": "HTTP Error 404: Not Found"
+  },
+  {
+   "ticker": "SBER",
+   "name": "Сбербанк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 59,
+   "ops": [],
+   "last_report": "29.07.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "VTBR",
+   "name": "ВТБ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 58,
+   "ops": [],
+   "last_report": "28.07.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "DOMRF",
+   "name": "ДОМ.РФ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 47,
+   "ops": [],
+   "last_report": "30.07.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "CBOM",
+   "name": "МКБ",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 45,
+   "ops": [],
+   "last_report": "29.05.2026",
+   "has_dividend": false,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "SVCB",
+   "name": "Совкомбанк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 54,
+   "ops": [],
+   "last_report": "14.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "BSPB",
+   "name": "Банк Санкт-Петербург",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": true,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 50,
+   "ops": [],
+   "last_report": "21.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "AVAN",
+   "name": "Авангард",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q4",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 36,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "USBN",
+   "name": "Уралсиб",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2020",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 35,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "MBNK",
+   "name": "МТС Банк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": true,
+   "in_funds": true,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 49,
+   "ops": [],
+   "last_report": "25.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "PRMB",
+   "name": "Приморье Банк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 36,
+   "ops": [],
+   "last_report": "30.04.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "RDRB",
+   "name": "Росдорбанк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4",
+    "2026Q2"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 40,
+   "ops": [],
+   "last_report": "28.08.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  },
+  {
+   "ticker": "KUZB",
+   "name": "Кузнецкий банк",
+   "cap": "",
+   "report": "LTM-МСФО",
+   "imoex": false,
+   "bmi": false,
+   "in_funds": false,
+   "years": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+   ],
+   "n_years": 5,
+   "quarters": [
+    "2023Q4",
+    "2024Q2",
+    "2024Q4",
+    "2025Q2",
+    "2025Q4"
+   ],
+   "n_quarters": 5,
+   "n_indicators": 36,
+   "ops": [],
+   "last_report": "29.04.2026",
+   "has_dividend": true,
+   "is_bank": true,
+   "msfo_empty": false
+  }
+ ],
+ "label_freq": [
+  [
+   "Валюта отчета",
+   220
+  ],
+  [
+   "Число акций ао, млн",
+   220
+  ],
+  [
+   "Капитализация, млрд руб",
+   220
+  ],
+  [
+   "EV, млрд руб",
+   220
+  ],
+  [
+   "EPS, руб",
+   220
+  ],
+  [
+   "Дата отчета",
+   218
+  ],
+  [
+   "Чистая прибыль, млрд руб",
+   218
+  ],
+  [
+   "Див доход, ао, %",
+   218
+  ],
+  [
+   "Дивиденды/прибыль, %",
+   218
+  ],
+  [
+   "Цена акции ао, руб",
+   218
+  ],
+  [
+   "P/E",
+   218
+  ],
+  [
+   "ROE, %",
+   213
+  ],
+  [
+   "Опер. расходы, млрд руб",
+   212
+  ],
+  [
+   "Расх на персонал, млрд руб",
+   211
+  ],
+  [
+   "ROA, %",
+   210
+  ],
+  [
+   "Чистый долг, млрд руб",
+   208
+  ],
+  [
+   "Баланс стоимость, млрд руб",
+   208
+  ],
+  [
+   "FCF/акцию, руб",
+   208
+  ],
+  [
+   "BV/акцию, руб",
+   208
+  ],
+  [
+   "Опер.денежный поток, млрд руб",
+   207
+  ],
+  [
+   "Активы, млрд руб",
+   206
+  ],
+  [
+   "Чистые активы, млрд руб",
+   206
+  ],
+  [
+   "Доходность FCF, %",
+   206
+  ],
+  [
+   "P/BV",
+   206
+  ],
+  [
+   "Выручка, млрд руб",
+   205
+  ],
+  [
+   "Наличность, млрд руб",
+   204
+  ],
+  [
+   "Рентаб EBITDA, %",
+   204
+  ],
+  [
+   "Чистая рентаб, %",
+   204
+  ],
+  [
+   "P/S",
+   204
+  ],
+  [
+   "CAPEX/Выручка, %",
+   204
+  ],
+  [
+   "Операционная прибыль, млрд руб",
+   203
+  ],
+  [
+   "CAPEX, млрд руб",
+   203
+  ],
+  [
+   "Долг, млрд руб",
+   201
+  ],
+  [
+   "R&D/CAPEX, %",
+   201
+  ],
+  [
+   "Процентные расходы, млрд руб",
+   197
+  ],
+  [
+   "FCF, млрд руб",
+   196
+  ],
+  [
+   "P/FCF",
+   196
+  ],
+  [
+   "Амортизация, млрд руб",
+   194
+  ],
+  [
+   "EBITDA, млрд руб",
+   192
+  ],
+  [
+   "EV/EBITDA",
+   192
+  ],
+  [
+   "Долг/EBITDA",
+   192
+  ],
+  [
+   "Персонал, чел",
+   180
+  ],
+  [
+   "Произв.труда, млн руб/чел/год",
+   179
+  ],
+  [
+   "Расходы/чел/год, тыс.р",
+   179
+  ],
+  [
+   "Див.выплата, млрд руб",
+   149
+  ],
+  [
+   "Дивиденд, руб/акцию",
+   144
+  ],
+  [
+   "Себестоимость, млрд руб",
+   130
+  ],
+  [
+   "Free Float, %",
+   107
+  ],
+  [
+   "Число акций ап, млн",
+   58
+  ],
+  [
+   "Див доход, ап, %",
+   53
+  ],
+  [
+   "Цена акции ап, руб",
+   53
+  ],
+  [
+   "Качество фин.отчетности",
+   46
+  ],
+  [
+   "Презентации для инвесторов",
+   46
+  ],
+  [
+   "Присутствие на смартлабе",
+   46
+  ],
+  [
+   "Сайт для инвесторов",
+   46
+  ],
+  [
+   "Календарь инвесторов",
+   44
+  ],
+  [
+   "Обратная связь",
+   44
+  ],
+  [
+   "Годовой отчет",
+   43
+  ],
+  [
+   "IR рейтинг",
+   41
+  ],
+  [
+   "Дивиденд ап, руб/акцию",
+   40
+  ],
+  [
+   "Чистая прибыль н/с, млрд руб",
+   35
+  ],
+  [
+   "Установленная мощность, ГВт",
+   19
+  ],
+  [
+   "Цена/мощность, руб/кВт",
+   19
+  ],
+  [
+   "Отпуск э/э потребителям из сети, млрд кВт*ч",
+   17
+  ],
+  [
+   "НИОКР, млрд руб",
+   16
+  ],
+  [
+   "Чист. проц. доходы, млрд руб",
+   13
+  ],
+  [
+   "Чист. комисс. доход, млрд руб",
+   13
+  ],
+  [
+   "Чистый операц доход, млрд руб",
+   12
+  ],
+  [
+   "Доходы по цб, млрд руб",
+   12
+  ],
+  [
+   "Активы банка, млрд руб",
+   12
+  ],
+  [
+   "Капитал, млрд руб",
+   12
+  ],
+  [
+   "Кредитный портфель, млрд руб",
+   12
+  ],
+  [
+   "Кредиты юрлицам, млрд руб",
+   12
+  ],
+  [
+   "Кредиты физлицам, млрд руб",
+   12
+  ],
+  [
+   "Депозиты, млрд руб",
+   12
+  ],
+  [
+   "Депозиты юрлиц, млрд руб",
+   12
+  ],
+  [
+   "Депозиты физлиц, млрд руб",
+   12
+  ],
+  [
+   "Резервы под обесценивание, млрд руб",
+   12
+  ],
+  [
+   "Loan-to-deposit ratio, %",
+   12
+  ],
+  [
+   "Рентабельность банка, %",
+   12
+  ],
+  [
+   "P/B",
+   12
+  ],
+  [
+   "Выработка электроэнергии, ТВт*ч",
+   11
+  ],
+  [
+   "Установл. тепл. мощность, Гкал/ч",
+   10
+  ],
+  [
+   "Отпуск тепл.энергии, млн Гкал",
+   10
+  ],
+  [
+   "Создание резервов, млрд руб",
+   10
+  ],
+  [
+   "Добыча нефти, млн т",
+   9
+  ],
+  [
+   "Число магазинов, шт",
+   9
+  ],
+  [
+   "Открыто новых магазинов, шт",
+   9
+  ],
+  [
+   "Протяженность ЛЭП, тыс.км",
+   9
+  ],
+  [
+   "Общ. площадь магазинов, тыс. м2",
+   8
+  ],
+  [
+   "Дост. общ капитала, %",
+   8
+  ],
+  [
+   "Добыча газа, млрд м3",
+   7
+  ],
+  [
+   "Сопоставимые продажи, LFL, %",
+   7
+  ],
+  [
+   "Трафик, %",
+   7
+  ],
+  [
+   "Средний чек, %",
+   7
+  ],
+  [
+   "Ср. цена реализации э/э, руб/кВт*ч",
+   7
+  ],
+  [
+   "EBITDAC, млрд руб",
+   7
+  ],
+  [
+   "NIC, млрд руб",
+   7
+  ],
+  [
+   "Стоимость риска (CoR), %",
+   7
+  ],
+  [
+   "Просроченные кредиты, NPL, %",
+   7
+  ],
+  [
+   "Чистая процентная маржа, %",
+   7
+  ],
+  [
+   "Переработка нефти, млн т",
+   6
+  ],
+  [
+   "Количество заказов, млн",
+   6
+  ],
+  [
+   "Контракты на продажу руб, млрд руб",
+   6
+  ],
+  [
+   "КИУМ, %",
+   6
+  ],
+  [
+   "Дост.осн капитала, %",
+   6
+  ],
+  [
+   "Расходы/Доходы (CIR), %",
+   6
+  ],
+  [
+   "Доля продаж на экспорт, %",
+   5
+  ],
+  [
+   "Средний чек, руб",
+   5
+  ],
+  [
+   "Контракты на продажу м, тыс.м2",
+   5
+  ],
+  [
+   "Доля ипотечных сделок, %",
+   5
+  ],
+  [
+   "Инсайдерское владение, %",
+   5
+  ],
+  [
+   "Средняя цена квадратного метра, тыс.руб/м2",
+   5
+  ],
+  [
+   "Добыча золота, тыс тр унц",
+   4
+  ],
+  [
+   "Торговый оборот GMV, млрд руб",
+   4
+  ],
+  [
+   "Производство стали, млн т",
+   4
+  ],
+  [
+   "Пр-во продукции, млн т",
+   4
+  ],
+  [
+   "Онлайн продажи, млрд руб",
+   4
+  ],
+  [
+   "Доля онлайн продаж, %",
+   4
+  ],
+  [
+   "Ср.цена продажи золота, $/унц",
+   3
+  ],
+  [
+   "Себестоимость золота, $/унц",
+   3
+  ],
+  [
+   "Продажи стали, млн т",
+   3
+  ],
+  [
+   "Отгрузки ПО, млрд руб",
+   3
+  ],
+  [
+   "Экспорт газа, млрд м3",
+   2
+  ],
+  [
+   "Добыча меди, тыс т",
+   2
+  ],
+  [
+   "Продажи золота, тыс тр унц",
+   2
+  ],
+  [
+   "Производство удобрений, млн т",
+   2
+  ],
+  [
+   "Продажа удобрений, млн т",
+   2
+  ],
+  [
+   "Цена мет/прод, $/т",
+   2
+  ],
+  [
+   "Новые площади на продажу, тыс.м2",
+   2
+  ],
+  [
+   "Грузооборот, млн т",
+   2
+  ],
+  [
+   "Пассажиропоток всего, млн чел",
+   2
+  ],
+  [
+   "Занятость пассаж.кресел, %",
+   2
+  ],
+  [
+   "Добыча коксующегося угля, млн т",
+   2
+  ],
+  [
+   "Реализация угля, млн т",
+   2
+  ],
+  [
+   "Трансформаторная мощность, ГВт",
+   2
+  ],
+  [
+   "Товарный ассортимент, тыс ед",
+   2
+  ],
+  [
+   "Продажи недвижимости, тыс.м2",
+   2
+  ],
+  [
+   "Число клиентов, млн",
+   2
+  ],
+  [
+   "Списание. плох.кредитов, млрд руб",
+   2
+  ],
+  [
+   "Добыча никеля, тыс т",
+   1
+  ],
+  [
+   "Добыча платины, тыс тр унц",
+   1
+  ],
+  [
+   "Добыча палладия, тыс тр унц",
+   1
+  ],
+  [
+   "Доля поиска, %",
+   1
+  ],
+  [
+   "Доля маркетплейса в продажах, %",
+   1
+  ],
+  [
+   "Загрузка мощности, %",
+   1
+  ],
+  [
+   "Производство алюминия, тыс т",
+   1
+  ],
+  [
+   "Продажи алюминия, тыс т",
+   1
+  ],
+  [
+   "Продажи ПДС, тыс т",
+   1
+  ],
+  [
+   "Цена алюминия, $/т",
+   1
+  ],
+  [
+   "Себестоимость алюминия, $/т",
+   1
+  ],
+  [
+   "Загрузка мощностей, %",
+   1
+  ],
+  [
+   "Акт. абоненты, млн чел",
+   1
+  ],
+  [
+   "Объем продаж труб, млн т",
+   1
+  ],
+  [
+   "Себестоимость сляба, $/т",
+   1
+  ],
+  [
+   "Добыча алмазов, млн карат",
+   1
+  ],
+  [
+   "Средняя цена алмазов, $/карат",
+   1
+  ],
+  [
+   "Платящие клиенты, тыс шт",
+   1
+  ],
+  [
+   "Перевалка нефти, млн т",
+   1
+  ],
+  [
+   "Перевалка Новороссийск, млн т",
+   1
+  ],
+  [
+   "Перевалка Приморск, млн т",
+   1
+  ],
+  [
+   "Транспорт нефти, млн т",
+   1
+  ],
+  [
+   "Транспорт нефтепродуктов, млн т",
+   1
+  ],
+  [
+   "Пассажиропоток внутр, млн чел",
+   1
+  ],
+  [
+   "Пассажиропоток м/нар, млн чел",
+   1
+  ],
+  [
+   "Часы налета, ч",
+   1
+  ],
+  [
+   "Число самолетов, шт",
+   1
+  ],
+  [
+   "Средняя цена на уголь, $/т",
+   1
+  ],
+  [
+   "Продажи ТС, шт",
+   1
+  ],
+  [
+   "Продажи лекарств, млн уп",
+   1
+  ],
+  [
+   "Производство авто, тыс шт",
+   1
+  ],
+  [
+   "Доля рынка, %",
+   1
+  ],
+  [
+   "Инвестиционный портфель, млрд руб",
+   1
+  ],
+  [
+   "Премии Non-Life, млрд руб",
+   1
+  ],
+  [
+   "Премии Life, млрд руб",
+   1
+  ],
+  [
+   "Биомасса в воде, тыс т",
+   1
+  ],
+  [
+   "Продажи вес, тыс т",
+   1
+  ],
+  [
+   "Цена лосося, руб/кг",
+   1
+  ],
+  [
+   "Реализация мощности, ГВт",
+   1
+  ],
+  [
+   "Законтрактованная выручка, млрд руб",
+   1
+  ],
+  [
+   "Число автомобилей, тыс шт",
+   1
+  ],
+  [
+   "Число минут, млн мин",
+   1
+  ],
+  [
+   "Флот, тыс шт",
+   1
+  ],
+  [
+   "Число поездок, млн шт",
+   1
+  ],
+  [
+   "Неработающие кредиты, млрд руб",
+   1
+  ]
+ ],
+ "imoex": [
+  "AFKS",
+  "AFLT",
+  "ALRS",
+  "BSPB",
+  "CBOM",
+  "CHMF",
+  "CNRU",
+  "DOMRF",
+  "ENPG",
+  "FLOT",
+  "GAZP",
+  "GMKN",
+  "HEAD",
+  "IRAO",
+  "LENT",
+  "LKOH",
+  "MAGN",
+  "MDMG",
+  "MOEX",
+  "MSNG",
+  "MTSS",
+  "NLMK",
+  "NVTK",
+  "OZON",
+  "PHOR",
+  "PLZL",
+  "POSI",
+  "RAGR",
+  "RENI",
+  "ROSN",
+  "RTKM",
+  "RUAL",
+  "SBER",
+  "SBERP",
+  "SNGS",
+  "SNGSP",
+  "SVCB",
+  "T",
+  "TATN",
+  "TATNP",
+  "TRNFP",
+  "UGLD",
+  "VKCO",
+  "VTBR",
+  "X5",
+  "YDEX"
+ ],
+ "bmi": [
+  "AFKS",
+  "AFLT",
+  "AKRN",
+  "ALRS",
+  "APTK",
+  "AQUA",
+  "ASTR",
+  "BANEP",
+  "BAZA",
+  "BELU",
+  "BSPB",
+  "CBOM",
+  "CHMF",
+  "CNRU",
+  "DATA",
+  "DIAS",
+  "DOMRF",
+  "ELFV",
+  "ENPG",
+  "ETLN",
+  "EUTR",
+  "FEES",
+  "FESH",
+  "FIXR",
+  "FLOT",
+  "GAZP",
+  "GEMC",
+  "GLRX",
+  "GMKN",
+  "HEAD",
+  "HNFG",
+  "HYDR",
+  "IRAO",
+  "LENT",
+  "LKOH",
+  "LSNGP",
+  "LSRG",
+  "MAGN",
+  "MBNK",
+  "MDMG",
+  "MGNT",
+  "MOEX",
+  "MRKC",
+  "MRKP",
+  "MRKU",
+  "MRKV",
+  "MSNG",
+  "MSRS",
+  "MTLR",
+  "MTLRP",
+  "MTSS",
+  "NKHP",
+  "NKNCP",
+  "NLMK",
+  "NMTP",
+  "NVTK",
+  "OGKB",
+  "OZON",
+  "OZPH",
+  "PHOR",
+  "PIKK",
+  "PLZL",
+  "POSI",
+  "PRMD",
+  "RAGR",
+  "RASP",
+  "RENI",
+  "RNFT",
+  "ROSN",
+  "RTKM",
+  "RTKMP",
+  "RUAL",
+  "SBER",
+  "SBERP",
+  "SELG",
+  "SFIN",
+  "SGZH",
+  "SMLT",
+  "SNGS",
+  "SNGSP",
+  "SOFL",
+  "SPBE",
+  "SVAV",
+  "SVCB",
+  "T",
+  "TATN",
+  "TATNP",
+  "TGKA",
+  "TRMK",
+  "TRNFP",
+  "UGLD",
+  "UPRO",
+  "UWGN",
+  "VKCO",
+  "VSEH",
+  "VSMO",
+  "VTBR",
+  "WUSH",
+  "X5",
+  "YDEX"
+ ],
+ "funds": [
+  "AFKS",
+  "AFLT",
+  "ALRS",
+  "ASTR",
+  "BANEP",
+  "BAZA",
+  "BELU",
+  "BSPB",
+  "BTBR",
+  "CBOM",
+  "CHMF",
+  "CNRU",
+  "DATA",
+  "DELI",
+  "DIAS",
+  "DOMRF",
+  "ELMT",
+  "ENPG",
+  "ETLN",
+  "EVRZ",
+  "FEES",
+  "FLOT",
+  "GAZP",
+  "GEMC",
+  "GMKN",
+  "HEAD",
+  "HNFG",
+  "HYDR",
+  "IRAO",
+  "LEAS",
+  "LENT",
+  "LKOH",
+  "LSRG",
+  "MAGN",
+  "MBNK",
+  "MDMG",
+  "MGNT",
+  "MOEX",
+  "MSNG",
+  "MSRS",
+  "MTLR",
+  "MTLRP",
+  "MTSS",
+  "MVID",
+  "NLMK",
+  "NVTK",
+  "OZON",
+  "OZPH",
+  "PHOR",
+  "PIKK",
+  "PLZL",
+  "POSI",
+  "PRMD",
+  "RAGR",
+  "RENI",
+  "ROSN",
+  "RTKM",
+  "RTKMP",
+  "RU000A101CQ4",
+  "RU000A101Q26",
+  "RU000A1032P1",
+  "RU000A104Z48",
+  "RU000A1053P7",
+  "RU000A105TP1",
+  "RU000A106EM8",
+  "RU000A106K27",
+  "RU000A1075J3",
+  "RU000A107746",
+  "RU000A107L82",
+  "RU000A108FX8",
+  "RU000A108Q29",
+  "RU000A108RP9",
+  "RU000A1098F3",
+  "RU000A109NC4",
+  "RU000A109TG2",
+  "RU000A10B3Q2",
+  "RU000A10BQF1",
+  "RU000A10BZT3",
+  "RU000A10C3F4",
+  "RU000A10CFK2",
+  "RUAL",
+  "SBER",
+  "SBERP",
+  "SELG",
+  "SFIN",
+  "SGZH",
+  "SIBN",
+  "SMLT",
+  "SNGS",
+  "SNGSP",
+  "SOFL",
+  "SPBE",
+  "SU26238RMFS4",
+  "SU26245RMFS9",
+  "SU26246RMFS7",
+  "SU26247RMFS5",
+  "SU26248RMFS3",
+  "SU26250RMFS9",
+  "SU26252RMFS5",
+  "SU29010RMFS4",
+  "SU29016RMFS1",
+  "SU29020RMFS3",
+  "SVCB",
+  "T",
+  "TATN",
+  "TATNP",
+  "TRNFP",
+  "UGLD",
+  "UPRO",
+  "VKCO",
+  "VSEH",
+  "VTBR",
+  "WUSH",
+  "X5",
+  "YDEX",
+  "ZAYM"
+ ]
+}
