@@ -60,6 +60,8 @@ import requests
 from dotenv import load_dotenv
 from sqlalchemy import text
 
+from signals.agent_trace import ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать
+
 # ── .env + DB_URL override ДО импорта api.database (host-side, как content_match) ──
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_ROOT, ".env"))
@@ -741,12 +743,18 @@ _SELECT_ENTITY_LINKS = text("""
 _SELECT_TICKER_NAME = text("SELECT name FROM instruments WHERE sec_id = :tk LIMIT 1")
 
 # ⚠️ Отбор по РАЗМЕТКЕ tickers, а не по ILIKE по тексту. Поиск словом «озон» тащит
-# Озон Фармацевтику (OZPH) — другую компанию; разметка их разделяет. Индекс GIN по
-# tickers уже есть, окно 180 дней укладывается в ~20 мс на 487 тыс. строк.
+# Озон Фармацевтику (OZPH) — другую компанию; разметка их разделяет.
+#
+# ⚠️ И ИМЕННО `tickers @> ARRAY[:tk]`, А НЕ `:tk = ANY(tickers)`. Форма с ANY GIN-индекс
+# использовать НЕ МОЖЕТ: планировщик шёл по индексу дат и отбрасывал фильтром 24 тысячи
+# строк. Замер на проде 03.09.2026, окно 4 месяца по GAZP:
+#     = ANY  → cost 18 545, 16 349 буферов, 3 936 мс на холодном кэше
+#     @>     → cost  1 032,    451 буфер,      36 мс
+# Индекс idx_news_archive_tickers существовал всё это время и просто не применялся.
 _SELECT_TICKER_NEWS = text("""
     SELECT posted_at::date AS d, text, coalesce(array_length(tickers, 1), 0) AS nt
     FROM news_archive
-    WHERE :tk = ANY(tickers) AND posted_at >= :since AND posted_at <= :until
+    WHERE tickers @> ARRAY[:tk]::text[] AND posted_at >= :since AND posted_at <= :until
     ORDER BY posted_at DESC
     LIMIT 40
 """)
@@ -775,8 +783,12 @@ def _pick_snippet(body: str, nt: int, name: str) -> str:
     return ""
 
 
-def _related_context(db, tickers, as_of) -> dict:
+def _related_context(db, tickers, as_of, trace=None) -> dict:
     """Связанные компании: что у них с ценой и что о них писал архив.
+
+    trace — счётчик следа (signals/agent_trace). Здесь агент реально ходит по графу
+    владения, и без записи этого обхода потом невозможно объяснить, почему в текст
+    попал Озон, а МТС нет. Необязателен: без него функция работает как раньше.
 
     ⚠️ Это КОНТЕКСТ, НЕ ПРИЧИНА, и подписано так в самом брифе. Разбор кандидата
     1638 (АКРА понизило рейтинг АФК Системы) показал соблазн: цепочка «залог Озона →
@@ -790,12 +802,27 @@ def _related_context(db, tickers, as_of) -> dict:
         return {}
     links = db.execute(_SELECT_ENTITY_LINKS,
                        {"tickers": tks, "as_of": as_of}).fetchall()
+    if trace:
+        trace.record("world_facts", "кто связан с %s" % ", ".join(tks),
+                     outcome=(ВЗЯТО if links else ПУСТО),
+                     result_count=len(links),
+                     result_note=("%d рёбер" % len(links)) if links else "связей нет",
+                     params={"tickers": tks, "as_of": as_of})
     if not links:
         return {}
     out = {}
     for entities, statement in links:
         for tk in (entities or []):
-            if tk in tks or tk in out or len(out) >= 2:
+            if tk in tks or tk in out:
+                continue
+            if len(out) >= 2:
+                # Лимит в две компании — не «ничего не нашлось», а осознанный отказ.
+                # Без этой строки в дашборде связь выглядела бы просто отсутствующей.
+                if trace:
+                    trace.record("world_facts", "связанная компания %s" % tk,
+                                 outcome=НЕ_ВЗЯТО, result_count=1,
+                                 result_note=statement[:120],
+                                 reason="в бриф идут максимум две связанные компании")
                 continue
             name = db.execute(_SELECT_TICKER_NAME, {"tk": tk}).scalar() or tk
             item = {"связь": statement}
@@ -818,6 +845,13 @@ def _related_context(db, tickers, as_of) -> dict:
             if snippets:
                 item["из_архива"] = snippets
             out[tk] = item
+            if trace:
+                trace.record("news_archive", "что писали про %s" % name,
+                             outcome=(ВЗЯТО if snippets else НЕ_ВЗЯТО),
+                             result_count=len(snippets),
+                             result_note=("; ".join(snippets))[:200] if snippets else None,
+                             reason=None if snippets else "связь есть, свежих событий нет",
+                             params={"ticker": tk, "окно_дней": 120})
     if not out:
         return {}
     out["ПОЯСНЕНИЕ"] = (
@@ -886,7 +920,7 @@ _RE_SCALE = re.compile(
 _SELECT_RATING_LINES = text("""
     SELECT posted_at::date AS d, unnest(string_to_array(text, chr(10))) AS ln
     FROM news_archive
-    WHERE :tk = ANY(tickers) AND posted_at >= :since AND posted_at < :until
+    WHERE tickers @> ARRAY[:tk]::text[] AND posted_at >= :since AND posted_at < :until
     ORDER BY posted_at DESC
 """)
 
@@ -1075,6 +1109,7 @@ def _build_brief(db, row) -> dict:
     reused_signal = bool(created_at and row["signal_date"] < news_date)
     pos = _position_phrases(row["asset_id"], row["anomaly_clgroup"],
                             as_of=row["signal_date"])
+    _trace = трассировать(db, row["id"], "бриф")
     brief = {
         "candidate_id": row["id"],
         "headline": row["headline"],
@@ -1088,7 +1123,8 @@ def _build_brief(db, row) -> dict:
         "позиции_физлиц": pos,
         "история_рейтинга": _rating_history(db, row["headline"], row["raw_text"],
                                              row["tickers"], row["signal_date"]),
-        "связанные_компании": _related_context(db, row["tickers"], row["signal_date"]),
+        "связанные_компании": _related_context(db, row["tickers"], row["signal_date"],
+                                               trace=_trace),
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
             pos),
