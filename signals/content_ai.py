@@ -60,8 +60,6 @@ import requests
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-from signals.agent_trace import ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать
-
 # ── .env + DB_URL override ДО импорта api.database (host-side, как content_match) ──
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_ROOT, ".env"))
@@ -69,6 +67,9 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
+from signals.agent_trace import (          # noqa: E402
+    ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать,
+)
 import pipeline_heartbeat                  # noqa: E402
 from api.database import SessionLocal      # noqa: E402
 
