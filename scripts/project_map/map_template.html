@@ -1,0 +1,104 @@
+<title>Карта Фрейма</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--bg:#f6f4f0;--card:#ffffff;--ink:#1c1a17;--muted:#6b665e;--line:#e3ded6;--accent:#FF5C2B;--ok:#2e8b57;--warn:#c98a00;--bad:#c0392b;--chip:#f0ece5;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15161a;--card:#1d1f25;--ink:#ecebe6;--muted:#9a978f;--line:#2c2f37;--chip:#262932;--ok:#4cc38a;--warn:#e0a63a;--bad:#e5645a}}
+:root[data-theme="dark"]{--bg:#15161a;--card:#1d1f25;--ink:#ecebe6;--muted:#9a978f;--line:#2c2f37;--chip:#262932;--ok:#4cc38a;--warn:#e0a63a;--bad:#e5645a}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:26px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 18px;max-width:70ch}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0 22px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kpi b{display:block;font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:2;border-bottom:1px solid var(--line)}
+nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;background:var(--card)}
+nav a:hover,nav a:focus-visible{border-color:var(--accent);outline:none}
+#q{flex:1;min-width:220px;border:1px solid var(--line);border-radius:999px;padding:6px 14px;background:var(--card);color:var(--ink);font:inherit}
+#q:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+h2{font-size:18px;font-weight:600;margin:34px 0 12px;padding-top:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+.dom{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-top:3px solid var(--accent)}
+.dom h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.dom .src{color:var(--muted);font-size:12px;margin-bottom:10px}
+.lane{display:grid;grid-template-columns:78px 1fr;gap:6px 10px;font-size:12.5px;margin:4px 0}
+.lane .k{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;padding-top:3px}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{background:var(--chip);border-radius:6px;padding:2px 7px;font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+.chip.t{cursor:pointer;border-bottom:1px dotted var(--muted)}
+.note{color:var(--muted);font-size:12px;margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;background:var(--chip)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px}
+.mono{font-family:var(--mono);font-size:12px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.ok{background:var(--ok)}.warn{background:var(--warn)}.bad{background:var(--bad)}.na{background:var(--line)}
+.scroll{overflow-x:auto}
+.hide{display:none}
+.legend{color:var(--muted);font-size:12px;margin:6px 0 10px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.card h3{margin:0 0 8px;font-size:14px;font-weight:600}
+.card li{margin:3px 0}
+ul{padding-left:18px;margin:0}
+</style>
+<div class="wrap">
+<h1>Карта Фрейма</h1>
+<p class="sub">Инвентаризация проекта на DATE: откуда данные, кто их забирает и когда, где лежат, какой API их отдаёт и на какой странице они видны. Свежесть снята с прод-базы.</p>
+<div class="kpis" id="kpis"></div>
+<nav><input id="q" type="search" placeholder="Поиск по всему: таблица, скрипт, роутер, страница…" aria-label="Поиск"><a href="#domains">Потоки данных</a><a href="#tables">Таблицы БД</a><a href="#sched">Расписание</a><a href="#api">API</a><a href="#pages">Страницы</a><a href="#infra">Инфраструктура</a><a href="#research">Исследования и инструменты</a></nav>
+<h2 id="domains">Потоки данных по областям</h2>
+<div class="legend">Каждая карточка: источник → шаги забора и расписание → таблицы → роутеры API → страницы сайта. Клик по таблице подсвечивает её строку ниже.</div>
+<div class="grid" id="doms"></div>
+<h2 id="tables">Таблицы базы данных</h2>
+<div class="legend"><span class="dot ok"></span>обновлялась за 3 дня &nbsp; <span class="dot warn"></span>4–30 дней &nbsp; <span class="dot bad"></span>старше месяца &nbsp; <span class="dot na"></span>справочник или нет даты. Число строк из статистики Postgres, оценка.</div>
+<div class="scroll"><table id="tbl"><thead><tr><th></th><th>таблица</th><th>строк</th><th>размер</th><th>колонок</th><th>дата свежести</th><th>колонка даты</th><th>область</th></tr></thead><tbody></tbody></table></div>
+<h2 id="sched">Расписание: оркестратор и cron</h2>
+<div class="two">
+<div class="card"><h3>Оркестратор, контейнер frame-orchestrator-1</h3><div class="legend">5-минутный цикл в торговые часы, дневной слот 19:10 МСК с ретраями, ранние слоты: 08:00 сырьё, 09:00 индексы, 14:30 фонды.</div><ul id="orch"></ul></div>
+<div class="card"><h3>Host-cron и systemd</h3><ul id="cron"></ul></div>
+</div>
+<h2 id="api">API</h2>
+<div class="scroll"><table id="api-t"><thead><tr><th>роутер</th><th>префикс</th><th>эндпоинтов</th><th>что делает</th></tr></thead><tbody></tbody></table></div>
+<h2 id="pages">Страницы сайта</h2>
+<div class="two" id="pages-g"></div>
+<h2 id="infra">Инфраструктура</h2>
+<div class="scroll"><table id="infra-t"><thead><tr><th>контейнер или сервис</th><th>роль</th></tr></thead><tbody></tbody></table></div>
+<h2 id="research">Исследования, навыки, агенты</h2>
+<div class="two">
+<div class="card"><h3>research/</h3><ul id="res"></ul></div>
+<div class="card"><h3>Навыки Claude, .claude/skills</h3><div class="chips" id="skills"></div><h3 style="margin-top:12px">Агенты, .claude/agents</h3><div class="chips" id="agents"></div></div>
+</div>
+</div>
+<script>
+const D=DATA_JSON;
+const dom4=new Map();D.domains.forEach(d=>d.tables.forEach(t=>dom4.set(t,d.title)));
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const k=document.getElementById('kpis');
+[[D.tables.length,'таблиц'],[D.tables.reduce((a,t)=>a+t.rows,0).toLocaleString('ru-RU'),'строк в базе'],[D.routers.length,'роутеров'],[D.routers.reduce((a,r)=>a+r.n,0),'эндпоинтов'],[18,'шагов оркестратора'],[D.cron.length,'cron-задач'],[58,'маршрутов сайта'],[D.skills.length,'навыков']].forEach(([v,l])=>{k.insertAdjacentHTML('beforeend',`<div class="kpi"><b>${v}</b><span>${l}</span></div>`)});
+const doms=document.getElementById('doms');
+D.domains.forEach(d=>{const ch=a=>a.map(x=>`<span class="chip">${esc(x)}</span>`).join('');const ct=a=>a.map(x=>`<span class="chip t" data-t="${esc(x)}">${esc(x)}</span>`).join('');
+doms.insertAdjacentHTML('beforeend',`<section class="dom" data-search="${esc([d.title,d.src,...d.steps,...d.tables,...d.api,...d.pages].join(' ').toLowerCase())}"><h3>${esc(d.title)}</h3><div class="src">Источник: ${esc(d.src)}</div>
+<div class="lane"><div class="k">забор</div><div class="chips">${ch(d.steps)}</div></div>
+<div class="lane"><div class="k">таблицы</div><div class="chips">${ct(d.tables)}</div></div>
+<div class="lane"><div class="k">api</div><div class="chips">${ch(d.api.map(x=>'/'+x))}</div></div>
+<div class="lane"><div class="k">страницы</div><div class="chips">${ch(d.pages)}</div></div>
+${d.note?`<div class="note">${esc(d.note)}</div>`:''}</section>`)});
+const tb=document.querySelector('#tbl tbody');const today=new Date(D.today);
+D.tables.forEach(t=>{let cls='na';if(t.last){const d=new Date(t.last.slice(0,10));const age=(today-d)/86400000;cls=age<=3?'ok':age<=30?'warn':'bad';}
+tb.insertAdjacentHTML('beforeend',`<tr id="t-${esc(t.name)}" data-search="${esc((t.name+' '+(dom4.get(t.name)||'')).toLowerCase())}"><td><span class="dot ${cls}"></span></td><td class="mono">${esc(t.name)}</td><td class="num">${t.rows.toLocaleString('ru-RU')}</td><td class="num">${esc(t.size)}</td><td class="num">${t.cols}</td><td class="mono">${esc(t.last||'—')}</td><td class="mono">${esc(t.fcol||'')}</td><td>${esc(dom4.get(t.name)||'')}</td></tr>`)});
+const orch=[["каждые 5 мин","oi_5min, candles_spot, candles_futures, index_intraday; oi_aggregate ежечасно"],["08:00","commodity_daily"],["09:00","indices_daily, ранний прогон"],["14:30","funds_daily, ранний прогон"],["19:10","oi_daily, funds_daily, indices_daily, contract_calendar, futures_turnover, index_candles_hourly, macro_daily с KEY_RATE, market_cap_daily, freefloat_cap_daily, index_composition_daily, breadth_daily, dividends_daily"]];
+document.getElementById('orch').innerHTML=orch.map(([a,b])=>`<li><b class="mono">${a}</b> — ${b}</li>`).join('');
+document.getElementById('cron').innerHTML=D.cron.map(([a,b])=>`<li><b class="mono">${esc(a)}</b> — ${esc(b)}</li>`).join('')+`<li><b class="mono">systemd</b> — frame-alert-bot, frame-content-review-bot</li>`;
+document.querySelector('#api-t tbody').innerHTML=D.routers.map(r=>`<tr data-search="${esc((r.name+' '+r.prefix+' '+r.desc).toLowerCase())}"><td class="mono">${esc(r.name)}</td><td class="mono">${esc(r.prefix)}</td><td class="num">${r.n}</td><td>${esc(r.desc)}</td></tr>`).join('');
+const pg={"Индикаторы":["/oi","/strength","/heatmap","/seasonality","/funds","/funds-money","/funds-catalog","/fund-trades","/buffett","/cbr-flows","/repo","/embed/:indicator","/chart-lab","/sandbox"],"Методология":["/methodology/oi","/methodology/strength","/methodology/heatmap","/methodology/seasonality","/methodology/funds-money","/methodology/funds-catalog","/methodology/buffett","/methodology/cbr-flows","/glossary","/faq"],"Аккаунт и биллинг":["/login","/profile","/pricing","/billing/success","/billing/fail","/billing/sbp","/billing/redeem","/billing/stub","/billing/unavailable","/billing/trial-success","/billing/trial-fail","/forgot-password","/verify-email","/add-email","/auth/callback/*","/api-docs","/signal-export"],"Админ":["/admin/stats","/admin/users/:userId","/admin/content-news","/admin/repaint","/style-preview"],"Юридические":["/offer","/privacy","/agreement","/recurring","/refund","/delivery","/security","/contacts"]};
+document.getElementById('pages-g').innerHTML=Object.entries(pg).map(([k,v])=>`<div class="card" data-search="${esc((k+' '+v.join(' ')).toLowerCase())}"><h3>${k}</h3><div class="chips">${v.map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div></div>`).join('');
+document.querySelector('#infra-t tbody').innerHTML=D.containers.map(([a,b])=>`<tr data-search="${esc((a+' '+b).toLowerCase())}"><td class="mono">${esc(a)}</td><td>${esc(b)}</td></tr>`).join('');
+document.getElementById('res').innerHTML=D.research.map(([a,b])=>`<li><b class="mono">${esc(a)}</b> — ${esc(b)}</li>`).join('');
+document.getElementById('skills').innerHTML=D.skills.map(x=>`<span class="chip">${x}</span>`).join('');
+document.getElementById('agents').innerHTML=D.agents.map(x=>`<span class="chip">${x}</span>`).join('');
+document.querySelectorAll('.chip.t').forEach(c=>c.addEventListener('click',()=>{const r=document.getElementById('t-'+c.dataset.t);if(r){r.scrollIntoView({block:'center'});r.style.outline='2px solid var(--accent)';setTimeout(()=>r.style.outline='',1600)}}));
+document.getElementById('q').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll('[data-search]').forEach(el=>{el.classList.toggle('hide',!!q&&!el.dataset.search.includes(q))})});
+</script>

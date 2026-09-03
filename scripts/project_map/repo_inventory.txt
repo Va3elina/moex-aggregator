@@ -1,0 +1,130 @@
+=== routers ===
+__init__ | 0 endpoints |  | API роутеры
+alerts | 14 endpoints | prefix="/api/alerts" | /api/alerts/* — Telegram alert-bot.
+analytics | 5 endpoints | prefix="/api/analytics" | Analytics API — приём событий с фронта + admin-stats.
+anomalies | 5 endpoints | prefix="/api/anomalies" | /api/anomalies/* — лента всплывающих аномалий (тосты в у
+api_keys | 4 endpoints | prefix="/api/keys" | API keys management endpoints для Pro-юзеров.
+auth | 14 endpoints | prefix="/auth" | API endpoints для аутентификации.
+billing | 27 endpoints | prefix="/api/billing" | Billing endpoints — оплата и подписки.
+breadth | 2 endpoints | prefix="/api/breadth" | Market Breadth API — Сила рынка
+buffett | 3 endpoints | prefix="/api/buffett" | API роутер для Индикатора Баффетта
+candles | 1 endpoints | prefix="/api/candles" | API endpoints для свечей
+cbr_flows | 1 endpoints | prefix="/api/cbr-flows" | ОРФР Банка России — потоки участников биржевых т
+chart | 3 endpoints |  | API endpoint для получения свечей и данных OI
+content_corpus | 0 endpoints | prefix="/api/internal/content-corpus" | 
+content_news | 4 endpoints | prefix="/api/admin/content-candidates" | /api/admin/content-candidates/* — админ-Kanban состояний content-пайп
+csp_report | 1 endpoints | prefix="/api/csp-report" | CSP violation report endpoint.
+events | 2 endpoints | prefix="/api/events" | SSE endpoint для real-time обновлений данных.
+exports | 7 endpoints | prefix="/api/export" | CSV export endpoints для всех индикаторов — Pro tier only.
+extension | 5 endpoints | prefix="/api/extension" | /api/extension/* — токены для браузерного расширения (те
+fund_trades | 12 endpoints | prefix="/api/fund-trades" | Fund Trades — отслеживание покупок/продаж в БПИФах че
+funds | 7 endpoints | prefix="/api/funds" | API роутер для данных фондов и индексов
+health_monitor | 1 endpoints | prefix="/api/health" | Health/data — барометр свежести/целостности ингеста д
+heatmap | 4 endpoints | prefix="/api/heatmap" | API для карты рынка (Heatmap) — стиль TradingView
+instruments | 4 endpoints | prefix="/api/instruments" | API endpoints для инструментов
+mandate_scan | 0 endpoints | prefix="/api/internal/mandate-scan" | /api/internal/mandate-scan/* — callback для еженедельного Routine-ска
+oauth | 8 endpoints | prefix="/auth/oauth" | OAuth аутентификация через внешние провайдеры.
+oi_intl | 5 endpoints | prefix="/api/admin/oi-intl" | Международный Open Interest (CFTC/NSE/Eurex/B3) + «сила рынка» п
+open_interest | 1 endpoints | prefix="/api/openinterest" | API endpoints для открытого интереса
+public_api | 16 endpoints | prefix="/api/v1/public" | Public API v1 — programmatic access для Pro юзеров через API key.
+repaint | 2 endpoints | prefix="/api/admin/repaint" | «Перекраска» — экспериментальный admin-only индикат
+repo_volume | 2 endpoints | prefix="/api/repo" | /api/repo — Репо в акциях (экспериментальная вкладка,
+seasonality | 5 endpoints | prefix="/api/seasonality" | Seasonality API — Сезонность
+stats | 3 endpoints | prefix="/api/stats" | API endpoint для общей статистики открытого интереса
+user_settings | 2 endpoints | prefix="/api/settings" | Синхронизация настроек юзера между устройствами
+world_facts | 0 endpoints | prefix="/api/internal/world-facts" | 
+=== include_router in main ===
+499 app.include_router(instruments_router)
+500 app.include_router(candles_router)
+501 app.include_router(open_interest_router)
+502 app.include_router(oi_router)  # ← /api/oi/* (справка: внутридневная доступн
+503 app.include_router(chart_router)
+504 app.include_router(stats.router)
+505 app.include_router(heatmap_router)
+506 app.include_router(funds_router)
+507 app.include_router(breadth_router)
+508 app.include_router(buffett_router)
+509 app.include_router(seasonality_router)
+510 app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участн
+511 app.include_router(repo_volume_router)  # ← /api/repo/* (репо в акциях — тест гипо
+512 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
+513 app.include_router(health_monitor.router)  # ← /api/health/data (always-on, НЕ под kill-switch)
+521     app.include_router(exports_router)  # ← /api/export/*.csv (Pro-only data download)
+523     app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
+524     app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
+525 app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
+526 app.include_router(oi_intl_router)  # ← /api/admin/oi-intl/* (международный ОИ, admin-onl
+527 app.include_router(repaint.router)  # ← /api/admin/repaint/* (экспериментальная «Пе
+528 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
+529 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
+530 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
+531 app.include_router(events.router)  # ← SSE: /api/events/*
+532 app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
+533 app.include_router(analytics.ingest_router)  # ← Приём событий: /api/usage/log
+534 app.include_router(extension.router)  # ← /api/extension/* (ext-токены: генерация/обм
+535 app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
+536 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих анома
+537 app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
+538 app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, share
+539 app.include_router(mandate_scan.internal_router)  # ← /api/internal/mandate-scan/* (Routine-скаут, 
+540 app.include_router(content_corpus.internal_router)  # ← /api/internal/content-corpus/* (примеры 
+541 app.include_router(world_facts.internal_router)  # ← /api/internal/world-facts (второй мозг, s
+542 app.include_router(user_settings.router)  # ← /api/settings (синк настроек юзера меж
+=== frontend routes ===
+path="/" path="/add-email" path="/admin/content-news" path="/admin/repaint" path="/admin/stats" path="/admin/users/:userId" path="/agreement" path="/api-docs" path="/auth/callback/google" path="/auth/callback/telegram" path="/auth/callback/vk" path="/auth/callback/yandex" path="/billing/fail" path="/billing/redeem" path="/billing/sbp" path="/billing/stub" path="/billing/success" path="/billing/trial-fail" path="/billing/trial-success" path="/billing/unavailable" path="/buffett" path="/cbr-flows" path="/chart-lab" path="/contacts" path="/delivery" path="/embed/:indicator" path="/faq" path="/forgot-password" path="/fund-trades" path="/funds" path="/funds-catalog" path="/funds-money" path="/glossary" path="/heatmap" path="/login" path="/methodology/buffett" path="/methodology/cbr-flows" path="/methodology/funds-catalog" path="/methodology/funds-money" path="/methodology/heatmap" path="/methodology/oi" path="/methodology/seasonality" path="/methodology/strength" path="/offer" path="/oi" path="/pricing" path="/privacy" path="/profile" path="/recurring" path="/refund" path="/repo" path="/sandbox" path="/seasonality" path="/security" path="/signal-export" path="/strength" path="/style-preview" path="/verify-email" 
+AddEmailPage.tsx AdminContentNewsPage.tsx AdminStatsPage.tsx AdminUserDetailPage.tsx ApiDocsPage.tsx AuthCallback.tsx BillingFailPage.tsx BillingRedeemPage.tsx BillingSbpPage.tsx BillingStubPage.tsx BillingSuccessPage.tsx BillingUnavailablePage.tsx BuffettPage.tsx CbrFlowsPage.tsx ContactsPage.tsx DeliveryPage.tsx FAQPage.tsx ForgotPasswordPage.tsx FundTradesPage.tsx FundsMoneyPage.tsx GlossaryPage.tsx HeatmapPage.tsx LandingPage.tsx LoginPage.tsx OpenInterestPage.tsx PricingPage.tsx PrivacyPage.tsx ProfilePage.tsx RefundPage.tsx RepaintPage.tsx RepoVolumePage.tsx SeasonalityPage.tsx SignalExportPage.tsx StrengthPage.tsx StylePreviewPage.tsx TrialFailPage.tsx TrialSuccessPage.tsx VerifyEmailPage.tsx dev embed legal methodology mobile sandbox 
+=== orchestrator scripts ===
+oi_5min: OI/fetch_oi_5min_realtime.py
+oi_aggregate: OI/aggregate_oi_hourly.py
+oi_daily: OI/fetch_oi_daily_realtime.py
+candles_futures: Candles/fetch_candles_futures_realtime.py
+candles_spot: Candles/fetch_candles_spot_realtime.py
+futures_turnover: Candles/fetch_futures_turnover.py
+contract_calendar: Candles/fetch_contract_calendar.py
+funds_daily: Funds/fetch_funds_realtime.py
+indices_daily: Funds/fetch_indices_realtime.py
+index_candles_hourly: Funds/fetch_index_candles_hourly.py
+index_intraday: Funds/fetch_index_intraday.py
+macro_daily: Macro/fetch_macro_realtime.py
+market_cap_daily: Macro/fetch_market_cap.py
+freefloat_cap_daily: Macro/fetch_freefloat_cap.py
+index_composition_daily: Candles/fetch_index_composition.py
+breadth_daily: Candles/compute_breadth_history.py
+dividends_daily: Candles/fetch_dividends.py
+commodity_daily: Commodity/fetch_commodity_realtime.py
+=== orchestrator schedule consts ===
+188:DAILY_UPDATE_HOUR = 19
+189:DAILY_UPDATE_MINUTE = 10
+194:FUNDS_EARLY_UPDATE_HOUR = 14
+195:FUNDS_EARLY_UPDATE_MINUTE = 30
+202:INDICES_EARLY_UPDATE_HOUR = 9
+203:INDICES_EARLY_UPDATE_MINUTE = 0
+209:COMMODITY_UPDATE_HOUR = 8
+210:COMMODITY_UPDATE_MINUTE = 0
+216:BUFFER_HOUR = 120  # 2 минуты после часа для агрега
+=== docker services ===
+28:  options: 36:  db: 98:  redis: 120:  api: 298:  orchestrator: 356:  tg-bot: 384:  nginx: 409:  certbot: 424:  postgres_data: 425:  certbot_data: 426:  certbot_certs: 429:  api_logs: 
+=== top-level dirs ===
+CBR: 4 файлов — __pycache__ backfill_orfr_history.py fetch_orfr_flows.py logs 
+Candles: 24 файлов — __pycache__ adjust_irao_consolidation_2015.py backfill_daily_history.py backfill_delisted_history.py backfill_dividends_dohod.py backfill_extra_intervals.py backfill_futures_candles.py backfill_futures_history.py backfill_futures_intraday.py backfill_market_cap.py compute_breadth_history.py compute_price_breadth_intl.py 
+Commodity: 3 файлов — __pycache__ fetch_commodity_realtime.py logs 
+Crypto: 3 файлов — backfill_bybit_history.py backfill_coinbase_history.py fetch_bybit_realtime.py 
+Funds: 22 файлов — CBONDS_MIGRATION.md DATA_SOURCES.md HOLDINGS_RESEARCH.md MONTHLY_SCHA_REFRESH.md __pycache__ backfill_cnyrub_history.py backfill_history.py backfill_holdings_byname.py backfill_holdings_isin.py build_securities_ref.py cbonds_reconstruct.py fetch_distributions.py 
+IntlOI: 8 файлов — __pycache__ common.py fetch_b3.py fetch_cftc.py fetch_eurex.py fetch_nse.py fetch_nse_stocks.py fetch_taifex.py 
+Macro: 5 файлов — __pycache__ fetch_freefloat_cap.py fetch_macro_realtime.py fetch_market_cap.py logs 
+OI: 6 файлов — __pycache__ aggregate_oi_hourly.py backfill_oi_range.py fetch_oi_5min_realtime.py fetch_oi_daily_realtime.py logs 
+signals: 40 файлов — __init__.py __pycache__ alert_bot.py alert_notify.py alerts_run.py alerts_run.sh anomaly_scan.py anomaly_scan.sh calibration.py channel_scan.py channel_scan.sh classification.py 
+scripts: 23 файлов — __pycache__ build-logos-manifest.sh build-sprite.py check_ru_tls.py fetch_ticker_logos.py fetch_wikimedia_logos.py fit-screenshots.py gen-ext-icons.py gen-icon.py gen-store-assets.py gen-store-screenshots.py landing-videos 
+research: 6 файлов — company_cards content_pipeline_v2 forward moex_license moex_rebalance repo_shorts 
+docs: 12 файлов — ARCHITECTURE.html NEW_CHAT_CONTEXT.md chart-layout-playground.html claude-design-flows-redesign.html colors_and_type.css design-system design-system-index.html generate_heatmap_pdf.py handoff handoff.tar.gz prototypes scha-layout-playground.html 
+tests: 12 файлов — REPORT_SEASONALITY_VERIFICATION.md __pycache__ pine_adj_verify_aapl.pine pine_monthly_verify.pine pine_weekday_verify.pine sber_daily.csv sber_daily.xlsx test_contract_calendar.py test_market_delay.py verify_adjusted_price.py verify_seasonality.py verify_strategy_observations.py 
+sandbox: 3 файлов — app.py fear_lib.py oi_medium_threshold_calibration.py 
+extension: 8 файлов — README.md _metadata dev-preview.html icons manifest.json rules.json src store 
+db: 13 файлов — __pycache__ ab_experiments.sql add_email_verification_fields.py add_email_verification_fields.sql add_oauth_fields.py analytics_events.sql cbr_flows.sql init_db.py maint_register_futures_prefixes.sql migrations models.py mv_heatmap_stocks.sql 
+=== skills/agents ===
+.claude/agents: moex-deploy-verifier.md moex-indicator-explorer.md moex-methodology-auditor.md moex-responsive-auditor.md moex-timeweb-ops.md  .claude/skills: moex-analytics moex-backtest moex-billing moex-cbr-flows moex-content-routines moex-crypto moex-data-triage moex-db-query moex-deploy-backend moex-deploy-frontend moex-fund-scha-backfill moex-git-workflow moex-local-dev-seed moex-macro-refresh moex-methodology-verify moex-moex-ban moex-new-indicator-scaffold moex-publish-extension moex-redesign moex-responsive-audit moex-seo moex-server-access moex-simplechart-usage moex-timeweb-api 
+=== migrations ===
+      66
+064_content_candidates_judge_fix.sql
+065_content_candidates_style_profile.sql
+066_freefloat_cap_factors.sql

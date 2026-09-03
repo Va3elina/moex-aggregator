@@ -1,0 +1,3 @@
+# Снимки страниц МосБиржи: тяжёлые, восстанавливаются calc/fetch_sources.py по MANIFEST.json
+sources/*.html
+__pycache__/
