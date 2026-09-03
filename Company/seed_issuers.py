@@ -71,6 +71,59 @@ FUTURES_PATCH = {"GAZP": "GZ"}
 NOT_A_COMPANY = {"RGBI"}
 
 
+def из_инструментов(conn, уже_есть: set):
+    """
+    Кандидаты во вселенную из НАШЕЙ ЖЕ базы: акции, по которым мы храним свечи.
+
+    ⚠️ ПОЧЕМУ ЭТО ПРАВИЛЬНАЯ ГРАНИЦА. Первая вселенная строилась по модалкам
+    открытого интереса и сделок фондов — 86 эмитентов. Но замер 03.09.2026 показал,
+    что справочник ОКАЗАЛСЯ УЖЕ СОБСТВЕННЫХ ДАННЫХ: 129 акций в instruments, 167
+    бумаг со свечами, 117 в составе индекса — и 91 в справочнике. По ОГК-2 у нас
+    4 926 дней котировок и ни строчки карточки.
+
+    Разрыв нашёлся не из теории, а из детектора сигналов: треть очереди оказалась
+    про компании, которых справочник не знает, хотя цены по ним мы качаем годами.
+
+    Проверено пробой: у всех 40 таких бумаг карточка на smart-lab ЕСТЬ.
+
+    Побочный эффект важнее самого расширения: вселенная перестаёт быть замороженным
+    файлом. Новая бумага появляется в instruments — следующий сид её подхватит.
+    """
+    rows = conn.execute(text("""
+        SELECT i.sec_id, i.name, i.sector,
+               (SELECT s.isin FROM securities_ref s WHERE s.secid = i.sec_id LIMIT 1),
+               (SELECT s.sec_type FROM securities_ref s WHERE s.secid = i.sec_id LIMIT 1),
+               (SELECT COUNT(*) FROM candles c WHERE c.secid = i.sec_id AND c.interval = 24)
+        FROM instruments i
+        WHERE i.type = 'stock'
+        ORDER BY i.sec_id
+    """)).fetchall()
+    известные = {r[0] for r in rows}
+    новые = []
+    for secid, name, sector, isin, sec_type, дней in rows:
+        if secid in уже_есть or secid in NOT_A_COMPANY:
+            continue
+        if not дней:
+            # Без котировок бумага для нас не существует: карточку показать не с чем,
+            # а справочник заполнится тикерами-призраками.
+            log.info("пропуск %s: нет свечей", secid)
+            continue
+        # Преф опознаём по типу бумаги, а если его нет — по тому, что существует
+        # обычка с тем же тикером без хвостовой P (LSNGP → LSNG). Ставить класс по
+        # одной букве нельзя: у GLTR и MGKL P в конце нет вовсе, а SNGSP есть.
+        преф = (sec_type == "preferred_share"
+                or (secid.endswith("P") and secid[:-1] in известные))
+        key = secid[:-1] if преф and secid[:-1] in известные else secid
+        новые.append({
+            "issuer_key": key, "secid": secid,
+            "class": "pref" if преф else "common",
+            "isin": isin, "smartlab_ticker": key,
+            "oi_display_name": name, "futures_sectype": None,
+            "источник": "instruments",
+        })
+    return новые
+
+
 def setup_logging():
     LOG_DIR.mkdir(exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
@@ -89,6 +142,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("draft", type=Path)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--from-instruments", action="store_true",
+                    help="дополнить вселенную акциями из instruments, по которым есть свечи")
     a = ap.parse_args()
     setup_logging()
 
@@ -96,9 +151,15 @@ def main():
     engine = create_engine(os.environ["DB_URL"])
     stats = {"эмитентов": 0, "бумаг": 0, "алиасов": 0, "имён_УК": 0,
              "облигаций_в_именах": 0, "без_фьючерса": 0, "без_smartlab": 0,
-             "пропущено_не_компаний": 0}
+             "пропущено_не_компаний": 0, "из_instruments": 0}
 
     with engine.begin() as conn:
+        if a.from_instruments:
+            добавка = из_инструментов(conn, {r["secid"] for r in rows})
+            log.info("из instruments добавлено кандидатов: %d", len(добавка))
+            stats["из_instruments"] = len(добавка)
+            rows = rows + добавка
+
         # --- справочные срезы одним заходом, чтобы не долбить БД в цикле
         instruments = {r[0]: (r[1], r[2]) for r in conn.execute(text(
             "SELECT sec_id, name, sector FROM instruments WHERE type='stock'")).fetchall()}
