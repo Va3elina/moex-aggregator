@@ -157,6 +157,15 @@ SCRIPTS = {
     'dividends_daily': BASE_DIR / 'Candles' / 'fetch_dividends.py',
     # Сырьевые товары (Yahoo Finance: BRENT/GOLD/SILVER/...) — для seasonality
     'commodity_daily': BASE_DIR / 'Commodity' / 'fetch_commodity_realtime.py',
+    # Карточки компаний со smart-lab: отчётность, дивиденды, акционеры, документы.
+    # ⚠️ ДВА РЕЖИМА, потому что данные живут с разной скоростью. Полный обход —
+    # 7 страниц на компанию, 560 запросов, раз в неделю: отчётность меняется четыре
+    # раза в год. Лёгкий — 2 страницы, 160 запросов, ежедневно: дивиденды объявляют
+    # внезапно, а смену акционера важно поймать быстро.
+    'company_cards': BASE_DIR / 'Company' / 'fetch_company_cards.py',
+    # Рёбра владения между эмитентами (страницы акционеров) → world_facts.
+    # Пишет только изменившееся, поэтому лишний прогон безвреден.
+    'ownership_scan': BASE_DIR / 'Company' / 'ownership_scan.py',
     # ОРФР ЦБ (cbr_orfr_flows) убран из расписания: cbr.ru таймаутит с сервера,
     # формат отчёта нестабилен (ЦБ переименовывает листы). Перешли на ручной
     # ингест — файл присылается вручную, грузится через
@@ -209,6 +218,21 @@ INDICES_EARLY_UPDATE_MINUTE = 0
 COMMODITY_UPDATE_HOUR = 8
 COMMODITY_UPDATE_MINUTE = 0
 
+# Карточки компаний. Полный обход — ночью с воскресенья на понедельник: он идёт
+# 20+ минут и занимает одно ядро из четырёх, а в 04:00 сервер свободен и биржа
+# закрыта. Лёгкий проход (дивиденды и акционеры) — ежедневно в 05:00, после
+# полного, чтобы в понедельник они не спорили за источник.
+CARDS_FULL_WEEKDAY = 0        # понедельник
+CARDS_FULL_HOUR = 4
+CARDS_LIGHT_HOUR = 5
+CARDS_MINUTE = 0
+
+# Граф владения — сразу после полного обхода карточек: он читает те же страницы
+# акционеров, и к этому моменту они уже в кэше источника.
+OWNERSHIP_WEEKDAY = 0
+OWNERSHIP_HOUR = 6
+OWNERSHIP_MINUTE = 0
+
 # ОРФР ЦБ — авто-расписание убрано (ручной ингест через --xlsx, см. SCRIPTS).
 
 # Буферы (секунды после закрытия интервала)
@@ -230,6 +254,10 @@ TIMEOUTS = {
     'index_intraday': 60,  # 1 минута (2 HTTP-запроса ISS marketdata + upsert)
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
+    # Полный обход 80 компаний измерен: 20 минут при паузе 0,5 с между запросами.
+    # 45 минут — запас на повторы после таймаутов, не на «вдруг медленно».
+    'company_cards': 2700,
+    'ownership_scan': 900,   # 80 страниц акционеров, замер — 1,5 минуты
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
     'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
@@ -392,6 +420,11 @@ RETRYABLE_DAILY = {
     'index_candles_hourly', 'macro_daily', 'market_cap_daily',
     'freefloat_cap_daily', 'index_composition_daily', 'breadth_daily',
     'dividends_daily', 'commodity_daily',
+    # ⚠️ company_cards в ретраях НЕТ намеренно. Если smart-lab попросил остановиться
+    # (429/403), скрипт прекращает обход сам — и автоматический повтор через 30 секунд
+    # был бы ровно тем поведением, за которое банят по IP. Повтор здесь — решение
+    # человека, а не оркестратора.
+    'ownership_scan',
 }
 RETRY_BACKOFF = [30, 120]  # сек между попытками (итого до 3 попыток)
 
@@ -502,7 +535,12 @@ class MainOrchestrator:
         self.last_daily_update = None
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
         self.last_indices_early_update = None  # ранний indices-прогон в 09:00 (T+1-публикации ISS)
-        self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
+        self.last_commodity_update = None
+        # Карточки и граф владения ведут свои отметки: у них своё расписание,
+        # не привязанное к торговому дню.
+        self.last_cards_full = None
+        self.last_cards_light = None
+        self.last_ownership = None    # commodity daily — 08:00 МСК после US close
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
         self.last_expire_quarter = None      # лёгкий expire-only — каждые 15 мин
@@ -1037,6 +1075,51 @@ class MainOrchestrator:
 
         return success
 
+    async def run_company_cards(self, light: bool) -> bool:
+        """Карточки компаний со smart-lab.
+
+        light=True — только дивиденды и акционеры (2 страницы из 7, ~160 запросов);
+        light=False — полный обход (~560 запросов, 20+ минут).
+
+        ⚠️ Скрипт сам прекращает обход, если источник ответил 429/403, и сам пишет
+        об этом в Telegram. Оркестратору остаётся не мешать: ретраев тут нет.
+        """
+        имя = "Карточки (лёгкий)" if light else "Карточки (полный)"
+        log.info(f"  📇 {имя}...")
+        self.stats.setdefault('company_cards_runs', 0)
+        self.stats.setdefault('company_cards_success', 0)
+        self.stats['company_cards_runs'] += 1
+
+        args = ['--once']
+        if light:
+            args.append('--light')
+        success, msg, dur = await run_script('company_cards', args)
+
+        if success:
+            self.stats['company_cards_success'] += 1
+            log.info(f"    ✓ {имя} ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ {имя}: {msg}")
+        return success
+
+    async def run_ownership_scan(self) -> bool:
+        """Рёбра владения между эмитентами → world_facts."""
+        log.info("  🕸  Граф владения...")
+        self.stats.setdefault('ownership_runs', 0)
+        self.stats.setdefault('ownership_success', 0)
+        self.stats['ownership_runs'] += 1
+
+        success, msg, dur = await run_script('ownership_scan', ['--all', '--load'])
+
+        if success:
+            self.stats['ownership_success'] += 1
+            log.info(f"    ✓ Граф владения ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Граф владения: {msg}")
+        return success
+
     async def run_analytics_cleanup(self) -> bool:
         """Cleanup analytics_events старше 180 дней (раз в день).
 
@@ -1503,6 +1586,30 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Commodity update...")
                     await self.run_commodity_update()
                     self.last_commodity_update = slot_day
+
+                # === Карточки компаний ===
+                # Полный обход — понедельник 04:00, лёгкий — ежедневно 05:00.
+                # ⚠️ Ночью и в выходные тоже: smart-lab не биржа, он не закрывается,
+                # а мы в это время никому не мешаем — ни торгам, ни себе по CPU.
+                if (slot_day != self.last_cards_full and
+                        now.weekday() == CARDS_FULL_WEEKDAY and
+                        now.hour == CARDS_FULL_HOUR and now.minute >= CARDS_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, полный обход...")
+                    await self.run_company_cards(light=False)
+                    self.last_cards_full = slot_day
+
+                if (slot_day != self.last_cards_light and
+                        now.hour == CARDS_LIGHT_HOUR and now.minute >= CARDS_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, лёгкий проход...")
+                    await self.run_company_cards(light=True)
+                    self.last_cards_light = slot_day
+
+                if (slot_day != self.last_ownership and
+                        now.weekday() == OWNERSHIP_WEEKDAY and
+                        now.hour == OWNERSHIP_HOUR and now.minute >= OWNERSHIP_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Граф владения...")
+                    await self.run_ownership_scan()
+                    self.last_ownership = slot_day
 
                 # === Дневное обновление (в 19:10, только в торговые дни) ===
                 if (slot_day != self.last_daily_update and

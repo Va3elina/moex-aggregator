@@ -21,10 +21,13 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
+from sqlalchemy import create_engine, text
+
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parents[1]))   # чтобы был виден пакет signals/
 
-from parse_smartlab_company import ThrottledError, parse_company, setup_logging
+from smartlab_parser import ThrottledError, parse_company, setup_logging
+from load_card import load_card
 
 
 def notify(text: str):
@@ -50,32 +53,56 @@ log = logging.getLogger("smartlab_parser")
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_draft.json")
-    ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_universe.json")
+    ap.add_argument("--out-dir", type=Path,
+                    help="куда класть разобранные карточки; без --no-load не обязателен")
+    ap.add_argument("--no-load", action="store_true",
+                    help="только разобрать, в базу не грузить (отладка)")
     ap.add_argument("--cache-dir", type=Path)
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--light", action="store_true",
+                    help="только дивиденды и акционеры (ежедневный проход, 2 страницы из 7)")
+    ap.add_argument("--once", action="store_true", help="совместимость с оркестратором")
+    ap.add_argument("--force", action="store_true", help="совместимость с оркестратором")
     ap.add_argument("--skip-existing", action="store_true",
                     help="не перекачивать то, что уже сохранено сегодня")
     a = ap.parse_args()
     setup_logging()
-    a.out_dir.mkdir(parents=True, exist_ok=True)
+    if a.out_dir:
+        a.out_dir.mkdir(parents=True, exist_ok=True)
+    if a.no_load and not a.out_dir:
+        sys.exit("--no-load без --out-dir бессмыслен: разобрать и выбросить")
 
     rows = json.loads(a.draft.read_text(encoding="utf-8"))["кандидаты"]
     tickers = sorted({r["smartlab_ticker"] for r in rows if r.get("smartlab_ticker")})
     if a.limit:
         tickers = tickers[:a.limit]
 
+    # Справочник «тикер smart-lab → эмитент» читается из БАЗЫ, а не из файла:
+    # источник истины после сида — issuer_aliases, файл лишь его первое наполнение.
+    engine = None if a.no_load else create_engine(os.environ["DB_URL"])
+    смартлаб_к_эмитенту = {}
+    if engine is not None:
+        with engine.connect() as c:
+            смартлаб_к_эмитенту = {r[0]: r[1] for r in c.execute(text(
+                "SELECT a.alias_value, i.issuer_key FROM issuer_aliases a "
+                "JOIN issuers i USING(issuer_id) WHERE a.alias_type = 'smartlab'"
+            )).fetchall()}
+        log.info("справочник smart-lab → эмитент: %d записей", len(смартлаб_к_эмитенту))
+
     started = time.time()
-    итог = {"успех": 0, "пусто": 0, "упало": 0, "метрик": 0, "документов": 0}
+    итог = {"успех": 0, "пусто": 0, "упало": 0, "метрик": 0, "документов": 0,
+            "загружено": 0, "не_загружено": 0}
     сломались = []
 
-    log.info("прогон вселенной: %d компаний", len(tickers))
+    log.info("прогон вселенной: %d компаний%s", len(tickers),
+             " (лёгкий режим: дивиденды и акционеры)" if a.light else "")
     for i, t in enumerate(tickers, 1):
-        dest = a.out_dir / f"{t}.json"
-        if a.skip_existing and dest.exists():
+        dest = (a.out_dir / f"{t}.json") if a.out_dir else None
+        if a.skip_existing and dest and dest.exists():
             continue
         try:
-            card = parse_company(t, ("MSFO", "RSBU"), a.cache_dir)
+            card = parse_company(t, ("MSFO", "RSBU"), a.cache_dir, light=a.light)
         except ThrottledError as ex:
             # ⚠️ НЕ продолжаем обход. Источник попросил остановиться, и долбить его
             # дальше по оставшимся компаниям — прямой путь к бану IP. Один раз мы
@@ -94,14 +121,39 @@ def main():
             continue
 
         filled = sum(1 for m in card["metrics"] if m["value"] is not None)
-        if not filled:
-            log.warning("%s: ни одного заполненного значения", t)
-            итог["пусто"] += 1
+        # ⚠️ Критерий успеха зависит от режима. В лёгком проходе метрик НЕТ по
+        # замыслу — страницы отчётности не запрашивались. Считать это «пусто»
+        # значило бы слать тревогу каждое утро на все 80 компаний, а тревога,
+        # которая приходит всегда, перестаёт быть тревогой.
+        if a.light:
+            есть = bool(card.get("dividend_payments") or card.get("shareholders"))
         else:
+            есть = bool(filled)
+        if есть:
             итог["успех"] += 1
+        else:
+            log.warning("%s: страницы отдались, но данных в них нет", t)
+            итог["пусто"] += 1
         итог["метрик"] += filled
         итог["документов"] += len(card["documents"])
-        dest.write_text(json.dumps(card, ensure_ascii=False), encoding="utf-8")
+        if dest:
+            dest.write_text(json.dumps(card, ensure_ascii=False), encoding="utf-8")
+
+        if not a.no_load:
+            # ⚠️ Грузим СРАЗУ, а не после всего прогона. Если обход прервётся на
+            # середине (429 от источника, обрыв сети), уже собранные компании
+            # окажутся в базе, а не в подвешенном состоянии «разобрано, но нигде».
+            try:
+                key = смартлаб_к_эмитенту.get(t)
+                if not key:
+                    log.warning("%s: нет такого тикера smart-lab в справочнике", t)
+                    итог["не_загружено"] += 1
+                else:
+                    load_card(card, key, a.draft, engine=engine)
+                    итог["загружено"] += 1
+            except Exception:
+                log.exception("%s: карточка разобрана, но не загружена", t)
+                итог["не_загружено"] += 1
 
         if i % 10 == 0:
             прошло = time.time() - started
@@ -114,10 +166,12 @@ def main():
 
     строки = ["📇 Карточки компаний: прогон закончен за %d мин" % round(заняло / 60),
               "Успешно: %d, пусто: %d, упало: %d" % (итог["успех"], итог["пусто"], итог["упало"]),
-              "Метрик: %d, документов: %d" % (итог["метрик"], итог["документов"])]
+              "Загружено в базу: %d, не загружено: %d" % (итог["загружено"], итог["не_загружено"]),
+              ("Метрик: %d, документов: %d" % (итог["метрик"], итог["документов"])
+               if not a.light else "Лёгкий проход: дивиденды и акционеры")]
     if сломались:
         строки.append("⚠️ Не разобраны: " + ", ".join(сломались))
-    if итог["упало"] or итог["пусто"] or "остановлен_на" in итог:
+    if итог["упало"] or итог["пусто"] or итог["не_загружено"] or "остановлен_на" in итог:
         notify("\n".join(строки))
     else:
         # Тихий успех не спамим: уведомление имеет смысл, только когда что-то не так
