@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Репо нужен для scripts/prod_deploy.sh — пайпим его на сервер по SSH.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # SSH-деплой с РЕТРАЯМИ: сеть GitHub-раннер → РФ-хост периодически флапает
       # (dial tcp ...:22: i/o timeout). Без ретраев каждый такой деплой падал и
