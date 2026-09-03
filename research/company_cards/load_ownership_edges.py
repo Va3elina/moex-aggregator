@@ -56,6 +56,8 @@ EXTRA_NAMES = {
     "HYDR": "РусГидро", "GMKN": "Норникель", "BANE": "Башнефть", "SIBN": "Газпром нефть",
     "RUAL": "Русал", "MTSS": "МТС", "MOEX": "Московская биржа", "VTBR": "ВТБ",
     "GAZP": "Газпром", "ROSN": "Роснефть", "AFKS": "АФК Система",
+    "BAZA": "Базис", "MVID": "М.Видео", "MTLR": "Мечел", "LEAS": "Европлан",
+    "NVTK": "НОВАТЭК", "SFIN": "ЭсЭфАй",
 }
 
 log = logging.getLogger("ownership_loader")
@@ -85,35 +87,61 @@ def build_names(draft_path: Path):
     return names
 
 
-def statement_for(edge, names):
+def statement_for(edge, names, institutions):
+    """
+    Текст факта. У института владелец подписывается БЕЗ решётки-тикера и с явным
+    предупреждением: Газпромбанк не Газпром, и агент не должен их склеить.
+    """
     pct = ("%.2f" % edge["доля"]).replace(".", ",")
-    owner, target = edge["владелец_тикер"], edge["эмитент"]
+    target = edge["эмитент"]
+    is_inst = edge.get("владелец_kind") == "institution"
+    owner = edge.get("владелец_код") if is_inst else edge["владелец_тикер"]
+    owner_label = (institutions.get(owner, {}).get("имя", owner) if is_inst
+                   else "%s (#%s)" % (names.get(owner, owner), owner))
+    как = (" косвенно (через %s)" % edge["через"]) if edge.get("через") else ""
     when = (("Доля по структуре акционеров, обновлённой %s." % edge["структура_от"])
-            if edge["структура_от"] else
+            if edge.get("структура_от") else
             "ВНИМАНИЕ: источник не указал дату обновления структуры, доля может быть устаревшей.")
-    return ("%s (#%s) владеет долей %s%% в компании %s (#%s). %s"
-            % (names.get(owner, owner), owner, pct, names.get(target, target), target, when))
+    warn = ""
+    if is_inst:
+        warn = " " + institutions.get(owner, {}).get("предупреждение", "")
+    return ("%s владеет%s долей %s%% в компании %s (#%s). %s%s"
+            % (owner_label, как, pct, names.get(target, target), target, when, warn))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("edges_json", type=Path)
     ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_draft.json")
+    ap.add_argument("--curated", type=Path, default=BASE_DIR / "ownership_curated.json",
+                    help="рёбра, проверенные вручную (цепочки, дочки, институты)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     setup_logging()
 
     edges = json.loads(a.edges_json.read_text(encoding="utf-8"))["рёбра"]
     names = build_names(a.draft)
+
+    # Курируемые рёбра идут В ТОТ ЖЕ проход: автомат их не находит (владелец назван
+    # цепочкой «ЦХД->РТК ЦОД->Ростелеком», дочкой «Газпром капитал» или вообще не
+    # является эмитентом), но обновляться они должны по тем же правилам.
+    institutions = {}
+    if a.curated and a.curated.exists():
+        cur_data = json.loads(a.curated.read_text(encoding="utf-8"))
+        institutions = cur_data.get("институты", {})
+        edges = edges + cur_data["рёбра"]
+        log.info("курируемых рёбер добавлено: %d", len(cur_data["рёбра"]))
     engine = create_engine(DB_URL)
     stats = {"новых": 0, "изменилось": 0, "без_изменений": 0}
 
     with engine.begin() as conn:
         for edge in edges:
-            key = "own:%s:%s" % (edge["владелец_тикер"], edge["эмитент"])
+            is_inst = edge.get("владелец_kind") == "institution"
+            owner = edge.get("владелец_код") if is_inst else edge["владелец_тикер"]
+            key = "own:%s:%s" % (owner, edge["эмитент"])
             as_of = (datetime.strptime(edge["структура_от"], "%d.%m.%Y").date()
-                     if edge["структура_от"] else None)
-            st = statement_for(edge, names)
+                     if edge.get("структура_от") else None)
+            st = statement_for(edge, names, institutions)
             vf = as_of or UNKNOWN_SINCE
 
             cur = conn.execute(text(
@@ -129,6 +157,14 @@ def main():
             else:
                 stats["новых"] += 1
 
+            # Косвенное владение и институты — менее твёрдые факты, чем прямая доля
+            # с датой снимка, и confidence это отражает.
+            conf = 0.85 if as_of else 0.60
+            if edge.get("связь") == "косвенная":
+                conf = min(conf, 0.70)
+            if is_inst:
+                conf = min(conf, 0.65)
+
             conn.execute(text("""
               INSERT INTO world_facts (fact_key, statement, kind, entities, valid_from,
                                        source, source_url, confidence)
@@ -137,10 +173,9 @@ def main():
                 entities=EXCLUDED.entities, valid_from=EXCLUDED.valid_from,
                 source_url=EXCLUDED.source_url, confidence=EXCLUDED.confidence,
                 updated_at=now()
-            """), {"k": key, "s": st,
-                   "ents": [edge["владелец_тикер"], edge["эмитент"]], "vf": vf,
+            """), {"k": key, "s": st, "ents": [owner, edge["эмитент"]], "vf": vf,
                    "url": "https://smart-lab.ru/q/%s/shareholders/" % edge["эмитент"],
-                   "conf": 0.85 if as_of else 0.60})
+                   "conf": conf})
 
         if a.dry_run:
             conn.rollback()
