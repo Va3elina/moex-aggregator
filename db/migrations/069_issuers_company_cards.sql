@@ -138,12 +138,31 @@ CREATE TABLE IF NOT EXISTS company_metrics (
     note         VARCHAR(24),              -- NULL | no_data | zero_as_missing
     raw_text     VARCHAR(40),
     report_date  DATE,                     -- дата публикации отчёта за период
+    -- smartlab | financemarker | ... — источник, а не украшение: он в уникальном
+    -- ключе ниже, поэтому один показатель за один период может иметь ряд из каждого
+    -- источника, и они сверяются между собой вместо того, чтобы затирать друг друга.
     source       VARCHAR(24) NOT NULL DEFAULT 'smartlab',
     first_seen   DATE NOT NULL DEFAULT CURRENT_DATE,
     last_seen    DATE NOT NULL DEFAULT CURRENT_DATE
 );
+-- ⚠️ SOURCE ВХОДИТ В КЛЮЧ, и это не запас на будущее, а условие сменяемости источника.
+-- Без него два источника (smart-lab и платный API) не могут писать один и тот же
+-- показатель за один и тот же период: вторая запись затрёт первую. А нужно ровно
+-- обратное — чтобы обе истории лежали рядом и сверялись друг с другом, и чтобы уход
+-- со smart-lab не означал потерю уже собранного.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_company_metrics_version
-    ON company_metrics (secid, metric_code, standard, period_type, period_label, first_seen);
+    ON company_metrics (secid, metric_code, standard, period_type, period_label, source, first_seen);
+-- Пересоздание для баз, где индекс был создан предыдущим прогоном без source.
+DROP INDEX IF EXISTS uq_company_metrics_version_old;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_company_metrics_version'
+             AND indexdef NOT LIKE '%source%') THEN
+    DROP INDEX uq_company_metrics_version;
+    CREATE UNIQUE INDEX uq_company_metrics_version ON company_metrics
+      (secid, metric_code, standard, period_type, period_label, source, first_seen);
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_company_metrics_lookup
     ON company_metrics (secid, metric_code, period_type, period_end DESC);
 
@@ -176,9 +195,15 @@ CREATE TABLE IF NOT EXISTS company_shareholders (
     share_pct       NUMERIC,
     structure_as_of DATE,
     source          VARCHAR(24) NOT NULL DEFAULT 'smartlab',
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (issuer_id, holder, structure_as_of)
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- ⚠️ structure_as_of НЕ входит в PRIMARY KEY, хотя логически ключом является.
+-- Причина: у части компаний (АЛРОСА, ЛУКОЙЛ, Газпром нефть) даты обновления структуры
+-- на источнике нет вовсе, а NOT NULL заставил бы подставить выдуманную. Лучше честный
+-- NULL и низкая уверенность, чем правдоподобная ложь. Уникальность держит индекс
+-- с COALESCE — он же не даёт задвоиться снимку без даты.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_company_shareholders
+    ON company_shareholders (issuer_id, holder, COALESCE(structure_as_of, DATE '0001-01-01'));
 
 -- «Факторы роста и падения акций» — датированные тезисы. Устроены как world_facts:
 -- утверждение + дата, с которой оно заявлено. Видно 5 из 10 (остальные за подпиской),

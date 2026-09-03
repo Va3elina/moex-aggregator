@@ -37,6 +37,7 @@ import json
 import logging
 import re
 import sys
+import random
 import time
 import urllib.request
 from datetime import date, datetime
@@ -48,7 +49,18 @@ LOG_DIR = BASE_DIR / "logs"
 BASE = "https://smart-lab.ru/q"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-POLITE_DELAY = 0.5  # в разведке 223 бумаги × 2 страницы прошли без блокировок
+POLITE_DELAY = 0.5   # базовая пауза; к ней добавляется дрожание, см. _sleep_polite
+JITTER = 0.35        # ±35%: ровный такт в 0,5 с выглядит как робот и им и является
+MAX_RETRIES = 3      # на таймаут и 5xx — с ростом паузы
+BACKOFF_BASE = 2.0
+
+
+class ThrottledError(RuntimeError):
+    """
+    Источник попросил остановиться (429/403). Это НЕ ошибка одной страницы, а сигнал
+    прекратить весь прогон: продолжать обход остальных 79 компаний после такого ответа
+    — прямая дорога к бану IP. Ровно так мы уже получали блокировку от MOEX.
+    """
 
 log = logging.getLogger("smartlab_parser")
 
@@ -124,8 +136,18 @@ def strip_tags(s: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", s))).strip()
 
 
+def _sleep_polite(base: float = POLITE_DELAY):
+    time.sleep(base * (1 + random.uniform(-JITTER, JITTER)))
+
+
 def fetch(url: str, cache_dir: Path | None) -> str | None:
-    """Возвращает HTML или None, если страницы нет (404 — норма: WTCM, JETL, MONO)."""
+    """
+    Возвращает HTML или None, если страницы нет (404 — норма: WTCM, JETL, MONO).
+
+    Бросает ThrottledError на 429/403 — это команда остановить прогон целиком.
+    Таймауты и 5xx повторяются с растущей паузой: раньше единственный таймаут (LSRG)
+    просто терял компанию до следующего прогона.
+    """
     if cache_dir:
         cached = cache_dir / (re.sub(r"[^A-Za-z0-9]+", "_", url).strip("_") + ".html")
         if cached.exists():
@@ -133,21 +155,43 @@ def fetch(url: str, cache_dir: Path | None) -> str | None:
     if cache_dir and cached.exists():
         log.debug("кэш: %s", url)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            body = r.read().decode("utf-8", errors="replace")
-        log.debug("получено %d Б: %s", len(body), url)
-    except urllib.error.HTTPError as ex:
-        if ex.code == 404:
-            # 404 — норма, а не сбой: у WTCM, JETL, MONO карточки нет.
-            log.warning("404 (страницы нет): %s", url)
-            return None
-        log.error("HTTP %s: %s", ex.code, url)
-        raise
-    except Exception as ex:
-        log.error("сеть упала на %s: %s", url, ex)
-        raise
-    time.sleep(POLITE_DELAY)
+    body = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                body = r.read().decode("utf-8", errors="replace")
+            log.debug("получено %d Б: %s", len(body), url)
+            break
+        except urllib.error.HTTPError as ex:
+            if ex.code == 404:
+                # 404 — норма, а не сбой: у WTCM, JETL, MONO карточки нет.
+                log.warning("404 (страницы нет): %s", url)
+                return None
+            if ex.code in (429, 403):
+                retry_after = ex.headers.get("Retry-After") if ex.headers else None
+                log.error("ИСТОЧНИК ПРОСИТ ОСТАНОВИТЬСЯ: HTTP %s на %s (Retry-After=%s)",
+                          ex.code, url, retry_after)
+                raise ThrottledError("HTTP %s, Retry-After=%s" % (ex.code, retry_after))
+            if ex.code >= 500 and attempt < MAX_RETRIES:
+                пауза = BACKOFF_BASE ** attempt
+                log.warning("HTTP %s на %s — повтор %d/%d через %.0f с",
+                            ex.code, url, attempt, MAX_RETRIES, пауза)
+                time.sleep(пауза)
+                continue
+            log.error("HTTP %s: %s", ex.code, url)
+            raise
+        except Exception as ex:
+            if attempt < MAX_RETRIES:
+                пауза = BACKOFF_BASE ** attempt
+                log.warning("сеть на %s (%s) — повтор %d/%d через %.0f с",
+                            url, ex, attempt, MAX_RETRIES, пауза)
+                time.sleep(пауза)
+                continue
+            log.error("сеть упала на %s: %s", url, ex)
+            raise
+    if body is None:
+        return None
+    _sleep_polite()
     if cache_dir:
         cache_dir.mkdir(parents=True, exist_ok=True)
         cached.write_text(body, encoding="utf-8")
