@@ -729,8 +729,24 @@ def _pair_price_with_position(price: dict, pos: dict) -> dict:
     return out
 
 
+# ⚠️ ВОЗРАСТ ФАКТА ЕДЕТ ВМЕСТЕ С ФАКТОМ. Раньше выбирался только текст, и связь,
+# снятая пять лет назад, приходила в бриф неотличимой от вчерашней. Дата в тексте
+# есть не у всех рёбер: курируемые (link:*) писались людьми и её могут не содержать.
+_STALE_YEARS = 2
+
+
+def _лет(n: int) -> str:
+    """«5 ГОДА(ЛЕТ)» читается как машинный вывод и подрывает доверие к тексту,
+    в который вшито. Пост пишется по-русски — предупреждение тоже."""
+    n = abs(int(n))
+    if 11 <= n % 100 <= 14:
+        return "лет"
+    return {1: "год", 2: "года", 3: "года", 4: "года"}.get(n % 10, "лет")
+
 _SELECT_ENTITY_LINKS = text("""
-    SELECT entities, statement
+    SELECT entities, statement,
+           EXTRACT(YEAR FROM age(CURRENT_DATE, valid_from))::int AS лет,
+           confidence
     FROM world_facts
     WHERE kind = 'связь'
       AND entities && CAST(:tickers AS text[])
@@ -804,15 +820,32 @@ def _related_context(db, tickers, as_of, trace=None) -> dict:
     links = db.execute(_SELECT_ENTITY_LINKS,
                        {"tickers": tks, "as_of": as_of}).fetchall()
     if trace:
+        старых = sum(1 for r in links
+                     if (r[2] or 0) >= _STALE_YEARS
+                     and (r[3] is None or float(r[3]) >= 0.80))
         trace.record("world_facts", "кто связан с %s" % ", ".join(tks),
                      outcome=(ВЗЯТО if links else ПУСТО),
                      result_count=len(links),
-                     result_note=("%d рёбер" % len(links)) if links else "связей нет",
-                     params={"tickers": tks, "as_of": as_of})
+                     result_note=(("%d рёбер, из них %d со старым снимком"
+                                   % (len(links), старых)) if links else "связей нет"),
+                     params={"tickers": tks, "as_of": as_of, "старых": старых})
     if not links:
         return {}
     out = {}
-    for entities, statement in links:
+    for entities, statement, лет, conf in links:
+        # ⚠️ У факта, чей источник даты НЕ УКАЗАЛ, valid_from — консервативная
+        # заглушка, а не снимок. Объявить по ней «снимку 6 лет» значило бы выдумать
+        # возраст: мы не знаем его ни в одну сторону. Такие факты помечены низкой
+        # уверенностью, и предупреждение у них уже вшито в текст при записи.
+        известна_дата = conf is None or float(conf) >= 0.80
+        if известна_дата and лет is not None and лет >= _STALE_YEARS:
+            # Не выбрасываем: старая связь чаще всего верна (контрольный пакет
+            # держат десятилетиями), а выбросив её, мы потеряем настоящий сюжет.
+            # Но и молчать нельзя — приписка идёт В САМ ТЕКСТ факта, потому что
+            # модель читает факты, а не наши поля рядом с ними.
+            statement = ("%s [СНИМКУ %d %s: долю называть только со ссылкой на дату "
+                         "снимка, «сейчас» про неё писать нельзя]"
+                         % (statement, лет, _лет(лет)))
         for tk in (entities or []):
             if tk in tks or tk in out:
                 continue

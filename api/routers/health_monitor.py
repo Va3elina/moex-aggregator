@@ -251,6 +251,62 @@ def health_data(
         pipelines = []  # таблица ещё не создана (до первого heartbeat)
         silent_pipelines = []
 
+    # ── ВОЗРАСТ САМИХ ДАННЫХ, А НЕ НАШЕЙ ЗАПИСИ ──────────────────────────────
+    # ⚠️ ЭТО ДРУГОЙ ВИД ПРОТУХАНИЯ, и блок выше его не видит. Там меряется, когда
+    # мы последний раз ПИСАЛИ; здесь — на какую дату сами данные. Структуру
+    # акционеров Сбербанка мы перезаписываем каждую неделю исправно, но у источника
+    # она от 08.05.2020 и содержит «Американские инвесторы 33%». По первой оси это
+    # вечное «ok»: пайплайн зелёный, данные пятилетние.
+    #
+    # Порог в 2 года выбран по факту: у 40 компаний из 85 структура старше — то есть
+    # это норма жизни, а не авария. Поэтому блок ИНФОРМАЦИОННЫЙ и в overall не
+    # входит: тревога, которая горит всегда, гасит внимание ко всем остальным.
+    старение = []
+    try:
+        r = db.execute(text("""
+            SELECT COUNT(DISTINCT issuer_id) FILTER (
+                       WHERE structure_as_of < CURRENT_DATE - INTERVAL '2 years'),
+                   COUNT(DISTINCT issuer_id) FILTER (WHERE structure_as_of IS NULL),
+                   COUNT(DISTINCT issuer_id),
+                   MIN(structure_as_of)
+            FROM company_shareholders""")).first()
+        if r and r[2]:
+            старение.append({
+                "данные": "структура акционеров",
+                "старше_2_лет": r[0], "без_даты": r[1], "всего": r[2],
+                "самая_старая": r[3].isoformat() if r[3] else None,
+                "чем_грозит": "агент назовёт устаревшую долю текущей",
+            })
+
+        r = db.execute(text("""
+            SELECT COUNT(*) FILTER (WHERE valid_from < CURRENT_DATE - INTERVAL '2 years'),
+                   COUNT(*), MIN(valid_from)
+            FROM world_facts WHERE kind = 'связь'""")).first()
+        if r and r[1]:
+            старение.append({
+                "данные": "рёбра владения",
+                "старше_2_лет": r[0], "без_даты": 0, "всего": r[1],
+                "самая_старая": r[2].isoformat() if r[2] else None,
+                "чем_грозит": "доля владения могла смениться после снимка",
+            })
+
+        r = db.execute(text("""
+            SELECT COUNT(DISTINCT secid) FILTER (WHERE последний < CURRENT_DATE - INTERVAL '15 months'),
+                   COUNT(DISTINCT secid), MIN(последний)
+            FROM (SELECT secid, MAX(period_end) AS последний FROM company_metrics
+                  WHERE period_type = 'year' GROUP BY secid) t""")).first()
+        if r and r[1]:
+            старение.append({
+                # 15 месяцев: годовой отчёт за прошлый год выходит к весне, поэтому
+                # к сентябрю «последний период — позапрошлый год» уже ненормально.
+                "данные": "годовая отчётность",
+                "старше_15_месяцев": r[0], "всего": r[1],
+                "самая_старая": r[2].isoformat() if r[2] else None,
+                "чем_грозит": "компания перестала отчитываться или парсер отвалился",
+            })
+    except Exception:
+        старение = []  # таблиц ещё нет (до применения миграции 069)
+
     stale = [s["name"] for s in sources if s["status"] == "stale"]
     failed_pipelines = [p["pipeline"] for p in pipelines
                         if p["status"] not in ("ok", "silent")]
@@ -269,4 +325,6 @@ def health_data(
         "silent_pipelines": silent_pipelines,
         "sources": sources,
         "pipelines": pipelines,
+        # Информационно: в overall НЕ входит, см. комментарий выше.
+        "стареющие_данные": старение,
     }
