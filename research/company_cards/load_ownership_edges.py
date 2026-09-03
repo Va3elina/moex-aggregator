@@ -109,6 +109,57 @@ def statement_for(edge, names, institutions):
             % (owner_label, как, pct, names.get(target, target), target, when, warn))
 
 
+def load_treasury(conn, card, names, log, stats):
+    """
+    Квазиказначейские пакеты — ОТДЕЛЬНЫЙ вид факта, не ребро.
+    Обе стороны здесь одна компания, поэтому kind='казначейский пакет', а не 'связь':
+    иначе запрос «кто связан с MGNT» вернул бы Магнит сам себе, и это шум.
+
+    Пакет собирается В ОДИН факт на компанию с итоговой долей. У Белуги шесть держателей
+    («НБВ Сервис», «Синергия капитал», «Tottenwell»…) — шесть отдельных фактов
+    засорили бы бриф, а нужен один: сколько всего компания держит сама в себе.
+    """
+    by_issuer = {}
+    for r in card:
+        by_issuer.setdefault(r["эмитент"], []).append(r)
+
+    for ticker, rows in sorted(by_issuer.items()):
+        total = sum(r["доля"] for r in rows)
+        as_of_raw = next((r["структура_от"] for r in rows if r["структура_от"]), None)
+        as_of = datetime.strptime(as_of_raw, "%d.%m.%Y").date() if as_of_raw else None
+        holders = ", ".join("%s — %s%%" % (r["владелец"], ("%.2f" % r["доля"]).replace(".", ","))
+                            for r in sorted(rows, key=lambda x: -x["доля"]))
+        когда = ("Данные по структуре акционеров на %s." % as_of_raw) if as_of_raw else \
+                "ВНИМАНИЕ: источник не указал дату обновления структуры."
+        st = ("%s (#%s) держит %s%% собственных акций как квазиказначейский пакет%s. %s "
+              "Такой пакет не голосует и не торгуется — реальный free float меньше "
+              "номинального на эту величину."
+              % (names.get(ticker, ticker), ticker, ("%.2f" % total).replace(".", ","),
+                 (" (%s)" % holders) if len(rows) > 1 else "", когда))
+
+        key = "treasury:%s" % ticker
+        cur = conn.execute(text("SELECT statement, valid_from FROM world_facts WHERE fact_key=:k"),
+                           {"k": key}).fetchone()
+        vf = as_of or UNKNOWN_SINCE
+        if cur and cur[0] == st and cur[1] == vf:
+            stats["казн_без_изменений"] += 1
+            continue
+        if cur:
+            log.info("ИЗМЕНЕНИЕ %s\n  было:  %s\n  стало: %s", key, cur[0], st)
+            stats["казн_изменилось"] += 1
+        else:
+            stats["казн_новых"] += 1
+        conn.execute(text("""
+          INSERT INTO world_facts (fact_key, statement, kind, entities, valid_from,
+                                   source, source_url, confidence)
+          VALUES (:k,:s,'казначейский пакет',:ents,:vf,'smartlab',:url,:conf)
+          ON CONFLICT (fact_key) DO UPDATE SET statement=EXCLUDED.statement,
+            valid_from=EXCLUDED.valid_from, confidence=EXCLUDED.confidence, updated_at=now()
+        """), {"k": key, "s": st, "ents": [ticker], "vf": vf,
+               "url": "https://smart-lab.ru/q/%s/shareholders/" % ticker,
+               "conf": 0.85 if as_of else 0.60})
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("edges_json", type=Path)
@@ -119,7 +170,9 @@ def main():
     a = ap.parse_args()
     setup_logging()
 
-    edges = json.loads(a.edges_json.read_text(encoding="utf-8"))["рёбра"]
+    payload = json.loads(a.edges_json.read_text(encoding="utf-8"))
+    edges = payload["рёбра"]
+    treasury = payload.get("казначейские", [])
     names = build_names(a.draft)
 
     # Курируемые рёбра идут В ТОТ ЖЕ проход: автомат их не находит (владелец назван
@@ -132,7 +185,8 @@ def main():
         edges = edges + cur_data["рёбра"]
         log.info("курируемых рёбер добавлено: %d", len(cur_data["рёбра"]))
     engine = create_engine(DB_URL)
-    stats = {"новых": 0, "изменилось": 0, "без_изменений": 0}
+    stats = {"новых": 0, "изменилось": 0, "без_изменений": 0,
+             "казн_новых": 0, "казн_изменилось": 0, "казн_без_изменений": 0}
 
     with engine.begin() as conn:
         for edge in edges:
@@ -176,6 +230,9 @@ def main():
             """), {"k": key, "s": st, "ents": [owner, edge["эмитент"]], "vf": vf,
                    "url": "https://smart-lab.ru/q/%s/shareholders/" % edge["эмитент"],
                    "conf": conf})
+
+        if treasury:
+            load_treasury(conn, treasury, names, log, stats)
 
         if a.dry_run:
             conn.rollback()
