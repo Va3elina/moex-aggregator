@@ -52,6 +52,7 @@ MAX_DISPATCH_ATTEMPTS (028_content_candidates_dispatch_attempts) огранич�
 """
 import os
 import hashlib
+import html
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -1115,6 +1116,203 @@ def _rating_history(db, headline: str, raw_text: str, tickers, as_of) -> dict:
     return out
 
 
+
+# ══════════════════════════════════════════════════════════════════════
+#                  ФУНДАМЕНТ КОМПАНИИ В БРИФ
+# ══════════════════════════════════════════════════════════════════════
+# В карточке 55 показателей за 5 лет и 5 кварталов. В бриф идут ЕДИНИЦЫ, и это
+# главное решение всего блока.
+#
+# ⚠️ ПОЛЕ, ПОПАВШЕЕ В БРИФ, МОДЕЛЬ СЧИТАЕТ ОБЯЗАННОЙ ИЗРАСХОДОВАТЬ. Проверено
+# дорого: 01.09 в бриф добавили два блока без границы, и черновик разбух до 1 105
+# знаков против медианы жанра 661 — Вадиму он понравился меньше предыдущего. Вывалить
+# сюда всю карточку значит гарантированно испортить пост.
+#
+# ⚠️ ДИНАМИКА, А НЕ УРОВЕНЬ. «Долг/EBITDA 3,11» читателю не говорит ничего, «1,07 →
+# 3,11 за год» говорит всё. Поэтому каждый показатель отдаётся парой год-назад → сейчас,
+# и только если он реально изменился.
+#
+# ⚠️ НАБОР ЗАВИСИТ ОТ ПОВОДА. Пост про дивиденды и пост про санкции держатся на разных
+# числах. Показывать один и тот же список — тот же вывал, только меньшего размера.
+#
+# Разбор поста про Полюс (кандидат 793), на котором блок и проектировался: повод —
+# «акции сложились вдвое, дивиденды приостановлены до 2030». Агент пересказал повод,
+# потому что больше ничего не знал. В карточке лежало объяснение: Долг/EBITDA 1,07 →
+# 3,11, чистый долг 554,6 → 912,9 млрд, и датированный тезис «капзатраты на Сухой Лог
+# могут составить $6 млрд, запуск в 2028-2029». Приостановка дивидендов ИМЕННО до 2030
+# из этого следует.
+
+# Какие показатели относятся к делу при каком поводе. Ключи — event_type кандидата.
+_FUND_BY_EVENT = {
+    "dividend":         ["dividend", "div_yield", "div_payout_ratio", "debt_ebitda", "net_debt"],
+    "register_closing": ["dividend", "div_yield", "div_payout_ratio"],
+    "earnings":         ["revenue", "net_income", "ebitda", "net_margin", "debt_ebitda"],
+    "sanctions":        ["revenue", "net_debt", "debt_ebitda", "capex"],
+    "regulatory":       ["revenue", "net_income", "debt_ebitda"],
+    "corporate_action": ["market_cap", "p_e", "net_debt", "free_float"],
+}
+_FUND_DEFAULT = ["revenue", "net_income", "debt_ebitda", "p_e"]
+
+# Сколько показателей максимум доезжает до модели. Четыре — не круглое число, а
+# граница, за которой абзац перестаёт быть абзацем: у канала медиана 11 слов в
+# предложении, а каждое число требует своей опоры в тексте.
+_FUND_LIMIT = 4
+
+# ⚠️ КАРТОЧКА КЛЮЧУЕТСЯ ПО ТИКЕРУ АКЦИИ, А asset_id КАНДИДАТА — ЭТО ФЬЮЧЕРС.
+# У кандидата asset_id приходит из аномалии открытого интереса: SR, SBERF, GZ. Взять
+# его как secid значит не найти карточку никогда — поймано на первом же тесте.
+#
+# Резолвим через issuer_aliases: он знает и sectype, и assetcode, и тикер бумаги, и
+# ISIN, и имя из справки УК. Старая ticker_futures_map остаётся запасным вариантом,
+# но она беднее — один sectype на тикер, из-за чего у Газпрома там вечный GAZPF, а
+# квартальный GZ не резолвится вовсе. Это первый потребитель справочника в конвейере,
+# и он же показывает, зачем справочник заводился.
+_RESOLVE_SECID = text("""
+    SELECT s.secid
+    FROM issuer_aliases a
+    JOIN issuer_securities s ON s.issuer_id = a.issuer_id AND s.share_class = 'common'
+    WHERE a.alias_value = :v AND a.instrument_kind <> 'bond'
+    LIMIT 1
+""")
+
+
+def _secid_for_card(db, asset_id: str, tickers) -> str | None:
+    """Тикер обыкновенной акции, под которым лежит карточка компании."""
+    for ключ in [asset_id] + [t for t in (tickers or []) if t]:
+        if not ключ:
+            continue
+        secid = db.execute(_RESOLVE_SECID, {"v": ключ}).scalar()
+        if secid:
+            return secid
+    # Запасной путь: старая карта фьючерс → акция.
+    return db.execute(_SELECT_STOCK_FOR_FUTURES, {"f": asset_id}).scalar()
+
+
+_SELECT_FUND = text("""
+    SELECT m.metric_code, r.label_ru, r.unit, m.period_label, m.value
+    FROM company_metrics m
+    JOIN metrics_ref r USING (metric_code)
+    WHERE m.secid = :secid AND m.standard = 'MSFO'
+      AND m.metric_code = ANY(:codes)
+      AND m.period_type IN ('year', 'ltm')
+      AND m.value IS NOT NULL
+      AND m.last_seen >= CURRENT_DATE - INTERVAL '30 days'
+""")
+
+_SELECT_THESES = text("""
+    SELECT direction, statement, stated_date
+    FROM company_theses
+    WHERE issuer_id = (SELECT issuer_id FROM issuer_securities WHERE secid = :secid)
+      AND stated_date IS NOT NULL
+      AND stated_date >= :since
+    ORDER BY stated_date DESC
+    LIMIT 2
+""")
+
+
+def _fund_number(v) -> str:
+    """Числа в бриф идут уже человеческими: модель не должна их форматировать."""
+    v = float(v)
+    if abs(v) >= 1000:
+        return _ru(round(v))
+    if abs(v) >= 10:
+        return _ru(round(v, 1))
+    return _ru(round(v, 2))
+
+
+def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
+                          trace=None) -> dict:
+    """Несколько чисел из карточки, относящихся к поводу, и датированные тезисы."""
+    # ⚠️ ПОСТ НЕ ПРО ОДНУ КОМПАНИЮ — ФУНДАМЕНТ НЕ ПРИ ЧЁМ. Кандидат 748 («исторические
+    # минимумы обновляют более 30 акций») размечен шестью тикерами, и блок цеплял
+    # отчётность АЛРОСЫ — первой попавшейся. В обзорном посте это не контекст, а
+    # приглашение свернуть на разговор об одной компании, которая тут ни при чём.
+    if len([t for t in (tickers or []) if t]) > 2:
+        if trace:
+            trace.record("company_metrics", "фундамент под обзорный пост",
+                         outcome=НЕ_ВЗЯТО, result_count=0,
+                         reason="в кандидате %d тикеров — пост не про одну компанию"
+                                % len(tickers))
+        return {}
+
+    secid = _secid_for_card(db, asset_id, tickers)
+    if not secid:
+        if trace:
+            trace.record("issuer_aliases", "какая компания за %s" % asset_id,
+                         outcome=ПУСТО, reason="ключ не резолвится в эмитента")
+        return {}
+    codes = _FUND_BY_EVENT.get(event_type or "", _FUND_DEFAULT)
+    rows = db.execute(_SELECT_FUND, {"secid": secid, "codes": codes}).fetchall()
+    if not rows:
+        if trace:
+            trace.record("company_metrics", "фундамент %s под повод «%s»" % (secid, event_type),
+                         outcome=ПУСТО, result_count=0,
+                         reason="карточки нет или показатели пустые")
+        return {}
+
+    # Собираем «прошлый год → сейчас». LTM — это «сейчас»; за «прошлый год» берём
+    # последний ПОЛНЫЙ год, он же самый свежий year-период.
+    по_коду = {}
+    for code, label, unit, period, value in rows:
+        d = по_коду.setdefault(code, {"label": label, "unit": unit, "years": {}})
+        if period == "LTM":
+            d["ltm"] = float(value)
+        else:
+            d["years"][period] = float(value)
+
+    out, взято = {}, 0
+    for code in codes:                      # порядок = приоритет для повода
+        if взято >= _FUND_LIMIT:
+            break
+        d = по_коду.get(code)
+        if not d:
+            continue
+        годы = sorted(d["years"])
+        сейчас = d.get("ltm", d["years"].get(годы[-1]) if годы else None)
+        было = d["years"].get(годы[-1]) if годы else None
+        if сейчас is None:
+            continue
+        ед = (" " + d["unit"]) if d["unit"] and "%" not in d["unit"] else ("%" if d["unit"] else "")
+        # ⚠️ Показатель без изменения отдаём одним числом, а не парой: «выручка
+        # 712,8 → 712,8» выглядит как значимая динамика, которой нет.
+        if было is not None and abs(сейчас - было) > abs(было) * 0.02:
+            out[d["label"]] = "%s → %s%s (было за %s, стало за последние 12 мес)" % (
+                _fund_number(было), _fund_number(сейчас), ед, годы[-1])
+        else:
+            out[d["label"]] = "%s%s" % (_fund_number(сейчас), ед)
+        взято += 1
+
+    # Тезисы smart-lab — датированные утверждения о компании. Берём только свежие:
+    # «Сухой Лог запустят в 2028-2029» от 2025 года содержателен, тот же тезис от
+    # 2019 — уже история, а не контекст.
+    тезисы = []
+    for direction, statement, stated in db.execute(
+            _SELECT_THESES, {"secid": secid, "since": as_of - timedelta(days=730)}).fetchall():
+        # ⚠️ Двойное экранирование у источника: в тезисах приезжает «&quot;подарила&quot;».
+        # Парсер снимает один слой, а их два. Чистим и здесь тоже: уже записанные строки
+        # сами не исправятся, а показывать модели разметку нельзя — она её процитирует.
+        statement = html.unescape(html.unescape(statement or "")).strip()
+        тезисы.append("%s (%s, %s)" % (statement, stated.strftime("%d.%m.%Y"),
+                                       "в плюс" if direction == "growth" else "в минус"))
+    if тезисы:
+        out["чем_объясняют"] = тезисы
+
+    if trace:
+        trace.record("company_metrics", "фундамент %s под повод «%s»" % (secid, event_type),
+                     outcome=ВЗЯТО, result_count=взято,
+                     result_note="; ".join("%s: %s" % (k, v) for k, v in list(out.items())[:3])[:200],
+                     params={"secid": secid, "event_type": event_type, "codes": codes})
+
+    if out:
+        out["ГРАНИЦА"] = (
+            "МАКСИМУМ ОДНО число отсюда в посте, и только если оно объясняет ПОВОД. "
+            "Это фон, а не тема: пост про событие, а не про отчётность. Показатель без "
+            "связи с поводом не упоминать вовсе — лишнее число делает абзац отчётом. "
+            "Даты у тезисов называть обязательно: это чужое мнение на конкретный день, "
+            "а не наш вывод."
+        )
+    return out
+
 def _build_brief(db, row) -> dict:
     """ЕДИНСТВЕННЫЙ сборщик брифа — для Шага В (писатель) и Шага Г (судья).
 
@@ -1159,6 +1357,9 @@ def _build_brief(db, row) -> dict:
                                              row["tickers"], row["signal_date"]),
         "связанные_компании": _related_context(db, row["tickers"], row["signal_date"],
                                                trace=_trace),
+        "фундамент_компании": _company_fundamentals(
+            db, row["asset_id"], row["tickers"], row["event_type"], row["signal_date"],
+            trace=_trace),
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
             pos),

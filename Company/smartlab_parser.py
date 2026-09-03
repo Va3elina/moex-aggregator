@@ -133,7 +133,10 @@ DOC_ROWS = {"Финансовый отчет": "financial_report",
 # ---------------------------------------------------------------- утилиты HTML
 
 def strip_tags(s: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", s))).strip()
+    # ⚠️ unescape ДВАЖДЫ: у smart-lab встречается двойное экранирование, и после
+    # одного прохода в тексте остаётся «&quot;подарила&quot;». Модель такую разметку
+    # не отличает от текста и цитирует её в посте.
+    return re.sub(r"\s+", " ", html.unescape(html.unescape(re.sub(r"<[^>]+>", "", s)))).strip()
 
 
 def _sleep_polite(base: float = POLITE_DELAY):
