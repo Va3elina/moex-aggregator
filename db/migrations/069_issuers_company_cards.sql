@@ -79,10 +79,20 @@ CREATE TABLE IF NOT EXISTS issuer_aliases (
     -- NULL, когда ключ не различает класс бумаги: имя «Сбербанк» в справке УК может
     -- относиться к любой из двух бумаг, а sectype 'SP' — однозначно к SBERP.
     secid        VARCHAR(24) REFERENCES issuer_securities(secid) ON DELETE SET NULL,
+    -- ⚠️ ВИД ИНСТРУМЕНТА. Резолвер обязан быть ПОЛНЫМ (знать и облигации эмитента),
+    -- а карточка акции — УЗКОЙ. Без этой колонки одно из двух ломается: либо строка
+    -- «Сбер Sb15R» не резолвится ни во что, либо резолвится как акция. У Сбера в
+    -- составах фондов 14 облигационных ISIN и 17 имён, при этом цен и доходностей по
+    -- облигациям в проекте нет вообще — класть в карточку нечего, а знать надо.
+    -- Карточка акции фильтрует: instrument_kind IN ('share','future').
+    instrument_kind VARCHAR(12) NOT NULL DEFAULT 'share',  -- share | future | bond | other
     source       VARCHAR(40) NOT NULL DEFAULT 'manual',
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (alias_type, alias_value)
 );
+-- Для таблицы, созданной предыдущим прогоном этого файла (по образцу 023).
+ALTER TABLE issuer_aliases ADD COLUMN IF NOT EXISTS instrument_kind VARCHAR(12) NOT NULL DEFAULT 'share';
+CREATE INDEX IF NOT EXISTS idx_issuer_aliases_kind ON issuer_aliases (instrument_kind);
 CREATE INDEX IF NOT EXISTS idx_issuer_aliases_issuer ON issuer_aliases (issuer_id);
 
 -- ======================================================================
@@ -226,36 +236,77 @@ ON CONFLICT (secid) DO UPDATE
 
 -- Алиасы. Имена из справок УК взяты не из головы, а из реальных значений
 -- fund_holdings_history.asset_name на проде (03.09.2026) — их у Сбера восемь штук.
-INSERT INTO issuer_aliases (alias_type, alias_value, issuer_id, secid, source)
-SELECT v.t, v.val, i.issuer_id, v.secid, 'seed_069'
+INSERT INTO issuer_aliases (alias_type, alias_value, issuer_id, secid, instrument_kind, source)
+SELECT v.t, v.val, i.issuer_id, v.secid, v.kind, 'seed_069'
 FROM issuers i,
      (VALUES
-        ('secid',           'SBER',                                              'SBER'),
-        ('secid',           'SBERP',                                             'SBERP'),
-        ('isin',            'RU0009029540',                                      'SBER'),
-        ('isin',            'RU0009029557',                                      'SBERP'),
-        ('sectype',         'SR',                                                'SBER'),
-        ('sectype',         'SBERF',                                             'SBER'),
-        ('sectype',         'SP',                                                'SBERP'),
-        ('assetcode',       'SBRF',                                              'SBER'),
-        ('assetcode',       'SBERF',                                             'SBER'),
-        ('assetcode',       'SBPR',                                              'SBERP'),
-        ('smartlab',        'SBER',                                              'SBER'),
-        ('display_name',    'Сбербанк',                                          NULL),
-        ('display_name',    'Сбербанк (прив)',                                   'SBERP'),
-        ('display_name',    'Сбербанк (вечн)',                                   'SBER'),
-        ('fund_asset_name', 'Сбербанк',                                          NULL),
-        ('fund_asset_name', 'Публичное акционерное общество "Сбербанк России"',  NULL),
-        ('fund_asset_name', 'ПАО "Сбербанк России"',                             NULL),
-        ('fund_asset_name', 'Сбербанк России, акция об.',                        'SBER'),
-        ('fund_asset_name', 'Сбербанк, ао, 10301481B',                           'SBER'),
-        ('fund_asset_name', 'Сбербанк-п',                                        'SBERP'),
-        ('fund_asset_name', 'Сбербанк России, акция прив.',                      'SBERP'),
-        ('fund_asset_name', 'Сбербанк, ап, 20301481B',                           'SBERP')
-     ) AS v(t, val, secid)
+        -- акции
+        ('secid',           'SBER',                                              'SBER',  'share'),
+        ('secid',           'SBERP',                                             'SBERP', 'share'),
+        ('isin',            'RU0009029540',                                      'SBER',  'share'),
+        ('isin',            'RU0009029557',                                      'SBERP', 'share'),
+        ('smartlab',        'SBER',                                              'SBER',  'share'),
+        ('display_name',    'Сбербанк',                                          NULL,    'share'),
+        ('display_name',    'Сбербанк (прив)',                                   'SBERP', 'share'),
+        ('fund_asset_name', 'Сбербанк',                                          NULL,    'share'),
+        ('fund_asset_name', 'Публичное акционерное общество "Сбербанк России"',  NULL,    'share'),
+        ('fund_asset_name', 'ПАО "Сбербанк России"',                             NULL,    'share'),
+        ('fund_asset_name', 'Сбербанк России, акция об.',                        'SBER',  'share'),
+        ('fund_asset_name', 'Сбербанк, ао, 10301481B',                           'SBER',  'share'),
+        ('fund_asset_name', 'Сбербанк-п',                                        'SBERP', 'share'),
+        ('fund_asset_name', 'Сбербанк России, акция прив.',                      'SBERP', 'share'),
+        ('fund_asset_name', 'Сбербанк, ап, 20301481B',                           'SBERP', 'share'),
+        -- фьючерсы
+        ('sectype',         'SR',                                                'SBER',  'future'),
+        ('sectype',         'SBERF',                                             'SBER',  'future'),
+        ('sectype',         'SP',                                                'SBERP', 'future'),
+        ('assetcode',       'SBRF',                                              'SBER',  'future'),
+        ('assetcode',       'SBERF',                                             'SBER',  'future'),
+        ('assetcode',       'SBPR',                                              'SBERP', 'future'),
+        ('display_name',    'Сбербанк (вечн)',                                   'SBER',  'future'),
+        -- облигации: у нас НЕТ ни цен, ни доходностей по ним — только присутствие в
+        -- составах фондов. Заводим, чтобы строка резолвилась в Сбербанк и при этом
+        -- НЕ попадала в карточку акции. ISIN'ы из fund_holdings_history на 03.09.2026.
+        ('isin',            'RU000A101C89',                                      NULL,    'bond'),
+        ('isin',            'RU000A101QW2',                                      NULL,    'bond'),
+        ('isin',            'RU000A1025U5',                                      NULL,    'bond'),
+        ('isin',            'RU000A102CU4',                                      NULL,    'bond'),
+        ('isin',            'RU000A102HC1',                                      NULL,    'bond'),
+        ('isin',            'RU000A102RS6',                                      NULL,    'bond'),
+        ('isin',            'RU000A103G75',                                      NULL,    'bond'),
+        ('isin',            'RU000A103KG4',                                      NULL,    'bond'),
+        ('isin',            'RU000A103WV8',                                      NULL,    'bond'),
+        ('isin',            'RU000A103YM3',                                      NULL,    'bond'),
+        ('isin',            'RU000A105SD9',                                      NULL,    'bond'),
+        ('isin',            'RU000A1069P3',                                      NULL,    'bond'),
+        ('isin',            'RU000A10DS74',                                      NULL,    'bond'),
+        -- ⚠️ ИМЕНА ОБЛИГАЦИЙ ЗАВЕДЕНЫ ОТДЕЛЬНО ОТ ISIN НЕ ИЗ ПЕДАНТИЗМА. Две из них
+        -- приходят в справках УК под ISIN'ом ОБЫКНОВЕННОЙ АКЦИИ RU0009029540
+        -- («Сбербанк России, 001Р-SBER51» и «002СУБ-02R», 18 строк в
+        -- fund_holdings_history), а ещё 182 строки — вообще без ISIN. То есть для
+        -- этих бумаг ISIN как ключ ЛЖЁТ, и различить их можно только по имени.
+        ('fund_asset_name', 'Сбер Sb15R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb16R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb17R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb19R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb24R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb32R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb33R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb42R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb44R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb51R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер Sb01G',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер SbD1R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбер2СУБ2R',                                        NULL,    'bond'),
+        ('fund_asset_name', 'Сбербанк России, 001Р-SBER51',                      NULL,    'bond'),
+        ('fund_asset_name', 'Сбербанк России, 002СУБ-02R',                       NULL,    'bond'),
+        ('fund_asset_name', 'Сбербанк, 001Р-SBER51, 4B02-804-01481-B-001P',      NULL,    'bond'),
+        ('fund_asset_name', 'Сбербанк, 002СУБ-02R, 4-02-01481-B-002P',           NULL,    'bond')
+     ) AS v(t, val, secid, kind)
 WHERE i.issuer_key = 'SBER'
 ON CONFLICT (alias_type, alias_value) DO UPDATE
-   SET issuer_id = EXCLUDED.issuer_id, secid = EXCLUDED.secid;
+   SET issuer_id = EXCLUDED.issuer_id, secid = EXCLUDED.secid,
+       instrument_kind = EXCLUDED.instrument_kind;
 
 COMMENT ON TABLE issuer_aliases IS
   'Резолвер: любой ключ (тикер, ISIN, sectype, assetcode, имя из справки УК, подпись '
@@ -267,3 +318,8 @@ COMMENT ON COLUMN company_metrics.note IS
 COMMENT ON COLUMN company_shareholders.structure_as_of IS
   'Дата, на которую smart-lab обновлял структуру. У Сбера 08.05.2020 — там до сих пор '
   '«Американские инвесторы 33%». Отдавать агенту структуру БЕЗ этой даты нельзя.';
+
+COMMENT ON COLUMN issuer_aliases.instrument_kind IS
+  'share | future | bond | other. Резолвер полный, карточка узкая: карточка акции '
+  'берёт только share и future. Облигации Сбера заведены без собственных рядов — '
+  'цен и доходностей по ним в проекте нет, но резолвиться они обязаны.';

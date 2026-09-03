@@ -15,6 +15,7 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -32,6 +33,24 @@ for _p in _root.parents:
 DB_URL = os.getenv("DB_URL")  # в контейнере уже в окружении
 
 QUARTER_END = {"1": (3, 31), "2": (6, 30), "3": (9, 30), "4": (12, 31)}
+
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+log = logging.getLogger("company_card_loader")
+
+
+def setup_logging():
+    """Полный лог + отдельный лог ошибок — как у фетчеров проекта."""
+    LOG_DIR.mkdir(exist_ok=True)
+    day = date.today().strftime("%Y%m")
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+    log.setLevel(logging.DEBUG)
+    log.handlers.clear()
+    for path, level in ((LOG_DIR / f"loader_{day}.log", logging.DEBUG),
+                        (LOG_DIR / f"loader_errors_{day}.log", logging.WARNING)):
+        h = logging.FileHandler(path, encoding="utf-8")
+        h.setLevel(level); h.setFormatter(fmt); log.addHandler(h)
+    c = logging.StreamHandler(sys.stderr)
+    c.setLevel(logging.INFO); c.setFormatter(fmt); log.addHandler(c)
 
 
 def period_end(period_type: str, label: str):
@@ -72,7 +91,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
+    setup_logging()
     card = json.loads(a.json_file.read_text(encoding="utf-8"))
+    log.info("загрузка %s из %s (снято %s)", a.issuer, a.json_file.name,
+             card.get("captured_at"))
     standard = card.get("standard", "MSFO")
     today = date.today()
     engine = create_engine(DB_URL)
@@ -155,7 +177,13 @@ def main():
                    "pt": m["period_type"], "pl": label, "pe": pend,
                    "v": m["value"], "n": m["note"], "raw": (m["raw"] or "")[:40],
                    "rd": rd, "d": today})
-            stats["metrics_changed" if cur else "metrics_new"] += 1
+            if cur:
+                # Значение переписали задним числом — это событие, а не рутина.
+                log.info("ревизия: %s %s %s %s: %s → %s",
+                         secid, m["metric_code"], m["period_type"], label, cur[1], m["value"])
+                stats["metrics_changed"] += 1
+            else:
+                stats["metrics_new"] += 1
 
         # --- дивиденды
         for d in card.get("dividend_payments", []):
@@ -209,8 +237,16 @@ def main():
 
         if a.dry_run:
             conn.rollback()
-            print("DRY-RUN, откат")
+            log.info("DRY-RUN, откат")
 
+    if stats["metrics_skipped_no_secid"]:
+        # Строки префа у эмитента без префа — норма. Но если счётчик вдруг большой,
+        # значит бумага не заведена в issuer_securities, и данные молча теряются.
+        log.warning("пропущено строк без бумаги нужного класса: %d",
+                    stats["metrics_skipped_no_secid"])
+    if stats["metrics_new"] == 0 and stats["metrics_touched"] == 0:
+        log.error("не загружено ни одной метрики — проверьте JSON и сид эмитента")
+    log.info("итог: %s", json.dumps(stats, ensure_ascii=False))
     print(json.dumps(stats, ensure_ascii=False, indent=1))
 
 

@@ -34,6 +34,7 @@
 import argparse
 import html
 import json
+import logging
 import re
 import sys
 import time
@@ -41,10 +42,45 @@ import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
+
 BASE = "https://smart-lab.ru/q"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 POLITE_DELAY = 0.5  # в разведке 223 бумаги × 2 страницы прошли без блокировок
+
+log = logging.getLogger("smartlab_parser")
+
+
+def setup_logging(verbose: bool = False):
+    """
+    Двойное логирование по образцу Macro/fetch_market_cap.py: полный лог отдельно,
+    ошибки отдельно. Причина ровно та же, что и у фетчеров: прогон по 86 эмитентам
+    идёт ~30 минут, и при разборе «почему у компании X пусто» листать общий лог
+    бессмысленно — нужен файл, в котором только то, что сломалось.
+    """
+    LOG_DIR.mkdir(exist_ok=True)
+    day = date.today().strftime("%Y%m")
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+
+    log.setLevel(logging.DEBUG)
+    log.handlers.clear()
+
+    full = logging.FileHandler(LOG_DIR / f"smartlab_parser_{day}.log", encoding="utf-8")
+    full.setLevel(logging.DEBUG)
+    full.setFormatter(fmt)
+    log.addHandler(full)
+
+    errors = logging.FileHandler(LOG_DIR / f"smartlab_parser_errors_{day}.log", encoding="utf-8")
+    errors.setLevel(logging.WARNING)
+    errors.setFormatter(fmt)
+    log.addHandler(errors)
+
+    console = logging.StreamHandler(sys.stderr)
+    console.setLevel(logging.DEBUG if verbose else logging.INFO)
+    console.setFormatter(fmt)
+    log.addHandler(console)
 
 # Показатели, у которых ноль почти наверняка означает «не заполнено».
 # Всё это уровни/остатки: у работающей компании они нулём не бывают.
@@ -94,13 +130,22 @@ def fetch(url: str, cache_dir: Path | None) -> str | None:
         cached = cache_dir / (re.sub(r"[^A-Za-z0-9]+", "_", url).strip("_") + ".html")
         if cached.exists():
             return cached.read_text(encoding="utf-8", errors="replace")
+    if cache_dir and cached.exists():
+        log.debug("кэш: %s", url)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             body = r.read().decode("utf-8", errors="replace")
+        log.debug("получено %d Б: %s", len(body), url)
     except urllib.error.HTTPError as ex:
         if ex.code == 404:
+            # 404 — норма, а не сбой: у WTCM, JETL, MONO карточки нет.
+            log.warning("404 (страницы нет): %s", url)
             return None
+        log.error("HTTP %s: %s", ex.code, url)
+        raise
+    except Exception as ex:
+        log.error("сеть упала на %s: %s", url, ex)
         raise
     time.sleep(POLITE_DELAY)
     if cache_dir:
@@ -143,6 +188,10 @@ def parse_financials(page_html: str, period_type: str):
     table = re.search(r'<table[^>]*class="[^"]*financials[^"]*"[^>]*>.*?</table>',
                       page_html, re.S)
     if not table:
+        # Страница есть, а таблицы нет — либо смена вёрстки, либо у компании нет
+        # отчётности этого стандарта. Тихо возвращать пустоту нельзя: так пропадёт
+        # ровно тот случай, когда сайт переехал и парсер надо чинить.
+        log.warning("таблица financials не найдена (%s) — вёрстка или нет данных", period_type)
         return [], [], {}, []
     trs = re.findall(r"<tr[^>]*>(.*?)</tr>", table.group(0), re.S)
 
@@ -158,6 +207,7 @@ def parse_financials(page_html: str, period_type: str):
             header_idx = i
             break
     if header_idx is None:
+        log.warning("шапка периодов не распознана (%s) — вёрстка изменилась", period_type)
         return [], [], {}, []
 
     report_dates, documents, metrics = {}, [], []
@@ -193,10 +243,15 @@ def parse_financials(page_html: str, period_type: str):
                 continue
             raw = cs[col][0]
             value = parse_number(raw)
+            if value is None and raw.strip() not in ("", "-", "—", "?"):
+                # Текст, который не разобрался в число: единица измерения уехала,
+                # появился новый формат. Молча терять такое нельзя.
+                log.warning("не разобрано число: %s %s = %r", canon, per, raw)
             note = None
             if value == 0.0 and canon in ZERO_IS_MISSING and canon not in TRUE_ZERO_OK:
                 # Ловушка Роснефти: ноль здесь означает «smart-lab не заполнил».
                 value, note = None, "zero_as_missing"
+                log.info("ноль как пропуск: %s %s (%s)", canon, per, label)
             if value is None and not note and raw.strip() in ("", "-", "—"):
                 note = "no_data"
             metrics.append({
@@ -326,19 +381,32 @@ def main():
     ap.add_argument("--standard", default="MSFO", choices=["MSFO", "RSBU"])
     ap.add_argument("--cache-dir", type=Path)
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
 
-    res = parse_company(a.ticker, a.standard, a.cache_dir)
+    setup_logging(a.verbose)
+    log.info("старт: %s (%s)", a.ticker, a.standard)
+    try:
+        res = parse_company(a.ticker, a.standard, a.cache_dir)
+    except Exception:
+        log.exception("парсер упал на %s", a.ticker)
+        raise
     codes = {m["metric_code"] for m in res["metrics"]}
     filled = sum(1 for m in res["metrics"] if m["value"] is not None)
-    print(f"{a.ticker}: страницы={res['pages']} метрик={len(res['metrics'])} "
-          f"кодов={len(codes)} заполнено={filled} "
-          f"zero_as_missing={sum(1 for m in res['metrics'] if m['note']=='zero_as_missing')} "
-          f"факторов={len(res.get('factors', []))}/{res.get('factors_total')} "
-          f"выплат={len(res.get('dividend_payments', []))} "
-          f"акционеров={len(res.get('shareholders', []))} "
-          f"(структура от {res.get('shareholders_as_of')}) "
-          f"документов={len(res['documents'])}", file=sys.stderr)
+    zeros = sum(1 for m in res["metrics"] if m["note"] == "zero_as_missing")
+    log.info("%s: страницы=%s метрик=%d кодов=%d заполнено=%d zero_as_missing=%d "
+             "факторов=%s/%s выплат=%d акционеров=%d (структура от %s) документов=%d",
+             a.ticker, res["pages"], len(res["metrics"]), len(codes), filled, zeros,
+             len(res.get("factors", [])), res.get("factors_total"),
+             len(res.get("dividend_payments", [])), len(res.get("shareholders", [])),
+             res.get("shareholders_as_of"), len(res["documents"]))
+
+    # Пустая карточка — не успех. Если страница отдалась, а метрик нет, это сбой парсера.
+    if res["pages"].get("year") and not res["metrics"]:
+        log.error("%s: годовая страница есть, а метрик ноль — парсер сломан", a.ticker)
+    if res.get("shareholders") and not res.get("shareholders_as_of"):
+        log.warning("%s: структура акционеров без даты обновления — отдавать агенту нельзя",
+                    a.ticker)
     out = json.dumps(res, ensure_ascii=False, indent=1)
     if a.out:
         a.out.write_text(out, encoding="utf-8")
