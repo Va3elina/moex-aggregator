@@ -161,7 +161,7 @@ const COLORS = {
 
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { theme: _theme } = useTheme();
   const navigate = useNavigate();
 

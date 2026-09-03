@@ -40,7 +40,6 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
-import EditorialChip from '../components/editorial/EditorialChip';
 
 type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -67,7 +66,7 @@ const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
-    const { isAuthenticated, user } = useAuth();
+    const { isAuthenticated } = useAuth();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // EMA-период: 20 (очень краткосрок), 50 (краткосрок), 100 (среднесрок),
