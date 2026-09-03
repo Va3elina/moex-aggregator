@@ -154,30 +154,6 @@ export default function Layout() {
                 </>
               )}
               <span
-                className={
-                  isEditorial
-                    ? 'px-2 py-0.5 font-bold tracking-wider hidden lg:inline'
-                    : 'px-2 py-0.5 font-medium rounded-full hidden lg:inline'
-                }
-                style={
-                  isEditorial
-                    ? {
-                        fontSize: 'var(--fs-2xs)',
-                        color: 'var(--text-primary)',
-                        border: '1.5px solid var(--text-primary)',
-                        borderRadius: '4px',
-                        textTransform: 'uppercase',
-                      }
-                    : {
-                        fontSize: 'var(--fs-2xs)',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'var(--border-color)',
-                      }
-                }
-              >
-                Beta
-              </span>
-              <span
                 title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
                 className={`w-2 h-2 rounded-full hidden xl:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
               />

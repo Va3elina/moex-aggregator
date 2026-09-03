@@ -2,7 +2,7 @@
  * MobileTopBar — компактный header для мобильной версии.
  *
  * Default mode (главные страницы индикаторов):
- *   - Логотип «Фрейм» (link на /) + Beta-тег
+ *   - Логотип «Фрейм» (link на /)
  *   - Иконка темы / PLUS / Аватар справа
  *
  * Back mode (передан `onBack` через MobileLayout):
@@ -47,7 +47,6 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
             <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
               <FrameLogo size={18} color="var(--accent)" />
             </Link>
-            <span className="fm-beta-tag">Beta</span>
           </>
         )}
       </div>

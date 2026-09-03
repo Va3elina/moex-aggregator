@@ -75,17 +75,6 @@
   color: var(--accent);
 }
 
-.fm-beta-tag {
-  font-size: clamp(8px, 2.5vw, 10px);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text-primary);
-  border: 1.5px solid var(--text-primary);
-  border-radius: 3px;
-  padding: 1px 5px;
-  text-transform: uppercase;
-}
-
 .fm-topbar-right {
   display: flex;
   gap: clamp(5px, 1.8vw, 8px);
