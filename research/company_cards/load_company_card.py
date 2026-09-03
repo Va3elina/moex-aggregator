@@ -95,7 +95,6 @@ def main():
     card = json.loads(a.json_file.read_text(encoding="utf-8"))
     log.info("загрузка %s из %s (снято %s)", a.issuer, a.json_file.name,
              card.get("captured_at"))
-    standard = card.get("standard", "MSFO")
     today = date.today()
     engine = create_engine(DB_URL)
     stats = {"metrics_new": 0, "metrics_touched": 0, "metrics_changed": 0,
@@ -119,9 +118,13 @@ def main():
             """), {"c": code, "l": label, "u": unit})
             stats["metrics_ref"] += 1
 
-        rdates = {("year", k): as_date(v) for k, v in card.get("report_dates_year", {}).items()}
-        rdates.update({("quarter", k): as_date(v)
-                       for k, v in card.get("report_dates_quarter", {}).items()})
+        # Даты отчётов теперь свои у каждого стандарта: у Сбера годовой МСФО за 2025
+        # опубликован 26.02.2026, а РСБУ за тот же год — 20.01.2026.
+        rdates = {}
+        for pt, key in (("year", "report_dates_year"), ("quarter", "report_dates_quarter")):
+            for std, per_map in card.get(key, {}).items():
+                for label, raw in per_map.items():
+                    rdates[(std, pt, label)] = as_date(raw)
 
         # --- метрики, SCD-2
         # ⚠️ LTM приходит ДВАЖДЫ: и с годовой страницы, и с квартальной. Значения там
@@ -129,8 +132,8 @@ def main():
         # версию строки вечно. Побеждает годовая страница (идёт первой).
         deduped, seen_keys = [], set()
         for m in card["metrics"]:
-            k = (m["share_class"], m["metric_code"], m["period_type"],
-                 "LTM" if m["period"] is None else m["period"])
+            k = (m["share_class"], m["metric_code"], m.get("standard", "MSFO"),
+                 m["period_type"], "LTM" if m["period"] is None else m["period"])
             if k in seen_keys:
                 continue
             seen_keys.add(k)
@@ -143,9 +146,11 @@ def main():
                 # без префа. Молча терять нельзя, поэтому считаем.
                 stats["metrics_skipped_no_secid"] += 1
                 continue
+            standard = m.get("standard", "MSFO")
             label = "LTM" if m["period"] is None else m["period"]
             pend = period_end(m["period_type"], label)
-            rd = rdates.get((m["period_type"], label)) or rdates.get(("year", label))
+            rd = (rdates.get((standard, m["period_type"], label))
+                  or rdates.get((standard, "year", label)))
 
             cur = conn.execute(text("""
                 SELECT id, value, note FROM company_metrics

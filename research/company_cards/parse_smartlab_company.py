@@ -303,6 +303,68 @@ def parse_dividends(page_html: str):
     return payments, annual
 
 
+# ------------------------------------------------ список документов /f/l/
+
+# Заголовки секций на /q/<T>/f/l/ → тип документа. Это ОТДЕЛЬНАЯ страница, и брать
+# её обязательно: сводная таблица /f/y/ показывает ссылки только за те 5 лет, что в
+# ней помещаются (у Сбера 12 штук), а /f/l/ отдаёт весь архив — у Сбера 132 ссылки,
+# 83 из них PDF, с 2011 по 2026 год.
+DOC_SECTIONS = [
+    ("Годовые отчеты МСФО",      "financial_report_msfo_year"),
+    ("Квартальные отчеты МСФО",  "financial_report_msfo_quarter"),
+    ("Годовые отчеты РСБУ",      "financial_report_rsbu_year"),
+    ("Квартальные отчеты РСБУ",  "financial_report_rsbu_quarter"),
+    ("Годовые презентации",      "presentation"),
+    ("Годовые отчеты",           "annual_report"),   # ПОСЛЕДНИМ: подстрока остальных
+]
+
+
+def parse_documents_list(page_html: str):
+    """Все ссылки на первоисточники с разбивкой по секциям и годам."""
+    body = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", page_html, flags=re.S)
+
+    # Границы секций по заголовкам. Порядок в DOC_SECTIONS важен: «Годовые отчеты» —
+    # подстрока «Годовые отчеты МСФО», поэтому проверяется последним.
+    marks = []
+    for m in re.finditer(r"<h[123][^>]*>(.*?)</h[123]>", body, re.S):
+        title = strip_tags(m.group(1))
+        for name, doc_type in DOC_SECTIONS:
+            if title.startswith(name):
+                marks.append((m.start(), doc_type))
+                break
+    marks.sort()
+
+    def section_of(pos: int):
+        cur = None
+        for start, doc_type in marks:
+            if start <= pos:
+                cur = doc_type
+            else:
+                break
+        return cur
+
+    docs, seen = [], set()
+    for tr in re.finditer(r"<tr[^>]*>(.*?)</tr>", body, re.S):
+        cells = row_cells(tr.group(1))
+        # ⚠️ СМЕШАННЫЙ АЛФАВИТ. Квартал в списке документов подписан КИРИЛЛИЧЕСКОЙ «К»:
+        # «2026К2», а не «2026Q2» — при этом в таблицах отчётности тот же квартал
+        # написан латиницей. Без этого 71 квартальный документ приезжал без периода.
+        period = next((c[0] for c in cells
+                       if re.fullmatch(r"20\d\d([QКK][1-4])?", c[0])), None)
+        if period:
+            period = re.sub(r"[КK](?=[1-4]$)", "Q", period)
+        for _, _, links in cells:
+            for href in links:
+                if not href.startswith("http") or (href, period) in seen:
+                    continue
+                seen.add((href, period))
+                docs.append({"doc_type": section_of(tr.start()) or "other",
+                             "period": period or "", "url": href})
+    if not docs:
+        log.warning("страница /f/l/ отдалась, но ссылок на документы в ней нет")
+    return docs
+
+
 # ------------------------------------------------------------ акционеры
 
 def parse_shareholders(page_html: str):
@@ -342,26 +404,58 @@ def parse_factors(page_html: str):
 
 # ------------------------------------------------------------------ сборка
 
-def parse_company(ticker: str, standard: str = "MSFO", cache_dir: Path | None = None):
-    res = {"ticker": ticker, "standard": standard,
+def parse_company(ticker: str, standards=("MSFO", "RSBU"), cache_dir: Path | None = None):
+    """
+    standards: какие стандарты отчётности забирать. У Сбера МСФО даёт 52 кода, РСБУ —
+    49 со своими датами отчётов; у части компаний МСФО нет вовсе, и РСБУ — единственное,
+    что есть. Поэтому по умолчанию берём оба, а не только МСФО.
+
+    ЧЕГО ЗДЕСЬ СОЗНАТЕЛЬНО НЕТ (пересчитано по всем 57 маршрутам /q/<T>/*):
+      • 43 страницы вида /q/SBER/MSFO/<код>/ — по одному показателю каждая. Проверено
+        на net_income: глубина ТА ЖЕ, 5 лет + LTM. Нового там только CAGR за 5 лет и
+        изменения г/г, а они считаются из значений, которые уже забраны. 43 лишних
+        запроса на бумагу — это 3 700 запросов на вселенную ради нуля новых данных;
+      • /r/y/ и /r/q/ — те же таблицы в процентах изменений, тоже вычисляемо;
+      • /ir-rating/ — строки ir_* уже приходят в основной таблице;
+      • /f/y/MSFO/en — английская версия той же страницы.
+    """
+    if isinstance(standards, str):
+        standards = (standards,)
+    res = {"ticker": ticker, "standards": list(standards),
            "captured_at": datetime.now().isoformat(timespec="seconds"),
-           "pages": {}, "metrics": [], "documents": []}
+           "pages": {}, "metrics": [], "documents": [],
+           "report_dates_year": {}, "report_dates_quarter": {}}
 
-    y = fetch(f"{BASE}/{ticker}/f/y/{standard}/", cache_dir)
-    res["pages"]["year"] = y is not None
-    if y:
-        periods, metrics, rdates, docs = parse_financials(y, "year")
-        res["year_periods"], res["report_dates_year"] = periods, rdates
-        res["metrics"] += metrics
-        res["documents"] += docs
-        res["factors"], res["factors_total"] = parse_factors(y)
+    for standard in standards:
+        y = fetch(f"{BASE}/{ticker}/f/y/{standard}/", cache_dir)
+        res["pages"][f"year_{standard}"] = y is not None
+        if y:
+            periods, metrics, rdates, docs = parse_financials(y, "year")
+            res[f"year_periods_{standard}"] = periods
+            res["report_dates_year"][standard] = rdates
+            for m in metrics:
+                m["standard"] = standard
+            res["metrics"] += metrics
+            if standard == "MSFO":
+                # Факторы и ссылки в таблице не зависят от стандарта — берём один раз.
+                res["factors"], res["factors_total"] = parse_factors(y)
 
-    q = fetch(f"{BASE}/{ticker}/f/q/{standard}/", cache_dir)
-    res["pages"]["quarter"] = q is not None
-    if q:
-        periods, metrics, rdates, _ = parse_financials(q, "quarter")
-        res["quarter_periods"], res["report_dates_quarter"] = periods, rdates
-        res["metrics"] += metrics
+        q = fetch(f"{BASE}/{ticker}/f/q/{standard}/", cache_dir)
+        res["pages"][f"quarter_{standard}"] = q is not None
+        if q:
+            periods, metrics, rdates, _ = parse_financials(q, "quarter")
+            res[f"quarter_periods_{standard}"] = periods
+            res["report_dates_quarter"][standard] = rdates
+            for m in metrics:
+                m["standard"] = standard
+            res["metrics"] += metrics
+
+    # Полный архив первоисточников — отдельной страницей, а не тем огрызком,
+    # что помещается в сводную таблицу.
+    fl = fetch(f"{BASE}/{ticker}/f/l/", cache_dir)
+    res["pages"]["documents"] = fl is not None
+    if fl:
+        res["documents"] = parse_documents_list(fl)
 
     d = fetch(f"{BASE}/{ticker}/dividend/", cache_dir)
     res["pages"]["dividend"] = d is not None
@@ -378,16 +472,18 @@ def parse_company(ticker: str, standard: str = "MSFO", cache_dir: Path | None = 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ticker")
-    ap.add_argument("--standard", default="MSFO", choices=["MSFO", "RSBU"])
+    ap.add_argument("--standards", default="MSFO,RSBU",
+                    help="какие стандарты забирать, через запятую (MSFO,RSBU)")
     ap.add_argument("--cache-dir", type=Path)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
 
     setup_logging(a.verbose)
-    log.info("старт: %s (%s)", a.ticker, a.standard)
+    standards = tuple(x.strip() for x in a.standards.split(",") if x.strip())
+    log.info("старт: %s (%s)", a.ticker, ",".join(standards))
     try:
-        res = parse_company(a.ticker, a.standard, a.cache_dir)
+        res = parse_company(a.ticker, standards, a.cache_dir)
     except Exception:
         log.exception("парсер упал на %s", a.ticker)
         raise
@@ -402,7 +498,7 @@ def main():
              res.get("shareholders_as_of"), len(res["documents"]))
 
     # Пустая карточка — не успех. Если страница отдалась, а метрик нет, это сбой парсера.
-    if res["pages"].get("year") and not res["metrics"]:
+    if res["pages"].get("year_MSFO") and not res["metrics"]:
         log.error("%s: годовая страница есть, а метрик ноль — парсер сломан", a.ticker)
     if res.get("shareholders") and not res.get("shareholders_as_of"):
         log.warning("%s: структура акционеров без даты обновления — отдавать агенту нельзя",

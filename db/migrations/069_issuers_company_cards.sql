@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS issuer_aliases (
 );
 -- Для таблицы, созданной предыдущим прогоном этого файла (по образцу 023).
 ALTER TABLE issuer_aliases ADD COLUMN IF NOT EXISTS instrument_kind VARCHAR(12) NOT NULL DEFAULT 'share';
+-- Типы документов из /f/l/ длиннее исходных 24 символов (financial_report_msfo_quarter).
+ALTER TABLE company_documents ALTER COLUMN doc_type TYPE VARCHAR(40);
 CREATE INDEX IF NOT EXISTS idx_issuer_aliases_kind ON issuer_aliases (instrument_kind);
 CREATE INDEX IF NOT EXISTS idx_issuer_aliases_issuer ON issuer_aliases (issuer_id);
 
@@ -195,10 +197,15 @@ CREATE TABLE IF NOT EXISTS company_theses (
 -- Первый шаг по PDF — ТОЛЬКО ссылки. Текст и факты со страницами — отдельная задача:
 -- она тянет за собой проверяемость (документ + страница у каждого утверждения), и это
 -- не довесок к парсеру таблиц.
+--
+-- ⚠️ Ссылки берутся со страницы /q/<T>/f/l/, а НЕ из сводной таблицы /f/y/. В сводной
+-- видно только те 5 лет, что в неё помещаются (у Сбера 12 ссылок), а /f/l/ отдаёт
+-- весь архив: у Сбера 121 ссылка, 74 из них PDF, с 2011 по 2025 год.
 CREATE TABLE IF NOT EXISTS company_documents (
     issuer_id   INTEGER NOT NULL REFERENCES issuers(issuer_id) ON DELETE CASCADE,
-    doc_type    VARCHAR(24) NOT NULL,      -- financial_report | annual_report | presentation
-    period      VARCHAR(12) NOT NULL,      -- '2024', 'LTM'
+    -- annual_report | presentation | financial_report_{msfo,rsbu}_{year,quarter} | other
+    doc_type    VARCHAR(40) NOT NULL,
+    period      VARCHAR(12) NOT NULL,      -- '2024', '2024Q3', '' если год не указан
     url         TEXT NOT NULL,
     source      VARCHAR(24) NOT NULL DEFAULT 'smartlab',
     parsed      BOOLEAN NOT NULL DEFAULT FALSE,
