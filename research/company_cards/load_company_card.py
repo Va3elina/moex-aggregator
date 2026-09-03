@@ -34,6 +34,11 @@ DB_URL = os.getenv("DB_URL")  # в контейнере уже в окружен
 
 QUARTER_END = {"1": (3, 31), "2": (6, 30), "3": (9, 30), "4": (12, 31)}
 
+# Источник этого загрузчика. Он входит в уникальный ключ company_metrics, поэтому
+# переход на платный API не затрёт уже собранное: два ряда лягут рядом и будут
+# сверяться друг с другом.
+SOURCE = "smartlab"
+
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 log = logging.getLogger("company_card_loader")
 
@@ -152,13 +157,16 @@ def main():
             rd = (rdates.get((standard, m["period_type"], label))
                   or rdates.get((standard, "year", label)))
 
+            # source в условии обязателен: у одного показателя за один период может
+            # быть свой ряд из каждого источника, и сравнивать надо с ПРЕДЫДУЩИМ
+            # значением того же источника, а не с чужим.
             cur = conn.execute(text("""
                 SELECT id, value, note FROM company_metrics
                 WHERE secid=:s AND metric_code=:c AND standard=:st
-                  AND period_type=:pt AND period_label=:pl
+                  AND period_type=:pt AND period_label=:pl AND source=:src
                 ORDER BY first_seen DESC LIMIT 1
             """), {"s": secid, "c": m["metric_code"], "st": standard,
-                   "pt": m["period_type"], "pl": label}).fetchone()
+                   "pt": m["period_type"], "pl": label, "src": SOURCE}).fetchone()
 
             same = (cur is not None
                     and (cur[1] is None) == (m["value"] is None)
@@ -174,14 +182,14 @@ def main():
                 INSERT INTO company_metrics
                     (secid, metric_code, standard, period_type, period_label, period_end,
                      value, note, raw_text, report_date, source, first_seen, last_seen)
-                VALUES (:s,:c,:st,:pt,:pl,:pe,:v,:n,:raw,:rd,'smartlab',:d,:d)
-                ON CONFLICT (secid, metric_code, standard, period_type, period_label, first_seen)
+                VALUES (:s,:c,:st,:pt,:pl,:pe,:v,:n,:raw,:rd,:src,:d,:d)
+                ON CONFLICT (secid, metric_code, standard, period_type, period_label, source, first_seen)
                 DO UPDATE SET value=EXCLUDED.value, note=EXCLUDED.note,
                               raw_text=EXCLUDED.raw_text, last_seen=EXCLUDED.last_seen
             """), {"s": secid, "c": m["metric_code"], "st": standard,
                    "pt": m["period_type"], "pl": label, "pe": pend,
                    "v": m["value"], "n": m["note"], "raw": (m["raw"] or "")[:40],
-                   "rd": rd, "d": today})
+                   "rd": rd, "d": today, "src": SOURCE})
             if cur:
                 # Значение переписали задним числом — это событие, а не рутина.
                 log.info("ревизия: %s %s %s %s: %s → %s",
@@ -211,7 +219,7 @@ def main():
             conn.execute(text("""
                 INSERT INTO company_shareholders (issuer_id, holder, share_pct, structure_as_of)
                 VALUES (:i,:h,:p,:d)
-                ON CONFLICT (issuer_id, holder, structure_as_of) DO UPDATE
+                ON CONFLICT (issuer_id, holder, COALESCE(structure_as_of, DATE '0001-01-01')) DO UPDATE
                    SET share_pct=EXCLUDED.share_pct, updated_at=now()
             """), {"i": issuer_id, "h": h["holder"], "p": h["share_pct"], "d": as_of})
             stats["shareholders"] += 1
