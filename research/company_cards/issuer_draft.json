@@ -1,0 +1,1504 @@
+{
+ "собрано": "2026-09-03",
+ "строк": 92,
+ "кандидаты": [
+  {
+   "issuer_key": "T",
+   "secid": "T",
+   "class": "common",
+   "isin": "RU000A107UL4",
+   "fund_asset_name": "Т-Техно ао",
+   "funds_count": 19,
+   "futures_sectype": "TB",
+   "futures_assetcode": "T",
+   "smartlab_ticker": null,
+   "oi_display_name": "Т-Технологии"
+  },
+  {
+   "issuer_key": "SBER",
+   "secid": "SBER",
+   "class": "common",
+   "isin": "RU0009029540",
+   "fund_asset_name": "Сбербанк",
+   "funds_count": 18,
+   "futures_sectype": "SBERF",
+   "futures_assetcode": "SBERF",
+   "smartlab_ticker": "SBER",
+   "oi_display_name": "Сбербанк"
+  },
+  {
+   "issuer_key": "YDEX",
+   "secid": "YDEX",
+   "class": "common",
+   "isin": "RU000A107T19",
+   "fund_asset_name": "ЯНДЕКС",
+   "funds_count": 18,
+   "futures_sectype": "YD",
+   "futures_assetcode": "YDEX",
+   "smartlab_ticker": "YDEX",
+   "oi_display_name": "Яндекс"
+  },
+  {
+   "issuer_key": "PLZL",
+   "secid": "PLZL",
+   "class": "common",
+   "isin": "RU000A0JNAA8",
+   "fund_asset_name": "Полюс",
+   "funds_count": 16,
+   "futures_sectype": "PX",
+   "futures_assetcode": "PLZLM",
+   "smartlab_ticker": "PLZL",
+   "oi_display_name": "Полюс"
+  },
+  {
+   "issuer_key": "X5",
+   "secid": "X5",
+   "class": "common",
+   "isin": "RU000A108X38",
+   "fund_asset_name": "КЦ ИКС 5",
+   "funds_count": 16,
+   "futures_sectype": "X5",
+   "futures_assetcode": "X5",
+   "smartlab_ticker": "X5",
+   "oi_display_name": "X5 Group"
+  },
+  {
+   "issuer_key": "LKOH",
+   "secid": "LKOH",
+   "class": "common",
+   "isin": "RU0009024277",
+   "fund_asset_name": "ЛУКОЙЛ",
+   "funds_count": 15,
+   "futures_sectype": "LK",
+   "futures_assetcode": "LKOH",
+   "smartlab_ticker": "LKOH",
+   "oi_display_name": "Лукойл"
+  },
+  {
+   "issuer_key": "OZON",
+   "secid": "OZON",
+   "class": "common",
+   "isin": "RU000A10CW95",
+   "fund_asset_name": "Озон",
+   "funds_count": 15,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "OZON",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "GMKN",
+   "secid": "GMKN",
+   "class": "common",
+   "isin": "RU0007288411",
+   "fund_asset_name": "ГМКНорНик",
+   "funds_count": 15,
+   "futures_sectype": "GK",
+   "futures_assetcode": "GMKN",
+   "smartlab_ticker": "GMKN",
+   "oi_display_name": "Норильский никель"
+  },
+  {
+   "issuer_key": "TRNFP",
+   "secid": "TRNFP",
+   "class": "common",
+   "isin": "RU0009091573",
+   "fund_asset_name": "Транснф ап",
+   "funds_count": 15,
+   "futures_sectype": "TN",
+   "futures_assetcode": "TRNF",
+   "smartlab_ticker": null,
+   "oi_display_name": "Транснефть (прив)"
+  },
+  {
+   "issuer_key": "VTBR",
+   "secid": "VTBR",
+   "class": "common",
+   "isin": "RU000A0JP5V6",
+   "fund_asset_name": "ВТБ ао",
+   "funds_count": 15,
+   "futures_sectype": "VB",
+   "futures_assetcode": "VTBR",
+   "smartlab_ticker": "VTBR",
+   "oi_display_name": "ВТБ"
+  },
+  {
+   "issuer_key": "RAGR",
+   "secid": "RAGR",
+   "class": "common",
+   "isin": "RU000A0JQUZ6",
+   "fund_asset_name": "Русагро",
+   "funds_count": 15,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "RAGR",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "NVTK",
+   "secid": "NVTK",
+   "class": "common",
+   "isin": "RU000A0DKVS5",
+   "fund_asset_name": "Новатэк ао",
+   "funds_count": 14,
+   "futures_sectype": "NV",
+   "futures_assetcode": "NOTKM",
+   "smartlab_ticker": "NVTK",
+   "oi_display_name": "НОВАТЭК"
+  },
+  {
+   "issuer_key": "HEAD",
+   "secid": "HEAD",
+   "class": "common",
+   "isin": "RU000A107662",
+   "fund_asset_name": "Хэдхантер",
+   "funds_count": 14,
+   "futures_sectype": "HD",
+   "futures_assetcode": "HEAD",
+   "smartlab_ticker": "HEAD",
+   "oi_display_name": "HeadHunter"
+  },
+  {
+   "issuer_key": "GAZP",
+   "secid": "GAZP",
+   "class": "common",
+   "isin": "RU0007661625",
+   "fund_asset_name": "ГАЗПРОМ ао",
+   "funds_count": 14,
+   "futures_sectype": "GAZPF",
+   "futures_assetcode": "GAZPF",
+   "smartlab_ticker": "GAZP",
+   "oi_display_name": "Газпром"
+  },
+  {
+   "issuer_key": "ROSN",
+   "secid": "ROSN",
+   "class": "common",
+   "isin": "RU000A0J2Q06",
+   "fund_asset_name": "Роснефть",
+   "funds_count": 14,
+   "futures_sectype": "RN",
+   "futures_assetcode": "ROSN",
+   "smartlab_ticker": "ROSN",
+   "oi_display_name": "Роснефть"
+  },
+  {
+   "issuer_key": "DOMRF",
+   "secid": "DOMRF",
+   "class": "common",
+   "isin": "RU000A0ZZFU5",
+   "fund_asset_name": "ДОМ.РФ",
+   "funds_count": 14,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "DOMRF",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "IRAO",
+   "secid": "IRAO",
+   "class": "common",
+   "isin": "RU000A0JPNM1",
+   "fund_asset_name": "ИнтерРАОао",
+   "funds_count": 14,
+   "futures_sectype": "IR",
+   "futures_assetcode": "IRAO",
+   "smartlab_ticker": "IRAO",
+   "oi_display_name": "Интер РАО"
+  },
+  {
+   "issuer_key": "SNGS",
+   "secid": "SNGSP",
+   "class": "pref",
+   "isin": "RU0009029524",
+   "fund_asset_name": "Сургнфгз-п",
+   "funds_count": 13,
+   "futures_sectype": "SG",
+   "futures_assetcode": null,
+   "smartlab_ticker": "SNGS",
+   "oi_display_name": "Сургутнефтегаз (прив)"
+  },
+  {
+   "issuer_key": "CHMF",
+   "secid": "CHMF",
+   "class": "common",
+   "isin": "RU0009046510",
+   "fund_asset_name": "СевСт-ао",
+   "funds_count": 13,
+   "futures_sectype": "CH",
+   "futures_assetcode": "CHMF",
+   "smartlab_ticker": "CHMF",
+   "oi_display_name": "Северсталь"
+  },
+  {
+   "issuer_key": "MAGN",
+   "secid": "MAGN",
+   "class": "common",
+   "isin": "RU0009084396",
+   "fund_asset_name": "ММК",
+   "funds_count": 13,
+   "futures_sectype": "MG",
+   "futures_assetcode": "MAGN",
+   "smartlab_ticker": "MAGN",
+   "oi_display_name": "ММК"
+  },
+  {
+   "issuer_key": "TATN",
+   "secid": "TATN",
+   "class": "common",
+   "isin": "RU0009033591",
+   "fund_asset_name": "Татнфт 3ао",
+   "funds_count": 12,
+   "futures_sectype": "TT",
+   "futures_assetcode": "TATN",
+   "smartlab_ticker": "TATN",
+   "oi_display_name": "Татнефть"
+  },
+  {
+   "issuer_key": "MTSS",
+   "secid": "MTSS",
+   "class": "common",
+   "isin": "RU0007775219",
+   "fund_asset_name": "МТС-ао",
+   "funds_count": 12,
+   "futures_sectype": "MT",
+   "futures_assetcode": "MTSI",
+   "smartlab_ticker": "MTSS",
+   "oi_display_name": "МТС"
+  },
+  {
+   "issuer_key": "FLOT",
+   "secid": "FLOT",
+   "class": "common",
+   "isin": "RU000A0JXNU8",
+   "fund_asset_name": "Совкомфлот",
+   "funds_count": 12,
+   "futures_sectype": "FL",
+   "futures_assetcode": "FLOT",
+   "smartlab_ticker": "FLOT",
+   "oi_display_name": "Совкомфлот"
+  },
+  {
+   "issuer_key": "SVCB",
+   "secid": "SVCB",
+   "class": "common",
+   "isin": "RU000A0ZZAC4",
+   "fund_asset_name": "Совкомбанк",
+   "funds_count": 12,
+   "futures_sectype": "SC",
+   "futures_assetcode": "SVCB",
+   "smartlab_ticker": "SVCB",
+   "oi_display_name": "Совкомбанк"
+  },
+  {
+   "issuer_key": "PHOR",
+   "secid": "PHOR",
+   "class": "common",
+   "isin": "RU000A0JRKT8",
+   "fund_asset_name": "ФосАгро ао",
+   "funds_count": 12,
+   "futures_sectype": "PH",
+   "futures_assetcode": "PHOR",
+   "smartlab_ticker": "PHOR",
+   "oi_display_name": "ФосАгро"
+  },
+  {
+   "issuer_key": "NLMK",
+   "secid": "NLMK",
+   "class": "common",
+   "isin": "RU0009046452",
+   "fund_asset_name": "НЛМК ао",
+   "funds_count": 12,
+   "futures_sectype": "NM",
+   "futures_assetcode": "NLMK",
+   "smartlab_ticker": "NLMK",
+   "oi_display_name": "НЛМК"
+  },
+  {
+   "issuer_key": "MGNT",
+   "secid": "MGNT",
+   "class": "common",
+   "isin": "RU000A0JKQU8",
+   "fund_asset_name": "Магнит ао",
+   "funds_count": 12,
+   "futures_sectype": "MN",
+   "futures_assetcode": "MGNT",
+   "smartlab_ticker": "MGNT",
+   "oi_display_name": "Магнит"
+  },
+  {
+   "issuer_key": "AFKS",
+   "secid": "AFKS",
+   "class": "common",
+   "isin": "RU000A0DQZE3",
+   "fund_asset_name": "Система ао",
+   "funds_count": 11,
+   "futures_sectype": "AK",
+   "futures_assetcode": "AFKS",
+   "smartlab_ticker": "AFKS",
+   "oi_display_name": "АФК Система"
+  },
+  {
+   "issuer_key": "MOEX",
+   "secid": "MOEX",
+   "class": "common",
+   "isin": "RU000A0JR4A1",
+   "fund_asset_name": "МосБиржа",
+   "funds_count": 11,
+   "futures_sectype": "ME",
+   "futures_assetcode": "MOEX",
+   "smartlab_ticker": "MOEX",
+   "oi_display_name": "Московская биржа"
+  },
+  {
+   "issuer_key": "ALRS",
+   "secid": "ALRS",
+   "class": "common",
+   "isin": "RU0007252813",
+   "fund_asset_name": "АЛРОСА ао",
+   "funds_count": 11,
+   "futures_sectype": "AL",
+   "futures_assetcode": "ALRS",
+   "smartlab_ticker": "ALRS",
+   "oi_display_name": "АЛРОСА"
+  },
+  {
+   "issuer_key": "RENI",
+   "secid": "RENI",
+   "class": "common",
+   "isin": "RU000A0ZZM04",
+   "fund_asset_name": "Ренессанс",
+   "funds_count": 11,
+   "futures_sectype": "RD",
+   "futures_assetcode": "RENI",
+   "smartlab_ticker": "RENI",
+   "oi_display_name": "Ренессанс Страхование"
+  },
+  {
+   "issuer_key": "POSI",
+   "secid": "POSI",
+   "class": "common",
+   "isin": "RU000A103X66",
+   "fund_asset_name": "iПозитив",
+   "funds_count": 10,
+   "futures_sectype": "PS",
+   "futures_assetcode": "POSI",
+   "smartlab_ticker": "POSI",
+   "oi_display_name": "Positive Technologies"
+  },
+  {
+   "issuer_key": "RUAL",
+   "secid": "RUAL",
+   "class": "common",
+   "isin": "RU000A1025V3",
+   "fund_asset_name": "РУСАЛ ао",
+   "funds_count": 10,
+   "futures_sectype": "RL",
+   "futures_assetcode": "RUAL",
+   "smartlab_ticker": "RUAL",
+   "oi_display_name": "Русал"
+  },
+  {
+   "issuer_key": "SIBN",
+   "secid": "SIBN",
+   "class": "common",
+   "isin": "RU0009062467",
+   "fund_asset_name": "Газпрнефть",
+   "funds_count": 10,
+   "futures_sectype": "SO",
+   "futures_assetcode": "SIBN",
+   "smartlab_ticker": "SIBN",
+   "oi_display_name": "Газпром нефть"
+  },
+  {
+   "issuer_key": "RTKM",
+   "secid": "RTKM",
+   "class": "common",
+   "isin": "RU0008943394",
+   "fund_asset_name": "Ростел -ао",
+   "funds_count": 10,
+   "futures_sectype": "RT",
+   "futures_assetcode": "RTKM",
+   "smartlab_ticker": "RTKM",
+   "oi_display_name": "Ростелеком"
+  },
+  {
+   "issuer_key": "ASTR",
+   "secid": "ASTR",
+   "class": "common",
+   "isin": "RU000A106T36",
+   "fund_asset_name": "iАстра ао",
+   "funds_count": 10,
+   "futures_sectype": "AS",
+   "futures_assetcode": "ASTR",
+   "smartlab_ticker": "ASTR",
+   "oi_display_name": "Астра"
+  },
+  {
+   "issuer_key": "CNRU",
+   "secid": "CNRU",
+   "class": "common",
+   "isin": "RU000A10ANA1",
+   "fund_asset_name": "iЦиан",
+   "funds_count": 9,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "CNRU",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SNGS",
+   "secid": "SNGS",
+   "class": "common",
+   "isin": "RU0008926258",
+   "fund_asset_name": "Сургнфгз",
+   "funds_count": 9,
+   "futures_sectype": "SN",
+   "futures_assetcode": "SNGR",
+   "smartlab_ticker": "SNGS",
+   "oi_display_name": "Сургутнефтегаз"
+  },
+  {
+   "issuer_key": "TATN",
+   "secid": "TATNP",
+   "class": "pref",
+   "isin": "RU0006944147",
+   "fund_asset_name": "Татнфт 3ап",
+   "funds_count": 9,
+   "futures_sectype": "TP",
+   "futures_assetcode": null,
+   "smartlab_ticker": "TATN",
+   "oi_display_name": "Татнефть (прив)"
+  },
+  {
+   "issuer_key": "GLTR",
+   "secid": "GLTR",
+   "class": "common",
+   "isin": "US37949E2046",
+   "fund_asset_name": "GLTR-гдр",
+   "funds_count": 9,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": null,
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "AFLT",
+   "secid": "AFLT",
+   "class": "common",
+   "isin": "RU0009062285",
+   "fund_asset_name": "Аэрофлот",
+   "funds_count": 9,
+   "futures_sectype": "AF",
+   "futures_assetcode": "AFLT",
+   "smartlab_ticker": "AFLT",
+   "oi_display_name": "Аэрофлот"
+  },
+  {
+   "issuer_key": "VKCO",
+   "secid": "VKCO",
+   "class": "common",
+   "isin": "RU000A106YF0",
+   "fund_asset_name": "МКПАО \"ВК\"",
+   "funds_count": 9,
+   "futures_sectype": "VK",
+   "futures_assetcode": "VKCO",
+   "smartlab_ticker": "VKCO",
+   "oi_display_name": "VK"
+  },
+  {
+   "issuer_key": "MTLR",
+   "secid": "MTLR",
+   "class": "common",
+   "isin": "RU000A0DKXV5",
+   "fund_asset_name": "Мечел ао",
+   "funds_count": 9,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MTLR",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MTLR",
+   "secid": "MTLRP",
+   "class": "pref",
+   "isin": "RU000A0JPV70",
+   "fund_asset_name": "Мечел ап",
+   "funds_count": 9,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MTLR",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MDMG",
+   "secid": "MDMG",
+   "class": "common",
+   "isin": "RU000A108KL3",
+   "fund_asset_name": "MDMG-ао",
+   "funds_count": 8,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MDMG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "PIKK",
+   "secid": "PIKK",
+   "class": "common",
+   "isin": "RU000A0JP7J7",
+   "fund_asset_name": "ПИК ао",
+   "funds_count": 8,
+   "futures_sectype": "PI",
+   "futures_assetcode": "PIKK",
+   "smartlab_ticker": "PIKK",
+   "oi_display_name": "ПИК"
+  },
+  {
+   "issuer_key": "LEAS",
+   "secid": "LEAS",
+   "class": "common",
+   "isin": "RU000A0ZZFS9",
+   "fund_asset_name": "Европлан",
+   "funds_count": 8,
+   "futures_sectype": "LE",
+   "futures_assetcode": "LEAS",
+   "smartlab_ticker": "LEAS",
+   "oi_display_name": "Европлан"
+  },
+  {
+   "issuer_key": "LENT",
+   "secid": "LENT",
+   "class": "common",
+   "isin": "RU000A102S15",
+   "fund_asset_name": "Лента ао",
+   "funds_count": 8,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "LENT",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "HYDR",
+   "secid": "HYDR",
+   "class": "common",
+   "isin": "RU000A0JPKH7",
+   "fund_asset_name": "РусГидро",
+   "funds_count": 8,
+   "futures_sectype": "HY",
+   "futures_assetcode": "HYDR",
+   "smartlab_ticker": "HYDR",
+   "oi_display_name": "РусГидро"
+  },
+  {
+   "issuer_key": "SMLT",
+   "secid": "SMLT",
+   "class": "common",
+   "isin": "RU000A0ZZG02",
+   "fund_asset_name": "Самолет ао",
+   "funds_count": 8,
+   "futures_sectype": "SS",
+   "futures_assetcode": "SMLT",
+   "smartlab_ticker": "SMLT",
+   "oi_display_name": "Самолет"
+  },
+  {
+   "issuer_key": "FEES",
+   "secid": "FEES",
+   "class": "common",
+   "isin": "RU000A0JPNN9",
+   "fund_asset_name": "Россети",
+   "funds_count": 8,
+   "futures_sectype": "FS",
+   "futures_assetcode": "FEES",
+   "smartlab_ticker": "FEES",
+   "oi_display_name": "ФСК Россети"
+  },
+  {
+   "issuer_key": "UGLD",
+   "secid": "UGLD",
+   "class": "common",
+   "isin": "RU000A0JPP37",
+   "fund_asset_name": "ЮГК",
+   "funds_count": 7,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "UGLD",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "ENPG",
+   "secid": "ENPG",
+   "class": "common",
+   "isin": "RU000A100K72",
+   "fund_asset_name": "ЭН+ГРУП ао",
+   "funds_count": 6,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "ENPG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BSPB",
+   "secid": "BSPB",
+   "class": "common",
+   "isin": "RU0009100945",
+   "fund_asset_name": "БСП ао",
+   "funds_count": 6,
+   "futures_sectype": "BS",
+   "futures_assetcode": "BSPB",
+   "smartlab_ticker": "BSPB",
+   "oi_display_name": "Банк Санкт-Петербург"
+  },
+  {
+   "issuer_key": "UPRO",
+   "secid": "UPRO",
+   "class": "common",
+   "isin": "RU000A0JNGA5",
+   "fund_asset_name": "Юнипро ао",
+   "funds_count": 6,
+   "futures_sectype": "UN",
+   "futures_assetcode": "UPRO",
+   "smartlab_ticker": "UPRO",
+   "oi_display_name": "Юнипро"
+  },
+  {
+   "issuer_key": "SELG",
+   "secid": "SELG",
+   "class": "common",
+   "isin": "RU000A0JPR50",
+   "fund_asset_name": "Селигдар",
+   "funds_count": 6,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "SELG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "DELI",
+   "secid": "DELI",
+   "class": "common",
+   "isin": "RU000A107J11",
+   "fund_asset_name": "iКаршеринг",
+   "funds_count": 6,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "DELI",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SBER",
+   "secid": "SBERP",
+   "class": "pref",
+   "isin": "RU0009029557",
+   "fund_asset_name": "Сбербанк-п",
+   "funds_count": 5,
+   "futures_sectype": "SP",
+   "futures_assetcode": null,
+   "smartlab_ticker": "SBER",
+   "oi_display_name": "Сбербанк (прив)"
+  },
+  {
+   "issuer_key": "POLY",
+   "secid": "POLY",
+   "class": "common",
+   "isin": "JE00B6T5S470",
+   "fund_asset_name": "Polymetal",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "POLY",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "CBOM",
+   "secid": "CBOM",
+   "class": "common",
+   "isin": "RU000A0JUG31",
+   "fund_asset_name": "МКБ ао",
+   "funds_count": 5,
+   "futures_sectype": "CM",
+   "futures_assetcode": "CBOM",
+   "smartlab_ticker": "CBOM",
+   "oi_display_name": "МКБ"
+  },
+  {
+   "issuer_key": "VSEH",
+   "secid": "VSEH",
+   "class": "common",
+   "isin": "RU000A108K09",
+   "fund_asset_name": "ВИ.ру",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "VSEH",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "DATA",
+   "secid": "DATA",
+   "class": "common",
+   "isin": "RU000A108ZR8",
+   "fund_asset_name": "iАренадата",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "DATA",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SGZH",
+   "secid": "SGZH",
+   "class": "common",
+   "isin": "RU000A102XG9",
+   "fund_asset_name": "Сегежа",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "SGZH",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BANE",
+   "secid": "BANEP",
+   "class": "pref",
+   "isin": "RU0007976965",
+   "fund_asset_name": "Башнефт ап",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "BANE",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BELU",
+   "secid": "BELU",
+   "class": "common",
+   "isin": "RU000A0HL5M1",
+   "fund_asset_name": "НоваБев ао",
+   "funds_count": 5,
+   "futures_sectype": "NB",
+   "futures_assetcode": "BELUGA",
+   "smartlab_ticker": "BELU",
+   "oi_display_name": "Novabev"
+  },
+  {
+   "issuer_key": "LSRG",
+   "secid": "LSRG",
+   "class": "common",
+   "isin": "RU000A0JPFP0",
+   "fund_asset_name": "ЛСР ао",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "LSRG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "OZPH",
+   "secid": "OZPH",
+   "class": "common",
+   "isin": "RU000A109B25",
+   "fund_asset_name": "iОзонФарм",
+   "funds_count": 5,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "OZPH",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "QIWI",
+   "secid": "QIWI",
+   "class": "common",
+   "isin": "US74735M1080",
+   "fund_asset_name": "iQIWI",
+   "funds_count": 4,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": null,
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "WUSH",
+   "secid": "WUSH",
+   "class": "common",
+   "isin": "RU000A105EX7",
+   "fund_asset_name": "iВУШХолднг",
+   "funds_count": 4,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "WUSH",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "PRMD",
+   "secid": "PRMD",
+   "class": "common",
+   "isin": "RU000A108JF7",
+   "fund_asset_name": "iПРОМОМЕД",
+   "funds_count": 3,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "PRMD",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MSNG",
+   "secid": "MSNG",
+   "class": "common",
+   "isin": "RU0008958863",
+   "fund_asset_name": "+МосЭнерго",
+   "funds_count": 3,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MSNG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "EVRZ",
+   "secid": "EVRZ",
+   "class": "common",
+   "isin": "RU0009084438",
+   "fund_asset_name": "ЕВРАЗ",
+   "funds_count": 3,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": null,
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "DIAS",
+   "secid": "DIAS",
+   "class": "common",
+   "isin": "RU000A107ER5",
+   "fund_asset_name": "iДиасофт",
+   "funds_count": 3,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "DIAS",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "ELMT",
+   "secid": "ELMT",
+   "class": "common",
+   "isin": "RU000A102093",
+   "fund_asset_name": "iЭлемент",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "ELMT",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BAZA",
+   "secid": "BAZA",
+   "class": "common",
+   "isin": "RU000A10CTQ0",
+   "fund_asset_name": "iБАЗИС",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "BAZA",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BTBR",
+   "secid": "BTBR",
+   "class": "common",
+   "isin": "RU000A104U43",
+   "fund_asset_name": "В2В-РТС",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "BTBR",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SPBE",
+   "secid": "SPBE",
+   "class": "common",
+   "isin": "RU000A0JQ9P9",
+   "fund_asset_name": "СПБ Биржа",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "SPBE",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "ETLN",
+   "secid": "ETLN",
+   "class": "common",
+   "isin": "RU000A10C1L6",
+   "fund_asset_name": "ЭталонГруп",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "ETLN",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SOFL",
+   "secid": "SOFL",
+   "class": "common",
+   "isin": "RU000A0ZZBC2",
+   "fund_asset_name": "iСофтлайн",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "SOFL",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "RTKM",
+   "secid": "RTKMP",
+   "class": "pref",
+   "isin": "RU0009046700",
+   "fund_asset_name": "Ростел -ап",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "RTKM",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "SFIN",
+   "secid": "SFIN",
+   "class": "common",
+   "isin": "RU000A0JVW89",
+   "fund_asset_name": "ЭсЭфАй ао",
+   "funds_count": 2,
+   "futures_sectype": "SH",
+   "futures_assetcode": "SFIN",
+   "smartlab_ticker": "SFIN",
+   "oi_display_name": "ЭсЭфАй"
+  },
+  {
+   "issuer_key": "GEMC",
+   "secid": "GEMC",
+   "class": "common",
+   "isin": "RU000A107JE2",
+   "fund_asset_name": "МКПАО ЮМГ",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "GEMC",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "HNFG",
+   "secid": "HNFG",
+   "class": "common",
+   "isin": "RU000A106XF2",
+   "fund_asset_name": "ХЭНДЕРСОН",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "HNFG",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "ZAYM",
+   "secid": "ZAYM",
+   "class": "common",
+   "isin": "RU000A107RM8",
+   "fund_asset_name": "Займер ао",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "ZAYM",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MBNK",
+   "secid": "MBNK",
+   "class": "common",
+   "isin": "RU000A0JRH43",
+   "fund_asset_name": "МТС Банк",
+   "funds_count": 2,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MBNK",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MSRS",
+   "secid": "MSRS",
+   "class": "common",
+   "isin": "RU000A0ET7Y7",
+   "fund_asset_name": "РСетиМР ао",
+   "funds_count": 1,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MSRS",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "MVID",
+   "secid": "MVID",
+   "class": "common",
+   "isin": "RU000A0JPGA0",
+   "fund_asset_name": "М.видео",
+   "funds_count": 1,
+   "futures_sectype": null,
+   "futures_assetcode": null,
+   "smartlab_ticker": "MVID",
+   "oi_display_name": null
+  },
+  {
+   "issuer_key": "BANE",
+   "secid": "BANE",
+   "class": "common",
+   "isin": null,
+   "fund_asset_name": null,
+   "funds_count": 0,
+   "futures_sectype": "BN",
+   "futures_assetcode": "BANE",
+   "smartlab_ticker": "BANE",
+   "oi_display_name": "Башнефть",
+   "note": "есть фьючерс, в фондах не найдена"
+  },
+  {
+   "issuer_key": "FESH",
+   "secid": "FESH",
+   "class": "common",
+   "isin": null,
+   "fund_asset_name": null,
+   "funds_count": 0,
+   "futures_sectype": "FE",
+   "futures_assetcode": "FESH",
+   "smartlab_ticker": "FESH",
+   "oi_display_name": "ДВМП",
+   "note": "есть фьючерс, в фондах не найдена"
+  },
+  {
+   "issuer_key": "KMAZ",
+   "secid": "KMAZ",
+   "class": "common",
+   "isin": null,
+   "fund_asset_name": null,
+   "funds_count": 0,
+   "futures_sectype": "KM",
+   "futures_assetcode": "KMAZ",
+   "smartlab_ticker": "KMAZ",
+   "oi_display_name": "КАМАЗ",
+   "note": "есть фьючерс, в фондах не найдена"
+  },
+  {
+   "issuer_key": "RASP",
+   "secid": "RASP",
+   "class": "common",
+   "isin": null,
+   "fund_asset_name": null,
+   "funds_count": 0,
+   "futures_sectype": "RA",
+   "futures_assetcode": "RASP",
+   "smartlab_ticker": "RASP",
+   "oi_display_name": "Распадская",
+   "note": "есть фьючерс, в фондах не найдена"
+  },
+  {
+   "issuer_key": "RGBI",
+   "secid": "RGBI",
+   "class": "common",
+   "isin": null,
+   "fund_asset_name": null,
+   "funds_count": 0,
+   "futures_sectype": "RB",
+   "futures_assetcode": "RGBI",
+   "smartlab_ticker": null,
+   "oi_display_name": "Индекс ОФЗ (RGBI)",
+   "note": "есть фьючерс, в фондах не найдена"
+  }
+ ],
+ "ticker_futures_map": {
+  "AFKS": {
+   "sectype": "AK",
+   "name": "АФК Система"
+  },
+  "AFLT": {
+   "sectype": "AF",
+   "name": "Аэрофлот"
+  },
+  "ALRS": {
+   "sectype": "AL",
+   "name": "АЛРОСА"
+  },
+  "ASTR": {
+   "sectype": "AS",
+   "name": "Астра"
+  },
+  "BANE": {
+   "sectype": "BN",
+   "name": "Башнефть"
+  },
+  "BELU": {
+   "sectype": "NB",
+   "name": "Novabev"
+  },
+  "BSPB": {
+   "sectype": "BS",
+   "name": "Банк Санкт-Петербург"
+  },
+  "CBOM": {
+   "sectype": "CM",
+   "name": "МКБ"
+  },
+  "CHMF": {
+   "sectype": "CH",
+   "name": "Северсталь"
+  },
+  "FEES": {
+   "sectype": "FS",
+   "name": "ФСК Россети"
+  },
+  "FESH": {
+   "sectype": "FE",
+   "name": "ДВМП"
+  },
+  "FLOT": {
+   "sectype": "FL",
+   "name": "Совкомфлот"
+  },
+  "GAZP": {
+   "sectype": "GAZPF",
+   "name": "Газпром"
+  },
+  "GMKN": {
+   "sectype": "GK",
+   "name": "Норильский никель"
+  },
+  "HEAD": {
+   "sectype": "HD",
+   "name": "HeadHunter"
+  },
+  "HYDR": {
+   "sectype": "HY",
+   "name": "РусГидро"
+  },
+  "IRAO": {
+   "sectype": "IR",
+   "name": "Интер РАО"
+  },
+  "KMAZ": {
+   "sectype": "KM",
+   "name": "КАМАЗ"
+  },
+  "LEAS": {
+   "sectype": "LE",
+   "name": "Европлан"
+  },
+  "LKOH": {
+   "sectype": "LK",
+   "name": "Лукойл"
+  },
+  "MAGN": {
+   "sectype": "MG",
+   "name": "ММК"
+  },
+  "MGNT": {
+   "sectype": "MN",
+   "name": "Магнит"
+  },
+  "MOEX": {
+   "sectype": "ME",
+   "name": "Московская биржа"
+  },
+  "MTSS": {
+   "sectype": "MT",
+   "name": "МТС"
+  },
+  "NLMK": {
+   "sectype": "NM",
+   "name": "НЛМК"
+  },
+  "NVTK": {
+   "sectype": "NV",
+   "name": "НОВАТЭК"
+  },
+  "PHOR": {
+   "sectype": "PH",
+   "name": "ФосАгро"
+  },
+  "PIKK": {
+   "sectype": "PI",
+   "name": "ПИК"
+  },
+  "PLZL": {
+   "sectype": "PX",
+   "name": "Полюс"
+  },
+  "POSI": {
+   "sectype": "PS",
+   "name": "Positive Technologies"
+  },
+  "RASP": {
+   "sectype": "RA",
+   "name": "Распадская"
+  },
+  "RENI": {
+   "sectype": "RD",
+   "name": "Ренессанс Страхование"
+  },
+  "RGBI": {
+   "sectype": "RB",
+   "name": "Индекс ОФЗ (RGBI)"
+  },
+  "ROSN": {
+   "sectype": "RN",
+   "name": "Роснефть"
+  },
+  "RTKM": {
+   "sectype": "RT",
+   "name": "Ростелеком"
+  },
+  "RUAL": {
+   "sectype": "RL",
+   "name": "Русал"
+  },
+  "SBER": {
+   "sectype": "SBERF",
+   "name": "Сбербанк"
+  },
+  "SBERP": {
+   "sectype": "SP",
+   "name": "Сбербанк (прив)"
+  },
+  "SFIN": {
+   "sectype": "SH",
+   "name": "ЭсЭфАй"
+  },
+  "SIBN": {
+   "sectype": "SO",
+   "name": "Газпром нефть"
+  },
+  "SMLT": {
+   "sectype": "SS",
+   "name": "Самолет"
+  },
+  "SNGS": {
+   "sectype": "SN",
+   "name": "Сургутнефтегаз"
+  },
+  "SNGSP": {
+   "sectype": "SG",
+   "name": "Сургутнефтегаз (прив)"
+  },
+  "SVCB": {
+   "sectype": "SC",
+   "name": "Совкомбанк"
+  },
+  "T": {
+   "sectype": "TB",
+   "name": "Т-Технологии"
+  },
+  "TATN": {
+   "sectype": "TT",
+   "name": "Татнефть"
+  },
+  "TATNP": {
+   "sectype": "TP",
+   "name": "Татнефть (прив)"
+  },
+  "TRNFP": {
+   "sectype": "TN",
+   "name": "Транснефть (прив)"
+  },
+  "UPRO": {
+   "sectype": "UN",
+   "name": "Юнипро"
+  },
+  "VKCO": {
+   "sectype": "VK",
+   "name": "VK"
+  },
+  "VTBR": {
+   "sectype": "VB",
+   "name": "ВТБ"
+  },
+  "X5": {
+   "sectype": "X5",
+   "name": "X5 Group"
+  },
+  "YDEX": {
+   "sectype": "YD",
+   "name": "Яндекс"
+  }
+ },
+ "pref_pairs": {
+  "SBERP": "SBER",
+  "SNGSP": "SNGS",
+  "TATNP": "TATN",
+  "RTKMP": "RTKM",
+  "BANEP": "BANE",
+  "MTLRP": "MTLR",
+  "NKNCP": "NKNC",
+  "LSNGP": "LSNG",
+  "KAZTP": "KAZT",
+  "PMSBP": "PMSB",
+  "KRKNP": "KRKN",
+  "MGTSP": "MGTS",
+  "CNTLP": "CNTL",
+  "VRSBP": "VRSB"
+ },
+ "smartlab_нет": [
+  "EVRZ",
+  "GLTR",
+  "QIWI",
+  "RGBI",
+  "T",
+  "TRNFP"
+ ],
+ "imoex": [
+  "AFKS",
+  "AFLT",
+  "ALRS",
+  "BSPB",
+  "CBOM",
+  "CHMF",
+  "CNRU",
+  "DOMRF",
+  "ENPG",
+  "FLOT",
+  "GAZP",
+  "GMKN",
+  "HEAD",
+  "IRAO",
+  "LENT",
+  "LKOH",
+  "MAGN",
+  "MDMG",
+  "MOEX",
+  "MSNG",
+  "MTSS",
+  "NLMK",
+  "NVTK",
+  "OZON",
+  "PHOR",
+  "PLZL",
+  "POSI",
+  "RAGR",
+  "RENI",
+  "ROSN",
+  "RTKM",
+  "RUAL",
+  "SBER",
+  "SBERP",
+  "SNGS",
+  "SNGSP",
+  "SVCB",
+  "T",
+  "TATN",
+  "TATNP",
+  "TRNFP",
+  "UGLD",
+  "VKCO",
+  "VTBR",
+  "X5",
+  "YDEX"
+ ],
+ "bmi": [
+  "AFKS",
+  "AFLT",
+  "AKRN",
+  "ALRS",
+  "APTK",
+  "AQUA",
+  "ASTR",
+  "BANEP",
+  "BAZA",
+  "BELU",
+  "BSPB",
+  "CBOM",
+  "CHMF",
+  "CNRU",
+  "DATA",
+  "DIAS",
+  "DOMRF",
+  "ELFV",
+  "ENPG",
+  "ETLN",
+  "EUTR",
+  "FEES",
+  "FESH",
+  "FIXR",
+  "FLOT",
+  "GAZP",
+  "GEMC",
+  "GLRX",
+  "GMKN",
+  "HEAD",
+  "HNFG",
+  "HYDR",
+  "IRAO",
+  "LENT",
+  "LKOH",
+  "LSNGP",
+  "LSRG",
+  "MAGN",
+  "MBNK",
+  "MDMG",
+  "MGNT",
+  "MOEX",
+  "MRKC",
+  "MRKP",
+  "MRKU",
+  "MRKV",
+  "MSNG",
+  "MSRS",
+  "MTLR",
+  "MTLRP",
+  "MTSS",
+  "NKHP",
+  "NKNCP",
+  "NLMK",
+  "NMTP",
+  "NVTK",
+  "OGKB",
+  "OZON",
+  "OZPH",
+  "PHOR",
+  "PIKK",
+  "PLZL",
+  "POSI",
+  "PRMD",
+  "RAGR",
+  "RASP",
+  "RENI",
+  "RNFT",
+  "ROSN",
+  "RTKM",
+  "RTKMP",
+  "RUAL",
+  "SBER",
+  "SBERP",
+  "SELG",
+  "SFIN",
+  "SGZH",
+  "SMLT",
+  "SNGS",
+  "SNGSP",
+  "SOFL",
+  "SPBE",
+  "SVAV",
+  "SVCB",
+  "T",
+  "TATN",
+  "TATNP",
+  "TGKA",
+  "TRMK",
+  "TRNFP",
+  "UGLD",
+  "UPRO",
+  "UWGN",
+  "VKCO",
+  "VSEH",
+  "VSMO",
+  "VTBR",
+  "WUSH",
+  "X5",
+  "YDEX"
+ ],
+ "правка": "фьючерс привязан к КЛАССУ бумаги (secid), а не к эмитенту: у SBERP/SNGSP/TATNP/TRNFP свои контракты SP/SG/TP/TN"
+}

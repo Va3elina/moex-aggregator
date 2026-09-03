@@ -1,0 +1,45 @@
+psql:/tmp/freshness.sql:2: ERROR:  canceling statement due to statement timeout
+open_interest|tradedate|2026-09-03
+news_archive|posted_at|2026-09-03 10:25:15+00
+open_interest_intl|trade_date|2026-07-24
+crypto_candles|open_time|2026-09-03 10:30:00+00
+candles_intl|trade_date|2026-07-24
+crypto_open_interest|ts|2026-09-03 10:25:00+00
+fund_data|trade_date|2026-09-01
+analytics_events|client_ts|2026-09-03 10:34:32.497
+index_data|trade_date|2026-09-03
+index_composition|trade_date|2026-09-02
+channel_posts|created_at|2026-09-02 17:15:02.788918+00
+fund_holdings_history|snapshot_date|2026-09-01
+alerts|created_at|2026-08-19 13:11:08.452221+00
+breadth_history|trade_date|2026-09-02
+stock_market_cap|period_date|2026-09-02
+price_breadth_intl_history|trade_date|2026-07-24
+macro_data|period_date|2026-09-02
+tg_channel_watch|created_at|2026-09-03 10:34:06.219622+00
+refresh_tokens|created_at|2026-09-03 10:30:26.238911+00
+content_candidates|published_at|2026-07-17 14:29:15.507377+00
+btc_network_stats|ts|2026-09-03 10:30:05.682003+00
+freefloat_cap|created_at|2026-09-02 16:13:24.693697
+fund_holdings|updated_at|2026-09-02 16:12:14.322856
+futures_contracts|updated_at|2026-09-02 16:10:02.123104
+world_facts|created_at|2026-09-01 10:55:11.544444+00
+dividends|registry_close_date|2026-06-09
+user_settings|updated_at|2026-09-03 09:53:18.481204+00
+cbr_flows|updated_at|2026-08-10 16:10:14.327395
+anomalies|created_at|2026-09-03 10:12:02.872123+00
+pipeline_runs|updated_at|2026-09-03 10:35:02.769753+00
+alert_fires|fired_at|2026-09-03 10:12:01.919215+00
+ofz_auctions|updated_at|2026-06-11 20:31:11.265875+00
+securities_ref|updated_at|2026-08-04 17:24:38.611177
+users|created_at|2026-09-03 07:10:56.051402+00
+subscriptions|created_at|2026-09-03 07:10:56.451014+00
+funds|created_at|2026-06-27 20:02:53.36248
+indices|created_at|2026-06-11 16:44:01.324301
+imoex_weights|updated_at|2026-09-03 10:12:26.945554+00
+macro|created_at|2026-06-11 20:35:47.529547
+extension_tokens|created_at|2026-07-08 15:00:40.3743
+fund_distributions|updated_at|2026-08-31 06:30:59.834507+00
+api_keys|created_at|2026-06-17 11:31:13.64532
+user_payment_methods|created_at|2026-07-28 21:02:52.468793+00
+ticker_futures_map|created_at|2026-07-16 07:56:16.471713+00

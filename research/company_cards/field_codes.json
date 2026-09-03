@@ -1,0 +1,402 @@
+[
+ {
+  "field": "oil_production",
+  "page": "shares_fundamental",
+  "title": "Добыча нефти российских компаний ММВБ",
+  "column": "Добыча нефти, млн т",
+  "tickers": 4,
+  "total": "353.7"
+ },
+ {
+  "field": "oil_refining",
+  "page": "shares_fundamental",
+  "title": "Переработка нефти российских компаний ММВБ",
+  "column": "Переработка нефти, млн т",
+  "tickers": 3,
+  "total": "136.9"
+ },
+ {
+  "field": "gas_production",
+  "page": "shares_fundamental",
+  "title": "Добыча газа российских компаний ММВБ",
+  "column": "Добыча газа, млрд м3",
+  "tickers": 2,
+  "total": "164.2"
+ },
+ {
+  "field": "operating_income",
+  "page": "shares_fundamental",
+  "title": "Операционная прибыль российских компаний ММВБ",
+  "column": "Операционная прибыль, млрд руб",
+  "tickers": 210,
+  "total": "9 618.95"
+ },
+ {
+  "field": "net_income_ns",
+  "page": "shares_fundamental",
+  "title": "Чистая прибыль н/с российских компаний ММВБ",
+  "column": "Чистая прибыль н/с, млрд руб",
+  "tickers": 19,
+  "total": "2 157"
+ },
+ {
+  "field": "ocf",
+  "page": "shares_fundamental",
+  "title": "Операционный денежный поток российских компаний ММВБ",
+  "column": "Операционный денежный поток, млрд руб",
+  "tickers": 207,
+  "total": "12 458"
+ },
+ {
+  "field": "capex",
+  "page": "shares_fundamental",
+  "title": "Капитальные затраты, CAPEX российских компаний ММВБ",
+  "column": "CAPEX, млрд руб",
+  "tickers": 209,
+  "total": "13 494"
+ },
+ {
+  "field": "dividend_payout",
+  "page": "shares_fundamental",
+  "title": "Объем выплаты дивидендов российских компаний ММВБ",
+  "column": "Див.выплата, млрд руб",
+  "tickers": 103,
+  "total": "3 509"
+ },
+ {
+  "field": "dividend",
+  "page": "shares_fundamental",
+  "title": "Дивиденды на обыкновенную акцию российских компаний ММВБ",
+  "column": "Дивиденд, руб/акцию",
+  "tickers": 100,
+  "total": "7 707"
+ },
+ {
+  "field": "div_yield",
+  "page": "shares_fundamental",
+  "title": "Дивидендная доходность обыкновенной акции российских компаний ММВБ",
+  "column": "Див доход, ао, %",
+  "tickers": 226,
+  "total": "1 188.2"
+ },
+ {
+  "field": "div_payout_ratio",
+  "page": "shares_fundamental",
+  "title": "Доля дивидендов от чистой прибыли % российских компаний ММВБ",
+  "column": "Дивиденды/прибыль, %",
+  "tickers": 103,
+  "total": "17 492"
+ },
+ {
+  "field": "opex",
+  "page": "shares_fundamental",
+  "title": "Операционные расходы российских компаний ММВБ",
+  "column": "Опер. расходы, млрд руб",
+  "tickers": 219,
+  "total": "37 711"
+ },
+ {
+  "field": "amortization",
+  "page": "shares_fundamental",
+  "title": "Амортизация российских компаний ММВБ",
+  "column": "Амортизация, млрд руб",
+  "tickers": 196,
+  "total": "7 353.489"
+ },
+ {
+  "field": "employment_expenses",
+  "page": "shares_fundamental",
+  "title": "Расходы на персонал российских компаний ММВБ",
+  "column": "Расх на персонал, млрд руб",
+  "tickers": 211,
+  "total": "11 298"
+ },
+ {
+  "field": "interest_expenses",
+  "page": "shares_fundamental",
+  "title": "Процентные расходы российских компаний ММВБ",
+  "column": "Процентные расходы, млрд руб",
+  "tickers": 194,
+  "total": "16 432"
+ },
+ {
+  "field": "net_assets",
+  "page": "shares_fundamental",
+  "title": "Чистые активы российских компаний ММВБ",
+  "column": "Чистые активы, млрд руб",
+  "tickers": 218,
+  "total": "73 394"
+ },
+ {
+  "field": "common_share",
+  "page": "shares_fundamental",
+  "title": "Цена акции ао российских компаний ММВБ",
+  "column": "Цена акции ао, руб",
+  "tickers": 222,
+  "total": "362 450"
+ },
+ {
+  "field": "number_of_shares",
+  "page": "shares_fundamental",
+  "title": "Число акций ао российских компаний ММВБ",
+  "column": "Число акций ао, млн",
+  "tickers": 231,
+  "total": "16 172 980"
+ },
+ {
+  "field": "free_float",
+  "page": "shares_fundamental",
+  "title": "Доля акций в свободном обращении free float российских компаний ММВБ",
+  "column": "Free Float, %",
+  "tickers": 92,
+  "total": "2 109"
+ },
+ {
+  "field": "market_cap",
+  "page": "shares_fundamental",
+  "title": "Капитализация российских компаний ММВБ",
+  "column": "Капитализация, млрд руб",
+  "tickers": 232,
+  "total": "48 020"
+ },
+ {
+  "field": "ev",
+  "page": "shares_fundamental",
+  "title": "Стоимость предприятия EV - Enterprise value российских компаний ММВБ",
+  "column": "EV, млрд руб",
+  "tickers": 232,
+  "total": "71 900"
+ },
+ {
+  "field": "book_value",
+  "page": "shares_fundamental",
+  "title": "Балансовая стоимость российских компаний ММВБ",
+  "column": "Баланс стоимость, млрд руб",
+  "tickers": 232,
+  "total": "69 381"
+ },
+ {
+  "field": "fcf_share",
+  "page": "shares_fundamental",
+  "title": "Свободный денежный поток на обыкновенную акцию российских компаний ММВБ",
+  "column": "FCF/акцию, руб",
+  "tickers": 193,
+  "total": "-30 489"
+ },
+ {
+  "field": "bv_share",
+  "page": "shares_fundamental",
+  "title": "Балансовая стоимость на акцию российских компаний ММВБ",
+  "column": "BV/акцию, руб",
+  "tickers": 217,
+  "total": "432 628"
+ },
+ {
+  "field": "fcf_yield",
+  "page": "shares_fundamental",
+  "title": "Доходность FCF российских компаний ММВБ",
+  "column": "Доходность FCF, %",
+  "tickers": 186,
+  "total": "-55 940.4"
+ },
+ {
+  "field": "roe",
+  "page": "shares_fundamental",
+  "title": "Рентабельность капитала ROE российских компаний ММВБ",
+  "column": "ROE, %",
+  "tickers": 224,
+  "total": "-37 294.6"
+ },
+ {
+  "field": "roa",
+  "page": "shares_fundamental",
+  "title": "Рентабельность активов ROA российских компаний ММВБ",
+  "column": "ROA, %",
+  "tickers": 219,
+  "total": "737.0"
+ },
+ {
+  "field": "p_fcf",
+  "page": "shares_fundamental",
+  "title": "Мультипликатор P/FCF (цена/своб.денежный поток) российских компаний ММВБ",
+  "column": "P/FCF",
+  "tickers": 189,
+  "total": "-1 294"
+ },
+ {
+  "field": "employees",
+  "page": "shares_fundamental",
+  "title": "Численность персонала российских компаний ММВБ",
+  "column": "Персонал, чел",
+  "tickers": 164,
+  "total": "4 022 317"
+ },
+ {
+  "field": "labour_productivity",
+  "page": "shares_fundamental",
+  "title": "Производительность труда, млн руб/чел/год российских компаний ММВБ",
+  "column": "Производительность труда, млн руб/чел/год",
+  "tickers": 161,
+  "total": "11 439"
+ },
+ {
+  "field": "expenses_per_employee",
+  "page": "shares_fundamental",
+  "title": "Расходы на оплату труда 1 сотрудника в год российских компаний ММВБ",
+  "column": "Расходы/чел/год, тыс.р",
+  "tickers": 158,
+  "total": "1 552 466"
+ },
+ {
+  "field": "r_and_d_capex",
+  "page": "shares_fundamental",
+  "title": "Доля НИОКР в капитальных затратах российских компаний ММВБ",
+  "column": "R&D/CAPEX, %",
+  "tickers": 14,
+  "total": "451.99"
+ },
+ {
+  "field": "capex_revenue",
+  "page": "shares_fundamental",
+  "title": "Соотношение капитальных затрат к выручке российских компаний ММВБ",
+  "column": "CAPEX/Выручка, %",
+  "tickers": 206,
+  "total": "2 538"
+ },
+ {
+  "field": "oil_production",
+  "page": "shares_fundamental2",
+  "title": "Добыча нефти российских компаний ММВБ",
+  "column": "Добыча нефти, млн т",
+  "tickers": 3,
+  "total": "261.6"
+ },
+ {
+  "field": "oil_refining",
+  "page": "shares_fundamental2",
+  "title": "Переработка нефти российских компаний ММВБ",
+  "column": "Переработка нефти, млн т",
+  "tickers": 1,
+  "total": "20.3"
+ },
+ {
+  "field": "revenue",
+  "page": "shares_fundamental2",
+  "title": "Выручка российских компаний ММВБ",
+  "column": "Выручка, млрд руб",
+  "tickers": 208,
+  "total": "82 251"
+ },
+ {
+  "field": "ebitda",
+  "page": "shares_fundamental2",
+  "title": "EBITDA российских компаний ММВБ",
+  "column": "EBITDA, млрд руб",
+  "tickers": 182,
+  "total": "19 396"
+ },
+ {
+  "field": "net_income",
+  "page": "shares_fundamental2",
+  "title": "Чистая прибыль российских компаний ММВБ",
+  "column": "Чистая прибыль, млрд руб",
+  "tickers": 223,
+  "total": "9 104"
+ },
+ {
+  "field": "cost_of_production",
+  "page": "shares_fundamental2",
+  "title": "Себестоимость производства российских компаний ММВБ",
+  "column": "Себестоимость, млрд руб",
+  "tickers": 189,
+  "total": "44 342"
+ },
+ {
+  "field": "assets",
+  "page": "shares_fundamental2",
+  "title": "Активы российских компаний ММВБ",
+  "column": "Активы, млрд руб",
+  "tickers": 211,
+  "total": "173 746"
+ },
+ {
+  "field": "debt",
+  "page": "shares_fundamental2",
+  "title": "Общий долг российских компаний ММВБ",
+  "column": "Долг, млрд руб",
+  "tickers": 204,
+  "total": "35 617"
+ },
+ {
+  "field": "cash",
+  "page": "shares_fundamental2",
+  "title": "Наличные денежные средства российских компаний ММВБ",
+  "column": "Наличность, млрд руб",
+  "tickers": 207,
+  "total": "16 612"
+ },
+ {
+  "field": "net_debt",
+  "page": "shares_fundamental2",
+  "title": "Чистый долг российских компаний ММВБ",
+  "column": "Чистый долг, млрд руб",
+  "tickers": 207,
+  "total": "19 010"
+ },
+ {
+  "field": "ebitda_margin",
+  "page": "shares_fundamental2",
+  "title": "Рентабельность EBITDA российских компаний ММВБ",
+  "column": "Рентаб EBITDA, %",
+  "tickers": 182,
+  "total": "3 511.8"
+ },
+ {
+  "field": "net_margin",
+  "page": "shares_fundamental2",
+  "title": "Чистая рентабельность российских компаний ММВБ",
+  "column": "Чистая рентаб, %",
+  "tickers": 207,
+  "total": "-158 494.6"
+ },
+ {
+  "field": "p_e",
+  "page": "shares_fundamental2",
+  "title": "Мультипликатор P/E (цена/прибыль) российских компаний ММВБ",
+  "column": "P/E",
+  "tickers": 223,
+  "total": "6 428"
+ },
+ {
+  "field": "p_s",
+  "page": "shares_fundamental2",
+  "title": "Мультипликатор P/S (цена/выручка) российских компаний ММВБ",
+  "column": "P/S",
+  "tickers": 207,
+  "total": "1 668"
+ },
+ {
+  "field": "p_bv",
+  "page": "shares_fundamental2",
+  "title": "Мультипликатор P/BV (цена/балансовая стоимость) российских компаний ММВБ",
+  "column": "P/BV",
+  "tickers": 211,
+  "total": "307.8"
+ },
+ {
+  "field": "ev_ebitda",
+  "page": "shares_fundamental2",
+  "title": "Мультипликатор EV/EBITDA российских компаний ММВБ",
+  "column": "EV/EBITDA",
+  "tickers": 182,
+  "total": "457.1"
+ },
+ {
+  "field": "debt_ebitda",
+  "page": "shares_fundamental2",
+  "title": "Долг/EBITDA российских компаний ММВБ",
+  "column": "Долг/EBITDA",
+  "tickers": 177,
+  "total": "28.1"
+ }
+]
