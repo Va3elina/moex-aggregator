@@ -362,6 +362,79 @@ export default function StrengthPage() {
                 sourceNote="Индекс IMOEX/RTSI: ПАО Московская Биржа"
             />
 
+            {/* Editorial frame — обнимает controls + chart в один контейнер */}
+            <div className="editorial-frame">
+
+            {/* Контролы — одна строка. Camera button передаётся как trailingSlot
+                чтобы стоять inline с classification chip (не накладываться). */}
+            <div data-tour="strength-controls">
+            <StrengthControls
+                period={period}
+                onPeriodChange={setPeriod}
+                universeBase={universeBase}
+                onUniverseBaseChange={setUniverseBase}
+                currency={currency}
+                onCurrencyChange={setCurrency}
+                dollarStale={dollarStale}
+                emaPeriod={emaPeriod}
+                onEmaPeriodChange={setEmaPeriod}
+                trailingSlot={
+                    <>
+                    <ChartActionsMenu containerRef={containerRef} tourId="strength-layers">
+                    <LayersButton
+                        tourId="strength-layers"
+                        layers={[
+                            { key: 'price', label: 'Индекс', hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
+                            { key: 'histogram', label: 'Гистограмма', hint: 'Столбики вместо линии', checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
+                        ]}
+                    />
+                    <CsvExportButton
+                        indicator="strength"
+                        config={() => buildStrengthExportConfig({
+                            emaPeriod,
+                            universe,
+                            period,
+                            periodDays: PERIOD_DAYS[period],
+                        })}
+                    />
+                    <ChartCaptureButton
+                        getTargetElement={() => containerRef.current}
+                        filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
+                        metadata={{
+                            title: 'Сила рынка',
+                            asset: priceChartLabel,
+                            details: [
+                                `EMA${emaPeriod}`,
+                                period === '1y' ? '1 год' :
+                                period === '5y' ? '5 лет' :
+                                period === '10y' ? '10 лет' :
+                                period === '20y' ? '20 лет' : 'Всё',
+                                currency === 'usd' ? 'USD' : 'RUB',
+                                chartMode === 'histogram' ? 'Гистограмма' : 'Линия',
+                            ].filter(Boolean),
+                        }}
+                    />
+                    <ChartSettings showType={false} />
+                    {ALERTS_ENABLED && (
+                        <AlertBellButton
+                            indicator="strength"
+                            asset={universe}
+                            assetName="Сила рынка"
+                            metrics={strengthMetrics}
+                        />
+                    )}
+                    </ChartActionsMenu>
+
+                    {/* Вход в песочницу — крайняя справа в строке контролов
+                        (единая позиция на всех индикаторах). ChartActionsMenu
+                        уходит порталом в угол графика и место здесь не занимает. */}
+                    <div style={{ marginLeft: 'auto', order: 99 }}>
+                        <SandboxEntryButton />
+                    </div>
+                    </>
+                }
+            />
+            </div>{/* /strength-controls */}
 
             {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
             <div
