@@ -41,7 +41,6 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import EditorialChip from '../components/editorial/EditorialChip';
-import IntlStrengthPanel, { type IntlCountry } from '../components/strength/IntlStrengthPanel';
 
 type Period = '1y' | '5y' | '10y' | '20y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -67,18 +66,8 @@ const EMA_PERIOD = 200; // Fixed EMA period
 const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30 };
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
-// Международная "сила рынка" поставлена на паузу (Вадим, 2026-07-25) —
-// скрыта даже от админов, пока проект не возобновят. Данные/бэкенд/
-// компонент НЕ удалены — поставь true, чтобы вернуть переключатель страны.
-const INTL_STRENGTH_ENABLED = false;
-
 export default function StrengthPage() {
     const { isAuthenticated, user } = useAuth();
-    // Admin-only: страна для "силы рынка" по другим рынкам (см. IntlStrengthPanel).
-    // НЕ персистится — при перезагрузке всегда обратно на RF, чтобы не оставлять
-    // обычный рендер в неожиданном состоянии. Обычные пользователи это не видят
-    // и не могут установить (селектор ниже рендерится только под role=admin).
-    const [country, setCountry] = useState<IntlCountry>('RF');
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // EMA-период: 20 (очень краткосрок), 50 (краткосрок), 100 (среднесрок),
@@ -373,96 +362,6 @@ export default function StrengthPage() {
                 sourceNote="Индекс IMOEX/RTSI: ПАО Московская Биржа"
             />
 
-            {/* Editorial frame — обнимает controls + chart в один контейнер */}
-            <div className="editorial-frame">
-
-            {/* Контролы — одна строка. Camera button передаётся как trailingSlot
-                чтобы стоять inline с classification chip (не накладываться). */}
-            <div data-tour="strength-controls">
-            <StrengthControls
-                period={period}
-                onPeriodChange={setPeriod}
-                universeBase={universeBase}
-                onUniverseBaseChange={setUniverseBase}
-                currency={currency}
-                onCurrencyChange={setCurrency}
-                dollarStale={dollarStale}
-                emaPeriod={emaPeriod}
-                onEmaPeriodChange={setEmaPeriod}
-                trailingSlot={
-                    <>
-                    <ChartActionsMenu containerRef={containerRef} tourId="strength-layers">
-                    <LayersButton
-                        tourId="strength-layers"
-                        layers={[
-                            { key: 'price', label: 'Индекс', hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
-                            { key: 'histogram', label: 'Гистограмма', hint: 'Столбики вместо линии', checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
-                        ]}
-                    />
-                    <CsvExportButton
-                        indicator="strength"
-                        config={() => buildStrengthExportConfig({
-                            emaPeriod,
-                            universe,
-                            period,
-                            periodDays: PERIOD_DAYS[period],
-                        })}
-                    />
-                    <ChartCaptureButton
-                        getTargetElement={() => containerRef.current}
-                        filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
-                        metadata={{
-                            title: 'Сила рынка',
-                            asset: priceChartLabel,
-                            details: [
-                                `EMA${emaPeriod}`,
-                                period === '1y' ? '1 год' :
-                                period === '5y' ? '5 лет' :
-                                period === '10y' ? '10 лет' :
-                                period === '20y' ? '20 лет' : 'Всё',
-                                currency === 'usd' ? 'USD' : 'RUB',
-                                chartMode === 'histogram' ? 'Гистограмма' : 'Линия',
-                            ].filter(Boolean),
-                        }}
-                    />
-                    <ChartSettings showType={false} />
-                    {ALERTS_ENABLED && (
-                        <AlertBellButton
-                            indicator="strength"
-                            asset={universe}
-                            assetName="Сила рынка"
-                            metrics={strengthMetrics}
-                        />
-                    )}
-                    </ChartActionsMenu>
-
-                    {/* Вход в песочницу — крайняя справа в строке контролов
-                        (единая позиция на всех индикаторах). ChartActionsMenu
-                        уходит порталом в угол графика и место здесь не занимает. */}
-                    <div style={{ marginLeft: 'auto', order: 99 }}>
-                        <SandboxEntryButton />
-                    </div>
-                    </>
-                }
-            />
-            </div>{/* /strength-controls */}
-
-            {/* Admin-only: страна для международной "силы рынка" — не видно
-                и не влияет на обычных пользователей. Сейчас на паузе
-                (INTL_STRENGTH_ENABLED=false) — скрыто даже от админов. */}
-            {INTL_STRENGTH_ENABLED && user?.role === 'admin' && (
-                <div className="flex items-center mb-3" style={{ gap: 'var(--sp-2)' }}>
-                    {([
-                        { key: 'RF', label: '🇷🇺 Россия' },
-                        { key: 'NSE', label: '🇮🇳 Индия' },
-                        { key: 'TAIFEX', label: '🇹🇼 Тайвань' },
-                    ] as const).map((c) => (
-                        <EditorialChip key={c.key} active={country === c.key} onClick={() => setCountry(c.key)} size="sm">
-                            {c.label}
-                        </EditorialChip>
-                    ))}
-                </div>
-            )}
 
             {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
             <div
@@ -485,15 +384,13 @@ export default function StrengthPage() {
                 onTouchMove={isAnimating ? undefined : handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
-                {country === 'RF' && dollarStale && (
+                {dollarStale && (
                     <DollarStaleHint
                         style={{ position: 'absolute', top: 12, left: 16, zIndex: 30 }}
                     />
                 )}
                 {/* Полный loading / error на месте графика */}
-                {country !== 'RF' ? (
-                    <IntlStrengthPanel country={country} />
-                ) : loading && !current ? (
+                {loading && !current ? (
                     <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 16 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 + 68 }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
