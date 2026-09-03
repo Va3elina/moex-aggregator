@@ -197,14 +197,14 @@ def parse_financials(page_html: str, period_type: str):
 
     # Шапка: первая строка, где встречается год ('2021') или квартал ('2025Q2').
     pat = r"^\d{4}Q[1-4]$" if period_type == "quarter" else r"^\d{4}$"
-    periods, header_idx = [], None
+    periods, header_idx, header_len = [], None, 0
     for i, tr in enumerate(trs):
         cs = row_cells(tr)
         cols = [(j, c[0]) for j, c in enumerate(cs)
                 if re.match(pat, c[0]) or c[0].startswith("LTM")]
         if cols:
             periods = [(j, "LTM" if t.startswith("LTM") else t) for j, t in cols]
-            header_idx = i
+            header_idx, header_len = i, len(cs)
             break
     if header_idx is None:
         log.warning("шапка периодов не распознана (%s) — вёрстка изменилась", period_type)
@@ -218,19 +218,32 @@ def parse_financials(page_html: str, period_type: str):
         label = cs[0][0]
         code = next((c[1] for c in cs if c[1]), None)
 
+        off = len(cs) - header_len
         if label == "Дата отчета":
             for col, per in periods:
-                if col < len(cs):
-                    report_dates[per] = cs[col][0] or None
+                if 0 <= col + off < len(cs):
+                    report_dates[per] = cs[col + off][0] or None
             continue
         if label in DOC_ROWS:
             for col, per in periods:
-                if col < len(cs) and cs[col][2]:
-                    for href in cs[col][2]:
+                if 0 <= col + off < len(cs) and cs[col + off][2]:
+                    for href in cs[col + off][2]:
                         documents.append({"doc_type": DOC_ROWS[label],
                                           "period": per, "url": href})
             continue
         if label in HEADER_ROWS or not code:
+            continue
+
+        # ⚠️ СТРОКА ДАННЫХ ШИРЕ ШАПКИ. У шапки 9 ячеек, у строки показателя 10: в
+        # строке есть лишняя ячейка со знаком «?» и ссылкой на код показателя, а в
+        # шапке её нет. Брать значение по индексу колонки из шапки нельзя — весь ряд
+        # уезжает НА ГОД: чистая прибыль 2021 года встаёт в 2022, и так до конца
+        # таблицы. Ошибка тихая: числа настоящие, просто не за тот период.
+        # Поэтому сдвиг считается для КАЖДОЙ строки: у «Изм. за год, %» его нет вовсе.
+        offset = len(cs) - header_len
+        if offset < 0:
+            log.warning("строка уже шапки (%s): %d против %d — пропущена",
+                        label, len(cs), header_len)
             continue
 
         code = CODE_ALIASES.get(code, code)
@@ -239,9 +252,10 @@ def parse_financials(page_html: str, period_type: str):
         unit = label.split(",", 1)[1].strip() if "," in label else None
 
         for col, per in periods:
-            if col >= len(cs):
+            idx = col + offset
+            if idx >= len(cs):
                 continue
-            raw = cs[col][0]
+            raw = cs[idx][0]
             value = parse_number(raw)
             if value is None and raw.strip() not in ("", "-", "—", "?"):
                 # Текст, который не разобрался в число: единица измерения уехала,
@@ -261,6 +275,22 @@ def parse_financials(page_html: str, period_type: str):
                 "period": None if per == "LTM" else per,
                 "value": value, "raw": raw, "note": note,
             })
+    # СТОРОЖ ПРОТИВ СДВИГА КОЛОНОК. Ошибка выравнивания тихая: числа остаются
+    # настоящими, просто уезжают на период. Её характерная подпись — крайний столбец
+    # пустеет целиком, потому что данные съезжают за границу таблицы. Проверяем это
+    # прямо здесь, а не надеемся заметить глазами на 86 эмитентах.
+    filled = {}
+    for m in metrics:
+        key = "LTM" if m["period"] is None else m["period"]
+        filled[key] = filled.get(key, 0) + (1 if m["value"] is not None else 0)
+    if len(filled) > 2:
+        last = ("LTM" if periods[-1][1] == "LTM" else periods[-1][1])
+        others = [v for k, v in filled.items() if k != last]
+        if filled.get(last, 0) == 0 and max(others) > 0:
+            log.error("крайний период %s пуст целиком при заполненных остальных — "
+                      "похоже на сдвиг колонок, проверьте выравнивание (%s)",
+                      last, period_type)
+
     return [p for _, p in periods], metrics, report_dates, documents
 
 
