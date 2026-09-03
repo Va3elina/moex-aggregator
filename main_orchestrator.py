@@ -166,6 +166,9 @@ SCRIPTS = {
     # Рёбра владения между эмитентами (страницы акционеров) → world_facts.
     # Пишет только изменившееся, поэтому лишний прогон безвреден.
     'ownership_scan': BASE_DIR / 'Company' / 'ownership_scan.py',
+    # Детектор смены владения по архиву новостей → очередь ownership_signals.
+    # Дёшево (один полнотекстовый запрос по GIN-индексу), поэтому ежедневно.
+    'ownership_detect': BASE_DIR / 'Company' / 'ownership_detect.py',
     # ОРФР ЦБ (cbr_orfr_flows) убран из расписания: cbr.ru таймаутит с сервера,
     # формат отчёта нестабилен (ЦБ переименовывает листы). Перешли на ручной
     # ингест — файл присылается вручную, грузится через
@@ -233,6 +236,13 @@ OWNERSHIP_WEEKDAY = 0
 OWNERSHIP_HOUR = 6
 OWNERSHIP_MINUTE = 0
 
+# Детектор сигналов — ежедневно, сразу после лёгкого прохода карточек. Окно 7 дней
+# при суточной частоте: перекрытие безвредно (повторы схлопываются), а разрыв из-за
+# пропущенного прогона не теряет сигналы.
+DETECT_HOUR = 5
+DETECT_MINUTE = 30
+DETECT_WINDOW_DAYS = 7
+
 # ОРФР ЦБ — авто-расписание убрано (ручной ингест через --xlsx, см. SCRIPTS).
 
 # Буферы (секунды после закрытия интервала)
@@ -258,6 +268,7 @@ TIMEOUTS = {
     # 45 минут — запас на повторы после таймаутов, не на «вдруг медленно».
     'company_cards': 2700,
     'ownership_scan': 900,   # 80 страниц акционеров, замер — 1,5 минуты
+    'ownership_detect': 180,  # один запрос к news_archive по GIN, замер — секунды
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
     'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
@@ -424,7 +435,7 @@ RETRYABLE_DAILY = {
     # (429/403), скрипт прекращает обход сам — и автоматический повтор через 30 секунд
     # был бы ровно тем поведением, за которое банят по IP. Повтор здесь — решение
     # человека, а не оркестратора.
-    'ownership_scan',
+    'ownership_scan', 'ownership_detect',
 }
 RETRY_BACKOFF = [30, 120]  # сек между попытками (итого до 3 попыток)
 
@@ -540,7 +551,8 @@ class MainOrchestrator:
         # не привязанное к торговому дню.
         self.last_cards_full = None
         self.last_cards_light = None
-        self.last_ownership = None    # commodity daily — 08:00 МСК после US close
+        self.last_ownership = None
+        self.last_detect = None        # ежедневный детектор сигналов владения
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
         self.last_expire_quarter = None      # лёгкий expire-only — каждые 15 мин
@@ -1103,6 +1115,24 @@ class MainOrchestrator:
             log.error(f"    ✗ {имя}: {msg}")
         return success
 
+    async def run_ownership_detect(self) -> bool:
+        """Детектор смены владения: наполняет очередь поводов посмотреть.
+
+        ⚠️ Ничего не пишет в граф. Автомат предлагает, человек утверждает — попытка
+        выводить рёбра из текста новостей автоматически уже давала уверенный мусор.
+        """
+        log.info("  🔎 Сигналы смены владения...")
+        self.stats.setdefault('ownership_detect_runs', 0)
+        self.stats['ownership_detect_runs'] += 1
+        success, msg, dur = await run_script(
+            'ownership_detect', ['--days', str(DETECT_WINDOW_DAYS)])
+        if success:
+            log.info(f"    ✓ Сигналы ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Сигналы: {msg}")
+        return success
+
     async def run_ownership_scan(self) -> bool:
         """Рёбра владения между эмитентами → world_facts."""
         log.info("  🕸  Граф владения...")
@@ -1603,6 +1633,12 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, лёгкий проход...")
                     await self.run_company_cards(light=True)
                     self.last_cards_light = slot_day
+
+                if (slot_day != self.last_detect and
+                        now.hour == DETECT_HOUR and now.minute >= DETECT_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Сигналы смены владения...")
+                    await self.run_ownership_detect()
+                    self.last_detect = slot_day
 
                 if (slot_day != self.last_ownership and
                         now.weekday() == OWNERSHIP_WEEKDAY and

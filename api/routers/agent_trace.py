@@ -126,3 +126,76 @@ def trace_path(
             and ((r["params"] or {}).get("ticker") or (r["params"] or {}).get("тикер"))
         ],
     }
+
+
+# ======================================================================
+#        ОЧЕРЕДЬ СИГНАЛОВ СМЕНЫ ВЛАДЕНИЯ (кандидаты в рёбра графа)
+# ======================================================================
+# Живёт рядом со следом агента намеренно: обе ручки про НАБЛЮДЕНИЕ за тем, как
+# устроен второй мозг, и обе читает один и тот же дашборд одного и того же админа.
+# Заводить ради двух эндпоинтов третий роутер — плодить сущности.
+
+signals_router = APIRouter(prefix="/api/admin/ownership-signals",
+                           tags=["admin-ownership-signals"])
+
+
+@signals_router.get("")
+def signals_queue(
+    status: str = Query("новый"),
+    only_strong: bool = Query(False, description="только строгие сигналы с процентом"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Очередь поводов посмотреть на граф.
+
+    Порядок неслучаен: сначала сигналы по компаниям, у которых связь УЖЕ ЕСТЬ (там
+    речь об изменении известной доли — это дороже пропустить), затем строгие
+    формулировки 714-П, затем свежесть.
+    """
+    rows = db.execute(text("""
+        SELECT id, posted_at, tickers, snippet, strength, has_percent, edge_state,
+               status, review_note
+        FROM ownership_signals
+        WHERE status = :st
+          AND (:strong = false OR (strength = 'строгий' AND has_percent))
+        ORDER BY (edge_state = 'есть_ребро') DESC,
+                 (strength = 'строгий') DESC,
+                 has_percent DESC,
+                 posted_at DESC
+        LIMIT :lim
+    """), {"st": status, "strong": only_strong, "lim": limit}).mappings().all()
+
+    counts = db.execute(text(
+        "SELECT status, COUNT(*) FROM ownership_signals GROUP BY status"
+    )).all()
+    return {"очередь": [dict(r) for r in rows],
+            "по_статусам": {k: v for k, v in counts}}
+
+
+@signals_router.patch("/{signal_id}")
+def signals_review(
+    signal_id: int,
+    status: str = Query(..., pattern="^(подтверждён|отклонён|новый)$"),
+    note: str = Query(""),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Отметка разбора.
+
+    ⚠️ Подтверждение НИЧЕГО не создаёт в графе. Оно означает «я посмотрел и завёл
+    ребро руками» — ровно та граница, ради которой очередь и заведена: автомат
+    предлагает, человек утверждает. Ручка, которая по нажатию писала бы ребро,
+    незаметно превратила бы курируемый граф в автоматический.
+    """
+    res = db.execute(text("""
+        UPDATE ownership_signals
+        SET status = :st, review_note = NULLIF(:note, \'\'), reviewed_at = now()
+        WHERE id = :id
+    """), {"id": signal_id, "st": status, "note": note})
+    if not res.rowcount:
+        raise HTTPException(status_code=404, detail="Сигнал не найден")
+    db.commit()
+    return {"id": signal_id, "status": status}

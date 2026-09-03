@@ -534,6 +534,7 @@ app.include_router(extension.router)  # ← /api/extension/* (ext-токены: 
 app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих аномалий)
 app.include_router(agent_trace.router)  # ← /api/admin/agent-trace/* (след агента для дашборда)
+app.include_router(agent_trace.signals_router)  # ← /api/admin/ownership-signals/* (очередь кандидатов в рёбра)
 app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, shared secret)
 app.include_router(mandate_scan.internal_router)  # ← /api/internal/mandate-scan/* (Routine-скаут, shared secret)
