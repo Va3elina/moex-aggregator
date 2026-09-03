@@ -257,7 +257,14 @@ def load_card(card: dict, issuer_key: str, draft: Path, engine=None,
         # значит бумага не заведена в issuer_securities, и данные молча теряются.
         log.warning("пропущено строк без бумаги нужного класса: %d",
                     stats["metrics_skipped_no_secid"])
-    if stats["metrics_new"] == 0 and stats["metrics_touched"] == 0:
+    # ⚠️ В ЛЁГКОМ ПРОХОДЕ МЕТРИК НЕТ ПО ЗАМЫСЛУ. Карточка без единой метрики — это
+    # либо сбой, либо лёгкий режим (запрошены только дивиденды и акционеры), и
+    # отличить их надо ДО того, как писать ошибку. Иначе ежедневный проход по 123
+    # компаниям пишет 123 ложные ошибки в лог ошибок, и настоящую там уже не увидеть.
+    # Ровно эту же болезнь пришлось лечить в счётчике раннера — здесь она вторая.
+    лёгкий = not card.get("metrics") and (card.get("dividend_payments")
+                                          or card.get("shareholders"))
+    if stats["metrics_new"] == 0 and stats["metrics_touched"] == 0 and not лёгкий:
         log.error("не загружено ни одной метрики — проверьте JSON и сид эмитента")
     log.info("итог: %s", json.dumps(stats, ensure_ascii=False))
     return stats

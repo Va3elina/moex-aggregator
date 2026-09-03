@@ -73,14 +73,34 @@ def main():
     if a.no_load and not a.out_dir:
         sys.exit("--no-load без --out-dir бессмыслен: разобрать и выбросить")
 
-    rows = json.loads(a.draft.read_text(encoding="utf-8"))["кандидаты"]
-    tickers = sorted({r["smartlab_ticker"] for r in rows if r.get("smartlab_ticker")})
+    # Справочник и список компаний читаются из БАЗЫ: источник истины после сида —
+    # issuers и issuer_aliases, файл лишь их первое наполнение.
+    engine = None if a.no_load else create_engine(os.environ["DB_URL"])
+
+    # ⚠️ СПИСОК КОМПАНИЙ — ИЗ БАЗЫ, А НЕ ИЗ ФАЙЛА. Вселенная расширяется сидом
+    # (seed_issuers --from-instruments), и она уже была расширена до 123 эмитентов,
+    # когда фетчер продолжал читать замороженный JSON с 80 тикерами: 39 компаний
+    # просто не качались. Поймано на первом же ручном прогоне по логу «40/80».
+    #
+    # Тот же список читает и карта «тикер smart-lab → эмитент» ниже — значит источник
+    # у них теперь ОДИН, и разойтись они больше не могут.
+    #
+    # Файл остаётся запасным путём: пустая база (первый запуск, свежая копия) не
+    # должна приводить к прогону по нулю компаний, который выглядит как успех.
+    tickers = []
+    if engine is not None:
+        with engine.connect() as c:
+            tickers = sorted({r[0] for r in c.execute(text(
+                "SELECT smartlab_ticker FROM issuers WHERE smartlab_ticker IS NOT NULL"
+            )).fetchall() if r[0]})
+    if not tickers:
+        rows = json.loads(a.draft.read_text(encoding="utf-8"))["кандидаты"]
+        tickers = sorted({r["smartlab_ticker"] for r in rows if r.get("smartlab_ticker")})
+        log.warning("список компаний взят из файла (%d) — в базе справочник пуст",
+                    len(tickers))
     if a.limit:
         tickers = tickers[:a.limit]
 
-    # Справочник «тикер smart-lab → эмитент» читается из БАЗЫ, а не из файла:
-    # источник истины после сида — issuer_aliases, файл лишь его первое наполнение.
-    engine = None if a.no_load else create_engine(os.environ["DB_URL"])
     смартлаб_к_эмитенту = {}
     if engine is not None:
         with engine.connect() as c:
