@@ -98,6 +98,8 @@ COPY Candles/ ./Candles/
 COPY Funds/ ./Funds/
 COPY Macro/ ./Macro/
 COPY Commodity/ ./Commodity/
+# Карточки компаний и граф владения (справочник эмитентов, smart-lab)
+COPY Company/ ./Company/
 COPY CBR/ ./CBR/
 COPY main_orchestrator.py .
 COPY pipeline_heartbeat.py .

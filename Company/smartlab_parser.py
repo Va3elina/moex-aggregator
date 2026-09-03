@@ -478,7 +478,8 @@ def parse_factors(page_html: str):
 
 # ------------------------------------------------------------------ сборка
 
-def parse_company(ticker: str, standards=("MSFO", "RSBU"), cache_dir: Path | None = None):
+def parse_company(ticker: str, standards=("MSFO", "RSBU"), cache_dir: Path | None = None,
+                  light: bool = False):
     """
     standards: какие стандарты отчётности забирать. У Сбера МСФО даёт 52 кода, РСБУ —
     49 со своими датами отчётов; у части компаний МСФО нет вовсе, и РСБУ — единственное,
@@ -495,6 +496,13 @@ def parse_company(ticker: str, standards=("MSFO", "RSBU"), cache_dir: Path | Non
     """
     if isinstance(standards, str):
         standards = (standards,)
+    if light:
+        # ⚠️ ЛЁГКИЙ РЕЖИМ — не «побыстрее», а про РАЗНУЮ СКОРОСТЬ ЖИЗНИ ДАННЫХ.
+        # Отчётность меняется 4 раза в год: ходить за ней ежедневно значит 560
+        # запросов в сутки ради того, чтобы узнать, что ничего не изменилось.
+        # Дивиденды объявляются внезапно, а смена акционера — то, что важно поймать
+        # быстро. Поэтому ежедневно берём ДВЕ страницы из семи.
+        standards = ()
     res = {"ticker": ticker, "standards": list(standards),
            "captured_at": datetime.now().isoformat(timespec="seconds"),
            "pages": {}, "metrics": [], "documents": [],
@@ -526,10 +534,13 @@ def parse_company(ticker: str, standards=("MSFO", "RSBU"), cache_dir: Path | Non
 
     # Полный архив первоисточников — отдельной страницей, а не тем огрызком,
     # что помещается в сводную таблицу.
-    fl = fetch(f"{BASE}/{ticker}/f/l/", cache_dir)
-    res["pages"]["documents"] = fl is not None
-    if fl:
-        res["documents"] = parse_documents_list(fl)
+    # В лёгком режиме пропускается: список отчётов пополняется вместе с публикацией
+    # отчётности, то есть раз в квартал, и ежедневно за ним ходить незачем.
+    if not light:
+        fl = fetch(f"{BASE}/{ticker}/f/l/", cache_dir)
+        res["pages"]["documents"] = fl is not None
+        if fl:
+            res["documents"] = parse_documents_list(fl)
 
     d = fetch(f"{BASE}/{ticker}/dividend/", cache_dir)
     res["pages"]["dividend"] = d is not None

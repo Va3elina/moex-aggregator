@@ -160,16 +160,31 @@ def load_treasury(conn, card, names, log, stats):
                "conf": 0.85 if as_of else 0.60})
 
 
+def load_edges(edges_json: Path, draft: Path, curated: Path, dry_run: bool = False) -> dict:
+    """Загрузка рёбер из готового JSON. Вынесено из main, чтобы сканер мог грузить
+    сам, одним проходом: отдельный второй шаг в расписании — это шаг, который
+    однажды не случится."""
+    class _A:
+        pass
+    a = _A(); a.edges_json = edges_json; a.draft = draft
+    a.curated = curated; a.dry_run = dry_run
+    return _run(a)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("edges_json", type=Path)
-    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_draft.json")
+    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_universe.json")
     ap.add_argument("--curated", type=Path, default=BASE_DIR / "ownership_curated.json",
                     help="рёбра, проверенные вручную (цепочки, дочки, институты)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     setup_logging()
+    stats = _run(a)
+    print(json.dumps(stats, ensure_ascii=False, indent=1))
 
+
+def _run(a) -> dict:
     payload = json.loads(a.edges_json.read_text(encoding="utf-8"))
     edges = payload["рёбра"]
     treasury = payload.get("казначейские", [])
@@ -239,7 +254,7 @@ def main():
             log.info("DRY-RUN, откат")
 
     log.info("итог: %s", json.dumps(stats, ensure_ascii=False))
-    print(json.dumps(stats, ensure_ascii=False, indent=1))
+    return stats
 
 
 if __name__ == "__main__":

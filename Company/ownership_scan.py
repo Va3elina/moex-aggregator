@@ -197,9 +197,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tickers", help="через запятую")
     ap.add_argument("--all", action="store_true", help="вся вселенная из issuer_draft.json")
-    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_draft.json")
+    ap.add_argument("--draft", type=Path, default=BASE_DIR / "issuer_universe.json")
     ap.add_argument("--cache-dir", type=Path)
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--load", action="store_true",
+                    help="сразу записать рёбра в world_facts (режим расписания)")
+    ap.add_argument("--once", action="store_true", help="совместимость с оркестратором")
+    ap.add_argument("--force", action="store_true", help="совместимость с оркестратором")
     a = ap.parse_args()
     setup_logging()
 
@@ -251,7 +255,19 @@ def main():
              len(result["неоднозначно"]), len(result["не_эмитенты"]),
              len(result["без_страницы"]))
     out = json.dumps(result, ensure_ascii=False, indent=1)
-    (a.out.write_text(out, encoding="utf-8") if a.out else print(out))
+    dest = a.out or (BASE_DIR / "logs" / "ownership_last.json")
+    dest.parent.mkdir(exist_ok=True)
+    dest.write_text(out, encoding="utf-8")
+    if not a.out and not a.load:
+        print(out)
+
+    if a.load:
+        # ⚠️ Грузим ТОЛЬКО уверенные рёбра и курируемый файл. Неоднозначные сюда не
+        # попадают никогда: цена ложного ребра — агент объяснит движение одной бумаги
+        # событиями чужой компании, и объяснит уверенно. Их разбирает человек.
+        from load_ownership import load_edges
+        stats = load_edges(dest, a.draft, BASE_DIR / "ownership_curated.json")
+        log.info("записано в world_facts: %s", json.dumps(stats, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -89,25 +89,25 @@ def resolve(conn, issuer_key: str):
     return row[0], {c: s for c, s in secs}
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("json_file", type=Path)
-    ap.add_argument("--issuer", required=True)
-    ap.add_argument("--dry-run", action="store_true")
-    a = ap.parse_args()
+def load_card(card: dict, issuer_key: str, draft: Path, engine=None,
+              dry_run: bool = False) -> dict:
+    """
+    Загрузка одной уже разобранной карточки.
 
-    setup_logging()
-    card = json.loads(a.json_file.read_text(encoding="utf-8"))
-    log.info("загрузка %s из %s (снято %s)", a.issuer, a.json_file.name,
-             card.get("captured_at"))
+    Вынесено из main, чтобы дневной фетчер парсил и грузил в ОДИН проход.
+    Промежуточные JSON полезны при отладке, а в расписании они только плодят файлы
+    и второй шаг, который может не случиться — и тогда данные разобраны, но не
+    записаны, а по логам всё зелёное.
+    """
+
     today = date.today()
-    engine = create_engine(DB_URL)
+    engine = engine or create_engine(DB_URL)
     stats = {"metrics_new": 0, "metrics_touched": 0, "metrics_changed": 0,
              "metrics_skipped_no_secid": 0, "metrics_ref": 0,
              "dividends": 0, "shareholders": 0, "theses": 0, "documents": 0}
 
     with engine.begin() as conn:
-        issuer_id, by_class = resolve(conn, a.issuer)
+        issuer_id, by_class = resolve(conn, issuer_key)
 
         # --- справочник показателей: наполняется тем, что реально пришло
         seen = {}
@@ -248,7 +248,7 @@ def main():
             """), {"i": issuer_id, "t": doc["doc_type"], "p": doc["period"], "u": url})
             stats["documents"] += 1
 
-        if a.dry_run:
+        if dry_run:
             conn.rollback()
             log.info("DRY-RUN, откат")
 
@@ -260,6 +260,22 @@ def main():
     if stats["metrics_new"] == 0 and stats["metrics_touched"] == 0:
         log.error("не загружено ни одной метрики — проверьте JSON и сид эмитента")
     log.info("итог: %s", json.dumps(stats, ensure_ascii=False))
+    return stats
+
+
+
+def main():
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("json_file", type=Path)
+    ap.add_argument("--issuer", required=True)
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+    setup_logging()
+    card = json.loads(a.json_file.read_text(encoding="utf-8"))
+    log.info("загрузка %s из %s (снято %s)", a.issuer, a.json_file.name,
+             card.get("captured_at"))
+    stats = load_card(card, a.issuer, a.draft, dry_run=a.dry_run)
     print(json.dumps(stats, ensure_ascii=False, indent=1))
 
 
