@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
-    "@unhead/react": "^3.1.0",
+    "@unhead/react": "^3.2.3",
     "fabric": "^6.9.1",
     "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
