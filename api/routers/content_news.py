@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy import text
 from api.services import style_profile
+from api.agent_trace import ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать
 from sqlalchemy.orm import Session
 
 from api.database import get_db
@@ -852,6 +853,25 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
                                   ensure_ascii=False) if body.paragraphs else None,
         "apply_fix": apply_fix, "fix": fix or None, "note": body.fix_note,
     })
+    # ── След судьи. Вердикт — одна строка, разбор абзацев — по строке на абзац.
+    # ⚠️ Абзацы пишутся ВСЕ, а не только проваленные: «абзац 2 опирается на долю из
+    # world_facts» объясняет пост не хуже, чем «абзац 3 без опоры», и без принятых
+    # абзацев в дашборде получился бы список одних претензий.
+    _t = трассировать(db, candidate_id, "судья")
+    _t.record("judge", "вердикт по черновику",
+              outcome=(ВЗЯТО if verdict == "годится" else НЕ_ВЗЯТО),
+              result_count=len(items),
+              result_note="%s · проверено пунктов: %d" % (verdict, len(items)),
+              reason=(", ".join(failed) if failed else None),
+              params={"вердикт": verdict, "провалы": failed, "недочёты": defects,
+                      "правка_применена": apply_fix})
+    for para in body.paragraphs:
+        _t.record("judge", "абзац %d" % para.n,
+                  outcome=(ВЗЯТО if para.supported else НЕ_ВЗЯТО),
+                  result_count=1,
+                  result_note=(para.supported_by or para.claim or "")[:200],
+                  reason=(None if para.supported else (para.doubt or "опора в брифе не найдена")))
+
     db.commit()
     return {"verdict": verdict, "failed_gates": failed, "defects": defects,
             "paragraphs_without_support": [p.n for p in body.paragraphs
@@ -928,13 +948,29 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
                 # черновиков (01.09: плотность чисел уехала втрое, хотя каждый
                 # отдельный запрет был верным), поэтому нужен снимок КАЖДОГО.
                 "style": _style_snapshot(body.draft_text)})
+        # ⚠️ Длина в следе — не украшение. Замер 01.09: черновик разъехался до 1 105
+        # знаков против медианы жанра 661, и заметили это постфактум по одному посту.
+        # В следе дрейф виден рядом на всех черновиках подряд.
+        трассировать(db, candidate_id, "писатель").record(
+            "writer", "написать пост по брифу", outcome=ВЗЯТО, result_count=1,
+            result_note="черновик %d знаков" % len(body.draft_text),
+            params={"версия_брифа": _BRIEF_VERSION})
         db.commit()
         return {"status": "draft_ready", "has_draft": True}
 
+    _reason = body.declined_reason or "модель не указала причину"
     db.execute(text("""
         UPDATE content_candidates
         SET status = 'pending', synth_declined_reason = :reason, updated_at = now()
         WHERE id = :id
-    """), {"id": candidate_id, "reason": body.declined_reason or "модель не указала причину"})
+    """), {"id": candidate_id, "reason": _reason})
+    # ⚠️ Отказ писателя — САМАЯ ценная строка следа на этом шаге. В воронке такой
+    # кандидат просто возвращается в pending и внешне неотличим от того, до которого
+    # ещё не дошли руки. Причина отказа («данных мало», «сюжет не складывается»)
+    # существует только здесь и только в этот момент.
+    трассировать(db, candidate_id, "писатель").record(
+        "writer", "написать пост по брифу", outcome=ПУСТО, result_count=0,
+        result_note="отказался писать", reason=_reason,
+        params={"версия_брифа": _BRIEF_VERSION})
     db.commit()
     return {"status": "pending", "has_draft": False}

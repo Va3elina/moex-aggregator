@@ -67,7 +67,7 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
-from signals.agent_trace import (          # noqa: E402
+from api.agent_trace import (              # noqa: E402
     ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать,
 )
 import pipeline_heartbeat                  # noqa: E402
@@ -787,7 +787,7 @@ def _pick_snippet(body: str, nt: int, name: str) -> str:
 def _related_context(db, tickers, as_of, trace=None) -> dict:
     """Связанные компании: что у них с ценой и что о них писал архив.
 
-    trace — счётчик следа (signals/agent_trace). Здесь агент реально ходит по графу
+    trace — счётчик следа (api/agent_trace). Здесь агент реально ходит по графу
     владения, и без записи этого обхода потом невозможно объяснить, почему в текст
     попал Озон, а МТС нет. Необязателен: без него функция работает как раньше.
 
