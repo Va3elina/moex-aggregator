@@ -1,0 +1,117 @@
+/**
+ * Токены админской панели. ЗАКРЫТЫЙ НАБОР, НЕ ТРОГАЕТ САЙТ.
+ *
+ * ⚠️ ВСЁ ЗАПЕРТО ВНУТРИ .dash. Сайт готов, у него свои editorial-токены и две темы;
+ * панель — тёмная всегда и по своему макету, поэтому она не переопределяет ничего
+ * глобально и не читает сайтовые переменные --bg и --fs. Тот же приём, что у песочницы (.sb-panel):
+ * отдельная поверхность живёт на своих переменных, иначе правка панели однажды
+ * приедет на страницу, которую никто не собирался менять.
+ *
+ * ⚠️ АНИМАЦИИ СДЕРЖАННЫЕ. Пульс только у того, что живо прямо сейчас; бегущий блик —
+ * только у идущего процесса. Приборная панель, а не витрина. Всё гасится при
+ * prefers-reduced-motion.
+ */
+
+.dash {
+  --d-bg: #0E0E10;
+  --d-card: #17171A;
+  --d-inner: #1E1E22;
+  --d-sunk: #141416;
+  --d-ink: #F5F1E8;
+  --d-mute: #9A9A9A;
+  --d-dim: #6B6B6B;
+  --d-line: rgba(245, 241, 232, 0.14);
+  --d-line-strong: rgba(245, 241, 232, 0.30);
+  --d-accent: #FF5C2B;
+  --d-ok: #5BD49C;
+  --d-warn: #F2A24A;
+  --d-bad: #FF7A5C;
+  --d-cold: #5DA3E9;
+  --d-shadow: 4px 4px 0 #0A0A0A;
+
+  background: var(--d-bg);
+  color: var(--d-ink);
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dash .mono {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Крупные цифры и заголовки. Archivo с сайта не тянем — берём то, что уже
+   загружено, иначе панель ждёт лишний шрифт ради четырёх чисел. */
+.dash .disp {
+  font-family: Inter, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+.dash-card {
+  background: var(--d-card);
+  border: 2px solid var(--d-ink);
+  border-radius: 12px;
+  box-shadow: var(--d-shadow);
+}
+
+.dash-inner {
+  background: var(--d-inner);
+  border-radius: 8px;
+}
+
+/* Вкладки: активная — заливка акцентом, остальные молчат. */
+.dash-tab {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: var(--d-mute);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+  white-space: nowrap;
+}
+.dash-tab:hover { color: var(--d-ink); }
+.dash-tab[data-active='true'] {
+  background: var(--d-accent);
+  color: var(--d-bg);
+  font-weight: 600;
+}
+
+.dash-press {
+  border: 1px solid var(--d-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--d-ink);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.dash-press:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #0A0A0A; }
+.dash-press:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #0A0A0A; }
+.dash-press:disabled { opacity: 0.5; cursor: default; }
+
+@keyframes dash-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.82); }
+}
+@keyframes dash-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.dash-pulse { animation: dash-pulse 2.4s ease-in-out infinite; }
+.dash-rise  { animation: dash-rise 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+/* Ребро карты: пунктир «ползёт» от источника к потребителю — видно направление
+   потока без стрелок на каждом ребре. */
+@keyframes dash-flow { to { stroke-dashoffset: -24; } }
+.dash-edge-live {
+  stroke-dasharray: 6 6;
+  animation: dash-flow 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-pulse, .dash-rise, .dash-edge-live { animation: none; }
+}
