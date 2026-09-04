@@ -144,10 +144,24 @@ interface Props {
      * поверх. UX-паттерн как в Figma/Excalidraw.
      */
     onShapeCreated?: () => void;
+    /**
+     * Палитра toolbar (значения могут быть CSS-переменными). Нужна, чтобы при
+     * выделении фигуры вернуть родителю ИМЕННО пресет, а не resolved-hex —
+     * иначе кнопка палитры не подсветилась бы.
+     */
+    colorPresets?: string[];
+    /**
+     * Стиль выделенного объекта (толщина в CSS-px и цвет). Родитель
+     * синхронизирует toolbar с выделением: без этого панель показывала бы
+     * настройки прошлой фигуры, и переключение на уже выставленное значение
+     * не срабатывало (нужно было ткнуть в соседнее и вернуться).
+     */
+    onSelectionStyle?: (style: { strokeWidth: number; color?: string }) => void;
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
-    ({ background, tool, color, strokeWidth, pixelScale, onHistoryChange, onShapeCreated }, ref) => {
+    ({ background, tool, color, strokeWidth, pixelScale, onHistoryChange, onShapeCreated,
+       colorPresets, onSelectionStyle }, ref) => {
         const canvasDpr = useCallback(
             () => pixelScale ?? fallbackCanvasDpr(),
             [pixelScale],
@@ -171,11 +185,15 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const strokeWidthRef = useRef(strokeWidth);
         const onShapeCreatedRef = useRef(onShapeCreated);
         const onHistoryChangeRef = useRef(onHistoryChange);
+        const onSelectionStyleRef = useRef(onSelectionStyle);
+        const colorPresetsRef = useRef(colorPresets);
         useEffect(() => { toolRef.current = tool; }, [tool]);
         useEffect(() => { colorRef.current = color; }, [color]);
         useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
         useEffect(() => { onShapeCreatedRef.current = onShapeCreated; }, [onShapeCreated]);
         useEffect(() => { onHistoryChangeRef.current = onHistoryChange; }, [onHistoryChange]);
+        useEffect(() => { onSelectionStyleRef.current = onSelectionStyle; }, [onSelectionStyle]);
+        useEffect(() => { colorPresetsRef.current = colorPresets; }, [colorPresets]);
 
         // ── История undo/redo (snapshot-стек) ──────────────────────────────
         // saveSnapshot пишет JSON-снимок объектов на каждое дискретное изменение;
@@ -314,6 +332,39 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 const hy2 = y2 - headLen * Math.sin(a2);
                 return `M ${x1} ${y1} L ${x2} ${y2} M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`;
             };
+
+            // ── Обратная синхронизация toolbar с выделением ──────────────────
+            // Панель показывает настройки ТЕКУЩЕЙ фигуры: выбрал толстую стрелку —
+            // подсвечена «толстая», выбрал среднюю — «средняя». Без этого стейт
+            // панели жил своей жизнью и повторный клик по уже подсвеченному
+            // размеру/цвету ничего не менял (нужен был круг «сменить и вернуть»).
+            const reportSelectionStyle = (obj: FabricObject | undefined) => {
+                const cb = onSelectionStyleRef.current;
+                if (!cb || !obj || restoringRef.current) return;
+                const d = canvasDpr();
+                const isText = obj.type === 'i-text';
+                const raw = isText
+                    ? (obj as InstanceType<typeof fabric.IText>).fill
+                    : obj.stroke;
+                const w = isText
+                    ? ((obj as InstanceType<typeof fabric.IText>).fontSize / d) / 6
+                    : (obj.strokeWidth ?? 0) / d;
+                let color: string | undefined;
+                if (typeof raw === 'string' && raw) {
+                    const host = containerRef.current;
+                    // Пресеты бывают CSS-переменными, а на объекте лежит уже
+                    // вычисленный цвет — сравниваем в resolved-виде.
+                    color = (colorPresetsRef.current ?? []).find(
+                        (p) => resolveColor(p, host) === raw,
+                    ) ?? raw;
+                }
+                cb({ strokeWidth: w, color });
+            };
+            const onSelectionEvent = (e: { selected?: FabricObject[] }) => {
+                reportSelectionStyle(e.selected?.[0]);
+            };
+            fc.on('selection:created', onSelectionEvent);
+            fc.on('selection:updated', onSelectionEvent);
 
             fc.on('mouse:down', (opt) => {
                 if (toolRef.current === 'pen') return; // pen handled by PencilBrush
