@@ -63,7 +63,7 @@ from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config  # noqa: E402
 from signals.publish.telegram import (  # noqa: E402
-    send_text_post, apply_custom_emoji, with_frame_signature,
+    send_text_post, apply_custom_emoji, with_frame_signature, with_data_annotation,
 )
 
 API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
@@ -148,7 +148,7 @@ _SELECT_CANDIDATE = text("""
     SELECT id, headline, tickers, draft_text, status,
            reviewer_reason_code, reviewer_reason,
            judge_verdict, judge_failed, judge_defects, judge_paragraphs,
-           judge_fixed_at, judge_fix_note
+           judge_fixed_at, judge_fix_note, annotation
     FROM content_candidates WHERE id = :id
 """)
 
@@ -341,8 +341,12 @@ def _card_view(row):
     сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
-     j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note) = row
-    body = apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
+     j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note,
+     annotation) = row
+    # Превью обязано показывать ТО ЖЕ, что уйдёт в канал, вместе с аннотацией:
+    # иначе человек утверждает один текст, а публикуется другой.
+    body = apply_custom_emoji(with_frame_signature(with_data_annotation(
+        (draft_text or "")[:_DRAFT_PREVIEW_LIMIT], annotation)))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
     txt += (_fix_line(j_fixed_at, j_fix_note)
@@ -394,7 +398,14 @@ def _approve(db, cid: int) -> tuple:
     db.execute(_TO_IN_REVIEW, {"id": cid})
     db.commit()
 
-    ok, msg_id, err = send_text_post(text=row[3], channel_id=config.CONTENT_CHANNEL_ID)
+    # Аннотация берётся с кандидата, а не собирается заново: она должна описывать те
+    # данные, на которых пост был НАПИСАН, а не те, что лежат в базе на момент выхода.
+    аннотация = db.execute(
+        text("SELECT annotation FROM content_candidates WHERE id = :i"), {"i": cid}
+    ).scalar()
+    ok, msg_id, err = send_text_post(
+        text=with_data_annotation(row[3], аннотация),
+        channel_id=config.CONTENT_CHANNEL_ID)
     if not ok:
         # Оставляем в in_review — видно в Kanban как «застряло», не откатываем
         # молча в draft_ready (не даём повторный auto-triggered показ карточки).

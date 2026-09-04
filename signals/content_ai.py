@@ -1189,7 +1189,7 @@ def _secid_for_card(db, asset_id: str, tickers) -> str | None:
 
 
 _SELECT_FUND = text("""
-    SELECT m.metric_code, r.label_ru, r.unit, m.period_label, m.value
+    SELECT m.metric_code, r.label_ru, r.unit, m.period_label, m.value, m.report_date
     FROM company_metrics m
     JOIN metrics_ref r USING (metric_code)
     WHERE m.secid = :secid AND m.standard = 'MSFO'
@@ -1218,6 +1218,14 @@ _SELECT_THESES = text("""
     ) t WHERE n = 1
     ORDER BY direction DESC
 """)
+
+
+def _только_текущее(val: str) -> str:
+    """Из «1,07 → 3,11 (было за 2025…)» оставить «3,11»: в подписи нужна величина,
+    а не история. Историю модель объясняет словами в самом посте."""
+    if "→" in val:
+        val = val.split("→", 1)[1]
+    return val.split("(")[0].strip()
 
 
 def _fund_number(v) -> str:
@@ -1262,8 +1270,10 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
 
     # Собираем «прошлый год → сейчас». LTM — это «сейчас»; за «прошлый год» берём
     # последний ПОЛНЫЙ год, он же самый свежий year-период.
-    по_коду = {}
-    for code, label, unit, period, value in rows:
+    по_коду, дата_отчёта = {}, None
+    for code, label, unit, period, value, report_date in rows:
+        if period == "LTM" and report_date and (not дата_отчёта or report_date > дата_отчёта):
+            дата_отчёта = report_date
         d = по_коду.setdefault(code, {"label": label, "unit": unit, "years": {}})
         if period == "LTM":
             d["ltm"] = float(value)
@@ -1317,12 +1327,44 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
                      result_note="; ".join("%s: %s" % (k, v) for k, v in list(out.items())[:3])[:200],
                      params={"secid": secid, "event_type": event_type, "codes": codes})
 
+    # ── АННОТАЦИЯ. Собирается ЗДЕСЬ и целиком кодом; модель её не пишет и не правит.
+    # Числа, придуманные моделью, неотличимы от настоящих — а мы за один день поймали
+    # и выдуманный возраст факта, и ноль вместо пропуска. Приклеивается на слое
+    # публикации, как фирменная подпись, и по той же причине (см. миграцию 073).
+    числа = [(k, v) for k, v in out.items() if k not in ("чем_объясняют", "ГРАНИЦА")]
+    if числа:
+        # В аннотации — «стало», без стрелок: это подпись, а не рассуждение о динамике.
+        части = []
+        for label, val in числа:
+            # ⚠️ Регистр не трогаем: .lower() превращал «P/E» в «p/e», а «EBITDA» в
+            # «ebitda». Аббревиатуры в подписи под постом выглядят как опечатка.
+            части.append("%s %s" % (label, _только_текущее(val)))
+        # ⚠️ ДАТА — ЭТО ДАТА ОТЧЁТНОСТИ, А НЕ ДАТА НОВОСТИ. Первый рендер подписывал
+        # «на 01.09.2026», хотя это день сигнала: читатель понял бы, что цифры
+        # свежие на эту дату, а они за последние 12 месяцев по отчёту, вышедшему
+        # раньше. Берём дату публикации последнего отчёта; если её нет — говорим
+        # честно, что это дата, на которую мы данные сняли.
+        if дата_отчёта:
+            когда = "по отчётности за последние 12 мес (отчёт от %s)" % дата_отчёта.strftime("%d.%m.%Y")
+        else:
+            когда = "по данным на %s" % as_of.strftime("%d.%m.%Y")
+        out["аннотация"] = ("Данные smart-lab, %s: %s." % (когда, ", ".join(части)))
+        out["_аннотация_служебное"] = (
+            "Эта строка приклеивается к посту АВТОМАТИЧЕСКИ на публикации. "
+            "НЕ переписывать её, НЕ вставлять в текст и не дублировать."
+        )
+
     if out:
         # Граница сама была на 400 знаков — четверть блока уходила на инструкцию.
         # Сокращено без потери смысла: три запрета вместо пяти предложений.
+        # ⚠️ ЧИСЛА В ТЕКСТ НЕ ПЕЧАТАТЬ. Раньше здесь стояло «максимум одно число» —
+        # инструкция, которую модель обходит, потому что поле в брифе она считает
+        # обязанной израсходовать. Теперь числа нужны ей только для ПОНИМАНИЯ причины,
+        # а в пост они попадают отдельной строкой, собранной кодом.
         out["ГРАНИЦА"] = (
-            "МАКСИМУМ ОДНО число отсюда, и только если оно объясняет ПОВОД. Это фон, "
-            "а не тема. Тезис — чужое мнение: называть с датой."
+            "Числа отсюда в текст поста НЕ ПЕРЕНОСИТЬ: они уйдут отдельной строкой "
+            "автоматически. Объяснять словами («долговая нагрузка выросла втрое»), "
+            "без цифр. Тезис — чужое мнение: называть с датой."
         )
     return out
 
@@ -1355,6 +1397,16 @@ def _build_brief(db, row) -> dict:
     pos = _position_phrases(row["asset_id"], row["anomaly_clgroup"],
                             as_of=row["signal_date"])
     _trace = трассировать(db, row["id"], "бриф")
+    _фундамент = _company_fundamentals(
+        db, row["asset_id"], row["tickers"], row["event_type"], row["signal_date"],
+        trace=_trace)
+    # ⚠️ Аннотацию храним на кандидате, а не пересобираем при публикации. Между
+    # написанием поста и его выходом может пройти день: карточка успеет обновиться,
+    # и подпись «на основании таких-то данных» стала бы описывать не те данные, на
+    # которых пост написан. Подпись должна соответствовать моменту написания.
+    if _фундамент.get("аннотация"):
+        db.execute(text("UPDATE content_candidates SET annotation = :a WHERE id = :i"),
+                   {"a": _фундамент["аннотация"], "i": row["id"]})
     brief = {
         "candidate_id": row["id"],
         "headline": row["headline"],
@@ -1370,9 +1422,7 @@ def _build_brief(db, row) -> dict:
                                              row["tickers"], row["signal_date"]),
         "связанные_компании": _related_context(db, row["tickers"], row["signal_date"],
                                                trace=_trace),
-        "фундамент_компании": _company_fundamentals(
-            db, row["asset_id"], row["tickers"], row["event_type"], row["signal_date"],
-            trace=_trace),
+        "фундамент_компании": _фундамент,
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
             pos),
