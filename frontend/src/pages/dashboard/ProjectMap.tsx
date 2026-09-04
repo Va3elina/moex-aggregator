@@ -85,10 +85,28 @@ function состояния(процессы: DashboardProcess[]): Record<string
   return итог;
 }
 
-export default function ProjectMap({ процессы }: { процессы: DashboardProcess[] }) {
+export default function ProjectMap({ процессы, идут, вспышки }: {
+  процессы: DashboardProcess[];
+  /** Имена пайплайнов, работающих прямо сейчас. */
+  идут?: Set<string>;
+  /** Только что закончившие — короткая вспышка исхода. */
+  вспышки?: Map<string, 'ok' | 'fail'>;
+}) {
   const [выбран, setВыбран] = useState<string | null>(null);
   const сост = useMemo(() => состояния(процессы), [процессы]);
   const поИмени = useMemo(() => new Map(процессы.map((п) => [п.имя, п])), [процессы]);
+
+  // Узел «работает сейчас», если работает хоть один его пайплайн.
+  const идущие = идут ?? new Set<string>();
+  const вспыхнувшие = вспышки ?? new Map<string, 'ok' | 'fail'>();
+  const узелИдёт = (у: УзелКарты) => у.пайплайны.some((имя) => идущие.has(имя));
+  const узелВспыхнул = (у: УзелКарты): 'ok' | 'fail' | null => {
+    for (const имя of у.пайплайны) {
+      const в = вспыхнувшие.get(имя);
+      if (в) return в;
+    }
+    return null;
+  };
 
   const высота = Math.max(...УЗЛЫ.map((у) => у.y)) + ВЫСОТА_УЗЛА + 40;
   const узел = (id: string) => УЗЛЫ.find((у) => у.id === id)!;
@@ -146,16 +164,20 @@ export default function ProjectMap({ процессы }: { процессы: Das
             const dx = (x2 - x1) / 2;
             const s = сост[р.от] ?? 'неизвестно';
             const активно = выбран === null || выбран === р.от || выбран === р.к;
+            // ⚠️ Ребро «течёт», только когда процесс идёт ПРЯМО СЕЙЧАС. Первая
+            // версия анимировала всё зелёное подряд — экран мерцал целиком и
+            // сообщал ровно ноль: если движется всё, не движется ничто.
+            const течёт = узелИдёт(узел(р.от)) || узелИдёт(узел(р.к));
             return (
               <path
                 key={`${р.от}-${р.к}`}
                 d={`M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`}
                 fill="none"
                 stroke={ЦВЕТ[s]}
-                strokeWidth={выбран && активно ? 2.4 : 1.4}
-                strokeDasharray={р.ручное ? '5 4' : undefined}
-                opacity={активно ? 0.75 : 0.12}
-                className={!р.ручное && s === 'работает' && активно ? 'dash-edge-live' : undefined}
+                strokeWidth={течёт ? 2.6 : (выбран && активно ? 2.4 : 1.4)}
+                strokeDasharray={р.ручное && !течёт ? '5 4' : undefined}
+                opacity={активно ? (течёт ? 1 : 0.75) : 0.12}
+                className={течёт && активно ? 'dash-edge-live' : undefined}
                 markerEnd="url(#dash-arrow)"
               />
             );
@@ -166,6 +188,13 @@ export default function ProjectMap({ процессы }: { процессы: Das
             const s = сост[у.id] ?? 'неизвестно';
             const виден = связан(у.id);
             const активный = выбран === у.id;
+            const работает = узелИдёт(у);
+            const вспышка = узелВспыхнул(у);
+            const обводка = активный ? 'var(--d-accent)'
+              : работает ? 'var(--d-accent)'
+              : вспышка === 'ok' ? 'var(--d-ok)'
+              : вспышка === 'fail' ? 'var(--d-bad)'
+              : 'var(--d-line)';
             return (
               <g
                 key={у.id}
@@ -177,9 +206,21 @@ export default function ProjectMap({ процессы }: { процессы: Das
                 <rect
                   width={ШИРИНА_УЗЛА} height={ВЫСОТА_УЗЛА} rx={8}
                   fill={у.вид === 'витрина' ? 'var(--d-sunk)' : 'var(--d-inner)'}
-                  stroke={активный ? 'var(--d-accent)' : 'var(--d-line)'}
-                  strokeWidth={активный ? 2 : 1}
+                  stroke={обводка}
+                  strokeWidth={активный || работает || вспышка ? 2 : 1}
+                  className={вспышка ? 'dash-flash' : undefined}
                 />
+                {работает && (
+                  <>
+                    {/* Бегущая полоса по низу узла — «идёт прямо сейчас». */}
+                    <rect y={ВЫСОТА_УЗЛА - 3} width={ШИРИНА_УЗЛА} height={3} rx={1.5}
+                      fill="var(--d-line)" />
+                    <rect y={ВЫСОТА_УЗЛА - 3} width={ШИРИНА_УЗЛА * 0.32} height={3} rx={1.5}
+                      fill="var(--d-accent)" className="dash-runner" />
+                    <circle cx={ШИРИНА_УЗЛА - 14} cy={16} r={4}
+                      fill="var(--d-accent)" className="dash-pulse" />
+                  </>
+                )}
                 {/* Полоса состояния слева — читается быстрее любого текста. */}
                 <rect width={3} height={ВЫСОТА_УЗЛА} rx={1.5} fill={ЦВЕТ[s]} />
                 <text x={14} y={24} fontSize={13} fontWeight={600} fill="var(--d-ink)">
@@ -189,8 +230,11 @@ export default function ProjectMap({ процессы }: { процессы: Das
                   {у.подпись.length > 34 ? `${у.подпись.slice(0, 33)}…` : у.подпись}
                 </text>
                 {у.пайплайны.length > 0 && (
-                  <text x={14} y={55} className="mono" fontSize={10} fill={ЦВЕТ[s]}>
-                    {у.пайплайны.length} {у.пайплайны.length === 1 ? 'процесс' : 'процессов'} · {s}
+                  <text x={14} y={55} className="mono" fontSize={10}
+                    fill={работает ? 'var(--d-accent)' : ЦВЕТ[s]}>
+                    {работает
+                      ? `идёт · ${у.пайплайны.filter((и) => идущие.has(и)).join(', ')}`
+                      : `${у.пайплайны.length} ${у.пайплайны.length === 1 ? 'процесс' : 'процессов'} · ${s}`}
                   </text>
                 )}
               </g>

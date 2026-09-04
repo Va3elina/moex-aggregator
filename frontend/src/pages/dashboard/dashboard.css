@@ -112,6 +112,29 @@
   animation: dash-flow 1.6s linear infinite;
 }
 
+/* Бегущая полоса по низу узла: процесс идёт прямо сейчас. */
+@keyframes dash-run {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(212%); }
+}
+.dash-runner { animation: dash-run 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+/* Вспышка на финише: процесс закончился — узел коротко подсвечивается. */
+@keyframes dash-flash {
+  0%   { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+.dash-flash { animation: dash-flash 0.9s ease-out 2; }
+
+/* Точка «живого соединения» в шапке. */
+.dash-dot-live { box-shadow: 0 0 0 0 currentColor; animation: dash-halo 2.4s ease-out infinite; }
+@keyframes dash-halo {
+  0%   { box-shadow: 0 0 0 0 rgba(91, 212, 156, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(91, 212, 156, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(91, 212, 156, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .dash-pulse, .dash-rise, .dash-edge-live { animation: none; }
+  .dash-pulse, .dash-rise, .dash-edge-live,
+  .dash-runner, .dash-flash, .dash-dot-live { animation: none; }
 }

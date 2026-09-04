@@ -174,6 +174,15 @@ async def _handle_notification(payload: str):
         source = data.get("source", "unknown")
         logger.info(f"NOTIFY received: source={source}")
 
+        # ⚠️ ТЕЛЕМЕТРИЯ ПРОЦЕССОВ КЭША НЕ КАСАЕТСЯ. Событие «процесс начался /
+        # закончился» несёт только факт запуска, никаких новых данных за ним нет.
+        # Пропустить его дальше нельзя: ниже неизвестный источник трактуется как
+        # «перестраховка» и сбрасывает ВЕСЬ Redis, а процессы стартуют десятки раз
+        # в час — кэш не выжил бы ни часа. Ранний выход: только broadcast.
+        if source == "pipeline":
+            await sse_manager.broadcast(payload)
+            return
+
         # Обновление кеша
         if source in ("5min", "hourly"):
             # Инкрементально дописываем новые данные в существующий кеш

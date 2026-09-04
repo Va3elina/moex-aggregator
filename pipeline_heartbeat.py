@@ -13,6 +13,7 @@ record_pipeline_run(name, success, note, duration) — это апсертит �
 ГЛАВНОЕ: запись heartbeat обёрнута так, что НИКОГДА не бросает исключение —
 сбой пульса не должен ронять сам фетчер.
 """
+import json
 import os
 from datetime import datetime
 
@@ -60,6 +61,58 @@ def _get_engine():
     return _engine
 
 
+_НАЧАЛО = """
+INSERT INTO pipeline_runs
+    (pipeline, last_run_at, last_status, started_at, updated_at)
+VALUES
+    (:p, :never, 'неизвестно', :now, :now)
+ON CONFLICT (pipeline) DO UPDATE SET
+    started_at = EXCLUDED.started_at,
+    updated_at = EXCLUDED.updated_at
+"""
+
+
+def _телеграмма(фаза: str, pipeline: str, extra: dict = None) -> None:
+    """
+    Событие о процессе в канал data_updated → SSE → приборная панель.
+
+    ⚠️ source='pipeline' ОБЯЗАН быть известен api/notify_listener: неизвестный
+    источник там means «перестраховка» и сбрасывает ВЕСЬ Redis-кэш. Процессы
+    стартуют десятки раз в час — молчаливая полная инвалидация на каждый старт
+    убила бы кэш насовсем. В листенере для этого источника стоит ранний выход.
+
+    Best-effort, как и сам пульс: телеметрия не смеет ронять ингест.
+    """
+    try:
+        payload = {"source": "pipeline", "pipeline": pipeline, "phase": фаза,
+                   "ts": datetime.utcnow().isoformat()}
+        if extra:
+            payload.update(extra)
+        with _get_engine().begin() as conn:
+            conn.execute(text("SELECT pg_notify('data_updated', :p)"),
+                         {"p": json.dumps(payload, ensure_ascii=False)})
+    except Exception:
+        pass
+
+
+def record_pipeline_start(pipeline: str) -> None:
+    """Отметить НАЧАЛО прогона: панель показывает процесс идущим сразу, а не
+    задним числом. Ошибки проглатываются — пульс не должен влиять на ингест."""
+    global _table_ready
+    try:
+        now = datetime.utcnow()
+        eng = _get_engine()
+        with eng.begin() as conn:
+            if not _table_ready:
+                conn.execute(text(_DDL))
+                _table_ready = True
+            conn.execute(text(_НАЧАЛО),
+                         {"p": pipeline, "now": now, "never": datetime(1970, 1, 1)})
+    except Exception:
+        pass
+    _телеграмма("start", pipeline)
+
+
 def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_sec: float = None,
                          degraded: bool = False) -> None:
     """
@@ -100,3 +153,8 @@ def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_s
     except Exception:
         # Пульс — best-effort. Молча игнорируем (фетч важнее мониторинга).
         pass
+    _телеграмма("end", pipeline, {
+        "status": "ok" if success else ("degraded" if degraded else "fail"),
+        "duration_sec": duration_sec,
+        "note": (note or "")[:120],
+    })
