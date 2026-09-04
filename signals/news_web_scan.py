@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
@@ -139,12 +140,49 @@ def _parse_views(s: str):
     return int(val * mult)
 
 
-def fetch(channel: str, before: int | None = None, timeout: int = 20) -> str:
+# ⚠️ ОДНА СЕССИЯ НА ВСЕ КАНАЛЫ. t.me с прод-сервера отвечает не всегда: за 1152
+# прогона 115 отказов у markettwits и 121 у newssmartlab — то есть примерно каждый
+# десятый запрос не доводит до конца TCP-рукопожатие (ConnectTimeout, до чтения
+# ответа дело не доходит). Канал и порядок ни при чём, оба страдают поровну.
+# Keep-alive избавляет второй канал от повторного рукопожатия.
+_СЕССИЯ = requests.Session()
+
+ПОВТОРОВ = 3
+ПАУЗЫ = (1.0, 3.0, 7.0)
+
+
+def fetch(channel: str, before: int | None = None, timeout: int = 20,
+          счётчик: dict | None = None) -> str:
+    """Забрать веб-превью канала. Повторяет только СЕТЕВЫЕ сбои.
+
+    ⚠️ ПОВТОР НЕ ПРЯЧЕТ ПРОБЛЕМУ, А ГАСИТ ШУМ. До этого попытка была одна, и
+    десятипроцентное мигание сети превращалось в качели «сломан / восстановился» по
+    пять раз за день — канал уведомлений от такого перестают читать. Число повторов
+    возвращается наверх и попадает в заметку прогона: если t.me начнёт мигать вдвое
+    чаще, это будет видно, а не растворится в тихих успехах.
+
+    HTTP-ответ с кодом ошибки НЕ повторяем: 404 у переименованного канала или 429
+    от самого t.me повтором не лечится, а 429 ещё и усугубится.
+    """
     url = WEB_ROOT.format(channel=channel)
     params = {"before": before} if before else None
-    r = requests.get(url, params=params, headers={"User-Agent": UA}, timeout=timeout)
-    r.raise_for_status()
-    return r.text
+    последняя = None
+    for попытка in range(ПОВТОРОВ):
+        try:
+            r = _СЕССИЯ.get(url, params=params, headers={"User-Agent": UA},
+                            timeout=timeout)
+            r.raise_for_status()
+            return r.text
+        except (requests.ConnectionError, requests.Timeout) as e:
+            последняя = e
+            if попытка + 1 < ПОВТОРОВ:
+                пауза = ПАУЗЫ[попытка]
+                if счётчик is not None:
+                    счётчик["retries"] = счётчик.get("retries", 0) + 1
+                print(f"[news_web_scan] {channel}: {type(e).__name__}, "
+                      f"повтор {попытка + 1}/{ПОВТОРОВ - 1} через {пауза:.0f} с")
+                time.sleep(пауза)
+    raise последняя
 
 
 def parse(page_html: str, channel_hint: str = "") -> list:
@@ -182,16 +220,29 @@ def parse(page_html: str, channel_hint: str = "") -> list:
 
 def run_once(channels=None, before=None) -> dict:
     channels = channels or config.TG_HYPE_CHANNELS
-    summary = {"fetched": 0, "written": 0, "errors": 0, "by_channel": {}}
+    summary = {"fetched": 0, "written": 0, "errors": 0, "retries": 0,
+               "пустых": 0, "by_channel": {}}
     db = SessionLocal()
     try:
         for ch in channels:
             try:
-                posts = parse(fetch(ch, before=before), channel_hint=ch)
+                posts = parse(fetch(ch, before=before, счётчик=summary), channel_hint=ch)
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[news_web_scan] {ch}: {type(e).__name__}: {e}")
                 continue
+            # ⚠️ ПУСТОЙ КАНАЛ — ЭТО СБОЙ, А НЕ ТИШИНА. t.me отдаёт 200 и обычную
+            # страницу на НЕСУЩЕСТВУЮЩИЙ канал (9919 байт, ноль постов), поэтому
+            # raise_for_status молчит. Переименуй кто-нибудь канал — и мы бы каждые
+            # пять минут писали «успех, каналов 2» с нулём постов от одного из них.
+            # У живого канала на превью всегда ~20 постов, ноль не бывает.
+            if not posts:
+                summary["пустых"] += 1
+                print(f"[news_web_scan] {ch}: НОЛЬ ПОСТОВ — канал переименован, "
+                      f"удалён или разметка превью изменилась")
+                summary["by_channel"][ch] = 0
+                continue
+
             summary["fetched"] += len(posts)
             for p in posts:
                 db.execute(_UPSERT, p)
@@ -225,10 +276,18 @@ def main() -> None:
         return
     s = run_once(a.channels, a.before)
     print(f"[news_web_scan] итог: {s}")
+    заметка = f"каналов {len(s['by_channel'])}, постов {s['written']}"
+    if s.get("пустых"):
+        заметка += f", ПУСТЫХ {s['пустых']}"
+    # Повторы держим на виду: успех после трёх попыток — не то же самое, что успех
+    # с первой, и молчать об этом значит потерять раннее предупреждение.
+    if s.get("retries"):
+        заметка += f", повторов {s['retries']}"
     pipeline_heartbeat.record_pipeline_run(
-        "news_web_scan", success=s["errors"] == 0,
-        note=f"каналов {len(s['by_channel'])}, постов {s['written']}",
-        degraded=s["errors"] > 0 and s["written"] > 0,
+        "news_web_scan",
+        success=s["errors"] == 0 and s["пустых"] == 0,
+        note=заметка,
+        degraded=(s["errors"] > 0 or s["пустых"] > 0) and s["written"] > 0,
     )
 
 
