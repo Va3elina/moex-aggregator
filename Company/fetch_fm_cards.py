@@ -27,6 +27,7 @@ e-disclosure, который нам недоступен.
 """
 
 import argparse
+import calendar
 import json
 import os
 import sys
@@ -56,8 +57,8 @@ if "@db:" in _db:
     except OSError:
         os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
-from fm_client import (FMClient, ЗАПАС_ЗАПРОСОВ, ИсточникПросилУйти,  # noqa: E402
-                       ЛимитИсчерпан, log, setup_logging)
+from fm_client import (FMClient, ЗАПАС_ЗАПРОСОВ, МЕСЯЧНАЯ_КВОТА,  # noqa: E402
+                       ЦЕНА_ВЫЗОВА, ИсточникПросилУйти, ЛимитИсчерпан, log, setup_logging)
 
 ИСТОЧНИК = "financemarker"
 РАЗДЕЛЫ = "info,reports,ratios,dividends,owners,shares,summary,operations"
@@ -69,18 +70,44 @@ from fm_client import (FMClient, ЗАПАС_ЗАПРОСОВ, ИсточникП
                  "preliminary"}
 
 
-def notify(текст: str):
-    """Уведомление тем же каналом, что и весь проект (CF-релей: прямой TG закрыт)."""
-    chat = os.getenv("FRAME_ADMIN_CHAT_ID")
-    if not chat:
-        log.info("уведомление не отправлено (нет FRAME_ADMIN_CHAT_ID): %s",
-                 текст.replace("\n", " ")[:160])
-        return
+def notify(текст: str) -> bool:
+    """
+    Пуш в @frameadminbot — та же связка, что у mandate_scan и tg_bot.
+
+    ⚠️ ЗДЕСЬ БЫЛО ДВЕ ОШИБКИ СРАЗУ, И ОБЕ МОЛЧАЛИ. Переменную звали
+    FRAME_ADMIN_CHAT_ID — такой в проекте нет вообще, настоящая ADMIN_CHAT_ID; а
+    отправка шла через `from signals.alert_notify`, которого нет ни в одном образе
+    (signals/ живёт на хосте под cron). То есть уведомление не ушло бы, даже если бы
+    переменную назвали верно, — и об этом сообщала строка уровня INFO, которую никто
+    не читает. Поэтому теперь: отсутствие настроек — ERROR, а не INFO.
+
+    ⚠️ ТОЛЬКО ЧЕРЕЗ TELEGRAM_API_ROOT. Прямой api.telegram.org с прод-сервера
+    закрыт (РКН, инцидент 2026-07-15) — без релея запрос просто виснет.
+    """
+    token = os.environ.get("BOT_TOKEN", "")
+    chat = os.environ.get("ADMIN_CHAT_ID", "")
+    if not token or not chat:
+        log.error("УВЕДОМЛЕНИЕ НЕ УШЛО (нет BOT_TOKEN/ADMIN_CHAT_ID): %s",
+                  текст.replace("\n", " ")[:200])
+        return False
+    api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     try:
-        from signals.alert_notify import send_message
-        send_message(chat, текст)
+        import requests
+        r = requests.post("%s/bot%s/sendMessage" % (api_root, token),
+                          json={"chat_id": chat, "text": текст[:4000],
+                                "parse_mode": "HTML", "disable_web_page_preview": True},
+                          timeout=15)
+        r.raise_for_status()
+        # ⚠️ Пишем и УСПЕХ тоже. Без этой строки лог молчит одинаково и когда пуш
+        # ушёл, и когда его не было вовсе, — а «тихий успех» неотличим от «тихого
+        # ничего», и именно так уведомления в этом проекте уже терялись.
+        log.info("уведомление отправлено в ТГ")
+        return True
     except Exception as ex:
-        log.warning("уведомление не ушло: %s", ex)
+        # Токен в текст ошибки не попадает: он в URL, а мы печатаем только код.
+        log.error("УВЕДОМЛЕНИЕ НЕ УШЛО (%s): %s", type(ex).__name__,
+                  текст.replace("\n", " ")[:200])
+        return False
 
 
 def период_в_метку(r: dict) -> tuple:
@@ -110,7 +137,14 @@ def период_в_метку(r: dict) -> tuple:
     if p == "Q":
         return "quarter", "%sQ%d" % (y, (m + 2) // 3 if m else 0)
     if p == "6M":
-        return "quarter", "%sH%d" % (y, 2 if m >= 12 else 1)
+        # ⚠️ МЕСЯЦ В МЕТКЕ ОБЯЗАТЕЛЕН. У ЕвроТранса за первое полугодие 2023 ДВЕ
+        # записи: 6M с месяцем 5 и с месяцем 6, выручка отличается на 1000 — правка,
+        # записанная источником дважды. Схлопывание по «месяц < 12 → H1» теряло одну
+        # из них молча: 86 столкновений на одной компании. Канонический месяц (6 и 12)
+        # даёт красивую метку, любой другой — с пометкой, чтобы аномалия была видна.
+        if m in (6, 12):
+            return "quarter", "%sH%d" % (y, 2 if m == 12 else 1)
+        return "quarter", "%sH?-м%d" % (y, m)
     if p:
         return "quarter", "%s-%s" % (y, p)
     return "year", str(y)
@@ -118,7 +152,8 @@ def период_в_метку(r: dict) -> tuple:
 
 def загрузить_компанию(db, secid: str, payload: dict, today: date) -> dict:
     итог = {"метрик": 0, "новых": 0, "изменилось": 0, "акционеров": 0,
-            "дивидендов": 0, "документов": 0, "столкновений": 0}
+            "дивидендов": 0, "документов": 0, "столкновений": 0,
+            "операционных": 0, "инсайдеров": 0, "сводок": 0, "акций": 0}
     # ⚠️ СТОРОЖ ПРОТИВ СТОЛКНОВЕНИЙ. Если два разных периода из одного ответа дают
     # одну метку, второй молча затрёт первый — ровно это и случилось с «6M». Ошибку
     # видно только здесь: в базе останется правдоподобное значение не за тот период.
@@ -191,6 +226,107 @@ def загрузить_компанию(db, secid: str, payload: dict, today: da
                "src": ИСТОЧНИК, "sec": secid})
         итог["акционеров"] += 1
 
+    # ── операционные показатели: своя таблица, потому что свои единицы
+    for o in (payload.get("operations") or []):
+        ptype, plabel = период_в_метку(o)
+        try:
+            v = float(o.get("value")) if o.get("value") is not None else None
+        except (TypeError, ValueError):
+            v = None
+        try:
+            ov = float(o.get("original_value")) if o.get("original_value") is not None else None
+        except (TypeError, ValueError):
+            ov = None
+        db.execute(text("""
+            INSERT INTO company_operations (secid, metric_id, period_type, period_label,
+                   value, unit, orig_value, orig_unit, source, first_seen, last_seen)
+            VALUES (:s,:m,:pt,:pl,:v,:u,:ov,:ou,:src,:d,:d)
+            ON CONFLICT (secid, metric_id, period_type, period_label, source, first_seen)
+            DO UPDATE SET value=EXCLUDED.value, last_seen=EXCLUDED.last_seen
+        """), {"s": secid, "m": str(o.get("operation_metric_id") or "")[:24],
+               "pt": ptype, "pl": plabel, "v": v, "u": (o.get("unit") or "")[:40],
+               "ov": ov, "ou": (o.get("original_unit") or "")[:40],
+               "src": ИСТОЧНИК, "d": today})
+        итог["операционных"] += 1
+
+    # ── сделки инсайдеров: с долей ДО и ПОСЛЕ — этого нет ни в одном другом источнике
+    for t in (payload.get("insiderTransactions") or []):
+        d0 = t.get("transaction_date")
+        if not d0:
+            continue
+        def _f(x):
+            try:
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+        db.execute(text("""
+            INSERT INTO company_insider_trades (secid, transaction_date, filling_date,
+                   insider, insider_role, insider_title, transaction_type, amount, price,
+                   value, own_before, own_after, market_trade, approximate, link, source)
+            VALUES (:s,:td,:fd,:i,:ir,:it,:tt,:a,:p,:v,:ob,:oa,:mt,:ap,:l,:src)
+            ON CONFLICT (secid, transaction_date, insider, transaction_type)
+            DO UPDATE SET amount=EXCLUDED.amount, own_after=EXCLUDED.own_after,
+                          updated_at=now()
+        """), {"s": secid, "td": d0[:10], "fd": (t.get("filling_date") or None),
+               "i": (t.get("insider") or "?")[:300], "ir": (t.get("insider_role") or "")[:120],
+               "it": (t.get("insider_title") or "")[:200],
+               "tt": (t.get("transaction_type") or "")[:40],
+               "a": _f(t.get("amount")), "p": _f(t.get("price")), "v": _f(t.get("value")),
+               "ob": _f(t.get("own_before")), "oa": _f(t.get("own_after")),
+               "mt": t.get("market_trade"), "ap": t.get("approximate"),
+               "l": t.get("link"), "src": ИСТОЧНИК})
+        итог["инсайдеров"] += 1
+
+    # ── сводка: снимок, а не ряд (рост за 5 лет пересчитывается каждый раз заново)
+    сводка = payload.get("summary")
+    if сводка:
+        db.execute(text("""
+            INSERT INTO company_summary (secid, payload, source, updated_at)
+            VALUES (:s, CAST(:p AS jsonb), :src, now())
+            ON CONFLICT (secid) DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()
+        """), {"s": secid, "p": json.dumps(сводка, ensure_ascii=False), "src": ИСТОЧНИК})
+        итог["сводок"] += 1
+
+    # ── история числа акций: делает сопоставимыми показатели «на акцию»
+    for sh in (payload.get("shares") or []):
+        try:
+            y, m2 = int(sh.get("year")), int(sh.get("month") or 12)
+        except (TypeError, ValueError):
+            continue
+        try:
+            num = int(float(sh.get("num"))) if sh.get("num") is not None else None
+        except (TypeError, ValueError):
+            num = None
+        db.execute(text("""
+            INSERT INTO company_shares (secid, year, month, num, source)
+            VALUES (:s,:y,:m,:n,:src)
+            ON CONFLICT (secid, year, month, source)
+            DO UPDATE SET num=EXCLUDED.num, updated_at=now()
+        """), {"s": secid, "y": y, "m": m2, "n": num, "src": ИСТОЧНИК})
+        итог["акций"] += 1
+
+    # ── дивиденды: у FM с 2007 года против 2017 у smart-lab
+    for dv in (payload.get("dividends") or []):
+        rd = dv.get("reestr_close_date")
+        if not rd:
+            continue
+        def _f2(x):
+            try:
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+        db.execute(text("""
+            INSERT INTO company_dividends (secid, period, record_date, dividend, price,
+                   div_yield, source)
+            VALUES (:s,:p,:rd,:d,:px,:y,:src)
+            ON CONFLICT (secid, record_date, period)
+            DO UPDATE SET dividend=EXCLUDED.dividend, div_yield=EXCLUDED.div_yield,
+                          updated_at=now()
+        """), {"s": secid, "p": str(dv.get("year") or "")[:40], "rd": rd[:10],
+               "d": _f2(dv.get("div_amount")), "px": _f2(dv.get("last_buy_price")),
+               "y": _f2(dv.get("div_percent")), "src": ИСТОЧНИК})
+        итог["дивидендов"] += 1
+
     # ── документы: у КАЖДОГО отчёта ссылка на PDF через их CDN
     for r in (payload.get("reports") or []):
         for поле, тип in (("link", "financial_report"), ("link_press", "presentation")):
@@ -210,9 +346,12 @@ def загрузить_компанию(db, secid: str, payload: dict, today: da
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="сколько компаний (для пробы)")
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="показать план и выйти, НЕ ходя в сеть (ни одного платного запроса)")
     ap.add_argument("--once", action="store_true", help="совместимость с оркестратором")
     ap.add_argument("--force", action="store_true", help="совместимость с оркестратором")
+    ap.add_argument("--все", dest="все", action="store_true",
+                    help="перезапросить и уже загруженные компании (по умолчанию только новые)")
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
     setup_logging(a.verbose)
@@ -222,31 +361,108 @@ def main():
     начало = time.time()
     итог = {"компаний": 0, "метрик": 0, "новых": 0, "изменилось": 0,
             "акционеров": 0, "документов": 0, "пусто": 0, "упало": 0,
-            "столкновений": 0}
+            "столкновений": 0, "операционных": 0, "инсайдеров": 0,
+            "сводок": 0, "акций": 0, "дивидендов": 0}
     остановлен = None
 
-    with engine.begin() as db:
-        client = FMClient(db=db)
-        остаток = client.остаток()
-        компании = [r[0] for r in db.execute(text("""
-            SELECT s.secid FROM issuer_securities s
-            WHERE s.share_class = 'common' ORDER BY s.secid""")).fetchall()]
-        if a.limit:
-            компании = компании[:a.limit]
+    # ⚠️ ТРАНЗАКЦИЯ НА КОМПАНИЮ, А НЕ НА ОБХОД. Первая версия держала одну транзакцию
+    # на все 123 компании: 700 тысяч вставок, пятнадцать минут блокировок, и — главное —
+    # падение на сотой откатило бы все девяносто девять. Повезло, что первый прогон
+    # остановился штатно. Ровно эту защиту я закладывал в smart-лабовский фетчер
+    # («грузим сразу, чтобы прерывание не обесценило собранное») и не перенёс сюда.
+    with engine.connect() as db:
+        client = FMClient(db=db, engine=engine)
+        # ⚠️ У ИСТОЧНИКА ОСТАТОК НЕ СПРАШИВАЕМ. Во-первых, сам вопрос стоит запроса.
+        # Во-вторых, его day_limit показал 388 при пустом пуле — на этом числе
+        # 04.09.2026 и была потрачена вся месячная квота. Считаем по api_budget.
+        # Потолок месяца хранится в БД (это запись, а не догадка), но сменить тариф
+        # должно быть можно переменной окружения, а не ручным SQL по проду.
+        if os.environ.get("FM_МЕС_КВОТА") or os.environ.get("FM_MONTHLY_QUOTA"):
+            client.установить_квоту(МЕСЯЧНАЯ_КВОТА)
+            log.info("потолок месяца задан окружением: %d", МЕСЯЧНАЯ_КВОТА)
+        списано, квота = client.бюджет()
+        db.commit()
 
-        log.info("остаток запросов: %d · компаний к обходу: %d", остаток, len(компании))
-        # ⚠️ Проверяем ДО начала, а не по ходу. Упереться в лимит на середине значит
-        # получить половину компаний обновлённой, а половину нет — молча, без ошибок.
-        if остаток < len(компании) + ЗАПАС_ЗАПРОСОВ:
-            сообщение = ("⛔️ Карточки FinanceMarker: обход НЕ запущен. Остаток %d, "
-                         "нужно %d (+%d запаса)." % (остаток, len(компании), ЗАПАС_ЗАПРОСОВ))
+        # ⚠️ ПОРЯДОК — ПО ЗАПУЩЕННОСТИ, А НЕ ПО АЛФАВИТУ. Бюджета хватает не на всех,
+        # значит порядок решает, кого мы обновим, а кого нет. По алфавиту это значило
+        # бы вечно свежий AFLT и вечно протухший YDEX. Сначала те, у кого карточки нет
+        # вовсе, потом самые давно не обновлявшиеся.
+        компании = [r[0] for r in db.execute(text("""
+            SELECT s.secid
+              FROM issuer_securities s
+              LEFT JOIN (
+                   SELECT secid, MAX(last_seen) AS свежесть
+                     FROM company_metrics WHERE source = 'financemarker'
+                    GROUP BY secid
+              ) m ON m.secid = s.secid
+             WHERE s.share_class = 'common'
+             ORDER BY m.свежесть ASC NULLS FIRST, s.secid""")).fetchall()]
+        # ⚠️ ДОЗАЛИВКА ПО УМОЛЧАНИЮ. Компанию, которая уже есть в базе, второй раз не
+        # запрашиваем: платный источник, а данные годовые и квартальные — они не
+        # меняются между прогонами. --все перезапрашивает всё принудительно.
+        if not a.все:
+            есть = {r[0] for r in db.execute(text(
+                "SELECT DISTINCT secid FROM company_metrics WHERE source = 'financemarker'"
+            )).fetchall()}
+            пропущено = [c for c in компании if c in есть]
+            компании = [c for c in компании if c not in есть]
+            if пропущено:
+                log.info("уже загружены, пропускаю: %d (--все чтобы обновить)", len(пропущено))
+        доступно = квота - ЗАПАС_ЗАПРОСОВ - списано
+        по_карману = int(доступно // ЦЕНА_ВЫЗОВА) if доступно > 0 else 0
+
+        # ⚠️ ПОРЦИЯ НА СЕГОДНЯ = ОСТАТОК БЮДЖЕТА ÷ ДНИ ДО КОНЦА МЕСЯЦА. Квота 400 при
+        # цене ~3 даёт ~126 вызовов в месяц на 123 компании — то есть ровно один полный
+        # обход. Тратить его одним залпом первого числа нельзя: до конца месяца не
+        # останется ничего ни на новую компанию, ни на переспрос после сбоя. Поэтому
+        # каждый прогон берёт свою долю, и доля сама растёт, если вчерашний прогон
+        # не состоялся: пропущенный день не теряется, он размазывается по оставшимся.
+        _посл = calendar.monthrange(today.year, today.month)[1]
+        дней_осталось = max(1, _посл - today.day + 1)
+        порция = max(1, по_карману // дней_осталось) if по_карману > 0 else 0
+        if a.limit:
+            порция = a.limit
+        log.info("бюджет: списано %.0f из %d · всего хватит на %d · дней до конца месяца %d "
+                 "· порция сегодня %d · кандидатов %d",
+                 списано, квота, по_карману, дней_осталось, порция, len(компании))
+
+        if not компании:
+            log.info("нечего делать: все компании уже загружены")
+            print(json.dumps({"обход": "нечего делать"}, ensure_ascii=False))
+            return
+
+        if по_карману <= 0:
+            сообщение = ("⛔️ Карточки FinanceMarker: обход НЕ запущен. Бюджет месяца "
+                         "исчерпан: списано %.0f из %d." % (списано, квота))
             log.error(сообщение)
             notify(сообщение)
-            print(json.dumps({"остановлен": "лимит", "остаток": остаток}, ensure_ascii=False))
+            print(json.dumps({"остановлен": "бюджет", "списано": списано}, ensure_ascii=False))
             return
+
+        # ⚠️ НЕ ОТКАЗЫВАЕМСЯ ЦЕЛИКОМ, ЕСЛИ ХВАТАЕТ НЕ НА ВСЕХ. Раньше здесь стоял
+        # отказ «нужно N, есть меньше» — при платной квоте это значит не забрать
+        # ничего. Берём сколько влезает, остальные останутся на следующий прогон:
+        # дозаливка выше сама их подхватит.
+        # ⚠️ --dry-run НЕ ХОДИТ В СЕТЬ. Раньше он отключал только запись в БД, а
+        # запросы всё равно уходили — то есть «проба» стоила денег ровно столько же,
+        # сколько боевой прогон. Для платного источника это ловушка в чистом виде.
+        if a.dry_run:
+            план = компании[:min(порция, по_карману)] if по_карману > 0 else []
+            log.info("ПЛАН (сеть не трогаем): взяли бы %d — %s",
+                     len(план), ", ".join(план[:15]) + ("…" if len(план) > 15 else ""))
+            print(json.dumps({"план": план, "списано": списано, "квота": квота},
+                             ensure_ascii=False))
+            return
+
+        порция = min(порция, по_карману)
+        if порция < len(компании):
+            log.info("беру %d из %d (самые давние) — остальные в следующие прогоны",
+                     порция, len(компании))
+            компании = компании[:порция]
 
         for i, secid in enumerate(компании, 1):
             try:
+                client.проверить_бюджет()   # штатная остановка вместо 403 от источника
                 payload = client.get("stocks/MOEX:%s" % secid, {"include": РАЗДЕЛЫ},
                                      doc_key="stocks/MOEX:%s" % secid)
             except ЛимитИсчерпан as ex:
@@ -269,22 +485,27 @@ def main():
 
             try:
                 r = загрузить_компанию(db, secid, payload, today)
+                if a.dry_run:
+                    db.rollback()
+                else:
+                    db.commit()   # компания закончена — она в базе, что бы ни было дальше
             except Exception:
+                db.rollback()
                 log.exception("%s: данные получены, но не загружены", secid)
                 итог["упало"] += 1
                 continue
 
             итог["компаний"] += 1
             for k in ("метрик", "новых", "изменилось", "акционеров", "документов",
-                      "столкновений"):
+                      "столкновений", "операционных", "инсайдеров", "сводок",
+                      "акций", "дивидендов"):
                 итог[k] += r.get(k, 0)
             if i % 20 == 0:
                 log.info("%d/%d · %.0f сек · метрик %d", i, len(компании),
                          time.time() - начало, итог["метрик"])
 
         if a.dry_run:
-            db.rollback()
-            log.info("DRY-RUN, откат")
+            log.info("DRY-RUN: ничего не записано")
 
     заняло = time.time() - начало
     log.info("ГОТОВО за %.0f сек: %s", заняло, json.dumps(итог, ensure_ascii=False))
