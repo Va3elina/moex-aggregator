@@ -1199,14 +1199,24 @@ _SELECT_FUND = text("""
       AND m.last_seen >= CURRENT_DATE - INTERVAL '30 days'
 """)
 
+# ⚠️ ПО ОДНОМУ ТЕЗИСУ С КАЖДОЙ СТОРОНЫ, А НЕ ДВА САМЫХ СВЕЖИХ. Проверка на живом
+# кандидате: у Полюса три свежих тезиса «в плюс» и один «в минус» — «капзатраты на
+# Сухой Лог могут составить $6 млрд», ТОЙ ЖЕ ДАТЫ. Сортировка по свежести взяла два
+# «в плюс», и в пост про обвал акций и срезанные дивиденды поехало «добыча вырастет
+# вдвое». Ровно обратное тому, что объясняет повод.
+#
+# Односторонняя картина хуже отсутствия картины: она выглядит как вывод, а не как
+# выборка. Поэтому берём свежайший «за» и свежайший «против» — пусть модель видит обе
+# стороны и выбирает ту, что относится к делу.
 _SELECT_THESES = text("""
-    SELECT direction, statement, stated_date
-    FROM company_theses
-    WHERE issuer_id = (SELECT issuer_id FROM issuer_securities WHERE secid = :secid)
-      AND stated_date IS NOT NULL
-      AND stated_date >= :since
-    ORDER BY stated_date DESC
-    LIMIT 2
+    SELECT direction, statement, stated_date FROM (
+        SELECT direction, statement, stated_date,
+               ROW_NUMBER() OVER (PARTITION BY direction ORDER BY stated_date DESC) AS n
+        FROM company_theses
+        WHERE issuer_id = (SELECT issuer_id FROM issuer_securities WHERE secid = :secid)
+          AND stated_date IS NOT NULL AND stated_date >= :since
+    ) t WHERE n = 1
+    ORDER BY direction DESC
 """)
 
 
@@ -1292,6 +1302,10 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
         # Парсер снимает один слой, а их два. Чистим и здесь тоже: уже записанные строки
         # сами не исправятся, а показывать модели разметку нельзя — она её процитирует.
         statement = html.unescape(html.unescape(statement or "")).strip()
+        # Тезис длиной с абзац занимает четверть блока и провоцирует цитирование
+        # целиком. Нужна суть, а не текст: 160 знаков хватает на утверждение.
+        if len(statement) > 160:
+            statement = statement[:157].rsplit(" ", 1)[0] + "…"
         тезисы.append("%s (%s, %s)" % (statement, stated.strftime("%d.%m.%Y"),
                                        "в плюс" if direction == "growth" else "в минус"))
     if тезисы:
@@ -1304,12 +1318,11 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
                      params={"secid": secid, "event_type": event_type, "codes": codes})
 
     if out:
+        # Граница сама была на 400 знаков — четверть блока уходила на инструкцию.
+        # Сокращено без потери смысла: три запрета вместо пяти предложений.
         out["ГРАНИЦА"] = (
-            "МАКСИМУМ ОДНО число отсюда в посте, и только если оно объясняет ПОВОД. "
-            "Это фон, а не тема: пост про событие, а не про отчётность. Показатель без "
-            "связи с поводом не упоминать вовсе — лишнее число делает абзац отчётом. "
-            "Даты у тезисов называть обязательно: это чужое мнение на конкретный день, "
-            "а не наш вывод."
+            "МАКСИМУМ ОДНО число отсюда, и только если оно объясняет ПОВОД. Это фон, "
+            "а не тема. Тезис — чужое мнение: называть с датой."
         )
     return out
 
