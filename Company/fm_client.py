@@ -11,9 +11,10 @@ URL. Логируем поэтому не URL, а логический ключ 
 он показал 388 в момент, когда месячный пул (400) был уже выбран и ушёл в −3. Число
 живое и правдоподобное, но меряет не то, что списывается. Оно осталось в логе одной
 справочной строкой — и только.
-Настоящий предохранитель — таблица api_budget (миграция 076): расход переживает
-перезапуск процесса. Прошлый счётчик жил в объекте клиента, и три прогона подряд
-каждый считал с нуля.
+Настоящий предохранитель — таблица api_budget (миграции 076/078): расход переживает
+перезапуск процесса и считается ПОСУТОЧНО — лимит у них 400 в день и обнуляется
+каждые сутки. Прошлый счётчик жил в объекте клиента, и три прогона подряд каждый
+считал с нуля.
 
 ⚠️ ЦЕНА ВЫЗОВА НЕ РАВНА ЕДИНИЦЕ. 145 вызовов компаний списали ~403 единицы — около
 2.8 за вызов с include из восьми разделов. Точное правило биллинга неизвестно, а
@@ -46,9 +47,13 @@ log = logging.getLogger("fm_client")
 # Запас, ниже которого обход не начинаем и прерываем. Не ноль: между нашей проверкой
 # и концом обхода лимит могут потратить другие процессы или ручные вызовы.
 ЗАПАС_ЗАПРОСОВ = 20
-# Месячная квота и оценка цены одного вызова. Обе — env, чтобы менять без деплоя кода.
-МЕСЯЧНАЯ_КВОТА = int(os.environ.get("FM_МЕС_КВОТА", os.environ.get("FM_MONTHLY_QUOTA", "400")))
+# Суточная квота (обнуляется каждый день) и оценка цены вызова. Обе — env.
+СУТОЧНАЯ_КВОТА = int(os.environ.get("FM_СУТ_КВОТА", os.environ.get("FM_DAILY_QUOTA", "400")))
 ЦЕНА_ВЫЗОВА = float(os.environ.get("FM_ЦЕНА_ВЫЗОВА", os.environ.get("FM_CALL_COST", "3")))
+# Сколько суточной квоты НЕ трогает обход карточек. Ту же квоту тратит сканер
+# раскрытия (каждые 15 мин = 96 вызовов в сутки) и ручные проверки; без явной брони
+# обход карточек съедал бы всё до последней единицы и сканеру не оставалось бы ничего.
+ДОЛЯ_ДРУГИМ = int(os.environ.get("FM_ДОЛЯ_ДРУГИМ", os.environ.get("FM_RESERVE_OTHERS", "120")))
 # ⚠️ ДВЕ СЕКУНДЫ, А НЕ 0,3. Тот 403 на 98-й компании я сперва объяснил защитой от
 # частоты («остаток же 388») и пошёл вторым проходом — это и добило квоту. 403 был
 # про ЛИМИТ. Пауза всё равно остаётся: три запроса в секунду к API с квотой 400 в
@@ -108,30 +113,29 @@ class FMClient:
 
     # ── бюджет ───────────────────────────────────────────────────────────────
     @staticmethod
-    def _месяц() -> date:
-        сегодня = date.today()
-        return сегодня.replace(day=1)
+    def _день() -> date:
+        return date.today()
 
     def бюджет(self) -> tuple:
-        """(списано, квота) за текущий месяц по НАШЕМУ счёту, не по данным источника."""
+        """(списано, квота) за СЕГОДНЯ по НАШЕМУ счёту, не по данным источника."""
         with self.engine.connect() as c:
             строка = c.execute(text("""
                 SELECT spent, limit_total FROM api_budget
-                WHERE source = 'financemarker' AND period_month = :m
-            """), {"m": self._месяц()}).first()
+                WHERE source = 'financemarker' AND period_day = :m
+            """), {"m": self._день()}).first()
         if строка is None:
-            return 0.0, МЕСЯЧНАЯ_КВОТА
+            return 0.0, СУТОЧНАЯ_КВОТА
         return float(строка[0]), int(строка[1])
 
     def установить_квоту(self, квота: int) -> None:
-        """Сменился тариф — правим потолок месяца. Расход не трогаем."""
+        """Сменился тариф — правим потолок суток. Расход не трогаем."""
         with self.engine.connect() as c:
             c.execute(text("""
-                INSERT INTO api_budget (source, period_month, spent, limit_total, calls)
+                INSERT INTO api_budget (source, period_day, spent, limit_total, calls)
                 VALUES ('financemarker', :m, 0, :кв, 0)
-                ON CONFLICT (source, period_month) DO UPDATE
+                ON CONFLICT (source, period_day) DO UPDATE
                    SET limit_total = EXCLUDED.limit_total, updated_at = now()
-            """), {"m": self._месяц(), "кв": квота})
+            """), {"m": self._день(), "кв": квота})
             c.commit()
 
     def состояние_уведомления(self) -> str:
@@ -139,38 +143,38 @@ class FMClient:
         with self.engine.connect() as c:
             r = c.execute(text("""
                 SELECT COALESCE(notified_state, '') FROM api_budget
-                 WHERE source = 'financemarker' AND period_month = :m
-            """), {"m": self._месяц()}).first()
+                 WHERE source = 'financemarker' AND period_day = :m
+            """), {"m": self._день()}).first()
         return r[0] if r else ''
 
     def запомнить_уведомление(self, состояние: str) -> None:
         with self.engine.connect() as c:
             c.execute(text("""
                 UPDATE api_budget SET notified_state = :с, notified_at = now()
-                 WHERE source = 'financemarker' AND period_month = :m
-            """), {"с": состояние, "m": self._месяц()})
+                 WHERE source = 'financemarker' AND period_day = :m
+            """), {"с": состояние, "m": self._день()})
             c.commit()
 
     def _списать(self, цена: float) -> None:
         """Пишем расход СРАЗУ и отдельной транзакцией — до разбора ответа."""
         with self.engine.connect() as c:
             c.execute(text("""
-                INSERT INTO api_budget (source, period_month, spent, limit_total, calls)
+                INSERT INTO api_budget (source, period_day, spent, limit_total, calls)
                 VALUES ('financemarker', :m, :ц, :кв, 1)
-                ON CONFLICT (source, period_month) DO UPDATE
+                ON CONFLICT (source, period_day) DO UPDATE
                    SET spent = api_budget.spent + EXCLUDED.spent,
                        calls = api_budget.calls + 1,
                        updated_at = now()
-            """), {"m": self._месяц(), "ц": цена, "кв": МЕСЯЧНАЯ_КВОТА})
+            """), {"m": self._день(), "ц": цена, "кв": СУТОЧНАЯ_КВОТА})
             c.commit()
 
     def проверить_бюджет(self, цена: float = None) -> None:
-        """Бросает ЛимитИсчерпан, если следующий вызов уводит нас за запас."""
+        """Бросает ЛимитИсчерпан, если следующий вызов уводит за суточный запас."""
         цена = ЦЕНА_ВЫЗОВА if цена is None else цена
         списано, квота = self.бюджет()
         if списано + цена > квота - ЗАПАС_ЗАПРОСОВ:
             raise ЛимитИсчерпан(
-                "месячный бюджет исчерпан: списано %.0f из %d (запас %d), цена вызова %.1f"
+                "суточный бюджет исчерпан: списано %.0f из %d (запас %d), цена вызова %.1f"
                 % (списано, квота, ЗАПАС_ЗАПРОСОВ, цена))
 
     # ── справка источника (НЕ предохранитель) ────────────────────────────────
