@@ -2472,3 +2472,39 @@ export async function getRepaintSeries(secId: string, days = 365): Promise<Repai
   }
   return response.json();
 }
+
+// ─── Админский дашборд: снимок состояния проекта ────────────────────────────
+// Ключи приходят с бэкенда по-русски — они же и есть контракт (api/routers/dashboard.py).
+// Переименовывать их на фронте значит держать два словаря вместо одного.
+
+export interface DashboardProcess {
+  имя: string;
+  /** ok / fail / degraded / молчит / неизвестно */
+  состояние: string;
+  часов_назад: number | null;
+  длился_сек: number | null;
+  заметка: string;
+}
+
+export interface DashboardOverview {
+  снято: string;
+  вердикт: 'работает' | 'сломано';
+  молчат: string[];
+  упали: string[];
+  процессы: DashboardProcess[];
+  воронка_постов: Record<string, number>;
+  второй_мозг: Record<string, number>;
+  стареющие_данные: Record<string, number>;
+  хранилища: Array<{ таблица: string; размер: string; байт: number; строк: number }>;
+  из_кэша: boolean;
+}
+
+export async function getDashboardOverview(fresh = false): Promise<DashboardOverview> {
+  const qs = fresh ? '?fresh=true' : '';
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/overview${qs}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить снимок состояния');
+  }
+  return response.json();
+}

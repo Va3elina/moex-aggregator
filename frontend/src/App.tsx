@@ -85,6 +85,7 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
 const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
 const AdminContentNewsPage = lazy(() => import('./pages/AdminContentNewsPage'));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 // Экспериментальная «Перекраска» (admin-only): % free float, сменивший руки за месяц.
 const RepaintPage = lazy(() => import('./pages/RepaintPage'));
 const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
@@ -337,6 +338,7 @@ export default function App() {
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/content-news" element={<AdminContentNewsPage />} />
+            <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
             <Route path="/admin/repaint" element={<RepaintPage />} />
           </Route>
         </Routes>
