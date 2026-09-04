@@ -444,7 +444,50 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 activeShape = null;
             });
 
+            // Буфер копирования фигур (Ctrl+C / Ctrl+V). Храним клон, а не сам
+            // объект: исходник может быть изменён или удалён после копирования.
+            let clipboard: FabricObject | null = null;
+            const PASTE_OFFSET = 20 * dpr;
+
+            const copySelection = async () => {
+                const fcLocal = fabricRef.current;
+                const active = fcLocal?.getActiveObject();
+                if (!active) return;
+                clipboard = await active.clone();
+            };
+
+            const pasteClipboard = async () => {
+                const fcLocal = fabricRef.current;
+                if (!fcLocal || !clipboard) return;
+                const cloned = await clipboard.clone();
+                fcLocal.discardActiveObject();
+                cloned.set({
+                    left: (cloned.left ?? 0) + PASTE_OFFSET,
+                    top: (cloned.top ?? 0) + PASTE_OFFSET,
+                    selectable: true,
+                    evented: true,
+                });
+                if (cloned instanceof fabric.ActiveSelection) {
+                    // Множественное выделение клонируется как группа-обёртка:
+                    // её саму на холст не добавляют, добавляют детей.
+                    cloned.canvas = fcLocal;
+                    cloned.forEachObject((o) => fcLocal.add(o));
+                    cloned.setCoords();
+                } else {
+                    fcLocal.add(cloned);
+                }
+                // Следующая вставка ложится ещё ниже-правее, а не поверх этой.
+                clipboard.set({
+                    left: (clipboard.left ?? 0) + PASTE_OFFSET,
+                    top: (clipboard.top ?? 0) + PASTE_OFFSET,
+                });
+                fcLocal.setActiveObject(cloned);
+                fcLocal.requestRenderAll();
+                saveSnapshot();
+            };
+
             // Keyboard: Ctrl/Cmd+Z — undo, Ctrl/Cmd+Shift+Z или Ctrl+Y — redo,
+            // Ctrl/Cmd+C / Ctrl/Cmd+V — копировать/вставить фигуру,
             // Delete/Backspace — удалить выделенный объект. Когда IText в editing
             // mode — хоткеи не трогаем (там свой текстовый ввод).
             const onKeyDown = (e: KeyboardEvent) => {
@@ -463,6 +506,17 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     const isY = e.code === 'KeyY' || key === 'y';
                     if (isZ && !e.shiftKey) { e.preventDefault(); undo(); return; }
                     if ((isZ && e.shiftKey) || isY) { e.preventDefault(); redo(); return; }
+                    const isC = e.code === 'KeyC' || key === 'c';
+                    const isV = e.code === 'KeyV' || key === 'v';
+                    // Ctrl+C не перехватываем, когда пользователь копирует
+                    // выделенный на странице текст.
+                    if (isC && !e.shiftKey && !e.altKey && active
+                        && !window.getSelection()?.toString()) {
+                        e.preventDefault(); void copySelection(); return;
+                    }
+                    if (isV && !e.shiftKey && !e.altKey && clipboard) {
+                        e.preventDefault(); void pasteClipboard(); return;
+                    }
                 }
 
                 if (e.key !== 'Delete' && e.key !== 'Backspace') return;
