@@ -338,6 +338,15 @@ services:
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-FRAME}
       # Прод-тест рекуррента: цена basic для конверсии триала (должна совпадать с api).
       - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
+      # FinanceMarker: карточки компаний (fm_cards_daily). Квота платная и месячная,
+      # расход считается в таблице api_budget — потолок можно менять без деплоя кода.
+      - FM_API_TOKEN=${FM_API_TOKEN:-}
+      - FM_MONTHLY_QUOTA=${FM_MONTHLY_QUOTA:-}
+      # Пуш в @frameadminbot, когда прогон встал (кончилась квота, источник закрылся).
+      # ⚠️ Прямой api.telegram.org с сервера закрыт — только через релей.
+      - BOT_TOKEN=${BOT_TOKEN:-}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
+      - TELEGRAM_API_ROOT=${TELEGRAM_API_ROOT:-}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /proc/1/cmdline"]

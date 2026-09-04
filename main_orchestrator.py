@@ -157,6 +157,11 @@ SCRIPTS = {
     'dividends_daily': BASE_DIR / 'Candles' / 'fetch_dividends.py',
     # Сырьевые товары (Yahoo Finance: BRENT/GOLD/SILVER/...) — для seasonality
     'commodity_daily': BASE_DIR / 'Commodity' / 'fetch_commodity_realtime.py',
+    # Карточки компаний с FinanceMarker — фундамент для карточек и брифа постов.
+    # ⚠️ ПЛАТНЫЙ ИСТОЧНИК С МЕСЯЧНОЙ КВОТОЙ (400). Скрипт сам считает расход в
+    # api_budget и берёт за прогон только свою дневную долю остатка, поэтому его
+    # МОЖНО дёргать ежедневно: он не «обходит всех», а докачивает самых давних.
+    'fm_cards_daily': BASE_DIR / 'Company' / 'fetch_fm_cards.py',
     # Карточки компаний со smart-lab: отчётность, дивиденды, акционеры, документы.
     # ⚠️ ДВА РЕЖИМА, потому что данные живут с разной скоростью. Полный обход —
     # 7 страниц на компанию, 560 запросов, раз в неделю: отчётность меняется четыре
@@ -586,6 +591,9 @@ class MainOrchestrator:
             # Market Cap
             'market_cap_daily_runs': 0,
             'market_cap_daily_success': 0,
+            # Карточки компаний (FinanceMarker)
+            'fm_cards_daily_runs': 0,
+            'fm_cards_daily_success': 0,
             # Free-float Cap
             'freefloat_cap_daily_runs': 0,
             'freefloat_cap_daily_success': 0,
@@ -1330,6 +1338,7 @@ class MainOrchestrator:
             self.run_breadth_update,
             self.run_dividends_update,
             self.run_commodity_update,
+            self.run_fm_cards_update,
             self.run_analytics_cleanup,
         ]:
             success = await fn()
@@ -1358,6 +1367,28 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Market Cap Daily: {msg}")
+
+        return success
+
+    async def run_fm_cards_update(self) -> bool:
+        """Карточки компаний (FinanceMarker): дневная порция докачки.
+
+        ⚠️ «Ничего не сделано» здесь — НОРМА, а не сбой. Если бюджет месяца выбран
+        или все компании свежие, скрипт штатно выходит без запросов. Ошибкой это
+        считать нельзя, иначе в статистику каждый день будет капать ложный сбой —
+        ровно та беда, что была с ночными прогонами в «лёгком» режиме.
+        """
+        log.info("  🏢 Карточки компаний (FinanceMarker)...")
+        self.stats['fm_cards_daily_runs'] += 1
+
+        success, msg, dur = await run_script('fm_cards_daily', ['--once'])
+
+        if success:
+            self.stats['fm_cards_daily_success'] += 1
+            log.info(f"    ✓ Карточки компаний ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Карточки компаний: {msg}")
 
         return success
 
@@ -1663,6 +1694,7 @@ class MainOrchestrator:
                     await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
+                    await self.run_fm_cards_update()
                     await self.run_analytics_cleanup()
                     send_data_notify("daily")
                     self.last_daily_update = slot_day
