@@ -134,6 +134,23 @@ class FMClient:
             """), {"m": self._месяц(), "кв": квота})
             c.commit()
 
+    def состояние_уведомления(self) -> str:
+        """О каком состоянии бюджета уже сообщали ('' — ещё ни о каком)."""
+        with self.engine.connect() as c:
+            r = c.execute(text("""
+                SELECT COALESCE(notified_state, '') FROM api_budget
+                 WHERE source = 'financemarker' AND period_month = :m
+            """), {"m": self._месяц()}).first()
+        return r[0] if r else ''
+
+    def запомнить_уведомление(self, состояние: str) -> None:
+        with self.engine.connect() as c:
+            c.execute(text("""
+                UPDATE api_budget SET notified_state = :с, notified_at = now()
+                 WHERE source = 'financemarker' AND period_month = :m
+            """), {"с": состояние, "m": self._месяц()})
+            c.commit()
+
     def _списать(self, цена: float) -> None:
         """Пишем расход СРАЗУ и отдельной транзакцией — до разбора ответа."""
         with self.engine.connect() as c:
