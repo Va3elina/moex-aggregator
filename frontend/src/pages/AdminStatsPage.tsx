@@ -141,6 +141,14 @@ export default function AdminStatsPage() {
             Custom analytics · только для администратора
           </p>
         </div>
+        {/* Вход в карту состояния проекта — отдельной кнопкой, видной только админу. */}
+        <Link
+          to="/admin/dashboard"
+          className="editorial-press rounded-full flex items-center ml-auto shrink-0"
+          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: '6px', fontSize: 'var(--fs-xs)' }}
+        >
+          <Activity size={14} /> Состояние проекта
+        </Link>
       </div>
 
       {/* Filters */}
