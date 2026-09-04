@@ -21,7 +21,7 @@
  *   - Phase 4 добавит back-navigation с preserve drawings (display:none toggle).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, Loader2, AlertCircle, Pencil, Copy, Check } from 'lucide-react';
 import type { ExportModalState, ExportMetadata } from './types';
@@ -36,6 +36,9 @@ import AnnotationCanvas, {
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
+
+/** Значения палитры — стабильная ссылка для AnnotationCanvas (prop в deps). */
+const COLOR_PRESET_VALUES = COLOR_PRESETS.map((p) => p.value);
 
 /** Ждать N кадров подряд (не N независимых rAF-промисов запущенных разом —
  *  каждый следующий rAF планируется ТОЛЬКО после того, как разрешился предыдущий).
@@ -108,6 +111,18 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         COLOR_PRESETS.find(p => p.key === 'red')?.value ?? COLOR_PRESETS[0].value,
     );
     const [strokeWidth, setStrokeWidth] = useState<number>(STROKE_PRESETS[1].value);
+    // Toolbar следует за выделенной фигурой: показываем её толщину и цвет.
+    // Толщину приводим к ближайшему пресету — на объекте она может быть любой
+    // (масштабирование, снимок из старой версии).
+    const handleSelectionStyle = useCallback(
+        ({ strokeWidth: w, color: c }: { strokeWidth: number; color?: string }) => {
+            const nearest = STROKE_PRESETS.reduce((best, p) =>
+                Math.abs(p.value - w) < Math.abs(best.value - w) ? p : best);
+            setStrokeWidth(nearest.value);
+            if (c) setColor(c);
+        },
+        [],
+    );
     const annotationRef = useRef<AnnotationCanvasHandle>(null);
     // Плотность снимка, с которой реально сняли график. Одно значение на весь
     // pipeline: html2canvas, шрифты рамки и кисть аннотаций — иначе на экране
@@ -438,6 +453,8 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             // Пользователь сразу видит handles на новой фигуре
                             // и может drag/resize/rotate без переключения tool.
                             onShapeCreated={() => setTool('select')}
+                            colorPresets={COLOR_PRESET_VALUES}
+                            onSelectionStyle={handleSelectionStyle}
                         />
                     )}
 
