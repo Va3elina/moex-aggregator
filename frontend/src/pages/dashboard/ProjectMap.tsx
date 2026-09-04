@@ -1,0 +1,240 @@
+/**
+ * Карта проекта: узлы и рёбра, живое состояние из pipeline_runs.
+ *
+ * ⚠️ СОСТОЯНИЕ ХРАНИЛИЩ И ВИТРИНЫ — ПРОИЗВОДНОЕ. У таблицы нет своего heartbeat:
+ * «Фонды» живы ровно настолько, насколько жив писавший в них фетчер. Поэтому
+ * состояние течёт по рёбрам слева направо, и оборванный источник красит всю свою
+ * цепочку до витрины. Иначе карта показывала бы зелёный индикатор на сайте, под
+ * которым лежат данные недельной давности, — то самое второе состояние, ради
+ * которого всё и затевалось.
+ *
+ * ⚠️ РЁБРА РИСУЮТСЯ ПОД УЗЛАМИ. Порядок в SVG — это z-order; если нарисовать
+ * рёбра после узлов, линии лягут поверх текста.
+ */
+import { useMemo, useState } from 'react';
+import {
+  РЁБРА, ПОДПИСИ_КОЛОНОК, УЗЛЫ, ШИРИНА, ШИРИНА_УЗЛА, ВЫСОТА_УЗЛА,
+} from './topology';
+import type { УзелКарты } from './topology';
+import type { DashboardProcess } from '../../services/api';
+
+/** Чем меньше число, тем хуже. Худшее и побеждает при слиянии. */
+const ВЕС: Record<string, number> = {
+  сломан: 0, молчит: 1, отстаёт: 2, работает: 3, неизвестно: 4,
+};
+
+export type СостояниеУзла = 'сломан' | 'молчит' | 'отстаёт' | 'работает' | 'неизвестно';
+
+const ЦВЕТ: Record<СостояниеУзла, string> = {
+  сломан: 'var(--d-bad)',
+  молчит: 'var(--d-dim)',
+  отстаёт: 'var(--d-warn)',
+  работает: 'var(--d-ok)',
+  неизвестно: 'var(--d-line-strong)',
+};
+
+function изСтатуса(s: string): СостояниеУзла {
+  if (s === 'ok') return 'работает';
+  if (s === 'молчит') return 'молчит';
+  if (s === 'degraded') return 'отстаёт';
+  if (s === 'неизвестно') return 'неизвестно';
+  return 'сломан';
+}
+
+function хуже(a: СостояниеУзла, b: СостояниеУзла): СостояниеУзла {
+  return ВЕС[a] <= ВЕС[b] ? a : b;
+}
+
+/**
+ * Состояние каждого узла. Сначала прямое (у кого есть пайплайны), затем протекает
+ * по рёбрам. Проход по колонкам слева направо: топология слоистая, поэтому одного
+ * прохода на слой достаточно и цикл невозможен.
+ */
+function состояния(процессы: DashboardProcess[]): Record<string, СостояниеУзла> {
+  const поИмени = new Map(процессы.map((п) => [п.имя, п]));
+  const итог: Record<string, СостояниеУзла> = {};
+
+  for (const у of УЗЛЫ) {
+    if (у.пайплайны.length === 0) { итог[у.id] = 'неизвестно'; continue; }
+    let s: СостояниеУзла = 'неизвестно';
+    let нашлись = false;
+    for (const имя of у.пайплайны) {
+      const п = поИмени.get(имя);
+      if (!п) continue;
+      нашлись = true;
+      s = хуже(s, изСтатуса(п.состояние));
+    }
+    итог[у.id] = нашлись ? s : 'неизвестно';
+  }
+
+  const порядок: Array<УзелКарты['вид']> = ['обработка', 'хранилище', 'витрина'];
+  for (const слой of порядок) {
+    for (const у of УЗЛЫ.filter((n) => n.вид === слой)) {
+      const входящие = РЁБРА.filter((р) => р.к === у.id);
+      if (входящие.length === 0) continue;
+      // У узла без собственных пайплайнов состояние целиком приходит слева.
+      // У узла со своими — своё не улучшаем чужим, но и не ухудшаем: он сам
+      // отвечает за себя, а протухший источник виден на его же ребре.
+      if (итог[у.id] === 'неизвестно') {
+        let s: СостояниеУзла = 'неизвестно';
+        for (const р of входящие) s = хуже(s, итог[р.от] ?? 'неизвестно');
+        итог[у.id] = s;
+      }
+    }
+  }
+  return итог;
+}
+
+export default function ProjectMap({ процессы }: { процессы: DashboardProcess[] }) {
+  const [выбран, setВыбран] = useState<string | null>(null);
+  const сост = useMemo(() => состояния(процессы), [процессы]);
+  const поИмени = useMemo(() => new Map(процессы.map((п) => [п.имя, п])), [процессы]);
+
+  const высота = Math.max(...УЗЛЫ.map((у) => у.y)) + ВЫСОТА_УЗЛА + 40;
+  const узел = (id: string) => УЗЛЫ.find((у) => у.id === id)!;
+  const связан = (id: string) =>
+    выбран === null || выбран === id ||
+    РЁБРА.some((р) => (р.от === выбран && р.к === id) || (р.к === выбран && р.от === id));
+
+  const выбранныйУзел = выбран ? узел(выбран) : null;
+
+  return (
+    <div>
+      {/* Легенда */}
+      <div className="flex flex-wrap items-center justify-between mb-3" style={{ gap: 12 }}>
+        <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>Куда течёт всё хозяйство</div>
+        <div className="flex flex-wrap" style={{ gap: 14, fontSize: 11, color: 'var(--d-dim)' }}>
+          {([['работает', 'свежее'], ['отстаёт', 'отстаёт'], ['сломан', 'оборвано'],
+             ['молчит', 'молчит']] as Array<[СостояниеУзла, string]>).map(([к, подпись]) => (
+            <span key={к} className="flex items-center" style={{ gap: 6 }}>
+              <span style={{ width: 20, height: 2, background: ЦВЕТ[к], display: 'inline-block' }} />
+              {подпись}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ⚠️ Карта широкая по замыслу: четыре колонки не сжимаются в телефон без
+          потери смысла. Поэтому горизонтальная прокрутка внутри блока, а не
+          перенос колонок — страница при этом вбок НЕ едет. */}
+      <div style={{ overflowX: 'auto' }}>
+        <svg
+          viewBox={`0 0 ${ШИРИНА} ${высота}`}
+          style={{ width: '100%', minWidth: 900, display: 'block' }}
+          role="img"
+          aria-label="Карта потоков данных проекта"
+        >
+          <defs>
+            <marker id="dash-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--d-dim)" />
+            </marker>
+          </defs>
+
+          {ПОДПИСИ_КОЛОНОК.map((к) => (
+            <text key={к.текст} x={к.x} y={12} className="mono"
+              fontSize={10} letterSpacing="1.2" fill="var(--d-dim)">
+              {к.текст.toUpperCase()}
+            </text>
+          ))}
+
+          {/* Рёбра — под узлами */}
+          {РЁБРА.map((р) => {
+            const a = узел(р.от); const b = узел(р.к);
+            const x1 = a.x + ШИРИНА_УЗЛА; const y1 = a.y + ВЫСОТА_УЗЛА / 2;
+            const x2 = b.x;               const y2 = b.y + ВЫСОТА_УЗЛА / 2;
+            const dx = (x2 - x1) / 2;
+            const s = сост[р.от] ?? 'неизвестно';
+            const активно = выбран === null || выбран === р.от || выбран === р.к;
+            return (
+              <path
+                key={`${р.от}-${р.к}`}
+                d={`M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`}
+                fill="none"
+                stroke={ЦВЕТ[s]}
+                strokeWidth={выбран && активно ? 2.4 : 1.4}
+                strokeDasharray={р.ручное ? '5 4' : undefined}
+                opacity={активно ? 0.75 : 0.12}
+                className={!р.ручное && s === 'работает' && активно ? 'dash-edge-live' : undefined}
+                markerEnd="url(#dash-arrow)"
+              />
+            );
+          })}
+
+          {/* Узлы */}
+          {УЗЛЫ.map((у) => {
+            const s = сост[у.id] ?? 'неизвестно';
+            const виден = связан(у.id);
+            const активный = выбран === у.id;
+            return (
+              <g
+                key={у.id}
+                transform={`translate(${у.x},${у.y})`}
+                opacity={виден ? 1 : 0.25}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setВыбран(активный ? null : у.id)}
+              >
+                <rect
+                  width={ШИРИНА_УЗЛА} height={ВЫСОТА_УЗЛА} rx={8}
+                  fill={у.вид === 'витрина' ? 'var(--d-sunk)' : 'var(--d-inner)'}
+                  stroke={активный ? 'var(--d-accent)' : 'var(--d-line)'}
+                  strokeWidth={активный ? 2 : 1}
+                />
+                {/* Полоса состояния слева — читается быстрее любого текста. */}
+                <rect width={3} height={ВЫСОТА_УЗЛА} rx={1.5} fill={ЦВЕТ[s]} />
+                <text x={14} y={24} fontSize={13} fontWeight={600} fill="var(--d-ink)">
+                  {у.имя}
+                </text>
+                <text x={14} y={41} className="mono" fontSize={10.5} fill="var(--d-mute)">
+                  {у.подпись.length > 34 ? `${у.подпись.slice(0, 33)}…` : у.подпись}
+                </text>
+                {у.пайплайны.length > 0 && (
+                  <text x={14} y={55} className="mono" fontSize={10} fill={ЦВЕТ[s]}>
+                    {у.пайплайны.length} {у.пайплайны.length === 1 ? 'процесс' : 'процессов'} · {s}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Разбор выбранного узла */}
+      {выбранныйУзел && (
+        <div className="dash-inner dash-rise mt-3" style={{ padding: '12px 14px' }}>
+          <div className="flex items-baseline justify-between mb-2" style={{ gap: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{выбранныйУзел.имя}</div>
+            <button className="dash-press mono" style={{ fontSize: 11, padding: '3px 10px' }}
+              onClick={() => setВыбран(null)}>
+              закрыть
+            </button>
+          </div>
+          {выбранныйУзел.пайплайны.length === 0 ? (
+            <div className="mono" style={{ fontSize: 11.5, color: 'var(--d-mute)' }}>
+              Своих процессов нет — состояние приходит слева по рёбрам.
+            </div>
+          ) : (
+            <div className="flex flex-col" style={{ gap: 5 }}>
+              {выбранныйУзел.пайплайны.map((имя) => {
+                const п = поИмени.get(имя);
+                const s = п ? изСтатуса(п.состояние) : 'неизвестно';
+                return (
+                  <div key={имя} className="flex items-center justify-between mono"
+                    style={{ fontSize: 11.5, gap: 12 }}>
+                    <span style={{ color: 'var(--d-ink)' }}>{имя}</span>
+                    <span style={{ color: 'var(--d-dim)', flex: 1, textAlign: 'right' }}>
+                      {п?.заметка || (п ? '' : 'в pipeline_runs нет — имя не совпало')}
+                    </span>
+                    <span style={{ color: ЦВЕТ[s], minWidth: 74, textAlign: 'right' }}>
+                      {п?.часов_назад != null ? `${п.часов_назад} ч` : '—'} · {s}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
