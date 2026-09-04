@@ -24,11 +24,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { getDashboardOverview } from '../services/api';
 import type { DashboardOverview, DashboardProcess } from '../services/api';
 import ProjectMap from './dashboard/ProjectMap';
+import LiveProcesses from './dashboard/LiveProcesses';
+import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
 const ИНТЕРВАЛ_МС = 30_000;
 
-const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Второй мозг', 'База'] as const;
+const ВКЛАДКИ = ['Карта', 'Живые процессы', 'Процессы', 'Завод постов',
+                 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
 
 const ПОДПИСИ_МОЗГА: Record<string, string> = {
@@ -214,6 +217,11 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [обновляется, setОбновляется] = useState(false);
   const [вкладка, setВкладка] = useState<Вкладка>('Карта');
+  // ⚠️ ЖИВОЕ СОСТОЯНИЕ ЖИВЁТ ОТДЕЛЬНО ОТ СНИМКА. Снимок тяжёлый и лежит в кэше
+  // 30 секунд — на нём «прямо сейчас» не построить. Живое приезжает событиями
+  // (SSE 'pipeline') и лёгкой ручкой /live, поэтому кнопка «Обновить» нужна
+  // только для пересбора самого снимка, а не чтобы увидеть текущий процесс.
+  const живое = useLivePipelines(!!user && user.role === 'admin');
 
   useEffect(() => {
     if (authLoading) return;
@@ -251,9 +259,6 @@ export default function AdminDashboardPage() {
       отстаёт: п.filter((x) => x.состояние === 'degraded').length,
       молчит: п.filter((x) => x.состояние === 'молчит').length,
       сломан: п.filter((x) => !['ok', 'degraded', 'молчит', 'неизвестно'].includes(x.состояние)).length,
-      // «Прямо сейчас» на снимке не видно: heartbeat пишется ПОСЛЕ прогона.
-      // Считаем идущим то, что отметилось за последние пять минут.
-      сейчас: п.filter((x) => x.часов_назад !== null && x.часов_назад < 0.084).length,
     };
   }, [data]);
 
@@ -287,10 +292,14 @@ export default function AdminDashboardPage() {
           </div>
           <div className="flex items-center flex-wrap" style={{ gap: 16 }}>
             <div className="flex items-center" style={{ gap: 7 }}>
-              <span className="dash-pulse" style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: свод.сломан || свод.молчит ? 'var(--d-bad)' : 'var(--d-ok)',
-              }} />
+              <span
+                className={живое.подключено ? 'dash-dot-live' : undefined}
+                style={{
+                  width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
+                  background: !живое.подключено ? 'var(--d-bad)'
+                    : живое.идут.size ? 'var(--d-accent)' : 'var(--d-ok)',
+                }}
+              />
               <span className="mono" style={{ fontSize: 11.5, color: 'var(--d-mute)' }}>
                 {data && new Date(data.снято).toLocaleTimeString('ru-RU')}
                 {data?.из_кэша ? ' · из кэша' : ' · пересобран'}
@@ -327,14 +336,32 @@ export default function AdminDashboardPage() {
                 подпись={свод.молчит ? `${свод.молчит} молчит` : 'ничего не упало'}
                 цвет={свод.сломан + свод.молчит ? 'var(--d-bad)' : undefined}
                 рамка={свод.сломан + свод.молчит ? 'var(--d-bad)' : 'rgba(245,241,232,0.24)'} />
-              <Плитка ярлык="Отметились за 5 мин" число={свод.сейчас} подпись="процессов"
-                рамка="rgba(245,241,232,0.24)" />
+              {/* ⚠️ РАНЬШЕ ТУТ БЫЛО «отметились за 5 мин» — суррогат, потому что
+                  начала прогона в базе не было вовсе. Теперь оркестратор пишет
+                  старт, и плитка говорит правду: сколько процессов работает в
+                  эту секунду. */}
+              <Плитка ярлык="Идут сейчас" число={живое.идут.size}
+                подпись={живое.идут.size
+                  ? [...живое.идут].slice(0, 2).join(', ') + (живое.идут.size > 2 ? '…' : '')
+                  : 'очередь пуста'}
+                цвет={живое.идут.size ? 'var(--d-accent)' : undefined}
+                рамка={живое.идут.size ? 'var(--d-accent)' : 'rgba(245,241,232,0.24)'} />
             </div>
 
             {вкладка === 'Карта' && (
               <div className="dash-card" style={{ padding: '16px 18px' }}>
-                <ProjectMap процессы={data.процессы} />
+                <ProjectMap процессы={data.процессы} идут={живое.идут} вспышки={живое.вспышки} />
               </div>
+            )}
+
+            {вкладка === 'Живые процессы' && (
+              <LiveProcesses
+                процессы={живое.процессы}
+                идут={живое.идут}
+                вспышки={живое.вспышки}
+                подключено={живое.подключено}
+                тик={живое.тик}
+              />
             )}
 
             {вкладка === 'Процессы' && (

@@ -2479,6 +2479,9 @@ export async function getRepaintSeries(secId: string, days = 365): Promise<Repai
 
 export interface DashboardProcess {
   имя: string;
+  /** Идёт прямо сейчас: старт позже последнего финиша. */
+  идёт?: boolean;
+  идёт_сек?: number | null;
   /** ok / fail / degraded / молчит / неизвестно */
   состояние: string;
   часов_назад: number | null;
@@ -2505,6 +2508,32 @@ export async function getDashboardOverview(fresh = false): Promise<DashboardOver
   if (!response.ok) {
     if (response.status === 403) throw new Error('Доступ только для администратора');
     throw new Error('Не удалось загрузить снимок состояния');
+  }
+  return response.json();
+}
+
+export interface DashboardLiveProcess {
+  имя: string;
+  идёт: boolean;
+  идёт_сек: number | null;
+  состояние: string;
+  закончил_сек_назад: number | null;
+  длился_сек: number | null;
+  заметка: string;
+}
+
+export interface DashboardLive {
+  снято: string;
+  процессы: DashboardLiveProcess[];
+  идут: string[];
+}
+
+/** Лёгкое живое состояние процессов: без кэша, дёргается по SSE-событию. */
+export async function getDashboardLive(): Promise<DashboardLive> {
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/live`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить живое состояние');
   }
   return response.json();
 }

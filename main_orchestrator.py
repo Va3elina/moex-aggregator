@@ -456,6 +456,17 @@ async def run_script(script_key: str, args: List[str] = None, timeout: int = Non
     пишется ОДИН раз по ФИНАЛЬНОМУ исходу (монитор алертит только если не помогли
     и ретраи).
     """
+    # ⚠️ ОТМЕТКА СТАРТА — ДО ЗАПУСКА, А НЕ ПОСЛЕ. Пульс писался только по
+    # завершении, поэтому идущий процесс на приборной панели выглядел ровно так же,
+    # как не запускавшийся: «данные капают» увидеть было нельзя в принципе.
+    # Ставится ОДИН раз на всю цепочку с ретраями — перезапуск это тот же прогон,
+    # а не новый, и мигать им на карте незачем.
+    try:
+        import pipeline_heartbeat
+        pipeline_heartbeat.record_pipeline_start(script_key)
+    except Exception:
+        pass
+
     ok, msg, dur = await _run_script_impl(script_key, args, timeout)
     if not ok and script_key in RETRYABLE_DAILY:
         for i, backoff in enumerate(RETRY_BACKOFF, 1):

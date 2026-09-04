@@ -39,6 +39,22 @@ _MAX_AGE_H = {"distributions": 9 * 24, "mandate_scan": 9 * 24,
 _DEFAULT_MAX_AGE_H = 48
 
 
+# ⚠️ ЗАГЛУШКА «НИКОГДА». record_pipeline_start вставляет новую строку с
+# last_run_at = 1970-01-01, потому что колонка NOT NULL, а прогон ещё не
+# завершался. Наружу это обязано выходить как «никогда», иначе панель напишет
+# «20805 дн назад» — дата-заглушка, притворяющаяся измерением.
+_НИКОГДА_ДО = datetime(2000, 1, 1, tzinfo=timezone.utc)
+
+
+def _когда(v):
+    """Время с UTC-меткой, или None для заглушки «никогда»."""
+    if v is None:
+        return None
+    if v.tzinfo is None:
+        v = v.replace(tzinfo=timezone.utc)
+    return None if v < _НИКОГДА_ДО else v
+
+
 def _снимок(db: Session) -> dict:
     now = datetime.now(timezone.utc)
 
@@ -46,16 +62,21 @@ def _снимок(db: Session) -> dict:
     процессы = []
     for r in db.execute(text("""
             SELECT pipeline, last_run_at, last_success_at, last_status,
-                   last_duration_sec, last_note
+                   last_duration_sec, last_note, started_at
             FROM pipeline_runs ORDER BY last_run_at DESC NULLS LAST""")).mappings():
-        run_at = r["last_run_at"]
-        if run_at is not None and run_at.tzinfo is None:
-            run_at = run_at.replace(tzinfo=timezone.utc)
+        run_at = _когда(r["last_run_at"])
         часов = (now - run_at).total_seconds() / 3600 if run_at else None
         молчит = (часов is not None
                   and часов > _MAX_AGE_H.get(r["pipeline"], _DEFAULT_MAX_AGE_H))
+        нач = _когда(r["started_at"])
+        # «Идёт сейчас» — производное: старт позже последнего финиша. Отдельного
+        # статуса 'running' в базе нет намеренно (см. миграцию 079): убитый процесс
+        # навсегда застрял бы в нём, а так он сам выдаёт себя возрастом старта.
+        идёт = bool(нач and (run_at is None or нач > run_at))
         процессы.append({
             "имя": r["pipeline"],
+            "идёт": идёт,
+            "идёт_сек": round((now - нач).total_seconds(), 1) if идёт and нач else None,
             "состояние": "молчит" if молчит else (r["last_status"] or "неизвестно"),
             "часов_назад": round(часов, 1) if часов is not None else None,
             "длился_сек": (round(r["last_duration_sec"], 1)
@@ -123,6 +144,47 @@ def _снимок(db: Session) -> dict:
         "стареющие_данные": dict(старение or {}),
         "хранилища": хранилища,
     }
+
+
+@router.get("/live")
+def live(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Живое состояние процессов. БЕЗ КЭША и без тяжёлых запросов.
+
+    ⚠️ ЭТО НЕ УМЕНЬШЕННАЯ КОПИЯ /overview. Тот снимок стоит полсекунды и лежит в
+    Redis 30 секунд — опрашивать его чаще бессмысленно и дорого. Здесь одна
+    лёгкая выборка по 27 строкам: её не жалко дёргать раз в пару секунд и, что
+    важнее, отдавать сразу после SSE-события, не дожидаясь протухания кэша.
+
+    Панель живёт на событиях (SSE 'pipeline'), а эта ручка нужна для первой
+    отрисовки и для восстановления после разрыва соединения — иначе экран,
+    открытый в момент паузы между событиями, показывал бы пустоту.
+    """
+    now = datetime.now(timezone.utc)
+    итог = []
+    for r in db.execute(text("""
+            SELECT pipeline, last_run_at, last_status, last_duration_sec,
+                   last_note, started_at
+            FROM pipeline_runs""")).mappings():
+        run_at, нач = _когда(r["last_run_at"]), _когда(r["started_at"])
+        идёт = bool(нач and (run_at is None or нач > run_at))
+        итог.append({
+            "имя": r["pipeline"],
+            "идёт": идёт,
+            "идёт_сек": round((now - нач).total_seconds(), 1) if идёт and нач else None,
+            "состояние": r["last_status"] or "неизвестно",
+            "закончил_сек_назад": (round((now - run_at).total_seconds(), 1)
+                                   if run_at else None),
+            "длился_сек": (round(r["last_duration_sec"], 1)
+                           if r["last_duration_sec"] is not None else None),
+            "заметка": (r["last_note"] or "")[:120],
+        })
+    итог.sort(key=lambda x: (not x["идёт"], x["закончил_сек_назад"] or 1e12))
+    return {"снято": now.isoformat(), "процессы": итог,
+            "идут": [p["имя"] for p in итог if p["идёт"]]}
 
 
 @router.get("/overview")
