@@ -27,7 +27,7 @@ import numpy as np
 from sqlalchemy import create_engine, text
 
 DB_URL = os.getenv("DB_URL")
-MODEL_DIR = os.getenv("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M")
+MODEL_DIR = os.getenv("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M-int8")
 MODEL_NAME = "potion-multilingual-128M"
 ВИДЫ = ("company", "news", "candidate", "post", "fact", "signal", "anomaly", "fund", "index", "holder")
 ПАЧКА = 2000
@@ -39,7 +39,8 @@ def модель():
     global _модель
     if _модель is None:
         from model2vec import StaticModel
-        _модель = StaticModel.from_pretrained(MODEL_DIR, quantize_to="int8")
+        # квантованная копия на диске (…-int8) грузится 3,5 с; fp32 с квантованием — 10 с
+        _модель = StaticModel.from_pretrained(MODEL_DIR) if MODEL_DIR.endswith("-int8") else StaticModel.from_pretrained(MODEL_DIR, quantize_to="int8")
     return _модель
 
 

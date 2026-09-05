@@ -178,7 +178,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M
+      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M-int8   # квантованная копия: грузится 3,5 с вместо 10
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
@@ -323,7 +323,7 @@ services:
     volumes:
       - /opt/frame/models:/app/models:ro   # эмбеддинг-модель (model2vec), 530 МБ, скачана руками
     environment:
-      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M
+      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M-int8   # квантованная копия: грузится 3,5 с вместо 10
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}

@@ -22,6 +22,7 @@ dst=id) — OR по двум колонкам заставил бы планир
 
 import os
 import re
+import threading
 import time
 from collections import deque
 from datetime import date, datetime, timedelta, timezone
@@ -48,23 +49,47 @@ _ПРИОРИТЕТ = {"владеет": 0, "владеет_долей": 1, "д�
 _ЛИМИТ_СОСЕДЕЙ_В_ПУТИ = 300
 _БЮДЖЕТ_ПУТИ = 20_000
 _TTL = 60
-_MODEL_DIR = os.environ.get("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M")
+_MODEL_DIR = os.environ.get("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M-int8")
 _модель = None
+_замок = threading.Lock()
+
+
+def _загрузить_модель():
+    """Один раз на процесс. Квантованная копия на диске (…-int8) грузится ~3,5 с;
+    из fp32 с квантованием на лету — 10 с и 512 МБ пикового чтения."""
+    global _модель
+    with _замок:
+        if _модель is None:
+            from model2vec import StaticModel
+            if _MODEL_DIR.endswith("-int8"):
+                _модель = StaticModel.from_pretrained(_MODEL_DIR)
+            else:
+                _модель = StaticModel.from_pretrained(_MODEL_DIR, quantize_to="int8")
+    return _модель
+
+
+def _прогрев():
+    try:
+        _загрузить_модель()
+    except Exception:  # noqa: BLE001 — модели нет: смысловой поиск ответит 503, остальное живёт
+        pass
+
+
+# ⚠️ ПРОГРЕВ В ФОНЕ ПРИ СТАРТЕ ВОРКЕРА. Первый смысловой запрос на холодном воркере
+# ждал 11 с — модель грузилась по требованию. Фоновый поток грузит её за ~3,5 с
+# сразу после старта, +150 МБ на воркер; отключается BRAIN_WARMUP=0.
+if os.environ.get("BRAIN_WARMUP", "1") == "1" and os.path.isdir(_MODEL_DIR):
+    threading.Thread(target=_прогрев, name="brain-warmup", daemon=True).start()
 
 
 def _вектор(текст: str) -> str:
-    """Вектор запроса строкой для CAST(:v AS vector). Модель грузится лениво, int8 (~130 МБ)
-    и один раз на процесс: смысловой поиск — редкий путь, держать веса во всех
-    воркерах с самого старта незачем."""
-    global _модель
-    if _модель is None:
-        try:
-            from model2vec import StaticModel
-            _модель = StaticModel.from_pretrained(_MODEL_DIR, quantize_to="int8")
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(503, f"модель эмбеддингов недоступна: {type(e).__name__}")
+    """Вектор запроса строкой для CAST(:v AS vector)."""
+    try:
+        m = _загрузить_модель()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(503, f"модель эмбеддингов недоступна: {type(e).__name__}")
     import numpy as np
-    v = np.asarray(_модель.encode([текст]), dtype=np.float32)[0]
+    v = np.asarray(m.encode([текст]), dtype=np.float32)[0]
     n = float(np.linalg.norm(v)) or 1.0
     return "[" + ",".join(f"{x / n:.6f}" for x in v) + "]"
 
