@@ -34,7 +34,14 @@ services:
   # PostgreSQL
   # ═══════════════════════════════════════════════════════════════
   db:
-    image: postgres:17-alpine
+    # ⚠️ postgres:17-alpine + pgvector, собранный в этом же образе (Dockerfile.db).
+    # Не pgvector/pgvector:pg17: тот на Debian/glibc, а кластер создан на musl —
+    # смена libc ломает порядок btree-индексов по тексту (REINDEX 17 ГБ).
+    # Деплой db не трогает (--no-deps); пересоздание — руками: docker compose up -d --no-deps db
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    image: frame-db:pg17-vector
     restart: always
     # Тюнинг памяти Postgres (версионируется здесь, чтобы переживать пересоздание
     # тома — раньше лежал только в postgresql.auto.conf через ALTER SYSTEM).
@@ -150,6 +157,7 @@ services:
       # /tmp — Python multiprocessing IPC, gunicorn worker tmp, matplotlib cache.
       - /tmp:size=100M,mode=1777
     volumes:
+      - /opt/frame/models:/app/models:ro
       # /app/logs — runtime logs от api/logger.py. Named volume чтобы пережить
       # docker compose down (если хочется debug-archive логов через docker cp).
       - api_logs:/app/logs
@@ -170,6 +178,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
@@ -311,7 +320,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - /opt/frame/models:/app/models:ro   # эмбеддинг-модель (model2vec), 530 МБ, скачана руками
     environment:
+      - EMBED_MODEL_DIR=/app/models/potion-multilingual-128M
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
