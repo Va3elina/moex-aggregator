@@ -503,26 +503,28 @@ def _итог_из_вывода(stdout: bytes) -> str | None:
     на третьей, вышел» было нельзя. Скрипты Company/* при этом уже печатают
     готовый итог JSON-ом последней строкой — оркестратор его получал и выбрасывал.
 
-    Итог может быть многострочным (indent=1), поэтому идём с конца, накапливая
-    строки, пока не соберётся валидный объект. Логи скриптов уходят в stderr, так
-    что в stdout мусора почти нет; на всякий случай — не больше 80 строк вглубь.
+    ⚠️ JSON НЕ ОБЯЗАН БЫТЬ ПОСЛЕДНЕЙ СТРОКОЙ. Первая версия требовала именно этого
+    и молчала у шести скриптов: у них логи идут в stdout, и после итога ещё
+    печатаются строки вида «  M2: 404». Поэтому идём с конца, но пробуем каждую
+    строку, начинающуюся с «{», как начало объекта — и собираем его вперёд до
+    первого валидного разбора. Берём самый поздний. Не глубже 120 строк.
     """
     import json as _json
     if not stdout:
         return None
-    строки = stdout.decode("utf-8", errors="replace").rstrip().splitlines()
-    хвост: list = []
-    for строка in reversed(строки[-80:]):
-        хвост.insert(0, строка)
-        кусок = "\n".join(хвост).strip()
-        if not кусок.startswith("{"):
+    строки = stdout.decode("utf-8", errors="replace").rstrip().splitlines()[-120:]
+    for i in range(len(строки) - 1, -1, -1):
+        if not строки[i].lstrip().startswith("{"):
             continue
-        try:
-            данные = _json.loads(кусок)
-        except ValueError:
-            continue
-        if isinstance(данные, dict):
-            return _json.dumps(данные, ensure_ascii=False, separators=(",", ":"))
+        for j in range(i, min(i + 60, len(строки))):
+            кусок = "\n".join(строки[i:j + 1]).strip()
+            try:
+                данные = _json.loads(кусок)
+            except ValueError:
+                continue
+            if isinstance(данные, dict):
+                return _json.dumps(данные, ensure_ascii=False, separators=(",", ":"))
+            break
     return None
 
 

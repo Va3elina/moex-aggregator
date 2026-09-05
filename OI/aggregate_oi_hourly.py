@@ -337,6 +337,9 @@ def run_last_hour(engine, force: bool = False):
             return
 
     inserted = aggregate_last_hour(engine)
+    # Итог для оркестратора: он зовёт скрипт именно с --last-hour, а первая печать
+    # стояла только в ветке run_once — и этот пайплайн молчал.
+    print(json.dumps({"вставлено": inserted}, ensure_ascii=False))
 
     if inserted > 0:
         logger.info(f"✅ Создано {inserted} записей")
