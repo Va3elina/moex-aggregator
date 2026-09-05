@@ -1233,6 +1233,14 @@ class MainOrchestrator:
                 result = conn.execute(text(
                     "DELETE FROM analytics_events WHERE server_ts < NOW() - INTERVAL '180 days'"
                 ))
+                # Журнал прогонов (миграция 080): ~90 строк в час, месяца истории
+                # хватает и для медианы длительности, и для «пульса за сутки».
+                try:
+                    conn.execute(text(
+                        "DELETE FROM pipeline_run_log WHERE finished_at < NOW() - INTERVAL '30 days'"
+                    ))
+                except Exception as _e:
+                    log.warning(f"    журнал прогонов не почищен: {_e}")
                 deleted = result.rowcount
             self.stats['analytics_cleanup_success'] += 1
             log.info(f"    ✓ Analytics cleanup: удалено {deleted} строк")

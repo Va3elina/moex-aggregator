@@ -180,6 +180,16 @@ def live(
     открытый в момент паузы между событиями, показывал бы пустоту.
     """
     now = datetime.now(timezone.utc)
+    # Медиана длительности за 14 дней по журналу (миграция 080). У процесса без
+    # истории — NULL, и экран ничего не утверждает. Это замена снятой эвристике
+    # «меньше секунды — ранний выход»: та врала у штатно быстрых скриптов.
+    типично = {r[0]: float(r[1]) for r in db.execute(text("""
+        SELECT pipeline, percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_sec)
+          FROM pipeline_run_log
+         WHERE finished_at > now() - interval '14 days' AND duration_sec IS NOT NULL
+           AND status = 'ok'
+         GROUP BY pipeline HAVING COUNT(*) >= 5
+    """)).all()}
     итог = []
     for r in db.execute(text("""
             SELECT pipeline, last_run_at, last_status, last_duration_sec,
@@ -200,10 +210,68 @@ def live(
             # Перевод рядом с сырой заметкой, а не вместо неё: экран показывает
             # фразу, оригинал остаётся под рукой — перевод не должен прятать факт.
             **_перевод(r),
+            "типично_сек": (round(типично[r["pipeline"]], 1) if r["pipeline"] in типично else None),
         })
     итог.sort(key=lambda x: (not x["идёт"], x["закончил_сек_назад"] or 1e12))
     return {"снято": now.isoformat(), "процессы": итог,
             "идут": [p["имя"] for p in итог if p["идёт"]]}
+
+
+@router.get("/pulse")
+def pulse(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Пульс: что и сколько писалось по часам, лента последних прогонов, ковёр шагов.
+
+    Всё из pipeline_run_log (миграция 080). Первые сутки после деплоя гистограмма
+    неполная — журнал наполняется с этого момента, истории задним числом нет.
+    """
+    now = datetime.now(timezone.utc)
+    часы = [{
+        "час": r["час"].isoformat(),
+        "прогонов": r["прогонов"],
+        "записей": int(r["записей"]) if r["записей"] is not None else 0,
+        "сбоев": r["сбоев"],
+    } for r in db.execute(text("""
+        SELECT date_trunc('hour', finished_at) AS час,
+               COUNT(*) AS прогонов,
+               SUM(rows_written) AS записей,
+               COUNT(*) FILTER (WHERE status NOT IN ('ok', 'degraded')) AS сбоев
+          FROM pipeline_run_log
+         WHERE finished_at > now() - make_interval(hours => :h)
+         GROUP BY 1 ORDER BY 1
+    """), {"h": hours}).mappings()]
+
+    лента = []
+    for r in db.execute(text("""
+        SELECT pipeline, finished_at, status, duration_sec, rows_written, note
+          FROM pipeline_run_log
+         ORDER BY finished_at DESC LIMIT 40
+    """)).mappings():
+        ч = человеческая(r["pipeline"], r["status"], r["note"], r["duration_sec"])
+        лента.append({
+            "имя": r["pipeline"],
+            "когда": r["finished_at"].isoformat(),
+            "сек_назад": round((now - r["finished_at"]).total_seconds(), 1),
+            "статус": r["status"],
+            "длился_сек": round(r["duration_sec"], 1) if r["duration_sec"] is not None else None,
+            "записей": r["rows_written"],
+            "фраза": ч["фраза"],
+            "тревога": ч["тревога"],
+        })
+
+    return {
+        "снято": now.isoformat(),
+        "часов": hours,
+        "по_часам": часы,
+        "лента": лента,
+        # Ковёр — те же последние прогоны, но в порядке выполнения: квадрат на шаг.
+        "ковёр": [{"имя": x["имя"], "статус": x["статус"]} for x in reversed(лента[:32])],
+        "всего_в_журнале": db.execute(text("SELECT COUNT(*) FROM pipeline_run_log")).scalar(),
+    }
 
 
 @router.get("/overview")
