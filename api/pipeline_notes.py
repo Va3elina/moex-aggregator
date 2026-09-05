@@ -278,6 +278,16 @@ def _macro(d: dict):
     return "Макро: " + ", ".join(части), тревога
 
 
+def _zcyc(d: dict):
+    if d.get("ошибка"):
+        return "Кривая ОФЗ: не получена ни от ЦБ, ни от биржи", True
+    новых, последняя, ист = _n(d, "новых_дней"), d.get("последняя"), d.get("источник")
+    откуда = "через API биржи" if ист == "iss" else "с ЦБ"
+    if новых == 0:
+        return f"Кривая ОФЗ: новых дней нет, последняя точка {последняя or '—'}", False
+    return f"Кривая ОФЗ: {новых} новых дн. {откуда}, до {последняя or '—'}", False
+
+
 def _freefloat(d: dict):
     n = _n(d, "месяцев")
     if n == 0:
@@ -349,6 +359,7 @@ _ПО_ИМЕНИ = {
     "oi_daily": ("dict", _oi_daily),
     "candles_futures": ("dict", _candles_futures),
     "macro_daily": ("dict", _macro),
+    "zcyc_daily": ("dict", _zcyc),
     "freefloat_cap_daily": ("dict", _freefloat),
     "commodity_daily": ("dict", _commodity),
     "futures_turnover": ("dict", _turnover),

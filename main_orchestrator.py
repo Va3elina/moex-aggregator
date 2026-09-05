@@ -142,6 +142,7 @@ SCRIPTS = {
     'index_intraday': BASE_DIR / 'Funds' / 'fetch_index_intraday.py',
     # Macro скрипты (M2, GDP)
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
+    'zcyc_daily': BASE_DIR / 'Candles' / 'fetch_zcyc.py',  # кривая ОФЗ: ЦБ, фоллбэк — ISS
     # Market Cap (полная капитализация рынка)
     'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
     # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
@@ -276,6 +277,7 @@ TIMEOUTS = {
     'index_candles_hourly': 600,  # 10 минут (бэкфилл с 2011 — ~25k свечей)
     'index_intraday': 60,  # 1 минута (2 HTTP-запроса ISS marketdata + upsert)
     'macro_daily': 120,  # 2 минуты
+    'zcyc_daily': 120,  # один запрос к ЦБ, в фоллбэке до 10 к ISS
     'market_cap_daily': 120,  # 2 минуты
     # Полный обход 80 компаний измерен: 20 минут при паузе 0,5 с между запросами.
     # 45 минут — запас на повторы после таймаутов, не на «вдруг медленно».
@@ -441,7 +443,7 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 # они и так повторяются каждые 5 минут, ретрай только добавил бы латентность.
 RETRYABLE_DAILY = {
     'oi_daily', 'funds_daily', 'indices_daily', 'contract_calendar',
-    'index_candles_hourly', 'macro_daily', 'market_cap_daily',
+    'index_candles_hourly', 'macro_daily', 'zcyc_daily', 'market_cap_daily',
     'freefloat_cap_daily', 'index_composition_daily', 'breadth_daily',
     'dividends_daily', 'commodity_daily',
     # ⚠️ company_cards в ретраях НЕТ намеренно. Если smart-lab попросил остановиться
@@ -644,6 +646,8 @@ class MainOrchestrator:
             # Macro
             'macro_daily_runs': 0,
             'macro_daily_success': 0,
+            'zcyc_daily_runs': 0,
+            'zcyc_daily_success': 0,
             # Market Cap
             'market_cap_daily_runs': 0,
             'market_cap_daily_success': 0,
@@ -1284,6 +1288,20 @@ class MainOrchestrator:
 
         return success
 
+    async def run_zcyc_update(self) -> bool:
+        """Кривая доходности ОФЗ (ZCYC): ЦБ, фоллбэк — ISS. Раньше скрипт был
+        одноразовым и ряд три месяца стоял при зелёном macro_daily."""
+        log.info("  📈 ZCYC Daily...")
+        self.stats['zcyc_daily_runs'] += 1
+        success, msg, dur = await run_script('zcyc_daily', [])
+        if success:
+            self.stats['zcyc_daily_success'] += 1
+            log.info(f"    ✓ ZCYC Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ ZCYC Daily: {msg}")
+        return success
+
     async def run_macro_update(self) -> bool:
         """Запускает обновление макроданных (M2 с ЦБ)"""
         log.info("  📊 Macro Daily (M2)...")
@@ -1571,6 +1589,7 @@ class MainOrchestrator:
             await self.run_indices_update()
             await self.run_index_candles_hourly_update()
             await self.run_macro_update()
+            await self.run_zcyc_update()
             await self.run_market_cap_update()
             await self.run_freefloat_cap_update()
             await self.run_index_composition_update()
@@ -1761,6 +1780,7 @@ class MainOrchestrator:
                     await self.run_indices_update()
                     await self.run_index_candles_hourly_update()
                     await self.run_macro_update()
+                    await self.run_zcyc_update()
                     await self.run_market_cap_update()
                     await self.run_freefloat_cap_update()
                     await self.run_index_composition_update()
