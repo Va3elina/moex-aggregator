@@ -286,6 +286,11 @@ def карточка(
             if разгон else []
         ),
         "признан_хайпом": bool(разгон["promoted"]) if разгон else None,
+        "мозг": [{
+            "шаг": t["step"], "номер": t["seq"], "источник": t["source"], "вопрос": t["question"],
+            "нашлось": t["result_count"], "результат": t["result_note"], "исход": t["outcome"],
+            "почему": t["outcome_reason"], "мс": t["duration_ms"],
+        } for t in след if t["step"] == "мозг"],
         "след": [{
             "шаг": t["step"],
             "номер": t["seq"],
@@ -296,7 +301,7 @@ def карточка(
             "исход": t["outcome"],
             "почему": t["outcome_reason"],
             "мс": t["duration_ms"],
-        } for t in след],
+        } for t in след if t["step"] != "мозг"],
         "журнал": [{
             "событие": j["event"],
             "код": j["reason_code"],

@@ -408,7 +408,16 @@ def _brain_hint_for_step_a(db, row) -> str:
                 части.append(f"по смыслу похоже на: {похоже} [D — подсказка, имени в тексте нет]")
         except Exception as e:  # noqa: BLE001 — подсказка не имеет права ронять Шаг А
             части.append(f"(смысловой поиск недоступен: {type(e).__name__})")
-    return "; ".join(части) if части else "(ни имени наших компаний в тексте, ни похожих по смыслу)"
+    подсказка = "; ".join(части) if части else "(ни имени наших компаний в тексте, ни похожих по смыслу)"
+    # Итоговая строка следа: в разборе поста видно, что именно мозг сказал Шагу А.
+    try:
+        трассировать(db, row["id"], "мозг").record(
+            "brain", "подсказка Шагу А", outcome=ВЗЯТО if части else ПУСТО, result_count=len(части),
+            result_note=подсказка, params={"хэштеги": хэштеги, "по_имени": [c for c, _, _ in по_имени]})
+        db.commit()
+    except Exception:  # noqa: BLE001 — след не имеет права ронять Шаг А
+        pass
+    return подсказка
 
 
 def _step_a_payload(row, internal_token: str, known_tickers: str, brain_hint: str = "") -> str:
