@@ -571,6 +571,7 @@ async def main():
             async with aiohttp.ClientSession(connector=connector) as session:
                 instr_count, ins = await updater.update_all(session)
                 log.info(f"✓ Инструментов: {instr_count}, записей: +{ins}")
+                print(json.dumps({"инструментов": instr_count, "вставлено": ins}, ensure_ascii=False))
         else:
             # Режим daemon
             await updater.run_forever()

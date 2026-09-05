@@ -654,7 +654,9 @@ async def main():
             return
 
     if args.once:
-        await update_indices(force=args.force)
+        _r = await update_indices(force=args.force)
+        print(json.dumps(_r if isinstance(_r, dict) else ({"сохранено": _r} if isinstance(_r, int) else {"индексы": "обновлены"}),
+                         ensure_ascii=False, default=str))
     else:
         await run_daemon()
 

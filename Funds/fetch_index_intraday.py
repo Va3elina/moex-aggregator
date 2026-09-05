@@ -185,7 +185,8 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Внутридневное значение индексов MOEX (ISS)")
     parser.add_argument("--force", action="store_true", help="Игнорировать проверку торгового дня")
     args = parser.parse_args()
-    await run_once(force=args.force)
+    _n = await run_once(force=args.force)
+    print(json.dumps({"обновлено": _n if isinstance(_n, int) else None}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

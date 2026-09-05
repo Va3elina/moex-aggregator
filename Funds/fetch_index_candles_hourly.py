@@ -359,7 +359,9 @@ async def main():
             print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return
 
-    await update_all(force=args.force)
+    _r = await update_all(force=args.force)
+    print(json.dumps(_r if isinstance(_r, dict) else ({"строк": _r} if isinstance(_r, int) else {"часовые": "обновлены"}),
+                     ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

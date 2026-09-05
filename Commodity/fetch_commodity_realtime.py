@@ -569,6 +569,7 @@ def main():
 
     duration = time.time() - start_time
     log.info(f"=== Готово: {total_rows} строк, {len(failed)} ошибок/пустых, {duration:.1f}s ===")
+    print(json.dumps({"строк": total_rows, "пустых": len(failed), "не_отдали": failed[:10]}, ensure_ascii=False))
     if failed:
         log.warning(f"Empty/failed tickers: {failed}")
 

@@ -1382,6 +1382,7 @@ async def main():
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 results = await updater.run_once(session)
                 log.info(f"✅ Готово: 5м=+{results.get(5, 0)}, 60м=+{results.get(60, 0)}, 24ч=+{results.get(24, 0)}")
+                print(json.dumps({"5м": results.get(5, 0), "60м": results.get(60, 0), "24ч": results.get(24, 0)}, ensure_ascii=False))
         else:
             # Режим daemon
             await updater.run_forever()

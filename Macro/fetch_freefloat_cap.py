@@ -304,6 +304,7 @@ def main():
     elif args.once or args.force:
         n = run_once(engine, force=args.force)
         log.info(f"Готово: обновлено месяцев — {n}")
+        print(json.dumps({"месяцев": n}, ensure_ascii=False))
     else:
         parser.print_help()
     engine.dispose()

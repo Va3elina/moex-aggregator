@@ -228,11 +228,12 @@ def _breadth(d: dict):
 
 
 def _market_cap(d: dict):
-    # результат update_market_cap: словарь шагов → число; «0» у якоря = вёрстка сменилась
-    нули = [k for k, v in d.items() if v in (0, "0")]
-    if нули and len(нули) == len(d):
-        return "Капитализация: ничего не обновлено — смотреть вёрстку smart-lab", True
-    return ", ".join(f"{k} {v}" for k, v in list(d.items())[:5]), False
+    # update_market_cap отдаёт {"MARKET_CAP_TOTAL": n_строк, ...}. Ноль у якоря =
+    # smart-lab сменил вёрстку (инцидент 17.06.2026) — и это выглядело как «OK».
+    t = _n(d, "MARKET_CAP_TOTAL")
+    if t == 0:
+        return "Капитализация рынка НЕ обновлена — smart-lab не распознан, смотреть вёрстку", True
+    return "Капитализация рынка за сегодня записана", False
 
 
 def _index_composition(d: dict):
@@ -242,7 +243,120 @@ def _index_composition(d: dict):
     return f"База расчёта IMOEX: +{n} {_склон(n, 'день', 'дня', 'дней')}", False
 
 
+def _oi_5min(d: dict):
+    a, i = _n(d, "опрошено"), _n(d, "вставлено")
+    if a == 0:
+        return "Открытый интерес: ни одного инструмента не опрошено", True
+    return f"Открытый интерес: опрошено {a}, +{i} записей" + ("" if i else " (уже актуально)"), False
+
+
+def _oi_daily(d: dict):
+    k, i = _n(d, "инструментов"), _n(d, "вставлено")
+    if k == 0:
+        return "Дневной ОИ: список инструментов пуст", True
+    return f"Дневной ОИ: {k} инструментов, +{i} записей" + ("" if i else " (день уже был)"), False
+
+
+def _candles_futures(d: dict):
+    a, b, c = _n(d, "5м"), _n(d, "60м"), _n(d, "24ч")
+    if a == b == c == 0:
+        return "Свечи фьючерсов: ни одной новой строки", True
+    return f"Свечи фьючерсов: +{a} пятиминуток, +{b} часовых, +{c} дневных", False
+
+
+def _macro(d: dict):
+    # ⚠️ Число строк здесь показывать НЕЛЬЗЯ: M2 и ВВП перезаписываются целиком
+    # каждый прогон (404 + 125 строк при нулевом фактическом обновлении). Только факт.
+    m2, gdp, rate = _n(d, "M2"), _n(d, "GDP"), _n(d, "KEY_RATE")
+    части, тревога = [], False
+    for имя, v in (("M2", m2), ("ВВП", gdp)):
+        if v:
+            части.append(f"{имя} перезаписан")
+        else:
+            части.append(f"{имя} НЕ получен"); тревога = True
+    части.append("ставка обновлена" if rate else "ставка без изменений")
+    return "Макро: " + ", ".join(части), тревога
+
+
+def _freefloat(d: dict):
+    n = _n(d, "месяцев")
+    if n == 0:
+        return "Free-float: текущий месяц уже есть — пропуск", False
+    return f"Free-float: обновлено {n} {_склон(n, 'месяц', 'месяца', 'месяцев')}", False
+
+
+def _commodity(d: dict):
+    r, п = _n(d, "строк"), _n(d, "пустых")
+    не = d.get("не_отдали") or []
+    if r == 0:
+        return "Сырьё: ни один тикер не отдал данных", True
+    фраза = f"Сырьё: {r} строк"
+    if п:
+        фраза += f", не отдали {п}: {', '.join(не[:4])}"
+    return фраза, bool(п)
+
+
+def _turnover(d: dict):
+    с, к = _n(d, "свечей"), _n(d, "контрактов")
+    if с == 0:
+        return f"Оборот не проставлен ни одной свече (контрактов с оборотом {к}) — дневных свечей ещё нет?", True
+    return f"Рублёвый оборот проставлен {с} свечам из {к} контрактов", False
+
+
+def _dividends(d: dict):
+    н, о, п = _n(d, "новых"), _n(d, "обновлено"), _n(d, "покрытие", default=None)
+    фраза = f"Дивиденды: +{н} новых, {о} обновлено"
+    if п is not None:
+        фраза += f", покрытие {п * 100:.0f}%"
+    # Ноль новых — норма: дивиденды меняются редко. Тревога только по покрытию.
+    return фраза, (п is not None and п < 0.5)
+
+
+def _aggregate(d: dict):
+    if "вставлено" in d:
+        n = _n(d, "вставлено")
+        return (f"Свёрнуто часовых записей ОИ: {n}" if n else "Часовой ОИ: нет данных для свёртки (нерабочий час)"), False
+    return "Часовая свёртка ОИ выполнена", False
+
+
+def _indices(d: dict):
+    if "сохранено" in d:
+        n = _n(d, "сохранено")
+        return (f"Индексы: +{n} записей" if n else "Индексы: новых записей нет"), False
+    if "индексы" in d:
+        return "Индексы обновлены", False
+    return ", ".join(f"{k} {v}" for k, v in list(d.items())[:6]), None
+
+
+def _index_hourly(d: dict):
+    if "строк" in d:
+        n = _n(d, "строк")
+        return (f"Часовые свечи индексов: +{n}" if n else "Часовые свечи индексов: новых нет"), False
+    return "Часовые свечи индексов обновлены", False
+
+
+def _index_intraday(d: dict):
+    n = d.get("обновлено")
+    if n is None:
+        return "Текущие значения индексов: прогон завершён", None
+    if n == 0:
+        return "Вне сессии — текущих значений нет", False
+    return f"Текущие значения: обновлено {n} из 3 индексов", False
+
+
 _ПО_ИМЕНИ = {
+    "oi_5min": ("dict", _oi_5min),
+    "oi_daily": ("dict", _oi_daily),
+    "candles_futures": ("dict", _candles_futures),
+    "macro_daily": ("dict", _macro),
+    "freefloat_cap_daily": ("dict", _freefloat),
+    "commodity_daily": ("dict", _commodity),
+    "futures_turnover": ("dict", _turnover),
+    "dividends_daily": ("dict", _dividends),
+    "oi_aggregate": ("dict", _aggregate),
+    "indices_daily": ("dict", _indices),
+    "index_candles_hourly": ("dict", _index_hourly),
+    "index_intraday": ("dict", _index_intraday),
     "contract_calendar": ("dict", _contract_calendar),
     "funds_daily": ("dict", _funds),
     "candles_spot": ("dict", _candles_spot),

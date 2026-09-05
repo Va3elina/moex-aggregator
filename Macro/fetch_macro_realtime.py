@@ -1132,6 +1132,7 @@ async def main():
             print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return
         results = await update_macro(force=args.force)
+        print(json.dumps(results, ensure_ascii=False, default=str))
         for k, v in results.items():
             log.info(f"  {k}: {v}")
     else:

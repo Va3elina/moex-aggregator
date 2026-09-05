@@ -135,6 +135,7 @@ def main():
         "Рублёвый оборот записан: %d дневных свечей фьючерсов (из %d контрактов с VALTODAY>0) за %s",
         updated, len(pairs), today,
     )
+    print(json.dumps({"свечей": updated, "контрактов": len(pairs)}, ensure_ascii=False))
     return 0
 
 
