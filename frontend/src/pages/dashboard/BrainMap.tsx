@@ -17,10 +17,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, Loader2, Search } from 'lucide-react';
 import {
-  getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch, getBrainSimilar, getBrainStats, getBrainTop,
+  decideBrainHolder, getBrainHolderQueue, getBrainNameRules, getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch,
+  getBrainSimilar, getBrainStats, getBrainTop, patchBrainNameRule,
 } from '../../services/api';
 import type {
-  BrainNeighbor, BrainNode, BrainNodePage, BrainPath, BrainRing, BrainSearchHit, BrainStats, DashboardOverview,
+  BrainHolderReview, BrainNameRule, BrainNeighbor, BrainNode, BrainNodePage, BrainPath, BrainRing, BrainSearchHit, BrainStats,
+  DashboardOverview,
 } from '../../services/api';
 import TickerJump from './TickerJump';
 
@@ -39,11 +41,30 @@ const СВЯЗИ: Record<string, { имя: string; цвет: string; поряд�
   сигнал_о:      { имя: 'сигналы о владении',  цвет: '#F2A24A', порядок: 7 },
   аномалия_по:   { имя: 'аномалии',            цвет: '#F2A24A', порядок: 8 },
   отчитался:     { имя: 'документы',           цвет: '#5DA3E9', порядок: 9 },
+  в_секторе:     { имя: 'сектор',              цвет: '#5BD49C', порядок: 4.5 },
+  вместе_в_новостях: { имя: 'вместе в новостях', цвет: '#9A9A9A', порядок: 9.5 },
   упоминает:     { имя: 'новости',             цвет: '#9A9A9A', порядок: 10 },
 };
+/** Уровень доверия ребра: A — первоисточник, B — посредник, C — наше правило, D — подсказка. */
+const УРОВЕНЬ: Record<string, { цвет: string; подпись: string }> = {
+  A: { цвет: 'var(--d-ok)', подпись: 'A · факт из первоисточника, с датой' },
+  B: { цвет: '#5DA3E9', подпись: 'B · факт от посредника — с источником и датой' },
+  C: { цвет: 'var(--d-warn)', подпись: 'C · наш вывод по правилу — «по нашей разметке»' },
+  D: { цвет: 'var(--d-dim)', подпись: 'D · статистическая подсказка — не утверждать' },
+};
+function Уровень({ у }: { у?: string | null }) {
+  if (!у) return <span className="mono" title="уровень не проставлен" style={{ fontSize: 9.5, color: 'var(--d-dim)' }}>?</span>;
+  const и = УРОВЕНЬ[у] ?? { цвет: 'var(--d-dim)', подпись: у };
+  return (
+    <span className="mono" title={и.подпись} style={{
+      fontSize: 9.5, fontWeight: 700, padding: '0 5px', borderRadius: 4, lineHeight: '15px',
+      border: `1px solid ${и.цвет}`, color: и.цвет, flexShrink: 0,
+    }}>{у}</span>
+  );
+}
 const ВИД_ПОДПИСЬ: Record<string, string> = {
   company: 'компания', news: 'новость', candidate: 'кандидат', post: 'пост', doc: 'документ', fund: 'фонд',
-  index: 'индекс', fact: 'факт', anomaly: 'аномалия', signal: 'сигнал', holder: 'держатель',
+  index: 'индекс', fact: 'факт', anomaly: 'аномалия', signal: 'сигнал', holder: 'держатель', sector: 'сектор',
 };
 const ОКНА: Array<[number | undefined, string]> = [[7, '7 дн'], [30, '30 дн'], [90, '90 дн'], [undefined, 'всё']];
 
@@ -225,13 +246,15 @@ function Список({ узел, кольцо, окно, onУзел }: { узе
             <div key={s.id + s.связь} className="flex items-baseline" style={{ gap: 10, fontSize: 12.5, padding: '5px 8px', borderRadius: 6, background: 'var(--d-sunk)' }}>
               <span className="mono shrink-0" style={{ fontSize: 10.5, color: 'var(--d-dim)', minWidth: 58 }}>{датаРус(s.время)}</span>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: с.цвет, flexShrink: 0, alignSelf: 'center' }} />
+              <Уровень у={s.уровень} />
               <Ярлык>{ВИД_ПОДПИСЬ[s.вид] ?? s.вид}</Ярлык>
               <button onClick={() => onУзел(s.id)} className="truncate"
                 style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--d-ink)', textAlign: 'left', flex: 1, minWidth: 0 }}
                 title={s.заголовок}>
                 {s.заголовок}
               </button>
-              {s.вес != null && <span className="mono shrink-0" style={{ fontSize: 10.5, color: 'var(--d-mute)' }}>{Number(s.вес).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}{s.связь === 'держит' || s.связь === 'включает' || s.связь === 'владеет_долей' ? ' %' : ''}</span>}
+              {s.вес != null && <span className="mono shrink-0" style={{ fontSize: 10.5, color: 'var(--d-mute)' }}>{Number(s.вес).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}{['держит', 'включает', 'владеет_долей', 'владеет'].includes(s.связь) ? ' %' : s.связь === 'вместе_в_новостях' ? ' новостей' : ''}</span>}
+              {s.способ && <span className="mono shrink-0" title={`способ: ${s.способ}${s.на_дату ? ` · на ${датаРус(s.на_дату)}` : ''}`} style={{ fontSize: 10, color: 'var(--d-dim)' }}>{s.способ.replace(/_/g, ' ')}{s.на_дату && ['владеет', 'владеет_долей', 'держит'].includes(s.связь) ? ` · ${датаРус(s.на_дату)}` : ''}</span>}
               {вн && (вн.to
                 ? <Link to={вн.to} className="mono shrink-0" style={{ fontSize: 10.5, color: 'var(--d-accent)', textDecoration: 'none' }}>{вн.подпись} →</Link>
                 : <a href={вн.href} target="_blank" rel="noreferrer" className="mono shrink-0 flex items-center" style={{ fontSize: 10.5, color: 'var(--d-accent)', gap: 3 }}>{вн.подпись} <ExternalLink size={9} /></a>)}
@@ -246,6 +269,106 @@ function Список({ узел, кольцо, окно, onУзел }: { узе
             {занято ? 'гружу…' : 'ещё'}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ТекстУзла({ id }: { id: string }) {
+  const [текст, setТекст] = useState<string | null | undefined>(undefined);
+  const [открыт, setОткрыт] = useState(false);
+  useEffect(() => { setТекст(undefined); setОткрыт(false); }, [id]);
+  const показать = async () => {
+    setОткрыт((o) => !o);
+    if (текст === undefined) {
+      try { setТекст((await getBrainNode(id, undefined, 1, true)).текст ?? null); } catch { setТекст(null); }
+    }
+  };
+  return (
+    <div className="mb-2">
+      <button onClick={показать} className="mono" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--d-accent)', fontSize: 11 }}>
+        {открыт ? 'скрыть текст' : 'полный текст источника'} <Уровень у="A" />
+      </button>
+      {открыт && (
+        <div className="dash-inner" style={{ padding: '10px 12px', marginTop: 6, fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: 320, overflowY: 'auto' }}>
+          {текст === undefined ? 'читаю…' : текст ?? 'текста нет'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Очередь сопоставлений держателей: точные однословные и похожие. Решение человека переживает пересборку. */
+function ОчередьДержателей({ onУзел }: { onУзел: (id: string) => void }) {
+  const [d, setD] = useState<{ по_статусам: Record<string, number>; очередь: BrainHolderReview[] } | null>(null);
+  const [выбор, setВыбор] = useState<Record<string, string>>({});
+  const [занят, setЗанят] = useState<string | null>(null);
+  const загрузить = useCallback(() => { getBrainHolderQueue('на_проверке').then(setD).catch(() => setD(null)); }, []);
+  useEffect(() => { загрузить(); }, [загрузить]);
+  const решить = async (h: BrainHolderReview, decision: 'подтверждено' | 'отклонено') => {
+    setЗанят(h.holder_norm);
+    try { await decideBrainHolder(h.holder_norm, decision, выбор[h.holder_norm] ?? h.company_id ?? undefined); загрузить(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'сбой'); }
+    finally { setЗанят(null); }
+  };
+  if (!d) return null;
+  return (
+    <div className="dash-card" style={{ padding: '14px 16px' }}>
+      <div className="flex items-baseline justify-between mb-2" style={{ gap: 10 }}>
+        <div className="mono" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Держатели на проверке</div>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
+          авто {d.по_статусам['авто'] ?? 0} · подтверждено {d.по_статусам['подтверждено'] ?? 0} · без пары {d.по_статусам['нет'] ?? 0}
+        </span>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--d-dim)', margin: '0 0 8px', lineHeight: 1.45 }}>
+        Акционер записан строкой; «подтвердить» заведёт ребро владения компания → компания (уровень B, дата структуры из источника). Решение переживает пересборку.
+      </p>
+      {d.очередь.length === 0 && <div className="mono" style={{ fontSize: 11.5, color: 'var(--d-ok)' }}>очередь пуста</div>}
+      <div className="flex flex-col" style={{ gap: 5 }}>
+        {d.очередь.map((h) => (
+          <div key={h.holder_norm} className="flex items-center flex-wrap" style={{ gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 6, background: 'var(--d-sunk)' }}>
+            <span style={{ flex: '1 1 220px', minWidth: 0 }} className="truncate" title={h.holder}>{h.holder}</span>
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>держит в {h.держит_в ?? '—'}</span>
+            <select className="dash-select" value={выбор[h.holder_norm] ?? h.company_id ?? ''} onChange={(e) => setВыбор((v) => ({ ...v, [h.holder_norm]: e.target.value }))} style={{ fontSize: 11.5, padding: '3px 6px' }}>
+              {(h.candidates ?? []).map((c) => <option key={c.company_id} value={c.company_id}>{c.company_id.replace('company:', '')} · {Math.round(c.sim * 100)}%</option>)}
+            </select>
+            <button onClick={() => onУзел(выбор[h.holder_norm] ?? h.company_id ?? '')} className="mono" style={{ background: 'none', border: 'none', color: 'var(--d-accent)', cursor: 'pointer', fontSize: 11 }}>узел →</button>
+            <button className="dash-press" disabled={занят === h.holder_norm} onClick={() => решить(h, 'подтверждено')} style={{ padding: '3px 10px', fontSize: 11 }}>подтвердить</button>
+            <button className="dash-press" disabled={занят === h.holder_norm} onClick={() => решить(h, 'отклонено')} style={{ padding: '3px 10px', fontSize: 11, color: 'var(--d-mute)' }}>не то</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Правила разметки новостей по имени: неоднозначные выключены до решения человека. */
+function ПравилаИмён() {
+  const [правила, setПравила] = useState<BrainNameRule[] | null>(null);
+  const [занят, setЗанят] = useState<number | null>(null);
+  const загрузить = useCallback(() => { getBrainNameRules(true).then((r) => setПравила(r.правила)).catch(() => setПравила(null)); }, []);
+  useEffect(() => { загрузить(); }, [загрузить]);
+  const включить = async (r: BrainNameRule) => {
+    setЗанят(r.id);
+    try { await patchBrainNameRule(r.id, { enabled: !r.enabled, ambiguous: r.enabled }); загрузить(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'сбой'); }
+    finally { setЗанят(null); }
+  };
+  if (!правила || правила.length === 0) return null;
+  return (
+    <div className="dash-card" style={{ padding: '14px 16px' }}>
+      <div className="mono mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Имена-омонимы: по ним новости не размечаются</div>
+      <p style={{ fontSize: 11.5, color: 'var(--d-dim)', margin: '0 0 8px', lineHeight: 1.45 }}>
+        «Магнит», «Полюс», «Система» — обычные слова. Включить можно, если готов к ложным срабатываниям; уровень у таких рёбер всегда C.
+      </p>
+      <div className="flex flex-wrap" style={{ gap: 5 }}>
+        {правила.map((r) => (
+          <button key={r.id} className="dash-press" disabled={занят === r.id} onClick={() => включить(r)}
+            title={`${r.company_id.replace('company:', '')} · ${r.enabled ? 'включено' : 'выключено'} · размечено ${r.размечено}`}
+            style={{ padding: '3px 10px', fontSize: 11.5, color: r.enabled ? 'var(--d-ok)' : 'var(--d-mute)' }}>
+            {r.pattern} <span className="mono" style={{ fontSize: 10, color: 'var(--d-dim)' }}>{r.company_id.replace('company:', '')}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -419,6 +542,8 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
                 </div>
               </div>
             )}
+            <ОчередьДержателей onУзел={открыть} />
+            <ПравилаИмён />
             {покрытие && (
               <div className="dash-card" style={{ padding: '14px 16px' }}>
                 <div className="mono mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Справочник и карточки</div>
@@ -453,11 +578,13 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
                 </div>
               </div>
               {у.кратко && <p style={{ fontSize: 12.5, color: 'var(--d-mute)', margin: '0 0 6px', lineHeight: 1.5 }}>{у.кратко}</p>}
+              {['news', 'candidate', 'post', 'fact'].includes(у.вид) && <ТекстУзла id={у.id} />}
               {страница.кольца.length === 0
                 ? <div className="mono" style={{ fontSize: 12, color: 'var(--d-dim)', padding: '20px 0' }}>связей за это окно нет</div>
                 : <Кольца страница={страница} выбранноеКольцо={кольцо} onКольцо={setКольцо} onУзел={открыть} />}
-              <div className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>
-                кольцо — вид связи, точка — сосед (до 24 самых свежих); клик по точке переносит центр, клик по кольцу фильтрует список
+              <div className="mono flex flex-wrap items-center" style={{ fontSize: 10.5, color: 'var(--d-dim)', gap: 10 }}>
+                <span>кольцо — вид связи, точка — сосед (до 24 свежих); клик по точке переносит центр, по кольцу — фильтр списка</span>
+                <span className="flex items-center" style={{ gap: 5 }}>{(['A', 'B', 'C', 'D'] as const).map((у) => <span key={у} className="flex items-center" style={{ gap: 3 }}><Уровень у={у} /><span>{УРОВЕНЬ[у].подпись.split(' · ')[1].split(' —')[0]}</span></span>)}</span>
               </div>
             </div>
             <div className="dash-card" style={{ padding: '14px 18px' }}>
@@ -506,7 +633,10 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: связь(к.связь).цвет, display: 'inline-block' }} />
                         {связь(к.связь).имя}
                       </span>
-                      <span className="mono" style={{ fontSize: 11 }}>{числоРус(к.сколько)} <span style={{ color: 'var(--d-dim)' }}>· {датаРус(к.свежее)}</span></span>
+                      <span className="mono flex items-center" style={{ fontSize: 11, gap: 6 }}>
+                        <Уровень у={к.уровень} />{к.уровень_худший && к.уровень_худший !== к.уровень && <Уровень у={к.уровень_худший} />}
+                        {числоРус(к.сколько)} <span style={{ color: 'var(--d-dim)' }}>· {датаРус(к.свежее)}</span>
+                      </span>
                     </span>
                   </button>
                 ))}

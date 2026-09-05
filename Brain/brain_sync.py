@@ -176,7 +176,10 @@ def документы(conn, full: bool) -> int:
         SELECT DISTINCT ON (md5(d.url)) 'doc:' || md5(d.url), 'doc', md5(d.url),
                CASE d.doc_type WHEN 'financial_report' THEN 'Отчёт' WHEN 'presentation' THEN 'Презентация' ELSE d.doc_type END
                  || COALESCE(' · ' || d.period, ''),
-               CAST(NULL AS text), d.created_at,
+               CAST(NULL AS text),
+               -- ⚠️ ts = период документа, не created_at: архив пересобирается еженедельно,
+               -- и по created_at все 8 тысяч документов выглядели «свежими» каждую неделю.
+               CASE WHEN d.period ~ '^[0-9]{4}$' THEN make_date(CAST(d.period AS int), 12, 31) ELSE d.created_at::date END,
                jsonb_build_object('url', d.url, 'source', d.source, 'doc_type', d.doc_type, 'period', d.period, 'parsed', d.parsed), NOW()
           FROM company_documents d
          WHERE d.created_at > :вод
@@ -186,7 +189,9 @@ def документы(conn, full: bool) -> int:
     n = r.rowcount
     conn.execute(text("""
         INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
-        SELECT DISTINCT 'doc:' || md5(d.url), 'company:' || i.smartlab_ticker, 'отчитался', d.created_at, CAST(NULL AS real), d.source
+        SELECT DISTINCT 'doc:' || md5(d.url), 'company:' || i.smartlab_ticker, 'отчитался',
+               CASE WHEN d.period ~ '^[0-9]{4}$' THEN make_date(CAST(d.period AS int), 12, 31) ELSE d.created_at::date END,
+               CAST(NULL AS real), d.source
           FROM company_documents d JOIN issuers i USING (issuer_id)
          WHERE d.created_at > :вод AND i.smartlab_ticker IS NOT NULL
         ON CONFLICT DO NOTHING
@@ -253,10 +258,11 @@ def факты(conn) -> int:
          WHERE kind IN ('связь', 'казначейский пакет') AND superseded_by IS NULL
         ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary, ts = EXCLUDED.ts, payload = EXCLUDED.payload, updated_at = NOW()
     """))
-    conn.execute(text("DELETE FROM brain_edges WHERE kind IN ('владеет', 'факт_о')"))
+    conn.execute(text("DELETE FROM brain_edges WHERE kind = 'факт_о' OR (kind = 'владеет' AND (method IS NULL OR method = 'world_facts'))"))
     r = conn.execute(text("""
-        INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
-        SELECT 'company:' || x.a, 'company:' || x.b, 'владеет', w.valid_from, CAST(NULL AS real), 'fact:' || w.id
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT 'company:' || x.a, 'company:' || x.b, 'владеет', w.valid_from, CAST(NULL AS real), 'fact:' || w.id,
+               CASE WHEN w.confidence >= 0.9 THEN 'A' ELSE 'B' END, 'world_facts', w.valid_from
           FROM world_facts w
           CROSS JOIN LATERAL (SELECT substring(w.fact_key FROM '^(?\\:own|link):([A-Z0-9_]+):') AS a,
                                      substring(w.fact_key FROM '^(?\\:own|link):[A-Z0-9_]+:([A-Z0-9_]+)$') AS b) x
@@ -332,8 +338,9 @@ def сигналы(conn, full: bool) -> int:
     return n
 
 
-def акционеры(conn) -> int:
-    """Держатели как узлы: «Прочие» и «free float» — не держатели, их пропускаем."""
+def держатели_узлы(conn) -> int:
+    """Держатели как узлы: «Прочие» и «free float» — не держатели, их пропускаем.
+    Рёбра теперь строит держатели_резолв()."""
     conn.execute(text("""
         INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
         SELECT DISTINCT ON (md5(lower(trim(holder)))) 'holder:' || md5(lower(trim(holder))), 'holder', md5(lower(trim(holder))),
@@ -343,6 +350,10 @@ def акционеры(conn) -> int:
          ORDER BY md5(lower(trim(holder))), updated_at DESC
         ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()
     """))
+    return 0
+
+
+def _старые_рёбра_держателей(conn) -> int:  # не вызывается, оставлено до следующей чистки
     conn.execute(text("DELETE FROM brain_edges WHERE kind = 'владеет_долей'"))
     r = conn.execute(text("""
         INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
@@ -353,6 +364,229 @@ def акционеры(conn) -> int:
          WHERE i.smartlab_ticker IS NOT NULL AND s.holder IS NOT NULL
            AND lower(trim(s.holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
          ORDER BY md5(lower(trim(s.holder))), i.smartlab_ticker, s.structure_as_of DESC NULLS LAST
+        ON CONFLICT DO NOTHING
+    """))
+    return r.rowcount
+
+
+# ── слой доверия ──────────────────────────────────────────────────────────────
+# Уровень и способ — по виду связи. Новый вид связи = одна строка здесь; без строки
+# ребро останется без уровня, и экран покажет «?» — лучше, чем молча выдать D за A.
+УРОВНИ = {
+    "упоминает":         ("B", "хэштег"),
+    "о":                 ("B", "тикер_кандидата"),
+    "из_новости":        ("A", "ссылка_на_источник"),
+    "отчитался":         ("B", "financemarker"),
+    "держит":            ("A", "раскрытие_ук"),
+    "включает":          ("A", "moex"),
+    "факт_о":            ("B", "world_facts"),
+    "аномалия_по":       ("C", "детектор"),
+    "сигнал_о":          ("C", "детектор"),
+    "владеет_долей":     ("B", "акционеры"),
+    "владеет":           ("B", "акционеры"),
+    "в_секторе":         ("B", "классификация_smartlab"),
+    "вместе_в_новостях": ("D", "совместные_упоминания"),
+}
+# Обычные слова, совпадающие с именами компаний: по ним автоматически не размечаем.
+# Список сеется в brain_name_rules (ambiguous=true) и дальше правится в таблице.
+НЕОДНОЗНАЧНЫЕ = {"магнит", "полюс", "самолет", "самолёт", "система", "лента", "энергия", "диод",
+                 "мать и дитя", "красный октябрь", "т", "вуш", "озон", "русагро", "инарктика",
+                 "европлан", "яковлев", "аптека", "детский мир", "белуга", "черкизово", "пик"}
+# ⚠️ Полнотекст не различает регистр: «ПИК» и «пик цен» — одно слово, поэтому ПИК в списке.
+# ВТБ, МТС, ММК, МКБ, ЛСР — аббревиатуры без бытового смысла, их короткая длина не повод.
+
+
+def уровни(conn) -> int:
+    """Проставить level/method/snapshot_date всем рёбрам, у которых их ещё нет."""
+    n = 0
+    for kind, (lvl, meth) in УРОВНИ.items():
+        r = conn.execute(text("""
+            UPDATE brain_edges SET level = COALESCE(level, :l), method = COALESCE(method, :m),
+                                   snapshot_date = COALESCE(snapshot_date, ts::date)
+             WHERE kind = :k AND (level IS NULL OR method IS NULL OR (snapshot_date IS NULL AND ts IS NOT NULL))
+        """), {"l": lvl, "m": meth, "k": kind})
+        n += r.rowcount
+    return n
+
+
+def правила_имён(conn) -> int:
+    """Сеем правила разметки из справочника: короткое имя, отображаемое имя, имена активов в
+    фондах (обрезаем «, акция об.», «ао»). Правки руками переживают пересев (DO NOTHING)."""
+    r = conn.execute(text("""
+        INSERT INTO brain_name_rules (pattern, company_id, ambiguous, enabled, source)
+        SELECT DISTINCT ON (lower(p.pattern), p.company_id) p.pattern, p.company_id,
+               ((length(p.pattern) <= 3 AND p.pattern <> upper(p.pattern)) OR lower(p.pattern) = ANY(string_to_array(:amb, '|'))),
+               NOT ((length(p.pattern) <= 3 AND p.pattern <> upper(p.pattern)) OR lower(p.pattern) = ANY(string_to_array(:amb, '|'))), p.source
+          FROM (
+                SELECT i.name_short AS pattern, 'company:' || i.smartlab_ticker AS company_id, 'name_short' AS source
+                  FROM issuers i WHERE i.smartlab_ticker IS NOT NULL AND i.name_short IS NOT NULL
+                UNION ALL
+                SELECT a.alias_value, m.company_id, 'display_name'
+                  FROM issuer_aliases a JOIN brain_ticker_map m ON m.ticker = a.secid
+                 WHERE a.alias_type = 'display_name' AND a.instrument_kind = 'share'
+                UNION ALL
+                SELECT trim(regexp_replace(a.alias_value, '(,\\s*(акци[яи]\\s*об\\.?|ао|ап|обыкн\\.?|прив\\.?)|\\s+(ао|ап)|-?ао)\\s*$', '', 'i')), m.company_id, 'fund_asset_name'
+                  FROM issuer_aliases a JOIN brain_ticker_map m ON m.ticker = a.secid
+                 WHERE a.alias_type = 'fund_asset_name' AND a.instrument_kind = 'share' AND a.secid IS NOT NULL
+               ) p
+         WHERE length(trim(p.pattern)) >= 2 AND p.pattern !~ '^[A-Z0-9.\\- ]+$'
+           AND p.pattern !~* '(публичное|акционерное|общество|limited|company|public)'   -- юридические простыни не ищем в новостях
+         ORDER BY lower(p.pattern), p.company_id
+        ON CONFLICT (pattern, company_id) DO NOTHING
+    """), {"amb": "|".join(sorted(НЕОДНОЗНАЧНЫЕ))})
+    return r.rowcount
+
+
+def новости_по_имени(conn, full: bool) -> int:
+    """Новости без хэштега тикера: разметка по имени компании полнотекстом (русская
+    морфология: «Сбербанка», «Полюсом»). Уровень C, способ «имя». Только правила
+    enabled и не ambiguous — остальные ждут решения в таблице правил."""
+    вод = None if full else _водяной(conn, "news_names")
+    с = datetime.now(timezone.utc) - timedelta(days=НОВОСТИ_ДНЕЙ)
+    правила = conn.execute(text("SELECT pattern, company_id FROM brain_name_rules WHERE enabled AND NOT ambiguous")).all()
+    n = 0
+    for pattern, company_id in правила:
+        п = {"с": с, "вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc), "q": pattern, "cid": company_id}
+        conn.execute(text(f"""
+            INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+            SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
+                   left(regexp_replace(text, '\\\\s+', ' ', 'g'), 160), CAST(NULL AS text), posted_at,
+                   jsonb_build_object('channel', {_КАНАЛ}, 'views', views, 'tickers', to_jsonb(tickers),
+                                      'url', 'https://t.me/' || {_КАНАЛ} || '/' || message_id), NOW()
+              FROM news_archive n
+             WHERE posted_at > :с AND imported_at > :вод
+               AND to_tsvector('russian', text) @@ phraseto_tsquery('russian', :q)
+             ORDER BY 1, imported_at DESC
+            ON CONFLICT (id) DO NOTHING
+        """), п)
+        r = conn.execute(text(f"""
+            INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+            SELECT DISTINCT 'news:' || {_КАНАЛ} || '/' || message_id, :cid, 'упоминает', posted_at, CAST(NULL AS real),
+                   'news_archive', 'C', 'имя', posted_at::date
+              FROM news_archive n
+             WHERE posted_at > :с AND imported_at > :вод
+               AND to_tsvector('russian', text) @@ phraseto_tsquery('russian', :q)
+            ON CONFLICT DO NOTHING
+        """), п)
+        n += r.rowcount
+    _отметить(conn, "news_names", conn.execute(text("SELECT MAX(imported_at) FROM news_archive")).scalar(), n)
+    return n
+
+
+def держатели_резолв(conn) -> dict:
+    """Акционеры строкой → компании справочника. Точное совпадение нормализованных имён —
+    «авто»; похожее (pg_trgm ≥ 0.5) — «на_проверке» с вариантами; решения человека
+    («подтверждено»/«отклонено») не перезаписываются."""
+    conn.execute(text("DROP TABLE IF EXISTS _имена"))
+    conn.execute(text("""
+        CREATE TEMP TABLE _имена AS
+        SELECT DISTINCT brain_norm(p.name) AS norm, p.company_id FROM (
+            SELECT i.name_short AS name, 'company:' || i.smartlab_ticker AS company_id FROM issuers i WHERE i.smartlab_ticker IS NOT NULL
+            UNION ALL SELECT i.name_full, 'company:' || i.smartlab_ticker FROM issuers i WHERE i.smartlab_ticker IS NOT NULL AND i.name_full IS NOT NULL
+            UNION ALL SELECT a.alias_value, m.company_id FROM issuer_aliases a JOIN brain_ticker_map m ON m.ticker = a.secid
+                       WHERE a.alias_type IN ('display_name', 'fund_asset_name') AND a.instrument_kind = 'share'
+            UNION ALL SELECT r.pattern, r.company_id FROM brain_name_rules r
+        ) p WHERE length(brain_norm(p.name)) >= 3
+    """))
+    r1 = conn.execute(text("""
+        INSERT INTO brain_holder_map (holder_norm, holder, company_id, method, confidence, status, candidates, updated_at)
+        -- ⚠️ Однословное точное совпадение — НЕ авто: «ООО Озон» (держатель Озон Фармацевтики)
+        -- совпало с Ozon. Два и больше слов («афк система», «россети ленэнерго») — авто;
+        -- одно слово — в очередь с уверенностью 0.9, человек подтверждает один раз.
+        SELECT DISTINCT ON (brain_norm(s.holder)) brain_norm(s.holder), trim(s.holder), n.company_id, 'точное',
+               CASE WHEN array_length(string_to_array(brain_norm(s.holder), ' '), 1) >= 2 THEN 1.0 ELSE 0.9 END,
+               CASE WHEN array_length(string_to_array(brain_norm(s.holder), ' '), 1) >= 2 THEN 'авто' ELSE 'на_проверке' END,
+               jsonb_build_array(jsonb_build_object('company_id', n.company_id, 'sim', 1.0)), NOW()
+          FROM company_shareholders s JOIN _имена n ON n.norm = brain_norm(s.holder)
+         WHERE length(brain_norm(s.holder)) >= 3
+         ORDER BY brain_norm(s.holder), n.company_id
+        ON CONFLICT (holder_norm) DO UPDATE SET company_id = EXCLUDED.company_id, method = EXCLUDED.method,
+               confidence = EXCLUDED.confidence, status = EXCLUDED.status, candidates = EXCLUDED.candidates, updated_at = NOW()
+         WHERE brain_holder_map.status IN ('авто', 'на_проверке', 'нет')
+    """))
+    r2 = conn.execute(text("""
+        INSERT INTO brain_holder_map (holder_norm, holder, company_id, method, confidence, status, candidates, updated_at)
+        SELECT h.norm, h.holder, (h.c->0->>'company_id'), 'похожее', CAST(h.c->0->>'sim' AS real), 'на_проверке', h.c, NOW()
+          FROM (
+                SELECT x.norm, x.holder,
+                       (SELECT jsonb_agg(jsonb_build_object('company_id', y.company_id, 'sim', round(CAST(y.sim AS numeric), 2)) ORDER BY y.sim DESC)
+                          FROM (SELECT n.company_id, MAX(similarity(n.norm, x.norm)) AS sim FROM _имена n
+                                 WHERE similarity(n.norm, x.norm) >= 0.5 GROUP BY n.company_id ORDER BY sim DESC LIMIT 3) y) AS c
+                  FROM (SELECT DISTINCT ON (brain_norm(holder)) brain_norm(holder) AS norm, trim(holder) AS holder FROM company_shareholders
+                         WHERE length(brain_norm(holder)) >= 3 ORDER BY brain_norm(holder)) x
+               ) h
+         WHERE h.c IS NOT NULL AND NOT EXISTS (SELECT 1 FROM _имена n WHERE n.norm = h.norm)
+        ON CONFLICT (holder_norm) DO UPDATE SET candidates = EXCLUDED.candidates, updated_at = NOW()
+         WHERE brain_holder_map.status IN ('на_проверке', 'нет')
+    """))
+    r3 = conn.execute(text("""
+        INSERT INTO brain_holder_map (holder_norm, holder, company_id, method, confidence, status, updated_at)
+        SELECT DISTINCT ON (brain_norm(holder)) brain_norm(holder), trim(holder), NULL, NULL, NULL, 'нет', NOW() FROM company_shareholders
+         WHERE length(brain_norm(holder)) >= 3
+           AND lower(trim(holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
+         ORDER BY brain_norm(holder)
+        ON CONFLICT (holder_norm) DO NOTHING
+    """))
+    conn.execute(text("DELETE FROM brain_edges WHERE kind = 'владеет' AND method = 'акционеры'"))
+    conn.execute(text("DELETE FROM brain_edges WHERE kind = 'владеет_долей'"))
+    r4 = conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT DISTINCT ON (h.company_id, i.smartlab_ticker) h.company_id, 'company:' || i.smartlab_ticker, 'владеет',
+               s.structure_as_of, s.share_pct, s.source, 'B', 'акционеры', s.structure_as_of
+          FROM company_shareholders s JOIN issuers i USING (issuer_id)
+          JOIN brain_holder_map h ON h.holder_norm = brain_norm(s.holder)
+         WHERE i.smartlab_ticker IS NOT NULL AND h.status IN ('авто', 'подтверждено') AND h.company_id IS NOT NULL
+           AND h.company_id <> 'company:' || i.smartlab_ticker
+         ORDER BY h.company_id, i.smartlab_ticker, s.structure_as_of DESC NULLS LAST
+        ON CONFLICT DO NOTHING
+    """))
+    r5 = conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT DISTINCT ON (md5(lower(trim(s.holder))), i.smartlab_ticker)
+               'holder:' || md5(lower(trim(s.holder))), 'company:' || i.smartlab_ticker, 'владеет_долей',
+               s.structure_as_of, s.share_pct, s.source, 'B', 'акционеры', s.structure_as_of
+          FROM company_shareholders s JOIN issuers i USING (issuer_id)
+          LEFT JOIN brain_holder_map h ON h.holder_norm = brain_norm(s.holder)
+         WHERE i.smartlab_ticker IS NOT NULL AND s.holder IS NOT NULL
+           AND lower(trim(s.holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
+           AND NOT COALESCE(h.status IN ('авто', 'подтверждено') AND h.company_id IS NOT NULL, FALSE)
+         ORDER BY md5(lower(trim(s.holder))), i.smartlab_ticker, s.structure_as_of DESC NULLS LAST
+        ON CONFLICT DO NOTHING
+    """))
+    return {"точных": r1.rowcount, "на_проверке": r2.rowcount, "без_пары": r3.rowcount,
+            "рёбер_владения": r4.rowcount, "рёбер_держателей": r5.rowcount}
+
+
+def секторы(conn) -> int:
+    conn.execute(text("""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'sector:' || md5(sector), 'sector', md5(sector), sector, CAST(NULL AS text), CAST(NULL AS timestamptz),
+               jsonb_build_object('компаний', COUNT(*), 'классификация', 'smart-lab'), NOW()
+          FROM issuers WHERE sector IS NOT NULL AND smartlab_ticker IS NOT NULL GROUP BY sector
+        ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+    """))
+    conn.execute(text("DELETE FROM brain_edges WHERE kind = 'в_секторе'"))
+    r = conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT 'company:' || smartlab_ticker, 'sector:' || md5(sector), 'в_секторе', updated_at, CAST(NULL AS real),
+               'issuers', 'B', 'классификация_smartlab', updated_at::date
+          FROM issuers WHERE sector IS NOT NULL AND smartlab_ticker IS NOT NULL
+        ON CONFLICT DO NOTHING
+    """))
+    return r.rowcount
+
+
+def вместе(conn) -> int:
+    """Компании, которые встречаются в одних новостях (2–5 компаний в новости; обзоры с
+    десятком тикеров исключены). Уровень D: это факт о корпусе, не об отношениях."""
+    conn.execute(text("DELETE FROM brain_edges WHERE kind = 'вместе_в_новостях'"))
+    r = conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT a.dst, b.dst, 'вместе_в_новостях', MAX(a.ts), CAST(COUNT(*) AS real), 'brain_edges', 'D', 'совместные_упоминания', MAX(a.ts)::date
+          FROM brain_edges a JOIN brain_edges b ON a.src = b.src AND a.dst < b.dst
+          JOIN (SELECT src FROM brain_edges WHERE kind = 'упоминает' GROUP BY src HAVING COUNT(DISTINCT dst) BETWEEN 2 AND 5) ok ON ok.src = a.src
+         WHERE a.kind = 'упоминает' AND b.kind = 'упоминает' AND a.dst LIKE 'company:%' AND b.dst LIKE 'company:%'
+         GROUP BY a.dst, b.dst HAVING COUNT(*) >= 2
         ON CONFLICT DO NOTHING
     """))
     return r.rowcount
@@ -378,7 +612,13 @@ def main() -> int:
         итог["владение_рёбер"] = факты(conn)
         итог["аномалий"] = аномалии(conn, args.full)
         итог["сигналов"] = сигналы(conn, args.full)
-        итог["акционеры_рёбер"] = акционеры(conn)
+        держатели_узлы(conn)
+        итог["правил_имён"] = правила_имён(conn)
+        итог["новостей_по_имени"] = новости_по_имени(conn, args.full)
+        итог["держатели"] = держатели_резолв(conn)
+        итог["секторов_рёбер"] = секторы(conn)
+        итог["вместе_рёбер"] = вместе(conn)
+        итог["уровней_проставлено"] = уровни(conn)
         итог["узлов"] = conn.execute(text("SELECT COUNT(*) FROM brain_nodes")).scalar()
         итог["рёбер"] = conn.execute(text("SELECT COUNT(*) FROM brain_edges")).scalar()
     итог["сек"] = round(time.time() - t0, 1)

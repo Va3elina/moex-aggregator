@@ -2828,13 +2828,26 @@ export interface BrainNode {
   id: string; вид: string; заголовок: string; кратко: string | null; время: string | null;
   данные: Record<string, unknown> | null;
 }
-export interface BrainRingItem extends BrainNode { вес?: number | null }
+export interface BrainRingItem extends BrainNode { вес?: number | null; уровень?: string | null; способ?: string | null; на_дату?: string | null }
 export interface BrainRing {
   связь: string; направление: 'вх' | 'исх'; сколько: number; свежее: string | null; старое: string | null;
+  /** Лучший и худший уровень доверия среди рёбер кольца (A…D). */
+  уровень?: string | null; уровень_худший?: string | null;
   последние: BrainRingItem[];
 }
-export interface BrainNodePage { узел: BrainNode; кольца: BrainRing[] }
-export interface BrainNeighbor extends BrainNode { связь: string; направление: 'вх' | 'исх'; вес: number | null }
+export interface BrainNodePage { узел: BrainNode; кольца: BrainRing[]; текст?: string | null; уровни?: Record<string, string> }
+export interface BrainNeighbor extends BrainNode {
+  связь: string; направление: 'вх' | 'исх'; вес: number | null;
+  уровень?: string | null; способ?: string | null; на_дату?: string | null;
+}
+export interface BrainHolderReview {
+  holder_norm: string; holder: string; company_id: string | null; method: string | null; confidence: number | null;
+  status: string; candidates: Array<{ company_id: string; sim: number }> | null; reviewed_at: string | null; note: string | null;
+  держит_в: string | null;
+}
+export interface BrainNameRule {
+  id: number; pattern: string; company_id: string; ambiguous: boolean; enabled: boolean; source: string | null; note: string | null; размечено: number;
+}
 export interface BrainNeighbors { узел: string; связь: string | null; всего: number; предел: number; смещение: number; соседи: BrainNeighbor[] }
 export interface BrainSearchHit extends BrainNode { почему: string }
 export interface BrainPathStep { от: string; связь: string; направление: string; к: string; узел?: { вид: string; заголовок: string } | null }
@@ -2861,8 +2874,27 @@ async function brainFetch<T>(path: string, params: Record<string, string | numbe
 
 export const getBrainStats = () => brainFetch<BrainStats>('stats');
 export const getBrainTop = (kind = 'company', limit = 30) => brainFetch<{ вид: string; узлы: Array<BrainNode & { связей: number }> }>('top', { kind, limit });
-export const getBrainNode = (id: string, since?: number, perRing = 24) =>
-  brainFetch<BrainNodePage>(`node/${id}`, { since, per_ring: perRing });
+export const getBrainNode = (id: string, since?: number, perRing = 24, withText = false) =>
+  brainFetch<BrainNodePage>(`node/${id}`, { since, per_ring: perRing, text: withText ? 'true' : undefined });
+export const getBrainHolderQueue = (status = 'на_проверке') =>
+  brainFetch<{ по_статусам: Record<string, number>; очередь: BrainHolderReview[] }>('review/holders', { status, limit: 200 });
+export const getBrainNameRules = (ambiguous?: boolean) =>
+  brainFetch<{ правила: BrainNameRule[] }>('review/names', { ambiguous: ambiguous === undefined ? undefined : String(ambiguous) });
+async function brainPatch<T>(path: string, params: Record<string, string | number | boolean | undefined | null>): Promise<T> {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+  const response = await apiFetch(`${API_BASE}/api/internal/brain/${path}?${p}`, { method: 'PATCH' });
+  if (!response.ok) {
+    let detail = 'Не удалось сохранить решение';
+    try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+export const decideBrainHolder = (holderNorm: string, decision: 'подтверждено' | 'отклонено', companyId?: string) =>
+  brainPatch<{ status: string }>(`review/holders/${encodeURIComponent(holderNorm)}`, { decision, company_id: companyId });
+export const patchBrainNameRule = (id: number, fields: { enabled?: boolean; ambiguous?: boolean }) =>
+  brainPatch<{ id: number }>(`review/names/${id}`, fields);
 export const getBrainNeighbors = (id: string, kind?: string, since?: number, limit = 100, offset = 0) =>
   brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
 export const getBrainSearch = (q: string, kind?: string, limit = 12, mode: 'word' | 'meaning' = 'word') =>
