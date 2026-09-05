@@ -41,10 +41,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Крупные цифры и заголовки. Archivo с сайта не тянем — берём то, что уже
-   загружено, иначе панель ждёт лишний шрифт ради четырёх чисел. */
+/* Крупные цифры и заголовки — Archivo, как в макете.
+   ⚠️ Здесь стоял Inter с оправданием «Archivo с сайта не тянем, лишний шрифт ради
+   четырёх чисел». Оправдание было ложным: Archivo уже грузится глобально в
+   index.html вместе с Inter и JetBrains Mono. Экономии не существовало, а характер
+   всех крупных чисел потерялся. */
 .dash .disp {
-  font-family: Inter, system-ui, sans-serif;
+  font-family: Archivo, Inter, system-ui, sans-serif;
   letter-spacing: -0.02em;
   font-weight: 800;
 }
