@@ -218,6 +218,8 @@ def фонды(conn) -> int:
           JOIN funds f ON f.fund_id = h.fund_id
           JOIN brain_ticker_map m ON m.ticker = h.isin
          WHERE h.snapshot_date = (SELECT MAX(x.snapshot_date) FROM fund_holdings_history x WHERE x.fund_id = h.fund_id)
+           -- «держит 0,0007 %» — остаток после ребаланса, не позиция: в карту не берём
+           AND (h.weight IS NULL OR h.weight >= 0.05)
          GROUP BY f.ticker, m.company_id
         ON CONFLICT DO NOTHING
     """))
@@ -430,8 +432,11 @@ def правила_имён(conn) -> int:
                   FROM issuer_aliases a JOIN brain_ticker_map m ON m.ticker = a.secid
                  WHERE a.alias_type = 'fund_asset_name' AND a.instrument_kind = 'share' AND a.secid IS NOT NULL
                ) p
-         WHERE length(trim(p.pattern)) >= 2 AND p.pattern !~ '^[A-Z0-9.\\- ]+$'
+         WHERE length(trim(p.pattern)) >= 2
+           AND p.pattern !~ '^[A-Z]{3,6}$' AND p.pattern !~ '^[A-Z]{2}[A-Z0-9]{10}$'     -- тикеры и ISIN — не имена; «X5» — имя
            AND p.pattern !~* '(публичное|акционерное|общество|limited|company|public)'   -- юридические простыни не ищем в новостях
+           -- ⚠️ В названиях активов фондов у ГДР стоит депозитарий: «The Bank of New York Mellon» → X5.
+           AND p.pattern !~* '(bank of new york|mellon|citibank|deutsche bank|jpmorgan|j\.p\. morgan|депозитар|custod)'
          ORDER BY lower(p.pattern), p.company_id
         ON CONFLICT (pattern, company_id) DO NOTHING
     """), {"amb": "|".join(sorted(НЕОДНОЗНАЧНЫЕ))})
