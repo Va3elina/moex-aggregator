@@ -625,6 +625,10 @@ def держатели_резолв(conn) -> dict:
           LEFT JOIN brain_holder_map h ON h.holder_norm = brain_norm(s.holder)
          WHERE i.smartlab_ticker IS NOT NULL AND s.holder IS NOT NULL
            AND lower(trim(s.holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
+           -- Номинальные держатели (НРД, «Депозитарии», Clearstream) — не владельцы: в раскрытии они
+           -- числятся с процентом, но агент, увидев «владельцы: НРД», напишет ложь. 05.09 у Роснефти
+           -- в «владельцах» стоял НРД.
+           AND s.holder !~* 'депозитар|номинальн|nominee|clearstream|euroclear'
            AND NOT COALESCE(h.status IN ('авто', 'подтверждено') AND h.company_id IS NOT NULL, FALSE)
          ORDER BY md5(lower(trim(s.holder))), i.smartlab_ticker, s.structure_as_of DESC NULLS LAST
         ON CONFLICT DO NOTHING
