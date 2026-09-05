@@ -27,6 +27,7 @@ import type { DashboardOverview } from '../services/api';
 import ProjectMap from './dashboard/ProjectMap';
 import LiveProcesses from './dashboard/LiveProcesses';
 import PostFactory from './dashboard/PostFactory';
+import OwnershipGraph from './dashboard/OwnershipGraph';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
@@ -35,12 +36,12 @@ const ИНТЕРВАЛ_МС = 30_000;
 // ⚠️ ВКЛАДКА ПРОЦЕССОВ ОДНА. Их было две — «Живые процессы» и «Процессы», — и они
 // показывали одно и то же: вторая просто не знала, что идёт сейчас. Разделение
 // заставляло помнить, в какой из них смотреть, и ничего за это не давало.
-const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Второй мозг', 'База'] as const;
+const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Связи', 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
 // Вкладка живёт в адресе: /admin/dashboard/<слаг>[/<объект>]. Слаги латиницей —
 // они попадают в строку браузера и в ссылки из чата.
 const СЛАГ: Record<Вкладка, string> = {
-  'Карта': 'map', 'Процессы': 'processes', 'Завод постов': 'posts',
+  'Карта': 'map', 'Процессы': 'processes', 'Завод постов': 'posts', 'Связи': 'graph',
   'Второй мозг': 'brain', 'База': 'db',
 };
 const ПО_СЛАГУ: Record<string, Вкладка> = Object.fromEntries(
@@ -212,7 +213,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {(узелВАдресе || (вкладка === 'Завод постов' && id) || searchParams.get('p')) && (
+        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи') && id) || searchParams.get('p')) && (
           <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
             <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
             <span>›</span>
@@ -221,6 +222,7 @@ export default function AdminDashboardPage() {
             <span style={{ color: 'var(--d-accent)' }}>
               {узелВАдресе ? узелВАдресе.имя
                 : вкладка === 'Завод постов' && id ? `#${id}`
+                : вкладка === 'Связи' && id ? id
                 : searchParams.get('p')}
             </span>
           </div>
@@ -283,6 +285,13 @@ export default function AdminDashboardPage() {
             )}
 
             {вкладка === 'Завод постов' && <PostFactory />}
+
+            {вкладка === 'Связи' && (
+              <OwnershipGraph
+                выбран={id ?? null}
+                onВыбрать={(t) => navigate(t ? `/admin/dashboard/graph/${t}` : '/admin/dashboard/graph')}
+              />
+            )}
 
             {вкладка === 'Второй мозг' && (
               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
