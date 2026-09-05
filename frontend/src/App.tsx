@@ -338,7 +338,9 @@ export default function App() {
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/content-news" element={<AdminContentNewsPage />} />
-            <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+            {/* Вкладка и объект — в адресе, а не в состоянии компонента: иначе на экран
+                нельзя дать ссылку, а «назад» в браузере уводит с панели целиком. */}
+            <Route path="/admin/dashboard/:tab?/:id?" element={<AdminDashboardPage />} />
             <Route path="/admin/repaint" element={<RepaintPage />} />
           </Route>
         </Routes>

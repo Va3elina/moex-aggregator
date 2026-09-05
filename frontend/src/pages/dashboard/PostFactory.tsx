@@ -12,6 +12,7 @@
  * Поэтому бэкенд отдаёт список пробелов, и он показывается наравне с данными.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Loader2, Search } from 'lucide-react';
 import { getPostDetail, getPostList } from '../../services/api';
 import type { PostDetail, PostList, PostListItem } from '../../services/api';
@@ -168,7 +169,11 @@ function PostTrace({ id, назад }: { id: number; назад: () => void }) {
         </button>
         <div className="flex items-center" style={{ gap: 7, flexWrap: 'wrap' }}>
           <Плашка цвет={цветСтатуса(к.статус)}>{к.статус_подпись}</Плашка>
-          {к.тикеры.map((t) => <Плашка key={t} цвет="var(--d-cold)">{t}</Плашка>)}
+          {к.тикеры.map((t) => (
+            <Link key={t} to={`/admin/dashboard/posts?ticker=${t}`} style={{ textDecoration: 'none' }}>
+              <Плашка цвет="var(--d-cold)">{t} →</Плашка>
+            </Link>
+          ))}
           {к.версия_брифа != null && <Плашка>бриф v{к.версия_брифа}</Плашка>}
           <Плашка>#{к.id}</Плашка>
         </div>
@@ -400,25 +405,38 @@ function PostTrace({ id, назад }: { id: number; назад: () => void }) {
 }
 
 export default function PostFactory() {
+  // ⚠️ ВЫБРАННЫЙ КАНДИДАТ И ФИЛЬТРЫ — В АДРЕСЕ. Первая версия держала их в
+  // useState: на разбор нельзя было дать ссылку, а «назад» в браузере уводил с
+  // панели целиком вместо возврата к списку. Теперь /posts/1727 — это адрес,
+  // а ?status=discarded&ticker=AFLT — сохраняемый фильтр.
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const [params, setParams] = useSearchParams();
+  const выбран = id ? Number(id) : null;
+  const статус = params.get('status') ?? '';
+  const тикер = params.get('ticker') ?? '';
+  const setСтатус = (v: string) => setParams((p) => {
+    const n = new URLSearchParams(p);
+    if (v) n.set('status', v); else n.delete('status');
+    return n;
+  });
   const [список, setСписок] = useState<PostList | null>(null);
-  const [статус, setСтатус] = useState('');
   const [поиск, setПоиск] = useState('');
   const [запрос, setЗапрос] = useState('');
-  const [выбран, setВыбран] = useState<number | null>(null);
   const [грузится, setГрузится] = useState(false);
   const [ошибка, setОшибка] = useState<string | null>(null);
 
   const загрузить = useCallback(async () => {
     setГрузится(true);
     try {
-      setСписок(await getPostList({ status: статус, q: запрос, limit: 60 }));
+      setСписок(await getPostList({ status: статус, ticker: тикер, q: запрос, limit: 60 }));
       setОшибка(null);
     } catch (e) {
       setОшибка(e instanceof Error ? e.message : 'сбой');
     } finally {
       setГрузится(false);
     }
-  }, [статус, запрос]);
+  }, [статус, тикер, запрос]);
 
   useEffect(() => { загрузить(); }, [загрузить]);
 
@@ -431,7 +449,7 @@ export default function PostFactory() {
   const этапы = useMemo(() => список?.этапы ?? [], [список]);
 
   if (выбран !== null) {
-    return <PostTrace id={выбран} назад={() => setВыбран(null)} />;
+    return <PostTrace id={выбран} назад={() => navigate('/admin/dashboard/posts')} />;
   }
 
   return (
@@ -446,6 +464,12 @@ export default function PostFactory() {
             Кандидаты{статус && <span className="mono" style={{
               fontSize: 12, fontWeight: 400, color: 'var(--d-accent)', marginLeft: 8,
             }}>{статус}</span>}
+            {тикер && (
+              <button className="dash-press mono" style={{ fontSize: 10.5, padding: '2px 8px', marginLeft: 8 }}
+                onClick={() => setParams((p) => { const n = new URLSearchParams(p); n.delete('ticker'); return n; })}>
+                {тикер} ×
+              </button>
+            )}
           </div>
           <div className="flex items-center" style={{ gap: 8 }}>
             <label className="flex items-center" style={{
@@ -484,7 +508,7 @@ export default function PostFactory() {
           {(список?.кандидаты ?? []).map((к: PostListItem) => (
             <button
               key={к.id}
-              onClick={() => setВыбран(к.id)}
+              onClick={() => navigate(`/admin/dashboard/posts/${к.id}`)}
               className="dash-inner"
               style={{
                 padding: '10px 12px', border: 'none', cursor: 'pointer',

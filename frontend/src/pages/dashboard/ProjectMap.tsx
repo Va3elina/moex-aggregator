@@ -12,6 +12,7 @@
  * рёбра после узлов, линии лягут поверх текста.
  */
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   РЁБРА, ПОДПИСИ_КОЛОНОК, УЗЛЫ, ШИРИНА, ШИРИНА_УЗЛА, ВЫСОТА_УЗЛА,
 } from './topology';
@@ -97,14 +98,22 @@ function состояния(процессы: DashboardProcess[]): Record<string
   return итог;
 }
 
-export default function ProjectMap({ процессы, идут, вспышки }: {
+export default function ProjectMap({ процессы, идут, вспышки, выбран: выбранСнаружи, onВыбрать }: {
   процессы: DashboardProcess[];
   /** Имена пайплайнов, работающих прямо сейчас. */
   идут?: Set<string>;
   /** Только что закончившие — короткая вспышка исхода. */
   вспышки?: Map<string, 'ok' | 'fail'>;
+  /** Выбранный узел, если им управляет адрес страницы (/map/:node). */
+  выбран?: string | null;
+  onВыбрать?: (id: string | null) => void;
 }) {
-  const [выбран, setВыбран] = useState<string | null>(null);
+  // ⚠️ Выбор узла живёт в адресе, когда страница его туда положила: тогда на узел
+  // можно дать ссылку, а «назад» возвращает к прошлому узлу. Без onВыбрать
+  // компонент работает по-старому, сам по себе.
+  const [локально, setЛокально] = useState<string | null>(null);
+  const выбран = onВыбрать ? (выбранСнаружи ?? null) : локально;
+  const setВыбран = (id: string | null) => (onВыбрать ? onВыбрать(id) : setЛокально(id));
   const сост = useMemo(() => состояния(процессы), [процессы]);
   const поИмени = useMemo(() => new Map(процессы.map((п) => [п.имя, п])), [процессы]);
 
@@ -289,7 +298,10 @@ export default function ProjectMap({ процессы, идут, вспышки 
                 return (
                   <div key={имя} className="flex items-center justify-between mono"
                     style={{ fontSize: 11.5, gap: 12 }}>
-                    <span style={{ color: 'var(--d-ink)' }}>{имя}</span>
+                    <Link to={`/admin/dashboard/processes?p=${имя}`}
+                      style={{ color: 'var(--d-ink)', textDecoration: 'none', borderBottom: '1px dotted var(--d-line-strong)' }}>
+                      {имя}
+                    </Link>
                     <span title={п?.заметка || undefined}
                       style={{ color: п?.тревога ? 'var(--d-warn)' : 'var(--d-dim)', flex: 1, textAlign: 'right' }}>
                       {п?.фраза || п?.заметка || (п ? '' : 'в pipeline_runs нет — имя не совпало')}
