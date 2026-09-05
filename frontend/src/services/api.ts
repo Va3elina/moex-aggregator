@@ -2537,3 +2537,93 @@ export async function getDashboardLive(): Promise<DashboardLive> {
   }
   return response.json();
 }
+
+// ─── Разбор кандидата в посты ───────────────────────────────────────────────
+
+export interface PostListItem {
+  id: number;
+  статус: string;
+  статус_подпись: string;
+  источник: string;
+  заголовок: string;
+  тикеры: string[];
+  фьючерс: string | null;
+  тип_события: string | null;
+  важность: number | null;
+  вердикт: string | null;
+  версия_брифа: number | null;
+  создан: string | null;
+  опубликован: string | null;
+  есть_аномалия: boolean;
+  есть_черновик: boolean;
+  есть_разбор: boolean;
+  шагов_следа: number;
+}
+
+export interface PostList {
+  всего_по_фильтру: number;
+  по_статусам: Record<string, number>;
+  этапы: Array<{ код: string; подпись: string; сколько: number }>;
+  кандидаты: PostListItem[];
+}
+
+export interface PostTraceStep {
+  шаг: string; номер: number; источник: string; вопрос: string;
+  нашлось: number | null; результат: string | null;
+  исход: string; почему: string | null; мс: number | null;
+}
+
+export interface PostDetail {
+  кандидат: Record<string, unknown> & {
+    id: number; статус: string; статус_подпись: string; заголовок: string;
+    текст_новости: string | null; тикеры: string[]; ссылка: string | null;
+    тип_события: string | null; важность: number | null; создан: string | null;
+    опубликован: string | null; версия_брифа: number | null;
+  };
+  шаг_н_хайп: { решение: boolean | null; когда: string | null; сдался: boolean };
+  шаг_а_релевантность: { обоснование: string | null; истекает: string | null };
+  шаг_б_данные: { проверен: string | null; аномалия: Record<string, unknown> | null };
+  шаг_в_черновик: {
+    текст: string | null; текст_ии: string | null; правил_человек: boolean;
+    отказ: string | null; аннотация: string | null;
+    профиль_стиля: Record<string, unknown> | null;
+  };
+  шаг_г_судья: {
+    вердикт: string | null; провалено: string[]; замечания: string[];
+    заметка: string | null; пункты: unknown; абзацы: unknown;
+    правил: string | null; что_поправил: string | null; когда: string | null;
+  };
+  человек: { решение: string | null; причина: string | null; код_причины: string | null; уведомлён: string | null };
+  новость: Record<string, unknown> | null;
+  разгон_репостов: Array<{ минута: number; репостов: number }>;
+  признан_хайпом: boolean | null;
+  след: PostTraceStep[];
+  журнал: Array<{ событие: string; код: string | null; причина: string | null; вердикт_тогда: string | null; когда: string | null }>;
+  чего_нет: string[];
+}
+
+export async function getPostList(opts: {
+  status?: string; ticker?: string; verdict?: string; q?: string;
+  limit?: number; offset?: number;
+} = {}): Promise<PostList> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(opts)) {
+    if (v !== undefined && v !== '') params.set(k, String(v));
+  }
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/posts?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить список кандидатов');
+  }
+  return response.json();
+}
+
+export async function getPostDetail(id: number): Promise<PostDetail> {
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/posts/${id}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error('Кандидат не найден');
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить разбор');
+  }
+  return response.json();
+}

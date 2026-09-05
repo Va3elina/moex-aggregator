@@ -25,6 +25,7 @@ import { getDashboardOverview } from '../services/api';
 import type { DashboardOverview } from '../services/api';
 import ProjectMap from './dashboard/ProjectMap';
 import LiveProcesses from './dashboard/LiveProcesses';
+import PostFactory from './dashboard/PostFactory';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
@@ -87,96 +88,6 @@ function Блок({ заголовок, справа, children }: {
   );
 }
 
-
-/**
- * Воронка завода постов.
- *
- * ⚠️ ГЛАВНОЕ ЧИСЛО — КОНВЕРСИЯ, А НЕ ВЫСОТА СТОЛБИКОВ. Из тысячи с лишним
- * кандидатов до канала доходит горстка, поэтому на общей шкале «опубликовано»
- * невидимо в принципе: пять против тысячи — это полпикселя. Показываем сначала
- * саму дробь крупно, а столбики нормируем на самый большой этап и держим
- * минимальную ширину, чтобы редкий этап был виден, а не угадывался.
- *
- * Порядок статусов задан руками: это путь кандидата, а не рейтинг по величине.
- */
-const ПОРЯДОК_ВОРОНКИ = ['pending', 'no_data', 'discarded', 'rejected',
-                         'draft_ready', 'published'];
-const ПОДПИСИ_ВОРОНКИ: Record<string, string> = {
-  pending: 'ждут разбора', no_data: 'нет данных', discarded: 'отсеяны судьёй',
-  rejected: 'отклонены вручную', draft_ready: 'черновик готов', published: 'опубликованы',
-};
-const ЦВЕТ_ВОРОНКИ: Record<string, string> = {
-  published: 'var(--d-ok)', draft_ready: 'var(--d-accent)', pending: 'var(--d-cold)',
-};
-
-function ВоронкаПостов({ воронка }: { воронка: Record<string, number> }) {
-  const всего = Object.values(воронка).reduce((a, b) => a + b, 0);
-  const опубликовано = воронка.published ?? 0;
-  const конверсия = всего ? (опубликовано / всего) * 100 : 0;
-  const известные = ПОРЯДОК_ВОРОНКИ.filter((к) => к in воронка);
-  const прочие = Object.keys(воронка).filter((к) => !ПОРЯДОК_ВОРОНКИ.includes(к));
-  const этапы = [...известные, ...прочие];
-  const макс = Math.max(...Object.values(воронка), 1);
-
-  if (всего === 0) {
-    return (
-      <Блок заголовок="Воронка кандидатов">
-        <div className="mono" style={{ fontSize: 12, color: 'var(--d-mute)' }}>Кандидатов нет</div>
-      </Блок>
-    );
-  }
-
-  return (
-    <Блок
-      заголовок="Воронка кандидатов"
-      справа={
-        <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
-          всего {числоРус(всего)}
-        </span>
-      }
-    >
-      <div className="dash-inner mb-3" style={{ padding: '12px 14px' }}>
-        <div className="flex items-baseline flex-wrap" style={{ gap: 10 }}>
-          <span className="disp" style={{ fontSize: 34, lineHeight: 1, color: 'var(--d-ok)' }}>
-            {числоРус(опубликовано)}
-          </span>
-          <span style={{ fontSize: 13, color: 'var(--d-mute)' }}>
-            из {числоРус(всего)} дошли до канала
-          </span>
-          <span className="mono" style={{ fontSize: 12, color: 'var(--d-dim)', marginLeft: 'auto' }}>
-            {конверсия < 1 ? конверсия.toFixed(2) : конверсия.toFixed(1)}%
-          </span>
-        </div>
-      </div>
-
-      <div className="flex flex-col" style={{ gap: 10 }}>
-        {этапы.map((статус) => {
-          const n = воронка[статус];
-          const цвет = ЦВЕТ_ВОРОНКИ[статус] ?? 'var(--d-line-strong)';
-          return (
-            <div key={статус}>
-              <div className="flex justify-between mb-1" style={{ gap: 10, fontSize: 12.5 }}>
-                <span style={{ color: 'var(--d-mute)' }}>
-                  {ПОДПИСИ_ВОРОНКИ[статус] ?? статус}
-                  <span className="mono" style={{ color: 'var(--d-dim)', fontSize: 10.5, marginLeft: 6 }}>
-                    {статус}
-                  </span>
-                </span>
-                <span className="mono shrink-0" style={{ fontWeight: 600 }}>{числоРус(n)}</span>
-              </div>
-              <div style={{ height: 6, borderRadius: 3, background: 'var(--d-line)' }}>
-                <div style={{
-                  width: `${Math.max(1.5, (n / макс) * 100)}%`, height: 6,
-                  borderRadius: 3, background: цвет,
-                }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Блок>
-  );
-}
 
 export default function AdminDashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -332,7 +243,7 @@ export default function AdminDashboardPage() {
               />
             )}
 
-            {вкладка === 'Завод постов' && <ВоронкаПостов воронка={data.воронка_постов} />}
+            {вкладка === 'Завод постов' && <PostFactory />}
 
             {вкладка === 'Второй мозг' && (
               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
