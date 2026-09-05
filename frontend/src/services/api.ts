@@ -2700,3 +2700,67 @@ export async function getDashboardPulse(hours = 24): Promise<Pulse> {
   if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить пульс');
   return r.json();
 }
+
+// ─── Ныряние в базу: курируемые срезы ────────────────────────────────────────
+// Срез описан на бэкенде целиком (api/routers/dashboard_db.py): колонки, фильтры,
+// обязательные условия. Фронт только рисует то, что пришло, и ничего не знает о
+// таблицах — белый список живёт на сервере.
+
+export interface DbSliceMeta {
+  код: string; имя: string; описание: string; таблица: string;
+  строк: number | null; размер: string | null; обязательный_фильтр: string | null;
+}
+export interface DbSlices { группы: Array<{ группа: string; срезы: DbSliceMeta[] }> }
+
+export interface DbFilterDef {
+  ключ: string; подпись: string;
+  /** text | ticker | select | number | bool | date | date_from | date_to */
+  тип: string;
+  обязателен: boolean; по_умолчанию: string | null; подсказка: string | null;
+  варианты: Array<{ значение: string; подпись: string }> | null;
+}
+export interface DbColumnDef {
+  ключ: string; подпись: string;
+  /** text | long | int | num | pct | date | ts | arr | bool | json | ticker | candidate | pipeline | tg */
+  тип: string;
+}
+export interface DbSliceResult {
+  срез: {
+    код: string; группа: string; имя: string; описание: string; таблица: string;
+    окно_дней: number | null; макс_окно_дней: number | null; предупреждение: string | null;
+    колонки: DbColumnDef[]; фильтры: DbFilterDef[];
+  };
+  фильтры_применены: Record<string, string>;
+  пояснения: string[];
+  всего: number; всего_с_потолком: boolean; предел: number; смещение: number;
+  строки: unknown[][];
+  /** Не сбой, а состояние: например, не задан обязательный фильтр. */
+  ошибка: string | null;
+}
+
+export async function getDbSlices(): Promise<DbSlices> {
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/db/slices`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить список срезов');
+  }
+  return response.json();
+}
+
+export async function getDbSlice(
+  код: string, фильтры: Record<string, string>, limit = 100, offset = 0,
+): Promise<DbSliceResult> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(фильтры)) if (v !== '') params.set(k, v);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/db/slices/${encodeURIComponent(код)}?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Нет такого среза');
+    let detail = 'Не удалось загрузить срез';
+    try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
+    throw new Error(detail);
+  }
+  return response.json();
+}

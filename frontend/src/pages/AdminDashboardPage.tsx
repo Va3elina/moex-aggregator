@@ -28,6 +28,7 @@ import ProjectMap from './dashboard/ProjectMap';
 import LiveProcesses from './dashboard/LiveProcesses';
 import PostFactory from './dashboard/PostFactory';
 import OwnershipGraph from './dashboard/OwnershipGraph';
+import DbDives from './dashboard/DbDives';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
@@ -213,7 +214,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи') && id) || searchParams.get('p')) && (
+        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База') && id) || searchParams.get('p')) && (
           <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
             <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
             <span>›</span>
@@ -222,7 +223,7 @@ export default function AdminDashboardPage() {
             <span style={{ color: 'var(--d-accent)' }}>
               {узелВАдресе ? узелВАдресе.имя
                 : вкладка === 'Завод постов' && id ? `#${id}`
-                : вкладка === 'Связи' && id ? id
+                : (вкладка === 'Связи' || вкладка === 'База') && id ? id
                 : searchParams.get('p')}
             </span>
           </div>
@@ -355,46 +356,11 @@ export default function AdminDashboardPage() {
             )}
 
             {вкладка === 'База' && (
-              <Блок заголовок="Самые тяжёлые таблицы"
-                справа={<span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
-                  вес с индексами · шкала логарифмическая
-                </span>}>
-                {(() => {
-                  // ⚠️ ЛОГАРИФМ, И ЭТО ПОДПИСАНО. Разброс тысячекратный: candles 14 ГБ
-                  // против 13 МБ у хвоста. На линейной шкале всё, кроме свечей,
-                  // вырождается в ниточку одинаковой длины — сравнить нельзя ничего.
-                  // Молча менять шкалу нельзя, поэтому в шапке блока сказано прямо.
-                  const мин = Math.min(...data.хранилища.map((т) => т.байт), 1);
-                  const макс = Math.max(...data.хранилища.map((т) => т.байт), 1);
-                  const низ = Math.log10(Math.max(мин, 1));
-                  const верх = Math.log10(Math.max(макс, 10));
-                  const доля = (b: number) =>
-                    верх === низ ? 1 : (Math.log10(Math.max(b, 1)) - низ) / (верх - низ);
-                  return (
-                    <div className="flex flex-col" style={{ gap: 9 }}>
-                      {data.хранилища.map((т) => (
-                        <div key={т.таблица}>
-                          <div className="flex justify-between mb-1" style={{ gap: 12, fontSize: 12.5 }}>
-                            <span className="mono truncate" style={{ color: 'var(--d-mute)' }}>{т.таблица}</span>
-                            <span className="mono shrink-0" style={{ color: 'var(--d-dim)', fontSize: 11 }}>
-                              {числоРус(т.строк)} стр.
-                            </span>
-                            <span className="mono shrink-0" style={{ fontWeight: 600, minWidth: 66, textAlign: 'right' }}>
-                              {т.размер}
-                            </span>
-                          </div>
-                          <div style={{ height: 5, borderRadius: 2.5, background: 'var(--d-line)' }}>
-                            <div style={{
-                              width: `${Math.max(4, доля(т.байт) * 100)}%`, height: 5,
-                              borderRadius: 2.5, background: 'var(--d-cold)',
-                            }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </Блок>
+              <DbDives
+                выбран={id ?? null}
+                хранилища={data.хранилища}
+                onВыбрать={(к) => navigate(к ? `/admin/dashboard/db/${к}` : '/admin/dashboard/db')}
+              />
             )}
           </>
         )}

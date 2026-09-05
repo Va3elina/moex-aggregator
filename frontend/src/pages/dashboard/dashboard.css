@@ -141,3 +141,30 @@
   .dash-pulse, .dash-rise, .dash-edge-live,
   .dash-runner, .dash-flash, .dash-dot-live { animation: none; }
 }
+
+/* ── Срезы базы: таблица и поля фильтров ── */
+.dash-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+.dash-table th {
+  position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap;
+  padding: 7px 10px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--d-dim); background: var(--d-card);
+  border-bottom: 1px solid var(--d-line-strong);
+}
+.dash-table td { padding: 6px 10px; border-bottom: 1px solid var(--d-line); vertical-align: top; }
+.dash-table tr:hover td { background: rgba(245, 241, 232, 0.03); }
+.dash-table td.num { text-align: right; white-space: nowrap; }
+.dash-input, .dash-select {
+  font: inherit; font-size: 12.5px; color: var(--d-ink); background: var(--d-sunk);
+  border: 1px solid var(--d-line-strong); border-radius: 7px; padding: 5px 9px; min-width: 0;
+}
+.dash-input:focus, .dash-select:focus { outline: 2px solid var(--d-accent); outline-offset: 1px; border-color: transparent; }
+.dash-input::placeholder { color: var(--d-dim); }
+.dash-select option { background: var(--d-card); }
+.dash-slice { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--d-mute);
+  padding: 6px 10px; border-radius: 7px; cursor: pointer; font: inherit; font-size: 12.5px; }
+.dash-slice:hover { color: var(--d-ink); background: rgba(245, 241, 232, 0.05); }
+.dash-slice[data-active='true'] { color: var(--d-ink); background: var(--d-inner); font-weight: 600; }
+.dash-jump { position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 4px; min-width: 190px;
+  background: var(--d-card); border: 1px solid var(--d-line-strong); border-radius: 9px; box-shadow: var(--d-shadow); padding: 6px; }
+.dash-jump a { display: block; padding: 5px 9px; border-radius: 6px; color: var(--d-ink); text-decoration: none; font-size: 12px; white-space: nowrap; }
+.dash-jump a:hover { background: var(--d-inner); color: var(--d-accent); }
