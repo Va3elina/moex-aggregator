@@ -113,6 +113,33 @@ def record_pipeline_start(pipeline: str) -> None:
     _телеграмма("start", pipeline)
 
 
+# Ключи итога, которые означают «записал N строк». Сумма — оценка объёма прогона.
+# Не входят: «опрошено», «компаний», «фондов» (это не записи) и «покрытие».
+_КЛЮЧИ_ЗАПИСЕЙ = ("вставлено", "записей", "строк", "метрик", "5м", "60м", "24ч",
+                  "свечей", "сохранено_дней", "документов")
+
+_ЖУРНАЛ = """
+INSERT INTO pipeline_run_log (pipeline, started_at, finished_at, status, duration_sec, rows_written, note)
+SELECT pipeline, started_at, :now, :status, :dur, :rows, :note
+  FROM pipeline_runs WHERE pipeline = :p
+"""
+
+
+def _записей_из_итога(note: str) -> int | None:
+    """Сумма известных счётчиков из JSON-итога; None, если их нет.
+    Ноль здесь выдумывать нельзя: он читается как «ничего не записал»."""
+    if not note or not note.lstrip().startswith("{"):
+        return None
+    try:
+        d = json.loads(note)
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    числа = [v for k, v in d.items() if k in _КЛЮЧИ_ЗАПИСЕЙ and isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return int(sum(числа)) if числа else None
+
+
 def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_sec: float = None,
                          degraded: bool = False) -> None:
     """
@@ -150,6 +177,18 @@ def record_pipeline_run(pipeline: str, success: bool, note: str = "", duration_s
                 "note": (note or "")[:500],
                 "dur": duration_sec,
             })
+            # ⚠️ ЖУРНАЛ — В ТОЙ ЖЕ ТРАНЗАКЦИИ, СРАЗУ ПОСЛЕ ПУЛЬСА. started_at берётся из
+            # только что обновлённой строки pipeline_runs: его туда положил
+            # record_pipeline_start, и это единственное место, где начало известно.
+            # Таблицы может не быть на старой базе (миграция 080) — тогда молча
+            # пропускаем: журнал не смеет ронять пульс, пульс — ингест.
+            try:
+                conn.execute(text(_ЖУРНАЛ), {
+                    "p": pipeline, "now": now, "status": status, "dur": duration_sec,
+                    "rows": _записей_из_итога(note or ""), "note": (note or "")[:500],
+                })
+            except Exception:
+                pass
     except Exception:
         # Пульс — best-effort. Молча игнорируем (фетч важнее мониторинга).
         pass

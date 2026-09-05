@@ -10,10 +10,11 @@
  * локально по тику раз в секунду. Спрашивать сервер ради бегущей цифры — это
  * шестьдесят запросов в минуту ровно ни за чем.
  */
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { узелПоПайплайну } from './topology';
-import type { DashboardLiveProcess } from '../../services/api';
+import type { DashboardLiveProcess, Pulse } from '../../services/api';
+import { getDashboardPulse } from '../../services/api';
 
 const ЦВЕТ: Record<string, string> = {
   ok: 'var(--d-ok)', degraded: 'var(--d-warn)', молчит: 'var(--d-dim)',
@@ -55,6 +56,94 @@ function давно(сек: number | null): string {
   if (сек < 3600) return `${Math.round(сек / 60)} мин назад`;
   if (сек < 172800) return `${(сек / 3600).toFixed(1)} ч назад`;
   return `${Math.round(сек / 86400)} дн назад`;
+}
+
+const числоРус = (n: number) => n.toLocaleString('ru-RU');
+
+/**
+ * Пульс за сутки, ковёр шагов и лента «капает прямо сейчас» — всё из журнала
+ * прогонов (миграция 080). Обновляется по тому же тику, что и живое состояние:
+ * событие о финише приходит по SSE, а этот блок перечитывает журнал при смене
+ * числа завершённых прогонов, а не по таймеру.
+ */
+function PulseBlock({ ключ }: { ключ: number }) {
+  const [пульс, setПульс] = useState<Pulse | null>(null);
+  useEffect(() => {
+    let живо = true;
+    getDashboardPulse(24).then((p) => { if (живо) setПульс(p); }).catch(() => {});
+    return () => { живо = false; };
+  }, [ключ]);
+  if (!пульс) return null;
+
+  const макс = Math.max(...пульс.по_часам.map((h) => h.записей), 1);
+  const теперь = new Date();
+  // 24 столбца по часам — включая пустые: пустой час это тоже информация.
+  const столбцы: Array<{ метка: string; h: Pulse['по_часам'][number] | null; текущий: boolean }> = [];
+  for (let i = 23; i >= 0; i--) {
+    const t = new Date(теперь); t.setMinutes(0, 0, 0); t.setHours(t.getHours() - i);
+    const h = пульс.по_часам.find((x) => new Date(x.час).getTime() === t.getTime()) ?? null;
+    столбцы.push({ метка: `${String(t.getHours()).padStart(2, '0')}`, h, текущий: i === 0 });
+  }
+  const цветСтатуса = (s: string) => s === 'ok' ? 'var(--d-ok)' : s === 'degraded' ? 'var(--d-warn)' : 'var(--d-bad)';
+
+  return (
+    <div className="dash-card" style={{ padding: '16px 18px' }}>
+      <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 380px)', gap: 16 }}>
+        <div>
+          <div className="flex items-baseline justify-between mb-2" style={{ gap: 12 }}>
+            <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>Пульс за сутки</div>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
+              столбец — час · высота — сколько записей · {числоРус(пульс.всего_в_журнале)} прогонов в журнале
+            </span>
+          </div>
+          <div className="flex items-end" style={{ gap: 3, height: 96 }}>
+            {столбцы.map((c, i) => {
+              const v = c.h?.записей ?? 0;
+              const есть = c.h !== null;
+              return (
+                <div key={i} className="flex flex-col items-center" style={{ flex: 1, minWidth: 0, gap: 3 }}
+                  title={c.h ? `${c.метка}:00 · прогонов ${c.h.прогонов} · записей ${числоРус(c.h.записей)}${c.h.сбоев ? ` · сбоев ${c.h.сбоев}` : ''}` : `${c.метка}:00 · журнал пуст`}>
+                  <div style={{
+                    width: '100%', height: Math.max(есть ? 3 : 1, (v / макс) * 72), borderRadius: 2,
+                    background: c.h?.сбоев ? 'var(--d-bad)' : c.текущий ? 'var(--d-accent)' : есть ? 'var(--d-cold)' : 'var(--d-line)',
+                    opacity: есть ? (c.метка >= '07' && c.метка <= '23' ? 1 : 0.55) : 0.5,
+                  }} />
+                  <span className="mono" style={{ fontSize: 8.5, color: c.текущий ? 'var(--d-accent)' : 'var(--d-dim)' }}>
+                    {i % 3 === 0 ? c.метка : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mono mt-3 mb-1" style={{ fontSize: 10, letterSpacing: '1.2px', color: 'var(--d-dim)' }}>
+            КОВЁР · ПОСЛЕДНИЕ {пульс.ковёр.length} ШАГОВ · КВАДРАТ = ШАГ, ЦВЕТ = ИСХОД
+          </div>
+          <div className="flex flex-wrap" style={{ gap: 3 }}>
+            {пульс.ковёр.map((к, i) => (
+              <span key={i} title={к.имя} style={{ width: 12, height: 12, borderRadius: 2, background: цветСтатуса(к.статус) }} />
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="disp mb-2" style={{ fontSize: 16, fontWeight: 700 }}>Капает прямо сейчас</div>
+          <div className="flex flex-col" style={{ gap: 5, maxHeight: 190, overflowY: 'auto' }}>
+            {пульс.лента.slice(0, 12).map((e, i) => (
+              <div key={i} className="flex" style={{ gap: 8, fontSize: 11.5, alignItems: 'baseline' }}>
+                <span className="mono shrink-0" style={{ color: 'var(--d-dim)', width: 46 }}>
+                  {new Date(e.когда).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: цветСтатуса(e.статус), flexShrink: 0, marginTop: 3 }} />
+                <span className="min-w-0" style={{ color: e.тревога ? 'var(--d-warn)' : 'var(--d-mute)' }}>
+                  <span style={{ color: 'var(--d-ink)', fontWeight: 600 }}>{e.имя}</span>
+                  {' · '}{e.фраза}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Переход из строки процесса на его узел карты. Обратная связь для «пайплайн → узел». */
@@ -104,8 +193,12 @@ export default function LiveProcesses({ процессы, идут, вспышк
     [процессы, идут],
   );
 
+  const завершённых = процессы.filter((п) => !идут.has(п.имя)).length + вспышки.size;
+
   return (
     <div className="flex flex-col" style={{ gap: 12 }}>
+      <PulseBlock ключ={завершённых} />
+
       {/* ── Идут сейчас ── */}
       <div className="dash-card" style={{ padding: '16px 18px' }}>
         <div className="flex items-baseline justify-between mb-3" style={{ gap: 12 }}>
@@ -217,6 +310,14 @@ export default function LiveProcesses({ процессы, идут, вспышк
                       <div className="truncate" title={п.заметка || undefined}
                         style={{ fontSize: 11.5, color: п.тревога ? 'var(--d-warn)' : 'var(--d-mute)' }}>
                         {п.фраза || п.заметка}
+                        {/* Быстрее обычного в разы — по медиане из журнала. Только при
+                            ok и только если история есть: без неё сказать нечего. */}
+                        {п.состояние === 'ok' && п.типично_сек != null && п.длился_сек != null
+                          && п.типично_сек >= 2 && п.длился_сек < п.типично_сек / 5 && (
+                          <span className="mono" style={{ color: 'var(--d-warn)', marginLeft: 6, fontSize: 10.5 }}>
+                            · в {Math.round(п.типично_сек / Math.max(п.длился_сек, 0.1))} раз быстрее обычного
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

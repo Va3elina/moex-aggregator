@@ -2526,6 +2526,8 @@ export interface DashboardLiveProcess {
   заметка: string;
   фраза?: string;
   тревога?: boolean | null;
+  /** Медиана длительности за 14 дней по журналу; null — истории ещё нет. */
+  типично_сек?: number | null;
 }
 
 export interface DashboardLive {
@@ -2679,5 +2681,22 @@ export async function reviewOwnershipSignal(id: number, status: 'подтвер�
   const p = new URLSearchParams({ status, note });
   const r = await apiFetch(`${API_BASE}/api/admin/ownership-signals/${id}?${p}`, { method: 'PATCH' });
   if (!r.ok) throw new Error('Не удалось сохранить отметку');
+  return r.json();
+}
+
+// ─── Пульс: журнал прогонов ─────────────────────────────────────────────────
+
+export interface PulseHour { час: string; прогонов: number; записей: number; сбоев: number }
+export interface PulseEvent {
+  имя: string; когда: string; сек_назад: number; статус: string;
+  длился_сек: number | null; записей: number | null; фраза: string; тревога: boolean | null;
+}
+export interface Pulse {
+  снято: string; часов: number; по_часам: PulseHour[]; лента: PulseEvent[];
+  ковёр: Array<{ имя: string; статус: string }>; всего_в_журнале: number;
+}
+export async function getDashboardPulse(hours = 24): Promise<Pulse> {
+  const r = await apiFetch(`${API_BASE}/api/admin/dashboard/pulse?hours=${hours}`);
+  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить пульс');
   return r.json();
 }
