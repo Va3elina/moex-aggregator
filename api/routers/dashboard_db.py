@@ -638,9 +638,11 @@ def срезы(db: Session = Depends(get_db), _admin: User = Depends(require_adm
     return out
 
 
-@router.get("/slices/{код}")
+# ⚠️ ИМЯ ПАРАМЕТРА ПУТИ — ЛАТИНИЦЕЙ. Starlette распознаёт {param} только из
+# ASCII-букв; «{код}» он считал буквальным текстом, и /slices/candles отвечал 404.
+@router.get("/slices/{code}")
 def срез(
-    код: str,
+    code: str,
     request: Request,
     limit: int = Query(_ПРЕДЕЛ, ge=1, le=_МАКС_ПРЕДЕЛ),
     offset: int = Query(0, ge=0),
@@ -648,7 +650,7 @@ def срез(
     _admin: User = Depends(require_admin),
 ):
     """Строки среза по фильтрам из query-string. Неизвестные параметры игнорируются."""
-    с = ПО_КОДУ.get(код)
+    с = ПО_КОДУ.get(code)
     if с is None:
         raise HTTPException(404, "нет такого среза")
 
