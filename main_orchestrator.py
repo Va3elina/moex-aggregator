@@ -143,6 +143,7 @@ SCRIPTS = {
     # Macro скрипты (M2, GDP)
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
     'zcyc_daily': BASE_DIR / 'Candles' / 'fetch_zcyc.py',  # кривая ОФЗ: ЦБ, фоллбэк — ISS
+    'brain_sync': BASE_DIR / 'Brain' / 'brain_sync.py',  # карта нодов второго мозга, инкремент
     # Market Cap (полная капитализация рынка)
     'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
     # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
@@ -278,6 +279,7 @@ TIMEOUTS = {
     'index_intraday': 60,  # 1 минута (2 HTTP-запроса ISS marketdata + upsert)
     'macro_daily': 120,  # 2 минуты
     'zcyc_daily': 120,  # один запрос к ЦБ, в фоллбэке до 10 к ISS
+    'brain_sync': 600,  # инкремент — секунды; полная пересборка (--full) — до минуты
     'market_cap_daily': 120,  # 2 минуты
     # Полный обход 80 компаний измерен: 20 минут при паузе 0,5 с между запросами.
     # 45 минут — запас на повторы после таймаутов, не на «вдруг медленно».
@@ -619,6 +621,7 @@ class MainOrchestrator:
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
         self.last_expire_quarter = None      # лёгкий expire-only — каждые 15 мин
+        self.last_brain_quarter = None       # карта нодов — каждые 15 мин
 
         self.stats = {
             'start_time': datetime.now(),
@@ -1288,6 +1291,20 @@ class MainOrchestrator:
 
         return success
 
+    async def run_brain_sync(self) -> bool:
+        """Инкремент карты нодов (brain_nodes/brain_edges) по водяным знакам."""
+        self.stats.setdefault('brain_sync_runs', 0)
+        self.stats.setdefault('brain_sync_success', 0)
+        self.stats['brain_sync_runs'] += 1
+        success, msg, dur = await run_script('brain_sync', [])
+        if success:
+            self.stats['brain_sync_success'] += 1
+            log.info(f"    ✓ Brain sync ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Brain sync: {msg}")
+        return success
+
     async def run_zcyc_update(self) -> bool:
         """Кривая доходности ОФЗ (ZCYC): ЦБ, фоллбэк — ISS. Раньше скрипт был
         одноразовым и ряд три месяца стоял при зелёном macro_daily."""
@@ -1649,6 +1666,13 @@ class MainOrchestrator:
                 if quarter_slot != self.last_expire_quarter and now.minute >= 2:
                     await self.run_expire_only()
                     self.last_expire_quarter = quarter_slot
+
+                # === Карта нодов второго мозга — инкремент каждые 15 мин, 24/7 ===
+                # Новости и кандидаты приезжают и в выходные; узлы должны догонять их,
+                # а не ждать торгового дня.
+                if quarter_slot != self.last_brain_quarter:
+                    await self.run_brain_sync()
+                    self.last_brain_quarter = quarter_slot
 
                 # === Выходной / праздник ===
                 if not is_trade_day:
