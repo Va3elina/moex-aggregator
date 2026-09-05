@@ -374,6 +374,15 @@ def _brain_hint_for_step_a(db, row) -> str:
     Вызовы оставляют след в agent_trace (шаг «мозг»)."""
     текст = ((row["headline"] or "") + " " + (row["raw_text"] or ""))[:1500]
     части = []
+    # Слой 0 — хэштеги автора (#PLZL): уровень B, надёжнее нашей разметки. Кандидат 1795
+    # «#золото #PLZL» по имени находил только ВТБ из текста — тикер в хэштеге не имя.
+    хэштеги = sorted({h.upper() for h in re.findall(r"#([A-Za-z0-9]{2,6})\b", текст)})
+    if хэштеги:
+        for тикер, company_id in db.execute(text("""
+            SELECT m.ticker, m.company_id FROM brain_ticker_map m
+             WHERE m.ticker = ANY(string_to_array(:h, ',')) AND m.company_id LIKE 'company:%'
+        """), {"h": ",".join(хэштеги)}).all():
+            части.append(f"хэштег автора: {тикер} [B]")
     try:
         по_имени = db.execute(_SELECT_NAME_HITS, {"t": текст}).all()
     except Exception as e:  # noqa: BLE001
@@ -388,7 +397,7 @@ def _brain_hint_for_step_a(db, row) -> str:
         except Exception:  # noqa: BLE001
             хвост = ""
         части.append(f"названа в тексте: {тикер} ({title}, {sector or 'сектор неизвестен'}) [C]" + (f" — {хвост}" if хвост else ""))
-    if not по_имени:
+    if not по_имени and not части:
         try:
             найдено = _brain_search(q=текст[:300], kind="company", mode="meaning", limit=3,
                                     candidate_id=row["id"], db=db, _who="agent")["найдено"]
