@@ -332,7 +332,8 @@ export default function ProjectMap({ процессы, идут, вспышки,
                 return (
                   <div key={и.id} className="flex items-center flex-wrap" style={{ gap: 10, fontSize: 12.5 }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: ЦВЕТ[si], display: 'inline-block' }} />
-                    <span style={{ fontWeight: 600, minWidth: 150 }}>{и.имя}</span>
+                    <Link to={`/admin/dashboard/indicators/${и.id}`} title="провалиться в индикатор"
+                        style={{ fontWeight: 600, minWidth: 150, color: 'var(--d-ink)', textDecoration: 'none', borderBottom: '1px dotted var(--d-line-strong)' }}>{и.имя}</Link>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
                       из {и.от.map((id) => узел(id).имя.toLowerCase()).join(', ')} · {si}
                     </span>
