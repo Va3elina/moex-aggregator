@@ -2633,3 +2633,51 @@ export async function getPostDetail(id: number): Promise<PostDetail> {
   }
   return response.json();
 }
+
+// ─── Граф владения и очередь сигналов ───────────────────────────────────────
+
+export interface GraphNode {
+  тикер: string; имя: string; сектор: string | null; в_справочнике: boolean;
+  компонента: number; степень: number;
+  казначейский: { доля_из_текста: number | null; снимок: string | null; снимку_дней: number | null; текст: string | null } | null;
+}
+export interface GraphEdge {
+  id: number; от: string; к: string; вид: 'own' | 'link' | 'без_направления';
+  косвенно: boolean; спорно: boolean; доля_из_текста: number | null;
+  снимок: string | null; снимку_дней: number | null; уверенность: number | null;
+  источник: string | null; ссылка: string | null; текст: string;
+}
+export interface OwnershipGraph {
+  узлы: GraphNode[]; рёбра: GraphEdge[];
+  компоненты: Array<{ номер: number; узлов: number }>;
+  итого: Record<string, number>;
+}
+export async function getOwnershipGraph(): Promise<OwnershipGraph> {
+  const r = await apiFetch(`${API_BASE}/api/admin/dashboard/graph`);
+  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить граф');
+  return r.json();
+}
+
+export interface OwnershipSignal {
+  id: number; posted_at: string; tickers: string[]; snippet: string;
+  strength: 'строгий' | 'широкий'; has_percent: boolean;
+  edge_state: 'есть_ребро' | 'нет_ребра'; status: string; review_note: string | null;
+}
+export async function getOwnershipSignals(opts: { status?: string; only_strong?: boolean; limit?: number } = {}):
+  Promise<{ очередь: OwnershipSignal[]; по_статусам: Record<string, number> }> {
+  const p = new URLSearchParams();
+  if (opts.status) p.set('status', opts.status);
+  if (opts.only_strong) p.set('only_strong', 'true');
+  if (opts.limit) p.set('limit', String(opts.limit));
+  const r = await apiFetch(`${API_BASE}/api/admin/ownership-signals?${p}`);
+  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить сигналы');
+  return r.json();
+}
+/** Отметка разбора. Подтверждение НИЧЕГО не пишет в граф — ребро заводится руками. */
+export async function reviewOwnershipSignal(id: number, status: 'подтверждён' | 'отклонён' | 'новый', note = ''):
+  Promise<{ id: number; status: string }> {
+  const p = new URLSearchParams({ status, note });
+  const r = await apiFetch(`${API_BASE}/api/admin/ownership-signals/${id}?${p}`, { method: 'PATCH' });
+  if (!r.ok) throw new Error('Не удалось сохранить отметку');
+  return r.json();
+}
