@@ -18,7 +18,8 @@
  * что у песочницы: отдельная поверхность — отдельный набор переменных.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
+import { УЗЛЫ } from './dashboard/topology';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDashboardOverview } from '../services/api';
@@ -36,6 +37,15 @@ const ИНТЕРВАЛ_МС = 30_000;
 // заставляло помнить, в какой из них смотреть, и ничего за это не давало.
 const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
+// Вкладка живёт в адресе: /admin/dashboard/<слаг>[/<объект>]. Слаги латиницей —
+// они попадают в строку браузера и в ссылки из чата.
+const СЛАГ: Record<Вкладка, string> = {
+  'Карта': 'map', 'Процессы': 'processes', 'Завод постов': 'posts',
+  'Второй мозг': 'brain', 'База': 'db',
+};
+const ПО_СЛАГУ: Record<string, Вкладка> = Object.fromEntries(
+  (Object.entries(СЛАГ) as Array<[Вкладка, string]>).map(([в, с]) => [с, в]),
+);
 
 const ПОДПИСИ_МОЗГА: Record<string, string> = {
   эмитентов: 'Эмитентов', бумаг: 'Бумаг', алиасов: 'Псевдонимов', метрик: 'Показателей',
@@ -95,7 +105,17 @@ export default function AdminDashboardPage() {
   const [data, setData] = useState<DashboardOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [обновляется, setОбновляется] = useState(false);
-  const [вкладка, setВкладка] = useState<Вкладка>('Карта');
+  // ⚠️ ВКЛАДКА И ОБЪЕКТ — ИЗ АДРЕСА, а не из useState. Иначе на экран нельзя дать
+  // ссылку, а «назад» в браузере уводит с панели целиком. /map/tg — это узел
+  // Telegram, /posts/1727 — кандидат, ?p=funds_daily — подсветить процесс.
+  const { tab, id } = useParams();
+  const [searchParams] = useSearchParams();
+  const вкладка: Вкладка = ПО_СЛАГУ[tab ?? ''] ?? 'Карта';
+  const перейти = (в: Вкладка) => navigate(`/admin/dashboard/${СЛАГ[в]}`);
+  useEffect(() => {
+    if (!tab) navigate('/admin/dashboard/map', { replace: true });
+  }, [tab, navigate]);
+  const узелВАдресе = вкладка === 'Карта' && id ? УЗЛЫ.find((у) => у.id === id) ?? null : null;
   // ⚠️ ЖИВОЕ СОСТОЯНИЕ ЖИВЁТ ОТДЕЛЬНО ОТ СНИМКА. Снимок тяжёлый и лежит в кэше
   // 30 секунд — на нём «прямо сейчас» не построить. Живое приезжает событиями
   // (SSE 'pipeline') и лёгкой ручкой /live, поэтому кнопка «Обновить» нужна
@@ -165,7 +185,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-wrap" style={{ gap: 4 }}>
               {ВКЛАДКИ.map((в) => (
                 <button key={в} className="dash-tab" data-active={вкладка === в}
-                  onClick={() => setВкладка(в)}>{в}</button>
+                  onClick={() => перейти(в)}>{в}</button>
               ))}
             </div>
           </div>
@@ -191,6 +211,20 @@ export default function AdminDashboardPage() {
             </button>
           </div>
         </div>
+
+        {(узелВАдресе || (вкладка === 'Завод постов' && id) || searchParams.get('p')) && (
+          <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
+            <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
+            <span>›</span>
+            <Link to={`/admin/dashboard/${СЛАГ[вкладка]}`} style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>{вкладка}</Link>
+            <span>›</span>
+            <span style={{ color: 'var(--d-accent)' }}>
+              {узелВАдресе ? узелВАдресе.имя
+                : вкладка === 'Завод постов' && id ? `#${id}`
+                : searchParams.get('p')}
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4" style={{
@@ -229,7 +263,11 @@ export default function AdminDashboardPage() {
 
             {вкладка === 'Карта' && (
               <div className="dash-card" style={{ padding: '16px 18px' }}>
-                <ProjectMap процессы={data.процессы} идут={живое.идут} вспышки={живое.вспышки} />
+                <ProjectMap
+                  процессы={data.процессы} идут={живое.идут} вспышки={живое.вспышки}
+                  выбран={id ?? null}
+                  onВыбрать={(n) => navigate(n ? `/admin/dashboard/map/${n}` : '/admin/dashboard/map')}
+                />
               </div>
             )}
 
@@ -240,6 +278,7 @@ export default function AdminDashboardPage() {
                 вспышки={живое.вспышки}
                 подключено={живое.подключено}
                 тик={живое.тик}
+                подсветить={searchParams.get('p')}
               />
             )}
 

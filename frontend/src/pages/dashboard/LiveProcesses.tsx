@@ -10,7 +10,9 @@
  * локально по тику раз в секунду. Спрашивать сервер ради бегущей цифры — это
  * шестьдесят запросов в минуту ровно ни за чем.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { узелПоПайплайну } from './topology';
 import type { DashboardLiveProcess } from '../../services/api';
 
 const ЦВЕТ: Record<string, string> = {
@@ -55,13 +57,33 @@ function давно(сек: number | null): string {
   return `${Math.round(сек / 86400)} дн назад`;
 }
 
-export default function LiveProcesses({ процессы, идут, вспышки, подключено, тик }: {
+/** Переход из строки процесса на его узел карты. Обратная связь для «пайплайн → узел». */
+function НаКарте({ имя }: { имя: string }) {
+  const у = узелПоПайплайну(имя);
+  if (!у) return null;
+  return (
+    <Link to={`/admin/dashboard/map/${у.id}`} className="mono shrink-0" title={у.имя}
+      style={{ fontSize: 10.5, color: 'var(--d-dim)', textDecoration: 'none' }}>
+      на карте →
+    </Link>
+  );
+}
+
+export default function LiveProcesses({ процессы, идут, вспышки, подключено, тик, подсветить }: {
   процессы: DashboardLiveProcess[];
   идут: Set<string>;
   вспышки: Map<string, 'ok' | 'fail'>;
   подключено: boolean;
   тик: number;
+  /** Имя процесса из адреса (?p=…): подсветить и прокрутить к нему. */
+  подсветить?: string | null;
 }) {
+  // Пришли по ссылке с карты — показываем именно эту строку, а не начало списка.
+  useEffect(() => {
+    if (!подсветить) return;
+    const el = document.getElementById(`proc-${подсветить}`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [подсветить, процессы]);
   const идущие = useMemo(
     () => процессы.filter((п) => идут.has(п.имя) || п.идёт),
     [процессы, идут],
@@ -168,11 +190,12 @@ export default function LiveProcesses({ процессы, идут, вспышк
             {недавние.map((п) => {
               const в = вспышки.get(п.имя);
               return (
-                <div key={п.имя} className={`dash-inner flex items-center${в ? ' dash-flash' : ''}`}
+                <div key={п.имя} id={`proc-${п.имя}`}
+                  className={`dash-inner flex items-center${в ? ' dash-flash' : ''}`}
                   style={{
                     gap: 12, padding: '9px 12px',
                     border: в ? `1px solid ${в === 'ok' ? 'var(--d-ok)' : 'var(--d-bad)'}`
-                              : '1px solid transparent',
+                              : подсветить === п.имя ? '1px solid var(--d-accent)' : '1px solid transparent',
                   }}>
                   <span style={{
                     width: 3, alignSelf: 'stretch', borderRadius: 2,
@@ -216,6 +239,7 @@ export default function LiveProcesses({ процессы, идут, вспышк
                     style={{ fontSize: 11, color: цвет(п.состояние), minWidth: 58, textAlign: 'right' }}>
                     {п.состояние}
                   </span>
+                  <НаКарте имя={п.имя} />
                 </div>
               );
             })}
@@ -234,8 +258,9 @@ export default function LiveProcesses({ процессы, идут, вспышк
           </div>
           <div className="flex flex-col" style={{ gap: 6 }}>
             {остальные.map((п) => (
-              <div key={п.имя} className="dash-inner flex items-center"
-                style={{ gap: 12, padding: '8px 12px' }}>
+              <div key={п.имя} id={`proc-${п.имя}`} className="dash-inner flex items-center"
+                style={{ gap: 12, padding: '8px 12px',
+                         border: подсветить === п.имя ? '1px solid var(--d-accent)' : '1px solid transparent' }}>
                 <span style={{
                   width: 3, alignSelf: 'stretch', borderRadius: 2, background: цвет(п.состояние),
                 }} />
@@ -247,6 +272,7 @@ export default function LiveProcesses({ процессы, идут, вспышк
                   style={{ fontSize: 11, color: цвет(п.состояние), minWidth: 58, textAlign: 'right' }}>
                   {п.состояние}
                 </span>
+                <НаКарте имя={п.имя} />
               </div>
             ))}
           </div>
