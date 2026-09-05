@@ -2775,3 +2775,47 @@ export async function getDbSlice(
   }
   return response.json();
 }
+
+// ─── Провалиться в индикатор ────────────────────────────────────────────────
+
+export interface IndicatorPassport {
+  id: string; имя: string; путь: string; методология: string | null; описание: string;
+  пайплайны: string[]; узел_карты: string;
+  срезы: Array<{ подпись: string; адрес: string }>;
+  объект_подпись: string; есть_объекты: boolean; период_по_умолчанию: string;
+}
+export interface IndicatorFreshness { таблица: string; подпись: string; последняя: string | null; дней: number | null }
+export interface IndicatorSeries { имя: string; ось: 'left' | 'right'; тип?: 'line' | 'bars'; точки: Array<[string, number]> }
+export interface IndicatorDetail {
+  индикатор: IndicatorPassport;
+  объекты: Array<{ значение: string; подпись: string }>;
+  выбран: string | null;
+  период: string;
+  ряды: IndicatorSeries[];
+  засечки: Array<{ время: string; метка: string; описание: string }>;
+  примечание: string | null;
+  свежесть: IndicatorFreshness[];
+  пропуски: { торговых_дней: number; пропущено: string[]; считается: boolean };
+}
+
+export async function getIndicatorList(): Promise<{ индикаторы: Array<IndicatorPassport & { свежесть: IndicatorFreshness[] }> }> {
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/indicators`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Не удалось загрузить индикаторы');
+  }
+  return response.json();
+}
+
+export async function getIndicatorDetail(id: string, obj?: string, period?: string): Promise<IndicatorDetail> {
+  const params = new URLSearchParams();
+  if (obj) params.set('obj', obj);
+  if (period) params.set('period', period);
+  const response = await apiFetch(`${API_BASE}/api/admin/dashboard/indicators/${encodeURIComponent(id)}?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Нет такого индикатора');
+    throw new Error('Не удалось загрузить индикатор');
+  }
+  return response.json();
+}

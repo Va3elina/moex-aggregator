@@ -29,6 +29,7 @@ import LiveProcesses from './dashboard/LiveProcesses';
 import PostFactory from './dashboard/PostFactory';
 import OwnershipGraph from './dashboard/OwnershipGraph';
 import DbDives from './dashboard/DbDives';
+import IndicatorDive from './dashboard/IndicatorDive';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
@@ -37,12 +38,12 @@ const ИНТЕРВАЛ_МС = 30_000;
 // ⚠️ ВКЛАДКА ПРОЦЕССОВ ОДНА. Их было две — «Живые процессы» и «Процессы», — и они
 // показывали одно и то же: вторая просто не знала, что идёт сейчас. Разделение
 // заставляло помнить, в какой из них смотреть, и ничего за это не давало.
-const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Связи', 'Второй мозг', 'База'] as const;
+const ВКЛАДКИ = ['Карта', 'Процессы', 'Индикаторы', 'Завод постов', 'Связи', 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
 // Вкладка живёт в адресе: /admin/dashboard/<слаг>[/<объект>]. Слаги латиницей —
 // они попадают в строку браузера и в ссылки из чата.
 const СЛАГ: Record<Вкладка, string> = {
-  'Карта': 'map', 'Процессы': 'processes', 'Завод постов': 'posts', 'Связи': 'graph',
+  'Карта': 'map', 'Процессы': 'processes', 'Индикаторы': 'indicators', 'Завод постов': 'posts', 'Связи': 'graph',
   'Второй мозг': 'brain', 'База': 'db',
 };
 const ПО_СЛАГУ: Record<string, Вкладка> = Object.fromEntries(
@@ -221,7 +222,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База') && id) || searchParams.get('p')) && (
+        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id) || searchParams.get('p')) && (
           <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
             <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
             <span>›</span>
@@ -230,7 +231,7 @@ export default function AdminDashboardPage() {
             <span style={{ color: 'var(--d-accent)' }}>
               {узелВАдресе ? узелВАдресе.имя
                 : вкладка === 'Завод постов' && id ? `#${id}`
-                : (вкладка === 'Связи' || вкладка === 'База') && id ? id
+                : (вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id ? id
                 : searchParams.get('p')}
             </span>
           </div>
@@ -294,6 +295,13 @@ export default function AdminDashboardPage() {
                 подключено={живое.подключено}
                 тик={живое.тик}
                 подсветить={searchParams.get('p')}
+              />
+            )}
+
+            {вкладка === 'Индикаторы' && (
+              <IndicatorDive
+                выбран={id ?? null}
+                onВыбрать={(и) => navigate(и ? `/admin/dashboard/indicators/${и}` : '/admin/dashboard/indicators')}
               />
             )}
 
