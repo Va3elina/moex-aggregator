@@ -268,6 +268,7 @@ export default function AdminDashboardPage() {
               <div className="dash-card" style={{ padding: '16px 18px' }}>
                 <ProjectMap
                   процессы={data.процессы} идут={живое.идут} вспышки={живое.вспышки}
+                  источники={data.источники} журнал={data.журнал_сутки}
                   выбран={id ?? null}
                   onВыбрать={(n) => navigate(n ? `/admin/dashboard/map/${n}` : '/admin/dashboard/map')}
                 />

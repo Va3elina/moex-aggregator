@@ -2503,8 +2503,19 @@ export interface DashboardOverview {
   второй_мозг: Record<string, number>;
   стареющие_данные: Record<string, number>;
   хранилища: Array<{ таблица: string; размер: string; байт: number; строк: number }>;
+  /** Живые цифры у узлов-источников карты; ключ — id узла из topology.ts. */
+  источники?: Record<string, DashboardSource>;
+  /** Что и сколько записал каждый процесс за сутки — из журнала прогонов. */
+  журнал_сутки?: Record<string, { прогонов: number; строк: number | null; последний: string | null }>;
   из_кэша: boolean;
 }
+
+export interface DashboardSourceFact {
+  ярлык: string; значение: string; подпись: string | null;
+  /** Данные у источника отстали — не сбой нашего процесса, а возраст самой точки. */
+  тревога: boolean;
+}
+export interface DashboardSource { заголовок: string; факты: DashboardSourceFact[] }
 
 export async function getDashboardOverview(fresh = false): Promise<DashboardOverview> {
   const qs = fresh ? '?fresh=true' : '';
