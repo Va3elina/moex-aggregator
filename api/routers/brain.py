@@ -119,6 +119,34 @@ def _узел(r) -> dict:
             "время": _json(r["ts"]), "данные": r["payload"]}
 
 
+_УРОВНИ_ОПИСАНИЕ = {
+    "A": "факт из первоисточника с датой — можно утверждать со ссылкой",
+    "B": "факт от посредника (FinanceMarker, smart-lab, хэштег автора) — утверждать с указанием источника и даты",
+    "C": "наш вывод по правилу (разметка по имени, детектор) — только как «по нашей разметке»",
+    "D": "статистическая подсказка (вместе в новостях, вектор) — не утверждать, использовать для поиска",
+}
+
+
+def _текст_узла(db: Session, id_: str, kind: str) -> Optional[str]:
+    """Полный текст источника — дословно (уровень A). Только по запросу: узел хранит 160 символов."""
+    ключ = id_.split(":", 1)[1]
+    if kind == "news" and "/" in ключ:
+        канал, mid = ключ.split("/", 1)
+        r = db.execute(text("""
+            SELECT text FROM news_archive
+             WHERE message_id = CAST(:mid AS bigint)
+               AND (channel = :ch OR channel = CASE :ch WHEN 'markettwits' THEN 'MarketTwits' WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' ELSE :ch END)
+             ORDER BY imported_at DESC LIMIT 1
+        """), {"mid": mid, "ch": канал}).scalar()
+        return r
+    if kind in ("candidate", "post"):
+        r = db.execute(text("SELECT COALESCE(draft_text, raw_text, headline) FROM content_candidates WHERE id = CAST(:id AS int)"), {"id": ключ}).scalar()
+        return r
+    if kind == "fact":
+        return db.execute(text("SELECT statement FROM world_facts WHERE id = CAST(:id AS bigint)"), {"id": ключ}).scalar()
+    return None
+
+
 def _проверить_id(id_: str) -> str:
     if not _ID.match(id_ or ""):
         raise HTTPException(400, "id узла: вид:ключ, например company:SBER")
@@ -133,13 +161,13 @@ def _соседи_sql(id_: str, kind: Optional[str], с, limit: int, offset: int
     """Две индексные выборки (исходящие и входящие), склеенные UNION ALL."""
     п = {"id": id_, "kind": kind, "с": с, "limit": limit, "offset": offset}
     return db.execute(text("""
-        SELECT x.kind AS ребро, x.напр, x.ts, x.weight, x.source,
+        SELECT x.kind AS ребро, x.напр, x.ts, x.weight, x.source, x.level, x.method, x.snapshot_date,
                n.id, n.kind, n.title, n.summary, n.payload, n.ts AS nts
           FROM (
-                SELECT dst AS other, kind, 'исх' AS напр, ts, weight, source FROM brain_edges
+                SELECT dst AS other, kind, 'исх' AS напр, ts, weight, source, level, method, snapshot_date FROM brain_edges
                  WHERE src = :id AND (CAST(:kind AS text) IS NULL OR kind = CAST(:kind AS text)) AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
                 UNION ALL
-                SELECT src, kind, 'вх', ts, weight, source FROM brain_edges
+                SELECT src, kind, 'вх', ts, weight, source, level, method, snapshot_date FROM brain_edges
                  WHERE dst = :id AND (CAST(:kind AS text) IS NULL OR kind = CAST(:kind AS text)) AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
                ) x
           JOIN brain_nodes n ON n.id = x.other
@@ -205,6 +233,7 @@ def узел(
     node_id: str,
     since: Optional[int] = Query(None, ge=1, le=3650, description="кольца только за N дней"),
     per_ring: int = Query(3, ge=1, le=40, description="сколько соседей отдать в каждом кольце"),
+    text_: bool = Query(False, alias="text", description="вернуть полный текст новости/кандидата (уровень A — дословно)"),
     candidate_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _who: str = Depends(_доступ),
@@ -216,24 +245,31 @@ def узел(
     if r is None:
         raise HTTPException(404, "узла нет в карте")
     с = _с(since)
+    текст = _текст_узла(db, r["id"], r["kind"]) if text_ else None
     кольца = db.execute(text("""
-        SELECT x.kind AS ребро, x.напр, COUNT(*) AS n, MAX(x.ts) AS свежее, MIN(x.ts) AS старое
+        -- «вместе в новостях» симметрична (пара хранится один раз как a<b): направление
+        -- у неё не значит ничего, и два кольца «вх»/«исх» были бы одним, разрезанным пополам.
+        SELECT x.kind AS ребро, CASE WHEN x.kind = 'вместе_в_новостях' THEN 'обе' ELSE x.напр END AS напр,
+               COUNT(*) AS n, MAX(x.ts) AS свежее, MIN(x.ts) AS старое,
+               MIN(x.level) AS лучший, MAX(x.level) AS худший
           FROM (
-                SELECT dst AS other, kind, 'исх' AS напр, ts FROM brain_edges WHERE src = :id AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
+                SELECT dst AS other, kind, 'исх' AS напр, ts, level FROM brain_edges WHERE src = :id AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
                 UNION ALL
-                SELECT src, kind, 'вх', ts FROM brain_edges WHERE dst = :id AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
+                SELECT src, kind, 'вх', ts, level FROM brain_edges WHERE dst = :id AND (CAST(:с AS timestamptz) IS NULL OR ts >= CAST(:с AS timestamptz))
                ) x
-         GROUP BY x.kind, x.напр ORDER BY n DESC
+         GROUP BY x.kind, CASE WHEN x.kind = 'вместе_в_новостях' THEN 'обе' ELSE x.напр END ORDER BY n DESC
     """), {"id": node_id, "с": с}).mappings().all()
-    out = {"узел": _узел(r), "кольца": []}
+    out = {"узел": _узел(r), "кольца": [], "текст": текст, "уровни": _УРОВНИ_ОПИСАНИЕ}
     for к in кольца:
         последние = _соседи_sql(node_id, к["ребро"], с, per_ring, 0, db)
         out["кольца"].append({
             "связь": к["ребро"], "направление": к["напр"], "сколько": int(к["n"]),
             "свежее": _json(к["свежее"]), "старое": _json(к["старое"]),
+            "уровень": к["лучший"], "уровень_худший": к["худший"],
             "последние": [{"id": s["id"], "вид": s["kind"], "заголовок": s["title"], "время": _json(s["ts"]),
-                           "вес": _json(s["weight"]), "данные": s["payload"]}
-                          for s in последние if s["ребро"] == к["ребро"] and s["напр"] == к["напр"]],
+                           "вес": _json(s["weight"]), "уровень": s["level"], "способ": s["method"],
+                           "на_дату": _json(s["snapshot_date"]), "данные": s["payload"]}
+                          for s in последние if s["ребро"] == к["ребро"] and (к["напр"] == "обе" or s["напр"] == к["напр"])],
         })
     _след(db, candidate_id, f"node {node_id}" + (f" since={since}" if since else ""), len(кольца), {"id": node_id, "since": since}, t0)
     return out
@@ -262,6 +298,7 @@ def соседи(
     out = {"узел": id, "связь": kind, "всего": int(всего or 0), "предел": limit, "смещение": offset,
            "соседи": [{"id": s["id"], "вид": s["kind"], "заголовок": s["title"], "кратко": s["summary"],
                        "связь": s["ребро"], "направление": s["напр"], "время": _json(s["ts"]), "вес": _json(s["weight"]),
+                       "уровень": s["level"], "способ": s["method"], "на_дату": _json(s["snapshot_date"]),
                        "данные": s["payload"]} for s in строки]}
     _след(db, candidate_id, f"neighbors {id} kind={kind or '*'} since={since or '∞'}", out["всего"],
           {"id": id, "kind": kind, "since": since}, t0)
@@ -358,6 +395,116 @@ def похожие(
     out = {"узел": id, "похожие": [{**_узел(r), "сходство": round(float(r["sim"]), 3)} for r in строки]}
     _след(db, candidate_id, f"similar {id} kind={kind or '*'}", len(out["похожие"]), {"id": id, "kind": kind}, t0)
     return out
+
+
+@router.get("/context")
+def контекст(
+    ticker: str = Query(..., min_length=1, max_length=20, description="тикер бумаги или код фьючерса"),
+    days: int = Query(14, ge=1, le=365),
+    candidate_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    _who: str = Depends(_доступ),
+):
+    """Всё, что мозг знает о компании, одним ответом и с уровнем у каждого блока —
+    чтобы агент вставил в промпт и не перепутал факт с подсказкой."""
+    t0 = time.time()
+    cid = db.execute(text("SELECT company_id FROM brain_ticker_map WHERE ticker = :t OR ticker = upper(:t) LIMIT 1"), {"t": ticker.strip()}).scalar()
+    if not cid:
+        raise HTTPException(404, "тикер не в справочнике")
+    у = db.execute(text("SELECT id, kind, title, summary, ts, payload FROM brain_nodes WHERE id = :id"), {"id": cid}).mappings().first()
+    с = _с(days)
+    def кольцо(kind, limit, since=None, напр=None):
+        rows = _соседи_sql(cid, kind, since, limit, 0, db)
+        return [{"id": s["id"], "заголовок": s["title"], "время": _json(s["ts"]), "вес": _json(s["weight"]),
+                 "уровень": s["level"], "способ": s["method"], "на_дату": _json(s["snapshot_date"]), "направление": s["напр"]}
+                for s in rows if напр is None or s["напр"] == напр]
+    блоки = {
+        "компания": {**_узел(у), "уровень": "B", "источник": "справочник эмитентов"},
+        "сектор": {"уровень": "B", "источник": "классификация smart-lab", "элементы": кольцо("в_секторе", 3)},
+        "владеет": {"уровень": "A/B", "источник": "world_facts, акционеры FinanceMarker", "элементы": кольцо("владеет", 20, напр="исх")},
+        "владельцы": {"уровень": "A/B", "источник": "world_facts, акционеры FinanceMarker", "элементы": кольцо("владеет", 20, напр="вх") + кольцо("владеет_долей", 10)},
+        "фонды_держатели": {"уровень": "A", "источник": "раскрытие УК, последний снимок", "элементы": кольцо("держит", 15)},
+        "индексы": {"уровень": "A", "источник": "МосБиржа", "элементы": кольцо("включает", 5)},
+        "новости": {"уровень": "B/C", "источник": "каналы; хэштег автора — B, разметка по имени — C", "элементы": кольцо("упоминает", 8, с)},
+        "кандидаты": {"уровень": "B", "источник": "завод постов", "элементы": кольцо("о", 5, _с(60))},
+        "аномалии": {"уровень": "C", "источник": "детектор", "элементы": кольцо("аномалия_по", 5, _с(60))},
+        "вместе_в_новостях": {"уровень": "D", "источник": "совместные упоминания, не отношение", "элементы": кольцо("вместе_в_новостях", 6)},
+        "правило_для_агента": _УРОВНИ_ОПИСАНИЕ,
+    }
+    n = sum(len(v.get("элементы", [])) for v in блоки.values() if isinstance(v, dict))
+    _след(db, candidate_id, f"context {ticker} days={days}", n, {"ticker": ticker, "days": days}, t0)
+    return блоки
+
+
+# ── очереди: держатели и правила имён (только админ)
+def _только_админ(who: str = Depends(_доступ)) -> str:
+    if who != "admin":
+        raise HTTPException(403, "решения по очередям принимает человек")
+    return who
+
+
+@router.get("/review/holders")
+def очередь_держателей(status: str = Query("на_проверке"), limit: int = Query(100, ge=1, le=500),
+                       db: Session = Depends(get_db), _who: str = Depends(_доступ)):
+    rows = db.execute(text("""
+        SELECT h.holder_norm, h.holder, h.company_id, h.method, h.confidence, h.status, h.candidates, h.reviewed_at, h.note,
+               (SELECT string_agg(replace(c.dst, 'company:', '') || ' ' || COALESCE(s.share_pct::text, '') || '%', ', ')
+                  FROM company_shareholders s JOIN issuers i USING (issuer_id)
+                  JOIN LATERAL (SELECT 'company:' || i.smartlab_ticker AS dst) c ON TRUE
+                 WHERE brain_norm(s.holder) = h.holder_norm AND i.smartlab_ticker IS NOT NULL) AS держит_в
+          FROM brain_holder_map h WHERE h.status = :st ORDER BY h.confidence DESC NULLS LAST, h.holder LIMIT :lim
+    """), {"st": status, "lim": limit}).mappings().all()
+    по_статусам = {r[0]: int(r[1]) for r in db.execute(text("SELECT status, COUNT(*) FROM brain_holder_map GROUP BY status")).all()}
+    return {"по_статусам": по_статусам, "очередь": [dict(r) for r in rows]}
+
+
+@router.patch("/review/holders/{holder_norm:path}")
+def решить_держателя(holder_norm: str, decision: str = Query(..., description="подтверждено | отклонено"),
+                     company_id: Optional[str] = Query(None), note: Optional[str] = Query(None),
+                     db: Session = Depends(get_db), _who: str = Depends(_только_админ)):
+    """Решение человека переживает пересборку; рёбра пересчитаются следующим синком (≤ 15 мин)."""
+    if decision not in ("подтверждено", "отклонено"):
+        raise HTTPException(400, "decision: подтверждено | отклонено")
+    if decision == "подтверждено":
+        cid = company_id or db.execute(text("SELECT company_id FROM brain_holder_map WHERE holder_norm = :h"), {"h": holder_norm}).scalar()
+        if not cid or not db.execute(text("SELECT 1 FROM brain_nodes WHERE id = :c AND kind = 'company'"), {"c": cid}).scalar():
+            raise HTTPException(400, "нужен company_id существующей компании")
+    else:
+        cid = None
+    r = db.execute(text("""
+        UPDATE brain_holder_map SET status = :d, company_id = :c, method = 'ручное', confidence = 1.0,
+               reviewed_at = NOW(), note = COALESCE(:n, note), updated_at = NOW()
+         WHERE holder_norm = :h
+    """), {"d": decision, "c": cid, "n": note, "h": holder_norm})
+    if r.rowcount == 0:
+        raise HTTPException(404, "держателя нет в карте")
+    db.commit()
+    return {"holder_norm": holder_norm, "status": decision, "company_id": cid}
+
+
+@router.get("/review/names")
+def правила_имён(ambiguous: Optional[bool] = Query(None), db: Session = Depends(get_db), _who: str = Depends(_доступ)):
+    rows = db.execute(text("""
+        SELECT r.id, r.pattern, r.company_id, r.ambiguous, r.enabled, r.source, r.note,
+               (SELECT COUNT(*) FROM brain_edges e WHERE e.dst = r.company_id AND e.method = 'имя') AS размечено
+          FROM brain_name_rules r
+         WHERE (CAST(:a AS boolean) IS NULL OR r.ambiguous = CAST(:a AS boolean))
+         ORDER BY r.ambiguous DESC, r.enabled, r.pattern
+    """), {"a": ambiguous}).mappings().all()
+    return {"правила": [dict(r) for r in rows]}
+
+
+@router.patch("/review/names/{rule_id}")
+def править_правило(rule_id: int, enabled: Optional[bool] = Query(None), ambiguous: Optional[bool] = Query(None),
+                    note: Optional[str] = Query(None), db: Session = Depends(get_db), _who: str = Depends(_только_админ)):
+    r = db.execute(text("""
+        UPDATE brain_name_rules SET enabled = COALESCE(CAST(:e AS boolean), enabled), ambiguous = COALESCE(CAST(:a AS boolean), ambiguous),
+               note = COALESCE(:n, note), updated_at = NOW() WHERE id = :id
+    """), {"e": enabled, "a": ambiguous, "n": note, "id": rule_id})
+    if r.rowcount == 0:
+        raise HTTPException(404, "правила нет")
+    db.commit()
+    return {"id": rule_id, "enabled": enabled, "ambiguous": ambiguous}
 
 
 def _соседи_для_пути(db: Session, id_: str) -> list[tuple[str, str, str]]:
