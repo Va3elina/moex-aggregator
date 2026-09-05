@@ -499,7 +499,7 @@ def править_правило(rule_id: int, enabled: Optional[bool] = Query(
                     note: Optional[str] = Query(None), db: Session = Depends(get_db), _who: str = Depends(_только_админ)):
     r = db.execute(text("""
         UPDATE brain_name_rules SET enabled = COALESCE(CAST(:e AS boolean), enabled), ambiguous = COALESCE(CAST(:a AS boolean), ambiguous),
-               note = COALESCE(:n, note), updated_at = NOW() WHERE id = :id
+               note = COALESCE(:n, note), manual = TRUE, updated_at = NOW() WHERE id = :id
     """), {"e": enabled, "a": ambiguous, "n": note, "id": rule_id})
     if r.rowcount == 0:
         raise HTTPException(404, "правила нет")
