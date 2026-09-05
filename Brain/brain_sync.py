@@ -24,6 +24,7 @@ news:markettwits/130070 совпадает с тем, что в source_url ка�
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -434,6 +435,29 @@ def правила_имён(conn) -> int:
          ORDER BY lower(p.pattern), p.company_id
         ON CONFLICT (pattern, company_id) DO NOTHING
     """), {"amb": "|".join(sorted(НЕОДНОЗНАЧНЫЕ))})
+    # Неоднозначность, выводимая из самих правил (правки руками — manual — не трогаем):
+    #  • одно и то же имя у двух компаний («Россети» → FEES и MSRS);
+    #  • однословное имя из названий активов фондов («Ренессанс», «МосБиржа») — это
+    #    ярлыки бумаг, а не то, как компанию называют в новостях;
+    #  • имя из списка обычных слов.
+    conn.execute(text("""
+        UPDATE brain_name_rules r SET ambiguous = x.amb, enabled = NOT x.amb, updated_at = NOW()
+          FROM (
+            SELECT r2.id,
+                   (lower(r2.pattern) = ANY(string_to_array(:amb, '|'))
+                    OR (length(r2.pattern) <= 3 AND r2.pattern <> upper(r2.pattern))
+                    OR EXISTS (SELECT 1 FROM brain_name_rules o WHERE lower(o.pattern) = lower(r2.pattern) AND o.company_id <> r2.company_id)
+                    OR (r2.source = 'fund_asset_name' AND position(' ' IN trim(r2.pattern)) = 0)) AS amb
+              FROM brain_name_rules r2 WHERE NOT r2.manual
+          ) x
+         WHERE r.id = x.id AND (r.ambiguous <> x.amb OR r.enabled = x.amb)
+    """), {"amb": "|".join(sorted(НЕОДНОЗНАЧНЫЕ))})
+    # Мосбиржа: «Индекс Мосбиржи» — не компания. Вычитаем и проверяем остаток.
+    conn.execute(text("""
+        UPDATE brain_name_rules SET exclude_regex = 'индекс\w*\s+(мосбиржи|московской\s+биржи)|imoex',
+               verify_regex = 'мосбирж|московск\w*\s+бирж'
+         WHERE company_id = 'company:MOEX' AND NOT manual AND exclude_regex IS NULL
+    """))
     return r.rowcount
 
 
@@ -443,10 +467,25 @@ def новости_по_имени(conn, full: bool) -> int:
     enabled и не ambiguous — остальные ждут решения в таблице правил."""
     вод = None if full else _водяной(conn, "news_names")
     с = datetime.now(timezone.utc) - timedelta(days=НОВОСТИ_ДНЕЙ)
-    правила = conn.execute(text("SELECT pattern, company_id FROM brain_name_rules WHERE enabled AND NOT ambiguous")).all()
+    правила = conn.execute(text("SELECT pattern, company_id, exclude_regex, verify_regex FROM brain_name_rules WHERE enabled AND NOT ambiguous")).all()
+    все_имена = [(r[0].lower(), r[1]) for r in conn.execute(text("SELECT pattern, company_id FROM brain_name_rules")).all()]
+    if full:
+        # полная пересборка разметки по имени: старые ложные рёбра не должны пережить новые правила
+        conn.execute(text("DELETE FROM brain_edges WHERE kind = 'упоминает' AND method = 'имя'"))
     n = 0
-    for pattern, company_id in правила:
-        п = {"с": с, "вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc), "q": pattern, "cid": company_id}
+    for pattern, company_id, excl, verify in правила:
+        # Самое длинное имя побеждает: «Газпром» не срабатывает на «Газпром нефть»,
+        # «Россети» — на «Россети Центр». Продолжения берутся из правил других компаний.
+        продолжения = sorted({имя[len(pattern.lower()):].strip() for имя, cid in все_имена
+                              if cid != company_id and имя.startswith(pattern.lower() + " ") and len(имя) > len(pattern) + 1})
+        # Продолжение — по основе (первые 4 буквы): «Газпром нефти» и «нефтью» — одно слово.
+        стоп = "(?!\\s+(" + "|".join(re.escape(x.split()[0][:4]) for x in продолжения if x) + "))" if продолжения else ""
+        # Полнотекст стеммит: «Эталон» находит «эталонных». Проверка — целое слово с
+        # русскими окончаниями, а не префикс.
+        окончания = "(а|я|у|ю|ом|ем|ём|е|ы|и|ов|ев|ам|ям|ами|ями|ах|ях|ой|ей|ью|ия|ии|ию|ией)?"
+        проверка = verify or ("\\m" + re.escape(pattern) + окончания + "\\M" + стоп)
+        п = {"с": с, "вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc), "q": pattern, "cid": company_id,
+             "ex": excl or "(?!x)x", "vf": проверка}
         conn.execute(text(f"""
             INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
             SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
@@ -456,6 +495,8 @@ def новости_по_имени(conn, full: bool) -> int:
               FROM news_archive n
              WHERE posted_at > :с AND imported_at > :вод
                AND to_tsvector('russian', text) @@ phraseto_tsquery('russian', :q)
+               AND regexp_replace(text, :ex, '', 'gi') ~* :vf
+               AND left(text, 160) !~* '(доброе утро!|итоги дня|акции и инвестиции|календарь на сегодня|ожидаем следующие события)'   -- дайджесты
              ORDER BY 1, imported_at DESC
             ON CONFLICT (id) DO NOTHING
         """), п)
@@ -466,9 +507,22 @@ def новости_по_имени(conn, full: bool) -> int:
               FROM news_archive n
              WHERE posted_at > :с AND imported_at > :вод
                AND to_tsvector('russian', text) @@ phraseto_tsquery('russian', :q)
+               AND regexp_replace(text, :ex, '', 'gi') ~* :vf
+               AND left(text, 160) !~* '(доброе утро!|итоги дня|акции и инвестиции|календарь на сегодня|ожидаем следующие события)'
             ON CONFLICT DO NOTHING
         """), п)
         n += r.rowcount
+    # Новость с пятью и больше компаниями по имени — обзор, а не упоминание: снимаем разметку.
+    conn.execute(text("""
+        DELETE FROM brain_edges e USING (
+            SELECT src FROM brain_edges WHERE kind = 'упоминает' AND method = 'имя' GROUP BY src HAVING COUNT(*) >= 5
+        ) d WHERE e.src = d.src AND e.kind = 'упоминает' AND e.method = 'имя'
+    """))
+    # Узлы новостей, оставшиеся без единой связи, карте не нужны.
+    conn.execute(text("""
+        DELETE FROM brain_nodes n WHERE n.kind = 'news'
+           AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = n.id OR e.dst = n.id)
+    """))
     _отметить(conn, "news_names", conn.execute(text("SELECT MAX(imported_at) FROM news_archive")).scalar(), n)
     return n
 
