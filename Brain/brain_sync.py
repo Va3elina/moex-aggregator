@@ -347,7 +347,10 @@ def держатели_узлы(conn) -> int:
     conn.execute(text("""
         INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
         SELECT DISTINCT ON (md5(lower(trim(holder)))) 'holder:' || md5(lower(trim(holder))), 'holder', md5(lower(trim(holder))),
-               trim(holder), CAST(NULL AS text), CAST(NULL AS timestamptz), jsonb_build_object('source', source), NOW()
+               -- Источник режет имя на 100 символах посреди слова («…ПАО АФК «Систе»): доводим до
+               -- целого слова и ставим многоточие, чтобы агент не вынес обрубок в текст.
+               CASE WHEN length(trim(holder)) >= 100 THEN regexp_replace(trim(holder), '\s+\S{0,12}$', '') || '…' ELSE trim(holder) END,
+               CAST(NULL AS text), CAST(NULL AS timestamptz), jsonb_build_object('source', source), NOW()
           FROM company_shareholders
          WHERE holder IS NOT NULL AND lower(trim(holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
          ORDER BY md5(lower(trim(holder))), updated_at DESC
@@ -637,22 +640,37 @@ def держатели_резолв(conn) -> dict:
             "рёбер_владения": r4.rowcount, "рёбер_держателей": r5.rowcount}
 
 
+# Холдинги: smart-lab кладёт АФК Систему в «Потреб. сектор», ЭсЭфАй — в «Финансы». Для агента
+# это ложный контекст («потребительская компания»). Переопределяем ТОЛЬКО в мозге — issuers.sector
+# и карточки на сайте не трогаем. Помечено как наша правка (уровень C), а не smart-lab.
+ХОЛДИНГИ = ("AFKS", "SFIN")
+
+
 def секторы(conn) -> int:
+    п = {"h": ",".join(ХОЛДИНГИ)}
     conn.execute(text("""
         INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
-        SELECT 'sector:' || md5(sector), 'sector', md5(sector), sector, CAST(NULL AS text), CAST(NULL AS timestamptz),
-               jsonb_build_object('компаний', COUNT(*), 'классификация', 'smart-lab'), NOW()
-          FROM issuers WHERE sector IS NOT NULL AND smartlab_ticker IS NOT NULL GROUP BY sector
+        SELECT 'sector:' || md5(s), 'sector', md5(s), s, CAST(NULL AS text), CAST(NULL AS timestamptz),
+               jsonb_build_object('компаний', COUNT(*), 'классификация', CASE WHEN s = 'Холдинги' THEN 'наша правка' ELSE 'smart-lab' END), NOW()
+          FROM (SELECT CASE WHEN smartlab_ticker = ANY(string_to_array(:h, ',')) THEN 'Холдинги' ELSE sector END AS s
+                  FROM issuers WHERE sector IS NOT NULL AND smartlab_ticker IS NOT NULL) x
+         GROUP BY s
         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-    """))
+    """), п)
     conn.execute(text("DELETE FROM brain_edges WHERE kind = 'в_секторе'"))
     r = conn.execute(text("""
         INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
-        SELECT 'company:' || smartlab_ticker, 'sector:' || md5(sector), 'в_секторе', updated_at, CAST(NULL AS real),
-               'issuers', 'B', 'классификация_smartlab', updated_at::date
+        SELECT 'company:' || smartlab_ticker,
+               'sector:' || md5(CASE WHEN smartlab_ticker = ANY(string_to_array(:h, ',')) THEN 'Холдинги' ELSE sector END),
+               'в_секторе', updated_at, CAST(NULL AS real), 'issuers',
+               CASE WHEN smartlab_ticker = ANY(string_to_array(:h, ',')) THEN 'C' ELSE 'B' END,
+               CASE WHEN smartlab_ticker = ANY(string_to_array(:h, ',')) THEN 'наша_правка_холдинг' ELSE 'классификация_smartlab' END,
+               updated_at::date
           FROM issuers WHERE sector IS NOT NULL AND smartlab_ticker IS NOT NULL
         ON CONFLICT DO NOTHING
-    """))
+    """), п)
+    # Осиротевшие узлы секторов (если у сектора не осталось компаний) — убрать.
+    conn.execute(text("DELETE FROM brain_nodes n WHERE n.kind = 'sector' AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.dst = n.id)"))
     return r.rowcount
 
 
