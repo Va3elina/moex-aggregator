@@ -73,6 +73,12 @@ from api.agent_trace import (              # noqa: E402
 )
 import pipeline_heartbeat                  # noqa: E402
 from api.database import SessionLocal      # noqa: E402
+# Второй мозг — те же функции, что у ручек /api/internal/brain/*, но в процессе:
+# бриф собирается здесь, и ходить за ним по HTTP к самому себе незачем. Прогрев
+# эмбеддинг-модели в фоне выключаем: скрипт живёт минуту, модель нужна только
+# подсказке Шага А и грузится лениво (int8-копия, ~3,5 с).
+os.environ.setdefault("BRAIN_WARMUP", "0")
+from api.brain_core import контекст as _brain_context, поиск as _brain_search  # noqa: E402
 
 # CLAUDE_ROUTINE_API_ROOT — релей (Cloudflare Worker) для обхода гео-блока
 # api.anthropic.com. Дефолт = прямой Anthropic (не работает с прод-сервера,
@@ -100,7 +106,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 16
+BRIEF_VERSION = 17   # v17: блок «второй_мозг» с уровнями доверия
 
 # ⚠️ 15 → 30. Кулдаун был РАВЕН периоду крона (*/15), и медленная Routine-сессия
 # получала второй запуск: draft_text остаётся NULL, пока сессия не ответила, значит
@@ -349,13 +355,62 @@ def _known_tickers_line(db) -> str:
     return ", ".join(f"{t}={name}" for t, name in rows)
 
 
-def _step_a_payload(row, internal_token: str, known_tickers: str) -> str:
+_SELECT_NAME_HITS = text("""
+    SELECT DISTINCT r.company_id, n.title, n.payload->>'sector' AS sector
+      FROM brain_name_rules r JOIN brain_nodes n ON n.id = r.company_id
+     WHERE r.enabled AND NOT r.ambiguous
+       AND to_tsvector('russian', :t) @@ phraseto_tsquery('russian', r.pattern)
+     LIMIT 6
+""")
+
+
+def _brain_hint_for_step_a(db, row) -> str:
+    """Подсказка Шагу А от второго мозга, двумя слоями:
+    1) компании, чьё имя стоит В САМОМ ТЕКСТЕ новости (правила разметки, полнотекст с
+       морфологией) — уровень C, это почти всегда и есть ответ;
+    2) на что новость похожа по смыслу (вектор) — уровень D, только если имени нет
+       или как соседи; замер 05.09: по смыслу «Роснефть ракетит» уходила к Россетям.
+    Тикер по-прежнему выбирается Шагом А только из known_tickers и по тексту.
+    Вызовы оставляют след в agent_trace (шаг «мозг»)."""
+    текст = ((row["headline"] or "") + " " + (row["raw_text"] or ""))[:1500]
+    части = []
+    try:
+        по_имени = db.execute(_SELECT_NAME_HITS, {"t": текст}).all()
+    except Exception as e:  # noqa: BLE001
+        по_имени = []
+        части.append(f"(разметка по имени недоступна: {type(e).__name__})")
+    for company_id, title, sector in по_имени:
+        тикер = company_id.split(":", 1)[1]
+        try:
+            c = _brain_context(ticker=тикер, days=14, candidate_id=row["id"], db=db, _who="agent")
+            хвост = (f"кандидатов за 60 дн: {c['кандидаты'].get('всего', 0)}, аномалий за 60 дн: {c['аномалии'].get('всего', 0)}, "
+                     f"новостей за 14 дн: {c['новости'].get('всего', 0)}")
+        except Exception:  # noqa: BLE001
+            хвост = ""
+        части.append(f"названа в тексте: {тикер} ({title}, {sector or 'сектор неизвестен'}) [C]" + (f" — {хвост}" if хвост else ""))
+    if not по_имени:
+        try:
+            найдено = _brain_search(q=текст[:300], kind="company", mode="meaning", limit=3,
+                                    candidate_id=row["id"], db=db, _who="agent")["найдено"]
+            # Ниже 0.30 — шум: геополитика «похожа» на Россети с 0.20. Молчим, а не подсказываем.
+            найдено = [x for x in найдено if float((x.get("почему") or "0").split()[-1].replace(",", ".") or 0) >= 0.30]
+            похоже = ", ".join(f"{x['id'].split(':', 1)[1]} ({x['заголовок']}, {x['почему']})" for x in найдено)
+            if похоже:
+                части.append(f"по смыслу похоже на: {похоже} [D — подсказка, имени в тексте нет]")
+        except Exception as e:  # noqa: BLE001 — подсказка не имеет права ронять Шаг А
+            части.append(f"(смысловой поиск недоступен: {type(e).__name__})")
+    return "; ".join(части) if части else "(ни имени наших компаний в тексте, ни похожих по смыслу)"
+
+
+def _step_a_payload(row, internal_token: str, known_tickers: str, brain_hint: str = "") -> str:
     return (
         f"candidate_id: {row['id']}\n"
         f"source: {row['source']}\n"
         f"headline: {row['headline']}\n"
         f"raw_text: {row['raw_text'] or row['headline']}\n"
         f"known_tickers (ТОЛЬКО из этого списка, больше ниоткуда): {known_tickers}\n"
+        f"подсказка_второго_мозга (ПОДСКАЗКА, не основание для tickers: [C] — имя компании найдено в тексте нашей "
+        f"разметкой, [D] — лишь похоже по смыслу; тикер — только если компания названа в тексте И есть в known_tickers): {brain_hint}\n"
         f"internal_token: {internal_token}\n"
         f"api_host: {INTERNAL_API_HOST}"
     )
@@ -1411,6 +1466,7 @@ def _build_brief(db, row) -> dict:
     pos = _position_phrases(row["asset_id"], row["anomaly_clgroup"],
                             as_of=row["signal_date"])
     _trace = трассировать(db, row["id"], "бриф")
+    _мозг = _brain_block(db, row)
     _фундамент = _company_fundamentals(
         db, row["asset_id"], row["tickers"], row["event_type"], row["signal_date"],
         trace=_trace)
@@ -1436,6 +1492,7 @@ def _build_brief(db, row) -> dict:
                                              row["tickers"], row["signal_date"]),
         "связанные_компании": _related_context(db, row["tickers"], row["signal_date"],
                                                trace=_trace),
+        "второй_мозг": _мозг,
         "фундамент_компании": _фундамент,
         "цена_акции": _pair_price_with_position(
             _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
@@ -1453,10 +1510,71 @@ def _build_brief(db, row) -> dict:
         pos.pop(k)
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
-    for empty in ("связанные_компании", "история_рейтинга"):
+    for empty in ("связанные_компании", "история_рейтинга", "второй_мозг"):
         if not brief.get(empty):
             brief.pop(empty, None)
     return brief
+
+
+def _brain_block(db, row) -> dict:
+    """Блок «второй_мозг» брифа: что карта знает о компании, с уровнем у каждой строки.
+
+    ⚠️ УРОВЕНЬ — ЧАСТЬ ФАКТА, А НЕ ПОЛЕ РЯДОМ. Модель читает строки, а не наши
+    колонки, поэтому [A]/[B]/[C]/[D] и дата снимка стоят в самой строке, а правило
+    «что можно утверждать» — прямо в блоке. Владельцев и фонды отдаём с датой
+    структуры: у половины компаний она старше двух лет, и «сейчас» про неё писать
+    нельзя. Вызов контекста сам пишет след в agent_trace (шаг «мозг»).
+    """
+    tks = [t for t in (row["tickers"] or []) if t][:2]
+    if not tks:
+        return {}
+    out = {}
+    for tk in tks:
+        try:
+            c = _brain_context(ticker=tk, days=14, candidate_id=row["id"], db=db, _who="agent")
+        except Exception as e:  # noqa: BLE001 — карта не имеет права ронять бриф
+            out[tk] = {"недоступно": f"{type(e).__name__}"}
+            continue
+        if "индекс" in c:
+            out[tk] = {"это_индекс": c["индекс"]["заголовок"], "в_составе_бумаг": c["состав"]["всего"]}
+            continue
+        def стр(э, с_датой=True, с_весом=False):
+            дата = f" на {э['на_дату'][:7]}" if с_датой and э.get("на_дату") else ""
+            вес = f" {э['вес']:g}%" if с_весом and э.get("вес") is not None else ""
+            return f"{э['заголовок']}{вес}{дата} [{э.get('уровень') or '?'}]"
+        блок = {"компания": f"{c['компания']['заголовок']} [B]"}
+        if c["сектор"]["элементы"]:
+            блок["сектор"] = f"{c['сектор']['элементы'][0]['заголовок']} [B, классификация smart-lab]"
+        if c["владельцы"]["элементы"]:
+            блок["владельцы_по_снимку"] = [стр(э, с_весом=True) for э in c["владельцы"]["элементы"][:4]]
+        if c["владеет"]["элементы"]:
+            блок["владеет"] = [стр(э, с_весом=True) for э in c["владеет"]["элементы"][:4]]
+        if c["фонды_держатели"]["всего"]:
+            топ = sorted(c["фонды_держатели"]["элементы"], key=lambda э: -(э.get("вес") or 0))[:3]
+            блок["фонды_держатели"] = (f"{c['фонды_держатели']['всего']} фондов держат бумагу [A, раскрытие УК]; "
+                                      "крупнейшие доли: " + ", ".join(стр(э, с_весом=True, с_датой=True) for э in топ))
+        if c["индексы"]["элементы"]:
+            блок["в_индексах"] = [стр(э, с_весом=True) for э in c["индексы"]["элементы"]]
+        if c["новости"]["всего"]:
+            блок["о_компании_писали_за_14_дней"] = (f"{c['новости']['всего']} новостей; последние: " +
+                " | ".join(f"{(э.get('время') or '')[:10]} {э['заголовок'][:90]} [{э.get('уровень') or '?'}]" for э in c["новости"]["элементы"][:3]))
+        if c["кандидаты"]["всего"]:
+            блок["прошлые_кандидаты_60_дней"] = (f"{c['кандидаты']['всего']}; " +
+                " | ".join(f"{(э.get('время') or '')[:10]} {э['заголовок'][:70]}" for э in c["кандидаты"]["элементы"][:3]))
+        if c["аномалии"]["всего"]:
+            блок["аномалии_позиций_60_дней"] = (f"{c['аномалии']['всего']} [C, наш детектор]; " +
+                " | ".join(f"{(э.get('время') or '')[:10]} {э['заголовок'][:60]}" for э in c["аномалии"]["элементы"][:3]))
+        if c["вместе_в_новостях"]["элементы"]:
+            блок["часто_рядом_в_новостях"] = ", ".join(э["заголовок"] for э in c["вместе_в_новостях"]["элементы"][:4]) + " [D — не связь, а соседство]"
+        out[tk] = блок
+    if out:
+        out["ПРАВИЛО"] = ("[A] — первоисточник с датой: можно утверждать со ссылкой на дату. "
+                          "[B] — посредник (FinanceMarker, smart-lab, хэштег канала): утверждать с источником и датой снимка; "
+                          "если снимок старше года — только «по данным на <дата>», не «сейчас». "
+                          "[C] — наша разметка/детектор: только как «по нашей разметке». "
+                          "[D] — подсказка: НЕ утверждать, в текст не выносить. "
+                          "Доли владения — только с датой снимка. Это КОНТЕКСТ, НЕ ПРИЧИНА события.")
+    return out
 
 
 def _payload(obj, internal_token: str) -> str:
@@ -1530,7 +1648,9 @@ def run_once() -> dict:
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
-                      _step_a_payload(row, internal_token, known_tickers))
+                      _step_a_payload(row, internal_token, known_tickers,
+                                      _brain_hint_for_step_a(db, row)))
+                db.commit()   # след подсказки в agent_trace — сразу, до долгого stagger
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_a_fired"] += 1
                 time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше

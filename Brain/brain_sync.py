@@ -437,9 +437,26 @@ def правила_имён(conn) -> int:
            AND p.pattern !~* '(публичное|акционерное|общество|limited|company|public)'   -- юридические простыни не ищем в новостях
            -- ⚠️ В названиях активов фондов у ГДР стоит депозитарий: «The Bank of New York Mellon» → X5.
            AND p.pattern !~* '(bank of new york|mellon|citibank|deutsche bank|jpmorgan|j\.p\. morgan|депозитар|custod)'
-         ORDER BY lower(p.pattern), p.company_id
+         ORDER BY lower(p.pattern), p.company_id,
+                  CASE p.source WHEN 'name_short' THEN 0 WHEN 'display_name' THEN 1 ELSE 2 END
         ON CONFLICT (pattern, company_id) DO NOTHING
     """), {"amb": "|".join(sorted(НЕОДНОЗНАЧНЫЕ))})
+    # ⚠️ Источник правила решает его судьбу: однословное из fund_asset_name — неоднозначно,
+    # из name_short — нет. Первый сев сохранил «Роснефть» как fund_asset_name (DISTINCT ON
+    # взял первую попавшуюся строку), и 60 нормальных имён — Роснефть, НОВАТЭК, Мечел —
+    # оказались выключены. Поэтому источник поднимаем до лучшего из справочника.
+    conn.execute(text("""
+        UPDATE brain_name_rules r SET source = 'name_short', updated_at = NOW()
+          FROM issuers i
+         WHERE NOT r.manual AND r.source <> 'name_short'
+           AND 'company:' || i.smartlab_ticker = r.company_id AND lower(i.name_short) = lower(r.pattern)
+    """))
+    conn.execute(text("""
+        UPDATE brain_name_rules r SET source = 'display_name', updated_at = NOW()
+          FROM issuer_aliases a JOIN brain_ticker_map m ON m.ticker = a.secid
+         WHERE NOT r.manual AND r.source = 'fund_asset_name' AND a.alias_type = 'display_name'
+           AND m.company_id = r.company_id AND lower(a.alias_value) = lower(r.pattern)
+    """))
     # Неоднозначность, выводимая из самих правил (правки руками — manual — не трогаем):
     #  • одно и то же имя у двух компаний («Россети» → FEES и MSRS);
     #  • однословное имя из названий активов фондов («Ренессанс», «МосБиржа») — это
