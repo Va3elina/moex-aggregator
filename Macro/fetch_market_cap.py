@@ -858,11 +858,13 @@ async def main():
         is_trading, reason = is_trading_day()
         if not is_trading and not args.force:
             log.info(f"Skip: {reason} (use --force)")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             engine.dispose()
             return
         results = await update_market_cap(force=args.force)
         for k, v in results.items():
             log.info(f"  {k}: {v}")
+        print(json.dumps(results, ensure_ascii=False, default=str))
         engine.dispose()
     else:
         log.info("Daemon mode: checking daily at 10:00 MSK")

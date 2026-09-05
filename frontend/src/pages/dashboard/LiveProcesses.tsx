@@ -179,10 +179,21 @@ export default function LiveProcesses({ процессы, идут, вспышк
                     background: цвет(п.состояние),
                   }} />
                   <div className="min-w-0" style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{п.имя}</div>
-                    {п.заметка && (
-                      <div className="mono truncate" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>
-                        {п.заметка}
+                    <div className="flex items-center" style={{ gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{п.имя}</span>
+                      {/* «Пусто, но зелёно» — то, ради чего перевод и делался:
+                          статус ok, а по сути ничего не сделано. */}
+                      {п.тревога && (
+                        <span className="mono" style={{
+                          fontSize: 9.5, padding: '1px 6px', borderRadius: 999,
+                          background: 'rgba(242,162,74,0.16)', color: 'var(--d-warn)',
+                        }}>пусто</span>
+                      )}
+                    </div>
+                    {(п.фраза || п.заметка) && (
+                      <div className="truncate" title={п.заметка || undefined}
+                        style={{ fontSize: 11.5, color: п.тревога ? 'var(--d-warn)' : 'var(--d-mute)' }}>
+                        {п.фраза || п.заметка}
                       </div>
                     )}
                   </div>

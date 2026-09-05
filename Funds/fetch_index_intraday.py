@@ -22,6 +22,7 @@ fetch_indices_realtime.py в 19:10 МСК перезаписывает эту ж
 """
 
 import argparse
+import json
 import asyncio
 import logging
 import os
@@ -154,6 +155,7 @@ async def run_once(force: bool = False) -> int:
         is_trade, reason = is_trading_day()
         if not is_trade:
             log.info(f"⏭️ Пропуск: {reason} (--force чтобы форсировать)")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return 0
 
     engine = get_engine()

@@ -17,6 +17,7 @@
 """
 
 import argparse
+import json
 import asyncio
 import logging
 import os
@@ -355,6 +356,7 @@ async def main():
         is_trading, reason = is_trading_day()
         if not is_trading:
             log.info(f"⏭️ Пропуск: {reason} (используйте --force для бэкфилла)")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return
 
     await update_all(force=args.force)

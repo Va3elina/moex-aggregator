@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from api.cache import get_or_set
 from api.database import get_db
 from api.models import User
+from api.pipeline_notes import человеческая
 from api.routers.auth import require_admin
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["admin-dashboard"])
@@ -50,6 +51,12 @@ _НИКОГДА_ДО = datetime(2000, 1, 1, tzinfo=timezone.utc)
 # видел не сокращение, а обрубок. Сам heartbeat уже режет до 500 символов при
 # записи, второй раз укорачивать нечего; решение «сколько показать» принадлежит
 # экрану, а не выдаче.
+
+
+def _перевод(r) -> dict:
+    """Человеческая фраза и флаг «зелёный, но пустой» для строки pipeline_runs."""
+    ч = человеческая(r["pipeline"], r["last_status"], r["last_note"], r["last_duration_sec"])
+    return {"фраза": ч["фраза"], "тревога": ч["тревога"]}
 
 
 def _когда(v):
@@ -88,6 +95,9 @@ def _снимок(db: Session) -> dict:
             "длился_сек": (round(r["last_duration_sec"], 1)
                            if r["last_duration_sec"] is not None else None),
             "заметка": r["last_note"] or "",
+            # Перевод рядом с сырой заметкой, а не вместо неё: экран показывает
+            # фразу, оригинал остаётся под рукой — перевод не должен прятать факт.
+            **_перевод(r),
         })
 
     # ── конвейер постов: воронка целиком, одним запросом
@@ -187,6 +197,9 @@ def live(
             "длился_сек": (round(r["last_duration_sec"], 1)
                            if r["last_duration_sec"] is not None else None),
             "заметка": r["last_note"] or "",
+            # Перевод рядом с сырой заметкой, а не вместо неё: экран показывает
+            # фразу, оригинал остаётся под рукой — перевод не должен прятать факт.
+            **_перевод(r),
         })
     итог.sort(key=lambda x: (not x["идёт"], x["закончил_сек_назад"] or 1e12))
     return {"снято": now.isoformat(), "процессы": итог,

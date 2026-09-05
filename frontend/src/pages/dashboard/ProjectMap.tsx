@@ -290,8 +290,9 @@ export default function ProjectMap({ процессы, идут, вспышки 
                   <div key={имя} className="flex items-center justify-between mono"
                     style={{ fontSize: 11.5, gap: 12 }}>
                     <span style={{ color: 'var(--d-ink)' }}>{имя}</span>
-                    <span style={{ color: 'var(--d-dim)', flex: 1, textAlign: 'right' }}>
-                      {п?.заметка || (п ? '' : 'в pipeline_runs нет — имя не совпало')}
+                    <span title={п?.заметка || undefined}
+                      style={{ color: п?.тревога ? 'var(--d-warn)' : 'var(--d-dim)', flex: 1, textAlign: 'right' }}>
+                      {п?.фраза || п?.заметка || (п ? '' : 'в pipeline_runs нет — имя не совпало')}
                     </span>
                     <span style={{ color: ЦВЕТ[s], minWidth: 74, textAlign: 'right' }}>
                       {п?.часов_назад != null ? `${п.часов_назад} ч` : '—'} · {s}
