@@ -21,6 +21,7 @@
 """
 
 import sys
+import json
 import logging
 import argparse
 import numpy as np
@@ -606,6 +607,9 @@ def main() -> None:
 
     engine.dispose()
     log.info(f"Готово за {time.time() - t0:.1f}с")
+    вселенных = 1 + (1 if imoex_ticker_data else 0) + (2 if usd_rates and imoex_ticker_data else 1 if usd_rates else 0)
+    print(json.dumps({"бумаг": len(all_ticker_data), "вселенных": вселенных,
+                      "состав_imoex": bool(composition)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

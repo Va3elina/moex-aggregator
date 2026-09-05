@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import json
 import aiohttp
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta, date
@@ -648,6 +649,7 @@ async def main():
         is_trading, reason = is_trading_day()
         if not is_trading:
             log.info(f"⏭️ Пропуск: {reason}")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             log.info("  (используйте --force для принудительного запуска)")
             return
 

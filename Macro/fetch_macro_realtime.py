@@ -19,6 +19,7 @@
 """
 
 import asyncio
+import json
 import argparse
 import logging
 import subprocess
@@ -1128,6 +1129,7 @@ async def main():
         is_trading, reason = is_trading_day()
         if not is_trading and not args.force:
             log.info(f"Skip: {reason} (use --force)")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return
         results = await update_macro(force=args.force)
         for k, v in results.items():

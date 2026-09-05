@@ -282,7 +282,7 @@ def main():
     run_ts = datetime.now()
 
     try:
-        run_phase_a(engine, run_ts)
+        n_active = run_phase_a(engine, run_ts)
     except Exception as e:
         log.error(f"Phase A провалилась: {e}")
         sys.exit(1)
@@ -294,6 +294,9 @@ def main():
             log.error(f"Phase B провалилась: {e}")
 
     log.info("✓ Готово")
+    # Итог для оркестратора: до этого прогон с ПУСТЫМ ответом ISS снимал с торгов
+    # все контракты и рапортовал «Готово» — снаружи это выглядело как успех.
+    print(json.dumps({"активных": n_active}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

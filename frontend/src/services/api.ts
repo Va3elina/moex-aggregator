@@ -2487,6 +2487,10 @@ export interface DashboardProcess {
   часов_назад: number | null;
   длился_сек: number | null;
   заметка: string;
+  /** Заметка по-человечески; сырая остаётся в `заметка`. */
+  фраза?: string;
+  /** true — «зелёный, но по сути ничего не сделано»; null — судить не по чему. */
+  тревога?: boolean | null;
 }
 
 export interface DashboardOverview {
@@ -2520,6 +2524,8 @@ export interface DashboardLiveProcess {
   закончил_сек_назад: number | null;
   длился_сек: number | null;
   заметка: string;
+  фраза?: string;
+  тревога?: boolean | null;
 }
 
 export interface DashboardLive {

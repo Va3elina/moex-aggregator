@@ -258,6 +258,12 @@ BUFFER_HOUR = 120  # 2 минуты после часа для агрегаци�
 
 # Таймауты (секунды)
 TIMEOUTS = {
+    # ⚠️ 1200, А НЕ УМОЛЧАНИЕ 300. Первый же прогон с обновлённой квотой (05.09)
+    # упал по таймауту: за 300 с прошла 31 компания — около 10 с на каждую, потому
+    # что загрузка десяти тысяч метрик в базу не бесплатна, а не только пауза 2 с
+    # перед запросом. Покоммитная запись результат сохранила, но статус стал «fail».
+    # Полный обход 123 компаний — до 20 минут; 1200 с с запасом на самых тяжёлых.
+    'fm_cards_daily': 1200,
     'oi_5min': 900,  # 15 минут (нужно для backfill после простоя)
     'oi_aggregate': 600,  # 10 минут
     'oi_daily': 1800,  # 30 минут
@@ -487,6 +493,39 @@ async def run_script(script_key: str, args: List[str] = None, timeout: int = Non
     return ok, msg, dur
 
 
+def _итог_из_вывода(stdout: bytes) -> str | None:
+    """
+    Последний JSON-объект в stdout скрипта — свёрнутый в одну строку.
+
+    ⚠️ ЗАЧЕМ. До этого любой прогон с кодом выхода 0 получал заметку «OK» — и
+    это слово означало не «данные пришли», а «процесс завершился». 21 пайплайн из
+    27 сообщал ровно это, и отличить «обошёл 80 компаний» от «источник затроттлил
+    на третьей, вышел» было нельзя. Скрипты Company/* при этом уже печатают
+    готовый итог JSON-ом последней строкой — оркестратор его получал и выбрасывал.
+
+    Итог может быть многострочным (indent=1), поэтому идём с конца, накапливая
+    строки, пока не соберётся валидный объект. Логи скриптов уходят в stderr, так
+    что в stdout мусора почти нет; на всякий случай — не больше 80 строк вглубь.
+    """
+    import json as _json
+    if not stdout:
+        return None
+    строки = stdout.decode("utf-8", errors="replace").rstrip().splitlines()
+    хвост: list = []
+    for строка in reversed(строки[-80:]):
+        хвост.insert(0, строка)
+        кусок = "\n".join(хвост).strip()
+        if not кусок.startswith("{"):
+            continue
+        try:
+            данные = _json.loads(кусок)
+        except ValueError:
+            continue
+        if isinstance(данные, dict):
+            return _json.dumps(данные, ensure_ascii=False, separators=(",", ":"))
+    return None
+
+
 async def _run_script_impl(script_key: str, args: List[str] = None, timeout: int = None) -> Tuple[bool, str, float]:
     """
     Асинхронно запускает Python скрипт.
@@ -541,7 +580,9 @@ async def _run_script_impl(script_key: str, args: List[str] = None, timeout: int
         duration = (datetime.now() - start_time).total_seconds()
 
         if process.returncode == 0:
-            return True, "OK", duration
+            # Итог из stdout, если скрипт его напечатал; иначе честное «OK» —
+            # оно теперь означает ровно то, что означает: код выхода ноль.
+            return True, _итог_из_вывода(stdout) or "OK", duration
         else:
             error_msg = stderr.decode()[-500:] if stderr else "Unknown error"
             return False, f"Exit code {process.returncode}: {error_msg}", duration

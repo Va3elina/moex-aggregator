@@ -18,6 +18,7 @@
 """
 
 import sys
+import json
 import time
 import logging
 import argparse
@@ -295,6 +296,7 @@ def run_once(engine, force: bool = False):
         is_trading, reason = is_trading_day()
         if not is_trading:
             logger.info(f"⏭️ Пропуск: {reason}")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             logger.info("  (используйте --force для принудительного запуска)")
             return
 
@@ -330,6 +332,7 @@ def run_last_hour(engine, force: bool = False):
         is_trading, reason = is_trading_day()
         if not is_trading:
             logger.info(f"⏭️ Пропуск: {reason}")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             logger.info("  (используйте --force для принудительного запуска)")
             return
 
@@ -354,6 +357,7 @@ def run_recent(engine, days: int = 7, force: bool = False):
         is_trading, reason = is_trading_day()
         if not is_trading:
             logger.info(f"⏭️ Пропуск: {reason}")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             logger.info("  (используйте --force для принудительного запуска)")
             return
 

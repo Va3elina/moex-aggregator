@@ -737,11 +737,19 @@ async def main():
         is_trading, reason = is_trading_day()
         if not is_trading:
             log.info(f"⏭️ Пропуск: {reason}")
+            print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             log.info("  (используйте --force для принудительного запуска)")
             return
 
     if args.once:
-        await update_all_funds(force=args.force)
+        результат = await update_all_funds(force=args.force)
+        # None = авторизация Cbonds не прошла. Раньше в этой ветке возврат не
+        # проверялся: ноль записей уходил наружу кодом 0 и заметкой «OK».
+        if результат is None:
+            print(json.dumps({"итог": "авторизация не прошла", "записей": 0}, ensure_ascii=False))
+        else:
+            print(json.dumps({"фондов": len(результат), "записей": sum(результат.values())},
+                             ensure_ascii=False))
     else:
         await run_daemon()
 

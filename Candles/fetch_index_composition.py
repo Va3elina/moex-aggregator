@@ -326,7 +326,8 @@ def main() -> None:
     # Инкремент из оркестратора не должен упираться в таймаут задачи:
     # ограничиваем прогон, недобранное подхватится в следующий раз.
     max_seconds = 240.0 if (args.once and not args.full and not args.date_from) else None
-    walk(engine, args.index, date_from, date_till, args.sleep, max_seconds)
+    сохранено_дней = walk(engine, args.index, date_from, date_till, args.sleep, max_seconds)
+    print(json.dumps({"сохранено_дней": сохранено_дней}, ensure_ascii=False))
     engine.dispose()
 
 
