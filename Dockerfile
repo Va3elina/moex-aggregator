@@ -100,6 +100,7 @@ COPY Macro/ ./Macro/
 COPY Commodity/ ./Commodity/
 # Карточки компаний и граф владения (справочник эмитентов, smart-lab)
 COPY Company/ ./Company/
+COPY Brain/ ./Brain/
 COPY CBR/ ./CBR/
 COPY main_orchestrator.py .
 COPY pipeline_heartbeat.py .
