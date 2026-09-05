@@ -821,6 +821,7 @@ async def main():
             )
             async with aiohttp.ClientSession(connector=connector) as session:
                 att, ins = await updater.update_all(session)
+                print(json.dumps({"опрошено": att, "вставлено": ins}, ensure_ascii=False))
                 log.info(f"✓ Загружено: {att}, сохранено: +{ins}")
 
             # Hard fail на 401: если хоть один запрос вернул unauthorized,

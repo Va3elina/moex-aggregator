@@ -458,7 +458,8 @@ def main():
     elif args.mode == "daemon":
         run_daemon(engine)
     else:
-        run_once(engine, force=args.force)
+        _r = run_once(engine, force=args.force)
+        print(json.dumps({"вставлено": _r} if isinstance(_r, int) else {"агрегация": "выполнена"}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ Candles/backfill_dividends_dohod.py). Это НЕ биржевые данные,
 """
 
 import sys
+import json
 import re
 import logging
 import argparse
@@ -337,6 +338,8 @@ def main() -> None:
     log.info(f"Готово за {time.time() - t0:.1f}с. Новых: {total_new}, "
              f"обновлённых: {total_updated}, покрытие: {with_data}/{len(tickers)} "
              f"({coverage:.0%})")
+    print(json.dumps({"новых": total_new, "обновлено": total_updated,
+                      "покрытие": round(coverage, 3), "тикеров": len(tickers)}, ensure_ascii=False))
 
     # Тихий отказ источника — это отказ, а не успех.
     if not args.ticker and coverage < MIN_COVERAGE:
