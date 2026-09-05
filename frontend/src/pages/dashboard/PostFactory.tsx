@@ -12,10 +12,11 @@
  * Поэтому бэкенд отдаёт список пробелов, и он показывается наравне с данными.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Loader2, Search } from 'lucide-react';
 import { getPostDetail, getPostList } from '../../services/api';
 import type { PostDetail, PostList, PostListItem } from '../../services/api';
+import TickerJump from './TickerJump';
 
 const ЦВЕТ_СТАТУСА: Record<string, string> = {
   published: 'var(--d-ok)',
@@ -169,11 +170,7 @@ function PostTrace({ id, назад }: { id: number; назад: () => void }) {
         </button>
         <div className="flex items-center" style={{ gap: 7, flexWrap: 'wrap' }}>
           <Плашка цвет={цветСтатуса(к.статус)}>{к.статус_подпись}</Плашка>
-          {к.тикеры.map((t) => (
-            <Link key={t} to={`/admin/dashboard/posts?ticker=${t}`} style={{ textDecoration: 'none' }}>
-              <Плашка цвет="var(--d-cold)">{t} →</Плашка>
-            </Link>
-          ))}
+          {к.тикеры.map((t) => <TickerJump key={t} t={t} />)}
           {к.версия_брифа != null && <Плашка>бриф v{к.версия_брифа}</Плашка>}
           <Плашка>#{к.id}</Плашка>
         </div>

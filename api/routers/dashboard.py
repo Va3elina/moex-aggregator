@@ -53,6 +53,193 @@ _НИКОГДА_ДО = datetime(2000, 1, 1, tzinfo=timezone.utc)
 # экрану, а не выдаче.
 
 
+def _давно(t, now) -> str:
+    """«3 мин назад» / «2 ч назад» / «4 дн назад» — для подписи у живой цифры."""
+    if isinstance(t, str):          # из журнала приходит уже isoformat
+        t = datetime.fromisoformat(t)
+    t = _когда(t) if not isinstance(t, datetime) else t
+    if t is None:
+        return "никогда"
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    сек = (now - t).total_seconds()
+    if сек < 90:
+        return "только что"
+    if сек < 3600:
+        return f"{int(сек // 60)} мин назад"
+    if сек < 48 * 3600:
+        return f"{int(сек // 3600)} ч назад"
+    return f"{int(сек // 86400)} дн назад"
+
+
+def _дата(d) -> str:
+    return d.strftime("%d.%m") if d else "—"
+
+
+def _скл(n: int, один: str, два: str, пять: str) -> str:
+    """131 бумага, 2 бумаги, 50 бумаг — «131 бумаг» читается как машинный текст."""
+    n = int(n)
+    сотня, ед = n % 100, n % 10
+    слово = пять if 11 <= сотня <= 14 else один if ед == 1 else два if 2 <= ед <= 4 else пять
+    return f"{n} {слово}"
+
+
+def _журнал_сутки(db: Session) -> dict:
+    """Сколько раз бегал и сколько строк записал каждый процесс за сутки — из журнала."""
+    return {r["pipeline"]: {
+        "прогонов": int(r["прогонов"]),
+        "строк": int(r["строк"]) if r["строк"] is not None else None,
+        "последний": r["последний"].isoformat() if r["последний"] else None,
+    } for r in db.execute(text("""
+        SELECT pipeline, COUNT(*) AS прогонов, SUM(rows_written) AS строк, MAX(finished_at) AS последний
+          FROM pipeline_run_log
+         WHERE finished_at > NOW() - INTERVAL '24 hours'
+         GROUP BY pipeline
+    """)).mappings()}
+
+
+def _источники(db: Session, now, журнал: dict) -> dict:
+    """
+    Живые цифры у узлов-источников карты: не «процесс отработал», а что именно
+    приехало и насколько оно свежее. Ключи — id узлов из topology.ts.
+
+    ⚠️ ВОЗРАСТ ДАННЫХ, А НЕ ВОЗРАСТ ЗАПИСИ. У Банка России ряд ZCYC «обновлялся»
+    каждый день и при этом стоял на 11.06 три месяца — потому что источник его
+    не отдавал. Здесь смотрится дата последней ТОЧКИ ряда, и порог свой у каждой
+    частоты: дневному ряду неделя — тревога, месячному — полтора месяца,
+    квартальному — четыре.
+    """
+    def факт(ярлык, значение, подпись=None, тревога=False):
+        return {"ярлык": ярлык, "значение": значение, "подпись": подпись, "тревога": bool(тревога)}
+
+    def строк_за_сутки(*пайплайны):
+        всего = 0
+        есть = False
+        for п in пайплайны:
+            ж = журнал.get(п)
+            if ж and ж["строк"] is not None:
+                всего += ж["строк"]
+                есть = True
+        return всего if есть else None
+
+    def дней(d):
+        return (now.date() - d).days if d else None
+
+    ист: dict[str, dict] = {}
+
+    # ── FinanceMarker: суточная квота из нашего счётчика
+    б = db.execute(text("""
+        SELECT spent, limit_total, calls, updated_at FROM api_budget
+         WHERE source = 'financemarker' AND period_day = CURRENT_DATE
+    """)).mappings().first()
+    if б:
+        остаток = max(0, int(б["limit_total"]) - int(б["spent"]))
+        ист["fm"] = {
+            "заголовок": f"квота {int(б['spent'])} из {б['limit_total']} · остаток {остаток}",
+            "факты": [факт("квота сегодня", f"{int(б['spent'])} из {б['limit_total']}",
+                          f"{б['calls']} вызовов · последний {_давно(б['updated_at'], now)}",
+                          тревога=остаток == 0)],
+        }
+    else:
+        ист["fm"] = {"заголовок": "сегодня ещё не ходили", "факты": [факт("квота сегодня", "не тронута")]}
+
+    # ── Telegram: по каналам — последний пост и сколько за сутки
+    факты = []
+    сутки = 0
+    for r in db.execute(text("""
+        SELECT channel, MAX(posted_at) AS последний,
+               COUNT(*) FILTER (WHERE posted_at > NOW() - INTERVAL '24 hours') AS за_сутки
+          FROM tg_channel_watch GROUP BY channel ORDER BY channel
+    """)).mappings():
+        # В выходные каналы молчат по полдня — шесть часов тишины тревога только в будни.
+        порог_ч = 30 if now.weekday() >= 5 else 6
+        тихо = (now - r["последний"]).total_seconds() > порог_ч * 3600 if r["последний"] else True
+        сутки += int(r["за_сутки"])
+        факты.append(факт(f"@{r['channel']}", f"{_скл(r['за_сутки'], 'пост', 'поста', 'постов')} за сутки",
+                          f"последний {_давно(r['последний'], now)}", тревога=тихо))
+    ист["tg"] = {"заголовок": f"{_скл(сутки, 'пост', 'поста', 'постов')} за сутки из двух каналов", "факты": факты}
+
+    # ── МосБиржа: объём за сутки по журналу
+    свечи = строк_за_сутки("candles_spot", "candles_futures")
+    ои = строк_за_сутки("oi_5min")
+    ист["moex"] = {
+        "заголовок": (f"{свечи:,} свечей · {ои:,} строк ОИ за сутки".replace(",", " ")
+                      if свечи is not None and ои is not None else "объём за сутки ещё не набрался"),
+        "факты": [
+            факт("свечи акций и фьючерсов", f"{свечи:,} строк за сутки".replace(",", " ") if свечи is not None else "—",
+                 f"последний прогон {_давно(журнал.get('candles_spot', {}).get('последний'), now)}"),
+            факт("открытый интерес 5 мин", f"{ои:,} строк за сутки".replace(",", " ") if ои is not None else "—",
+                 f"последний прогон {_давно(журнал.get('oi_5min', {}).get('последний'), now)}"),
+        ],
+    }
+
+    # ── Cbonds: СЧА
+    ф = db.execute(text("""
+        SELECT MAX(trade_date) AS д,
+               (SELECT COUNT(*) FROM fund_data WHERE trade_date = (SELECT MAX(trade_date) FROM fund_data)) AS фондов
+          FROM fund_data""")).mappings().first()
+    ист["cbonds"] = {
+        "заголовок": f"СЧА {_скл(ф['фондов'], 'фонда', 'фондов', 'фондов')} на {_дата(ф['д'])}",
+        "факты": [факт("СЧА и паи", f"{_скл(ф['фондов'], 'фонд', 'фонда', 'фондов')} на {_дата(ф['д'])}",
+                      "Cbonds отдаёт дату расчёта УК: сдвиг на день — норма", тревога=(дней(ф["д"]) or 0) > 4)],
+    }
+
+    # ── Банк России и Росстат: дата последней точки каждого ряда
+    ряды = {r["indicator"]: r for r in db.execute(text("""
+        SELECT m.indicator, m.name, m.frequency,
+               (SELECT MAX(period_date) FROM macro_data d WHERE d.indicator = m.indicator) AS д
+          FROM macro m
+         WHERE m.indicator IN ('KEY_RATE', 'M2_MONTHLY', 'GDP_QUARTERLY', 'ZCYC_10Y')
+    """)).mappings()}
+    порог = {"daily": 7, "monthly": 45, "quarterly": 130}
+
+    def ряд(код, ярлык):
+        r = ряды.get(код)
+        if not r or not r["д"]:
+            return факт(ярлык, "ряда нет", тревога=True)
+        дн = дней(r["д"])
+        return факт(ярлык, f"на {_дата(r['д'])}", f"{дн} дн назад · ряд {r['frequency']}",
+                    тревога=дн > порог.get(r["frequency"], 30))
+
+    цб = [ряд("KEY_RATE", "ключевая ставка"), ряд("M2_MONTHLY", "денежная масса M2"), ряд("ZCYC_10Y", "доходность ОФЗ 10 лет")]
+    отстали = [x["ярлык"] for x in цб if x["тревога"]]
+    ист["cbr"] = {
+        "заголовок": (f"отстал: {', '.join(отстали)}" if отстали
+                      else f"ставка на {_дата(ряды['KEY_RATE']['д'])} · M2 на {_дата(ряды['M2_MONTHLY']['д'])}"),
+        "факты": цб,
+    }
+    ввп = ряд("GDP_QUARTERLY", "ВВП, квартальный")
+    ист["rosstat"] = {"заголовок": f"ВВП {ввп['значение']}", "факты": [ввп]}
+
+    # ── smart-lab: капитализация и карточки
+    к = db.execute(text("""
+        SELECT MAX(period_date) AS д,
+               (SELECT COUNT(*) FROM stock_market_cap WHERE period_date = (SELECT MAX(period_date) FROM stock_market_cap)) AS бумаг
+          FROM stock_market_cap""")).mappings().first()
+    # ⚠️ Не «новых за неделю»: архив документов пересобирается целиком, и все 8 221
+    # строки имеют свежий created_at. Честная цифра — размер и когда обновлён.
+    док = db.execute(text("""
+        SELECT COUNT(*) AS всего, MAX(created_at) AS последний FROM company_documents""")).mappings().first()
+    ист["smartlab"] = {
+        "заголовок": f"капитализация {_скл(к['бумаг'], 'бумаги', 'бумаг', 'бумаг')} на {_дата(к['д'])}",
+        "факты": [
+            факт("капитализация", f"{_скл(к['бумаг'], 'бумага', 'бумаги', 'бумаг')} на {_дата(к['д'])}",
+                 f"{дней(к['д'])} дн назад" if к["д"] else None, тревога=(дней(к["д"]) or 0) > 3),
+            факт("документы компаний", f"{_скл(док['всего'], 'документ', 'документа', 'документов')} в архиве",
+                 f"обновлён {_давно(док['последний'], now)}"),
+        ],
+    }
+
+    # ── сырьё
+    сырьё = строк_за_сутки("commodity_daily")
+    ист["commodity"] = {
+        "заголовок": f"{сырьё} строк за сутки" if сырьё is not None else "за сутки не бегал",
+        "факты": [факт("Yahoo через релей", f"{сырьё} строк за сутки" if сырьё is not None else "—",
+                      f"последний прогон {_давно(журнал.get('commodity_daily', {}).get('последний'), now)}")],
+    }
+    return ист
+
+
 def _перевод(r) -> dict:
     """Человеческая фраза и флаг «зелёный, но пустой» для строки pipeline_runs."""
     ч = человеческая(r["pipeline"], r["last_status"], r["last_note"], r["last_duration_sec"])
@@ -143,6 +330,13 @@ def _снимок(db: Session) -> dict:
         ORDER BY pg_total_relation_size(c.oid) DESC
         LIMIT 12""")).mappings()]
 
+    # ── живые цифры у источников + журнал за сутки (что и сколько приехало)
+    журнал = _журнал_сутки(db)
+    try:
+        источники = _источники(db, now, журнал)
+    except Exception as e:  # noqa: BLE001 — одна упавшая цифра не должна валить снимок
+        источники = {"_ошибка": str(e)[:200]}
+
     молчат = [p["имя"] for p in процессы if p["состояние"] == "молчит"]
     упали = [p["имя"] for p in процессы
              if p["состояние"] not in ("ok", "молчит", "неизвестно")]
@@ -159,6 +353,8 @@ def _снимок(db: Session) -> dict:
         "второй_мозг": dict(мозг or {}),
         "стареющие_данные": dict(старение or {}),
         "хранилища": хранилища,
+        "источники": источники,
+        "журнал_сутки": журнал,
     }
 
 

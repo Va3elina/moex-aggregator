@@ -13,11 +13,17 @@
  */
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ExternalLink } from 'lucide-react';
 import {
-  РЁБРА, ПОДПИСИ_КОЛОНОК, УЗЛЫ, ШИРИНА, ШИРИНА_УЗЛА, ВЫСОТА_УЗЛА,
+  РЁБРА, ПОДПИСИ_КОЛОНОК, УЗЛЫ, ШИРИНА, ШИРИНА_УЗЛА, ВЫСОТА_УЗЛА, ИНДИКАТОРЫ, ВЫСОТА_ВИТРИНЫ,
 } from './topology';
 import type { УзелКарты } from './topology';
-import type { DashboardProcess } from '../../services/api';
+import type { DashboardOverview, DashboardProcess } from '../../services/api';
+
+const САЙТ = 'https://framedata.ru';
+const числоРус = (n: number) => n.toLocaleString('ru-RU');
+/** Высота узла: витрина индикаторов выше остальных — в ней чипы. */
+const высотаУзла = (у: УзелКарты) => (у.id === 'o_site' ? ВЫСОТА_ВИТРИНЫ : ВЫСОТА_УЗЛА);
 
 /** Русское склонение: 1 процесс, 2–4 процесса, 5+ процессов. Тернарник
  *  «один/много» даёт «2 процессов» — мелочь, но она сразу читается как машинный
@@ -98,8 +104,12 @@ function состояния(процессы: DashboardProcess[]): Record<string
   return итог;
 }
 
-export default function ProjectMap({ процессы, идут, вспышки, выбран: выбранСнаружи, onВыбрать }: {
+export default function ProjectMap({ процессы, идут, вспышки, выбран: выбранСнаружи, onВыбрать, источники, журнал }: {
   процессы: DashboardProcess[];
+  /** Живые цифры у узлов-источников (ключ — id узла). */
+  источники?: DashboardOverview['источники'];
+  /** Прогонов и строк за сутки по каждому процессу — из журнала. */
+  журнал?: DashboardOverview['журнал_сутки'];
   /** Имена пайплайнов, работающих прямо сейчас. */
   идут?: Set<string>;
   /** Только что закончившие — короткая вспышка исхода. */
@@ -129,7 +139,10 @@ export default function ProjectMap({ процессы, идут, вспышки,
     return null;
   };
 
-  const высота = Math.max(...УЗЛЫ.map((у) => у.y)) + ВЫСОТА_УЗЛА + 40;
+  const высота = Math.max(...УЗЛЫ.map((у) => у.y + высотаУзла(у))) + 40;
+  /** Состояние чипа-индикатора — худшее из его хранилищ. */
+  const состояниеИндикатора = (от: string[]): СостояниеУзла =>
+    от.reduce<СостояниеУзла>((acc, id) => хуже(acc, сост[id] ?? 'неизвестно'), 'неизвестно');
   const узел = (id: string) => УЗЛЫ.find((у) => у.id === id)!;
   const связан = (id: string) =>
     выбран === null || выбран === id ||
@@ -180,8 +193,8 @@ export default function ProjectMap({ процессы, идут, вспышки,
           {/* Рёбра — под узлами */}
           {РЁБРА.map((р) => {
             const a = узел(р.от); const b = узел(р.к);
-            const x1 = a.x + ШИРИНА_УЗЛА; const y1 = a.y + ВЫСОТА_УЗЛА / 2;
-            const x2 = b.x;               const y2 = b.y + ВЫСОТА_УЗЛА / 2;
+            const x1 = a.x + ШИРИНА_УЗЛА; const y1 = a.y + высотаУзла(a) / 2;
+            const x2 = b.x;               const y2 = b.y + высотаУзла(b) / 2;
             const dx = (x2 - x1) / 2;
             const s = сост[р.от] ?? 'неизвестно';
             const активно = выбран === null || выбран === р.от || выбран === р.к;
@@ -211,6 +224,9 @@ export default function ProjectMap({ процессы, идут, вспышки,
             const активный = выбран === у.id;
             const работает = узелИдёт(у);
             const вспышка = узелВспыхнул(у);
+            const h = высотаУзла(у);
+            const живое = у.вид === 'источник' ? источники?.[у.id]?.заголовок : undefined;
+            const живоеТревога = у.вид === 'источник' && !!источники?.[у.id]?.факты.some((ф) => ф.тревога);
             const обводка = активный ? 'var(--d-accent)'
               : работает ? 'var(--d-accent)'
               : вспышка === 'ok' ? 'var(--d-ok)'
@@ -225,7 +241,7 @@ export default function ProjectMap({ процессы, идут, вспышки,
                 onClick={() => setВыбран(активный ? null : у.id)}
               >
                 <rect
-                  width={ШИРИНА_УЗЛА} height={ВЫСОТА_УЗЛА} rx={8}
+                  width={ШИРИНА_УЗЛА} height={h} rx={8}
                   fill={у.вид === 'витрина' ? 'var(--d-sunk)' : 'var(--d-inner)'}
                   stroke={обводка}
                   strokeWidth={активный || работает || вспышка ? 2 : 1}
@@ -234,30 +250,50 @@ export default function ProjectMap({ процессы, идут, вспышки,
                 {работает && (
                   <>
                     {/* Бегущая полоса по низу узла — «идёт прямо сейчас». */}
-                    <rect y={ВЫСОТА_УЗЛА - 3} width={ШИРИНА_УЗЛА} height={3} rx={1.5}
+                    <rect y={h - 3} width={ШИРИНА_УЗЛА} height={3} rx={1.5}
                       fill="var(--d-line)" />
-                    <rect y={ВЫСОТА_УЗЛА - 3} width={ШИРИНА_УЗЛА * 0.32} height={3} rx={1.5}
+                    <rect y={h - 3} width={ШИРИНА_УЗЛА * 0.32} height={3} rx={1.5}
                       fill="var(--d-accent)" className="dash-runner" />
                     <circle cx={ШИРИНА_УЗЛА - 14} cy={16} r={4}
                       fill="var(--d-accent)" className="dash-pulse" />
                   </>
                 )}
                 {/* Полоса состояния слева — читается быстрее любого текста. */}
-                <rect width={3} height={ВЫСОТА_УЗЛА} rx={1.5} fill={ЦВЕТ[s]} />
+                <rect width={3} height={h} rx={1.5} fill={ЦВЕТ[s]} />
                 <text x={14} y={24} fontSize={13} fontWeight={600} fill="var(--d-ink)">
                   {у.имя}
                 </text>
                 <text x={14} y={41} className="mono" fontSize={10.5} fill="var(--d-mute)">
                   {у.подпись.length > 34 ? `${у.подпись.slice(0, 33)}…` : у.подпись}
                 </text>
+                {/* ⚠️ У источника третья строка — живая цифра, а не «N процессов»:
+                    что именно приехало и сколько. «2 процесса · работает» ничего
+                    не говорит о том, что квота FM исчерпана или ряд ЦБ стоит с июня. */}
                 {у.пайплайны.length > 0 && (
                   <text x={14} y={55} className="mono" fontSize={10}
-                    fill={работает ? 'var(--d-accent)' : ЦВЕТ[s]}>
+                    fill={работает ? 'var(--d-accent)' : живое ? (живоеТревога ? 'var(--d-warn)' : 'var(--d-mute)') : ЦВЕТ[s]}>
                     {работает
                       ? `идёт · ${у.пайплайны.filter((и) => идущие.has(и)).join(', ')}`
-                      : `${процессов(у.пайплайны.length)} · ${s}`}
+                      : живое
+                        ? (живое.length > 40 ? `${живое.slice(0, 39)}…` : живое)
+                        : `${процессов(у.пайплайны.length)} · ${s}`}
                   </text>
                 )}
+                {у.id === 'o_site' && ИНДИКАТОРЫ.map((и, k) => {
+                  const cx = 10 + (k % 2) * (ШИРИНА_УЗЛА / 2 - 6);
+                  const cy = ВЫСОТА_УЗЛА - 4 + Math.floor(k / 2) * 21;
+                  const si = состояниеИндикатора(и.от);
+                  return (
+                    <g key={и.id} transform={`translate(${cx},${cy})`}>
+                      <rect width={ШИРИНА_УЗЛА / 2 - 14} height={17} rx={8.5}
+                        fill="rgba(245,241,232,0.06)" stroke={ЦВЕТ[si]} strokeWidth={1} />
+                      <circle cx={9} cy={8.5} r={2.5} fill={ЦВЕТ[si]} />
+                      <text x={16} y={12} fontSize={9.5} fill="var(--d-ink)">
+                        {и.имя.length > 17 ? `${и.имя.slice(0, 16)}…` : и.имя}
+                      </text>
+                    </g>
+                  );
+                })}
               </g>
             );
           })}
@@ -274,6 +310,51 @@ export default function ProjectMap({ процессы, идут, вспышки,
               закрыть
             </button>
           </div>
+          {/* Живые цифры источника — выше описания: сначала «что сейчас», потом «как устроено». */}
+          {выбранныйУзел.вид === 'источник' && источники?.[выбранныйУзел.id] && (
+            <div className="grid mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+              {источники[выбранныйУзел.id].факты.map((ф) => (
+                <div key={ф.ярлык} style={{
+                  padding: '9px 12px', borderRadius: 8, background: 'var(--d-sunk)',
+                  borderLeft: `3px solid ${ф.тревога ? 'var(--d-warn)' : 'var(--d-ok)'}`,
+                }}>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{ф.ярлык}</div>
+                  <div className="disp" style={{ fontSize: 17, lineHeight: 1.2, marginTop: 2, color: ф.тревога ? 'var(--d-warn)' : 'var(--d-ink)' }}>{ф.значение}</div>
+                  {ф.подпись && <div style={{ fontSize: 11.5, color: 'var(--d-mute)', marginTop: 2 }}>{ф.подпись}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {выбранныйУзел.id === 'o_site' && (
+            <div className="flex flex-col mb-3" style={{ gap: 5 }}>
+              {ИНДИКАТОРЫ.map((и) => {
+                const si = состояниеИндикатора(и.от);
+                return (
+                  <div key={и.id} className="flex items-center flex-wrap" style={{ gap: 10, fontSize: 12.5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: ЦВЕТ[si], display: 'inline-block' }} />
+                    <span style={{ fontWeight: 600, minWidth: 150 }}>{и.имя}</span>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
+                      из {и.от.map((id) => узел(id).имя.toLowerCase()).join(', ')} · {si}
+                    </span>
+                    <span className="flex items-center" style={{ gap: 8, marginLeft: 'auto', fontSize: 11 }}>
+                      {и.от.map((id) => (
+                        <button key={id} onClick={() => setВыбран(id)} className="mono"
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--d-accent)' }}>
+                          {узел(id).имя} →
+                        </button>
+                      ))}
+                      {и.методология && (
+                        <a href={САЙТ + и.методология} target="_blank" rel="noreferrer" style={{ color: 'var(--d-mute)' }}>методология</a>
+                      )}
+                      <a href={САЙТ + и.путь} target="_blank" rel="noreferrer" className="flex items-center" style={{ color: 'var(--d-accent)', gap: 3 }}>
+                        открыть <ExternalLink size={10} />
+                      </a>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {выбранныйУзел.детали && (
             <ul style={{
               margin: '0 0 12px', paddingLeft: 18, display: 'flex',
@@ -306,6 +387,11 @@ export default function ProjectMap({ процессы, идут, вспышки,
                       style={{ color: п?.тревога ? 'var(--d-warn)' : 'var(--d-dim)', flex: 1, textAlign: 'right' }}>
                       {п?.фраза || п?.заметка || (п ? '' : 'в pipeline_runs нет — имя не совпало')}
                     </span>
+                    {журнал?.[имя] && (
+                      <span style={{ color: 'var(--d-dim)', whiteSpace: 'nowrap' }} title="по журналу прогонов за сутки">
+                        {журнал[имя].прогонов}× за сутки{журнал[имя].строк != null ? ` · ${числоРус(журнал[имя].строк!)} стр.` : ''}
+                      </span>
+                    )}
                     <span style={{ color: ЦВЕТ[s], minWidth: 74, textAlign: 'right' }}>
                       {п?.часов_назад != null ? `${п.часов_назад} ч` : '—'} · {s}
                     </span>

@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import TickerJump from './TickerJump';
 import { Loader2 } from 'lucide-react';
 import {
   getOwnershipGraph, getOwnershipSignals, reviewOwnershipSignal,
@@ -375,6 +376,7 @@ export default function OwnershipGraph({ выбран, onВыбрать }: {
                 )}
                 <div className="mt-2 flex" style={{ gap: 8 }}>
                   <Link to={`/admin/dashboard/posts?ticker=${узел.тикер}`} className="mono" style={{ fontSize: 11, color: 'var(--d-accent)' }}>посты по {узел.тикер} →</Link>
+                  <TickerJump t={узел.тикер} кроме="Связи владения" />
                 </div>
               </>
             )}
