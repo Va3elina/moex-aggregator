@@ -288,6 +288,16 @@ def _zcyc(d: dict):
     return f"Кривая ОФЗ: {новых} новых дн. {откуда}, до {последняя or '—'}", False
 
 
+def _brain(d: dict):
+    узлов, рёбер = _n(d, "узлов"), _n(d, "рёбер")
+    новых = _n(d, "новостей") + _n(d, "кандидатов") + _n(d, "документов") + _n(d, "аномалий") + _n(d, "сигналов")
+    if d.get("режим") == "полный":
+        return f"Карта нодов пересобрана целиком: {узлов} узлов, {рёбер} рёбер", False
+    if новых == 0:
+        return f"Карта нодов: нового нет, {узлов} узлов, {рёбер} рёбер", False
+    return f"Карта нодов: догнала {новых} новых, всего {узлов} узлов, {рёбер} рёбер", False
+
+
 def _freefloat(d: dict):
     n = _n(d, "месяцев")
     if n == 0:
@@ -360,6 +370,7 @@ _ПО_ИМЕНИ = {
     "candles_futures": ("dict", _candles_futures),
     "macro_daily": ("dict", _macro),
     "zcyc_daily": ("dict", _zcyc),
+    "brain_sync": ("dict", _brain),
     "freefloat_cap_daily": ("dict", _freefloat),
     "commodity_daily": ("dict", _commodity),
     "futures_turnover": ("dict", _turnover),
