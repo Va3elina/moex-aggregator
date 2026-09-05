@@ -1415,6 +1415,7 @@ class MainOrchestrator:
             self.run_indices_update,
             self.run_index_candles_hourly_update,
             self.run_macro_update,
+            self.run_zcyc_update,   # ⚠️ ТРИ списка дневных шагов: 19:10, старт, докачка
             self.run_market_cap_update,
             self.run_index_composition_update,
             self.run_breadth_update,
