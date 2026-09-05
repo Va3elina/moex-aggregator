@@ -22,7 +22,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDashboardOverview } from '../services/api';
-import type { DashboardOverview, DashboardProcess } from '../services/api';
+import type { DashboardOverview } from '../services/api';
 import ProjectMap from './dashboard/ProjectMap';
 import LiveProcesses from './dashboard/LiveProcesses';
 import { useLivePipelines } from './dashboard/useLivePipelines';
@@ -30,8 +30,10 @@ import './dashboard/dashboard.css';
 
 const ИНТЕРВАЛ_МС = 30_000;
 
-const ВКЛАДКИ = ['Карта', 'Живые процессы', 'Процессы', 'Завод постов',
-                 'Второй мозг', 'База'] as const;
+// ⚠️ ВКЛАДКА ПРОЦЕССОВ ОДНА. Их было две — «Живые процессы» и «Процессы», — и они
+// показывали одно и то же: вторая просто не знала, что идёт сейчас. Разделение
+// заставляло помнить, в какой из них смотреть, и ничего за это не давало.
+const ВКЛАДКИ = ['Карта', 'Процессы', 'Завод постов', 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
 
 const ПОДПИСИ_МОЗГА: Record<string, string> = {
@@ -46,19 +48,6 @@ const ПОДПИСИ_СТАРЕНИЯ: Record<string, string> = {
   акционеры_всего: 'Структур акционеров всего',
   рёбра_старше_2лет: 'Рёбер владения старше 2 лет',
 };
-
-const ЦВЕТ_СТАТУСА: Record<string, string> = {
-  ok: 'var(--d-ok)', degraded: 'var(--d-warn)', молчит: 'var(--d-dim)',
-  неизвестно: 'var(--d-line-strong)',
-};
-const цветСтатуса = (s: string) => ЦВЕТ_СТАТУСА[s] ?? 'var(--d-bad)';
-
-function возраст(часов: number | null): string {
-  if (часов === null) return 'никогда';
-  if (часов < 1) return `${Math.round(часов * 60)} мин назад`;
-  if (часов < 48) return `${часов.toFixed(1)} ч назад`;
-  return `${Math.round(часов / 24)} дн назад`;
-}
 
 const числоРус = (n: number) => n.toLocaleString('ru-RU');
 
@@ -98,27 +87,6 @@ function Блок({ заголовок, справа, children }: {
   );
 }
 
-function СтрокаПроцесса({ п }: { п: DashboardProcess }) {
-  const c = цветСтатуса(п.состояние);
-  return (
-    <div className="dash-inner flex items-center" style={{ gap: 12, padding: '9px 12px' }}>
-      <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: c }} />
-      <div className="min-w-0" style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{п.имя}</div>
-        {п.заметка && (
-          <div className="mono truncate" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>{п.заметка}</div>
-        )}
-      </div>
-      <div className="mono shrink-0" style={{ fontSize: 11, color: 'var(--d-mute)', textAlign: 'right' }}>
-        {возраст(п.часов_назад)}
-        {п.длился_сек !== null && <> · {п.длился_сек}с</>}
-      </div>
-      <span className="mono shrink-0" style={{ fontSize: 11, color: c, minWidth: 62, textAlign: 'right' }}>
-        {п.состояние}
-      </span>
-    </div>
-  );
-}
 
 /**
  * Воронка завода постов.
@@ -354,7 +322,7 @@ export default function AdminDashboardPage() {
               </div>
             )}
 
-            {вкладка === 'Живые процессы' && (
+            {вкладка === 'Процессы' && (
               <LiveProcesses
                 процессы={живое.процессы}
                 идут={живое.идут}
@@ -362,19 +330,6 @@ export default function AdminDashboardPage() {
                 подключено={живое.подключено}
                 тик={живое.тик}
               />
-            )}
-
-            {вкладка === 'Процессы' && (
-              <Блок заголовок="Все процессы"
-                справа={<span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
-                  {data.процессы.length} шт. · сверху те, кто дольше молчал
-                </span>}>
-                <div className="flex flex-col" style={{ gap: 6 }}>
-                  {[...data.процессы]
-                    .sort((a, b) => (b.часов_назад ?? 1e9) - (a.часов_назад ?? 1e9))
-                    .map((п) => <СтрокаПроцесса key={п.имя} п={п} />)}
-                </div>
-              </Блок>
             )}
 
             {вкладка === 'Завод постов' && <ВоронкаПостов воронка={data.воронка_постов} />}

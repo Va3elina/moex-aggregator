@@ -26,6 +26,27 @@ function длительность(сек: number | null | undefined): string {
   return `${м} мин ${Math.round(сек % 60)} с`;
 }
 
+/**
+ * Доля полосы длительности по ЛОГАРИФМИЧЕСКОЙ шкале.
+ *
+ * ⚠️ ЛИНЕЙНАЯ ЗДЕСЬ БЕСПОЛЕЗНА. Прогоны отличаются в тысячу раз: 0,1 с у
+ * content_match против 98 с у funds_daily и минут у полного обхода карточек. На
+ * линейной шкале всё, кроме самого долгого, — ниточка одинаковой длины, и
+ * сравнить нельзя ничего. Диапазон закреплён (0,1 с … 10 мин), а не выведен из
+ * текущей выборки: иначе одна и та же секунда рисуется по-разному в зависимости
+ * от того, кто ещё попал в список.
+ */
+const СЕК_МИН = 0.1;
+const СЕК_МАКС = 600;
+
+function доляДлительности(сек: number | null | undefined): number {
+  if (!сек || сек <= 0) return 0;
+  const низ = Math.log10(СЕК_МИН);
+  const верх = Math.log10(СЕК_МАКС);
+  const x = Math.log10(Math.min(Math.max(сек, СЕК_МИН), СЕК_МАКС));
+  return (x - низ) / (верх - низ);
+}
+
 function давно(сек: number | null): string {
   if (сек === null) return 'никогда';
   if (сек < 60) return `${Math.round(сек)} с назад`;
@@ -135,7 +156,7 @@ export default function LiveProcesses({ процессы, идут, вспышк
         <div className="flex items-baseline justify-between mb-3" style={{ gap: 12 }}>
           <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>Отработали за час</div>
           <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
-            {недавние.length} из {процессы.length}
+            {недавние.length} из {процессы.length} · шкала длительности логарифмическая
           </span>
         </div>
         {недавние.length === 0 ? (
@@ -165,7 +186,19 @@ export default function LiveProcesses({ процессы, идут, вспышк
                       </div>
                     )}
                   </div>
-                  <span className="mono shrink-0" style={{ fontSize: 11, color: 'var(--d-mute)' }}>
+                  {/* Полоса длительности: 0,1 с и 10 минут на одной картинке. */}
+                  <span className="shrink-0" style={{ width: 84 }} title={длительность(п.длился_сек)}>
+                    <span style={{
+                      display: 'block', height: 5, borderRadius: 2.5, background: 'var(--d-line)',
+                    }}>
+                      <span style={{
+                        display: 'block',
+                        width: `${Math.max(п.длился_сек ? 3 : 0, доляДлительности(п.длился_сек) * 100)}%`,
+                        height: 5, borderRadius: 2.5, background: 'var(--d-cold)',
+                      }} />
+                    </span>
+                  </span>
+                  <span className="mono shrink-0" style={{ fontSize: 11, color: 'var(--d-mute)', minWidth: 96, textAlign: 'right' }}>
                     {давно(п.закончил_сек_назад)} · {длительность(п.длился_сек)}
                   </span>
                   <span className="mono shrink-0"

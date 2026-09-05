@@ -45,6 +45,12 @@ _DEFAULT_MAX_AGE_H = 48
 # «20805 дн назад» — дата-заглушка, притворяющаяся измерением.
 _НИКОГДА_ДО = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
+# ⚠️ ЗАМЕТКУ БОЛЬШЕ НЕ РЕЖЕМ. Здесь стоял срез до 120 символов, и он обрывал
+# итог прогона на полуслове: «content_match {'checked': 6, … 'step_c_» — владелец
+# видел не сокращение, а обрубок. Сам heartbeat уже режет до 500 символов при
+# записи, второй раз укорачивать нечего; решение «сколько показать» принадлежит
+# экрану, а не выдаче.
+
 
 def _когда(v):
     """Время с UTC-меткой, или None для заглушки «никогда»."""
@@ -81,7 +87,7 @@ def _снимок(db: Session) -> dict:
             "часов_назад": round(часов, 1) if часов is not None else None,
             "длился_сек": (round(r["last_duration_sec"], 1)
                            if r["last_duration_sec"] is not None else None),
-            "заметка": (r["last_note"] or "")[:120],
+            "заметка": r["last_note"] or "",
         })
 
     # ── конвейер постов: воронка целиком, одним запросом
@@ -180,7 +186,7 @@ def live(
                                    if run_at else None),
             "длился_сек": (round(r["last_duration_sec"], 1)
                            if r["last_duration_sec"] is not None else None),
-            "заметка": (r["last_note"] or "")[:120],
+            "заметка": r["last_note"] or "",
         })
     итог.sort(key=lambda x: (not x["идёт"], x["закончил_сек_назад"] or 1e12))
     return {"снято": now.isoformat(), "процессы": итог,
