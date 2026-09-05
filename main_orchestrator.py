@@ -144,6 +144,7 @@ SCRIPTS = {
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
     'zcyc_daily': BASE_DIR / 'Candles' / 'fetch_zcyc.py',  # кривая ОФЗ: ЦБ, фоллбэк — ISS
     'brain_sync': BASE_DIR / 'Brain' / 'brain_sync.py',  # карта нодов второго мозга, инкремент
+    'brain_embed': BASE_DIR / 'Brain' / 'brain_embed.py',  # вектора узлов (model2vec), инкремент
     # Market Cap (полная капитализация рынка)
     'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
     # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
@@ -280,6 +281,7 @@ TIMEOUTS = {
     'macro_daily': 120,  # 2 минуты
     'zcyc_daily': 120,  # один запрос к ЦБ, в фоллбэке до 10 к ISS
     'brain_sync': 600,  # инкремент — секунды; полная пересборка (--full) — до минуты
+    'brain_embed': 900,  # первая загрузка модели ~10 с, 30 тыс. текстов — около минуты
     'market_cap_daily': 120,  # 2 минуты
     # Полный обход 80 компаний измерен: 20 минут при паузе 0,5 с между запросами.
     # 45 минут — запас на повторы после таймаутов, не на «вдруг медленно».
@@ -1303,6 +1305,13 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Brain sync: {msg}")
+        # Вектора — сразу за узлами: новым узлам нужен эмбеддинг до того, как агент
+        # спросит «похожие». Сбой эмбеддера не отменяет успех синка.
+        ok2, msg2, dur2 = await run_script('brain_embed', [])
+        if ok2:
+            log.info(f"    ✓ Brain embed ({dur2:.1f}с)")
+        else:
+            log.error(f"    ✗ Brain embed: {msg2}")
         return success
 
     async def run_zcyc_update(self) -> bool:

@@ -298,6 +298,13 @@ def _brain(d: dict):
     return f"Карта нодов: догнала {новых} новых, всего {узлов} узлов, {рёбер} рёбер", False
 
 
+def _brain_embed(d: dict):
+    новых, всего = _n(d, "новых"), _n(d, "всего")
+    if новых == 0:
+        return f"Вектора: новых нет, всего {всего}", False
+    return f"Вектора: посчитано {новых} новых, всего {всего}", False
+
+
 def _freefloat(d: dict):
     n = _n(d, "месяцев")
     if n == 0:
@@ -371,6 +378,7 @@ _ПО_ИМЕНИ = {
     "macro_daily": ("dict", _macro),
     "zcyc_daily": ("dict", _zcyc),
     "brain_sync": ("dict", _brain),
+    "brain_embed": ("dict", _brain_embed),
     "freefloat_cap_daily": ("dict", _freefloat),
     "commodity_daily": ("dict", _commodity),
     "futures_turnover": ("dict", _turnover),

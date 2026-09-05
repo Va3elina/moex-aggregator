@@ -1,0 +1,9 @@
+# База Фрейма: официальный postgres:17-alpine + pgvector, собранный в этом же образе.
+# ⚠️ ИМЕННО ALPINE, А НЕ pgvector/pgvector:pg17 (Debian): у кластера коллация musl,
+# смена libc сломала бы порядок btree-индексов по тексту и потребовала REINDEX 17 ГБ.
+FROM postgres:17-alpine
+ARG PGVECTOR_TAG=v0.8.0
+RUN apk add --no-cache --virtual .build-deps git build-base clang19 llvm19-dev \
+ && git clone --depth 1 --branch ${PGVECTOR_TAG} https://github.com/pgvector/pgvector.git /tmp/pgvector \
+ && cd /tmp/pgvector && make OPTFLAGS="" && make install \
+ && apk del .build-deps && rm -rf /tmp/pgvector

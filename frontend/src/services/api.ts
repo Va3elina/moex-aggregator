@@ -2865,6 +2865,8 @@ export const getBrainNode = (id: string, since?: number, perRing = 24) =>
   brainFetch<BrainNodePage>(`node/${id}`, { since, per_ring: perRing });
 export const getBrainNeighbors = (id: string, kind?: string, since?: number, limit = 100, offset = 0) =>
   brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
-export const getBrainSearch = (q: string, kind?: string, limit = 12) =>
-  brainFetch<{ запрос: string; найдено: BrainSearchHit[] }>('search', { q, kind, limit });
+export const getBrainSearch = (q: string, kind?: string, limit = 12, mode: 'word' | 'meaning' = 'word') =>
+  brainFetch<{ запрос: string; найдено: BrainSearchHit[] }>('search', { q, kind, limit, mode });
+export const getBrainSimilar = (id: string, kind?: string, limit = 12) =>
+  brainFetch<{ узел: string; похожие: Array<BrainNode & { сходство: number }> }>('similar', { id, kind, limit });
 export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('path', { a, b });

@@ -48,6 +48,25 @@ _ПРИОРИТЕТ = {"владеет": 0, "владеет_долей": 1, "д�
 _ЛИМИТ_СОСЕДЕЙ_В_ПУТИ = 300
 _БЮДЖЕТ_ПУТИ = 20_000
 _TTL = 60
+_MODEL_DIR = os.environ.get("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M")
+_модель = None
+
+
+def _вектор(текст: str) -> str:
+    """Вектор запроса строкой для CAST(:v AS vector). Модель грузится лениво, int8 (~130 МБ)
+    и один раз на процесс: смысловой поиск — редкий путь, держать веса во всех
+    воркерах с самого старта незачем."""
+    global _модель
+    if _модель is None:
+        try:
+            from model2vec import StaticModel
+            _модель = StaticModel.from_pretrained(_MODEL_DIR, quantize_to="int8")
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(503, f"модель эмбеддингов недоступна: {type(e).__name__}")
+    import numpy as np
+    v = np.asarray(_модель.encode([текст]), dtype=np.float32)[0]
+    n = float(np.linalg.norm(v)) or 1.0
+    return "[" + ",".join(f"{x / n:.6f}" for x in v) + "]"
 
 
 def _доступ(
@@ -226,19 +245,38 @@ def соседи(
 
 @router.get("/search")
 def поиск(
-    q: str = Query(..., min_length=2, max_length=120),
+    q: str = Query(..., min_length=2, max_length=300),
     kind: Optional[str] = Query(None),
+    mode: str = Query("word", description="word — по слову (тикер, pg_trgm); meaning — по смыслу (вектор)"),
     limit: int = Query(20, ge=1, le=100),
     candidate_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _who: str = Depends(_доступ),
 ):
-    """Вход по слову: тикер → компания напрямую; иначе похожесть заголовка (pg_trgm) и подстрока."""
+    """Вход по слову: тикер → компания напрямую; иначе похожесть заголовка (pg_trgm) и подстрока.
+    По смыслу (mode=meaning): вектор запроса против HNSW-индекса эмбеддингов узлов."""
     t0 = time.time()
     if kind and kind not in _ВИДЫ_УЗЛОВ:
         raise HTTPException(400, f"вид узла: {', '.join(_ВИДЫ_УЗЛОВ)}")
     qq = q.strip()
     найдено = []
+    if mode == "meaning":
+        v = _вектор(qq)
+        try:
+            строки = db.execute(text("""
+                SELECT n.id, n.kind, n.title, n.summary, n.ts, n.payload,
+                       1 - (e.embedding <=> CAST(:v AS vector)) AS sim
+                  FROM brain_embeddings e JOIN brain_nodes n ON n.id = e.node_id
+                 WHERE (CAST(:kind AS text) IS NULL OR n.kind = CAST(:kind AS text))
+                 ORDER BY e.embedding <=> CAST(:v AS vector)
+                 LIMIT :limit
+            """), {"v": v, "kind": kind, "limit": limit}).mappings().all()
+        except Exception as e:  # noqa: BLE001 — нет расширения/таблицы: вектора ещё не включены
+            db.rollback()
+            raise HTTPException(503, f"вектора недоступны: {str(e)[:120]}")
+        найдено = [{**_узел(r), "почему": f"смысл {float(r['sim']):.2f}"} for r in строки]
+        _след(db, candidate_id, f"search по смыслу «{qq[:60]}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind, "mode": mode}, t0)
+        return {"запрос": qq, "режим": "meaning", "найдено": найдено}
     # тикер или код фьючерса — прямой вход в компанию
     if re.fullmatch(r"[A-Za-z0-9_]{2,10}", qq):
         r = db.execute(text("""
@@ -261,6 +299,40 @@ def поиск(
         найдено.append({**_узел(r), "почему": f"похожесть {float(r['sim']):.2f}"})
     _след(db, candidate_id, f"search «{qq}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind}, t0)
     return {"запрос": qq, "найдено": найдено[:limit]}
+
+
+@router.get("/similar")
+def похожие(
+    id: str = Query(..., description="узел-образец"),
+    kind: Optional[str] = Query(None),
+    limit: int = Query(12, ge=1, le=60),
+    candidate_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    _who: str = Depends(_доступ),
+):
+    """Похожие по смыслу узлы: ближайшие эмбеддинги к эмбеддингу образца. Это не связь —
+    это «на что похоже», якорь для новости без тикера и для поиска прошлых поводов."""
+    t0 = time.time()
+    _проверить_id(id)
+    if kind and kind not in _ВИДЫ_УЗЛОВ:
+        raise HTTPException(400, f"вид узла: {', '.join(_ВИДЫ_УЗЛОВ)}")
+    try:
+        строки = db.execute(text("""
+            SELECT n.id, n.kind, n.title, n.summary, n.ts, n.payload,
+                   1 - (e.embedding <=> q.embedding) AS sim
+              FROM brain_embeddings q
+              JOIN brain_embeddings e ON e.node_id <> q.node_id
+              JOIN brain_nodes n ON n.id = e.node_id
+             WHERE q.node_id = :id AND (CAST(:kind AS text) IS NULL OR n.kind = CAST(:kind AS text))
+             ORDER BY e.embedding <=> q.embedding
+             LIMIT :limit
+        """), {"id": id, "kind": kind, "limit": limit}).mappings().all()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(503, f"вектора недоступны: {str(e)[:120]}")
+    out = {"узел": id, "похожие": [{**_узел(r), "сходство": round(float(r["sim"]), 3)} for r in строки]}
+    _след(db, candidate_id, f"similar {id} kind={kind or '*'}", len(out["похожие"]), {"id": id, "kind": kind}, t0)
+    return out
 
 
 def _соседи_для_пути(db: Session, id_: str) -> list[tuple[str, str, str]]:

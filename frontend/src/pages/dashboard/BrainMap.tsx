@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, Loader2, Search } from 'lucide-react';
 import {
-  getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch, getBrainStats, getBrainTop,
+  getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch, getBrainSimilar, getBrainStats, getBrainTop,
 } from '../../services/api';
 import type {
   BrainNeighbor, BrainNode, BrainNodePage, BrainPath, BrainRing, BrainSearchHit, BrainStats, DashboardOverview,
@@ -99,25 +99,36 @@ function Ярлык({ children, цвет }: { children: React.ReactNode; цве�
 
 function Поиск({ выбрать }: { выбрать: (id: string) => void }) {
   const [q, setQ] = useState('');
+  const [режим, setРежим] = useState<'word' | 'meaning'>('word');
   const [итоги, setИтоги] = useState<BrainSearchHit[]>([]);
   const [занято, setЗанято] = useState(false);
+  const [ошибка, setОшибка] = useState<string | null>(null);
   const таймер = useRef<number | null>(null);
   useEffect(() => {
     if (таймер.current) window.clearTimeout(таймер.current);
     if (q.trim().length < 2) { setИтоги([]); return; }
+    // По смыслу — только по Enter или после паузы подлиннее: каждый вызов считает вектор запроса.
     таймер.current = window.setTimeout(async () => {
-      setЗанято(true);
-      try { setИтоги((await getBrainSearch(q.trim())).найдено); } catch { setИтоги([]); } finally { setЗанято(false); }
-    }, 250);
+      setЗанято(true); setОшибка(null);
+      try { setИтоги((await getBrainSearch(q.trim(), undefined, 12, режим)).найдено); }
+      catch (e) { setИтоги([]); setОшибка(e instanceof Error ? e.message : 'сбой'); }
+      finally { setЗанято(false); }
+    }, режим === 'meaning' ? 600 : 250);
     return () => { if (таймер.current) window.clearTimeout(таймер.current); };
-  }, [q]);
+  }, [q, режим]);
   return (
     <div style={{ position: 'relative' }}>
       <div className="flex items-center" style={{ gap: 8 }}>
         {занято ? <Loader2 size={14} className="animate-spin" style={{ color: 'var(--d-dim)' }} /> : <Search size={14} style={{ color: 'var(--d-dim)' }} />}
-        <input className="dash-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="тикер, компания, слово из новости…"
+        <input className="dash-input" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={режим === 'meaning' ? 'о чём новость — своими словами…' : 'тикер, компания, слово из новости…'}
           style={{ width: 320 }}
           onKeyDown={(e) => { if (e.key === 'Enter' && итоги[0]) { выбрать(итоги[0].id); setQ(''); } }} />
+        <div className="flex" style={{ gap: 2 }}>
+          <button className="dash-tab" data-active={режим === 'word'} onClick={() => setРежим('word')}>по слову</button>
+          <button className="dash-tab" data-active={режим === 'meaning'} onClick={() => setРежим('meaning')}>по смыслу</button>
+        </div>
+        {ошибка && <span className="mono" style={{ fontSize: 11, color: 'var(--d-warn)' }}>{ошибка}</span>}
       </div>
       {итоги.length > 0 && (
         <div className="dash-jump" style={{ minWidth: 360, maxHeight: 340, overflowY: 'auto' }}>
@@ -236,6 +247,44 @@ function Список({ узел, кольцо, окно, onУзел }: { узе
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function Похожие({ id, onУзел }: { id: string; onУзел: (id: string) => void }) {
+  const [вид, setВид] = useState<string | undefined>(undefined);
+  const [d, setD] = useState<Array<BrainNode & { сходство: number }> | null>(null);
+  const [ошибка, setОшибка] = useState<string | null>(null);
+  useEffect(() => {
+    let живо = true;
+    setD(null); setОшибка(null);
+    getBrainSimilar(id, вид, 12)
+      .then((r) => { if (живо) setD(r.похожие); })
+      .catch((e) => { if (живо) setОшибка(e instanceof Error ? e.message : 'сбой'); });
+    return () => { живо = false; };
+  }, [id, вид]);
+  return (
+    <div>
+      <div className="flex flex-wrap mb-2" style={{ gap: 3 }}>
+        {([[undefined, 'всё'], ['company', 'компании'], ['news', 'новости'], ['candidate', 'кандидаты']] as Array<[string | undefined, string]>).map(([k, п]) => (
+          <button key={п} className="dash-tab" data-active={вид === k} onClick={() => setВид(k)} style={{ padding: '3px 9px', fontSize: 11 }}>{п}</button>
+        ))}
+      </div>
+      {ошибка && <div className="mono" style={{ fontSize: 11, color: 'var(--d-warn)' }}>{ошибка}</div>}
+      {!d && !ошибка && <div className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>считаю…</div>}
+      {d && d.length === 0 && <div className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>вектора у узла ещё нет</div>}
+      {d && d.length > 0 && (
+        <div className="flex flex-col" style={{ gap: 3 }}>
+          {d.map((x) => (
+            <button key={x.id} onClick={() => onУзел(x.id)} className="flex items-baseline"
+              style={{ gap: 8, background: 'none', border: 'none', padding: '3px 0', cursor: 'pointer', color: 'var(--d-ink)', textAlign: 'left', fontSize: 12 }}>
+              <span className="mono shrink-0" style={{ fontSize: 10.5, color: 'var(--d-dim)', minWidth: 30 }}>{Math.round(x.сходство * 100)}%</span>
+              <Ярлык>{ВИД_ПОДПИСЬ[x.вид] ?? x.вид}</Ярлык>
+              <span className="truncate" title={x.заголовок}>{x.заголовок}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -462,6 +511,10 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="dash-card" style={{ padding: '14px 16px' }}>
+              <div className="mono mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Похожие по смыслу</div>
+              <Похожие id={у.id} onУзел={открыть} />
             </div>
             <div className="dash-card" style={{ padding: '14px 16px' }}>
               <div className="mono mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>При чём тут…</div>
