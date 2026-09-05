@@ -2819,3 +2819,52 @@ export async function getIndicatorDetail(id: string, obj?: string, period?: stri
   }
   return response.json();
 }
+
+// ─── Второй мозг: карта нодов ────────────────────────────────────────────────
+// Ручки /api/internal/brain/* пускают и агентов по внутреннему токену, и админа
+// по сессии. Здесь — второе.
+
+export interface BrainNode {
+  id: string; вид: string; заголовок: string; кратко: string | null; время: string | null;
+  данные: Record<string, unknown> | null;
+}
+export interface BrainRingItem extends BrainNode { вес?: number | null }
+export interface BrainRing {
+  связь: string; направление: 'вх' | 'исх'; сколько: number; свежее: string | null; старое: string | null;
+  последние: BrainRingItem[];
+}
+export interface BrainNodePage { узел: BrainNode; кольца: BrainRing[] }
+export interface BrainNeighbor extends BrainNode { связь: string; направление: 'вх' | 'исх'; вес: number | null }
+export interface BrainNeighbors { узел: string; связь: string | null; всего: number; предел: number; смещение: number; соседи: BrainNeighbor[] }
+export interface BrainSearchHit extends BrainNode { почему: string }
+export interface BrainPathStep { от: string; связь: string; направление: string; к: string; узел?: { вид: string; заголовок: string } | null }
+export interface BrainPath { от: string; до: string; путь: BrainPathStep[] | null; шагов: number | null; просмотрено?: number }
+export interface BrainStats {
+  узлов: Record<string, number>; рёбер: Record<string, number>; всего_узлов: number; всего_рёбер: number;
+  синхронизация: Array<{ источник: string; до: string | null; строк: number | null; когда: string | null }>;
+}
+
+async function brainFetch<T>(path: string, params: Record<string, string | number | undefined | null> = {}): Promise<T> {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+  const qs = p.toString();
+  const response = await apiFetch(`${API_BASE}/api/internal/brain/${path}${qs ? '?' + qs : ''}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error('Такого узла в карте нет');
+    let detail = 'Второй мозг не ответил';
+    try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export const getBrainStats = () => brainFetch<BrainStats>('stats');
+export const getBrainTop = (kind = 'company', limit = 30) => brainFetch<{ вид: string; узлы: Array<BrainNode & { связей: number }> }>('top', { kind, limit });
+export const getBrainNode = (id: string, since?: number, perRing = 24) =>
+  brainFetch<BrainNodePage>(`node/${id}`, { since, per_ring: perRing });
+export const getBrainNeighbors = (id: string, kind?: string, since?: number, limit = 100, offset = 0) =>
+  brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
+export const getBrainSearch = (q: string, kind?: string, limit = 12) =>
+  brainFetch<{ запрос: string; найдено: BrainSearchHit[] }>('search', { q, kind, limit });
+export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('path', { a, b });

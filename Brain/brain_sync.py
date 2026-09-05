@@ -62,6 +62,25 @@ def карта_тикеров(conn) -> int:
     return r.rowcount
 
 
+def индексы_узлы(conn) -> int:
+    """Все индексы из справочника — узлы; их тикеры в карте ведут на index:<secid>, а не на компанию.
+    ⚠️ RGBI, IMOEX в тикерах кандидатов — четыре из 36 кандидатов замера были про индекс облигаций
+    и не находили узла вовсе."""
+    conn.execute(text("""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'index:' || secid, 'index', secid, COALESCE(name, secid), CAST(NULL AS text), CAST(NULL AS timestamptz),
+               jsonb_build_object('engine', engine, 'market', market, 'start_date', start_date), NOW()
+          FROM indices
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, payload = brain_nodes.payload || EXCLUDED.payload, updated_at = NOW()
+    """))
+    r = conn.execute(text("""
+        INSERT INTO brain_ticker_map (ticker, company_id)
+        SELECT secid, 'index:' || secid FROM indices
+        ON CONFLICT (ticker) DO NOTHING
+    """))
+    return r.rowcount
+
+
 def компании(conn) -> int:
     r = conn.execute(text("""
         INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
@@ -350,6 +369,7 @@ def main() -> int:
         conn.execute(text("SET LOCAL statement_timeout = '600s'"))
         итог["тикеров"] = карта_тикеров(conn)
         итог["компаний"] = компании(conn)
+        итог["индексов"] = индексы_узлы(conn)
         итог["новостей"], _ = новости(conn, args.full)
         итог["кандидатов"] = кандидаты(conn, args.full)
         итог["документов"] = документы(conn, args.full)

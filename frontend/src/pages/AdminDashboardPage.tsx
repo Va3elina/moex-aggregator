@@ -30,6 +30,7 @@ import PostFactory from './dashboard/PostFactory';
 import OwnershipGraph from './dashboard/OwnershipGraph';
 import DbDives from './dashboard/DbDives';
 import IndicatorDive from './dashboard/IndicatorDive';
+import BrainMap from './dashboard/BrainMap';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
@@ -49,21 +50,6 @@ const СЛАГ: Record<Вкладка, string> = {
 const ПО_СЛАГУ: Record<string, Вкладка> = Object.fromEntries(
   (Object.entries(СЛАГ) as Array<[Вкладка, string]>).map(([в, с]) => [с, в]),
 );
-
-const ПОДПИСИ_МОЗГА: Record<string, string> = {
-  эмитентов: 'Эмитентов', бумаг: 'Бумаг', алиасов: 'Псевдонимов', метрик: 'Показателей',
-  бумаг_с_карточкой: 'Бумаг с карточкой', документов: 'Документов',
-  рёбер: 'Рёбер владения', казначейских: 'Казначейских пакетов',
-  сигналов_в_очереди: 'Сигналов в очереди',
-};
-
-const ПОДПИСИ_СТАРЕНИЯ: Record<string, string> = {
-  акционеры_старше_2лет: 'Структур акционеров старше 2 лет',
-  акционеры_всего: 'Структур акционеров всего',
-  рёбра_старше_2лет: 'Рёбер владения старше 2 лет',
-};
-
-const числоРус = (n: number) => n.toLocaleString('ru-RU');
 
 function Плитка({ ярлык, число, подпись, цвет, рамка }: {
   ярлык: string; число: number | string; подпись: string; цвет?: string; рамка?: string;
@@ -86,21 +72,6 @@ function Плитка({ ярлык, число, подпись, цвет, рам
     </div>
   );
 }
-
-function Блок({ заголовок, справа, children }: {
-  заголовок: string; справа?: React.ReactNode; children: React.ReactNode;
-}) {
-  return (
-    <div className="dash-card" style={{ padding: '16px 18px' }}>
-      <div className="flex items-baseline justify-between mb-3" style={{ gap: 12 }}>
-        <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>{заголовок}</div>
-        {справа}
-      </div>
-      {children}
-    </div>
-  );
-}
-
 
 export default function AdminDashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -222,7 +193,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id) || searchParams.get('p')) && (
+        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id) || searchParams.get('p') || searchParams.get('n')) && (
           <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
             <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
             <span>›</span>
@@ -232,7 +203,7 @@ export default function AdminDashboardPage() {
               {узелВАдресе ? узелВАдресе.имя
                 : вкладка === 'Завод постов' && id ? `#${id}`
                 : (вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id ? id
-                : searchParams.get('p')}
+                : searchParams.get('p') || searchParams.get('n')}
             </span>
           </div>
         )}
@@ -314,66 +285,7 @@ export default function AdminDashboardPage() {
               />
             )}
 
-            {вкладка === 'Второй мозг' && (
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-                <Блок заголовок="Справочник и карточки">
-                  {/* ⚠️ ПОКРЫТИЕ КАРТОЧЕК — ВПЕРЁД СПИСКА. В плоском перечне «46» и «130»
-                      стоят соседними строчками и выглядят одинаково безобидно, хотя
-                      это и есть главная дыра: у двух третей бумаг фундамента нет.
-                      Полоса показывает разрыв сразу, до чтения цифр. */}
-                  {(() => {
-                    const есть = data.второй_мозг.бумаг_с_карточкой ?? 0;
-                    const всего = data.второй_мозг.бумаг ?? 0;
-                    if (!всего) return null;
-                    const доля = (есть / всего) * 100;
-                    return (
-                      <div className="dash-inner mb-3" style={{ padding: '12px 14px' }}>
-                        <div className="flex items-baseline flex-wrap mb-2" style={{ gap: 10 }}>
-                          <span className="disp" style={{
-                            fontSize: 30, lineHeight: 1,
-                            color: доля > 90 ? 'var(--d-ok)' : доля > 50 ? 'var(--d-warn)' : 'var(--d-bad)',
-                          }}>{числоРус(есть)}</span>
-                          <span style={{ fontSize: 13, color: 'var(--d-mute)' }}>
-                            из {числоРус(всего)} бумаг с карточкой
-                          </span>
-                          <span className="mono" style={{ fontSize: 12, color: 'var(--d-dim)', marginLeft: 'auto' }}>
-                            {доля.toFixed(0)}%
-                          </span>
-                        </div>
-                        <div style={{ height: 6, borderRadius: 3, background: 'var(--d-line)' }}>
-                          <div style={{
-                            width: `${доля}%`, height: 6, borderRadius: 3,
-                            background: доля > 90 ? 'var(--d-ok)' : доля > 50 ? 'var(--d-warn)' : 'var(--d-bad)',
-                          }} />
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex flex-col" style={{ gap: 7 }}>
-                    {Object.entries(data.второй_мозг).map(([k, v]) => (
-                      <div key={k} className="flex justify-between" style={{ fontSize: 12.5 }}>
-                        <span style={{ color: 'var(--d-mute)' }}>{ПОДПИСИ_МОЗГА[k] || k}</span>
-                        <span className="mono" style={{ fontWeight: 600 }}>{числоРус(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Блок>
-                <Блок заголовок="Возраст самих данных">
-                  <p style={{ fontSize: 11.5, color: 'var(--d-dim)', margin: '0 0 10px', lineHeight: 1.5 }}>
-                    Не авария: мы пишем исправно, а у источника данные могут быть старыми.
-                    В общий вердикт намеренно не входит.
-                  </p>
-                  <div className="flex flex-col" style={{ gap: 7 }}>
-                    {Object.entries(data.стареющие_данные).map(([k, v]) => (
-                      <div key={k} className="flex justify-between" style={{ gap: 12, fontSize: 12.5 }}>
-                        <span style={{ color: 'var(--d-mute)' }}>{ПОДПИСИ_СТАРЕНИЯ[k] || k}</span>
-                        <span className="mono" style={{ fontWeight: 600 }}>{числоРус(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Блок>
-              </div>
-            )}
+            {вкладка === 'Второй мозг' && <BrainMap покрытие={data.второй_мозг} />}
 
             {вкладка === 'База' && (
               <DbDives

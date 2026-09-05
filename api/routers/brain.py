@@ -130,15 +130,42 @@ def статистика(db: Session = Depends(get_db), _who: str = Depends(_д�
     return out
 
 
+@router.get("/top")
+def самые_связанные(
+    kind: str = Query("company"),
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _who: str = Depends(_доступ),
+):
+    """Узлы вида с наибольшим числом связей — стартовый экран карты."""
+    if kind not in _ВИДЫ_УЗЛОВ:
+        raise HTTPException(400, f"вид узла: {', '.join(_ВИДЫ_УЗЛОВ)}")
+    ключ = f"brain:top:{kind}:{limit}"
+    cached = get_or_set(ключ)
+    if cached is not None:
+        return cached
+    строки = db.execute(text("""
+        SELECT n.id, n.kind, n.title, n.summary, n.ts, n.payload, COUNT(e.*) AS связей
+          FROM brain_nodes n
+          JOIN brain_edges e ON e.dst = n.id OR e.src = n.id
+         WHERE n.kind = :kind
+         GROUP BY n.id ORDER BY связей DESC LIMIT :limit
+    """), {"kind": kind, "limit": limit}).mappings().all()
+    out = {"вид": kind, "узлы": [{**_узел(r), "связей": int(r["связей"])} for r in строки]}
+    get_or_set(ключ, out, ttl=300)
+    return out
+
+
 @router.get("/node/{node_id:path}")
 def узел(
     node_id: str,
     since: Optional[int] = Query(None, ge=1, le=3650, description="кольца только за N дней"),
+    per_ring: int = Query(3, ge=1, le=40, description="сколько соседей отдать в каждом кольце"),
     candidate_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _who: str = Depends(_доступ),
 ):
-    """Страница узла: сам узел + кольца по типам связей (счётчик, свежесть, три последних)."""
+    """Страница узла: сам узел + кольца по типам связей (счётчик, свежесть, последние N)."""
     t0 = time.time()
     _проверить_id(node_id)
     r = db.execute(text("SELECT id, kind, title, summary, ts, payload FROM brain_nodes WHERE id = :id"), {"id": node_id}).mappings().first()
@@ -156,12 +183,13 @@ def узел(
     """), {"id": node_id, "с": с}).mappings().all()
     out = {"узел": _узел(r), "кольца": []}
     for к in кольца:
-        последние = _соседи_sql(node_id, к["ребро"], с, 3, 0, db)
+        последние = _соседи_sql(node_id, к["ребро"], с, per_ring, 0, db)
         out["кольца"].append({
             "связь": к["ребро"], "направление": к["напр"], "сколько": int(к["n"]),
             "свежее": _json(к["свежее"]), "старое": _json(к["старое"]),
             "последние": [{"id": s["id"], "вид": s["kind"], "заголовок": s["title"], "время": _json(s["ts"]),
-                           "вес": _json(s["weight"])} for s in последние if s["ребро"] == к["ребро"] and s["напр"] == к["напр"]],
+                           "вес": _json(s["weight"]), "данные": s["payload"]}
+                          for s in последние if s["ребро"] == к["ребро"] and s["напр"] == к["напр"]],
         })
     _след(db, candidate_id, f"node {node_id}" + (f" since={since}" if since else ""), len(кольца), {"id": node_id, "since": since}, t0)
     return out
