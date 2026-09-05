@@ -17,6 +17,7 @@ import { ArrowLeft, ExternalLink, Loader2, Search } from 'lucide-react';
 import { getPostDetail, getPostList } from '../../services/api';
 import type { PostDetail, PostList, PostListItem } from '../../services/api';
 import TickerJump from './TickerJump';
+import BrainGraph from './BrainGraph';
 
 const ЦВЕТ_СТАТУСА: Record<string, string> = {
   published: 'var(--d-ok)',
@@ -129,6 +130,7 @@ function Воронка({ этапы, активный, выбрать }: {
  * это молчало.
  */
 function PostTrace({ id, назад }: { id: number; назад: () => void }) {
+  const navigate = useNavigate();
   const [d, setD] = useState<PostDetail | null>(null);
   const [ошибка, setОшибка] = useState<string | null>(null);
 
@@ -248,6 +250,42 @@ function PostTrace({ id, назад }: { id: number; назад: () => void }) {
             </div>}>
             <div style={{ fontSize: 12.5, color: 'var(--d-mute)', whiteSpace: 'pre-wrap' }}>
               {d.шаг_а_релевантность.обоснование}
+            </div>
+          </Секция>
+        )}
+
+        {(d.мозг.length > 0 || к.тикеры.length > 0) && (
+          <Секция титул="Второй мозг · как агент думал по карте"
+            метка={<span className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>
+              {d.мозг.length ? `${d.мозг.length} обращений` : 'обращений к мозгу нет — кандидат прошёл Шаг А до подключения'}
+            </span>}>
+            {d.мозг.length > 0 && (
+              <div className="flex flex-col" style={{ gap: 6, marginBottom: 10 }}>
+                {d.мозг.map((ш, i) => (
+                  <div key={i} className="flex" style={{ gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: ЦВЕТ_ИСХОДА[ш.исход] ?? 'var(--d-line-strong)' }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)' }}>
+                        {ш.вопрос}{ш.нашлось != null && ` · нашлось ${ш.нашлось}`}{ш.мс != null && ` · ${ш.мс} мс`}
+                      </div>
+                      {ш.результат && (
+                        <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', fontWeight: ш.вопрос.startsWith('подсказка') ? 600 : 400 }}>{ш.результат}</div>
+                      )}
+                    </div>
+                    <Плашка цвет={ЦВЕТ_ИСХОДА[ш.исход]}>{ш.исход}</Плашка>
+                  </div>
+                ))}
+              </div>
+            )}
+            <BrainGraph
+              key={к.id}
+              center={`candidate:${к.id}`}
+              запасной={к.тикеры[0] ? `company:${к.тикеры[0]}` : undefined}
+              высота={380}
+              onУзел={(id) => navigate(`/admin/dashboard/brain?n=${encodeURIComponent(id)}&v=graph`)}
+            />
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)', marginTop: 6 }}>
+              в центре — кандидат, вокруг — то, что мозг знал о компании к моменту разбора; уровни: [B] посредник, [C] наша разметка, [D] подсказка
             </div>
           </Секция>
         )}

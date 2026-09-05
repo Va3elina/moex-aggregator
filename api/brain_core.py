@@ -181,12 +181,14 @@ def _соседи_sql(id_: str, kind: Optional[str], с, limit: int, offset: int
     """), п).mappings().all()
 
 
-def _след(db, candidate_id, вопрос: str, n: int, params: dict, t0: float):
+def _след(db, candidate_id, вопрос: str, n: int, params: dict, t0: float, итог: Optional[str] = None):
+    """Строка следа: вопрос + человеческий итог (result_note), чтобы в разборе поста было видно
+    не «context SBER — 37», а «Сбер · Банки · владельцев 3 · фондов 12 · новостей 25 · аномалий 2»."""
     if candidate_id is None:
         return
     трассировать(db, candidate_id, "мозг").record(
         "brain", вопрос, outcome=ВЗЯТО if n else ПУСТО, result_count=n, params=params,
-        duration_ms=int((time.time() - t0) * 1000))
+        result_note=итог, duration_ms=int((time.time() - t0) * 1000))
     db.commit()
 
 
@@ -337,7 +339,8 @@ def поиск(
             db.rollback()
             raise Ошибка(503, f"вектора недоступны: {str(e)[:120]}")
         найдено = [{**_узел(r), "почему": f"смысл {float(r['sim']):.2f}"} for r in строки]
-        _след(db, candidate_id, f"search по смыслу «{qq[:60]}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind, "mode": mode}, t0)
+        _след(db, candidate_id, f"search по смыслу «{qq[:60]}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind, "mode": mode}, t0,
+              "; ".join(f"{x['заголовок']} ({x['почему']})" for x in найдено) or None)
         return {"запрос": qq, "режим": "meaning", "найдено": найдено}
     # тикер или код фьючерса — прямой вход в компанию
     if re.fullmatch(r"[A-Za-z0-9_]{2,10}", qq):
@@ -359,7 +362,8 @@ def поиск(
         if r["id"] in ids:
             continue
         найдено.append({**_узел(r), "почему": f"похожесть {float(r['sim']):.2f}"})
-    _след(db, candidate_id, f"search «{qq}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind}, t0)
+    _след(db, candidate_id, f"search «{qq}» kind={kind or '*'}", len(найдено), {"q": qq, "kind": kind}, t0,
+          "; ".join(f"{x['заголовок']} ({x['почему']})" for x in найдено[:limit]) or None)
     return {"запрос": qq, "найдено": найдено[:limit]}
 
 
@@ -444,8 +448,25 @@ def контекст(
         "правило_для_агента": _УРОВНИ_ОПИСАНИЕ,
     }
     n = sum(len(v.get("элементы", [])) for v in блоки.values() if isinstance(v, dict))
-    _след(db, candidate_id, f"context {ticker} days={days}", n, {"ticker": ticker, "days": days}, t0)
+    def имена(k, m=3):
+        return ", ".join(e["заголовок"] for e in блоки[k]["элементы"][:m])
+    итог = " · ".join(x for x in [
+        f"{у['title']} [{blok_level(блоки['компания'])}]",
+        (имена("сектор") + " [B]") if блоки["сектор"]["элементы"] else "",
+        f"владельцев {len(блоки['владельцы']['элементы'])}" + (f" ({имена('владельцы')}) [A/B]" if блоки["владельцы"]["элементы"] else ""),
+        f"фондов-держателей {блоки['фонды_держатели']['всего']} [A]",
+        f"индексов {блоки['индексы']['всего']} [A]",
+        f"новостей за {days} дн: {блоки['новости']['всего']} [B/C]",
+        f"кандидатов за 60 дн: {блоки['кандидаты']['всего']}",
+        f"аномалий за 60 дн: {блоки['аномалии']['всего']} [C]",
+        (f"рядом в новостях: {имена('вместе_в_новостях')} [D]") if блоки["вместе_в_новостях"]["элементы"] else "",
+    ] if x)
+    _след(db, candidate_id, f"context {ticker} days={days}", n, {"ticker": ticker, "days": days, "company_id": cid}, t0, итог)
     return блоки
+
+
+def blok_level(b: dict) -> str:  # noqa: N802 — короткий помощник для итога следа
+    return b.get("уровень", "?")
 
 
 # ── очереди: держатели и правила имён (только админ)

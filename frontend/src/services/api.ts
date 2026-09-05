@@ -2617,6 +2617,8 @@ export interface PostDetail {
   разгон_репостов: Array<{ минута: number; репостов: number }>;
   признан_хайпом: boolean | null;
   след: PostTraceStep[];
+  /** Ходы по второму мозгу (шаг «мозг»): подсказка Шагу А, контексты компаний для брифа. */
+  мозг: PostTraceStep[];
   журнал: Array<{ событие: string; код: string | null; причина: string | null; вердикт_тогда: string | null; когда: string | null }>;
   чего_нет: string[];
 }

@@ -46,7 +46,12 @@ function радиус(n: BrainGraphNode) {
   return базовый + Math.min(9, Math.sqrt(Math.max(n.степень, 1)) * 0.55);
 }
 
-export default function BrainGraph({ center, onУзел, высота = 560 }: { center?: string; onУзел: (id: string) => void; высота?: number }) {
+export default function BrainGraph({ center, запасной, onУзел, высота = 560 }: {
+  center?: string;
+  /** Если центра ещё нет в карте (кандидат синхронизируется раз в 15 мин) — рисуем вокруг этого узла. */
+  запасной?: string;
+  onУзел: (id: string) => void; высота?: number;
+}) {
   const [граф, setГраф] = useState<Граф | null>(null);
   const [ошибка, setОшибка] = useState<string | null>(null);
   const [занято, setЗанято] = useState(false);
@@ -69,6 +74,7 @@ export default function BrainGraph({ center, onУзел, высота = 560 }: {
     let живо = true;
     setЗанято(true); setОшибка(null);
     getBrainGraph(center, center ? глубина : 2, сНовостями)
+      .catch((e) => { if (запасной && center && /узла/.test(String(e?.message))) return getBrainGraph(запасной, глубина, сНовостями); throw e; })
       .then((g) => { if (живо) setГраф(g); })
       .catch((e) => { if (живо) setОшибка(e instanceof Error ? e.message : 'сбой'); })
       .finally(() => { if (живо) setЗанято(false); });
@@ -218,7 +224,7 @@ export default function BrainGraph({ center, onУзел, высота = 560 }: {
 
   const разбудить = () => (сост.current as unknown as { разбудить?: () => void }).разбудить?.();
 
-  const вМир = (ev: React.MouseEvent | React.WheelEvent) => {
+  const вМир = (ev: { clientX: number; clientY: number }) => {
     const c = холст.current!; const s = сост.current;
     const r = c.getBoundingClientRect();
     const sx = ev.clientX - r.left; const sy = ev.clientY - r.top;
@@ -261,7 +267,16 @@ export default function BrainGraph({ center, onУзел, высота = 560 }: {
     }
     s.панорама = null;
   };
-  const onWheel = (ev: React.WheelEvent) => {
+  // ⚠️ onWheel у React — пассивный слушатель: preventDefault там не работает, и колесо
+  // над холстом прокручивало страницу. Вешаем нативный с passive:false.
+  const onWheelRef = useRef<(ev: WheelEvent) => void>(() => undefined);
+  useEffect(() => {
+    const c = холст.current; if (!c) return;
+    const h = (ev: WheelEvent) => { ev.preventDefault(); onWheelRef.current(ev); };
+    c.addEventListener('wheel', h, { passive: false });
+    return () => c.removeEventListener('wheel', h);
+  }, []);
+  onWheelRef.current = (ev: WheelEvent) => {
     const s = сост.current; const m = вМир(ev);
     const k = Math.exp(-ev.deltaY * 0.0015);
     const новый = Math.min(6, Math.max(0.15, s.зум * k));
@@ -303,7 +318,7 @@ export default function BrainGraph({ center, onУзел, высота = 560 }: {
         <canvas
           ref={холст}
           style={{ width: '100%', height: '100%', display: 'block', cursor: навед ? 'pointer' : 'grab' }}
-          onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onWheel={onWheel}
+          onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
         />
         {ошибка && <div className="mono" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--d-bad)', fontSize: 12 }}>{ошибка}</div>}
         {навед && (
