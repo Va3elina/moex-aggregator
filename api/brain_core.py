@@ -59,7 +59,8 @@ _ID = re.compile(r"^[a-z]+:[A-Za-z0-9_./\-]{1,120}$")
 _ВИДЫ_УЗЛОВ = ("company", "news", "candidate", "post", "doc", "fund", "index", "fact", "anomaly", "signal", "holder")
 # Порядок расширения при поиске пути: сначала структурные связи, новости — последними.
 _ПРИОРИТЕТ = {"владеет": 0, "владеет_долей": 1, "держит": 2, "включает": 3, "факт_о": 4, "о": 5,
-              "из_новости": 6, "сигнал_о": 7, "аномалия_по": 8, "отчитался": 9, "упоминает": 10}
+              "из_новости": 6, "сигнал_о": 7, "аномалия_по": 8, "отчитался": 9, "упоминает": 10,
+              "в_секторе": 3.5, "вместе_в_новостях": 9.5}
 _ЛИМИТ_СОСЕДЕЙ_В_ПУТИ = 300
 _БЮДЖЕТ_ПУТИ = 20_000
 _TTL = 60
@@ -569,3 +570,114 @@ def путь(
         ш["узел"] = имена.get(ш["к"])
     _след(db, candidate_id, f"path {a} → {b}", len(шаги), {"a": a, "b": b}, t0)
     return {"от": a, "до": b, "путь": шаги, "шагов": len(шаги), "просмотрено": расширено}
+
+
+# ---------------------------------------------------------------------------
+# Граф для силовой раскладки (вид «как в Obsidian»)
+# ---------------------------------------------------------------------------
+_СТРУКТУРНЫЕ_ВИДЫ = ("company", "sector", "holder", "fund", "index")
+_СТРУКТУРНЫЕ_СВЯЗИ = ("в_секторе", "владеет", "владеет_долей", "держит", "включает")
+_ЛИМИТ_ГРАФА = 600
+
+
+def _рёбра_между(db: Session, ids: list[str]) -> list:
+    """Все рёбра, у которых оба конца в наборе. Набор ≤ 600 — массив в ANY, по индексам src/dst."""
+    if not ids:
+        return []
+    return db.execute(text("""
+        SELECT src, dst, kind, level, weight
+          FROM brain_edges
+         WHERE src = ANY(string_to_array(:ids, '|')) AND dst = ANY(string_to_array(:ids, '|'))
+    """), {"ids": "|".join(ids)}).mappings().all()
+
+
+def _узлы_по_id(db: Session, ids: list[str]) -> dict:
+    if not ids:
+        return {}
+    return {r["id"]: r for r in db.execute(text("""
+        SELECT n.id, n.kind, n.title, n.ts,
+               (SELECT COUNT(*) FROM brain_edges e WHERE e.src = n.id) + (SELECT COUNT(*) FROM brain_edges e WHERE e.dst = n.id) AS степень
+          FROM brain_nodes n WHERE n.id = ANY(string_to_array(:ids, '|'))
+    """), {"ids": "|".join(ids)}).mappings().all()}
+
+
+def граф(
+    center: Optional[str] = Query(None, description="узел-центр; без него — весь структурный слой"),
+    depth: int = Query(2, ge=1, le=3),
+    per_node: int = Query(40, ge=5, le=200, description="сколько соседей брать у каждого узла при обходе"),
+    news: bool = Query(False, description="включать новости/кандидатов/посты (иначе только структурные узлы)"),
+    limit: int = Query(_ЛИМИТ_ГРАФА, ge=20, le=1500),
+    db: Session = None,
+    _who: str = "agent",
+):
+    """Подграф для силовой раскладки: {узлы:[{id, вид, заголовок, степень}], рёбра:[{от, к, связь, уровень, вес}]}.
+
+    Без центра — структурный слой целиком (компании, секторы, держатели, фонды, индексы и
+    связи между ними — ≈550 узлов): его можно рисовать весь. С центром — обход в ширину на
+    depth шагов с веером per_node на узел, структурные связи первыми, новости — только по флагу.
+    Рёбра добираются вторым запросом «между набором», чтобы показать и боковые связи.
+    """
+    t0 = time.time()
+    if center is None:
+        ключ = f"brain:graph:структура:{limit}"
+        cached = get_or_set(ключ)
+        if cached is not None:
+            return cached
+        узлы = db.execute(text("""
+            SELECT n.id, n.kind, n.title, n.ts,
+                   (SELECT COUNT(*) FROM brain_edges e WHERE e.src = n.id) + (SELECT COUNT(*) FROM brain_edges e WHERE e.dst = n.id) AS степень
+              FROM brain_nodes n
+             WHERE n.kind = ANY(string_to_array(:kinds, ','))
+               AND EXISTS (SELECT 1 FROM brain_edges e WHERE (e.src = n.id OR e.dst = n.id) AND e.kind = ANY(string_to_array(:ek, ',')))
+             ORDER BY степень DESC LIMIT :limit
+        """), {"kinds": ",".join(_СТРУКТУРНЫЕ_ВИДЫ), "ek": ",".join(_СТРУКТУРНЫЕ_СВЯЗИ), "limit": limit}).mappings().all()
+        ids = [r["id"] for r in узлы]
+        рёбра = [r for r in _рёбра_между(db, ids) if r["kind"] in _СТРУКТУРНЫЕ_СВЯЗИ or r["kind"] == "вместе_в_новостях"]
+        out = {
+            "центр": None, "глубина": 0,
+            "узлы": [{"id": r["id"], "вид": r["kind"], "заголовок": r["title"], "степень": int(r["степень"])} for r in узлы],
+            "рёбра": [{"от": r["src"], "к": r["dst"], "связь": r["kind"], "уровень": r["level"], "вес": _json(r["weight"])} for r in рёбра],
+            "мс": int((time.time() - t0) * 1000),
+        }
+        get_or_set(ключ, out, ttl=900)
+        return out
+
+    _проверить_id(center)
+    if not db.execute(text("SELECT 1 FROM brain_nodes WHERE id = :id"), {"id": center}).first():
+        raise Ошибка(404, "узла нет")
+    видимые_виды = None if news else _СТРУКТУРНЫЕ_ВИДЫ
+    взяты = {center: 0}
+    очередь = deque([(center, 0)])
+    while очередь and len(взяты) < limit:
+        cur, d = очередь.popleft()
+        if d >= depth:
+            continue
+        соседи = db.execute(text("""
+            SELECT other, kind FROM (
+                SELECT e.dst AS other, e.kind, e.ts FROM brain_edges e WHERE e.src = :id
+                UNION ALL
+                SELECT e.src, e.kind, e.ts FROM brain_edges e WHERE e.dst = :id
+            ) x ORDER BY ts DESC NULLS LAST LIMIT 3000
+        """), {"id": cur}).all()
+        соседи.sort(key=lambda r: _ПРИОРИТЕТ.get(r[1], 99))
+        n = 0
+        for other, kind in соседи:
+            if n >= per_node or len(взяты) >= limit:
+                break
+            if other in взяты:
+                continue
+            if видимые_виды is not None and other.split(":", 1)[0] not in видимые_виды:
+                continue
+            взяты[other] = d + 1
+            очередь.append((other, d + 1))
+            n += 1
+    ids = list(взяты)
+    инфо = _узлы_по_id(db, ids)
+    рёбра = _рёбра_между(db, ids)
+    return {
+        "центр": center, "глубина": depth,
+        "узлы": [{"id": i, "вид": инфо[i]["kind"], "заголовок": инфо[i]["title"], "степень": int(инфо[i]["степень"]), "шаг": взяты[i]}
+                 for i in ids if i in инфо],
+        "рёбра": [{"от": r["src"], "к": r["dst"], "связь": r["kind"], "уровень": r["level"], "вес": _json(r["weight"])} for r in рёбра],
+        "мс": int((time.time() - t0) * 1000),
+    }

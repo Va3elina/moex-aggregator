@@ -10,6 +10,10 @@
  * ⚠️ УЗЕЛ ЖИВЁТ В QUERY, А НЕ В ПУТИ. У новостей id вида news:markettwits/130070 —
  * со слэшем; в сегменте пути роутер его расщепляет.
  *
+ * ⚠️ ДВА ВИДА: кольца (по умолчанию) и граф «как в Obsidian» (?v=graph) — силовая
+ * раскладка подграфа на canvas, см. BrainGraph.tsx. Без узла граф показывает
+ * структурный слой целиком; с узлом — окрестность на 1–3 шага.
+ *
  * ⚠️ ЭКРАН НИЧЕГО НЕ СЧИТАЕТ. Кольца и счётчики приходят с бэкенда одним вызовом
  * (node/{id}?per_ring=24), список кольца — вторым; раскладка точек — арифметика.
  */
@@ -25,6 +29,7 @@ import type {
   DashboardOverview,
 } from '../../services/api';
 import TickerJump from './TickerJump';
+import BrainGraph from './BrainGraph';
 
 const ШИРИНА = 900;
 const ЦЕНТР = { x: 450, y: 250 };
@@ -455,6 +460,8 @@ function Путь({ от }: { от: string }) {
 export default function BrainMap({ покрытие }: { покрытие?: DashboardOverview['второй_мозг'] }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const n = searchParams.get('n');
+  const вид = searchParams.get('v') === 'graph' ? 'graph' : 'rings';
+  const setВид = (v: 'graph' | 'rings') => { const p = new URLSearchParams(searchParams); if (v === 'graph') p.set('v', 'graph'); else p.delete('v'); setSearchParams(p); };
   const [страница, setСтраница] = useState<BrainNodePage | null>(null);
   const [ошибка, setОшибка] = useState<string | null>(null);
   const [окно, setОкно] = useState<number | undefined>(undefined);
@@ -494,6 +501,10 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
           <div className="flex items-center flex-wrap" style={{ gap: 14 }}>
             <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>Карта нодов</div>
             <Поиск выбрать={открыть} />
+            <div className="flex" style={{ gap: 4 }}>
+              <button className="dash-tab" data-active={вид === 'rings'} onClick={() => setВид('rings')}>кольца</button>
+              <button className="dash-tab" data-active={вид === 'graph'} onClick={() => setВид('graph')} title="силовая раскладка, как graph view в Obsidian">граф</button>
+            </div>
           </div>
           {статистика && (
             <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
@@ -504,6 +515,16 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
       </div>
 
       {ошибка && <div className="dash-card" style={{ padding: 14, color: 'var(--d-bad)', fontSize: 13 }}>{ошибка}</div>}
+
+      {!n && вид === 'graph' && (
+        <div className="dash-card" style={{ padding: '14px 18px' }}>
+          <div className="disp mb-1" style={{ fontSize: 15, fontWeight: 700 }}>Структурный слой целиком</div>
+          <p style={{ fontSize: 12.5, color: 'var(--d-mute)', margin: '0 0 10px', lineHeight: 1.5 }}>
+            Компании, секторы, держатели, фонды и индексы со связями между ними. Новостей здесь нет: их сорок тысяч, и они превратили бы холст в пыль. Клик по узлу открывает его окрестность.
+          </p>
+          <BrainGraph onУзел={открыть} высота={620} />
+        </div>
+      )}
 
       {!n && (
         <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)', gap: 12, alignItems: 'start' }}>
@@ -579,11 +600,13 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
               </div>
               {у.кратко && <p style={{ fontSize: 12.5, color: 'var(--d-mute)', margin: '0 0 6px', lineHeight: 1.5 }}>{у.кратко}</p>}
               {['news', 'candidate', 'post', 'fact'].includes(у.вид) && <ТекстУзла id={у.id} />}
-              {страница.кольца.length === 0
-                ? <div className="mono" style={{ fontSize: 12, color: 'var(--d-dim)', padding: '20px 0' }}>связей за это окно нет</div>
-                : <Кольца страница={страница} выбранноеКольцо={кольцо} onКольцо={setКольцо} onУзел={открыть} />}
+              {вид === 'graph'
+                ? <BrainGraph key={у.id} center={у.id} onУзел={открыть} />
+                : страница.кольца.length === 0
+                  ? <div className="mono" style={{ fontSize: 12, color: 'var(--d-dim)', padding: '20px 0' }}>связей за это окно нет</div>
+                  : <Кольца страница={страница} выбранноеКольцо={кольцо} onКольцо={setКольцо} onУзел={открыть} />}
               <div className="mono flex flex-wrap items-center" style={{ fontSize: 10.5, color: 'var(--d-dim)', gap: 10 }}>
-                <span>кольцо — вид связи, точка — сосед (до 24 свежих); клик по точке переносит центр, по кольцу — фильтр списка</span>
+                {вид === 'rings' && <span>кольцо — вид связи, точка — сосед (до 24 свежих); клик по точке переносит центр, по кольцу — фильтр списка</span>}
                 <span className="flex items-center" style={{ gap: 5 }}>{(['A', 'B', 'C', 'D'] as const).map((у) => <span key={у} className="flex items-center" style={{ gap: 3 }}><Уровень у={у} /><span>{УРОВЕНЬ[у].подпись.split(' · ')[1].split(' —')[0]}</span></span>)}</span>
               </div>
             </div>

@@ -2899,6 +2899,11 @@ export const getBrainNeighbors = (id: string, kind?: string, since?: number, lim
   brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
 export const getBrainSearch = (q: string, kind?: string, limit = 12, mode: 'word' | 'meaning' = 'word') =>
   brainFetch<{ запрос: string; найдено: BrainSearchHit[] }>('search', { q, kind, limit, mode });
+export interface BrainGraphNode { id: string; вид: string; заголовок: string; степень: number; шаг?: number }
+export interface BrainGraphEdge { от: string; к: string; связь: string; уровень: string | null; вес: number | null }
+export interface BrainGraph { центр: string | null; глубина: number; узлы: BrainGraphNode[]; рёбра: BrainGraphEdge[]; мс: number }
+export const getBrainGraph = (center?: string, depth = 2, news = false, perNode = 40) =>
+  brainFetch<BrainGraph>('graph', { center, depth, news: news ? 'true' : undefined, per_node: perNode });
 export const getBrainSimilar = (id: string, kind?: string, limit = 12) =>
   brainFetch<{ узел: string; похожие: Array<BrainNode & { сходство: number }> }>('similar', { id, kind, limit });
 export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('path', { a, b });

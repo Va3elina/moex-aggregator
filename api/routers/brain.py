@@ -116,3 +116,10 @@ def править_правило(rule_id: int, enabled: Optional[bool] = Query(
 def путь(a: str = Query(...), b: str = Query(...), max_depth: int = Query(3, ge=1, le=4),
          candidate_id: Optional[int] = Query(None), db: Session = Depends(get_db), who: str = Depends(_доступ)):
     return _вызов(ядро.путь, a=a, b=b, max_depth=max_depth, candidate_id=candidate_id, db=db, _who=who)
+
+
+@router.get("/graph")
+def граф(center: Optional[str] = Query(None), depth: int = Query(2, ge=1, le=3), per_node: int = Query(40, ge=5, le=200),
+         news: bool = Query(False), limit: int = Query(600, ge=20, le=1500),
+         db: Session = Depends(get_db), who: str = Depends(_доступ)):
+    return _вызов(ядро.граф, center=center, depth=depth, per_node=per_node, news=news, limit=limit, db=db, _who=who)
