@@ -93,7 +93,10 @@ deploy_api_rolling
 # деплой «успешен», а оркестратор крутит старый код. Так CBR/ не доезжал до
 # прода — правка парсера ОРФР ушла в main, но ингест шёл старым кодом.
 # Меняешь COPY в Dockerfile → правь и этот regex.
-if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|CBR/|main_orchestrator\.py|pipeline_heartbeat\.py|moex_calendar\.py|tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
+# ⚠️ Список папок — ЯВНЫЙ, и он уже подводил: Brain/ и Company/ в нём не было, деплой
+# #1413 обновил api, а оркестратор остался на старом brain_sync и раз в 15 минут
+# откатывал слой доверия. Любой новый каталог со скриптами оркестратора — сюда И в Dockerfile.
+if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|CBR/|Company/|Brain/|signals/|main_orchestrator\.py|pipeline_heartbeat\.py|moex_calendar\.py|moex_tls\.py|tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
   echo "=== Orchestrator code changed -> rebuild ==="
   docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
   docker compose build orchestrator
