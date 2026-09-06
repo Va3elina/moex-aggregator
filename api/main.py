@@ -54,6 +54,7 @@ from api.routers import dashboard_graph  # ← /api/admin/dashboard/graph (гр�
 from api.routers import dashboard_db  # ← /api/admin/dashboard/db/* (курируемые срезы базы)
 from api.routers import dashboard_indicators  # ← /api/admin/dashboard/indicators/* (провалиться в индикатор)
 from api.routers import brain  # ← /api/internal/brain/* (карта нодов второго мозга: агенты и панель)
+from api.routers import documents  # ← /api/internal/documents/* (документы компаний: карта, поиск, страницы, факты)
 from api.routers import content_news  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 from api.routers import mandate_scan  # ← /api/internal/mandate-scan/* (еженедельный Routine-скаут вынужденных потоков)
 from api.routers import content_corpus  # ← /api/internal/content-corpus/* (примеры постов для Шага В)
@@ -546,6 +547,7 @@ app.include_router(dashboard_graph.router)  # ← /api/admin/dashboard/graph (г
 app.include_router(dashboard_db.router)  # ← /api/admin/dashboard/db/* (курируемые срезы базы)
 app.include_router(dashboard_indicators.router)  # ← /api/admin/dashboard/indicators/* (провалиться в индикатор)
 app.include_router(brain.router)  # ← /api/internal/brain/* (карта нодов второго мозга)
+app.include_router(documents.router)  # ← /api/internal/documents/*
 app.include_router(agent_trace.signals_router)  # ← /api/admin/ownership-signals/* (очередь кандидатов в рёбра)
 app.include_router(content_news.router)  # ← /api/admin/content-candidates/* (Kanban «Новости»)
 app.include_router(content_news.internal_router)  # ← /api/internal/content-news/* (ИИ-callback, shared secret)
