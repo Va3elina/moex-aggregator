@@ -88,7 +88,7 @@ function внешняяСсылка(n: BrainNode): { to?: string; href?: string;
   const id = n.id.split(':').slice(1).join(':');
   switch (n.вид) {
     case 'candidate': case 'post': return { to: `/admin/dashboard/posts/${id}`, подпись: 'разбор' };
-    case 'news': return typeof д.url === 'string' ? { href: д.url, подпись: д.url.includes('interfax') ? 'interfax' : 't.me' } : null;
+    case 'news': return typeof д.url === 'string' ? { href: д.url, подпись: 't.me' } : null;
     case 'doc': return typeof д.url === 'string' ? { href: д.url, подпись: 'файл' } : null;
     case 'fund': return { to: `/admin/dashboard/db/fund_holdings?fund=${id}`, подпись: 'состав' };
     case 'index': return { to: `/admin/dashboard/db/index_composition?index_id=${id}`, подпись: 'состав' };
