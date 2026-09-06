@@ -641,6 +641,10 @@ def test_fundamentals_reach_the_writer_only_for_numeric_events():
     import inspect
     src = inspect.getsource(CA._build_brief)
     assert "_FUND_NUMERIC_EVENTS" in src
+    # ⚠️ Проверено на проде после v19: под «regulatory» блок доезжал как {} — пустое
+    # поле модель считает обязанной заполнить, поэтому его надо убирать целиком.
+    assert '"фундамент_компании")' in src.replace("\n", "").replace(" ", "") or \
+        '"фундамент_компании"' in src.split("for empty in")[1].split(")")[0]
 
 
 def test_frame_tells_the_model_to_stay_silent_about_the_one_day_gap():
