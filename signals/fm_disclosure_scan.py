@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -146,7 +147,7 @@ def _текст(r: dict) -> str:
 
 
 def run_once(offsets, since: date, dry_run: bool = False) -> dict:
-    итог = {"страниц": 0, "записей": 0, "новых": 0, "кандидатов": 0, "ошибок": 0, "пропущено_чужие": 0}
+    итог = {"страниц": 0, "записей": 0, "новых": 0, "кандидатов": 0, "ошибок": 0, "пропущено_чужие": 0, "карточки": []}
     db = SessionLocal()
     try:
         вселенная = {r[0] for r in db.execute(_SELECT_UNIVERSE).all()}
@@ -177,6 +178,8 @@ def run_once(offsets, since: date, dry_run: bool = False) -> dict:
                 }).mappings().first()
                 if row["inserted"]:
                     итог["новых"] += 1
+                    if наш and r["category"] in ("REPORT", "OPERATION") and код not in итог["карточки"]:
+                        итог["карточки"].append(код)
                 if not наш:
                     итог["пропущено_чужие"] += 1
                     continue
@@ -200,7 +203,30 @@ def run_once(offsets, since: date, dry_run: bool = False) -> dict:
         print(f"[fm_disclosure_scan] сбой: {type(e).__name__}: {e}")
     finally:
         db.close()
+    if итог["карточки"] and not dry_run:
+        обновить_карточки(итог["карточки"])
     return итог
+
+
+def обновить_карточки(коды: list[str]) -> None:
+    """Вышел отчёт — карточка этой компании нужна сейчас, а не в вечернем обходе.
+    Фетчер живёт в контейнере оркестратора (там токен FM и учёт квоты); зовём его
+    через docker exec с явным списком компаний. Бюджет он проверяет сам."""
+    коды = коды[:10]
+    try:
+        контейнер = subprocess.run(["docker", "ps", "-q", "-f", "label=com.docker.compose.service=orchestrator"],
+                                   capture_output=True, text=True, timeout=20).stdout.split()
+        if not контейнер:
+            print("[fm_disclosure_scan] карточки: контейнер оркестратора не найден")
+            return
+        r = subprocess.run(["docker", "exec", "-w", "/app/Company", контейнер[0], "python", "fetch_fm_cards.py",
+                            "--once", "--secid", *коды], capture_output=True, text=True, timeout=600)
+        хвост = (r.stdout.strip().splitlines() or [""])[-1][:300]
+        print(f"[fm_disclosure_scan] карточки по отчёту {', '.join(коды)}: код {r.returncode} · {хвост}")
+        if r.returncode != 0:
+            print((r.stderr or "")[-600:])
+    except Exception as e:  # noqa: BLE001 — карточка подождёт вечернего обхода, лента важнее
+        print(f"[fm_disclosure_scan] карточки: {type(e).__name__}: {e}")
 
 
 def main() -> None:
