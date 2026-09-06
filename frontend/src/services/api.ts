@@ -2619,6 +2619,8 @@ export interface PostDetail {
   след: PostTraceStep[];
   /** Ходы по второму мозгу (шаг «мозг»): подсказка Шагу А, контексты компаний для брифа. */
   мозг: PostTraceStep[];
+  /** Путь кандидата простыми фразами: шаг → две-три строки → тон (ok/warn/bad/neutral). */
+  рассуждение: Array<{ код: string; заголовок: string; строки: string[]; тон: 'ok' | 'warn' | 'bad' | 'neutral' }>;
   журнал: Array<{ событие: string; код: string | null; причина: string | null; вердикт_тогда: string | null; когда: string | null }>;
   чего_нет: string[];
 }
