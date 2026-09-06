@@ -86,10 +86,14 @@ _EXISTS_CANDIDATE = text("""
 # ⚠️ ОДНА КОМПАНИЯ — ОДИН КАНДИДАТ ЗА 6 ЧАСОВ. Пуск «Восток Ойла» 05.09 дал три новости
 # про Роснефть за час; три кандидата — это три разбора одного повода. Остальные
 # новости остаются в архиве и попадают в бриф как «о компании писали».
+# Окно считается по времени ПУБЛИКАЦИИ новости, а не по времени создания кандидата:
+# первый прогон залил двое суток разом, и «Аэрофлот допускает дивиденды» (05.09) ушёл
+# в тень «Аэрофлот закупает керосин» (04.09) только потому, что оба создались в одну минуту.
 _SAME_COMPANY_RECENT = text("""
     SELECT c.id FROM content_candidates c
       JOIN news_archive n ON n.channel = 'interfax' AND c.source_url = 'https://www.interfax.ru/business/' || n.message_id
-     WHERE c.source = 'interfax' AND c.created_at > now() - interval '6 hours'
+     WHERE c.source = 'interfax'
+       AND n.posted_at BETWEEN CAST(:posted_at AS timestamptz) - interval '6 hours' AND CAST(:posted_at AS timestamptz) + interval '6 hours'
        AND n.entities->'companies' ?| CAST(:companies AS text[])
      LIMIT 1
 """)
@@ -188,7 +192,7 @@ def run_once(dry_run: bool = False, limit: int = МАКС_СТАТЕЙ_ЗА_ПР
                 db.execute(_INSERT_NEWS, {"ch": КАНАЛ, "mid": mid, "posted_at": ст["posted_at"], "text": текст,
                                           "entities": json.dumps({"url": url, "companies": [c for c, _ in попадания]}, ensure_ascii=False)})
                 if кандидат and not db.execute(_EXISTS_CANDIDATE, {"url": url, "headline": title}).first():
-                    ветка = db.execute(_SAME_COMPANY_RECENT, {"companies": [c for c, _ in попадания]}).scalar()
+                    ветка = db.execute(_SAME_COMPANY_RECENT, {"companies": [c for c, _ in попадания], "posted_at": ст["posted_at"]}).scalar()
                     if ветка:
                         print(f"[interfax_scan] {mid}: та же компания уже в кандидате #{ветка} (<6 ч) — только в архив")
                     else:
