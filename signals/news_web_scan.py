@@ -147,11 +147,19 @@ def _parse_views(s: str):
 # Keep-alive избавляет второй канал от повторного рукопожатия.
 _СЕССИЯ = requests.Session()
 
-ПОВТОРОВ = 3
-ПАУЗЫ = (1.0, 3.0, 7.0)
+# ⚠️ ПОЧЕМУ СКРИПТ «ПАДАЛ» РАЗ В ЧАС (замер 06.09.2026 с сервера, 25 коннектов к t.me):
+# IPv6 отвечает 21/25, IPv4 — 2/25: путь по IPv4 к Telegram почти мёртв (тихий сток SYN,
+# см. telegram_egress_block). getaddrinfo отдаёт IPv6 первым; когда он мигает (≈16%),
+# urllib3 уходит на IPv4 и висит там полный connect-таймаут. С таймаутом 20 с одна попытка
+# стоила до 40 с, три — до двух минут, и всё равно 1 прогон из ~500 умирал.
+# Лечение: короткий connect-таймаут (5 с — живой адрес отвечает за 0,04 с), чтение 20 с,
+# четыре попытки. До повторов падало 222 прогона из 1160; с тремя — 1 из 490.
+ПОВТОРОВ = 4
+ТАЙМАУТ = (5, 20)   # (connect, read)
+ПАУЗЫ = (1.0, 3.0, 7.0, 15.0)
 
 
-def fetch(channel: str, before: int | None = None, timeout: int = 20,
+def fetch(channel: str, before: int | None = None, timeout=ТАЙМАУТ,
           счётчик: dict | None = None) -> str:
     """Забрать веб-превью канала. Повторяет только СЕТЕВЫЕ сбои.
 
@@ -220,7 +228,7 @@ def parse(page_html: str, channel_hint: str = "") -> list:
 
 def run_once(channels=None, before=None) -> dict:
     channels = channels or config.TG_HYPE_CHANNELS
-    summary = {"fetched": 0, "written": 0, "errors": 0, "retries": 0,
+    summary = {"fetched": 0, "written": 0, "errors": 0, "retries": 0, "пропущены": [],
                "пустых": 0, "by_channel": {}}
     db = SessionLocal()
     try:
@@ -229,6 +237,7 @@ def run_once(channels=None, before=None) -> dict:
                 posts = parse(fetch(ch, before=before, счётчик=summary), channel_hint=ch)
             except Exception as e:
                 summary["errors"] += 1
+                summary["пропущены"].append(ch)
                 print(f"[news_web_scan] {ch}: {type(e).__name__}: {e}")
                 continue
             # ⚠️ ПУСТОЙ КАНАЛ — ЭТО СБОЙ, А НЕ ТИШИНА. t.me отдаёт 200 и обычную
@@ -283,11 +292,18 @@ def main() -> None:
     # с первой, и молчать об этом значит потерять раннее предупреждение.
     if s.get("retries"):
         заметка += f", повторов {s['retries']}"
+    # ⚠️ ОДИН КАНАЛ ИЗ ДВУХ ЗА ПЯТЬ МИНУТ — НЕ АВАРИЯ. Следующий прогон через 5 минут
+    # заново снимает те же 20 последних постов (upsert), пропуск ничего не теряет.
+    # Раньше такой прогон писался как degraded, монитор красил его в 🔴, а через
+    # 15 минут слал 🟢 «восстановился» — качели без единого потерянного поста.
+    # Пропуск канала остаётся в заметке; красный — только когда не снялось ничего.
+    if s["errors"] > 0 and s["written"] > 0:
+        заметка += f", без ответа: {', '.join(s['пропущены'])}"
     pipeline_heartbeat.record_pipeline_run(
         "news_web_scan",
-        success=s["errors"] == 0 and s["пустых"] == 0,
+        success=s["written"] > 0 and s["пустых"] == 0,
         note=заметка,
-        degraded=(s["errors"] > 0 or s["пустых"] > 0) and s["written"] > 0,
+        degraded=s["пустых"] > 0 and s["written"] > 0,
     )
 
 
