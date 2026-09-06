@@ -35,6 +35,8 @@ DB_URL = os.getenv("DB_URL")
 НОВОСТИ_ДНЕЙ = 730
 
 _КАНАЛ = "CASE channel WHEN 'MarketTwits' THEN 'markettwits' WHEN 'СМАРТЛАБ НОВОСТИ' THEN 'newssmartlab' ELSE channel END"
+# Ссылка на первоисточник: телеграм-каналы — t.me, Интерфакс — страница новости.
+_URL = f"CASE WHEN channel = 'interfax' THEN 'https://www.interfax.ru/business/' || message_id ELSE 'https://t.me/' || {_КАНАЛ} || '/' || message_id END"
 
 
 def _водяной(conn, source: str):
@@ -111,7 +113,7 @@ def новости(conn, full: bool) -> tuple[int, datetime | None]:
         SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
                left(regexp_replace(text, '\\s+', ' ', 'g'), 160), CAST(NULL AS text), posted_at,
                jsonb_build_object('channel', {_КАНАЛ}, 'views', views, 'tickers', to_jsonb(tickers),
-                                  'url', 'https://t.me/' || {_КАНАЛ} || '/' || message_id), NOW()
+                                  'url', {_URL}), NOW()
           FROM news_archive n
          WHERE posted_at > :с AND imported_at > :вод AND cardinality(tickers) > 0
            AND EXISTS (SELECT 1 FROM brain_ticker_map m WHERE m.ticker = ANY(n.tickers))
@@ -516,7 +518,7 @@ def новости_по_имени(conn, full: bool) -> int:
             SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
                    left(regexp_replace(text, '\\\\s+', ' ', 'g'), 160), CAST(NULL AS text), posted_at,
                    jsonb_build_object('channel', {_КАНАЛ}, 'views', views, 'tickers', to_jsonb(tickers),
-                                      'url', 'https://t.me/' || {_КАНАЛ} || '/' || message_id), NOW()
+                                      'url', {_URL}), NOW()
               FROM news_archive n
              WHERE posted_at > :с AND imported_at > :вод
                AND to_tsvector('russian', text) @@ phraseto_tsquery('russian', :q)
