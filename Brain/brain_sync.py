@@ -35,8 +35,7 @@ DB_URL = os.getenv("DB_URL")
 НОВОСТИ_ДНЕЙ = 730
 
 _КАНАЛ = "CASE channel WHEN 'MarketTwits' THEN 'markettwits' WHEN 'СМАРТЛАБ НОВОСТИ' THEN 'newssmartlab' ELSE channel END"
-# Ссылка на первоисточник: телеграм-каналы — t.me, Интерфакс — страница новости.
-_URL = f"CASE WHEN channel = 'interfax' THEN 'https://www.interfax.ru/business/' || message_id ELSE 'https://t.me/' || {_КАНАЛ} || '/' || message_id END"
+_URL = f"'https://t.me/' || {_КАНАЛ} || '/' || message_id"
 
 
 def _водяной(conn, source: str):

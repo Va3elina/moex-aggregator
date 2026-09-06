@@ -57,10 +57,7 @@ def _разобрать_url(url: str | None):
     if not url:
         return None, None
     m = _URL_ПОСТА.search(url)
-    if m:
-        return m.group(1), int(m.group(2))
-    m = re.search(r"interfax\.ru/business/(\d+)", url)
-    return ("interfax", int(m.group(1))) if m else (None, None)
+    return (m.group(1), int(m.group(2))) if m else (None, None)
 
 
 def _возраст(t, now):
@@ -437,9 +434,8 @@ def _рассказ(c, новость, аномалия, след, журнал)
     elif новость:
         теги = " ".join("#" + str(h).lstrip("#") for h in (новость["hashtags"] or [])[:6])
         просмотров = (", " + f"{int(новость['views']):,}".replace(",", " ") + " просмотров") if новость["views"] is not None else ""
-        откуда = "Интерфакс" if новость["channel"] == "interfax" else f"Канал {новость['channel']}"
         шаги.append({"код": "новость", "заголовок": "Пришла новость",
-                     "строки": [f"{откуда}, {_д(новость['posted_at'])}{просмотров}."
+                     "строки": [f"Канал {новость['channel']}, {_д(новость['posted_at'])}{просмотров}."
                                 + (f" Хэштеги автора: {теги}." if теги else " Хэштегов у автора нет.")],
                      "тон": "neutral"})
     # 2. хайп-фильтр
