@@ -225,6 +225,12 @@ def обновить_карточки(коды: list[str]) -> None:
         print(f"[fm_disclosure_scan] карточки по отчёту {', '.join(коды)}: код {r.returncode} · {хвост}")
         if r.returncode != 0:
             print((r.stderr or "")[-600:])
+        # Карточка обновлена — в company_documents появились ссылки на новые PDF: качаем и
+        # раскладываем их сразу (хост, signals/.venv), чтобы бриф по отчёту читал сам документ.
+        for код in коды:
+            d = subprocess.run([os.path.join(_ROOT, "signals", "fetch_documents.sh"), "--secid", код, "--since-days", "3"],
+                               capture_output=True, text=True, timeout=900)
+            print(f"[fm_disclosure_scan] документы {код}: код {d.returncode} · {(d.stdout.strip().splitlines() or [''])[-1][:200]}")
     except Exception as e:  # noqa: BLE001 — карточка подождёт вечернего обхода, лента важнее
         print(f"[fm_disclosure_scan] карточки: {type(e).__name__}: {e}")
 
