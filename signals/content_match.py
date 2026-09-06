@@ -68,7 +68,7 @@ from signals.content_ai import (           # noqa: E402
 FIRE_STAGGER_SEC = 8
 
 _SELECT_PENDING = text("""
-    SELECT id, futures_ticker, thread_key, created_at, pending_expires_at,
+    SELECT id, source, futures_ticker, thread_key, created_at, pending_expires_at,
            step_b_checked_at, headline, raw_text, tickers, event_type, reasoning,
            forwards_count
     FROM content_candidates
@@ -174,6 +174,15 @@ def run_once() -> dict:
                 created = row["created_at"]
                 date_from = created.date() - timedelta(days=1)
                 date_to = created.date() + timedelta(days=config.CONTENT_PENDING_DAYS)
+                if row["source"] == "moex_calendar" and row["pending_expires_at"]:
+                    # ⚠️ ОКНО КАЛЕНДАРЯ — ВОКРУГ ОТСЕЧКИ, А НЕ ВОКРУГ СОЗДАНИЯ. Кандидат
+                    # заводится за 14–30 дней до закрытия реестра; окно «создание+5 дней»
+                    # заканчивалось задолго до самой отсечки, и приток физлиц перед ней
+                    # ни разу не попадал в поиск — все девять июльских кандидатов умерли
+                    # как «нечем подтвердить». pending_expires_at = отсечка + 5 дней.
+                    отсечка = row["pending_expires_at"].date() - timedelta(days=5)
+                    date_from = отсечка - timedelta(days=7)
+                    date_to = row["pending_expires_at"].date()
 
                 match = db.execute(_FIND_MATCH, {
                     "futures_ticker": ft, "date_from": date_from, "date_to": date_to,

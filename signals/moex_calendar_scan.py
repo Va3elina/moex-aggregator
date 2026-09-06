@@ -44,10 +44,22 @@ from signals import config             # noqa: E402
 CSV_URL = ("https://web.moex.com/moex-web-icdb-api/api/v1/export/"
            "register-closing-dates/csv?separator=2&language=1")
 _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://framedata.ru)"
-_TICKER_RE = re.compile(r",\s*([A-Z]{2,10})\s*\[")
+# {1,10}: у Т-Технологий тикер T из одной буквы — {2,10} его терял (отсечка 12.10.2026).
+_TICKER_RE = re.compile(r",\s*([A-Z]{1,10})\s*\[")
 HTTP_TIMEOUT = 20
 
 _SELECT_MAP = text("SELECT stock_ticker, futures_sectype, display_name FROM ticker_futures_map")
+# ⚠️ У MOEX ТОЛЬКО ДАТА. В выгрузке нет ни размера дивиденда, ни доходности — эти числа
+# берём из карточки FinanceMarker (company_dividends: дивиденд на акцию, доходность,
+# период), сопоставляя дату отсечки ±3 дня. Без них кандидат — голая дата, и писателю
+# не о чем писать; с ними — «110 руб на акцию, 2,9% доходности за 2026».
+_SELECT_DIVIDEND = text("""
+    SELECT dividend, div_yield, period, record_date
+      FROM company_dividends
+     WHERE secid = :secid AND source = 'financemarker'
+       AND record_date BETWEEN CAST(:d AS date) - 3 AND CAST(:d AS date) + 3
+     ORDER BY abs(record_date - CAST(:d AS date)) LIMIT 1
+""")
 _EXISTS = text("""
     SELECT 1 FROM content_candidates
     WHERE source = 'moex_calendar' AND futures_ticker = :ft AND headline = :headline
@@ -85,7 +97,8 @@ def _fetch_events() -> list[dict]:
             dt = datetime.strptime(date_str.strip(), "%m/%d/%Y %H:%M:%S")
         except ValueError:
             continue
-        events.append({"ticker": m.group(1), "date": dt, "name": name})
+        events.append({"ticker": m.group(1), "date": dt, "name": name,
+                       "рекомендуемая": "рекомендуем" in event_type.lower()})
     return events
 
 
@@ -127,6 +140,17 @@ def run_once(lookahead_days: int | None = None) -> dict:
             futures_sectype, display_name = universe[ev["ticker"]]
             date_label = ev["date"].strftime("%d.%m.%Y")
             headline = f"{display_name or ev['ticker']}: закрытие реестра {date_label}"
+            статус = "рекомендована советом директоров, собрание ещё не утвердило" if ev["рекомендуемая"] else "утверждена"
+            raw_text = (f"Закрытие реестра под дивиденды {date_label} ({статус}). "
+                        f"Дата и эмитент — календарь МосБиржи: {ev['name']}.")
+            дв = db.execute(_SELECT_DIVIDEND, {"secid": ev["ticker"], "d": ev["date"].date()}).mappings().first()
+            if дв and дв["dividend"] is not None:
+                доходность = f", доходность {float(дв['div_yield']):.1f}% к цене на момент объявления" if дв.get("div_yield") else ""
+                headline += f", дивиденд {float(дв['dividend']):g} руб"
+                raw_text += (f" По данным FinanceMarker: дивиденд {float(дв['dividend']):g} руб на акцию"
+                             f"{' за ' + str(дв['period']) if дв.get('period') else ''}{доходность} [B].")
+            else:
+                raw_text += " Размер дивиденда в карточке FinanceMarker пока не указан."
             reasoning = ("Календарное корпоративное событие (закрытие реестра под "
                          "дивиденды), дата и эмитент официальные (MOEX). Не требует "
                          "оценки ИИ — релевантно по построению.")
@@ -136,7 +160,7 @@ def run_once(lookahead_days: int | None = None) -> dict:
                     continue
                 db.execute(_INSERT, {
                     "headline": headline,
-                    "raw_text": ev["name"],
+                    "raw_text": raw_text,
                     "ticker": ev["ticker"],
                     "futures_ticker": futures_sectype,
                     "reasoning": reasoning,
