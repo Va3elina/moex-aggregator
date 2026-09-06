@@ -55,7 +55,7 @@ import hashlib
 import html
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 from dotenv import load_dotenv
@@ -1266,15 +1266,44 @@ def _secid_for_card(db, asset_id: str, tickers) -> str | None:
     return db.execute(_SELECT_STOCK_FOR_FUTURES, {"f": asset_id}).scalar()
 
 
+# ⚠️ КОДЫ И СТАНДАРТ — FINANCEMARKER, А НЕ SMART-LAB (с 04.09.2026, миграция 075).
+# Три дня после переезда блок молчал у всех постов и никто не заметил: запрос искал
+# standard = 'MSFO' латиницей, а FM пишет «МСФО»; просил net_income / p_e /
+# debt_ebitda, а у FM это earnings / pe, а долг/EBITDA не отдаётся вовсе — считаем
+# сами из чистого долга и EBITDA за те же 12 месяцев. Значения FM — в МИЛЛИОНАХ
+# рублей, подписи в metrics_ref — в миллиардах: делим на тысячу.
+#
+# ⚠️ ЕДИНИЦЫ У FM — КАК В ОТЧЁТЕ ЭМИТЕНТА, поля «unit» нет. Роснефть отчитывается в
+# миллиардах (выручка 8262), Магнит — в тысячах (3 509 225 556), большинство — в
+# миллионах. Масштаб восстанавливаем из выручки на акцию × число акций / выручка:
+# порядок 3, 6 или 9. Если восстановить нельзя — денежные показатели не отдаём,
+# только коэффициенты (P/E, долг/EBITDA), у них единиц нет.
+_FM_КОД = {"net_income": "earnings", "p_e": "pe", "debt_ebitda": "netdebt_ebitda", "market_cap": None,
+           "free_float": None, "dividend": None, "div_yield": None, "div_payout_ratio": None}
+_FM_ПОДПИСЬ = {"earnings": ("Чистая прибыль", "млрд руб"), "pe": ("P/E", None),
+               "netdebt_ebitda": ("Чистый долг/EBITDA", None)}
+# У банков EBITDA — бессмыслица (у Сбера она отрицательная): не отдаём.
+_НЕ_ДЛЯ_ФИНАНСОВ = {"ebitda", "netdebt_ebitda", "net_debt"}
+_SELECT_SCALE = text("""
+    WITH r AS (SELECT value AS rev FROM company_metrics WHERE secid = :secid AND metric_code = 'revenue'
+                 AND standard = 'МСФО' AND period_type = 'ltm' ORDER BY period_label DESC LIMIT 1),
+         p AS (SELECT value AS ps FROM company_metrics WHERE secid = :secid AND metric_code = 'revenue_ps'
+                 AND standard = 'МСФО' AND period_type = 'ltm' ORDER BY period_label DESC LIMIT 1),
+         s AS (SELECT num FROM company_shares WHERE secid = :secid ORDER BY year DESC, month DESC LIMIT 1)
+    SELECT ROUND(LOG(10, NULLIF(p.ps * s.num / NULLIF(r.rev, 0), 0))) FROM r, p, s
+""")
+_SELECT_SECTOR = text("""
+    SELECT i.sector FROM issuers i JOIN issuer_securities s USING (issuer_id) WHERE s.secid = :secid LIMIT 1
+""")
 _SELECT_FUND = text("""
-    SELECT m.metric_code, r.label_ru, r.unit, m.period_label, m.value, m.report_date
+    SELECT m.metric_code, r.label_ru, r.unit, m.period_type, m.period_label, m.value
     FROM company_metrics m
-    JOIN metrics_ref r USING (metric_code)
-    WHERE m.secid = :secid AND m.standard = 'MSFO'
+    LEFT JOIN metrics_ref r USING (metric_code)
+    WHERE m.secid = :secid AND m.standard = 'МСФО' AND m.source = 'financemarker'
       AND m.metric_code = ANY(:codes)
       AND m.period_type IN ('year', 'ltm')
       AND m.value IS NOT NULL
-      AND m.last_seen >= CURRENT_DATE - INTERVAL '30 days'
+      AND m.last_seen >= CURRENT_DATE - INTERVAL '45 days'
 """)
 
 # ⚠️ ПО ОДНОМУ ТЕЗИСУ С КАЖДОЙ СТОРОНЫ, А НЕ ДВА САМЫХ СВЕЖИХ. Проверка на живом
@@ -1337,7 +1366,11 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
             trace.record("issuer_aliases", "какая компания за %s" % asset_id,
                          outcome=ПУСТО, reason="ключ не резолвится в эмитента")
         return {}
-    codes = _FUND_BY_EVENT.get(event_type or "", _FUND_DEFAULT)
+    сектор = db.execute(_SELECT_SECTOR, {"secid": secid}).scalar() or ""
+    codes = [_FM_КОД.get(c, c) for c in _FUND_BY_EVENT.get(event_type or "", _FUND_DEFAULT)]
+    codes = [c for c in codes if c and not (сектор == "Финансы" and c in _НЕ_ДЛЯ_ФИНАНСОВ)]
+    порядок = db.execute(_SELECT_SCALE, {"secid": secid}).scalar()
+    масштаб = 10 ** int(порядок) / 1e9 if порядок is not None and int(порядок) in (3, 6, 9) else None
     rows = db.execute(_SELECT_FUND, {"secid": secid, "codes": codes}).fetchall()
     if not rows:
         if trace:
@@ -1346,17 +1379,29 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
                          reason="карточки нет или показатели пустые")
         return {}
 
-    # Собираем «прошлый год → сейчас». LTM — это «сейчас»; за «прошлый год» берём
-    # последний ПОЛНЫЙ год, он же самый свежий year-период.
-    по_коду, дата_отчёта = {}, None
-    for code, label, unit, period, value, report_date in rows:
-        if period == "LTM" and report_date and (not дата_отчёта or report_date > дата_отчёта):
-            дата_отчёта = report_date
-        d = по_коду.setdefault(code, {"label": label, "unit": unit, "years": {}})
-        if period == "LTM":
-            d["ltm"] = float(value)
+    # Собираем «прошлый год → сейчас». LTM — это «сейчас» (метка LTM-2026-06 = 12 мес
+    # до июня 2026); за «прошлый год» берём последний ПОЛНЫЙ год (метка «2025»).
+    по_коду, дата_отчёта, ltm_метка = {}, None, None
+    for code, label, unit, period_type, period_label, value in rows:
+        label, unit = (label, unit) if label else _FM_ПОДПИСЬ.get(code, (code, None))
+        if unit and "руб" in unit:
+            if масштаб is None:
+                continue                    # единицы эмитента неизвестны — число врало бы
+            v = float(value) * масштаб
         else:
-            d["years"][period] = float(value)
+            v = float(value)
+        d = по_коду.setdefault(code, {"label": label, "unit": unit, "years": {}})
+        if period_type == "ltm":
+            d["ltm"] = v
+            if not ltm_метка or period_label > ltm_метка:
+                ltm_метка = period_label
+        elif period_label and period_label[:4].isdigit():
+            d["years"][period_label[:4]] = v
+    if ltm_метка and ltm_метка.startswith("LTM-"):
+        try:
+            дата_отчёта = date(int(ltm_метка[4:8]), int(ltm_метка[9:11]), 1)
+        except ValueError:
+            дата_отчёта = None
 
     out, взято = {}, 0
     for code in codes:                      # порядок = приоритет для повода
@@ -1403,7 +1448,7 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
         trace.record("company_metrics", "фундамент %s под повод «%s»" % (secid, event_type),
                      outcome=ВЗЯТО, result_count=взято,
                      result_note="; ".join("%s: %s" % (k, v) for k, v in list(out.items())[:3])[:200],
-                     params={"secid": secid, "event_type": event_type, "codes": codes})
+                     params={"secid": secid, "event_type": event_type, "codes": codes, "масштаб": порядок})
 
     # ── АННОТАЦИЯ. Собирается ЗДЕСЬ и целиком кодом; модель её не пишет и не правит.
     # Числа, придуманные моделью, неотличимы от настоящих — а мы за один день поймали
@@ -1422,11 +1467,13 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
         # свежие на эту дату, а они за последние 12 месяцев по отчёту, вышедшему
         # раньше. Берём дату публикации последнего отчёта; если её нет — говорим
         # честно, что это дата, на которую мы данные сняли.
+        # ⚠️ Дата отчёта у FM не приходит — есть только метка периода. Подписываем
+        # период честно: «за 12 мес до июня 2026», а не выдуманную дату публикации.
         if дата_отчёта:
-            когда = "по отчётности за последние 12 мес (отчёт от %s)" % дата_отчёта.strftime("%d.%m.%Y")
+            когда = "МСФО за 12 мес до %s" % дата_отчёта.strftime("%m.%Y")
         else:
             когда = "по данным на %s" % as_of.strftime("%d.%m.%Y")
-        out["аннотация"] = ("Данные smart-lab, %s: %s." % (когда, ", ".join(части)))
+        out["аннотация"] = ("Данные FinanceMarker, %s: %s." % (когда, ", ".join(части)))
         out["_аннотация_служебное"] = (
             "Эта строка приклеивается к посту АВТОМАТИЧЕСКИ на публикации. "
             "НЕ переписывать её, НЕ вставлять в текст и не дублировать."
