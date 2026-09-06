@@ -354,6 +354,8 @@ def main():
                     help="перезапросить всех, не глядя на свежесть карточки")
     ap.add_argument("--свежесть", dest="свежесть", type=int, default=7,
                     help="сколько дней карточка считается свежей (по умолчанию 7)")
+    ap.add_argument("--secid", nargs="*", default=[],
+                    help="эти компании обновить обязательно, не глядя на свежесть (вызов из сканера раскрытия)")
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
     setup_logging(a.verbose)
@@ -404,6 +406,28 @@ def main():
         # раз в квартал. Ежедневный полный обход сжёг бы 344 из 400 единиц ради
         # неизменившихся чисел и не оставил бы места сканеру раскрытия (96/сутки),
         # ради которого всё и затевалось. Берём тех, чья карточка старше интервала.
+        # ⚠️ ОТЧЁТ В ЛЕНТЕ РАСКРЫТИЯ ФОРСИТ КАРТОЧКУ. Свежесть «7 дней» — про то, что
+        # отчётность выходит раз в квартал; но когда она ВЫШЛА, ждать неделю нельзя:
+        # пост про отчёт уйдёт на прошлых числах. События REPORT/OPERATION с
+        # handled_at IS NULL, по которым карточка не обновлялась после даты события,
+        # ставятся первыми и не режутся свежестью. Те, что уже перекрыты обновлением
+        # карточки (last_seen ≥ дата события), закрываются без запроса — квота не тратится.
+        if not a.dry_run:   # проба не меняет ничего, даже учёт событий
+            db.execute(text("""
+                UPDATE disclosure_events e SET handled_at = now()
+                 WHERE e.handled_at IS NULL AND e.secid IS NOT NULL AND e.category IN ('REPORT', 'OPERATION')
+                   AND EXISTS (SELECT 1 FROM company_metrics m WHERE m.secid = e.secid AND m.source = 'financemarker'
+                                 AND m.last_seen >= e.event_date)
+            """))
+            db.commit()
+        срочные = [r[0] for r in db.execute(text("""
+            SELECT DISTINCT secid FROM disclosure_events
+             WHERE handled_at IS NULL AND secid IS NOT NULL AND category IN ('REPORT', 'OPERATION')
+               AND event_date >= CURRENT_DATE - 30
+        """)).fetchall()]
+        срочные = [s for s in a.secid if s in компании] + [s for s in срочные if s not in a.secid]
+        if срочные:
+            log.info("срочные (вышел отчёт / явно заданы): %s", ", ".join(срочные))
         if not a.все:
             свежие = {r[0] for r in db.execute(text("""
                 SELECT secid FROM company_metrics
@@ -411,9 +435,13 @@ def main():
                  GROUP BY secid
                 HAVING MAX(last_seen) > now() - make_interval(days => :д)
             """), {"д": a.свежесть}).fetchall()}
-            компании = [c for c in компании if c not in свежие]
+            компании = [c for c in компании if c not in свежие or c in срочные]
             if свежие:
                 log.info("свежих (моложе %d дн.), пропускаю: %d", a.свежесть, len(свежие))
+        компании = [c for c in срочные if c in компании] + [c for c in компании if c not in срочные]
+        if a.secid:
+            # Вызов из сканера раскрытия: только названные, остальных возьмёт дневной прогон.
+            компании = [c for c in компании if c in a.secid]
         # ⚠️ ВСЯ АРИФМЕТИКА В ЕДИНИЦАХ КВОТЫ, А НЕ В ВЫЗОВАХ. Первая версия вычитала
         # бронь (единицы) из числа вызовов и давала 6 компаний вместо 86 — величины
         # разной размерности выглядят одинаково, пока их не сложишь.
@@ -517,6 +545,12 @@ def main():
                 continue
 
             итог["компаний"] += 1
+            if not a.dry_run:
+                db.execute(text("""
+                    UPDATE disclosure_events SET handled_at = now()
+                     WHERE secid = :s AND handled_at IS NULL AND category IN ('REPORT', 'OPERATION')
+                """), {"s": secid})
+                db.commit()
             for k in ("метрик", "новых", "изменилось", "акционеров", "документов",
                       "столкновений", "операционных", "инсайдеров", "сводок",
                       "акций", "дивидендов"):
