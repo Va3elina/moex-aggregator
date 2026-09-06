@@ -187,7 +187,9 @@ def записать_факты(doc_id: int, body: dict = Body(...), db: Session
         fm_val = fm.get(fm_code) if fm_code else None
         mismatch = None
         if num is not None and fm_val is not None:
-            mismatch = abs(num - fm_val) > 0.02 * max(abs(fm_val), 1e-9)
+            # ⚠️ ЕДИНИЦЫ РАЗНЫЕ: отчёт Сбера в млрд руб, карточка FM — в млн (у других — в тыс.
+            # или млрд). Сверяем с точностью до множителя 10^3k: 1 019,1 млрд = 1 019 100 млн.
+            mismatch = all(abs(num * k - fm_val) > 0.02 * max(abs(fm_val), 1e-9) for k in (1, 1e3, 1e6, 1e-3, 1e-6))
             расхождений += int(mismatch)
         db.execute(text("""
             INSERT INTO document_facts (read_id, version_id, field, value_num, value_text, unit, page, quote, fm_value, mismatch, confidence)
