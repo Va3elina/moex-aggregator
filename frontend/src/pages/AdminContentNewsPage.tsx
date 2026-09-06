@@ -38,6 +38,7 @@ const SOURCE_LABELS: Record<string, string> = {
   newssmartlab: 'Smartlab',
   moex_calendar: 'Календарь MOEX',
   fm_disclosure: 'Раскрытие FM',
+  interfax: 'Интерфакс',
 };
 function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] || source;
