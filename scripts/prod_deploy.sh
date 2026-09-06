@@ -40,6 +40,18 @@ deploy_api_rolling() {
     return 0
   fi
 
+  # ⚠️ Страховка по памяти (инцидент 06.09.2026): второй api рядом со старым нужен
+  # только если ему есть куда встать. Старый контейнер на 3 ГБ + база 3 ГБ + новый
+  # контейнер = OOM-killer, 25 минут 503 и мёртвый SSH. Ниже порога — честное
+  # пересоздание с коротким 502-окном, а не рулетка с OOM.
+  local avail_mb
+  avail_mb=$(free -m | awk 'NR==2{print $7}')
+  if [ -n "$avail_mb" ] && [ "$avail_mb" -lt 2500 ]; then
+    echo "!! свободной памяти ${avail_mb} МБ < 2500 → rolling небезопасен, force-recreate (короткое 502-окно)"
+    docker compose up -d --no-deps --force-recreate --scale api=1 api
+    return 0
+  fi
+
   # Поднять ВТОРОЙ api на новом образе, старый не трогаем (--no-recreate).
   if ! docker compose up -d --no-deps --no-recreate --scale api=2 api; then
     echo "!! scale=2 не удался → fallback на force-recreate (будет короткое 502-окно)"

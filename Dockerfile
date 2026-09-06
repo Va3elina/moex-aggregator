@@ -144,9 +144,16 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 #     (async, IO-bound) свободно ложатся на 4 ядра; число к ядрам жёстко не привязано —
 #     воркеры простаивают на await (сеть/БД), а не жгут CPU. При росте нагрузки можно 4-5.
 # Non-root запуск через docker-compose `user: 1000:1000` (api сервис).
+#   - --preload (06.09.2026): приложение и модель эмбеддингов второго мозга
+#     (BRAIN_WARMUP=sync, ~810 МБ) грузятся один раз в мастере, воркеры форкаются с
+#     готовой памятью. Без этого каждый воркер держал свою копию (≈1 ГБ × 3), и
+#     rolling-деплой с двумя контейнерами уронил сервер по OOM. Recycle по
+#     max-requests форкает от мастера же — модель не перегружается.
+ENV BRAIN_WARMUP=sync
 CMD ["gunicorn", "api.main:app", \
      "-k", "api.uvicorn_worker.GracefulSSEWorker", \
      "-w", "3", \
+     "--preload", \
      "-b", "0.0.0.0:8000", \
      "--graceful-timeout", "30", \
      "--timeout", "60", \
