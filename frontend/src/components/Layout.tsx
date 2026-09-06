@@ -292,10 +292,10 @@ export default function Layout() {
                 </button>
               )}
 
-              {/* Admin Content News link — только для role=admin (📰 → /admin/content-news) */}
+              {/* Admin Content News link — только для role=admin (📰 → панель, вкладка «Завод постов») */}
               {isAuthenticated && user?.role === 'admin' && (
                 <button
-                  onClick={() => navigate('/admin/content-news')}
+                  onClick={() => navigate('/admin/dashboard/posts')}
                   className="editorial-press grid place-items-center rounded-full"
                   style={{
                     color: 'var(--accent)',

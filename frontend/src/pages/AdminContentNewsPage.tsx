@@ -121,12 +121,70 @@ function LiveDot({ color, title }: { color: string; title: string }) {
 // сложности вебсокетов).
 const AUTO_REFRESH_MS = 40_000;
 
-export default function AdminContentNewsPage() {
-  const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+/**
+ * Доска сама по себе — без шапки страницы и без проверки роли: её встраивает
+ * вкладка «Завод постов» админской панели (проверка роли там). onTrace — куда
+ * вести на «разбор пути» кандидата (в панели это /admin/dashboard/posts/<id>).
+ */
+export function ContentKanban({ onTrace }: { onTrace?: (id: number) => void }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setRefreshTick((t) => t + 1), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ gap: 12, marginBottom: 'var(--sp-2)' }}>
+        <SourceStatsBar
+          refreshTick={refreshTick}
+          active={sourceFilter}
+          onSelect={setSourceFilter}
+        />
+        <button
+          type="button"
+          onClick={() => setRefreshTick((t) => t + 1)}
+          className="editorial-press inline-flex items-center flex-shrink-0 rounded-full font-semibold"
+          style={{
+            border: '1.5px solid var(--text-primary)', backgroundColor: 'transparent', color: 'var(--text-primary)',
+            padding: 'var(--sp-1) var(--sp-3)', fontSize: 'var(--fs-sm)', gap: 'var(--sp-1)',
+          }}
+        >
+          <RefreshCw size={14} strokeWidth={2} />
+          <span className="hidden sm:inline">Обновить</span>
+        </button>
+      </div>
+
+      {/* Board — горизонтальный скролл колонок (работает и на мобилке свайпом) */}
+      <div className="flex items-start overflow-x-auto" style={{ paddingBottom: 'var(--sp-3)' }}>
+        {COLUMN_ORDER.map((status) => (
+          <KanbanColumn
+            key={status}
+            status={status}
+            source={sourceFilter}
+            refreshTick={refreshTick}
+            onOpenCard={setSelectedId}
+          />
+        ))}
+      </div>
+
+      <CandidateDetailModal
+        candidateId={selectedId}
+        onClose={() => setSelectedId(null)}
+        onNavigate={setSelectedId}
+        onChanged={() => setRefreshTick((t) => t + 1)}
+        onTrace={onTrace}
+      />
+    </div>
+  );
+}
+
+export default function AdminContentNewsPage() {
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
 
   // Guard: только admin (тот же паттерн, что AdminStatsPage — silent redirect,
   // реальный гейт всё равно на бэке через require_admin).
@@ -136,11 +194,6 @@ export default function AdminContentNewsPage() {
       navigate('/', { replace: true });
     }
   }, [authLoading, user, navigate]);
-
-  useEffect(() => {
-    const id = setInterval(() => setRefreshTick((t) => t + 1), AUTO_REFRESH_MS);
-    return () => clearInterval(id);
-  }, []);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
@@ -172,49 +225,9 @@ export default function AdminContentNewsPage() {
             Content-пайплайн · Kanban состояний · только для администратора
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setRefreshTick((t) => t + 1)}
-          className="editorial-press inline-flex items-center flex-shrink-0 rounded-full font-semibold"
-          style={{
-            border: '1.5px solid var(--text-primary)',
-            backgroundColor: 'transparent',
-            color: 'var(--text-primary)',
-            padding: 'var(--sp-2) var(--sp-3)',
-            fontSize: 'var(--fs-sm)',
-            gap: 'var(--sp-1)',
-          }}
-        >
-          <RefreshCw size={14} strokeWidth={2} />
-          <span className="hidden sm:inline">Обновить</span>
-        </button>
       </div>
 
-      <SourceStatsBar
-        refreshTick={refreshTick}
-        active={sourceFilter}
-        onSelect={setSourceFilter}
-      />
-
-      {/* Board — горизонтальный скролл колонок (работает и на мобилке свайпом) */}
-      <div className="flex items-start overflow-x-auto" style={{ paddingBottom: 'var(--sp-3)' }}>
-        {COLUMN_ORDER.map((status) => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            source={sourceFilter}
-            refreshTick={refreshTick}
-            onOpenCard={setSelectedId}
-          />
-        ))}
-      </div>
-
-      <CandidateDetailModal
-        candidateId={selectedId}
-        onClose={() => setSelectedId(null)}
-        onNavigate={setSelectedId}
-        onChanged={() => setRefreshTick((t) => t + 1)}
-      />
+      <ContentKanban onTrace={(id) => navigate(`/admin/dashboard/posts/${id}`)} />
     </div>
   );
 }
@@ -575,12 +588,13 @@ const MANUAL_ACTIONS: Partial<Record<ContentCandidateStatus, { to: ContentCandid
 };
 
 function CandidateDetailModal({
-  candidateId, onClose, onNavigate, onChanged,
+  candidateId, onClose, onNavigate, onChanged, onTrace,
 }: {
   candidateId: number | null;
   onClose: () => void;
   onNavigate: (id: number) => void;
   onChanged: () => void;
+  onTrace?: (id: number) => void;
 }) {
   const [detail, setDetail] = useState<ContentCandidateDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -713,6 +727,20 @@ function CandidateDetailModal({
           )}
 
           {error && <p style={{ color: 'var(--danger)', fontSize: 'var(--fs-sm)' }}>{error}</p>}
+
+          {onTrace && (
+            <button
+              type="button"
+              onClick={() => { onClose(); onTrace(detail.id); }}
+              className="rounded-lg font-semibold self-start"
+              style={{
+                padding: 'var(--sp-2) var(--sp-4)', fontSize: 'var(--fs-sm)',
+                color: 'var(--accent)', backgroundColor: 'transparent', border: '1.5px solid var(--accent)', cursor: 'pointer',
+              }}
+            >
+              Как рассуждал агент →
+            </button>
+          )}
 
           {(MANUAL_ACTIONS[detail.status] ?? []).length > 0 && (
             <div

@@ -25,27 +25,24 @@ import { useAuth } from '../contexts/AuthContext';
 import { getDashboardOverview } from '../services/api';
 import type { DashboardOverview } from '../services/api';
 import ProjectMap from './dashboard/ProjectMap';
-import LiveProcesses from './dashboard/LiveProcesses';
 import PostFactory from './dashboard/PostFactory';
 import OwnershipGraph from './dashboard/OwnershipGraph';
 import DbDives from './dashboard/DbDives';
-import IndicatorDive from './dashboard/IndicatorDive';
 import BrainMap from './dashboard/BrainMap';
 import { useLivePipelines } from './dashboard/useLivePipelines';
 import './dashboard/dashboard.css';
 
 const ИНТЕРВАЛ_МС = 30_000;
 
-// ⚠️ ВКЛАДКА ПРОЦЕССОВ ОДНА. Их было две — «Живые процессы» и «Процессы», — и они
-// показывали одно и то же: вторая просто не знала, что идёт сейчас. Разделение
-// заставляло помнить, в какой из них смотреть, и ничего за это не давало.
-const ВКЛАДКИ = ['Карта', 'Процессы', 'Индикаторы', 'Завод постов', 'Связи', 'Второй мозг', 'База'] as const;
+// ⚠️ ВКЛАДОК «ПРОЦЕССЫ» И «ИНДИКАТОРЫ» БОЛЬШЕ НЕТ (06.09.2026, решение Вадима): процессы
+// целиком видны на карте (живые вспышки, журнал), а разбор индикаторов дублировал
+// методологию и никем не открывался. Старые адреса /processes и /indicators ведут на карту.
+const ВКЛАДКИ = ['Карта', 'Завод постов', 'Связи', 'Второй мозг', 'База'] as const;
 type Вкладка = typeof ВКЛАДКИ[number];
 // Вкладка живёт в адресе: /admin/dashboard/<слаг>[/<объект>]. Слаги латиницей —
 // они попадают в строку браузера и в ссылки из чата.
 const СЛАГ: Record<Вкладка, string> = {
-  'Карта': 'map', 'Процессы': 'processes', 'Индикаторы': 'indicators', 'Завод постов': 'posts', 'Связи': 'graph',
-  'Второй мозг': 'brain', 'База': 'db',
+  'Карта': 'map', 'Завод постов': 'posts', 'Связи': 'graph', 'Второй мозг': 'brain', 'База': 'db',
 };
 const ПО_СЛАГУ: Record<string, Вкладка> = Object.fromEntries(
   (Object.entries(СЛАГ) as Array<[Вкладка, string]>).map(([в, с]) => [с, в]),
@@ -193,7 +190,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id) || searchParams.get('p') || searchParams.get('n')) && (
+        {(узелВАдресе || ((вкладка === 'Завод постов' || вкладка === 'Связи' || вкладка === 'База') && id) || searchParams.get('p') || searchParams.get('n')) && (
           <div className="mono mb-3 flex items-center flex-wrap" style={{ gap: 6, fontSize: 11.5, color: 'var(--d-dim)' }}>
             <Link to="/admin/dashboard/map" style={{ color: 'var(--d-dim)', textDecoration: 'none' }}>Панель</Link>
             <span>›</span>
@@ -202,7 +199,7 @@ export default function AdminDashboardPage() {
             <span style={{ color: 'var(--d-accent)' }}>
               {узелВАдресе ? узелВАдресе.имя
                 : вкладка === 'Завод постов' && id ? `#${id}`
-                : (вкладка === 'Связи' || вкладка === 'База' || вкладка === 'Индикаторы') && id ? id
+                : (вкладка === 'Связи' || вкладка === 'База') && id ? id
                 : searchParams.get('p') || searchParams.get('n')}
             </span>
           </div>
@@ -256,24 +253,6 @@ export default function AdminDashboardPage() {
                   onВыбрать={(n) => navigate(n ? `/admin/dashboard/map/${n}` : '/admin/dashboard/map')}
                 />
               </div>
-            )}
-
-            {вкладка === 'Процессы' && (
-              <LiveProcesses
-                процессы={живое.процессы}
-                идут={живое.идут}
-                вспышки={живое.вспышки}
-                подключено={живое.подключено}
-                тик={живое.тик}
-                подсветить={searchParams.get('p')}
-              />
-            )}
-
-            {вкладка === 'Индикаторы' && (
-              <IndicatorDive
-                выбран={id ?? null}
-                onВыбрать={(и) => navigate(и ? `/admin/dashboard/indicators/${и}` : '/admin/dashboard/indicators')}
-              />
             )}
 
             {вкладка === 'Завод постов' && <PostFactory />}

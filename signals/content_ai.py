@@ -377,12 +377,14 @@ def _brain_hint_for_step_a(db, row) -> str:
     # Слой 0 — хэштеги автора (#PLZL): уровень B, надёжнее нашей разметки. Кандидат 1795
     # «#золото #PLZL» по имени находил только ВТБ из текста — тикер в хэштеге не имя.
     хэштеги = sorted({h.upper() for h in re.findall(r"#([A-Za-z0-9]{2,6})\b", текст)})
+    по_хэштегу, по_смыслу = [], []
     if хэштеги:
         for тикер, company_id in db.execute(text("""
             SELECT m.ticker, m.company_id FROM brain_ticker_map m
              WHERE m.ticker = ANY(string_to_array(:h, ',')) AND m.company_id LIKE 'company:%'
         """), {"h": ",".join(хэштеги)}).all():
             части.append(f"хэштег автора: {тикер} [B]")
+            по_хэштегу.append(тикер)
     try:
         по_имени = db.execute(_SELECT_NAME_HITS, {"t": текст}).all()
     except Exception as e:  # noqa: BLE001
@@ -404,6 +406,7 @@ def _brain_hint_for_step_a(db, row) -> str:
             # Ниже 0.30 — шум: геополитика «похожа» на Россети с 0.20. Молчим, а не подсказываем.
             найдено = [x for x in найдено if float((x.get("почему") or "0").split()[-1].replace(",", ".") or 0) >= 0.30]
             похоже = ", ".join(f"{x['id'].split(':', 1)[1]} ({x['заголовок']}, {x['почему']})" for x in найдено)
+            по_смыслу = [{"тикер": x["id"].split(":", 1)[1], "имя": x["заголовок"], "сходство": x["почему"]} for x in найдено]
             if похоже:
                 части.append(f"по смыслу похоже на: {похоже} [D — подсказка, имени в тексте нет]")
         except Exception as e:  # noqa: BLE001 — подсказка не имеет права ронять Шаг А
@@ -413,7 +416,9 @@ def _brain_hint_for_step_a(db, row) -> str:
     try:
         трассировать(db, row["id"], "мозг").record(
             "brain", "подсказка Шагу А", outcome=ВЗЯТО if части else ПУСТО, result_count=len(части),
-            result_note=подсказка, params={"хэштеги": хэштеги, "по_имени": [c for c, _, _ in по_имени]})
+            result_note=подсказка, params={"хэштеги": хэштеги, "по_хэштегу": по_хэштегу,
+                                             "по_имени": [{"тикер": c.split(":", 1)[1], "имя": t} for c, t, _ in по_имени],
+                                             "по_смыслу": по_смыслу})
         db.commit()
     except Exception:  # noqa: BLE001 — след не имеет права ронять Шаг А
         pass
