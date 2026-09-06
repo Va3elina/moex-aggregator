@@ -565,10 +565,15 @@ def test_context_blocks_declare_volume_limit():
     """Оба новых блока — фон. Без границы модель тратит по абзацу на каждый пункт,
     и пост распухает: 1105 знаков против медианы жанра 661."""
     import inspect
-    for fn in (CA._related_context, CA._rating_history):
-        src = inspect.getsource(fn)
-        assert "ОБЪЁМ" in src, fn.__name__
-        assert "ФОН" in src, fn.__name__
+    src = inspect.getsource(CA._related_context)
+    assert "ОБЪЁМ" in src
+    assert "ФОН" in src
+    # ⚠️ История рейтинга — тоже фон, но БЕЗ указания, как её верстать (06.09,
+    # кандидат 1638): «одним предложением в том же абзаце» модель прочла как
+    # «вставить обязательно», и в пост уехали коды шкалы A+(RU)/AA-(RU).
+    rat = inspect.getsource(CA._rating_history)
+    assert "ФОН" in rat
+    assert "ОДНИМ КОРОТКИМ ПРЕДЛОЖЕНИЕМ" not in rat
 
 
 def test_peak_comparison_is_gone_from_the_brief():
@@ -612,9 +617,30 @@ def test_context_blocks_ask_for_short_sentences_not_crammed_phrases():
     src = inspect.getsource(CA._related_context)
     assert "ОДНИМ-ДВУМЯ КОРОТКИМИ ПРЕДЛОЖЕНИЯМИ" in src
     assert "скобк" in src
-    rat = inspect.getsource(CA._rating_history)
-    assert "ОДНИМ КОРОТКИМ ПРЕДЛОЖЕНИЕМ" in rat, "прежний уровень — одна фраза, этого хватает"
-    assert "скобк" in rat
+    # История рейтинга границы по предложениям больше не задаёт — см.
+    # test_context_blocks_declare_volume_limit.
+
+
+def test_fundamentals_boundary_has_no_example_sentence():
+    """Вадим 06.09 о черновике 1638: «долговая нагрузка ни к селу ни к городу».
+    Пример в границе («рейтинг понизили, а долговая нагрузка снизилась») писатель
+    воспроизвёл дословно — пример для модели равен инструкции."""
+    import inspect
+    src = inspect.getsource(CA._company_fundamentals)
+    assert "например" not in src.split('out["ГРАНИЦА"]')[-1]
+    assert "долговая нагрузка" not in src.split('out["ГРАНИЦА"]')[-1]
+
+
+def test_fundamentals_reach_the_writer_only_for_numeric_events():
+    """«Если говорим про цифры, то про цифры» (Вадим 06.09): блок фундамента в брифе
+    только под отчёт/дивиденды/корпдействие. Под рейтинг или санкции числа уходят
+    лишь подписью под постом."""
+    assert {"earnings", "dividend", "register_closing", "corporate_action"} <= CA._FUND_NUMERIC_EVENTS
+    assert "regulatory" not in CA._FUND_NUMERIC_EVENTS
+    assert "sanctions" not in CA._FUND_NUMERIC_EVENTS
+    import inspect
+    src = inspect.getsource(CA._build_brief)
+    assert "_FUND_NUMERIC_EVENTS" in src
 
 
 def test_frame_tells_the_model_to_stay_silent_about_the_one_day_gap():
