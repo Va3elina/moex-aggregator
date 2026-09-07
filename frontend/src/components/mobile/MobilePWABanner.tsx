@@ -83,7 +83,9 @@ export default function MobilePWABanner() {
 
         <div className="fm-pwa-header">
           <div className="fm-pwa-logo">
-            <FrameLogo size={26} color="var(--accent)" />
+            {/* Только глиф: с wordmark'ом (по умолчанию) SVG в ~4.4× шире
+                квадрата 44px и «FRAME» вылезал поверх заголовка баннера. */}
+            <FrameLogo size={26} color="var(--accent)" showWordmark={false} />
           </div>
           <div>
             <h3 id="fm-pwa-title" className="fm-pwa-title">

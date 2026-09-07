@@ -248,13 +248,15 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         )}
 
         {/* Имя + тикер — как в Сезонности: имя жирное (fs-sm), резолвнутый тикер
-            (SBER/GAZP…) серый рядом (fs-xs). У бумаг без тикера — только имя. */}
-        <div className="flex items-baseline gap-1.5 flex-1 min-w-0">
-          <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }} title={displayName}>
+            (SBER/GAZP…) серый рядом (fs-xs). У бумаг без тикера — только имя.
+            На телефоне тикер уходит ПОД имя (как в поиске актива ОИ): в одну
+            строку с колонкой объёма имени оставалось два символа («Лу… LKOH»). */}
+        <div className={isMobile ? 'flex flex-col flex-1 min-w-0' : 'flex items-baseline gap-1.5 flex-1 min-w-0'}>
+          <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)', lineHeight: isMobile ? 1.25 : undefined }} title={displayName}>
             {displayName}
           </span>
           {ticker && (
-            <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>
+            <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', lineHeight: isMobile ? 1.2 : undefined }}>
               {ticker}
             </span>
           )}

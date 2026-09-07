@@ -26,6 +26,7 @@ import {
   getFundsFlows,
   type FundsChartResponse,
   type FundsFlowsResponse,
+  type IndexDataPoint,
   type FundCategory,
   type FundPeriod,
   type FlowTimeframe,
@@ -87,6 +88,9 @@ export default function MobileFundsMoneyPage() {
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.
   const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
   const [flowTimeframe, setFlowTimeframe] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1w');
+  // Слой «Индекс» (ключ общий с десктопом): в СЧА — линия индекса на левой
+  // оси, в Притоках-Оттоках — панель бенчмарка над гистограммой.
+  const [showIndex, setShowIndex] = usePersistedState<boolean>('frame:funds:showIndex', true);
   const fundsAccess = useTierAccess('funds_money');
   const { showUpgrade } = useUpgradePrompt();
 
@@ -455,7 +459,7 @@ export default function MobileFundsMoneyPage() {
         axis: 'right' as const,
         formatValue: (v: number) => `${v.toFixed(0)}`,
       },
-      ...(indexData.length > 0
+      ...(showIndex && indexData.length > 0
         ? [{
             data: indexData,
             color: 'var(--chart-line-1, #5DA3E9)',
@@ -466,7 +470,29 @@ export default function MobileFundsMoneyPage() {
           }]
         : []),
     ];
-  }, [data, hiddenFunds]);
+  }, [data, hiddenFunds, showIndex]);
+
+  // ── Согласованная пара «потоки + индекс» для двухпанельной гистограммы ──
+  // (зеркало desktop FundsMoneyPage.flowsPair). flows и nav-данные (источник
+  // линии бенчмарка) грузятся отдельно; при смене категории/периода между их
+  // приходами диапазоны расходятся — линия индекса нового периода легла бы
+  // на слоты потоков старого. Пропускаем в график только пары одного
+  // (category, period) — бек эхоит оба поля; пока свежая пара не собралась,
+  // держим предыдущую согласованную целиком. nav-данных нет/не будет (ошибка,
+  // чужая категория после ошибки) → потоки без панели индекса.
+  const [flowsPair, setFlowsPair] = useState<{
+    flows: FundsFlowsResponse;
+    index?: IndexDataPoint[];
+    indexLabel?: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!flowsData) return;
+    if (data && data.category === flowsData.category && data.period === flowsData.period) {
+      setFlowsPair({ flows: flowsData, index: data.index?.data, indexLabel: data.index?.secid });
+      return;
+    }
+    if (!loading) setFlowsPair({ flows: flowsData });
+  }, [flowsData, data, loading]);
 
   const categoryLabel = CATEGORIES.find((c) => c.key === category)?.label ?? '';
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '';
@@ -517,7 +543,15 @@ export default function MobileFundsMoneyPage() {
           ) : loading ? (
             <MobileSkeleton variant="chart" height="100%" />
           ) : flowsData && flowsData.flows.length > 0 ? (
-            <MobileFlowsHistogram flows={flowsData.flows} />
+            /* Двухпанельный вид (модель «Силы рынка»): сверху бенчмарк
+               категории (index из nav-запроса), снизу гистограмма потоков.
+               Пока согласованная пара не собралась — потоки как есть. */
+            <MobileFlowsHistogram
+              flows={(flowsPair?.flows ?? flowsData).flows}
+              indexData={flowsPair?.index}
+              indexLabel={flowsPair?.indexLabel}
+              showIndex={showIndex}
+            />
           ) : (
             <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
               Нет данных
@@ -623,6 +657,27 @@ export default function MobileFundsMoneyPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Слой «Индекс» — как «Слои» на десктопе: в СЧА линия индекса на
+              левой оси, в Притоках-Оттоках панель бенчмарка над гистограммой. */}
+          <div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Слои
+            </div>
+            <button
+              className={`fm-chip ${showIndex ? 'active' : ''}`}
+              onClick={() => setShowIndex(!showIndex)}
+              aria-pressed={showIndex}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              Индекс{data?.index?.secid ? ` · ${data.index.secid}` : ''}
+            </button>
+            <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 8, marginBottom: 0, lineHeight: 1.5 }}>
+              {viewMode === 'aum'
+                ? 'Линия индекса-эталона на левой оси графика СЧА.'
+                : 'Панель индекса-эталона над гистограммой притоков.'}
+            </p>
           </div>
 
           {/* Таймфрейм для притоков */}
