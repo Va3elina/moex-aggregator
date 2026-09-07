@@ -10,6 +10,8 @@ import { Menu, X, LogIn, BarChart3, Newspaper, User } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
+import LangToggle from './LangToggle';
+import { useTranslation } from 'react-i18next';
 import SandboxEntryButton from './SandboxEntryButton';
 import { AnomalyBell } from './anomaly/AnomalyBell';
 import PageSEO from './PageSEO';
@@ -67,6 +69,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
 export default function Layout() {
   // ВСЕ хуки до conditional return — React hooks rule.
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const { user, isAuthenticated } = useAuth();
   const { connected } = useSSE();
   const navigate = useNavigate();
@@ -210,7 +213,7 @@ export default function Layout() {
                 >
                   {({ isActive }) => (
                     <>
-                      {item.label}
+                      {t(item.label)}
                       {item.badge && (
                         <span
                           className="ml-1.5 uppercase font-bold hidden 2xl:inline-block align-middle"
@@ -261,6 +264,9 @@ export default function Layout() {
 
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
+
+              {/* Язык интерфейса RU/EN (см. src/i18n) */}
+              <LangToggle />
 
               <AnomalyBell />
 
@@ -452,7 +458,7 @@ export default function Layout() {
                       : undefined,
                   })}
                 >
-                  {item.label}
+                  {t(item.label)}
                   {item.badge && (
                     <span
                       className="ml-2 uppercase font-bold inline-block align-middle"

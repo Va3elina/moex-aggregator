@@ -57,6 +57,7 @@ type EventType =
   | 'seasonality_mode'
   | 'chart_export'
   | 'theme_toggle'
+  | 'lang_toggle'
   | 'session_heartbeat'
   // Воронка монетизации: намерение → оплата/триал
   | 'checkout_start'

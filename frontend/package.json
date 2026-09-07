@@ -19,10 +19,12 @@
     "fabric": "^6.9.1",
     "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
+    "i18next": "^26.4.2",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-i18next": "^17.0.13",
     "react-router-dom": "^7.17.0",
     "tailwindcss": "^4.1.17"
   },
