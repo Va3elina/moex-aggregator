@@ -17,6 +17,7 @@
  *   - sort             — компаратор финального списка (desktop=по колонке)
  */
 import { useMemo } from 'react';
+import { spotAliasesFor } from '../config/futuresSpotAliases';
 
 /** Минимальная форма элемента, по которой работают фильтр/группировка. */
 export interface FilterableInstrument {
@@ -24,6 +25,8 @@ export interface FilterableInstrument {
   name: string;
   type?: string | null;
   group?: string | null;
+  /** Код ISS (assetcode фьючерса: SBRF, GAZR) — тоже участвует в поиске. */
+  iss_code?: string | null;
   daily_volume?: number;
   day_change_pct?: number | null;
 }
@@ -31,7 +34,7 @@ export interface FilterableInstrument {
 export interface UseInstrumentFilterOptions<T extends FilterableInstrument> {
   /** Список инструментов (может содержать дубликаты sectype — серии контрактов). */
   instruments: T[];
-  /** Строка поиска (матч по sectype ИЛИ name, case-insensitive). */
+  /** Строка поиска (матч по sectype / name / iss_code / тикеру спота серии, case-insensitive). */
   searchQuery: string;
   /** Активная категория-чип: 'all' | 'Акции' | 'Валюта' | 'futures' | ... */
   categoryFilter: string;
@@ -137,10 +140,14 @@ export function useInstrumentFilter<T extends FilterableInstrument>(
         !searchQuery && !favSet.has(inst.sectype) &&
         !(keepVisibleSectypes && keepVisibleSectypes.has(inst.sectype))
       ) return false;
+      // Поиск: sectype, имя, код ISS (SBRF) и тикер базового актива (sber →
+      // SR/SBERF/мини) — пользователь знает тикер спота, а не код серии.
       const matchesSearch =
         !searchQuery ||
         inst.sectype.toLowerCase().includes(q) ||
-        inst.name.toLowerCase().includes(q);
+        inst.name.toLowerCase().includes(q) ||
+        (inst.iss_code != null && inst.iss_code.toLowerCase().includes(q)) ||
+        spotAliasesFor(inst.sectype).some((a) => a.includes(q));
       return matchesSearch && matchesCategory(inst.group, inst.type, categoryFilter, matchType);
     });
 
