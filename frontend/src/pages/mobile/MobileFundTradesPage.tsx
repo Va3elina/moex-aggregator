@@ -64,7 +64,7 @@ import PortfolioFundPicker, { defaultPortfolioTickers, indexFundTickers } from '
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
-import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
+import CompanyFlowsTab, { type CompanyFlowsMobileSummary } from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
 import MobileLayout from '../../components/mobile/MobileLayout';
@@ -376,6 +376,10 @@ export default function MobileFundTradesPage() {
   // Календарь своего периода внутри 🕐-sheet (раскрывается по чипу «Свой период»).
   const [moversRangeOpen, setMoversRangeOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  // «По бумаге»: поиск бумаги (★ Актив) + сводка выбора для рейла/шапки —
+  // сам выбор (бумага/режим/период/фонды) живёт внутри CompanyFlowsTab.
+  const [companyAssetOpen, setCompanyAssetOpen] = useState(false);
+  const [companySummary, setCompanySummary] = useState<CompanyFlowsMobileSummary | null>(null);
 
   // Месяцы свежее тир-отсечки в календаре — с замочком, не выбираются.
   // NB: календарь живёт на вкладке «Общий портфель», а она с 2026-08-09 выведена
@@ -687,27 +691,67 @@ export default function MobileFundTradesPage() {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
     if (tab === 'portfolio') return `Сделки · ${({ '1m': '1 мес', '6m': 'полгода', '1y': 'год' } as Record<MoversPeriod, string>)[portfolioMoversPeriod]}`;
     if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.resolved_month ? formatMonthYear(movers.resolved_month) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц'));
+    if (tab === 'company') return companySummary?.time ?? 'Период';
     return undefined;
   })();
   const optionsSummary = (() => {
     const base = TAB_LABEL[tab];
     if (tab === 'movers') return `${base} · ${metric === 'weight' ? '% веса' : '₽'}`;
     if (tab === 'portfolio') return `Портфель · ${portfolioMode === 'rub' ? '₽' : 'ср. доля'}`;
+    if (tab === 'company') return companySummary ? `${base} · ${companySummary.options}` : base;
     if (tab === 'funds') {
       const s = fundSort === 'return' ? 'доходность' : 'объём СЧА';
       return `${base} · ${s}`;
     }
     return base;
   })();
+  // Переключатель разделов — начало sheet'а «Опции» на всех вкладках (на
+  // «По бумаге» sheet рисует CompanyFlowsTab, поэтому блок передаём туда).
+  const tabSwitcher = (
+    <div>
+      <div style={SHEET_SECTION_LABEL}>Режим</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {([
+          // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
+          // оставлен — вернуть = дописать строки обратно.
+          { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
+          { id: 'company' as const, label: 'По бумаге', icon: ArrowLeftRight },
+          { id: 'funds' as const, label: 'Витрина', icon: Wallet },
+        ]).map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              className={`fm-chip ${tab === t.id ? 'active' : ''}`}
+              onClick={() => { setTab(t.id); setOptionsSheetOpen(false); }}
+              style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', gap: 6 }}
+            >
+              <Icon size={14} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+  const isCompany = tab === 'company';
   return (
     <MobileLayout
+      // ★ Актив — только на «По бумаге»: поиск бумаги (как актив на ОИ/Сезонности).
+      onAssetClick={isCompany ? () => setCompanyAssetOpen(true) : undefined}
+      assetLabel={isCompany ? companySummary?.assetName : undefined}
+      assetTicker={isCompany ? companySummary?.ticker : undefined}
+      assetSectype={isCompany ? companySummary?.ticker : undefined}
+      assetTourId="ft-company-asset-btn"
       onTimeClick={timeSummary ? () => setTimeSheetOpen(true) : undefined}
       timeSummary={timeSummary}
       timeTourId="ft-time"
       onSettingsClick={() => setOptionsSheetOpen(true)}
       settingsSummary={optionsSummary}
       settingsTourId="ft-options"
-      enableFullscreen={false}
+      // Полный экран (и авто-поворот) — только у графика «По бумаге»;
+      // списки «Витрины»/«Портфеля» в fullscreen не нужны.
+      enableFullscreen={isCompany}
       onRefresh={async () => {
         if (tab === 'portfolio') {
           const reqId = ++portfolioReqRef.current;
@@ -735,6 +779,7 @@ export default function MobileFundTradesPage() {
       <MobilePageHeader
         Icon={Wallet}
         title="Сделки фондов"
+        subtitle={isCompany ? companySummary?.subtitle : undefined}
         helpLink="/methodology/funds-catalog"
         sourceNote="Справки о СЧА (форма ЦБ № 0420502) · УК Первая, Т-Капитал, ВИМ, Альфа"
       />
@@ -755,12 +800,35 @@ export default function MobileFundTradesPage() {
         </div>
       )}
 
-      {/* ── Tab content — СОБСТВЕННЫЙ вертикальный скролл-контейнер. ──
+      {/* ── «По бумаге» — график на всю площадь, как у чарт-индикаторов (ОИ,
+          «Сила рынка»): без скролл-контейнера, контролы в sheet'ах рейла.
+          Sheet'ы «Период»/«Опции»/поиск бумаги рисует сам CompanyFlowsTab —
+          страница только открывает их кнопками рейла. */}
+      {isCompany ? (
+        <CompanyFlowsTab
+          presetAsset={companyPreset}
+          onPresetConsumed={() => setCompanyPreset(null)}
+          mobile={{
+            assetOpen: companyAssetOpen,
+            timeOpen: timeSheetOpen,
+            optionsOpen: optionsSheetOpen,
+            onClose: (s) => {
+              if (s === 'asset') setCompanyAssetOpen(false);
+              else if (s === 'time') setTimeSheetOpen(false);
+              else setOptionsSheetOpen(false);
+            },
+            onOpenAsset: () => setCompanyAssetOpen(true),
+            optionsHead: tabSwitcher,
+            onSummary: setCompanySummary,
+          }}
+        />
+      ) : (
+      /* ── Tab content — СОБСТВЕННЫЙ вертикальный скролл-контейнер. ──
           .fm-main залочен (overflow:hidden, под чарт-страницы, где чарт
           фиксирован в viewport). Фонд-трейд — это списки/несколько графиков,
           им нужен свой скролл: иначе контент режется (было видно «только 2
           фонда», обрезанный снапшот/потоки) и затекает в щель над нижним
-          рейлом. */}
+          рейлом. */
       <div className="fm-ft-scroll">
       {/* Плашка одна на страницу и читает общий snapshot_delay раздела. На
           «Общем портфеле» (portfolio_snapshot_delay=0), «По бумаге»
@@ -768,7 +836,8 @@ export default function MobileFundTradesPage() {
           (showcase_snapshot_delay=0, 2026-08-10) задержки больше нет — там
           плашка врала бы, поэтому не рисуем. Задержка осталась только у
           скрытых вкладок «Движения»/«Снапшот». */}
-      {tab !== 'portfolio' && tab !== 'company' && tab !== 'funds' && (
+      {/* «По бумаге» сюда не попадает — у неё своя ветка выше. */}
+      {tab !== 'portfolio' && tab !== 'funds' && (
         <DelayedDataBadge indicator="fund_trades" />
       )}
       {tab === 'funds' && (
@@ -790,15 +859,6 @@ export default function MobileFundTradesPage() {
           metric={metric}
           onAssetClick={openCompanyFlows}
         />
-      )}
-
-      {tab === 'company' && (
-        <div style={{ padding: '4px 2px 16px' }}>
-          <CompanyFlowsTab
-            presetAsset={companyPreset}
-            onPresetConsumed={() => setCompanyPreset(null)}
-          />
-        </div>
       )}
 
       {tab === 'portfolio' && (
@@ -823,6 +883,7 @@ export default function MobileFundTradesPage() {
 
       {tab === 'snapshots' && <SnapshotReviewTab />}
       </div>
+      )}
 
       {/* ── ⭐ Актив sheet (только funds): FundPicker single → выбирает фонд ──
           В режиме funds выбор фонда = открыть детальную карточку. FundPicker
@@ -850,8 +911,8 @@ export default function MobileFundTradesPage() {
         </div>
       </MobileSheet>
 
-      {/* ── 🕐 Время sheet ── */}
-      <MobileSheet open={timeSheetOpen} onClose={() => setTimeSheetOpen(false)} title="Время">
+      {/* ── 🕐 Время sheet (на «По бумаге» его рисует CompanyFlowsTab) ── */}
+      <MobileSheet open={timeSheetOpen && !isCompany} onClose={() => setTimeSheetOpen(false)} title="Время">
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {tab === 'portfolio' && (
             <div>
@@ -966,35 +1027,11 @@ export default function MobileFundTradesPage() {
         </div>
       </MobileSheet>
 
-      {/* ── ⚙️ Опции sheet — режимы + всё прочее ── */}
-      <MobileSheet open={optionsSheetOpen} onClose={() => setOptionsSheetOpen(false)} title="Опции">
+      {/* ── ⚙️ Опции sheet — режимы + всё прочее (на «По бумаге» — в CompanyFlowsTab) ── */}
+      <MobileSheet open={optionsSheetOpen && !isCompany} onClose={() => setOptionsSheetOpen(false)} title="Опции">
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Переключатель режимов */}
-          <div>
-            <div style={SHEET_SECTION_LABEL}>Режим</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {([
-                // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
-                // оставлен — вернуть = дописать строки обратно.
-                { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
-                { id: 'company' as const, label: 'По бумаге', icon: ArrowLeftRight },
-                { id: 'funds' as const, label: 'Витрина', icon: Wallet },
-              ]).map((t) => {
-                const Icon = t.icon;
-                return (
-                  <button
-                    key={t.id}
-                    className={`fm-chip ${tab === t.id ? 'active' : ''}`}
-                    onClick={() => { setTab(t.id); setOptionsSheetOpen(false); }}
-                    style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', gap: 6 }}
-                  >
-                    <Icon size={14} />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {tabSwitcher}
 
           {/* Состав фондов: сортировка + УК */}
           {tab === 'funds' && (
@@ -1096,18 +1133,12 @@ export default function MobileFundTradesPage() {
             </>
           )}
 
-          {/* Снапшот: метрика живёт внутри тела (frame:fundtrades:snapMetric);
-              Потоки: контролы (бумага + фонды) внутри CompanyFlowsTab. */}
+          {/* Снапшот: метрика живёт внутри тела (frame:fundtrades:snapMetric).
+              «По бумаге» сюда не попадает — её sheet «Опции» рисует CompanyFlowsTab. */}
           {tab === 'snapshots' && (
             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
               Выбор фонда, дата снапшота и метрика (вес % / объём ₽) — в самом
               разделе «Снапшот» выше.
-            </p>
-          )}
-          {tab === 'company' && (
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
-              Выбор бумаги и конкретных фондов — в самом разделе «Потоки по
-              компании» выше.
             </p>
           )}
         </div>

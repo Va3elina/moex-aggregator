@@ -667,11 +667,12 @@ function StrengthDualChart({
   const PAD_TOP = 8;
   const PAD_BOTTOM = 22; // X-axis labels снизу
   const MID_GAP = 18; // зона X-labels между двумя графиками
-  // Правый жёлоб под Y-шкалу + pill последнего значения (как PILL_GUTTER_R в
-  // MobileChart «Открытых позиций»): график рисуется только до W - PAD_RIGHT,
-  // а цифры шкалы стоят в зарезервированной колонке справа и НЕ перекрываются
-  // линией/барами.
-  const PAD_RIGHT = 46;
+  // Правая ось ЛЕЖИТ ПОВЕРХ графика, а не в отдельном жёлобе — как
+  // PILL_GUTTER_R = PAD_X в MobileChart «Открытых позиций» (#329): плот
+  // занимает всю ширину, подписи шкалы и pill последнего значения —
+  // полупрозрачным оверлеем у правого края. Раньше здесь был жёлоб 46px,
+  // из-за него график заканчивался раньше, чем на остальных индикаторах.
+  const PAD_RIGHT = PAD_X;
   const innerW = W - PAD_X - PAD_RIGHT;
   const totalInnerH = H - PAD_TOP - PAD_BOTTOM - MID_GAP;
   // Top zone (price) = 50%, bottom zone (breadth) = 50%
@@ -827,7 +828,7 @@ function StrengthDualChart({
           return (
             <text
               key={`yp-${i}`}
-              x={W - PAD_X - 4}
+              x={W - 4}
               y={topY0 + topH * t + 3}
               fontSize={9}
               fontWeight={600}
@@ -843,7 +844,7 @@ function StrengthDualChart({
         {[30, 50, 70].map((v) => (
           <text
             key={`yb-${v}`}
-            x={W - PAD_X - 4}
+            x={W - 4}
             y={yBreadth(v) + 3}
             fontSize={9}
             fontWeight={600}
@@ -855,14 +856,14 @@ function StrengthDualChart({
           </text>
         ))}
 
-        {/* Pills с последним значением — у правого края, под шкалой (как в ОИ) */}
+        {/* Pills с последним значением — у правого края, поверх графика (как в ОИ) */}
         {(() => {
           const last = data[N - 1];
           return (
             <>
-              <PillSmall x={W - PAD_X - 2} y={yPrice(last.price)} text={last.price.toFixed(0)} color="var(--chart-line-1, #5DA3E9)" align="right" />
+              <PillSmall x={W - 2} y={yPrice(last.price)} text={last.price.toFixed(0)} color="var(--chart-line-1, #5DA3E9)" align="right" />
               <PillSmall
-                x={W - PAD_X - 2}
+                x={W - 2}
                 y={yBreadth(last.breadth)}
                 text={`${last.breadth.toFixed(0)}%`}
                 color={breadthBarColor(last.breadth)}

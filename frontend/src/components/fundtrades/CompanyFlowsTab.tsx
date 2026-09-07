@@ -68,6 +68,12 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 // примитивов, а не страница: сайтовые SegmentedControl/таблетки в тулбар окна
 // не влезают (та же причина, по которой скринер не переиспользует OiScreenerTable).
 import { Dropdown as EmbDropdown, PillGroup } from '../../pages/embed/EmbedToolbar';
+// Мобильный вариант (MobileFundTradesPage): график на всю площадь + sheet'ы
+// «Период»/«Опции» + поиск бумаги. Данные и фильтры — те же, второй
+// реализации логики нет (см. `mobile` в пропсах).
+import MobileCompanyChart from '../mobile/MobileCompanyChart';
+import MobileSheet from '../mobile/MobileSheet';
+import MobileSkeleton from '../mobile/MobileSkeleton';
 
 type Metric = 'amount' | 'weight';
 
@@ -186,10 +192,64 @@ export interface CompanyFlowsTabProps {
     embedded?: boolean;
     /** Куда портировать контролы в панельном режиме (узел внутри тулбара окна). */
     controlsTarget?: HTMLElement | null;
+    /** Мобильный вариант (MobileFundTradesPage): вместо сайтового ряда контролов
+     *  и десктопных чартов — MobileCompanyChart на всю площадь, а бумага/период/
+     *  режим/фонды живут в sheet'ах рейла ★ Актив / 🕐 Время / ⚙️ Опции.
+     *  Sheet'ы ОТКРЫВАЕТ страница (у неё MobileLayout), а рисует этот таб —
+     *  чтобы state выбора не дублировать. */
+    mobile?: CompanyFlowsMobileProps | null;
 }
+
+/** Сводка выбора для рейла и шапки мобильной страницы (MobileLayout). */
+export interface CompanyFlowsMobileSummary {
+    /** Имя бумаги («Сбербанк»); нет — список ещё грузится. */
+    assetName?: string;
+    /** Тикер (для лого в кнопке ★); undefined у облигаций/ОФЗ. */
+    ticker?: string;
+    /** Подпись кнопки 🕐: «1 год». */
+    time: string;
+    /** Подпись кнопки ⚙️: «Сделки · Все фонды». */
+    options: string;
+    /** Подзаголовок шапки: «Сбербанк · Сделки · 1 год». */
+    subtitle: string;
+}
+
+export interface CompanyFlowsMobileProps {
+    /** Открыт поиск бумаги (кнопка ★ Актив). */
+    assetOpen: boolean;
+    /** Открыт sheet «Период» (кнопка 🕐 Время). */
+    timeOpen: boolean;
+    /** Открыт sheet «Опции» (кнопка ⚙️ Опции). */
+    optionsOpen: boolean;
+    onClose: (sheet: 'asset' | 'time' | 'options') => void;
+    /** Открыть поиск бумаги (из sheet'а «Опции»). */
+    onOpenAsset?: () => void;
+    /** Начало sheet'а «Опции» — переключатель разделов страницы. */
+    optionsHead?: ReactNode;
+    /** Сводка выбора для рейла/шапки — страница держит её в state. */
+    onSummary?: (s: CompanyFlowsMobileSummary) => void;
+}
+
+// Заголовок секции в sheet'е — как SHEET_SECTION_LABEL на мобильных страницах.
+const MOBILE_SHEET_LABEL = {
+    fontSize: 'var(--fs-xs)',
+    fontWeight: 800,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    marginBottom: 8,
+};
+const MOBILE_SHEET_HINT = {
+    fontSize: 'var(--fs-2xs)',
+    color: 'var(--text-muted)',
+    marginTop: 8,
+    marginBottom: 0,
+    lineHeight: 1.5,
+};
 
 export default function CompanyFlowsTab({
     presetAsset, onPresetConsumed, showChartActions = false, embedded = false, controlsTarget = null,
+    mobile = null,
 }: CompanyFlowsTabProps = {}) {
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     // min = 475: карточка графика = chartHeight + ~39px (padding + легенда/навигатор),
@@ -717,6 +777,172 @@ export default function CompanyFlowsTab({
     const priceStale = !!selectedTicker && price?.ticker !== selectedTicker;
     const weightsStale = !!selectedAsset && weightsKey !== selectedAsset.key;
     const priceMissing = !priceLoading && !priceStale && priceError === 'NO_PRICE_HISTORY';
+
+    // ── Мобильная сводка для рейла (★/🕐/⚙️) и подзаголовка шапки ──
+    // MobileLayout держит страница, а выбор живёт здесь — отдаём наверх
+    // строками; эффект срабатывает только на смену самих строк.
+    const onMobileSummary = mobile?.onSummary;
+    const mobileAssetName = selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined;
+    const mobileFundsShort = (() => {
+        const all = flows?.funds.length ?? 0;
+        if (!flows || effectiveFunds.size === all) return 'Все фонды';
+        return `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`;
+    })();
+    useEffect(() => {
+        if (!onMobileSummary) return;
+        onMobileSummary({
+            assetName: mobileAssetName,
+            ticker: selectedTicker,
+            time: PERIOD_LABELS[period],
+            options: `${MODE_LABELS[effectiveMode]} · ${mobileFundsShort}`,
+            subtitle: `${mobileAssetName ?? 'Бумага'} · ${MODE_LABELS[effectiveMode]} · ${PERIOD_LABELS[period]}`,
+        });
+    }, [onMobileSummary, mobileAssetName, selectedTicker, period, effectiveMode, mobileFundsShort]);
+
+    // ── Мобильный рендер: график на всю площадь + sheet'ы рейла ──
+    if (mobile) {
+        const bannerError = flowsError
+            ?? (effectiveMode !== 'map' ? weightsError : null)
+            ?? (priceError && priceError !== 'NO_PRICE_HISTORY' ? priceError : null);
+        // Пока едет цена/позиция новой бумаги — линию прошлой не показываем
+        // (гард по тикеру): окно месяцев новой бумаги с чужой ценой — ложь.
+        const chartLoading = flowsLoading || priceLoading || priceStale
+            || (effectiveMode !== 'map' && (weightsLoading || weightsStale));
+        return (
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                {bannerError && (
+                    <div
+                        style={{
+                            margin: '0 12px 8px',
+                            padding: '8px 12px',
+                            borderRadius: 8,
+                            background: 'color-mix(in srgb, var(--funds-flow-negative) 10%, transparent)',
+                            border: '1px solid var(--funds-flow-negative)',
+                            color: 'var(--funds-flow-negative)',
+                            fontSize: 'var(--fs-xs)',
+                        }}
+                    >
+                        {bannerError}
+                    </div>
+                )}
+                <div data-tour="ft-company-chart" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                    <div style={{ position: 'absolute', inset: 0 }}>
+                        {assetsLoading ? (
+                            <MobileSkeleton variant="chart" height="100%" />
+                        ) : assetsError || assets.length === 0 ? (
+                            <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
+                                {assetsError ?? 'Потоки по компаниям появятся, когда накопится история составов фондов.'}
+                            </div>
+                        ) : (
+                            <MobileCompanyChart
+                                mode={effectiveMode}
+                                flowMonths={visibleMonths}
+                                flowSeries={visibleSeries}
+                                shareMonths={visibleShareMonths}
+                                shareFunds={visibleShareFunds}
+                                ffcap={visibleFfcap}
+                                turnover={visibleTurnover}
+                                weeks={priceStale ? [] : (price?.weeks ?? [])}
+                                closes={priceStale ? [] : (price?.closes ?? [])}
+                                loading={chartLoading}
+                                noFundsSelected={effectiveMode === 'map' ? noFundsSelected : noFundsSelectedShare}
+                                priceMissing={priceMissing}
+                            />
+                        )}
+                    </div>
+                </div>
+
+                {/* ★ Актив — тот же строковый поиск бумаги, что на десктопе
+                    (AssetPickerModal сам адаптивен под узкий экран). */}
+                {mobile.assetOpen && (
+                    <AssetPickerModal
+                        assets={assets}
+                        onSelect={a => { setSelectedKey(a.key); mobile.onClose('asset'); }}
+                        onClose={() => mobile.onClose('asset')}
+                    />
+                )}
+
+                {/* 🕐 Время — окно последних N месяцев */}
+                <MobileSheet open={mobile.timeOpen} onClose={() => mobile.onClose('time')} title="Период">
+                    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {CF_PERIODS.map(p => (
+                            <button
+                                key={p}
+                                className={`fm-chip ${period === p ? 'active' : ''}`}
+                                onClick={() => { setPeriod(p); mobile.onClose('time'); }}
+                                style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
+                            >
+                                {PERIOD_LABELS[p]}
+                            </button>
+                        ))}
+                        <p style={MOBILE_SHEET_HINT}>
+                            Окно последних месяцев истории составов. «Всё» — вся доступная история по бумаге.
+                        </p>
+                    </div>
+                </MobileSheet>
+
+                {/* ⚙️ Опции — разделы страницы (optionsHead) + режим + бумага + фонды */}
+                <MobileSheet open={mobile.optionsOpen} onClose={() => mobile.onClose('options')} title="Опции">
+                    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {mobile.optionsHead}
+                        <div data-tour="ft-company-modes">
+                            <div style={MOBILE_SHEET_LABEL}>Что на графике</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {visibleModes.map(m => (
+                                    <button
+                                        key={m}
+                                        className={`fm-chip ${effectiveMode === m ? 'active' : ''}`}
+                                        onClick={() => setMode(m)}
+                                        style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', gap: 6 }}
+                                    >
+                                        {MODE_ICONS[m]}
+                                        {MODE_LABELS[m]}
+                                    </button>
+                                ))}
+                            </div>
+                            <p style={MOBILE_SHEET_HINT}>{MODE_HELP[effectiveMode]}</p>
+                        </div>
+                        <div>
+                            <div style={MOBILE_SHEET_LABEL}>Бумага</div>
+                            <button
+                                className="fm-chip"
+                                data-tour="ft-company-asset"
+                                onClick={() => { mobile.onClose('options'); mobile.onOpenAsset?.(); }}
+                                style={{ width: '100%', justifyContent: 'space-between', padding: '12px 14px', gap: 10 }}
+                            >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                    {selectedAsset && <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} size={22} />}
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {mobileAssetName ?? 'Выберите бумагу'}
+                                    </span>
+                                </span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>
+                                    {selectedTicker ?? (selectedAsset ? `${selectedAsset.funds_count} ${pluralFunds(selectedAsset.funds_count)}` : '')} ▾
+                                </span>
+                            </button>
+                        </div>
+                        {pickerFunds.length > 0 && (
+                            <div>
+                                <div style={MOBILE_SHEET_LABEL}>Фонды</div>
+                                {/* Тот же пикер, что в «Общем портфеле» и на десктопе этой
+                                    вкладки: набор сужен до держателей бумаги. */}
+                                <PortfolioFundPicker
+                                    funds={pickerFunds}
+                                    selected={effectiveFunds}
+                                    onChange={handleFundsChange}
+                                    title="Фонды с этой бумагой"
+                                    allLabel="Все фонды"
+                                />
+                                <p style={MOBILE_SHEET_HINT}>
+                                    По умолчанию индексные фонды выключены: их сделки — ребалансировка вслед за индексом.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </MobileSheet>
+            </div>
+        );
+    }
 
     // ── Рендер ──
     if (assetsLoading) {
