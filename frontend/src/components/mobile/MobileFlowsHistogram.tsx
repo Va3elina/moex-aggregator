@@ -164,14 +164,6 @@ export default function MobileFlowsHistogram({
   const botY0 = topY1 + MID_GAP;
   const botY1 = botY0 + botH;
   const zeroY = botY0 + botH / 2;
-  // Плот на всю ширину (симметричный padX): правая шкала — оверлей, не жёлоб.
-  const innerW = W - padX * 2;
-  const slotW = N > 0 ? innerW / N : 0;
-  const barW = slotW * 0.7;
-  const barGap = slotW * 0.3;
-  const barX = (i: number) => padX + i * slotW + barGap / 2;
-  const barCx = (i: number) => barX(i) + barW / 2;
-
   // Максимум по абсолютному значению net flow — каждый bar рисуется как net
   // (один цвет на знак), gross_in/gross_out видны только в tooltip.
   const maxAbs = useMemo(() => {
@@ -200,6 +192,24 @@ export default function MobileFlowsHistogram({
     return { min: lo - pad, span: (hi - lo) + pad * 2 };
   }, [hasPrice, idxBySlot]);
   const yPrice = (v: number) => topY1 - ((v - priceRange.min) / priceRange.span) * topH;
+
+  // Правый жёлоб под шкалы обеих панелей (единый стандарт мобильных графиков:
+  // шкала в своей колонке, график до неё не доходит) = самая длинная подпись
+  // (потоки и индекс) + зазор.
+  const priceTickVals = hasPrice
+    ? [0.2, 0.5, 0.8].map((t) => priceRange.min + priceRange.span * (1 - t))
+    : [];
+  const maxTickLen = Math.max(
+    ...yTicks.map((v) => fmtYTick(v).length),
+    ...priceTickVals.map((v) => fmtPrice(v).length),
+  );
+  const padRight = Math.ceil(maxTickLen * axisFs * 0.62) + 7;
+  const innerW = W - padX - padRight;
+  const slotW = N > 0 ? innerW / N : 0;
+  const barW = slotW * 0.7;
+  const barGap = slotW * 0.3;
+  const barX = (i: number) => padX + i * slotW + barGap / 2;
+  const barCx = (i: number) => barX(i) + barW / 2;
 
   // Линия индекса: дневные точки каждого слота дробно внутри слота. Y считаем
   // тут же (не через yPrice), чтобы deps мемо были честными.
@@ -296,17 +306,12 @@ export default function MobileFlowsHistogram({
     });
   };
 
-  // Подписи шкал — оверлей поверх графика: полупрозрачный текст с подложкой
-  // цвета фона (paintOrder=stroke), чтобы цифры читались поверх столбца/линии.
+  // Подписи шкал — в правом жёлобе, по правому краю.
   const axisTextProps = {
     x: W - 4,
     fontSize: axisFs,
     fontWeight: 600,
     fill: AXIS_FILL,
-    stroke: 'var(--bg-primary)',
-    strokeWidth: 3,
-    strokeLinejoin: 'round' as const,
-    paintOrder: 'stroke' as const,
     textAnchor: 'end' as const,
     pointerEvents: 'none' as const,
   };

@@ -667,12 +667,11 @@ function StrengthDualChart({
   const PAD_TOP = 8;
   const PAD_BOTTOM = 22; // X-axis labels снизу
   const MID_GAP = 18; // зона X-labels между двумя графиками
-  // Правая ось ЛЕЖИТ ПОВЕРХ графика, а не в отдельном жёлобе — как
-  // PILL_GUTTER_R = PAD_X в MobileChart «Открытых позиций» (#329): плот
-  // занимает всю ширину, подписи шкалы и pill последнего значения —
-  // полупрозрачным оверлеем у правого края. Раньше здесь был жёлоб 46px,
-  // из-за него график заканчивался раньше, чем на остальных индикаторах.
-  const PAD_RIGHT = PAD_X;
+  // Правый жёлоб под Y-шкалу + pill последнего значения (единый стандарт всех
+  // мобильных графиков, см. PILL_GUTTER_R в MobileChart): график рисуется
+  // только до W - PAD_RIGHT, а цифры шкалы стоят в зарезервированной колонке
+  // справа и НЕ перекрываются линией/барами.
+  const PAD_RIGHT = 46;
   const innerW = W - PAD_X - PAD_RIGHT;
   const totalInnerH = H - PAD_TOP - PAD_BOTTOM - MID_GAP;
   // Top zone (price) = 50%, bottom zone (breadth) = 50%

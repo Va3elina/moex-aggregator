@@ -322,9 +322,19 @@ export default function MobileCompanyChart({
   const topY1 = topY0 + topH;
   const botY0 = topY1 + (twoPane ? MID_GAP : 0);
   const botY1 = botY0 + botH;
-  const innerW = W - PAD_X * 2;
-  const slotW = M > 0 ? innerW / M : 0;
-  const slotX = (mi: number, frac = 0.5) => PAD_X + (mi + frac) * slotW;
+  // Значения режима: rub — рубли (адаптив млн/млрд), overhang — дни, cap — %.
+  const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v)
+    : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
+  const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false)
+    : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
+
+  // ── Шкала гистограммы (share): 0..max ×1.12, чтобы бар максимума не
+  // упирался в верхнюю грид-линию.
+  const shareMax = useMemo(() => {
+    let mx = 0;
+    for (const v of shareVals) if (v != null && v > mx) mx = v;
+    return (mx || 0.0001) * 1.12;
+  }, [shareVals]);
 
   // Шкала цены — по всем неделям окна, поля 6%.
   const priceRange = useMemo(() => {
@@ -344,6 +354,18 @@ export default function MobileCompanyChart({
     return { min: lo - pad, span: (hi - lo) + pad * 2 };
   }, [hasPrice, weeksByMonth, closesAll]);
   const yPrice = (v: number) => topY1 - ((v - priceRange.min) / priceRange.span) * topH;
+
+  // Правый жёлоб под шкалы (единый стандарт мобильных графиков: шкала в своей
+  // колонке, график до неё не доходит) = самая длинная подпись цены/позиции
+  // + зазор. Слоты месяцев зависят от него, поэтому считается до линии.
+  const maxTickLen = Math.max(
+    ...(hasPrice ? [0.2, 0.5, 0.8].map((t) => fmtPrice(priceRange.min + priceRange.span * (1 - t)).length) : [0]),
+    ...(!isMap ? [0.2, 0.5, 0.8].map((t) => fmtAxis(shareMax * (1 - t)).length) : [0]),
+  );
+  const PAD_RIGHT = Math.ceil(maxTickLen * axisFs * 0.62) + 8;
+  const innerW = W - PAD_X - PAD_RIGHT;
+  const slotW = M > 0 ? innerW / M : 0;
+  const slotX = (mi: number, frac = 0.5) => PAD_X + (mi + frac) * slotW;
 
   // Линия цены: недели по слотам, дробно внутри слота.
   const linePath = useMemo(() => {
@@ -411,13 +433,6 @@ export default function MobileCompanyChart({
     Math.max(rMax * Math.sqrt(Math.min(Math.abs(net) / normAbsNet, 1)), R_DOT);
   const isOverflow = (net: number) => Math.abs(net) > normAbsNet;
 
-  // ── Шкала гистограммы (share): 0..max ×1.12, чтобы бар максимума не
-  // упирался в верхнюю грид-линию.
-  const shareMax = useMemo(() => {
-    let mx = 0;
-    for (const v of shareVals) if (v != null && v > mx) mx = v;
-    return (mx || 0.0001) * 1.12;
-  }, [shareVals]);
   const yShare = (v: number) => botY1 - (v / shareMax) * botH;
   const lastShare = useMemo(() => {
     for (let mi = M - 1; mi >= 0; mi--) {
@@ -426,10 +441,6 @@ export default function MobileCompanyChart({
     }
     return null;
   }, [M, shareVals]);
-  const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v)
-    : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
-  const fmtAxis = (v: number) => (shareMode === 'rub' ? fmtRub(v, false)
-    : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
   // Ширина бара: 66% слота, но не шире 22px.
   const barW = Math.min(slotW * 0.66, 22);
 
@@ -517,16 +528,12 @@ export default function MobileCompanyChart({
   // голые оси: кругляши сажать не на что.
   else if (isMap && !hasPrice) empty = loading ? '' : 'Нет истории цены за выбранный период.';
 
-  // Подписи шкал — оверлей поверх графика с подложкой цвета фона.
+  // Подписи шкал — в правом жёлобе, по правому краю.
   const axisTextProps = {
     x: W - 4,
     fontSize: axisFs,
     fontWeight: 600,
     fill: AXIS_FILL,
-    stroke: 'var(--bg-primary)',
-    strokeWidth: 3,
-    strokeLinejoin: 'round' as const,
-    paintOrder: 'stroke' as const,
     textAnchor: 'end' as const,
     pointerEvents: 'none' as const,
   };
