@@ -592,14 +592,14 @@ function MobileCbrHistogram({
   const padX = 8;
   const padTop = 14;
   const padBottom = 22;
-  // Правая шкала ЛЕЖИТ ПОВЕРХ гистограммы, а не в отдельном жёлобе — как на
-  // остальных мобильных графиках (MobileChart «Открытых позиций», #329):
-  // стэки идут до самого правого края, подписи шкалы — полупрозрачный оверлей
-  // с тонкой подложкой цвета фона, чтобы цифры читались поверх столбца.
+  // Правый жёлоб = ширина самой длинной подписи шкалы + зазор, чтобы стэки
+  // доходили почти до цифр (без лишней пустоты справа), не наезжая на шкалу
+  // (единый стандарт мобильных графиков: шкала в своей колонке, не оверлей).
   const yTicks = [yMax, yMax / 2, 0, -yMax / 2, -yMax];
   const fmtYTick = (val: number) =>
     val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}`;
-  const padRight = padX;
+  const maxTickLen = Math.max(...yTicks.map((v) => fmtYTick(v).length));
+  const padRight = Math.ceil(maxTickLen * axisFs * 0.62) + 7;
   const innerW = W - padX - padRight;
   const innerH = H - padTop - padBottom;
   const midY = padTop + innerH / 2;
@@ -681,9 +681,8 @@ function MobileCbrHistogram({
         <line x1={padX} y1={midY} x2={padX + innerW} y2={midY}
           stroke="var(--text-primary)" strokeWidth={1.2} opacity={0.6} />
 
-        {/* Y-axis шкала (млрд ₽) оверлеем у правого края: [+max, +max/2, 0,
-            -max/2, -max]. Крайние с hanging/alphabetic, чтобы не обрезались.
-            paintOrder=stroke — подложка цвета фона под цифрой (поверх столбца). */}
+        {/* Y-axis шкала (млрд ₽) в правом жёлобе: [+max, +max/2, 0, -max/2,
+            -max]. Крайние с hanging/alphabetic, чтобы не обрезались по краям. */}
         {yTicks.map((val, i, arr) => {
           const ty = midY - (val / yMax) * halfH;
           const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
@@ -696,10 +695,6 @@ function MobileCbrHistogram({
               fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
-              stroke="var(--bg-primary)"
-              strokeWidth={3}
-              strokeLinejoin="round"
-              paintOrder="stroke"
               textAnchor="end"
               dominantBaseline={baseline}
               pointerEvents="none"
