@@ -317,7 +317,7 @@ export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
  * - Микро/мини: W4F → W4, NRH → NR, MMU → MM (первые 2 char)
  * - Уже база: остаётся
  */
-function extractBase(sectype: string): string {
+export function extractBase(sectype: string): string {
   // Perpetual ends with F, length > 4
   if (sectype.length > 4 && sectype.endsWith('F')) return sectype;
   // 3 chars = quarterly future или micro/mini → first 2
