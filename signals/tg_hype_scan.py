@@ -62,7 +62,7 @@ from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 from signals.content_ai import (       # noqa: E402
     _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
-    _hype_filter_payload, TRIGGER_ID_HYPE_FILTER,
+    _hype_filter_payload, TRIGGER_ID_HYPE_FILTER, _brain_hint_for_step_a,
 )
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
@@ -257,10 +257,18 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             if can_fire:
                 try:
                     known_tickers = _known_tickers_line(db)
+                    кандидат = {"id": new_id, "source": channel, "headline": headline,
+                                "raw_text": row["msg_text"] or headline}
+                    # ⚠️ Подсказка второго мозга — и в этом, событийном, пути тоже.
+                    # Найдено 08.09.2026 на кандидате 1886 (ПИК, делистинг): Шаг А
+                    # написал «подсказка второго мозга не передана», а в следе — ни
+                    # одной строки мозга. Подсказку собирал только бэкстоп
+                    # content_ai.run_once (раз в 15 мин), а хайп-путь стрелял Шаг А
+                    # напрямую и без неё — то есть почти все живые кандидаты шли мимо
+                    # мозга. Сама функция исключений наружу не пускает и пишет след.
                     payload = _step_a_payload(
-                        {"id": new_id, "source": channel, "headline": headline,
-                         "raw_text": row["msg_text"] or headline},
-                        internal_token, known_tickers,
+                        кандидат, internal_token, known_tickers,
+                        _brain_hint_for_step_a(db, кандидат),
                     )
                     _fire(TRIGGER_ID_STEP_A, token_a, payload)
                     db.execute(_MARK_DISPATCHED, {"id": new_id})
