@@ -17,7 +17,6 @@
   "Н": "W",
   "М": "M",
   "Г": "Y",
-
   "Одна плитка = одна компания.": "One tile = one company.",
   "Размер": "Size",
   "вклад в рынок,": "is its weight in the market,",
@@ -101,9 +100,7 @@
   "Большая плитка оборота у не самой крупной бумаги указывает на повышенную активность — нередко вокруг какой-то новости по компании.": "A large turnover tile for a not-so-large stock signals elevated activity — often around some company news.",
   "Вводный тур": "Intro tour",
   "Если хочешь повторить пошаговый гайд по переключателям и карте, который показывался при первом открытии страницы — нажми кнопку ниже.": "To replay the step-by-step guide to the toggles and the map that was shown when you first opened the page, press the button below.",
-
   "Все акции Мосбиржи на одном экране.": "Every Moscow Exchange stock on one screen.",
-  "Размер плитки": "Tile size",
   "вклад в рынок.": "is its weight in the market.",
   "Цвет": "Colour",
   "изменение за период. Зелёное = рост, красное = падение, насыщенность = сила.": "is the change over the period. Green = gain, red = decline, saturation = strength.",
@@ -132,5 +129,15 @@
   "За 2-3 секунды получаешь общее ощущение рынка: сегодня сила или слабость, какие сектора лидируют, есть ли аномалии (одна большая яркая плитка вне общего тренда).": "In 2–3 seconds you get an overall feel for the market: strength or weakness today, which sectors lead, whether there are anomalies (one big bright tile against the trend).",
   "Тёмно-серая плитка ≈ изменение около нуля. Чем насыщеннее цвет, тем больше движение.": "A dark grey tile ≈ a change near zero. The more saturated the colour, the bigger the move.",
   "Готово!": "Done!",
-  "6 сценариев чтения карты: что значит «море красного с яркими зелёными пятнами», аномальный объём, ротация секторов.": "6 map-reading scenarios: what \"a sea of red with bright green patches\" means, abnormal volume, sector rotation."
+  "6 сценариев чтения карты: что значит «море красного с яркими зелёными пятнами», аномальный объём, ротация секторов.": "6 map-reading scenarios: what \"a sea of red with bright green patches\" means, abnormal volume, sector rotation.",
+  "IT": "IT",
+  "Застройщики": "Real estate",
+  "Здравоохранение": "Healthcare",
+  "Машиностроение": "Industrials",
+  "Потреб. сектор": "Consumer",
+  "Телеком": "Telecom",
+  "Транспорт": "Transport",
+  "Финансы": "Financials",
+  "Химия": "Chemicals",
+  "Энергетика": "Utilities"
 }

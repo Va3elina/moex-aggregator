@@ -128,7 +128,7 @@ export default function TierPlanCard({
           className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap"
           style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
         >
-          {variant.badge}
+          {t(variant.badge)}
         </div>
       )}
       {isCurrent && (

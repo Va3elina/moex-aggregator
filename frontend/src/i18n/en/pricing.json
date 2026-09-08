@@ -48,7 +48,6 @@
   "Эквайринг от Т-Банка — перейти на tbank.ru": "Acquiring by T-Bank — go to tbank.ru",
   "Эквайринг от Т-Банка": "Acquiring by T-Bank",
   "Платежи защищены банком-эквайером по стандарту PCI DSS.": "Payments are protected by the acquiring bank under the PCI DSS standard.",
-
   "Каталог фондов": "Fund catalog",
   "Общие фичи": "General features",
   "Доступные режимы": "Available modes",
@@ -86,7 +85,6 @@
   "Индикаторы в терминале Т-Инвестиций (расширение)": "Indicators inside the T-Invest terminal (extension)",
   "Экспорт CSV / Excel": "CSV / Excel export",
   "API-доступ": "API access",
-
   "Текущий": "Current",
   "Оплата раз в год": "Billed once a year",
   "Вы экономите {{sum}} ₽ в год": "You save {{sum}} ₽ a year",
@@ -103,7 +101,6 @@
   "Безлимит уведомлений в Telegram": "Unlimited Telegram alerts",
   "Свой терминал с панелями индикаторов": "Own terminal with indicator panels",
   "Индикаторы в терминале Т-Инвестиций": "Indicators inside the T-Invest terminal",
-
   "×{{n}} к дневному шагу": "×{{n}} the daily step",
   "Февраль — Июнь": "February — June",
   "SR: чистая позиция физлиц пересекла 0": "SR: retail net position crossed 0",
@@ -128,6 +125,7 @@
   "Браузерное расширение показывает панели Фрейма плавающими окнами поверх терминала. Стакан и заявки остаются на месте, аналитика рядом.": "The browser extension shows Frame panels as floating windows over the terminal. The order book and orders stay in place, analytics right next to them.",
   "Скачивание данных": "Data download",
   "Выгрузка рядов в CSV и Excel и доступ по API. Функция готовится к запуску и войдёт в Pro.": "Export series to CSV and Excel and access via API. The feature is being prepared for launch and will be part of Pro.",
-
-  "{{n}} ₽/мес": "{{n}} ₽/mo"
+  "{{n}} ₽/мес": "{{n}} ₽/mo",
+  "Скидка 20%": "20% off",
+  "Самый популярный": "Most popular"
 }
