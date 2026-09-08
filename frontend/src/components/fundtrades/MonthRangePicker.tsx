@@ -20,14 +20,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import { monthShort } from '../../i18n';
 
 /** Границы диапазона — ISO-даты снапшотов из available_months (месяц-энды). */
 export interface MonthRange { from: string; to: string }
-
-const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
-    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 // Порядок ячеек в сетке — дек…янв: годы идут свежими сверху, поэтому и месяцы
 // внутри года должны убывать. Тогда порядок чтения (слева направо, сверху вниз)
@@ -55,7 +54,7 @@ const isoMonth = (iso: string) => Number(iso.slice(5, 7)) - 1;
 /** «мар – май 2024», через границу года — «окт 2023 – май 2024». */
 export function monthRangeLabel(fromISO: string, toISO: string): string {
     const fy = isoYear(fromISO), ty = isoYear(toISO);
-    const fm = MONTHS_SHORT[isoMonth(fromISO)], tm = MONTHS_SHORT[isoMonth(toISO)];
+    const fm = monthShort(isoMonth(fromISO)), tm = monthShort(isoMonth(toISO));
     return fy === ty ? `${fm} – ${tm} ${ty}` : `${fm} ${fy} – ${tm} ${ty}`;
 }
 
@@ -76,6 +75,7 @@ interface Props {
 export default function MonthRangePicker({
     availableMonths, value, onChange, onReset, monthLocked, onLockedClick, variant = 'popover',
 }: Props) {
+    const { t } = useTranslation();
     const inline = variant === 'inline';
     const [open, setOpen] = useState(false);
 
@@ -88,7 +88,7 @@ export default function MonthRangePicker({
     const canUseRange = access.isLoading || access.canUseFlag('custom_range');
     const promptRangeUpgrade = () => showUpgrade({
         tier: access.requiredTierFor({ flag: 'custom_range' }) ?? 'basic',
-        featureName: 'свой период',
+        featureName: t('свой период'),
         indicator: 'fund_trades',
     });
     // pending — первый выбранный месяц (база), ждём второй клик.
@@ -154,8 +154,8 @@ export default function MonthRangePicker({
     const inRange = (iso: string) => !!edgeA && !!edgeB && iso > edgeA && iso < edgeB;
 
     const hint = pending
-        ? `${MONTHS_SHORT[isoMonth(pending)]} ${isoYear(pending)} → выберите вторую границу`
-        : 'Выберите два месяца — с какого по какой';
+        ? t('{{month}} → выберите вторую границу', { month: `${monthShort(isoMonth(pending))} ${isoYear(pending)}` })
+        : t('Выберите два месяца — с какого по какой');
 
     const grid = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -181,7 +181,7 @@ export default function MonthRangePicker({
                                     <button
                                         key={m}
                                         type="button"
-                                        title={locked ? 'Свежий срез — по подписке' : undefined}
+                                        title={locked ? t('Свежий срез — по подписке') : undefined}
                                         onClick={() => pick(iso)}
                                         onMouseEnter={() => setHover(iso)}
                                         onMouseLeave={() => setHover((h) => (h === iso ? null : h))}
@@ -202,7 +202,7 @@ export default function MonthRangePicker({
                                             transition: 'background-color 0.12s ease, color 0.12s ease',
                                         }}
                                     >
-                                        {MONTHS_SHORT[m]}
+                                        {monthShort(m)}
                                         {locked && <Lock size={9} className="flex-shrink-0" />}
                                     </button>
                                 );
@@ -221,7 +221,7 @@ export default function MonthRangePicker({
                         color: 'var(--text-primary)', fontSize: 'var(--fs-2xs)', fontWeight: 700, cursor: 'pointer',
                     }}
                 >
-                    Сбросить
+                    {t('Сбросить')}
                 </button>
             )}
         </div>
@@ -236,11 +236,11 @@ export default function MonthRangePicker({
                 // Заперт: поповер не открываем — сразу апселл. Кнопка при этом
                 // выглядит обычной (без затемнения), платность выдаёт замочек.
                 onClick={() => { if (!canUseRange) { promptRangeUpgrade(); return; } setOpen((o) => !o); }}
-                aria-label="Свой период"
+                aria-label={t('Свой период')}
                 aria-pressed={!!value}
                 title={canUseRange
-                    ? (value ? `Свой период: ${monthRangeLabel(value.from, value.to)}` : 'Свой период — выбрать месяцы')
-                    : 'Свой период — на тарифе Basic или Pro'}
+                    ? (value ? t('Свой период: {{range}}', { range: monthRangeLabel(value.from, value.to) }) : t('Свой период — выбрать месяцы'))
+                    : t('Свой период — на тарифе Basic или Pro')}
                 style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3,
                     padding: '0 10px', borderRadius: 999,

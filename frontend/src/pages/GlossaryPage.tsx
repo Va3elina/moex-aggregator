@@ -10,6 +10,7 @@
  * seoMeta) пререндер кладёт для краулеров до JS, React его заменяет.
  */
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { BookOpen } from 'lucide-react';
 
 interface Term {
@@ -93,6 +94,7 @@ const TERMS: Term[] = [
 ];
 
 export default function GlossaryPage() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 md:py-8">
       <header className="flex items-center gap-4 mb-6">
@@ -112,32 +114,31 @@ export default function GlossaryPage() {
           className="text-2xl md:text-3xl font-bold"
           style={{ color: 'var(--text-primary)', letterSpacing: '-0.015em', lineHeight: 1.15 }}
         >
-          Глоссарий
+          {t('Глоссарий')}
         </h1>
       </header>
 
       <p className="mb-8" style={{ color: 'var(--text-secondary)', lineHeight: 1.65, fontSize: 15 }}>
-        Простые определения ключевых терминов анализа Московской биржи. Каждый
-        термин — с короткой расшифровкой и ссылкой на соответствующий индикатор Фрейма.
+        {t('Простые определения ключевых терминов анализа Московской биржи. Каждый термин — с короткой расшифровкой и ссылкой на соответствующий индикатор Фрейма.')}
       </p>
 
       <div className="space-y-6">
-        {TERMS.map((t) => (
-          <section key={t.term}>
+        {TERMS.map((term) => (
+          <section key={term.term}>
             <h2
               className="text-lg font-bold mb-2"
               style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
             >
-              {t.term}
+              {t(term.term)}
             </h2>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.65, fontSize: 15 }}>{t.body}</p>
-            {t.to && (
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.65, fontSize: 15 }}>{t(term.body)}</p>
+            {term.to && term.toLabel && (
               <Link
-                to={t.to}
+                to={term.to}
                 className="inline-flex items-center gap-1 mt-2 text-sm font-semibold transition-opacity hover:opacity-80"
                 style={{ color: 'var(--accent)' }}
               >
-                → {t.toLabel}
+                → {t(term.toLabel)}
               </Link>
             )}
           </section>

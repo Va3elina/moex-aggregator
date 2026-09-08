@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { Settings2, X } from 'lucide-react';
 import { ToggleRow } from '../ToggleRow';
 import type { PeriodConfig } from './periodConfig';
@@ -39,6 +40,7 @@ const POPOVER_WIDTH = 240;
 export default function PeriodSettingsPopover({
   period, color, removable, onRemove, hasDividends, onChange, title,
 }: PeriodSettingsPopoverProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const chipRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -77,7 +79,7 @@ export default function PeriodSettingsPopover({
 
   // Активная настройка подсвечивает шестерёнку — видно, что серия модифицирована.
   const active = period.median || period.excludeDividends;
-  const mods = [period.median && 'медиана', period.excludeDividends && 'без див.']
+  const mods = [period.median && t('медиана'), period.excludeDividends && t('без див.')]
     .filter(Boolean).join(', ');
 
   return (
@@ -104,7 +106,7 @@ export default function PeriodSettingsPopover({
           className="inline-block rounded-full"
           style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: color, flexShrink: 0 }}
         />
-        С {period.sinceYear} г.
+        {t('С {{y}} г.', { y: period.sinceYear })}
         {mods && (
           <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>({mods})</span>
         )}
@@ -123,8 +125,8 @@ export default function PeriodSettingsPopover({
               if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onRemove(); }
             }}
             className="opacity-60 hover:opacity-100 transition-opacity inline-flex items-center"
-            title="Убрать период"
-            aria-label="Убрать период"
+            title={t('Убрать период')}
+            aria-label={t('Убрать период')}
             style={{ cursor: 'pointer', flexShrink: 0 }}
           >
             <X size={14} />
@@ -154,15 +156,15 @@ export default function PeriodSettingsPopover({
           }}
         >
           <ToggleRow
-            label="Без выбросов"
-            hint="Считает по медиане, а не по среднему. Кризисные годы не перетягивают значение, видно типичную сезонность."
+            label={t('Без выбросов')}
+            hint={t('Считает по медиане, а не по среднему. Кризисные годы не перетягивают значение, видно типичную сезонность.')}
             checked={period.median}
             onChange={(v) => onChange({ median: v })}
           />
           {hasDividends && (
             <ToggleRow
-              label="Без дивидендных гэпов"
-              hint="Цены пересчитаны с учётом дивидендов. Провалы в дни отсечки не считаются падением и не искажают сезонность."
+              label={t('Без дивидендных гэпов')}
+              hint={t('Цены пересчитаны с учётом дивидендов. Провалы в дни отсечки не считаются падением и не искажают сезонность.')}
               checked={period.excludeDividends}
               onChange={(v) => onChange({ excludeDividends: v })}
             />

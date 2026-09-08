@@ -20,6 +20,8 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { getLang, monthGenitive } from '../i18n';
 import {
     Lock,
     Sparkles,
@@ -80,6 +82,7 @@ import FundDetailModal, {
 
 type Tab = 'funds' | 'portfolio' | 'movers' | 'snapshots' | 'company';
 
+// Значения — ключи t(), оборачиваются при рендере.
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
     'Авторские': 'Авторские',
@@ -93,6 +96,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 // ════════════════════════════════════════════════════════════════════
 
 function LockedView() {
+    const { t } = useTranslation();
     const { isAuthenticated } = useAuth();
     const { showUpgrade } = useUpgradePrompt();
     return (
@@ -130,7 +134,7 @@ function LockedView() {
                         letterSpacing: '-0.01em',
                     }}
                 >
-                    Сделки фондов
+                    {t('Сделки фондов')}
                 </h1>
                 <p
                     style={{
@@ -141,8 +145,7 @@ function LockedView() {
                         margin: '0 auto 20px',
                     }}
                 >
-                    Отслеживайте куда направляются деньги крупных фондов акций: какие
-                    акции управляющие компании накапливают, а что распродают.
+                    {t('Отслеживайте куда направляются деньги крупных фондов акций: какие акции управляющие компании накапливают, а что распродают.')}
                 </p>
                 <ul
                     style={{
@@ -154,12 +157,12 @@ function LockedView() {
                     }}
                 >
                     {[
-                        'Изменения портфеля по каждому БПИФ за период',
-                        'Топ-аккумуляция / распродажа across всех фондов',
-                        'История портфельных движений по месяцам',
-                    ].map((t) => (
+                        t('Изменения портфеля по каждому БПИФ за период'),
+                        t('Топ-аккумуляция / распродажа across всех фондов'),
+                        t('История портфельных движений по месяцам'),
+                    ].map((line) => (
                         <li
-                            key={t}
+                            key={line}
                             style={{
                                 display: 'flex',
                                 gap: 10,
@@ -169,7 +172,7 @@ function LockedView() {
                             }}
                         >
                             <span style={{ color: 'var(--accent)' }}>✓</span>
-                            <span>{t}</span>
+                            <span>{line}</span>
                         </li>
                     ))}
                 </ul>
@@ -178,7 +181,7 @@ function LockedView() {
                         onClick={() =>
                             showUpgrade({
                                 tier: 'pro',
-                                featureName: 'Сделки фондов',
+                                featureName: t('Сделки фондов'),
                                 indicator: 'fund_trades',
                             })
                         }
@@ -198,7 +201,7 @@ function LockedView() {
                         }}
                     >
                         <Sparkles size={14} />
-                        Перейти на Pro
+                        {t('Перейти на Pro')}
                     </button>
                 ) : (
                     <Link
@@ -217,7 +220,7 @@ function LockedView() {
                             fontWeight: 700,
                         }}
                     >
-                        Войти
+                        {t('Войти')}
                     </Link>
                 )}
             </div>
@@ -235,6 +238,7 @@ function LockedView() {
 // ════════════════════════════════════════════════════════════════════
 
 export default function FundTradesPage() {
+    const { t, i18n } = useTranslation();
     const common = useCommonFeatures();
     const { showUpgrade } = useUpgradePrompt(); // пейволл на locked-месяце movers (Free/гость)
     const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
@@ -522,7 +526,9 @@ export default function FundTradesPage() {
     // туры ВСЕХ индикаторов сразу. Ключ синхронно менять в трёх местах:
     // здесь, в MobileFundTradesPage и в ReplayTourButton методологии.
     const tour = useOnboardingTour('fund-trades-v2');
-    const tourSteps = useMemo(() => buildFundTradesTour(setTab), [setTab]);
+    // i18n.language в deps — тексты тура пересобираются при смене языка.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const tourSteps = useMemo(() => buildFundTradesTour(setTab), [setTab, i18n.language]);
 
     if (!common.fund_trades_access) {
         return <LockedView />;
@@ -534,8 +540,8 @@ export default function FundTradesPage() {
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
                 icon={Wallet}
-                title="Сделки фондов"
-                subtitle="Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают"
+                title={t('Сделки фондов')}
+                subtitle={t('Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают')}
                 helpLink="/methodology/funds-catalog"
             />
 
@@ -579,9 +585,9 @@ export default function FundTradesPage() {
                 value={tab}
                 onChange={setTab}
                 items={[
-                    { key: 'portfolio', label: 'Общий портфель', Icon: Briefcase },
-                    { key: 'company', label: 'По бумаге', Icon: ArrowLeftRight },
-                    { key: 'funds', label: 'Витрина', Icon: Wallet },
+                    { key: 'portfolio', label: t('Общий портфель'), Icon: Briefcase },
+                    { key: 'company', label: t('По бумаге'), Icon: ArrowLeftRight },
+                    { key: 'funds', label: t('Витрина'), Icon: Wallet },
                 ]}
             />
 
@@ -599,8 +605,8 @@ export default function FundTradesPage() {
                         <div data-tour="ft-funds-controls" className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
                             <SegmentedControl<FundSortKey>
                                 options={[
-                                    { key: 'return', label: 'Доходность' },
-                                    { key: 'volume', label: 'Объём СЧА' },
+                                    { key: 'return', label: t('Доходность') },
+                                    { key: 'volume', label: t('Объём СЧА') },
                                 ]}
                                 value={fundSort}
                                 onChange={setFundSort}
@@ -608,7 +614,7 @@ export default function FundTradesPage() {
                             <SegmentedControl<ReturnPeriodKey>
                                 options={(['m1', 'y1', 'y5'] as ReturnPeriodKey[]).map((k) => ({
                                     key: k,
-                                    label: RETURN_PERIOD_LABEL[k],
+                                    label: t(RETURN_PERIOD_LABEL[k]),
                                 }))}
                                 value={returnPeriod}
                                 onChange={setReturnPeriod}
@@ -632,7 +638,7 @@ export default function FundTradesPage() {
                         </div>
                     )}
                     {!loading && funds.length === 0 && !error && (
-                        <EmptyState message="Фонды не найдены." />
+                        <EmptyState message={t('Фонды не найдены.')} />
                     )}
                     {Object.entries(fundsByCategory).map(([cat, list]) => (
                         <div key={cat} style={{ marginBottom: 20 }}>
@@ -646,7 +652,7 @@ export default function FundTradesPage() {
                                     letterSpacing: '0.06em',
                                 }}
                             >
-                                {CATEGORY_LABEL[cat] || cat} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {list.length}</span>
+                                {CATEGORY_LABEL[cat] ? t(CATEGORY_LABEL[cat]) : cat} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {list.length}</span>
                             </h2>
                             <div
                                 style={{
@@ -668,10 +674,10 @@ export default function FundTradesPage() {
                                     const sum = listed.reduce((s, h) => s + (h.weight || 0), 0);
                                     const other = 100 - sum;
                                     const donutHoldings = other > 1
-                                        ? [...listed, { name: 'Прочее', isin: null, weight: other }]
+                                        ? [...listed, { name: t('Прочее'), isin: null, weight: other }]
                                         : listed;
                                     const donutColors = donutHoldings.map((h, i) =>
-                                        h.name === 'Прочее'
+                                        i >= listed.length
                                             ? 'var(--text-muted)'
                                             : (fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
                                     );
@@ -866,7 +872,7 @@ export default function FundTradesPage() {
                                                 ))}
                                                 {top.length === 0 && (
                                                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
-                                                        Состав не публикуется
+                                                        {t('Состав не публикуется')}
                                                     </span>
                                                 )}
                                             </div>
@@ -885,7 +891,7 @@ export default function FundTradesPage() {
                                         >
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                                                 <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                                                    Доходность · {ret?.period ?? RETURN_PERIOD_LABEL[returnPeriod]}
+                                                    {t('Доходность')} · {t(ret?.period ?? RETURN_PERIOD_LABEL[returnPeriod])}
                                                 </span>
                                                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: returnColor(ret?.v) }}>
                                                     {formatReturnPct(ret?.v)}
@@ -893,7 +899,7 @@ export default function FundTradesPage() {
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                                                 <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                                                    СЧА
+                                                    {t('СЧА')}
                                                 </span>
                                                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                                                     {f.nav_rub != null ? formatRubShort(f.nav_rub) : '—'}
@@ -950,7 +956,7 @@ export default function FundTradesPage() {
                                     onRangeChange={setPortfolioMoversRange}
                                     availableMonths={portfolioMovers?.available_months}
                                     monthLocked={isMoversRangeMonthLocked}
-                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: 'свежий срез фондов', indicator: 'fund_trades' })}
+                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: t('свежий срез фондов'), indicator: 'fund_trades' })}
                                     variant="embedded"
                                     onAssetClick={openCompanyFlows}
                                 />
@@ -968,7 +974,7 @@ export default function FundTradesPage() {
                                     asOf={portfolioAsOf}
                                     onAsOfChange={setPortfolioAsOf}
                                     monthLocked={isPortfolioMonthLocked}
-                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: 'свежий срез фондов', indicator: 'fund_trades' })}
+                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: t('свежий срез фондов'), indicator: 'fund_trades' })}
                                 />
                             </div>
                         </div>
@@ -993,7 +999,7 @@ export default function FundTradesPage() {
                                 onChange={setAsOf}
                                 onLockedClick={() => showUpgrade({
                                     tier: 'basic',
-                                    featureName: 'свежий срез фондов',
+                                    featureName: t('свежий срез фондов'),
                                     indicator: 'fund_trades',
                                 })}
                                 minWidth={150}
@@ -1010,15 +1016,15 @@ export default function FundTradesPage() {
                         )}
                         <SegmentedControl<'weight' | 'amount'>
                             options={[
-                                { key: 'weight', label: '% веса' },
-                                { key: 'amount', label: 'Объём, руб' },
+                                { key: 'weight', label: t('% веса') },
+                                { key: 'amount', label: t('Объём, руб') },
                             ]}
                             value={metric}
                             onChange={setMetric}
                         />
                     </div>
                     {loading && !movers && (
-                        <div style={{ color: 'var(--text-muted)' }}>Загружаем агрегаты…</div>
+                        <div style={{ color: 'var(--text-muted)' }}>{t('Загружаем агрегаты…')}</div>
                     )}
                     {movers && (
                         <div
@@ -1029,20 +1035,20 @@ export default function FundTradesPage() {
                             }}
                         >
                             <MoversColumn
-                                title="Топ-аккумуляция"
+                                title={t('Топ-аккумуляция')}
                                 icon={TrendingUp}
                                 color="var(--success, #2dd478)"
                                 items={movers.top_accumulated.slice(0, 5)}
-                                empty="Накоплений нет"
+                                empty={t('Накоплений нет')}
                                 metric={metric}
                                 onAssetClick={openCompanyFlows}
                             />
                             <MoversColumn
-                                title="Топ-распродажа"
+                                title={t('Топ-распродажа')}
                                 icon={TrendingDown}
                                 color="var(--danger, #ef4444)"
                                 items={movers.top_reduced.slice(0, 5)}
-                                empty="Распродаж нет"
+                                empty={t('Распродаж нет')}
                                 negative
                                 metric={metric}
                                 onAssetClick={openCompanyFlows}
@@ -1054,8 +1060,8 @@ export default function FundTradesPage() {
                         && movers.top_reduced.length === 0 && (
                         <EmptyState message={
                             movers.funds_in_month === 0
-                                ? `Для выбранных фондов нет данных за ${formatMonthYear(movers.resolved_month ?? asOf ?? '')}. Снапшот за этот месяц ещё не загружен — выберите другой месяц или дождитесь публикации.`
-                                : 'Нет заметных движений между этими месяцами.'
+                                ? t('Для выбранных фондов нет данных за {{month}}. Снапшот за этот месяц ещё не загружен — выберите другой месяц или дождитесь публикации.', { month: formatMonthYear(movers.resolved_month ?? asOf ?? '') })
+                                : t('Нет заметных движений между этими месяцами.')
                         } />
                     )}
                 </>
@@ -1118,6 +1124,7 @@ function bestReturn(
     r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null,
 ): { v: number; period: string } | null {
     if (!r) return null;
+    // period — ключ t(), оборачивается при рендере.
     if (r.y5 != null) return { v: r.y5, period: '5 лет' };
     if (r.y1 != null) return { v: r.y1, period: '1 год' };
     if (r.m6 != null) return { v: r.m6, period: '6 мес' };
@@ -1133,6 +1140,7 @@ type FundSortKey = 'return' | 'volume';
 // m3/m6 остаются в типе (детальная модалка/fallback), но в пикере периода
 // показываем только 1м / 1г / 5л.
 type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y5';
+// Значения — ключи t(), оборачиваются при рендере.
 const RETURN_PERIOD_LABEL: Record<ReturnPeriodKey, string> = {
     m1: '1 мес',
     m3: '3 мес',
@@ -1194,13 +1202,14 @@ function filterPillStyle(active: boolean): CSSProperties {
 // Сплит-коррекция позиций (splitAdjustPositions/nearestSplitRatio) и
 // formatSnapshotDate вынесены в components/funds/FundDetailModal.
 
-// "2026-04-30" → "Апрель 2026" — для month-picker день не показываем
-// (у разных УК конец месяца разный: 27/28/30/31), важен только месяц.
+// "2026-04-30" → "Апрель 2026" / "April 2026" — для month-picker день не
+// показываем (у разных УК конец месяца разный: 27/28/30/31), важен только месяц.
+const MONTHS_NOMINATIVE_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 function formatMonthYear(iso: string): string {
     const d = new Date(iso);
-    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-    return `${months[d.getMonth()]} ${d.getFullYear()}`;
+    const m = getLang() === 'en' ? monthGenitive(d.getMonth()) : MONTHS_NOMINATIVE_RU[d.getMonth()];
+    return `${m} ${d.getFullYear()}`;
 }
 
 // Horizontal bar — Editorial-стиль как у «Секторов дня».
@@ -1281,6 +1290,7 @@ function EditorialBar({
 }
 
 function SnapshotReviewTab() {
+    const { t } = useTranslation();
     const [availableFunds, setAvailableFunds] = useState<FundWithHistory[]>([]);
     const [ticker, setTicker] = usePersistedState<string>('frame:fundtrades:snapTicker', 'EQMX');
     const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
@@ -1366,8 +1376,8 @@ function SnapshotReviewTab() {
                     mode="single"
                     selected={pickerSelected}
                     onChange={(next) => {
-                        const t = next.values().next().value as string | undefined;
-                        if (t) setTicker(t);
+                        const first = next.values().next().value as string | undefined;
+                        if (first) setTicker(first);
                     }}
                     minWidth={280}
                 />
@@ -1392,8 +1402,8 @@ function SnapshotReviewTab() {
                                 key={s.snapshot_date}
                                 onClick={() => setSelectedDate(s.snapshot_date)}
                                 title={s.locked
-                                    ? `${s.snapshot_date} · свежий срез — по подписке`
-                                    : `${s.snapshot_date} · ${s.asset_count} активов`}
+                                    ? t('{{date}} · свежий срез — по подписке', { date: s.snapshot_date })
+                                    : t('{{date}} · {{n}} активов', { date: s.snapshot_date, n: s.asset_count })}
                                 className="editorial-press"
                                 style={{
                                     display: 'inline-flex',
@@ -1424,7 +1434,7 @@ function SnapshotReviewTab() {
 
             {loading && (
                 <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>
-                    Загрузка...
+                    {t('Загрузка...')}
                 </div>
             )}
             {error && (
@@ -1446,7 +1456,7 @@ function SnapshotReviewTab() {
 
             {!loading && !error && snapshotsList && snapshotsList.snapshots.length === 0 && (
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                    У {ticker} пока нет исторических снапшотов SCHA. Данные накапливаются с каждым месяцем.
+                    {t('У {{ticker}} пока нет исторических снапшотов SCHA. Данные накапливаются с каждым месяцем.', { ticker })}
                 </div>
             )}
 
@@ -1472,6 +1482,7 @@ function SnapshotReviewBody({
     maxAbsAmount: number;
     onRowClick: (r: FundDiffRow) => void;
 }) {
+    const { t } = useTranslation();
     // Переключатель метрики (как в «Сделки фондов»): сортировка/бары по объёму ₽ или по доле.
     const [metric, setMetric] = usePersistedState<'amount' | 'weight'>('frame:fundtrades:snapMetric', 'amount');
     const isW = metric === 'weight';
@@ -1521,13 +1532,13 @@ function SnapshotReviewBody({
                     {review.fund.name}
                 </h3>
                 <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
-                    Снапшот <strong style={{ color: 'var(--text-primary)' }}>
+                    {t('Снапшот')} <strong style={{ color: 'var(--text-primary)' }}>
                         {formatMonthYear(review.current_snapshot_date)}
                     </strong>
                     {review.previous_snapshot_date && (
-                        <> · сравниваем с {formatMonthYear(review.previous_snapshot_date)}</>
+                        <> · {t('сравниваем с {{month}}', { month: formatMonthYear(review.previous_snapshot_date) })}</>
                     )}
-                    {' · '}{review.totals!.current_assets} активов
+                    {' · '}{t('{{n}} активов', { n: review.totals!.current_assets })}
                 </div>
             </div>
 
@@ -1542,7 +1553,7 @@ function SnapshotReviewBody({
                         fontSize: 'var(--fs-sm)',
                         color: 'var(--text-secondary)',
                     }}>
-                        Самый ранний снапшот — сравнивать не с чем. Состав фонда на эту дату:
+                        {t('Самый ранний снапшот — сравнивать не с чем. Состав фонда на эту дату:')}
                     </div>
                     {review.current_holdings.map((h) => (
                         <div
@@ -1577,7 +1588,7 @@ function SnapshotReviewBody({
                                 className="editorial-press"
                                 style={filterPillStyle(on)}
                             >
-                                {lbl}
+                                {t(lbl)}
                             </button>
                         );
                     })}
@@ -1587,7 +1598,7 @@ function SnapshotReviewBody({
             {/* ДОКУПИЛ */}
             {addedItems.length > 0 && (
                 <SnapshotSection
-                    title="ДОКУПИЛ"
+                    title={t('ДОКУПИЛ')}
                     count={addedItems.length}
                     total={isW ? sumBy(addedItems, wDelta) : review.totals!.total_added_rub}
                     items={sortByAbs(addedItems, isW ? wDelta : aAdded)}
@@ -1596,7 +1607,7 @@ function SnapshotReviewBody({
                     valueGetter={isW ? wDelta : aAdded}
                     formatValue={fmtVal}
                     subLabelGetter={(r) =>
-                        `+${formatShares(r.delta_positions || 0)} шт` +
+                        `+${t('{{n}} шт', { n: formatShares(r.delta_positions || 0) })}` +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
                     }
                     onItemClick={onRowClick}
@@ -1606,7 +1617,7 @@ function SnapshotReviewBody({
             {/* ПРОДАЛ */}
             {reducedItems.length > 0 && (
                 <SnapshotSection
-                    title="ПРОДАЛ"
+                    title={t('ПРОДАЛ')}
                     count={reducedItems.length}
                     total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals!.total_reduced_rub)}
                     items={sortByAbs(reducedItems, isW ? wDelta : aAdded)}
@@ -1615,7 +1626,7 @@ function SnapshotReviewBody({
                     valueGetter={isW ? wDelta : aAdded}
                     formatValue={fmtVal}
                     subLabelGetter={(r) =>
-                        `${formatShares(r.delta_positions || 0)} шт` +
+                        t('{{n}} шт', { n: formatShares(r.delta_positions || 0) }) +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
                     }
                     onItemClick={onRowClick}
@@ -1625,7 +1636,7 @@ function SnapshotReviewBody({
             {/* НОВЫЕ ПОЗИЦИИ */}
             {review.new.length > 0 && (
                 <SnapshotSection
-                    title="НОВЫЕ ПОЗИЦИИ"
+                    title={t('НОВЫЕ ПОЗИЦИИ')}
                     count={review.new.length}
                     total={isW ? sumBy(review.new, wNew) : review.totals!.total_new_rub}
                     items={sortByAbs(review.new, isW ? wNew : aNew)}
@@ -1634,7 +1645,7 @@ function SnapshotReviewBody({
                     valueGetter={isW ? wNew : aNew}
                     formatValue={fmtVal}
                     subLabelGetter={(r) =>
-                        `${formatShares(r.curr_positions)} шт` +
+                        t('{{n}} шт', { n: formatShares(r.curr_positions) }) +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
                     }
                     onItemClick={onRowClick}
@@ -1644,7 +1655,7 @@ function SnapshotReviewBody({
             {/* ПОЛНОСТЬЮ ВЫШЕЛ */}
             {review.sold_out.length > 0 && (
                 <SnapshotSection
-                    title="ПОЛНОСТЬЮ ВЫШЕЛ"
+                    title={t('ПОЛНОСТЬЮ ВЫШЕЛ')}
                     count={review.sold_out.length}
                     total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals!.total_sold_out_rub}
                     items={sortByAbs(review.sold_out, isW ? wSold : aSold)}
@@ -1653,7 +1664,7 @@ function SnapshotReviewBody({
                     valueGetter={isW ? wSold : aSold}
                     formatValue={fmtVal}
                     subLabelGetter={(r) =>
-                        `было ${formatShares(r.prev_positions)} шт`
+                        t('было {{n}} шт', { n: formatShares(r.prev_positions) })
                     }
                     onItemClick={onRowClick}
                 />
@@ -1666,7 +1677,7 @@ function SnapshotReviewBody({
               review.new.length === 0 &&
               review.sold_out.length === 0 && (
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                    Состав не изменился между снапшотами.
+                    {t('Состав не изменился между снапшотами.')}
                 </div>
             )}
         </div>
@@ -1696,6 +1707,7 @@ function SnapshotSection({
     onItemClick?: (r: FundDiffRow) => void;
     formatValue?: (absValue: number) => string;
 }) {
+    const { t } = useTranslation();
     const fmt = formatValue ?? ((v: number) => formatRubShort(v));
     const [expanded, setExpanded] = useState(false);
     const displayed = expanded ? items : items.slice(0, 3);
@@ -1729,7 +1741,7 @@ function SnapshotSection({
                         {title}
                     </span>
                     <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
-                        {count} {count === 1 ? 'позиция' : count < 5 ? 'позиции' : 'позиций'}
+                        {count} {t(count === 1 ? 'позиция' : count < 5 ? 'позиции' : 'позиций')}
                     </span>
                 </div>
                 <span
@@ -1773,7 +1785,7 @@ function SnapshotSection({
                             cursor: 'pointer',
                         }}
                     >
-                        {expanded ? '↑ Свернуть' : `Показать все · ${items.length} ↓`}
+                        {expanded ? t('↑ Свернуть') : t('Показать все · {{n}} ↓', { n: items.length })}
                     </button>
                 )}
             </div>
@@ -1824,6 +1836,7 @@ function MoversColumn({
     // ITEM 2 — клик по строке актива открывает «Потоки по компании».
     onAssetClick?: (m: FundTradesMovers['top_accumulated'][number]) => void;
 }) {
+    const { t } = useTranslation();
     // Значение по выбранной метрике: % веса (Δвеса) или объём ₽ (Δсуммы).
     const valOf = (m: FundTradesMovers['top_accumulated'][number]) =>
         metric === 'amount' ? m.total_delta_amount : m.total_delta_weight;
@@ -1889,7 +1902,7 @@ function MoversColumn({
                                 : undefined}
                             role={clickable ? 'button' : undefined}
                             tabIndex={clickable ? 0 : undefined}
-                            title={clickable ? `По бумаге: ${mName}` : undefined}
+                            title={clickable ? t('По бумаге: {{name}}', { name: mName }) : undefined}
                             onMouseEnter={clickable ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                             onMouseLeave={clickable ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                             style={{
@@ -1966,8 +1979,8 @@ function MoversColumn({
                                     }}
                                 >
                                     {negative
-                                        ? `${m.funds_selling} продают`
-                                        : `${m.funds_buying} покупают`}
+                                        ? t('{{n}} продают', { n: m.funds_selling })
+                                        : t('{{n}} покупают', { n: m.funds_buying })}
                                 </span>
                             </div>
                         </div>

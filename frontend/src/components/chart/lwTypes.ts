@@ -7,6 +7,7 @@
  * контекст пользовательских настроек графика и форматтеры оси времени.
  */
 import { createContext } from 'react';
+import { monthShort } from '../../i18n';
 
 // value ВСЕГДА = close (для OHLC-серий тоже) — чтобы пилс последнего значения,
 // сигнатура reveal-анимации и alert-«+» (все читают def.data[].value) работали
@@ -121,12 +122,11 @@ export function hideTvLogo() {
 // имеет более высокий вес, чем соседние часовые бары) — это не баг, а то же
 // самое поведение, что и в настоящем TradingView; тип 3 нам приходит уже
 // свёрнутым (Time), различить «12:00» и «13:00» на этом уровне API нельзя.
-const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 export function ruTickMark(time: unknown, type: number): string {
   const t = typeof time === 'number' ? time : 0;
   const d = new Date(t * 1000);
   if (type === 0) return String(d.getUTCFullYear());
-  if (type === 1) return MONTHS_RU[d.getUTCMonth()];
+  if (type === 1) return monthShort(d.getUTCMonth());
   if (type === 2) return String(d.getUTCDate());
   return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
 }
@@ -137,6 +137,6 @@ export function ruTickMark(time: unknown, type: number): string {
 export function monthsYearsTickFmt(time: number, type: number): string {
   const d = new Date(time * 1000);
   if (type === 0) return String(d.getUTCFullYear());
-  if (type === 1) return MONTHS_RU[d.getUTCMonth()];
+  if (type === 1) return monthShort(d.getUTCMonth());
   return '';
 }

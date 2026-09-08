@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { useAnomalies } from '../../contexts/AnomalyContext';
 import { AnomalyFeedPanel } from './AnomalyFeedPanel';
+import { t } from '../../i18n';
 
 export default function MobileAnomalyBell() {
   const { unseenCount, markAllSeen, bellOpen, setBellOpen } = useAnomalies();
@@ -25,7 +26,7 @@ export default function MobileAnomalyBell() {
 
   return (
     <>
-      <button className="fm-icon-btn" onClick={toggle} aria-label="Новости и сигналы"
+      <button className="fm-icon-btn" onClick={toggle} aria-label={t('Новости и сигналы')}
         style={{ color: 'var(--accent)' }}>
         <Bell size={16} strokeWidth={2.2} />
         {unseenCount > 0 && (
@@ -40,11 +41,11 @@ export default function MobileAnomalyBell() {
       {bellOpen && createPortal(
         <>
           <div className="fm-sheet-backdrop" onClick={close} />
-          <div className="fm-sheet" role="dialog" aria-label="Новости и сигналы" style={{ maxHeight: '80dvh' }}>
+          <div className="fm-sheet" role="dialog" aria-label={t('Новости и сигналы')} style={{ maxHeight: '80dvh' }}>
             <div className="fm-sheet-handle" />
             <div className="fm-sheet-header">
-              <span className="fm-sheet-title">Новости и сигналы</span>
-              <button className="fm-icon-btn" onClick={close} aria-label="Закрыть">
+              <span className="fm-sheet-title">{t('Новости и сигналы')}</span>
+              <button className="fm-icon-btn" onClick={close} aria-label={t('Закрыть')}>
                 <X size={16} strokeWidth={2.2} />
               </button>
             </div>

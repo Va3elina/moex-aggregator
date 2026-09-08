@@ -18,6 +18,7 @@ import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { CsvExportConfig } from './CsvExportModal';
 import { CSV_EXPORT_ENABLED } from '../../config/features';
+import { useTranslation } from 'react-i18next';
 
 // Lazy-load модалки — chunk выделяется отдельно.
 const CsvExportModal = lazy(() => import('./CsvExportModal'));
@@ -46,6 +47,7 @@ interface PropsLegacy {
 type Props = PropsWithConfig | PropsLegacy;
 
 export default function CsvExportButton(props: Props) {
+    const { t } = useTranslation();
     const common = useCommonFeatures();
     const { showUpgrade } = useUpgradePrompt();
     const [modalOpen, setModalOpen] = useState(false);
@@ -56,14 +58,14 @@ export default function CsvExportButton(props: Props) {
     if (!CSV_EXPORT_ENABLED) return null;
 
     const locked = !common.csv_export;
-    const title = props.title ?? 'Скачать CSV';
+    const title = props.title ?? t('Скачать CSV');
     const indicator = props.indicator;
 
     const handleClick = async () => {
         if (locked) {
             showUpgrade({
                 tier: 'pro',
-                featureName: 'экспорт в CSV',
+                featureName: t('экспорт в CSV'),
                 indicator,
             });
             return;
@@ -84,12 +86,12 @@ export default function CsvExportButton(props: Props) {
         try {
             const resp = await apiFetch(resolvedUrl);
             if (resp.status === 403) {
-                showUpgrade({ tier: 'pro', featureName: 'экспорт в CSV', indicator });
+                showUpgrade({ tier: 'pro', featureName: t('экспорт в CSV'), indicator });
                 return;
             }
             if (!resp.ok) {
                 // eslint-disable-next-line no-alert
-                alert(`Не удалось скачать CSV (статус ${resp.status})`);
+                alert(t('Не удалось скачать CSV (статус {{status}})', { status: resp.status }));
                 return;
             }
             const blob = await resp.blob();
@@ -104,7 +106,7 @@ export default function CsvExportButton(props: Props) {
         } catch (err) {
             console.error('[CsvExportButton] download failed:', err);
             // eslint-disable-next-line no-alert
-            alert('Ошибка скачивания. Проверьте подключение и попробуйте ещё раз.');
+            alert(t('Ошибка скачивания. Проверьте подключение и попробуйте ещё раз.'));
         }
     };
 
@@ -124,7 +126,7 @@ export default function CsvExportButton(props: Props) {
                     position: 'relative',
                 }}
                 aria-label={locked ? `${title} (Pro)` : title}
-                title={locked ? `${title} — доступно на тарифе Pro` : title}
+                title={locked ? t('{{title}} — доступно на тарифе Pro', { title }) : title}
             >
                 <Download size={22} />
                 {locked && (

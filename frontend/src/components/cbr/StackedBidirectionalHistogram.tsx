@@ -28,6 +28,8 @@ import ChartDatePill from '../chart/ChartDatePill';
 import { TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
 import { useNoChartAnim } from '../chart/chartAnim';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 
 interface Props {
   periods: CbrFlowsPeriod[];
@@ -149,7 +151,8 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   tooltipNote,
 }, ref) {
   const { theme } = useTheme();
-  const axisSuffix = unitSuffix ?? 'млрд';
+  const { t } = useTranslation();
+  const axisSuffix = unitSuffix ?? t('млрд');
   const valueOf = fmtValue ?? ((v: number) => v.toFixed(2));
   const axisOf = fmtAxis ?? ((v: number) => String(Math.round(v)));
   // Цвет столбца: по знаку (одиночный ряд) либо по палитре категорий ЦБ.
@@ -436,8 +439,8 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
 
   const legendItems = useMemo<ChartLegendItem[]>(
     () => legendOverride
-      ?? categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: getCategoryShortLabel(cat) })),
-    [categories, theme, legendOverride],
+      ?? categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: t(getCategoryShortLabel(cat)) })),
+    [categories, theme, legendOverride, t],
   );
 
   // ─── Hover handler ───────────────────────────────────────────────────────
@@ -484,7 +487,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
     return (
       <div className="flex items-center justify-center"
         style={{ height: `${height}px`, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-        Нет данных
+        {t('Нет данных')}
       </div>
     );
   }
@@ -769,7 +772,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {p.label}
+                  {t(p.label)}
                 </span>
               ) : null
             ));
@@ -782,7 +785,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
             const maxTicks = cw < 420 ? 3 : cw < 640 ? 4 : cw < 900 ? 5 : 6;
             const tickCount = Math.min(maxTicks, periods.length);
             const labelOf = (p: CbrFlowsPeriod) =>
-              new Date(p.end_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+              new Date(p.end_date).toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit', year: '2-digit' });
             if (tickCount < 2) {
               // Edge case: 1 period — single centered label
               return <span style={{ margin: '0 auto' }}>{labelOf(periods[0])}</span>;
@@ -813,7 +816,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
           const p = periods[hover.periodIdx];
           return (
             <ChartDatePill
-              date={dateless ? p.label : `${p.label} ${p.year}`}
+              date={dateless ? t(p.label) : `${t(p.label)} ${p.year}`}
               x={pad.left + (hover.periodIdx + 0.5) * slotW}
               topLineY={padTop}
               minX={pad.left}
@@ -886,7 +889,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
               <div key={e.cat} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
                   <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: barColor(e.cat, e.val) }} />
-                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{e.cat}</span>
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{t(e.cat)}</span>
                 </div>
                 <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-positive)' }}>
                   {fmtValue ? fmtValue(e.val) : `+${e.val.toFixed(2)}`}
@@ -900,7 +903,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
               <div key={e.cat} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
                   <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: barColor(e.cat, e.val) }} />
-                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{e.cat}</span>
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{t(e.cat)}</span>
                 </div>
                 <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-negative)' }}>
                   {valueOf(e.val)}

@@ -2,6 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { UnheadProvider, createHead } from '@unhead/react/client'
 import './index.css'
+// i18n инициализируется на импорте — ДО первого рендера, чтобы не было
+// вспышки русского текста у EN-пользователя.
+import './i18n'
 import App from './App.tsx'
 import { reloadOnceForChunk } from './utils/chunkReload'
 import { readPalette, applyPalette } from './hooks/useChartPalette'

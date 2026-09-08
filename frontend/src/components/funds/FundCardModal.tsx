@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DONUT_COLORS, resolveFundLogo } from '../../config/fundConfig';
 import type { FundInfo, FundHoldingsResponse } from '../../services/api';
 
@@ -10,6 +11,7 @@ interface FundCardModalProps {
 }
 
 export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoading, onClose }: FundCardModalProps) {
+    const { t } = useTranslation();
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
             {/* Editorial paper-style modal: убран backdrop-blur (glass anti-pattern),
@@ -50,16 +52,16 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                 <div className="px-5 py-3 border-b border-white/10 bg-white/[0.03] grid grid-cols-2 gap-3 text-sm">
                     {selectedFund.subcategory && (
                         <div>
-                            <span className="text-theme-secondary">Тип: </span>
+                            <span className="text-theme-secondary">{t('Тип')}: </span>
                             <span className="font-medium">{selectedFund.subcategory}</span>
                         </div>
                     )}
                     <div>
-                        <span className="text-theme-secondary">СЧА: </span>
+                        <span className="text-theme-secondary">{t('СЧА')}: </span>
                         <span className="font-mono font-bold text-[#2EE59D]">
                             {(() => {
                                 const last = selectedFund.data[selectedFund.data.length - 1];
-                                return last?.nav ? `${(last.nav / 1e9).toFixed(2)} млрд ₽` : '—';
+                                return last?.nav ? t('{{v}} млрд ₽', { v: (last.nav / 1e9).toFixed(2) }) : '—';
                             })()}
                         </span>
                     </div>
@@ -67,7 +69,7 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
 
                 {/* Holdings — donut chart + list */}
                 <div className="px-5 py-3 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 180px)' }}>
-                    <div className="text-sm font-semibold text-theme-secondary mb-3">Состав фонда</div>
+                    <div className="text-sm font-semibold text-theme-secondary mb-3">{t('Состав фонда')}</div>
                     {holdingsLoading ? (
                         <div className="flex justify-center py-8">
                             <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
@@ -80,7 +82,7 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                                     {(() => {
                                         const top = fundHoldings.holdings.slice(0, 10);
                                         const otherWeight = fundHoldings.holdings.slice(10).reduce((s, h) => s + h.weight, 0);
-                                        const items = otherWeight > 0 ? [...top, { name: 'Прочее', weight: otherWeight }] : top;
+                                        const items = otherWeight > 0 ? [...top, { name: t('Прочее'), weight: otherWeight }] : top;
                                         const total = items.reduce((s, h) => s + h.weight, 0);
                                         let cumAngle = -90;
                                         const cx = 100, cy = 100, r = 70, ir = 45;
@@ -102,7 +104,7 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                                         {fundHoldings.holdings.length}
                                     </text>
                                     <text x="100" y="112" textAnchor="middle" fill="#9CA3B8" fontSize="10">
-                                        позиций
+                                        {t('позиций')}
                                     </text>
                                 </svg>
                             </div>
@@ -111,7 +113,7 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                                 {(() => {
                                     const top = fundHoldings.holdings.slice(0, 10);
                                     const otherWeight = fundHoldings.holdings.slice(10).reduce((s, h) => s + h.weight, 0);
-                                    const items = otherWeight > 0 ? [...top, { name: `Прочее (${fundHoldings.holdings.length - 10})`, weight: otherWeight }] : top;
+                                    const items = otherWeight > 0 ? [...top, { name: t('Прочее ({{n}})', { n: fundHoldings.holdings.length - 10 }), weight: otherWeight }] : top;
                                     return items.map((h, i) => (
                                         <div key={i} className="flex items-center gap-2 text-sm">
                                             <div className="legend-dot" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
@@ -124,7 +126,7 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                         </div>
                     ) : (
                         <div className="text-center text-theme-secondary py-8 text-sm">
-                            Состав не публикуется
+                            {t('Состав не публикуется')}
                         </div>
                     )}
                 </div>

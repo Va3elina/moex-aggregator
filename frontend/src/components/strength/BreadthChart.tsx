@@ -7,6 +7,7 @@ import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
 import { useChartReveal } from '../chart/useChartReveal';
 import ChartWatermark from '../ChartWatermark';
+import { dateLocale } from '../../i18n';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -216,7 +217,7 @@ export default function BreadthChart({
             const idx = Math.floor(i * (syncedData.length - 1) / Math.max(xTickCount - 1, 1));
             return {
                 x: scaleX(idx),
-                label: new Date(syncedData[idx].time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })
+                label: new Date(syncedData[idx].time).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: '2-digit' })
             };
         });
 

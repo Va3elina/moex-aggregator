@@ -26,6 +26,8 @@ import {
     useState,
 } from 'react';
 import { BarChart3 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { t as tt, dateLocale } from '../../i18n';
 import type { FundsFlowsResponse, IndexDataPoint } from '../../services/api';
 import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -90,7 +92,7 @@ function fmtFlowAxis(v: number): string {
 
 function fmtFlowVal(v: number): string {
     const s = Math.abs(v) >= 0.01 ? v.toFixed(2) : v.toFixed(3);
-    return `${v > 0 ? '+' : ''}${s} млрд ₽`;
+    return tt('{{v}} млрд ₽', { v: `${v > 0 ? '+' : ''}${s}` });
 }
 
 export default function FlowsHistogram({
@@ -98,14 +100,16 @@ export default function FlowsHistogram({
     flowsData,
     noFundsSelected = false,
     loading,
-    flowTitle = 'Чистые притоки и оттоки (млрд ₽)',
+    flowTitle,
     indexData,
     indexLabel,
     showIndex = true,
     height = 450,
     animTrigger,
 }: FlowsHistogramProps) {
+    const { t } = useTranslation();
     const isMobile = useIsMobile();
+    const flowTitleText = flowTitle ?? t('Чистые притоки и оттоки (млрд ₽)');
     // Обёртка обеих панелей — общая система координат для курсора и тултипа.
     const wrapRef = useRef<HTMLDivElement>(null);
     const priceSvgRef = useRef<SVGSVGElement>(null);
@@ -531,28 +535,28 @@ export default function FlowsHistogram({
                         <BarChart3 size={28} strokeWidth={2.4} color="#FFFFFF" />
                     </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                        Не выбрано ни одного фонда
+                        {t('Не выбрано ни одного фонда')}
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
-                        Отметьте фонды в списке «Фонды категории» ниже, чтобы увидеть гистограмму притоков и оттоков.
+                        {t('Отметьте фонды в списке «Фонды категории» ниже, чтобы увидеть гистограмму притоков и оттоков.')}
                     </div>
                 </div>
             ) : loading && !hasData ? (
                 <div className="flex items-center justify-center" style={{ height: 'calc(var(--chart-height, 450px) + 100px)' }}>
                     <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
                         <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>{t('Загрузка...')}</span>
                     </div>
                 </div>
             ) : !hasData ? (
                 <div className="flex items-center justify-center text-center" style={{ height: 'calc(var(--chart-height, 450px) + 100px)', color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                    Нет данных за период
+                    {t('Нет данных за период')}
                 </div>
             ) : (<>
                 {loading && (
                     <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
                         <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{t('Обновление...')}</span>
                     </div>
                 )}
 
@@ -582,7 +586,7 @@ export default function FlowsHistogram({
                         <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
-                                    items={[{ color: INDEX_LINE_COLOR, label: indexLabel || 'Индекс' }]}
+                                    items={[{ color: INDEX_LINE_COLOR, label: indexLabel || t('Индекс') }]}
                                     fontWeight={600}
                                     style={{ color: 'var(--text-primary)' }}
                                 />
@@ -658,7 +662,7 @@ export default function FlowsHistogram({
                     <div className="relative overflow-hidden" style={showPricePanel ? { paddingTop: 'var(--sp-2)' } : { marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                         <div className="flex items-center justify-center relative z-10" style={{ marginBottom: showPricePanel ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
-                                items={[{ color: 'transparent', label: flowTitle, marker: 'none' }]}
+                                items={[{ color: 'transparent', label: flowTitleText, marker: 'none' }]}
                                 fontWeight={600}
                                 itemGap={6}
                                 style={{ color: 'var(--text-primary)' }}
@@ -729,7 +733,7 @@ export default function FlowsHistogram({
                                         if (!f) return null;
                                         const date = new Date(f.period_end);
                                         return (
-                                            <span key={i}>{date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                            <span key={i}>{date.toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                                         );
                                     });
                                 })()}
@@ -761,7 +765,7 @@ export default function FlowsHistogram({
                                     <div style={{ marginBottom: 'var(--sp-1)', paddingBottom: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)' }}>
                                         <TooltipRow
                                             color={INDEX_LINE_COLOR}
-                                            label={indexLabel || 'Индекс'}
+                                            label={indexLabel || t('Индекс')}
                                             value={fmtPrice(hoverPrice)}
                                             labelClass="font-bold"
                                             labelColor="var(--text-primary)"
@@ -769,7 +773,7 @@ export default function FlowsHistogram({
                                         />
                                     </div>
                                 )}
-                                <TooltipRow color={color} label={f.flow >= 0 ? 'Приток' : 'Отток'} value={fmtFlowVal(f.flow)} />
+                                <TooltipRow color={color} label={f.flow >= 0 ? t('Приток') : t('Отток')} value={fmtFlowVal(f.flow)} />
                             </ChartTooltip>
                         );
                     })()}
@@ -777,7 +781,7 @@ export default function FlowsHistogram({
                     {/* Плавающая пилюля даты — hovered слот, над верхней панелью. */}
                     {hoveredI !== null && overlayGeom && flows[hoveredI] && (
                         <ChartDatePill
-                            date={new Date(flows[hoveredI].period_end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            date={new Date(flows[hoveredI].period_end).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}
                             x={overlayGeom.plotLeft + (slotX(hoveredI) / 1000) * overlayGeom.plotWidth}
                             topLineY={overlayGeom.topLineY}
                             minX={overlayGeom.plotLeft}

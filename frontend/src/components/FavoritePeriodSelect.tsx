@@ -16,6 +16,7 @@
  * Избранное живёт у родителя (persist в localStorage).
  */
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Star, Lock } from 'lucide-react';
 import { type DropdownOption } from './Dropdown';
 
@@ -44,6 +45,7 @@ export default function FavoritePeriodSelect<T extends string>({
   onLockedClick,
   className = '',
 }: FavoritePeriodSelectProps<T>) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -131,7 +133,7 @@ export default function FavoritePeriodSelect<T extends string>({
         {/* Стрелка — последний сегмент пилюли. */}
         <button
           type="button"
-          aria-label="Все периоды"
+          aria-label={t('Все периоды')}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
           className="frame-segmented-item inline-flex items-center justify-center"
@@ -214,7 +216,7 @@ export default function FavoritePeriodSelect<T extends string>({
                     Цвет отдельный от accent → не сливается с подсветкой выбора. */}
                 <button
                   type="button"
-                  aria-label={isFav ? 'Убрать из избранного' : 'Добавить в избранное'}
+                  aria-label={isFav ? t('Убрать из избранного') : t('Добавить в избранное')}
                   aria-pressed={isFav}
                   onClick={() => onToggleFavorite(opt.key)}
                   className="inline-flex items-center justify-center rounded-full flex-shrink-0"

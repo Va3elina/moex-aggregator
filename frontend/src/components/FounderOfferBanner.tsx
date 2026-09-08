@@ -21,31 +21,29 @@ import { Heart, X } from 'lucide-react';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTranslation } from 'react-i18next';
+import { dateLocale, t } from '../i18n';
 
 const DISMISS_KEY = 'frame_founder_offer_dismissed_v1';
 
-// Текст оффера — единственное место для правок копирайта.
-const COPY = {
-  title: 'Спасибо, что были первым',
-  body:
-    'Вы — самый первый подписчик Фрейма. Жаль, что не вышло связаться лично — ' +
-    'познакомиться и услышать обратную связь. Сегодня ваша подписка закончилась: ' +
-    'когда вы её оформляли, автопродление ещё не было настроено, поэтому она просто ' +
-    'истекла. В благодарность хотим подарить вам месяц Pro.',
-  cta: 'Активировать месяц Pro',
+// Текст оффера — единственное место для правок копирайта. Функция, а не
+// константа: t() на верхнем уровне модуля зафиксировал бы язык при загрузке.
+const getCopy = () => ({
+  title: t('Спасибо, что были первым'),
+  body: t('Вы — самый первый подписчик Фрейма. Жаль, что не вышло связаться лично — познакомиться и услышать обратную связь. Сегодня ваша подписка закончилась: когда вы её оформляли, автопродление ещё не было настроено, поэтому она просто истекла. В благодарность хотим подарить вам месяц Pro.'),
+  cta: t('Активировать месяц Pro'),
   // Контакт для обратной связи (если захочет поделиться опытом).
-  contactLead: 'Будем рады услышать ваш опыт — пишите',
+  contactLead: t('Будем рады услышать ваш опыт — пишите'),
   contactHandle: '@TorSasha',
   contactUrl: 'https://t.me/TorSasha',
   // Шаг согласия (раскрытие условий автосписания).
   consentLead: (days: number, amountStr: string, dateStr: string) =>
-    `Бесплатно ${days} дней Pro. Затем ${dateStr} спишется ${amountStr} и далее ` +
-    `${amountStr} ежемесячно, пока не отмените (в профиле — в любой момент).`,
-  consentCard: 'Для привязки карты спишется 1 ₽ и сразу вернётся на неё в полном объёме.',
-  consentCheckbox: 'Я согласен(на) с автосписанием по окончании бесплатного периода',
-  confirm: 'Привязать карту и активировать',
-  back: 'Назад',
-};
+    t('Бесплатно {{days}} дней Pro. Затем {{dateStr}} спишется {{amountStr}} и далее {{amountStr}} ежемесячно, пока не отмените (в профиле — в любой момент).', { days, dateStr, amountStr }),
+  consentCard: t('Для привязки карты спишется 1 ₽ и сразу вернётся на неё в полном объёме.'),
+  consentCheckbox: t('Я согласен(на) с автосписанием по окончании бесплатного периода'),
+  confirm: t('Привязать карту и активировать'),
+  back: t('Назад'),
+});
 
 // Маршруты, где баннер мешает (headless-рендер, fullscreen-формы, страницы оплаты).
 const HIDDEN_PREFIXES = [
@@ -67,11 +65,14 @@ function fmtRub(n: number | null): string {
 function firstChargeDate(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  return d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' });
 }
 
 export default function FounderOfferBanner() {
   const { isAuthenticated } = useAuth();
+  // Подписка на смену языка — COPY пересчитывается на каждом рендере.
+  useTranslation();
+  const COPY = getCopy();
   const isMobile = useIsMobile();
   const loc = useLocation();
   const [offer, setOffer] = useState<FounderOffer | null>(null);
@@ -117,11 +118,11 @@ export default function FounderOfferBanner() {
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payment_url) {
-        throw new Error(body.detail || body.error?.message || 'Не удалось активировать');
+        throw new Error(body.detail || body.error?.message || t('Не удалось активировать'));
       }
       window.location.href = body.payment_url; // → привязка карты (T-Bank AddCard)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Ошибка');
+      setErr(e instanceof Error ? e.message : t('Ошибка'));
       setSubmitting(false);
     }
   };
@@ -132,7 +133,7 @@ export default function FounderOfferBanner() {
   return (
     <div
       role="dialog"
-      aria-label="Подарок первому подписчику"
+      aria-label={t('Подарок первому подписчику')}
       style={{
         position: 'fixed',
         // Mobile: ставим НАД фикс. навигацией (.fm-bottomrail z=20, bottom=0) и
@@ -161,7 +162,7 @@ export default function FounderOfferBanner() {
       <button
         type="button"
         onClick={dismiss}
-        aria-label="Закрыть"
+        aria-label={t('Закрыть')}
         style={{
           position: 'absolute', top: 4, right: 4,
           width: 44, height: 44, display: 'inline-flex',  // 44px touch-target (мобилка)
@@ -280,7 +281,7 @@ export default function FounderOfferBanner() {
                 opacity: submitting ? 0.7 : 1,
               }}
             >
-              {submitting ? 'Переход к привязке…' : COPY.confirm}
+              {submitting ? t('Переход к привязке…') : COPY.confirm}
             </button>
           </div>
         </>

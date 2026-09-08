@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Briefcase, Bell,
@@ -25,18 +26,19 @@ import {
 
 /** Скринер сигналов: строки ленты въезжают одна за другой. */
 function VisualScreener() {
-  const rows: Array<[string, string, boolean]> = [
-    ['SR', '×6 к дневному шагу', true],
-    ['GZ', '×4 к дневному шагу', false],
-    ['BR', '×3 к дневному шагу', true],
+  const { t } = useTranslation();
+  const rows: Array<[string, number, boolean]> = [
+    ['SR', 6, true],
+    ['GZ', 4, false],
+    ['BR', 3, true],
   ];
   return (
     <div className="fh-visual">
-      {rows.map(([tk, note, up], i) => (
+      {rows.map(([tk, mult, up], i) => (
         <div key={tk} className="fh-scr-row" style={{ animationDelay: `${0.15 + i * 0.22}s` }}>
           <span className={`fh-scr-arrow ${up ? 'fh-up' : 'fh-down'}`}>{up ? '▲' : '▼'}</span>
           <span className="fh-scr-ticker">{tk}</span>
-          <span className="fh-scr-note">{note}</span>
+          <span className="fh-scr-note">{t('×{{n}} к дневному шагу', { n: mult })}</span>
         </div>
       ))}
     </div>
@@ -45,11 +47,12 @@ function VisualScreener() {
 
 /** Юрлица и число трейдеров: чип «Физлица» сменяется на «Юрлица», линия перерисовывается. */
 function VisualYur() {
+  const { t } = useTranslation();
   return (
     <div className="fh-visual">
       <div className="fh-yur-chips">
-        <span className="fh-yur-chip fh-yur-chip--fiz">Физлица</span>
-        <span className="fh-yur-chip fh-yur-chip--yur">Юрлица</span>
+        <span className="fh-yur-chip fh-yur-chip--fiz">{t('Физлица')}</span>
+        <span className="fh-yur-chip fh-yur-chip--yur">{t('Юрлица')}</span>
       </div>
       <svg viewBox="0 0 240 56" className="fh-yur-chart" aria-hidden="true">
         <polyline className="fh-yur-line fh-yur-line--fiz" points="4,14 40,22 76,18 112,30 148,26 184,40 232,46" />
@@ -61,12 +64,13 @@ function VisualYur() {
 
 /** Фильтры сезонности: тумблер включается, столбик-выброс сжимается к медиане. */
 function VisualSeasonality() {
+  const { t } = useTranslation();
   const bars = [26, 34, 22, 30, 24, 32];
   return (
     <div className="fh-visual">
       <div className="fh-sea-toggle-row">
         <span className="fh-sea-switch"><span className="fh-sea-knob" /></span>
-        <span className="fh-sea-label">Без выбросов</span>
+        <span className="fh-sea-label">{t('Без выбросов')}</span>
       </div>
       <div className="fh-sea-bars">
         {bars.map((h, i) => (
@@ -81,6 +85,7 @@ function VisualSeasonality() {
 
 /** Свой набор фондов: галочки проставляются по списку, одна строка остаётся пустой. */
 function VisualFunds() {
+  const { t } = useTranslation();
   const rows: Array<[string, boolean]> = [
     ['LQDT · Ликвидность', true],
     ['SBMX · Топ российских акций', true],
@@ -94,7 +99,7 @@ function VisualFunds() {
           <span className={`fh-fund-box ${on ? 'fh-fund-box--on' : ''}`} style={on ? { animationDelay: `${0.3 + i * 0.25}s` } : undefined}>
             {on && <svg viewBox="0 0 10 8" className="fh-fund-check" style={{ animationDelay: `${0.3 + i * 0.25}s` }}><path d="M1 4 L4 7 L9 1" /></svg>}
           </span>
-          <span className="fh-fund-name">{name}</span>
+          <span className="fh-fund-name">{t(name)}</span>
         </div>
       ))}
     </div>
@@ -103,26 +108,28 @@ function VisualFunds() {
 
 /** Свой период сравнения: подсветка диапазона растягивается по месяцам. */
 function VisualRange() {
+  const { t } = useTranslation();
   const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг'];
   return (
     <div className="fh-visual">
       <div className="fh-rng-strip">
         <span className="fh-rng-fill" />
-        {months.map((m) => <span key={m} className="fh-rng-cell">{m}</span>)}
+        {months.map((m) => <span key={m} className="fh-rng-cell">{t(m)}</span>)}
       </div>
-      <div className="fh-rng-caption">Февраль — Июнь</div>
+      <div className="fh-rng-caption">{t('Февраль — Июнь')}</div>
     </div>
   );
 }
 
 /** Алерты: колокольчик качается, тост со срабатыванием выезжает снизу. */
 function VisualAlerts() {
+  const { t } = useTranslation();
   return (
     <div className="fh-visual fh-al-wrap">
       <Bell size={22} className="fh-al-bell" />
       <div className="fh-al-toast">
         <span className="fh-al-dot" />
-        <span>SR: чистая позиция физлиц пересекла 0</span>
+        <span>{t('SR: чистая позиция физлиц пересекла 0')}</span>
       </div>
     </div>
   );
@@ -130,6 +137,7 @@ function VisualAlerts() {
 
 /** Расширение: панель Фрейма всплывает поверх графика чужого терминала. */
 function VisualExtension() {
+  const { t } = useTranslation();
   return (
     <div className="fh-visual fh-ext-wrap">
       <div className="fh-ext-bg">
@@ -139,7 +147,7 @@ function VisualExtension() {
       </div>
       <div className="fh-ext-panel">
         <span className="fh-ext-dot" />
-        <span>Открытые позиции</span>
+        <span>{t('Открытые позиции')}</span>
       </div>
     </div>
   );
@@ -274,6 +282,7 @@ interface FeatureHintRowProps {
 }
 
 export function FeatureHintRow({ hint, style, children }: FeatureHintRowProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const liRef = useRef<HTMLLIElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -364,8 +373,8 @@ export function FeatureHintRow({ hint, style, children }: FeatureHintRowProps) {
           }}
         >
           {Visual && <Visual />}
-          <div className="fh-pop-title">{hint.title}</div>
-          <div className="fh-pop-text">{hint.text}</div>
+          <div className="fh-pop-title">{t(hint.title)}</div>
+          <div className="fh-pop-text">{t(hint.text)}</div>
         </div>,
         document.body,
       )}

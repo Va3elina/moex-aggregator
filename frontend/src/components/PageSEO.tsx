@@ -19,6 +19,7 @@
 
 import { useLocation } from 'react-router-dom'
 import { useHead } from '@unhead/react'
+import { useTranslation } from 'react-i18next'
 import { CANONICAL_HOST, getSeoMeta } from '../config/seoMeta'
 
 interface Props {
@@ -29,13 +30,22 @@ interface Props {
 export default function PageSEO({ path }: Props) {
     const location = useLocation()
     const pathname = path ?? location.pathname
-    const meta = getSeoMeta(pathname)
+    // Переводы — в рендере (t зависит от языка); seoMeta.ts хранит русский
+    // оригинал, его же читает scripts/prerender-meta.ts.
+    const { t } = useTranslation()
+    const raw = getSeoMeta(pathname)
+    const meta = {
+        ...raw,
+        title: t(raw.title),
+        description: raw.description ? t(raw.description) : raw.description,
+        breadcrumb: raw.breadcrumb ? t(raw.breadcrumb) : raw.breadcrumb,
+    }
     const canonical = `${CANONICAL_HOST}${pathname === '/' ? '/' : pathname}`
 
     // BreadcrumbList JSON-LD — Google рисует «Главная > Индикаторы > Баффет»
     // прямо в результатах поиска. Появляется без BreadcrumbList — никогда.
     const breadcrumbItems: Array<{ name: string; url: string }> = [
-        { name: 'Главная', url: CANONICAL_HOST + '/' },
+        { name: t('Главная'), url: CANONICAL_HOST + '/' },
     ]
     if (meta.breadcrumb && pathname !== '/') {
         // Категория без своей страницы — просто текстовая опора

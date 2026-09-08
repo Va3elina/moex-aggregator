@@ -15,9 +15,11 @@
  * увидит активный тариф в /profile.
  */
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { XCircle } from 'lucide-react';
 
 export default function BillingFailPage() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-xl mx-auto px-6 py-12 text-center">
       <XCircle
@@ -28,20 +30,19 @@ export default function BillingFailPage() {
         className="text-2xl font-bold mb-2"
         style={{ color: 'var(--text-primary)' }}
       >
-        Оплата не прошла
+        {t('Оплата не прошла')}
       </h1>
       <p
         className="mb-2"
         style={{ color: 'var(--text-secondary)' }}
       >
-        Платёж был отменён или отклонён банком.
+        {t('Платёж был отменён или отклонён банком.')}
       </p>
       <p
         className="mb-6 text-sm"
         style={{ color: 'var(--text-muted)' }}
       >
-        Деньги не списаны. Можно попробовать ещё раз с другой картой,
-        либо вернуться позже.
+        {t('Деньги не списаны. Можно попробовать ещё раз с другой картой, либо вернуться позже.')}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
         <Link
@@ -52,7 +53,7 @@ export default function BillingFailPage() {
             color: '#fff',
           }}
         >
-          Попробовать ещё раз
+          {t('Попробовать ещё раз')}
         </Link>
         <Link
           to="/profile"
@@ -62,14 +63,14 @@ export default function BillingFailPage() {
             color: 'var(--text-primary)',
           }}
         >
-          В профиль
+          {t('В профиль')}
         </Link>
       </div>
       <p
         className="mt-8 text-xs"
         style={{ color: 'var(--text-muted)' }}
       >
-        Возникли вопросы? Напиши на{' '}
+        {t('Возникли вопросы? Напиши на')}{' '}
         <a
           href="mailto:frameinfo@mail.ru"
           style={{ color: 'var(--accent)' }}

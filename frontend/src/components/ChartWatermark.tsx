@@ -19,6 +19,7 @@
  */
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { useViewportWidth } from '../config/fluidScale';
 
@@ -48,6 +49,7 @@ export default function ChartWatermark({
   left = '10%',
   showText = true,
 }: ChartWatermarkProps) {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isEditorial = theme.startsWith('editorial');
 
@@ -117,7 +119,7 @@ export default function ChartWatermark({
             textShadow: '0 0 3px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.65)',
           }}
         >
-          Фрейм
+          {t('Фрейм')}
         </span>
       )}
     </div>

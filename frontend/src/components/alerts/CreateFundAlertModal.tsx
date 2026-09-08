@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AlarmClock, X, Check, ExternalLink } from 'lucide-react';
+import { t } from '../../i18n';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getFundsCatalog,
     type AlertCreatePayload, type CatalogFund,
@@ -96,9 +97,9 @@ const SIGNAL_LEVELS: SignalLevel[] = [
 // Русское склонение «N фондов».
 function fundsWord(n: number): string {
     const m10 = n % 10, m100 = n % 100;
-    if (m10 === 1 && m100 !== 11) return 'фонд';
-    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'фонда';
-    return 'фондов';
+    if (m10 === 1 && m100 !== 11) return t('фонд');
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return t('фонда');
+    return t('фондов');
 }
 
 export default function CreateFundAlertModal({ onClose }: Props) {
@@ -234,8 +235,8 @@ export default function CreateFundAlertModal({ onClose }: Props) {
     // ── Метка выбора (asset_name) + резолв payload ───────────────────────────
     // «Все фонды» | «<категории через запятую>» | «N фондов».
     const selectionLabel = useMemo<string>(() => {
-        if (allSelected) return 'Все фонды';
-        if (selectedCount === 0) return 'Фонды не выбраны';
+        if (allSelected) return t('Все фонды');
+        if (selectedCount === 0) return t('Фонды не выбраны');
         // Если выбор совпадает с объединением целых категорий — перечисляем их.
         const fullCats = presentCategories.filter((k) => {
             const ts = tickersByCategory.get(k) ?? [];
@@ -271,8 +272,8 @@ export default function CreateFundAlertModal({ onClose }: Props) {
 
     const handleCreate = async () => {
         const mult = resolvedMult();
-        if (mult == null || mult <= 0) { setMsg({ type: 'err', text: 'Укажите множитель уровня' }); return; }
-        if (selectedCount === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один фонд' }); return; }
+        if (mult == null || mult <= 0) { setMsg({ type: 'err', text: t('Укажите множитель уровня') }); return; }
+        if (selectedCount === 0) { setMsg({ type: 'err', text: t('Выберите хотя бы один фонд') }); return; }
         setBusy(true); setMsg(null);
         // Общие поля контракта: indicator='funds_flow', metric='net_flow', op='gt',
         // threshold=×N, timeframe всегда '1d' (потоки дневные); source='funds' ставит бэк.
@@ -298,7 +299,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                 } else {
                     const res = await createAlertsBatch(payloads);
                     if (res.created > 0) setCreated(true);
-                    else setMsg({ type: 'err', text: res.errors[0] || 'Не удалось создать сигналы' });
+                    else setMsg({ type: 'err', text: res.errors[0] || t('Не удалось создать сигналы') });
                 }
             } else {
                 // Точечный набор фондов (не целые категории) → один «custom»-сигнал
@@ -321,39 +322,39 @@ export default function CreateFundAlertModal({ onClose }: Props) {
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
-                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> Сигнал по фондам
+                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> {t('Сигнал по фондам')}
                     </span>
-                    <button onClick={onClose} aria-label="Закрыть" className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+                    <button onClick={onClose} aria-label={t('Закрыть')} className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                 </div>
 
                 {created ? (
                     <div style={{ textAlign: 'center', padding: '12px 0' }}>
                         <Check size={40} style={{ color: 'var(--accent)', margin: '0 auto 8px', display: 'block' }} />
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Сигнал создан</div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('Сигнал создан')}</div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                            Следим за потоком: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>. Когда дневной приток или отток станет аномальным, придёт сигнал в Telegram (@framesignalbot) — по конкретной категории.
+                            {t('Следим за потоком:')} <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>. {t('Когда дневной приток или отток станет аномальным, придёт сигнал в Telegram (@framesignalbot) — по конкретной категории.')}
                         </div>
-                        <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>Готово</button>
+                        <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>{t('Готово')}</button>
                     </div>
                 ) : linked === null ? (
-                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>Загрузка…</div>
+                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>{t('Загрузка…')}</div>
                 ) : !linked ? (
                     <div>
                         {linkUrl ? (
                             <>
                                 <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 12, lineHeight: 1.5 }}>
-                                    Откройте бота, нажмите <b>Start</b> — и вернитесь сюда. Статус обновится сам.
+                                    {t('Откройте бота, нажмите')} <b>Start</b> {t('— и вернитесь сюда. Статус обновится сам.')}
                                 </p>
                                 <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
                                     style={{ ...primaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', marginBottom: 8 }}>
-                                    <ExternalLink size={16} /> Открыть @framesignalbot
+                                    <ExternalLink size={16} /> {t('Открыть @framesignalbot')}
                                 </a>
-                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>Ждём подключения…</div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>{t('Ждём подключения…')}</div>
                             </>
                         ) : (
                             <>
                                 <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
-                                    Чтобы получать сигналы, подключите мессенджер. После этого все ваши уведомления будут приходить туда.
+                                    {t('Чтобы получать сигналы, подключите мессенджер. После этого все ваши уведомления будут приходить туда.')}
                                 </p>
                                 <MessengerChoice onTelegram={handleConnect} busy={busy} />
                             </>
@@ -363,11 +364,11 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {/* ── ВЫБОР ФОНДОВ — чипы категорий + пикер по УК ── */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Фонды</div>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{t('Фонды')}</div>
                             {!catalogReady ? (
-                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>Загружаем список фондов…</div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>{t('Загружаем список фондов…')}</div>
                             ) : totalFunds === 0 ? (
-                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>Фонды не найдены.</div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>{t('Фонды не найдены.')}</div>
                             ) : (
                                 <>
                                     {/* Чипы категорий (мультивыбор) + «Все категории» */}
@@ -378,7 +379,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                             className="editorial-press"
                                             style={catChip(allSelected)}
                                         >
-                                            Все категории
+                                            {t('Все категории')}
                                         </button>
                                         {presentCategories.map((k) => (
                                             <button
@@ -402,7 +403,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                             mode="multi"
                                             selected={selectedTickers}
                                             onChange={setSelectedTickers}
-                                            buttonLabel={() => (allSelected ? 'Все фонды' : `${selectedCount} ${fundsWord(selectedCount)}`)}
+                                            buttonLabel={() => (allSelected ? t('Все фонды') : `${selectedCount} ${fundsWord(selectedCount)}`)}
                                         />
                                         {!allSelected && (
                                             <button
@@ -415,13 +416,13 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                                     padding: '4px 2px',
                                                 }}
                                             >
-                                                Выбрать все
+                                                {t('Выбрать все')}
                                             </button>
                                         )}
                                     </div>
 
                                     <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                                        Выбрано: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
+                                        {t('Выбрано:')} <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
                                     </div>
                                 </>
                             )}
@@ -429,7 +430,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
 
                         {/* ── УРОВЕНЬ СИГНАЛА — ступени множителя ATR ── */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Уровень сигнала</div>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{t('Уровень сигнала')}</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {SIGNAL_LEVELS.map((l) => {
                                     const checked = levelKey === l.key;
@@ -443,10 +444,10 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                         >
                                             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                                                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-                                                    {l.label}
+                                                    {t(l.label)}
                                                     <span style={{ fontWeight: 600, opacity: 0.85 }}> · {l.mult}×</span>
                                                 </span>
-                                                <span style={{ fontSize: 'var(--fs-xs)', opacity: checked ? 0.85 : 1, color: checked ? 'var(--text-inverse)' : 'var(--text-secondary)' }}>{l.freq}</span>
+                                                <span style={{ fontSize: 'var(--fs-xs)', opacity: checked ? 0.85 : 1, color: checked ? 'var(--text-inverse)' : 'var(--text-secondary)' }}>{t(l.freq)}</span>
                                             </span>
                                         </button>
                                     );
@@ -458,7 +459,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                     className="editorial-press"
                                     style={pill(isCustomLevel)}
                                 >
-                                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Своё значение</span>
+                                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>{t('Своё значение')}</span>
                                     {isCustomLevel && (
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
                                             <input
@@ -477,7 +478,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
 
                         {/* ── РЕЖИМ — один раз / каждый раз ── */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Режим</div>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{t('Режим')}</div>
                             <div style={{ display: 'flex', gap: 6 }}>
                                 {([
                                     { value: 'once', label: 'Один раз' },
@@ -492,7 +493,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                                             className="editorial-press"
                                             style={{ ...pill(checked), justifyContent: 'center', fontSize: 'var(--fs-sm)', fontWeight: 700 }}
                                         >
-                                            {m.label}
+                                            {t(m.label)}
                                         </button>
                                     );
                                 })}
@@ -505,19 +506,15 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                             fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.5,
                         }}>
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                                Как считается аномальный поток
+                                {t('Как считается аномальный поток')}
                             </div>
-                            Берётся чистый дневной приток-отток денег в выбранные фонды и делится на
-                            средний дневной шаг за последние 14 дней. Получается «во сколько раз
-                            сегодняшний поток больше обычного»: 1 — обычный день, 3 — втрое сильнее
-                            обычного. Сигнал придёт, когда |поток| превысит выбранную кратность —
-                            и в тексте укажет направление (приток или отток).
+                            {t('Берётся чистый дневной приток-отток денег в выбранные фонды и делится на средний дневной шаг за последние 14 дней. Получается «во сколько раз сегодняшний поток больше обычного»: 1 — обычный день, 3 — втрое сильнее обычного. Сигнал придёт, когда |поток| превысит выбранную кратность — и в тексте укажет направление (приток или отток).')}
                         </div>
 
                         {/* Сводка */}
                         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                            Сигнал: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
-                            {' · поток ≥ '}
+                            {t('Сигнал:')} <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
+                            {' · '}{t('поток ≥')}{' '}
                             <b style={{ color: 'var(--text-primary)' }}>
                                 {isCustomLevel ? `${customMult || '—'}×` : `${activeLevel?.mult}×`}
                             </b>
@@ -529,7 +526,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                             className="editorial-press"
                             style={primaryBtn}
                         >
-                            {busy ? 'Создаём…' : 'Создать сигнал'}
+                            {busy ? t('Создаём…') : t('Создать сигнал')}
                         </button>
                     </div>
                 )}

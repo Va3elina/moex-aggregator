@@ -8,6 +8,8 @@
  *   - Список активных токенов + «Отозвать».
  */
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 import { MonitorSmartphone, Lock, Plus, Copy, Trash2, AlertCircle } from 'lucide-react';
 import {
     listExtensionTokens,
@@ -19,9 +21,9 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
-const UPGRADE = { tier: 'pro' as const, featureName: 'Расширение для терминала', indicator: 'api_access' };
-
 export default function ExtensionTokenSection() {
+    const { t } = useTranslation();
+    const UPGRADE = { tier: 'pro' as const, featureName: t('Расширение для терминала'), indicator: 'api_access' };
     const { user } = useAuth();
     const { showUpgrade } = useUpgradePrompt();
     // PRO или ADMIN — как на бэкенде (require_pro: role in [pro, admin]).
@@ -59,7 +61,7 @@ export default function ExtensionTokenSection() {
             const c = await createExtensionToken();
             setCreated(c);
             setTokens((prev) => [
-                { id: c.id, name: 'Терминал Т-Инвестиций', token_prefix: c.token_prefix, created_at: new Date().toISOString(), last_used_at: null },
+                { id: c.id, name: t('Терминал Т-Инвестиций'), token_prefix: c.token_prefix, created_at: new Date().toISOString(), last_used_at: null },
                 ...prev,
             ]);
         } catch (e) {
@@ -70,12 +72,12 @@ export default function ExtensionTokenSection() {
         }
     };
 
-    const handleRevoke = async (t: ExtensionTokenInfo) => {
+    const handleRevoke = async (tok: ExtensionTokenInfo) => {
         // eslint-disable-next-line no-alert
-        if (!confirm(`Отозвать токен ${t.token_prefix}…? Расширение перестанет работать с ним.`)) return;
+        if (!confirm(t('Отозвать токен {{prefix}}…? Расширение перестанет работать с ним.', { prefix: tok.token_prefix }))) return;
         try {
-            await revokeExtensionToken(t.id);
-            setTokens((prev) => prev.filter((x) => x.id !== t.id));
+            await revokeExtensionToken(tok.id);
+            setTokens((prev) => prev.filter((x) => x.id !== tok.id));
         } catch (e) {
             // eslint-disable-next-line no-alert
             alert((e as Error).message);
@@ -89,12 +91,11 @@ export default function ExtensionTokenSection() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MonitorSmartphone size={18} style={{ color: 'var(--text-secondary)' }} />
                 <h2 style={{ fontSize: 'var(--fs-lg)', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Расширение для терминала
+                    {t('Расширение для терминала')}
                 </h2>
             </div>
             <p style={{ marginTop: 6, fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Плавающее окно с индикаторами Фрейм поверх терминала Т-Инвестиций. Сгенерируйте
-                токен и вставьте его в popup расширения — индикаторы разблокируются.
+                {t('Плавающее окно с индикаторами Фрейм поверх терминала Т-Инвестиций. Сгенерируйте токен и вставьте его в popup расширения — индикаторы разблокируются.')}
             </p>
 
             {/* Non-Pro баннер */}
@@ -115,10 +116,10 @@ export default function ExtensionTokenSection() {
                     <Lock size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 200 }}>
                         <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-                            Токен — только на тарифе Pro
+                            {t('Токен — только на тарифе Pro')}
                         </div>
                         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                            Оформите Pro, чтобы генерировать токен и пользоваться расширением в терминале.
+                            {t('Оформите Pro, чтобы генерировать токен и пользоваться расширением в терминале.')}
                         </div>
                     </div>
                     <button
@@ -135,7 +136,7 @@ export default function ExtensionTokenSection() {
                             flexShrink: 0,
                         }}
                     >
-                        Перейти на Pro
+                        {t('Перейти на Pro')}
                     </button>
                 </div>
             )}
@@ -155,11 +156,10 @@ export default function ExtensionTokenSection() {
                         <AlertCircle size={20} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
                         <div style={{ flex: 1 }}>
                             <p style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', marginBottom: 4, color: 'var(--text-primary)' }}>
-                                Скопируйте токен — больше его не покажем
+                                {t('Скопируйте токен — больше его не покажем')}
                             </p>
                             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                                Вставьте его в popup расширения «Фрейм» в браузере. Мы храним только хеш —
-                                если потеряете, сгенерируйте новый.
+                                {t('Вставьте его в popup расширения «Фрейм» в браузере. Мы храним только хеш — если потеряете, сгенерируйте новый.')}
                             </p>
                         </div>
                     </div>
@@ -180,7 +180,7 @@ export default function ExtensionTokenSection() {
                         <code style={{ flex: 1 }}>{created.token}</code>
                         <button
                             onClick={() => copy(created.token)}
-                            title="Копировать"
+                            title={t('Копировать')}
                             style={{
                                 background: 'var(--bg-secondary)',
                                 border: '1.5px solid var(--text-primary)',
@@ -206,7 +206,7 @@ export default function ExtensionTokenSection() {
                             textDecoration: 'underline',
                         }}
                     >
-                        Я сохранил, скрыть
+                        {t('Я сохранил, скрыть')}
                     </button>
                 </div>
             )}
@@ -231,20 +231,20 @@ export default function ExtensionTokenSection() {
                     }}
                 >
                     <Plus size={14} />
-                    {inFlight ? 'Генерируем…' : 'Сгенерировать токен'}
+                    {inFlight ? t('Генерируем…') : t('Сгенерировать токен')}
                 </button>
             </div>
 
             {/* Список */}
             <div style={{ marginTop: 16 }}>
-                {loading && <p style={{ color: 'var(--text-muted)' }}>Загружаем…</p>}
+                {loading && <p style={{ color: 'var(--text-muted)' }}>{t('Загружаем…')}</p>}
                 {error && <p style={{ color: 'var(--funds-flow-negative)' }}>{error}</p>}
                 {!loading && tokens.length === 0 && (
-                    <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Токенов пока нет.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{t('Токенов пока нет.')}</p>
                 )}
-                {tokens.map((t) => (
+                {tokens.map((tok) => (
                     <div
-                        key={t.id}
+                        key={tok.id}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -255,19 +255,19 @@ export default function ExtensionTokenSection() {
                     >
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
-                                {t.name || '(без имени)'}
+                                {tok.name || t('(без имени)')}
                             </div>
                             <div style={{ fontFamily: 'monospace', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                {t.token_prefix}…
+                                {tok.token_prefix}…
                             </div>
                             <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2 }}>
-                                Создан {new Date(t.created_at).toLocaleDateString('ru-RU')}
-                                {t.last_used_at && <> · Использован {new Date(t.last_used_at).toLocaleDateString('ru-RU')}</>}
+                                {t('Создан')} {new Date(tok.created_at).toLocaleDateString(dateLocale())}
+                                {tok.last_used_at && <> · {t('Использован')} {new Date(tok.last_used_at).toLocaleDateString(dateLocale())}</>}
                             </div>
                         </div>
                         <button
-                            onClick={() => handleRevoke(t)}
-                            title="Отозвать"
+                            onClick={() => handleRevoke(tok)}
+                            title={t('Отозвать')}
                             style={{
                                 background: 'transparent',
                                 border: '1.5px solid var(--text-primary)',
@@ -282,7 +282,7 @@ export default function ExtensionTokenSection() {
                             }}
                         >
                             <Trash2 size={12} />
-                            Отозвать
+                            {t('Отозвать')}
                         </button>
                     </div>
                 ))}

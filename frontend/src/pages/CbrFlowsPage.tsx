@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -41,7 +42,7 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
+import { getCbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
@@ -67,6 +68,7 @@ const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null 
 ];
 
 export default function CbrFlowsPage() {
+  const { t, i18n } = useTranslation();
   const { theme } = useTheme();
   // Тип актива (Акции/ОФЗ/Валюты) персистится в localStorage — не сбрасывается на новой сессии.
   const [type, setType] = usePersistedState<CbrInstrumentType>('frame:cbr:type', 'stocks');
@@ -76,7 +78,7 @@ export default function CbrFlowsPage() {
   const { data, loading, error } = useIndicatorData<CbrFlowsResponse>({
     fetcher: () => getCbrFlows(type),
     deps: [type],
-    errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить данные',
+    errorMessage: (e) => (e as { message?: string } | null)?.message ?? t('Не удалось загрузить данные'),
   });
 
   // Категории-фильтр: какие категории скрыты из графика. Персистим в localStorage
@@ -103,6 +105,7 @@ export default function CbrFlowsPage() {
 
   // Onboarding tour
   const tour = useOnboardingTour('cbr-flows');
+  const tourSteps = useMemo(() => getCbrFlowsTourSteps(), [i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
   const categoriesBtnRef = useRef<HTMLDivElement>(null);
 
   // Click-outside handler: закрывает popover при клике вне его контейнера
@@ -212,11 +215,11 @@ export default function CbrFlowsPage() {
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
       <PageHeader
         icon={Building2}
-        title="Поток капитала"
-        subtitle="Кто покупает и кто продаёт по типам активов — по данным Банка России"
+        title={t('Поток капитала')}
+        subtitle={t('Кто покупает и кто продаёт по типам активов — по данным Банка России')}
         help={METHODOLOGY.cbrFlows}
         helpLink="/methodology/cbr-flows"
-        sourceNote="Источник: Банк России (ОРФР)"
+        sourceNote={t('Источник: Банк России (ОРФР)')}
       />
 
       {/* Нудж «данные с задержкой» убран 2026-08 вместе с самой задержкой
@@ -234,7 +237,7 @@ export default function CbrFlowsPage() {
         tourId="cbr-type"
         value={type}
         onChange={setType}
-        items={INSTRUMENT_TABS.map((t) => ({ key: t.key, label: t.label, Icon: t.Icon }))}
+        items={INSTRUMENT_TABS.map((tab) => ({ key: tab.key, label: t(tab.label), Icon: tab.Icon }))}
       />
 
       <div className="editorial-frame has-tabs">
@@ -265,7 +268,7 @@ export default function CbrFlowsPage() {
             >
               <Users style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
               <span className="whitespace-nowrap">
-                Категории {data ? `${visibleCategories.length}/${data.categories.length}` : ''}
+                {t('Категории')} {data ? `${visibleCategories.length}/${data.categories.length}` : ''}
               </span>
               <ChevronDown
                 style={{
@@ -301,7 +304,7 @@ export default function CbrFlowsPage() {
                     className="font-bold"
                     style={{ fontSize: 'var(--fs-base)', color: 'var(--text-primary)' }}
                   >
-                    Участники биржи
+                    {t('Участники биржи')}
                   </span>
                   <span
                     className="font-mono font-bold"
@@ -319,7 +322,7 @@ export default function CbrFlowsPage() {
                     const isHidden = hiddenCategories.has(cat);
                     const isLastVisible = !isHidden && !locked && visibleCategories.length === 1;
                     const color = getCategoryColor(cat, theme);
-                    const info = getCategoryInfo(cat);
+                    const info = t(getCategoryInfo(cat));
                     // Визуально «выключенной» считаем и скрытую вручную, и локнутую.
                     const dimmed = isHidden || locked;
                     return (
@@ -327,7 +330,7 @@ export default function CbrFlowsPage() {
                         key={cat}
                         onClick={() => {
                           if (locked) {
-                            showUpgrade({ tier: 'basic', featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
+                            showUpgrade({ tier: 'basic', featureName: t('категория «{{cat}}»', { cat: t(cat) }), indicator: 'cbr_flows' });
                             return;
                           }
                           if (!isLastVisible) toggleCategory(cat);
@@ -344,10 +347,10 @@ export default function CbrFlowsPage() {
                           borderColor: dimmed ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 12%, transparent)',
                         }}
                         title={locked
-                          ? 'Доступно на тарифе Базовый'
+                          ? t('Доступно на тарифе Базовый')
                           : isLastVisible
-                          ? 'Нельзя скрыть последнюю видимую категорию'
-                          : isHidden ? 'Показать на графике' : 'Скрыть с графика'}
+                          ? t('Нельзя скрыть последнюю видимую категорию')
+                          : isHidden ? t('Показать на графике') : t('Скрыть с графика')}
                       >
                         <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
                           {/* Checkbox-style indicator (локнутая → замок) */}
@@ -379,7 +382,7 @@ export default function CbrFlowsPage() {
                                 marginBottom: 'var(--sp-1)',
                               }}
                             >
-                              {cat}
+                              {t(cat)}
                               {locked && (
                                 <span
                                   className="font-bold uppercase rounded-full"
@@ -391,7 +394,7 @@ export default function CbrFlowsPage() {
                                     border: '1px solid var(--accent)',
                                   }}
                                 >
-                                  Базовый
+                                  {t('Базовый')}
                                 </span>
                               )}
                             </div>
@@ -421,7 +424,7 @@ export default function CbrFlowsPage() {
           <SegmentedControl<PeriodFilter>
             options={PERIOD_OPTIONS.map((opt) => ({
               key: opt.key,
-              label: opt.label,
+              label: t(opt.label),
               locked: !(cbrAccess.isLoading || cbrAccess.canUsePeriod(opt.key)),
             }))}
             value={period}
@@ -429,7 +432,7 @@ export default function CbrFlowsPage() {
             onLockedClick={(p) => {
               const tier = cbrAccess.requiredTierFor({ period: p });
               if (tier) {
-                showUpgrade({ tier, featureName: `период «${PERIOD_OPTIONS.find((o) => o.key === p)?.label ?? p}»`, indicator: 'cbr_flows' });
+                showUpgrade({ tier, featureName: t('период «{{p}}»', { p: t(PERIOD_OPTIONS.find((o) => o.key === p)?.label ?? p) }), indicator: 'cbr_flows' });
               }
             }}
           />
@@ -443,7 +446,7 @@ export default function CbrFlowsPage() {
             config={() => buildCbrFlowsExportConfig({
               type,
               period,
-              instrumentOptions: INSTRUMENT_TABS.map((t) => ({ value: t.key, label: t.label })),
+              instrumentOptions: INSTRUMENT_TABS.map((tab) => ({ value: tab.key, label: t(tab.label) })),
             })}
           />
           <ChartCaptureButton
@@ -453,11 +456,11 @@ export default function CbrFlowsPage() {
               // asset намеренно НЕ задаём: в шапке экспорта primary = asset ?? title,
               // и для «Потока капитала» главным заголовком должен быть сам индикатор,
               // а тип актива (Акции/ОФЗ/Валюта) уходит в подзаголовок.
-              title: 'Поток капитала',
+              title: t('Поток капитала'),
               details: [
-                data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
-                `Период: ${PERIOD_OPTIONS.find(o => o.key === period)?.label}`,
-                'Источник: Банк России · ОРФР',
+                t(INSTRUMENT_TABS.find(tab => tab.key === type)?.label ?? data?.instrument_label ?? ''),
+                t('Период: {{p}}', { p: t(PERIOD_OPTIONS.find(o => o.key === period)?.label ?? '') }),
+                t('Источник: Банк России · ОРФР'),
                 // `data.source` (имя XLSX-файла) намеренно убрано — не информативно
                 // для пользователя в подписи экспорта.
               ].filter(Boolean) as string[],
@@ -506,7 +509,7 @@ export default function CbrFlowsPage() {
               }}
             >
               <div>
-                <div className="font-bold mb-2">Не удалось загрузить данные</div>
+                <div className="font-bold mb-2">{t('Не удалось загрузить данные')}</div>
                 <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.8 }}>{error}</div>
               </div>
             </div>
@@ -542,7 +545,7 @@ export default function CbrFlowsPage() {
       </div>{/* /tabbed-card */}
 
       <OnboardingTour
-        steps={cbrFlowsTourSteps}
+        steps={tourSteps}
         open={tour.open}
         onClose={tour.close}
       />

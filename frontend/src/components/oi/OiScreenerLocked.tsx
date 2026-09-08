@@ -17,6 +17,7 @@
  * (принцип «лучше на миг не запереть, чем запереть платника»).
  */
 import { Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 
@@ -34,6 +35,7 @@ const FAKE_ROWS: { name: number; pos: number; force: number; sharp: boolean }[] 
 ];
 
 export default function OiScreenerLocked({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const { showUpgrade } = useUpgradePrompt();
   const access = useTierAccess('oi_screener');
   // requiredTierFor вернёт null, пока матрица не приехала — тогда просто Basic
@@ -41,7 +43,7 @@ export default function OiScreenerLocked({ compact = false }: { compact?: boolea
   const tier = access.requiredTierFor({ flag: 'open' }) ?? 'basic';
 
   const open = () =>
-    showUpgrade({ tier, featureName: 'скринер сигналов', indicator: 'oi_screener' });
+    showUpgrade({ tier, featureName: t('скринер сигналов'), indicator: 'oi_screener' });
 
   const rowH = compact ? 30 : 44;
   const pad = compact ? 10 : 16;
@@ -116,11 +118,10 @@ export default function OiScreenerLocked({ compact = false }: { compact?: boolea
           <Lock size={compact ? 17 : 22} strokeWidth={2.3} />
         </div>
         <div style={{ fontWeight: 800, fontSize: compact ? 'var(--fs-sm, .9rem)' : 'var(--fs-md, 1rem)', color: 'var(--text-primary)' }}>
-          Скринер сигналов — по подписке
+          {t('Скринер сигналов — по подписке')}
         </div>
         <div style={{ fontSize: compact ? 'var(--fs-xs, .8rem)' : 'var(--fs-sm, .9rem)', color: 'var(--text-secondary)', maxWidth: 360, lineHeight: 1.5 }}>
-          Где сегодня резко сдвинулись позиции физлиц и юрлиц по всему рынку разом —
-          доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic или Pro'}.
+          {t('Где сегодня резко сдвинулись позиции физлиц и юрлиц по всему рынку разом — доступно на тарифе {{tier}}.', { tier: tier === 'pro' ? 'Pro' : t('Basic или Pro') })}
         </div>
         <button
           onClick={open}
@@ -133,7 +134,7 @@ export default function OiScreenerLocked({ compact = false }: { compact?: boolea
             boxShadow: '3px 3px 0 var(--text-primary)',
           }}
         >
-          Открыть скринер
+          {t('Открыть скринер')}
         </button>
       </div>
     </div>

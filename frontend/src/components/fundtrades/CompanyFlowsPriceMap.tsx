@@ -28,6 +28,8 @@ import {
     useState,
 } from 'react';
 import { LineChart } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { t, dateLocale } from '../../i18n';
 import { GRID, CROSSHAIR, ANIMATION, FUND_PALETTE, cssVar } from '../../config/chartTheme';
 import { morphPts } from '../../utils/chartAnimation';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -111,24 +113,24 @@ interface CompanyFlowsPriceMapProps {
 
 // ── Форматтеры (fmtFlow/fmtMln — 1-в-1 из CompanyFlowsHistogram) ──
 function fmtMlnNumber(abs: number): string {
-    return abs >= 10 ? Math.round(abs).toLocaleString('ru-RU') : abs.toFixed(1);
+    return abs >= 10 ? Math.round(abs).toLocaleString(dateLocale()) : abs.toFixed(1);
 }
 
 function fmtFlow(v: number): string {
     const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    return `${sign}${fmtMlnNumber(Math.abs(v))} млн ₽`;
+    return `${sign}${fmtMlnNumber(Math.abs(v))} ${t('млн ₽')}`;
 }
 
 // Подпись оси Y — цена, ₽: адаптивная точность (5 300 / 512.4 / 84.12 / 0.5613).
 function fmtPrice(v: number): string {
-    if (v >= 1000) return Math.round(v).toLocaleString('ru-RU');
+    if (v >= 1000) return Math.round(v).toLocaleString(dateLocale());
     if (v >= 100) return v.toFixed(1);
     if (v >= 1) return v.toFixed(2);
     return v.toFixed(4);
 }
 
 function monthLabel(m: string): string {
-    return new Date(`${m}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    return new Date(`${m}-01T00:00:00`).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
 }
 
 export default function CompanyFlowsPriceMap({
@@ -144,6 +146,7 @@ export default function CompanyFlowsPriceMap({
     animTrigger,
     bare = false,
 }: CompanyFlowsPriceMapProps) {
+    const { t } = useTranslation();
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
@@ -512,10 +515,10 @@ export default function CompanyFlowsPriceMap({
                         <LineChart size={28} strokeWidth={2.4} color="#FFFFFF" />
                     </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                        Не выбрано ни одного фонда
+                        {t('Не выбрано ни одного фонда')}
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
-                        Отметьте фонды в фильтре выше, чтобы увидеть сделки на графике цены.
+                        {t('Отметьте фонды в фильтре выше, чтобы увидеть сделки на графике цены.')}
                     </div>
                 </div>
             ) : priceMissing ? (
@@ -535,29 +538,28 @@ export default function CompanyFlowsPriceMap({
                         <LineChart size={28} strokeWidth={2.4} color="#FFFFFF" />
                     </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                        Нет истории цены по этой бумаге
+                        {t('Нет истории цены по этой бумаге')}
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 380 }}>
-                        Режим «Сделки» доступен для акций, торгующихся на МосБирже.
-                        Потоки по этой бумаге смотрите в режиме «Позиция».
+                        {t('Режим «Сделки» доступен для акций, торгующихся на МосБирже. Потоки по этой бумаге смотрите в режиме «Позиция».')}
                     </div>
                 </div>
             ) : loading && !hasData ? (
                 <div className="flex items-center justify-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)' }}>
                     <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
                         <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>{t('Загрузка...')}</span>
                     </div>
                 </div>
             ) : !hasData ? (
                 <div className="flex items-center justify-center text-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)', color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                    Нет данных за период
+                    {t('Нет данных за период')}
                 </div>
             ) : (<>
                 {loading && (
                     <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
                         <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{t('Обновление...')}</span>
                     </div>
                 )}
 
@@ -569,11 +571,11 @@ export default function CompanyFlowsPriceMap({
                     <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                         <ChartLegend
                             items={[
-                                { color: PRICE_LINE_COLOR, label: assetName || 'Цена', marker: 'dot' },
+                                { color: PRICE_LINE_COLOR, label: assetName || t('Цена'), marker: 'dot' },
                                 {
                                     color: 'var(--funds-flow-negative)',
                                     colorRight: 'var(--funds-flow-positive)',
-                                    label: 'Чистые покупки и продажи (млн ₽)',
+                                    label: t('Чистые покупки и продажи (млн ₽)'),
                                     marker: 'split',
                                 },
                             ]}
@@ -739,7 +741,7 @@ export default function CompanyFlowsPriceMap({
                                     {price != null && (
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
-                                            label={assetName || 'Цена'}
+                                            label={assetName || t('Цена')}
                                             value={`${fmtPrice(price)} ₽`}
                                             labelClass="font-bold"
                                             labelColor="var(--text-primary)"
@@ -754,7 +756,7 @@ export default function CompanyFlowsPriceMap({
                                     <TooltipRow
                                         hideDot
                                         color={netColor}
-                                        label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'}
+                                        label={net >= 0 ? t('Чистая покупка') : t('Чистая продажа')}
                                         value={fmtFlow(net)}
                                         labelClass="font-bold"
                                         labelColor="var(--text-primary)"
@@ -778,7 +780,7 @@ export default function CompanyFlowsPriceMap({
                                             ))}
                                             {extra > 0 && (
                                                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
-                                                    и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
+                                                    {t('и ещё {{n}}', { n: extra })} {t(extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов')}
                                                 </div>
                                             )}
                                         </div>
@@ -825,7 +827,7 @@ export default function CompanyFlowsPriceMap({
                                     const idx = Math.min(Math.round(i * (vis.length - 1) / Math.max(tickCount - 1, 1)), vis.length - 1);
                                     if (!vis[idx]) return null;
                                     return (
-                                        <span key={i}>{new Date(`${vis[idx]}T00:00:00`).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
+                                        <span key={i}>{new Date(`${vis[idx]}T00:00:00`).toLocaleDateString(dateLocale(), { month: 'short', year: '2-digit' })}</span>
                                     );
                                 });
                             })()}

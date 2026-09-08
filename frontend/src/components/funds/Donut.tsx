@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DONUT_COLORS } from '../../config/fundConfig';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
 
@@ -65,6 +66,7 @@ export default function Donut({
     hoverPop = 7,
     renderCenter,
 }: DonutProps) {
+    const { t } = useTranslation();
     const [hover, setHover] = useState<number | null>(null);
     const active = highlightIndex != null ? highlightIndex : hover;
     const interactive = !!onHoverChange || !!onSliceClick;
@@ -72,7 +74,7 @@ export default function Donut({
     const { paths, items, total, segmentCount } = useMemo(() => {
         const top = holdings.slice(0, maxSlices);
         const otherWeight = holdings.slice(maxSlices).reduce((s, h) => s + h.weight, 0);
-        const items = otherWeight > 0 ? [...top, { name: 'Прочее', weight: otherWeight }] : top;
+        const items = otherWeight > 0 ? [...top, { name: t('Прочее'), weight: otherWeight }] : top;
         const total = items.reduce((s, h) => s + h.weight, 0);
 
         const cx = 100, cy = 100, r = outerRadius, ir = innerRadius;
@@ -99,7 +101,7 @@ export default function Donut({
         });
 
         return { paths: built, items, total, segmentCount: holdings.length };
-    }, [holdings, outerRadius, innerRadius, maxSlices, colors, gapDeg]);
+    }, [holdings, outerRadius, innerRadius, maxSlices, colors, gapDeg, t]);
 
     // Entrance-reveal: проявление слайсов при mount/смене состава (НЕ при hover).
     // Ключ зависит ТОЛЬКО от состава → hover/returnPeriod (не меняющие holdings) не
@@ -177,7 +179,7 @@ export default function Donut({
                         {centerCount ?? segmentCount}
                     </text>
                     <text x="100" y="116" textAnchor="middle" fill="var(--text-muted)" fontSize={cf(11)}>
-                        позиций
+                        {t('позиций')}
                     </text>
                 </>
             )}

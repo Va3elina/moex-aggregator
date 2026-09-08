@@ -10,6 +10,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { t } from '../i18n';
 
 interface CenteredModalShellProps {
   open: boolean;
@@ -74,7 +75,7 @@ export default function CenteredModalShell({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Закрыть"
+            aria-label={t('Закрыть')}
             className="inline-flex items-center justify-center rounded-full"
             style={{ color: 'var(--text-primary)', width: 28, height: 28 }}
           >

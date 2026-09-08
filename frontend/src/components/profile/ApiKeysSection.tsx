@@ -11,6 +11,8 @@
  * Tier-gating: показывает CTA на upgrade для не-Pro, скрывает UI.
  */
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 import { Key, Plus, Copy, Trash2, AlertCircle, ExternalLink, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -26,6 +28,7 @@ import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
 export default function ApiKeysSection() {
+    const { t } = useTranslation();
     const common = useCommonFeatures();
     const { showUpgrade } = useUpgradePrompt();
     const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
@@ -70,7 +73,7 @@ export default function ApiKeysSection() {
     const handleCreate = async () => {
         // Live-ключ требует Pro. Test-ключ — любой залогиненный юзер.
         if (newMode === 'live' && !common.api_access) {
-            showUpgrade({ tier: 'pro', featureName: 'API-доступ', indicator: 'api_access' });
+            showUpgrade({ tier: 'pro', featureName: t('API-доступ'), indicator: 'api_access' });
             return;
         }
         setCreatingInFlight(true);
@@ -90,7 +93,7 @@ export default function ApiKeysSection() {
     };
 
     const handleRevoke = async (key: ApiKeyInfo) => {
-        if (!confirm(`Отозвать ключ ${key.key_prefix}…? Восстановить нельзя.`)) return;
+        if (!confirm(t('Отозвать ключ {{prefix}}…? Восстановить нельзя.', { prefix: key.key_prefix }))) return;
         try {
             await revokeApiKey(key.id);
             setKeys((prev) => prev.map((k) => (k.id === key.id ? { ...k, is_revoked: true } : k)));
@@ -133,16 +136,15 @@ export default function ApiKeysSection() {
                                 marginBottom: 2,
                             }}
                         >
-                            Live-ключи — на тарифе Pro
+                            {t('Live-ключи — на тарифе Pro')}
                         </div>
                         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                            Сейчас вы можете создать <strong>test-ключ</strong> для разработки —
-                            бесплатно, с теми же эндпоинтами и rate-limit'ом.
+                            {t('Сейчас вы можете создать')} <strong>{t('test-ключ')}</strong> {t("для разработки — бесплатно, с теми же эндпоинтами и rate-limit'ом.")}
                         </div>
                     </div>
                     <button
                         onClick={() =>
-                            showUpgrade({ tier: 'pro', featureName: 'API-доступ', indicator: 'api_access' })
+                            showUpgrade({ tier: 'pro', featureName: t('API-доступ'), indicator: 'api_access' })
                         }
                         style={{
                             padding: '6px 14px',
@@ -156,7 +158,7 @@ export default function ApiKeysSection() {
                             flexShrink: 0,
                         }}
                     >
-                        Перейти на Pro
+                        {t('Перейти на Pro')}
                     </button>
                 </div>
             )}
@@ -193,7 +195,7 @@ export default function ApiKeysSection() {
                                     color: 'var(--text-primary)',
                                 }}
                             >
-                                Сохраните ключ — больше его не покажем
+                                {t('Сохраните ключ — больше его не покажем')}
                             </p>
                             <p
                                 style={{
@@ -202,8 +204,7 @@ export default function ApiKeysSection() {
                                     lineHeight: 1.4,
                                 }}
                             >
-                                Это ваш единственный шанс скопировать ключ. Мы храним только хеш
-                                для проверок. Если потеряете — создайте новый.
+                                {t('Это ваш единственный шанс скопировать ключ. Мы храним только хеш для проверок. Если потеряете — создайте новый.')}
                             </p>
                         </div>
                     </div>
@@ -224,7 +225,7 @@ export default function ApiKeysSection() {
                         <code style={{ flex: 1 }}>{createdKey.plain_key}</code>
                         <button
                             onClick={() => copyToClipboard(createdKey.plain_key)}
-                            title="Копировать"
+                            title={t('Копировать')}
                             style={{
                                 background: 'var(--bg-secondary)',
                                 border: '1.5px solid var(--text-primary)',
@@ -250,7 +251,7 @@ export default function ApiKeysSection() {
                             textDecoration: 'underline',
                         }}
                     >
-                        Я сохранил, скрыть
+                        {t('Я сохранил, скрыть')}
                     </button>
                 </div>
             )}
@@ -275,7 +276,7 @@ export default function ApiKeysSection() {
                         }}
                     >
                         <Plus size={14} />
-                        Создать ключ
+                        {t('Создать ключ')}
                     </button>
                 ) : (
                     <div
@@ -331,8 +332,8 @@ export default function ApiKeysSection() {
                                         </span>
                                         <span style={{ fontSize: 'var(--fs-2xs)', opacity: 0.8 }}>
                                             {m === 'live'
-                                                ? 'Продакшн (Pro)'
-                                                : 'Разработка (бесплатно)'}
+                                                ? t('Продакшн (Pro)')
+                                                : t('Разработка (бесплатно)')}
                                         </span>
                                     </button>
                                 );
@@ -343,7 +344,7 @@ export default function ApiKeysSection() {
                             <input
                                 value={newName}
                                 onChange={(e) => setNewName(e.target.value)}
-                                placeholder="Имя ключа (e.g. prod-bot)"
+                                placeholder={t('Имя ключа (e.g. prod-bot)')}
                                 maxLength={100}
                                 autoFocus
                                 style={{
@@ -370,7 +371,7 @@ export default function ApiKeysSection() {
                                     cursor: creatingInFlight ? 'wait' : 'pointer',
                                 }}
                             >
-                                {creatingInFlight ? 'Создаём…' : 'Создать'}
+                                {creatingInFlight ? t('Создаём…') : t('Создать')}
                             </button>
                             <button
                                 onClick={() => {
@@ -389,7 +390,7 @@ export default function ApiKeysSection() {
                                     cursor: 'pointer',
                                 }}
                             >
-                                Отмена
+                                {t('Отмена')}
                             </button>
                         </div>
                     </div>
@@ -398,11 +399,11 @@ export default function ApiKeysSection() {
 
             {/* List */}
             <div style={{ marginTop: 16 }}>
-                {loading && <p style={{ color: 'var(--text-muted)' }}>Загружаем…</p>}
+                {loading && <p style={{ color: 'var(--text-muted)' }}>{t('Загружаем…')}</p>}
                 {error && <p style={{ color: 'var(--funds-flow-negative)' }}>{error}</p>}
                 {!loading && keys.length === 0 && (
                     <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-                        Ключей пока нет. Создайте первый чтобы начать использовать API.
+                        {t('Ключей пока нет. Создайте первый чтобы начать использовать API.')}
                     </p>
                 )}
                 {keys.map((k) => (
@@ -429,7 +430,7 @@ export default function ApiKeysSection() {
                                     flexWrap: 'wrap',
                                 }}
                             >
-                                {k.name || '(без имени)'}
+                                {k.name || t('(без имени)')}
                                 {/* Mode badge — отличает live/test визуально */}
                                 <span
                                     style={{
@@ -457,7 +458,7 @@ export default function ApiKeysSection() {
                                             fontWeight: 600,
                                         }}
                                     >
-                                        ОТОЗВАН
+                                        {t('ОТОЗВАН')}
                                     </span>
                                 )}
                             </div>
@@ -478,11 +479,11 @@ export default function ApiKeysSection() {
                                     marginTop: 2,
                                 }}
                             >
-                                Создан {new Date(k.created_at).toLocaleDateString('ru-RU')}
+                                {t('Создан')} {new Date(k.created_at).toLocaleDateString(dateLocale())}
                                 {k.last_used_at && (
                                     <>
                                         {' · '}
-                                        Использован {new Date(k.last_used_at).toLocaleDateString('ru-RU')}
+                                        {t('Использован')} {new Date(k.last_used_at).toLocaleDateString(dateLocale())}
                                     </>
                                 )}
                             </div>
@@ -490,7 +491,7 @@ export default function ApiKeysSection() {
                         {!k.is_revoked && (
                             <button
                                 onClick={() => handleRevoke(k)}
-                                title="Отозвать"
+                                title={t('Отозвать')}
                                 style={{
                                     background: 'transparent',
                                     border: '1.5px solid var(--text-primary)',
@@ -505,7 +506,7 @@ export default function ApiKeysSection() {
                                 }}
                             >
                                 <Trash2 size={12} />
-                                Отозвать
+                                {t('Отозвать')}
                             </button>
                         )}
                     </div>
@@ -528,7 +529,7 @@ export default function ApiKeysSection() {
                         textDecoration: 'underline',
                     }}
                 >
-                    Документация API <ExternalLink size={12} />
+                    {t('Документация API')} <ExternalLink size={12} />
                 </Link>
             </div>
         </section>
@@ -543,6 +544,7 @@ export default function ApiKeysSection() {
  * Каждый столбец — высота пропорциональна max-значению в окне.
  */
 function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
+    const { t } = useTranslation();
     const maxCount = Math.max(...usage.by_day.map((d) => d.count), 1);
     return (
         <div
@@ -561,7 +563,7 @@ function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
                         color: 'var(--text-primary)',
                     }}
                 >
-                    Использование API
+                    {t('Использование API')}
                 </span>
                 <span
                     style={{
@@ -570,7 +572,7 @@ function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
                         color: 'var(--text-muted)',
                     }}
                 >
-                    {usage.total.toLocaleString('ru-RU')} запросов · {usage.days} дней
+                    {t('{{total}} запросов · {{days}} дней', { total: usage.total.toLocaleString('ru-RU'), days: usage.days })}
                 </span>
             </div>
             <div
@@ -581,7 +583,7 @@ function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
                     height: 64,
                     padding: '0 2px',
                 }}
-                title={`Максимум за день: ${maxCount}`}
+                title={t('Максимум за день: {{n}}', { n: maxCount })}
             >
                 {usage.by_day.map((d) => {
                     const heightPct = (d.count / maxCount) * 100;
@@ -622,13 +624,14 @@ function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
                 }}
             >
                 <span>{usage.by_day[0]?.date}</span>
-                <span>сегодня</span>
+                <span>{t('сегодня')}</span>
             </div>
         </div>
     );
 }
 
 function SectionHeader() {
+    const { t } = useTranslation();
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Key size={18} style={{ color: 'var(--text-secondary)' }} />
@@ -640,7 +643,7 @@ function SectionHeader() {
                     margin: 0,
                 }}
             >
-                API-ключи
+                {t('API-ключи')}
             </h2>
         </div>
     );

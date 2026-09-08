@@ -1,4 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t, dateLocale } from '../i18n';
 import { Download, BarChart2, TrendingUp } from 'lucide-react';
 import ChartNavigator from './ChartNavigator';
 import ChartWatermark from './ChartWatermark';
@@ -175,10 +177,10 @@ export default function SimpleChart({
     // С переменной шириной (нояб./февр./июн.) метки "дёргались" при drag
     // navigator: длина текста менялась вместе со средней датой → визуальный
     // shift даже при стабильной X-позиции тика.
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    return date.toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit', year: '2-digit' });
   },
   loading = false,
-  primaryLabel = 'Цена',
+  primaryLabel = t('Цена'),
   secondaryLabel = 'OI',
   thirdLabel = '',
   allowHistogram = false,
@@ -208,6 +210,8 @@ export default function SimpleChart({
   axisZoom = false,
   bare = false,
 }: SimpleChartProps) {
+  // Ре-рендер при смене языка (подписи/даты считаются через t()/dateLocale()).
+  useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -1224,7 +1228,7 @@ export default function SimpleChart({
       <div ref={containerRef} className={bare ? 'flex items-center justify-center' : 'rounded-2xl flex items-center justify-center bg-theme-primary border border-theme'} style={{ height: placeholderHeight }}>
         <div className="flex items-center text-theme-secondary" style={{ gap: 'var(--sp-3)' }}>
           <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-          <span style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+          <span style={{ fontSize: 'var(--fs-base)' }}>{t('Загрузка...')}</span>
         </div>
       </div>
     );
@@ -1233,7 +1237,7 @@ export default function SimpleChart({
   if (data.length === 0 && !loading) {
     return (
       <div ref={containerRef} className={bare ? 'flex items-center justify-center' : 'rounded-2xl flex items-center justify-center bg-theme-primary border border-theme'} style={{ height: placeholderHeight }}>
-        <p className="text-theme-secondary text-lg">Нет данных для отображения</p>
+        <p className="text-theme-secondary text-lg">{t('Нет данных для отображения')}</p>
       </div>
     );
   }
@@ -1287,7 +1291,7 @@ export default function SimpleChart({
             border: '1.5px solid var(--text-primary)',
             color: histogramDisabled ? 'var(--text-muted)' : 'var(--text-primary)',
           }}
-          title={histogramDisabled ? 'Гистограмма недоступна в этом режиме' : chartMode === 'line' ? 'Переключить на гистограмму' : 'Переключить на линию'}
+          title={histogramDisabled ? t('Гистограмма недоступна в этом режиме') : chartMode === 'line' ? t('Переключить на гистограмму') : t('Переключить на линию')}
         >
           {chartMode === 'line' ? <BarChart2 size={18} /> : <TrendingUp size={18} />}
         </button>
@@ -1303,7 +1307,7 @@ export default function SimpleChart({
             border: '1.5px solid var(--text-primary)',
             color: 'var(--text-primary)',
           }}
-          title="Скачать график как PNG"
+          title={t('Скачать график как PNG')}
         >
           <Download size={18} />
         </button>
@@ -1313,7 +1317,7 @@ export default function SimpleChart({
       {loading && (
         <div className="absolute top-4 left-4 z-10 flex items-center rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
           <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-          <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+          <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{t('Обновление...')}</span>
         </div>
       )}
 
@@ -2005,7 +2009,7 @@ export default function SimpleChart({
           // Strip большие units (трлн/млрд/млн/тыс/₽). % оставляем —
           // axis labels показывают "60%" с процентом, pill должен совпадать.
           const stripUnits = (s: string) =>
-            s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
+            s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽ (?:tn|bn|M|K)|(?:tn|bn|M|K) ₽|₽)\s*$/g, '').trim();
           // padSign убран — раньше добавлял FIGURE SPACE к positive чтобы
           // align digit columns между +/- pills, но это сдвигало pill text-LEFT
           // правее axis tick text. Без него pill вровень с осью.
@@ -2199,7 +2203,7 @@ export default function SimpleChart({
           const pillH = fontY + padY * 2;
           const r = fontY * 0.62;                 // радиус кружка «+»
           const plotLeft = padding.left, plotRight = padding.left + chartWidth;
-          const stripUnits = (s: string) => s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
+          const stripUnits = (s: string) => s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽ (?:tn|bn|M|K)|(?:tn|bn|M|K) ₽|₽)\s*$/g, '').trim();
           const y = tooltip.cursorY;
 
           const pill = (axis: 'primary' | 'secondary') => {
@@ -2386,7 +2390,7 @@ export default function SimpleChart({
         const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
         if (dataIdx === -1) return null;
         const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * Math.max(chartWidth - CHART_END_GAP, 1);
-        const annDate = new Date(ann.time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+        const annDate = new Date(ann.time).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
           <ChartDatePill
@@ -2404,7 +2408,7 @@ export default function SimpleChart({
         const wrap = chartWrapRef.current;
         if (!wrap) return null;
         const d = new Date(tooltip.time);
-        const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+        const dateStr = d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
         const hours = d.getHours();
         const minutes = d.getMinutes();
         const htmlDateLabel = tooltipDateFormat

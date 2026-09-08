@@ -7,6 +7,7 @@ import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
 import { useChartReveal } from '../chart/useChartReveal';
 import ChartWatermark from '../ChartWatermark';
+import { dateLocale } from '../../i18n';
 
 interface IndexChartProps {
     syncedData: SyncedDataPoint[];
@@ -208,7 +209,7 @@ export default function IndexChart({
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
                                     textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, #9CA3B8)" fontSize="var(--chart-font-y, 16)" fontWeight="600"
                                     paintOrder="stroke" stroke="var(--bg-primary)" strokeWidth="4" strokeLinejoin="round">
-                                    {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                                    {tick.value.toLocaleString(dateLocale(), { maximumFractionDigits: 0 })}
                                 </text>
                             </g>
                         ))}
@@ -218,7 +219,7 @@ export default function IndexChart({
                         {(() => {
                             const lastP = chartData.points[chartData.points.length - 1];
                             if (!lastP) return null;
-                            const value = lastP.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+                            const value = lastP.value.toLocaleString(dateLocale(), { maximumFractionDigits: 0 });
                             const fontY = axisFs;
                             const fontWeight = 700;
                             const padX = 8; // как в SimpleChart — единый размер заливки pill'а

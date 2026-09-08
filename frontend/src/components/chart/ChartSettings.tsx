@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { Settings2, X, LineChart, AreaChart, ChartCandlestick, ChartColumnBig } from 'lucide-react';
 import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
 import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../../hooks/useChartSettings';
@@ -112,6 +113,7 @@ const swatch = (bg: string): CSSProperties => ({
  * Состояние — в useChartSettings/useChartPalette, пропсов-коллбэков нет.
  */
 export default function ChartSettings({ showType = true, ohlcHere = false, scopeLabels, className = '' }: Props) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   // Модалка идёт порталом в body (см. ниже), а в песочнице тема живёт на
   // .sb-panel каждой панели — без явного атрибута окно взяло бы тему оболочки.
@@ -120,9 +122,9 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
   const [palette, setPalette] = useChartPalette();
   const { type, dash, scope, setType, setDash, setScope } = useChartSettings();
   const sl = {
-    primary: scopeLabels?.primary ?? 'Линия 1',
-    secondary: scopeLabels?.secondary ?? 'Линия 2',
-    all: scopeLabels?.all ?? 'Все',
+    primary: scopeLabels?.primary ?? t('Линия 1'),
+    secondary: scopeLabels?.secondary ?? t('Линия 2'),
+    all: scopeLabels?.all ?? t('Все'),
   };
 
   useEffect(() => {
@@ -145,8 +147,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
           color: 'var(--text-primary)',
           width: 44, height: 44,
         }}
-        aria-label="Настройки графика"
-        title="Настройки графика"
+        aria-label={t('Настройки графика')}
+        title={t('Настройки графика')}
       >
         <Settings2 size={22} />
       </button>
@@ -168,11 +170,11 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
           <div style={card} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }}>
-                <Settings2 size={20} /> Настройки графика
+                <Settings2 size={20} /> {t('Настройки графика')}
               </span>
               <button
                 onClick={() => setOpen(false)}
-                aria-label="Закрыть"
+                aria-label={t('Закрыть')}
                 className="editorial-press"
                 style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
               >
@@ -182,7 +184,7 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
 
             {showType && (
               <>
-                <div style={sectionLabel}>Тип графика</div>
+                <div style={sectionLabel}>{t('Тип графика')}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {CHART_TYPES
                     .filter(({ key }) => ohlcHere || !OHLC_TYPES.includes(key))
@@ -195,7 +197,7 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                         style={optionPill(type === key)}
                         aria-pressed={type === key}
                       >
-                        <Icon size={18} /> {label}
+                        <Icon size={18} /> {t(label)}
                       </button>
                     ))}
                 </div>
@@ -204,7 +206,7 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                     Подписи — имена линий конкретного графика (scopeLabels).
                     Свечи/бары/хайкен рисуются только на линии с OHLC (цена)
                     при любом выборе — вторичным не из чего строиться. */}
-                <div style={{ ...sectionLabel, marginTop: 22 }}>Применять к</div>
+                <div style={{ ...sectionLabel, marginTop: 22 }}>{t('Применять к')}</div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   {([
                     ['primary', sl.primary],
@@ -230,9 +232,9 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                 Несколько схем: одна не покрывает все типы дальтонизма. Пятая карточка
                 «Монохром» = контраст-палитра + штрих второй линии (различие формой —
                 для тех, кому не помогает никакой цвет). */}
-            <div style={{ ...sectionLabel, marginTop: showType ? 22 : 0 }}>Палитра</div>
+            <div style={{ ...sectionLabel, marginTop: showType ? 22 : 0 }}>{t('Палитра')}</div>
             <p style={sectionHint}>
-              Выбери схему, в которой линии графика различаются лучше всего.
+              {t('Выбери схему, в которой линии графика различаются лучше всего.')}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {PALETTES.map((p) => {
@@ -251,8 +253,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                       <i style={swatch(p.sell)} />
                     </span>
                     <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{p.label}</span>
-                      <span style={{ fontSize: 11, opacity: 0.7 }}>{p.tag}</span>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{t(p.label)}</span>
+                      <span style={{ fontSize: 11, opacity: 0.7 }}>{t(p.tag)}</span>
                     </span>
                   </button>
                 );
@@ -269,8 +271,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                   <path d="M2 10h5M11 10h5M20 10h5M29 10h2" />
                 </svg>
                 <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
-                  <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>Монохром</span>
-                  <span style={{ fontSize: 11, opacity: 0.7 }}>формой, не цветом</span>
+                  <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{t('Монохром')}</span>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>{t('формой, не цветом')}</span>
                 </span>
               </button>
             </div>

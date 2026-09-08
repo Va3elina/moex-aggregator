@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { t } from '../../i18n';
 
 export interface TourStep {
   /** CSS-селектор элемента для spotlight. null = центрированная generic-модалка. */
@@ -324,7 +325,7 @@ export default function OnboardingTour({
           <button
             onClick={handleClose}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
-            aria-label="Закрыть тур"
+            aria-label={t('Закрыть тур')}
             style={{ padding: 14, margin: -10 }}
           >
             <X size={16} />
@@ -354,7 +355,7 @@ export default function OnboardingTour({
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-3)' }}
           >
-            Пропустить
+            {t('Пропустить')}
           </button>
 
           <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
@@ -372,7 +373,7 @@ export default function OnboardingTour({
                 }}
               >
                 <ChevronLeft size={14} />
-                Назад
+                {t('Назад')}
               </button>
             )}
             <button
@@ -388,7 +389,7 @@ export default function OnboardingTour({
                 gap: 4,
               }}
             >
-              {isLastStep ? 'Готово' : 'Далее'}
+              {isLastStep ? t('Готово') : t('Далее')}
               {!isLastStep && <ChevronRight size={14} />}
             </button>
           </div>

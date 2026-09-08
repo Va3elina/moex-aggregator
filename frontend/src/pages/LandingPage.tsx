@@ -29,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ThermalLinesHero from '../components/landing/ThermalLinesHero';
 import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
 import MultiChartShowcase from '../components/landing/MultiChartShowcase';
@@ -118,6 +119,7 @@ const PATTERNS_INDICATORS: Indicator[] = [
 ];
 
 export default function LandingPage() {
+  const { t } = useTranslation();
   return (
     <div>
 
@@ -137,7 +139,7 @@ export default function LandingPage() {
                 textShadow: '0 2px 24px rgba(0,0,0,0.3)',
               }}
             >
-              Посмотри. Подумай. Решай.
+              {t('Посмотри. Подумай. Решай.')}
             </h1>
             <p
               className="text-base md:text-xl max-w-2xl mx-auto mb-8 md:mb-10"
@@ -147,8 +149,7 @@ export default function LandingPage() {
                 textShadow: '0 1px 20px rgba(0,0,0,0.4)',
               }}
             >
-              Лучшие инвестиционные решения начинаются с качественных данных.
-              Российский рынок, индикаторы и аналитика на одном экране.
+              {t('Лучшие инвестиционные решения начинаются с качественных данных. Российский рынок, индикаторы и аналитика на одном экране.')}
             </p>
             {/* Hero buttons — кастомные классы hero-btn-* с ИНВЕРТИРОВАННОЙ
                 тенью: чёрная кнопка → кремовая тень (light theme), кремовая
@@ -156,11 +157,11 @@ export default function LandingPage() {
                 цветом кнопки и хорошо видим на оранжевом accent-фоне. */}
             <div className="flex flex-wrap items-center justify-center gap-4">
               <Link to="/login" className="hero-btn-primary">
-                Попробовать бесплатно
+                {t('Попробовать бесплатно')}
                 <span style={{ fontSize: 18, lineHeight: 1 }}>→</span>
               </Link>
               <Link to="/pricing" className="hero-btn-ghost">
-                Тарифы
+                {t('Тарифы')}
               </Link>
             </div>
             <p
@@ -173,7 +174,7 @@ export default function LandingPage() {
                 textTransform: 'uppercase',
               }}
             >
-              Прокрутите вниз ↓
+              {t('Прокрутите вниз')} ↓
             </p>
           </div>
         </div>
@@ -221,18 +222,17 @@ export default function LandingPage() {
                     lineHeight: 1.05,
                   }}
                 >
-                  Данные, которые<br className="hidden md:inline"/>
+                  {t('Данные, которые')}<br className="hidden md:inline"/>
                   {' '}
-                  <span style={{ fontStyle: 'italic', marginLeft: '0.1em', marginRight: '0.18em' }}>меняют</span>
+                  <span style={{ fontStyle: 'italic', marginLeft: '0.1em', marginRight: '0.18em' }}>{t('меняют')}</span>
                   {' '}
-                  решения
+                  {t('решения')}
                 </h2>
                 <p
                   className="md:text-lg max-w-2xl mx-auto"
                   style={{ color: 'var(--text-secondary)', lineHeight: 1.55, fontSize: 'var(--fs-sm)' }}
                 >
-                  7 инструментов, разбитые на три группы. От настроения участников
-                  до структуры реальных денежных потоков и исторических паттернов.
+                  {t('7 инструментов, разбитые на три группы. От настроения участников до структуры реальных денежных потоков и исторических паттернов.')}
                 </p>
               </div>
 
@@ -240,28 +240,28 @@ export default function LandingPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-y-8 md:gap-y-0">
                 <SmallFeature
                   icon={<Layers size={28} strokeWidth={1.5} />}
-                  title="7 индикаторов"
-                  desc="От просмотра цены до композитных метрик и сезонности"
+                  title={t('7 индикаторов')}
+                  desc={t('От просмотра цены до композитных метрик и сезонности')}
                 />
                 <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
                   <SmallFeature
                     icon={<Database size={28} strokeWidth={1.5} />}
-                    title="95+ акций MOEX"
-                    desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
+                    title={t('95+ акций MOEX')}
+                    desc={t('Все ключевые бумаги + фьючерсы + индексы + валюты')}
                   />
                 </div>
                 <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
                   <SmallFeature
                     icon={<Clock size={28} strokeWidth={1.5} />}
-                    title="С 1997 года"
-                    desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
+                    title={t('С 1997 года')}
+                    desc={t('27 лет исторических данных, включая кризисы 2008/14/20/22')}
                   />
                 </div>
                 <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
                   <SmallFeature
                     icon={<Zap size={28} strokeWidth={1.5} />}
-                    title="Live-обновление"
-                    desc="Данные обновляются каждые 5 минут в торговое время"
+                    title={t('Live-обновление')}
+                    desc={t('Данные обновляются каждые 5 минут в торговое время')}
                   />
                 </div>
               </div>
@@ -271,22 +271,22 @@ export default function LandingPage() {
 
         {/* ═══ ГРУППА 1: Настроение рынка ═══ */}
         <IndicatorGroup
-          title="Что чувствуют участники"
-          subtitle="Композитные индексы и метрики настроения. Ширина рынка и макро-переоценка в числах."
+          title={t('Что чувствуют участники')}
+          subtitle={t('Композитные индексы и метрики настроения. Ширина рынка и макро-переоценка в числах.')}
           indicators={SENTIMENT_INDICATORS}
         />
 
         {/* ═══ ГРУППА 2: Деньги участников ═══ */}
         <IndicatorGroup
-          title="Куда идут реальные деньги"
-          subtitle="Позиции на фьючерсах, потоки в ETF, структура портфелей фондов. Большие деньги двигают рынок, следите за ними."
+          title={t('Куда идут реальные деньги')}
+          subtitle={t('Позиции на фьючерсах, потоки в ETF, структура портфелей фондов. Большие деньги двигают рынок, следите за ними.')}
           indicators={MONEY_FLOW_INDICATORS}
         />
 
         {/* ═══ ГРУППА 3: Паттерны и текущая картина ═══ */}
         <IndicatorGroup
-          title="Закономерности и текущая картина"
-          subtitle="Что повторяется год от года, и что на рынке прямо сейчас. Всё видно за один взгляд."
+          title={t('Закономерности и текущая картина')}
+          subtitle={t('Что повторяется год от года, и что на рынке прямо сейчас. Всё видно за один взгляд.')}
           indicators={PATTERNS_INDICATORS}
         />
 

@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
 import OptionHelp from './OptionHelp';
+import { t } from '../i18n';
 
 export interface DropdownOption<T extends string> {
   key: T;
@@ -85,7 +86,7 @@ export default function Dropdown<T extends string>({
   options,
   value,
   onChange,
-  placeholder = 'Выбрать',
+  placeholder,
   minWidth,
   menuMaxWidth = 280,
   className = '',
@@ -161,7 +162,7 @@ export default function Dropdown<T extends string>({
               />
             )}
             <span className="flex-1 text-left whitespace-nowrap">
-              {current?.label ?? placeholder}
+              {current?.label ?? placeholder ?? t('Выбрать')}
             </span>
             <ChevronDown
               size={16}

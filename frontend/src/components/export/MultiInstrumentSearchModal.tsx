@@ -15,6 +15,8 @@ import { apiFetch } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import { formatCompact } from '../../utils/formatNumber';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 
 // Тот же storage key что использует обычный InstrumentSearchModal — favorites
 // общие между picker'ами. Юзер избранно SBER на странице — видит в CSV-picker.
@@ -104,11 +106,12 @@ export default function MultiInstrumentSearchModal({
     initial,
     source = 'instruments',
     filterType,
-    title = 'Выберите инструменты',
+    title = t('Выберите инструменты'),
     maxItems,
     onConfirm,
     onClose,
 }: Props) {
+    useTranslation(); // ре-рендер при смене языка
     const [instruments, setInstruments] = useState<Instrument[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -313,7 +316,7 @@ export default function MultiInstrumentSearchModal({
                     </h3>
                     <button
                         onClick={onClose}
-                        aria-label="Закрыть"
+                        aria-label={t('Закрыть')}
                         style={{
                             background: 'transparent',
                             border: 'none',
@@ -348,7 +351,7 @@ export default function MultiInstrumentSearchModal({
                         <input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Поиск тикера или названия..."
+                            placeholder={t('Поиск тикера или названия...')}
                             style={{
                                 width: '100%',
                                 padding: '8px 12px 8px 32px',
@@ -388,7 +391,7 @@ export default function MultiInstrumentSearchModal({
                                         whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    {c.label}
+                                    {t(c.label)}
                                 </button>
                             );
                         })}
@@ -399,17 +402,17 @@ export default function MultiInstrumentSearchModal({
                 <div style={{ flex: 1, overflowY: 'auto', padding: '4px 8px' }}>
                     {loading ? (
                         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
-                            Загрузка...
+                            {t('Загрузка...')}
                         </div>
                     ) : unique.length === 0 ? (
                         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
-                            Не найдено
+                            {t('Не найдено')}
                         </div>
                     ) : (
                         <>
                             {favoriteItems.length > 0 && (
                                 <>
-                                    <SectionLabel icon={<Star size={11} fill="currentColor" strokeWidth={0} />} text="Избранные" accent />
+                                    <SectionLabel icon={<Star size={11} fill="currentColor" strokeWidth={0} />} text={t('Избранные')} accent />
                                     {favoriteItems.map((inst) =>
                                         renderRow(inst, {
                                             selected, maxItems, toggle, toggleFavorite, isFavorite: true,
@@ -420,7 +423,7 @@ export default function MultiInstrumentSearchModal({
                             {regularItems.length > 0 && (
                                 <>
                                     {favoriteItems.length > 0 && (
-                                        <SectionLabel text="Все инструменты" />
+                                        <SectionLabel text={t('Все инструменты')} />
                                     )}
                                     {regularItems.map((inst) =>
                                         renderRow(inst, {
@@ -448,7 +451,7 @@ export default function MultiInstrumentSearchModal({
                     }}
                 >
                     <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
-                        Выбрано:{' '}
+                        {t('Выбрано:')}{' '}
                         <strong
                             style={{
                                 color: maxItems && selected.size >= maxItems
@@ -474,7 +477,7 @@ export default function MultiInstrumentSearchModal({
                                 cursor: 'pointer',
                             }}
                         >
-                            Отмена
+                            {t('Отмена')}
                         </button>
                         <button
                             onClick={() => onConfirm(Array.from(selected))}
@@ -492,7 +495,7 @@ export default function MultiInstrumentSearchModal({
                                 opacity: selected.size === 0 ? 0.5 : 1,
                             }}
                         >
-                            Готово
+                            {t('Готово')}
                         </button>
                     </div>
                 </div>
@@ -628,7 +631,7 @@ function renderRow(inst: Instrument, ctx: RowContext) {
             <button
                 type="button"
                 onClick={(e) => ctx.toggleFavorite(inst.sectype, e)}
-                aria-label={ctx.isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+                aria-label={ctx.isFavorite ? t('Убрать из избранных') : t('Добавить в избранные')}
                 style={{
                     background: 'transparent',
                     border: 'none',

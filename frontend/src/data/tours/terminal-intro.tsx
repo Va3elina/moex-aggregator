@@ -23,6 +23,8 @@
  * тур просмотренным (см. его docstring), поэтому повторно он не появится.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 /** Видео-демо терминала; при отсутствии файла — схематичный мокап. */
@@ -65,6 +67,7 @@ function TerminalDemo() {
  * с мини-графиками. Рисуем токенами темы, чтобы жило в обеих темах.
  */
 function TerminalMock() {
+  const { t } = useTranslation();
   const pane = {
     fill: 'var(--bg-secondary)',
     stroke: 'var(--border-color)',
@@ -75,7 +78,7 @@ function TerminalMock() {
     <svg
       viewBox="0 0 320 200"
       role="img"
-      aria-label="Схема рабочего стола: три окна с индикаторами"
+      aria-label={t('Схема рабочего стола: три окна с индикаторами')}
       style={{
         width: '100%',
         aspectRatio: '16 / 10',
@@ -116,10 +119,15 @@ function TerminalMock() {
   );
 }
 
-export const terminalIntroTour: TourStep[] = [
+/**
+ * Шаги анонса. Функция, а не константа: заголовки переводятся через t(), и
+ * на верхнем уровне модуля они зафиксировались бы на языке загрузки. Зовётся
+ * в рендере Layout (он подписан на смену языка через useTranslation).
+ */
+export const getTerminalIntroTour = (): TourStep[] => [
   {
     selector: null,
-    title: 'Новое: Терминал',
+    title: t('Новое: Терминал'),
     // ≈3× стандартных 360: в узкой карточке запись рабочего стола превращалась
     // в нечитаемые пиксели. Значение согласовано с maxHeight видео (66vh),
     // чтобы кадр 16:10 заполнял карточку без полей по бокам. Клампится по
@@ -129,18 +137,17 @@ export const terminalIntroTour: TourStep[] = [
       <>
         <TerminalDemo />
         <p style={{ marginTop: 10 }}>
-          Индикаторы плавающими окнами на одном экране: рабочий стол, как в
-          биржевом терминале.
+          {t('Индикаторы плавающими окнами на одном экране: рабочий стол, как в биржевом терминале.')}
         </p>
       </>
     ),
   },
   {
     selector: '[data-tour="header-terminal"]',
-    title: 'Открывается отсюда',
+    title: t('Открывается отсюда'),
     body: (
       <p>
-        Кнопка в шапке работает с любой страницы. Входит в тариф <strong>Pro</strong>.
+        {t('Кнопка в шапке работает с любой страницы. Входит в тариф')} <strong>Pro</strong>.
       </p>
     ),
     position: 'bottom',
@@ -153,11 +160,10 @@ export const terminalIntroTour: TourStep[] = [
     // центрированной карточкой без подсветки — текст написан так, чтобы
     // работать в обоих случаях.
     selector: '[data-tour="chart-terminal"]',
-    title: 'И прямо с графика',
+    title: t('И прямо с графика'),
     body: (
       <p>
-        У индикаторов такая же кнопка стоит в панели над графиком — открыть
-        терминал можно, не возвращаясь в шапку.
+        {t('У индикаторов такая же кнопка стоит в панели над графиком — открыть терминал можно, не возвращаясь в шапку.')}
       </p>
     ),
     position: 'bottom',

@@ -18,9 +18,11 @@
 import { Link } from 'react-router-dom';
 import { Cookie } from 'lucide-react';
 import { useAnalytics } from '../contexts/AnalyticsContext';
+import { useTranslation } from 'react-i18next';
 
 export default function CookieConsentBanner() {
   const { consent, setConsent } = useAnalytics();
+  const { t } = useTranslation();
 
   // Если пользователь уже выбрал — не показываем
   if (consent !== null) return null;
@@ -28,7 +30,7 @@ export default function CookieConsentBanner() {
   return (
     <div
       role="dialog"
-      aria-label="Уведомление об использовании cookies"
+      aria-label={t('Уведомление об использовании cookies')}
       className="fixed bottom-0 left-0 right-0 z-[100] border-t"
       style={{
         backgroundColor: 'var(--bg-primary)',
@@ -54,7 +56,7 @@ export default function CookieConsentBanner() {
               maxWidth: 720,
             }}
           >
-            Мы используем{' '}
+            {t('Мы используем')}{' '}
             <Link
               to="/privacy"
               className="underline"
@@ -62,8 +64,7 @@ export default function CookieConsentBanner() {
             >
               cookies
             </Link>
-            , чтобы анализировать, как вы пользуетесь сайтом, и делать сервис
-            удобнее. IP-адрес не сохраняется.
+            {t(', чтобы анализировать, как вы пользуетесь сайтом, и делать сервис удобнее. IP-адрес не сохраняется.')}
           </p>
         </div>
 
@@ -80,7 +81,7 @@ export default function CookieConsentBanner() {
               padding: 'var(--sp-2) var(--sp-6)',
             }}
           >
-            Окей
+            {t('Окей')}
           </button>
         </div>
       </div>

@@ -16,10 +16,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { verifyEmail, resendVerification, ApiError } from '../services/api';
 import { safeInternalPath } from '../utils/postLoginRedirect';
 import { emailStepUrl } from '../utils/checkoutIntent';
+import { useTranslation } from 'react-i18next';
 
 export default function VerifyEmailPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   // ?next= — куда вернуть после кода. Сюда приходят из цикла оформления
   // подписки, и без next выбранный тариф терялся: юзер оказывался на главной
@@ -56,7 +58,7 @@ export default function VerifyEmailPage() {
     setInfo(null);
     const trimmed = code.trim();
     if (!/^\d{6}$/.test(trimmed)) {
-      setError('Код состоит из 6 цифр');
+      setError(t('Код состоит из 6 цифр'));
       return;
     }
     setSubmitting(true);
@@ -65,7 +67,7 @@ export default function VerifyEmailPage() {
       await refreshUser();
       navigate(next || '/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось подтвердить email');
+      setError(err instanceof Error ? err.message : t('Не удалось подтвердить email'));
     } finally {
       setSubmitting(false);
     }
@@ -78,7 +80,7 @@ export default function VerifyEmailPage() {
     setResending(true);
     try {
       await resendVerification();
-      setInfo(`Новый код отправлен на ${user.email}`);
+      setInfo(t('Новый код отправлен на {{email}}', { email: user.email }));
       setCooldown(60);
     } catch (err) {
       // 429 — кулдаун ещё не вышел; вытащим число секунд из сообщения
@@ -86,7 +88,7 @@ export default function VerifyEmailPage() {
         const m = err.message.match(/(\d+)/);
         setCooldown(m ? parseInt(m[1], 10) : 60);
       }
-      setError(err instanceof Error ? err.message : 'Не удалось отправить код');
+      setError(err instanceof Error ? err.message : t('Не удалось отправить код'));
     } finally {
       setResending(false);
     }
@@ -112,13 +114,13 @@ export default function VerifyEmailPage() {
             <MailCheck size={20} style={{ color: 'var(--accent)' }} />
           </div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Подтвердите email
+            {t('Подтвердите email')}
           </h1>
         </div>
 
         <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-          Мы отправили 6-значный код на <b style={{ color: 'var(--text-primary)' }}>{user.email}</b>.
-          Введите его ниже. Код действует 30&nbsp;минут.
+          {t('Мы отправили 6-значный код на')} <b style={{ color: 'var(--text-primary)' }}>{user.email}</b>.{' '}
+          {t('Введите его ниже. Код действует 30 минут.')}
         </p>
 
         <form onSubmit={handleVerify} className="space-y-4">
@@ -128,7 +130,7 @@ export default function VerifyEmailPage() {
               className="block text-sm font-medium mb-2"
               style={{ color: 'var(--text-primary)' }}
             >
-              Код из письма
+              {t('Код из письма')}
             </label>
             <input
               id="code"
@@ -181,7 +183,7 @@ export default function VerifyEmailPage() {
             className="w-full py-2.5 rounded font-medium transition-opacity disabled:opacity-50"
             style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-text, #fff)' }}
           >
-            {submitting ? 'Проверяем…' : 'Подтвердить'}
+            {submitting ? t('Проверяем…') : t('Подтвердить')}
           </button>
         </form>
 
@@ -193,10 +195,10 @@ export default function VerifyEmailPage() {
           style={{ color: 'var(--accent)' }}
         >
           {cooldown > 0
-            ? `Отправить код повторно (${cooldown}с)`
+            ? t('Отправить код повторно ({{n}}с)', { n: cooldown })
             : resending
-            ? 'Отправляем…'
-            : 'Отправить код повторно'}
+            ? t('Отправляем…')
+            : t('Отправить код повторно')}
         </button>
 
         <button
@@ -205,7 +207,7 @@ export default function VerifyEmailPage() {
           className="w-full mt-1 py-2 text-sm transition-opacity hover:opacity-70"
           style={{ color: 'var(--text-muted)' }}
         >
-          Позже
+          {t('Позже')}
         </button>
       </div>
     </div>

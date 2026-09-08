@@ -10,6 +10,8 @@
  *  4. По таймауту — кнопка «Проверить ещё раз».
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Clock, AlertCircle, RotateCw } from 'lucide-react';
 import { apiFetch } from '../services/api';
@@ -26,6 +28,7 @@ interface CompleteResult {
 }
 
 export default function TrialSuccessPage() {
+  const { t } = useTranslation();
   const [state, setState] = useState<'pending' | 'active' | 'timeout' | 'error'>('pending');
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
@@ -99,7 +102,7 @@ export default function TrialSuccessPage() {
   };
 
   const fmtDate = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    iso ? new Date(iso).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
   return (
     <div style={{
@@ -109,17 +112,16 @@ export default function TrialSuccessPage() {
       {state === 'active' && (
         <>
           <CheckCircle2 size={56} color="var(--accent, #FF5C2B)" style={{ display: 'block', margin: '0 auto 16px' }} />
-          <h1 style={{ fontSize: 'var(--fs-2xl)', marginBottom: 12 }}>Успешно! Пробный период активирован</h1>
+          <h1 style={{ fontSize: 'var(--fs-2xl)', marginBottom: 12 }}>{t('Успешно! Пробный период активирован')}</h1>
           <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 8, lineHeight: 1.6 }}>
-            Доступ открыт{expiresAt ? <> до <b>{fmtDate(expiresAt)}</b></> : ''}. Списание произойдёт
-            только по окончании, если вы не отмените. Отменить и отвязать карту можно в профиле.
+            {t('Доступ открыт')}{expiresAt ? <> {t('до')} <b>{fmtDate(expiresAt)}</b></> : ''}. {t('Списание произойдёт только по окончании, если вы не отмените. Отменить и отвязать карту можно в профиле.')}
           </p>
           <Link to="/" className="editorial-press" style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44,
             marginTop: 20, padding: '12px 24px', borderRadius: 8,
             background: 'var(--accent, #FF5C2B)', color: '#fff', textDecoration: 'none', fontWeight: 600,
           }}>
-            К аналитике →
+            {t('К аналитике →')}
           </Link>
         </>
       )}
@@ -127,27 +129,27 @@ export default function TrialSuccessPage() {
       {state === 'pending' && (
         <>
           <Clock size={56} color="var(--text-muted, #999)" style={{ display: 'block', margin: '0 auto 16px' }} />
-          <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>Активируем пробный период…</h1>
-          <p style={{ color: 'var(--text-secondary, #666)' }}>Подтверждаем привязку карты, секунду.</p>
+          <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>{t('Активируем пробный период…')}</h1>
+          <p style={{ color: 'var(--text-secondary, #666)' }}>{t('Подтверждаем привязку карты, секунду.')}</p>
         </>
       )}
 
       {(state === 'timeout' || state === 'error') && (
         <>
           <AlertCircle size={56} color="var(--text-muted, #999)" style={{ display: 'block', margin: '0 auto 16px' }} />
-          <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>Почти готово</h1>
+          <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>{t('Почти готово')}</h1>
           <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 8 }}>
-            {reason || 'Не удалось подтвердить привязку карты автоматически.'}
+            {reason || t('Не удалось подтвердить привязку карты автоматически.')}
           </p>
           <button onClick={retry} disabled={retrying} className="editorial-press" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 16,
             padding: '12px 24px', borderRadius: 8, border: '1px solid var(--border-color, #ddd)',
             background: 'transparent', color: 'var(--text-primary, #1a1a1a)', cursor: 'pointer', fontWeight: 600,
           }}>
-            <RotateCw size={16} /> {retrying ? 'Проверяем…' : 'Проверить ещё раз'}
+            <RotateCw size={16} /> {retrying ? t('Проверяем…') : t('Проверить ещё раз')}
           </button>
           <div style={{ marginTop: 16 }}>
-            <Link to="/pricing" style={{ color: 'var(--accent, #FF5C2B)' }}>Вернуться к тарифам</Link>
+            <Link to="/pricing" style={{ color: 'var(--accent, #FF5C2B)' }}>{t('Вернуться к тарифам')}</Link>
           </div>
         </>
       )}

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Scale } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -26,7 +27,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { buffettTourSteps } from '../data/tours/buffett';
+import { getBuffettTourSteps } from '../data/tours/buffett';
 import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
@@ -48,6 +49,7 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 };
 
 export default function BuffettPage() {
+    const { t, i18n } = useTranslation();
     const isMobile = useIsMobile();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:buffett:viewMode', 'cap-gdp');
@@ -67,6 +69,7 @@ export default function BuffettPage() {
 
     // Onboarding tour
     const tour = useOnboardingTour('buffett');
+    const tourSteps = useMemo(() => getBuffettTourSteps(), [i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Динамическая высота графика — chartAnchorRef как в OI/Funds-Money
     const chartAnchorRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,7 @@ export default function BuffettPage() {
                 setPeriod(lastGoodPeriod.current);
                 showUpgrade({
                     tier: 'pro',
-                    featureName: `период «${PERIOD_LABELS[period] ?? period}»`,
+                    featureName: t('период «{{p}}»', { p: t(PERIOD_LABELS[period] ?? period) }),
                     indicator: 'buffett',
                 });
                 return;
@@ -139,16 +142,16 @@ export default function BuffettPage() {
             if (!handleTierError(err, {
                 showUpgrade,
                 indicator: 'buffett',
-                featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
+                featureName: viewMode === 'cap-m2' ? t('режим «Кап / M2»') : t('индикатор Баффетта'),
                 onTier: () => setError(null),
             })) {
-                setError('Ошибка загрузки данных');
+                setError(t('Ошибка загрузки данных'));
             }
             console.error(err);
         } finally {
             if (!isStale()) setLoading(false);
         }
-    }, [period, smooth, viewMode, timeframe, showUpgrade]);
+    }, [period, smooth, viewMode, timeframe, showUpgrade, t]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -222,18 +225,18 @@ export default function BuffettPage() {
     // cap-gdp — уже в %. Порог алерта нормализуем в % (бэк считает 100·Cap/знам).
     const isM2 = viewMode === 'cap-m2';
     const modeKey = isM2 ? 'cap_m2' : 'cap_gdp';
-    const modeLabel = isM2 ? 'Cap / M2' : 'Cap / ВВП';
+    const modeLabel = isM2 ? 'Cap / M2' : t('Cap / ВВП');
 
     const buffettMetrics = useMemo<AlertMetricOption[]>(() => [{
-        key: 'buffett_ratio', label: `Коэффициент Баффета (${modeLabel})`,
+        key: 'buffett_ratio', label: t('Коэффициент Баффета ({{mode}})', { mode: modeLabel }),
         indicator: 'buffett_ratio', metric: modeKey, unit: '%',
         ops: [
-            { value: 'cross', label: 'Пересечение (в любую сторону)' },
-            { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
-            { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
+            { value: 'cross', label: t('Пересечение (в любую сторону)') },
+            { value: 'cross_up', label: t('↑ Пересечение (снизу вверх)') },
+            { value: 'cross_down', label: t('↓ Пересечение (сверху вниз)') },
         ],
-        hint: `Сработает, когда индикатор Баффета (${modeLabel}) пересечёт заданный уровень в %. Порог — в тех же %, что на правой оси графика.`,
-    }], [modeKey, modeLabel]);
+        hint: t('Сработает, когда индикатор Баффета ({{mode}}) пересечёт заданный уровень в %. Порог — в тех же %, что на правой оси графика.', { mode: modeLabel }),
+    }], [modeKey, modeLabel, t]);
 
     // Уровни активных buffett-алертов текущего режима → пунктир на ПРАВОЙ оси.
     // Порог в %; для cap-m2 домен оси = доля → делим на 100.
@@ -248,7 +251,7 @@ export default function BuffettPage() {
     // Клик «+» на правой оси (коэффициент) → модалка. cap-m2: домен=доля → в %.
     const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
         if (p.axis !== 'secondary') return;   // «+» только на коэффициенте (правая ось)
-        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' }); return; }
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: t('Уведомления'), indicator: 'alerts' }); return; }
         const toPct = (v: number) => (isM2 ? v * 100 : v);
         setChartAlertPrefill({
             metricKey: 'buffett_ratio',
@@ -261,8 +264,8 @@ export default function BuffettPage() {
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             <PageHeader
                 icon={Scale}
-                title="Индикатор Баффетта"
-                subtitle="Оценка рынка относительно экономики"
+                title={t('Индикатор Баффетта')}
+                subtitle={t('Оценка рынка относительно экономики')}
                 help={METHODOLOGY.buffett}
                 helpLink="/methodology/buffett"
             />
@@ -276,10 +279,10 @@ export default function BuffettPage() {
                 <div data-tour="buffett-view-mode" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <SegmentedControl<ViewMode>
                     options={[
-                        { key: 'cap-gdp', label: 'Капитализация / ВВП' },
+                        { key: 'cap-gdp', label: t('Капитализация / ВВП') },
                         {
                             key: 'cap-m2',
-                            label: 'Капитализация / M2',
+                            label: t('Капитализация / M2'),
                             locked: !buffAccess.isLoading && !buffAccess.canUseMode('cap-m2'),
                         },
                     ]}
@@ -290,7 +293,7 @@ export default function BuffettPage() {
                         if (tier) {
                             showUpgrade({
                                 tier,
-                                featureName: 'режим «Капитализация / M2»',
+                                featureName: t('режим «Капитализация / M2»'),
                                 indicator: 'buffett',
                             });
                         }
@@ -298,8 +301,8 @@ export default function BuffettPage() {
                     trailing={
                         <HelpTooltip
                             sections={[
-                                { heading: 'Капитализация / ВВП', body: 'Классический индикатор Баффетта: капитализация рынка к ВВП. Показывает, дорог ли рынок относительно того, что реально производит экономика. Что считать недооценкой или переоценкой, смотрите в контексте конкретного периода: ориентируйтесь на недавние исторические примеры, где контекст ещё актуален. ВВП меняется медленно, поэтому это про долгосрочную картину.' },
-                                { heading: 'Капитализация / M2', body: 'Капитализация к денежной массе M2 (наличные и депозиты): сколько в стране денег относительно рынка акций. Низкие значения значат, что денег много, но они не идут в акции, а сидят в депозитах и ОФЗ. M2 чувствительна к действиям ЦБ и бюджета, поэтому быстрее реагирует на монетарные условия.' },
+                                { heading: t('Капитализация / ВВП'), body: t('Классический индикатор Баффетта: капитализация рынка к ВВП. Показывает, дорог ли рынок относительно того, что реально производит экономика. Что считать недооценкой или переоценкой, смотрите в контексте конкретного периода: ориентируйтесь на недавние исторические примеры, где контекст ещё актуален. ВВП меняется медленно, поэтому это про долгосрочную картину.') },
+                                { heading: t('Капитализация / M2'), body: t('Капитализация к денежной массе M2 (наличные и депозиты): сколько в стране денег относительно рынка акций. Низкие значения значат, что денег много, но они не идут в акции, а сидят в депозитах и ОФЗ. M2 чувствительна к действиям ЦБ и бюджета, поэтому быстрее реагирует на монетарные условия.') },
                             ]}
                             size={18}
                         />
@@ -312,7 +315,7 @@ export default function BuffettPage() {
                 <SegmentedControl<BuffettPeriod>
                     options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => ({
                         key: p,
-                        label: PERIOD_LABELS[p] ?? p,
+                        label: t(PERIOD_LABELS[p] ?? p),
                         // tier-замок по ПЕР-ИНДИКАТОРНОМУ canUsePeriod (бэковый
                         // max_history_days buffett), а не глобальному GUEST_MAX='1y'
                         // — иначе период за лимитом кликабелен → 403.
@@ -328,7 +331,7 @@ export default function BuffettPage() {
                         // config/accessControl (он остался у OI и фондов).
                         const tier = buffAccess.requiredTierFor({ period: p });
                         if (tier) {
-                            showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p] ?? p}»`, indicator: 'buffett' });
+                            showUpgrade({ tier, featureName: t('период «{{p}}»', { p: t(PERIOD_LABELS[p] ?? p) }), indicator: 'buffett' });
                         }
                     }}
                 />
@@ -339,9 +342,9 @@ export default function BuffettPage() {
                     <div data-tour="buffett-timeframe" style={{ order: 2 }}>
                     <SegmentedControl<'1d' | '1w' | '1m'>
                         options={[
-                            { key: '1d', label: '1Д' },
-                            { key: '1w', label: '1Н' },
-                            { key: '1m', label: '1М' },
+                            { key: '1d', label: t('1Д') },
+                            { key: '1w', label: t('1Н') },
+                            { key: '1m', label: t('1М') },
                         ]}
                         value={timeframe}
                         onChange={setTimeframe}
@@ -356,10 +359,10 @@ export default function BuffettPage() {
                     <div data-tour="buffett-forecast">
                     <Dropdown<string>
                         options={[
-                            { key: '', label: 'Прогноз: выкл' },
+                            { key: '', label: t('Прогноз: выкл') },
                             ...[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((v): DropdownOption<string> => ({
                                 key: String(v),
-                                label: `Прогноз: ${v}%`,
+                                label: t('Прогноз: {{v}}%', { v }),
                             })),
                         ]}
                         value={forecastTarget !== null ? String(forecastTarget) : ''}
@@ -375,7 +378,7 @@ export default function BuffettPage() {
                 <LayersButton
                     tourId="buffett-layers"
                     layers={[
-                        { key: 'cap', label: 'Капитализация', hint: 'Линия капитализации на второй оси', checked: showCap, onChange: setShowCap },
+                        { key: 'cap', label: t('Капитализация'), hint: t('Линия капитализации на второй оси'), checked: showCap, onChange: setShowCap },
                     ]}
                 />
                 <CsvExportButton
@@ -386,20 +389,20 @@ export default function BuffettPage() {
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-buffett-${viewMode}-${period}-${timeframe}`}
                     metadata={{
-                        title: 'Индикатор Баффетта',
-                        asset: viewMode === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2',
+                        title: t('Индикатор Баффетта'),
+                        asset: viewMode === 'cap-gdp' ? t('Капитализация / ВВП') : t('Капитализация / M2'),
                         details: [
-                            PERIOD_LABELS[period] ?? period,
-                            timeframe === '1d' ? '1 день' : timeframe === '1w' ? '1 неделя' : '1 месяц',
+                            t(PERIOD_LABELS[period] ?? period),
+                            timeframe === '1d' ? t('1 день') : timeframe === '1w' ? t('1 неделя') : t('1 месяц'),
                         ].filter(Boolean),
                     }}
                 />
-                <ChartSettings scopeLabels={{ primary: 'Капитализация', secondary: 'Отношение' }} />
+                <ChartSettings scopeLabels={{ primary: t('Капитализация'), secondary: t('Отношение') }} />
                 {ALERTS_ENABLED && (
                     <AlertBellButton
                         indicator="buffett"
                         asset="buffett"
-                        assetName="Индикатор Баффета"
+                        assetName={t('Индикатор Баффета')}
                         metrics={buffettMetrics}
                     />
                 )}
@@ -420,7 +423,7 @@ export default function BuffettPage() {
                 <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
-                        <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
+                        <p className="text-sm text-theme-secondary mt-2">{t('Попробуйте обновить страницу')}</p>
                     </div>
                 </div>
             ) : viewMode === 'cap-gdp' ? (
@@ -440,7 +443,7 @@ export default function BuffettPage() {
                     showPrimary={showCap}
                     showSecondary={true}
                     reverseLegend={true}
-                    formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatValue={(v) => `${v.toFixed(2)} ${t('трлн ₽')}`}
                     formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
                     // Сетка привязана к ПРАВОЙ оси (Кап/ВВП) — главное значение.
@@ -454,8 +457,8 @@ export default function BuffettPage() {
                     onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
                     alertAxes={ALERTS_ENABLED ? ['secondary'] : undefined}
                     horizontalLines={alertLevels}
-                    primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
-                    secondaryLabel={isMobile ? 'Кап / ВВП' : 'Капитализация / ВВП'}
+                    primaryLabel={isMobile ? t('Кап. (₽)') : t('Капитализация (трлн ₽)')}
+                    secondaryLabel={isMobile ? t('Кап / ВВП') : t('Капитализация / ВВП')}
                     loading={loading}
                     forecastCount={forecastTarget !== null ? 12 : 0}
                     showValueHeader={false}
@@ -480,7 +483,7 @@ export default function BuffettPage() {
                     showPrimary={showCap}
                     showSecondary={true}
                     reverseLegend={true}
-                    formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatValue={(v) => `${v.toFixed(2)} ${t('трлн ₽')}`}
                     formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
                     // Сетка по ПРАВОЙ оси (Кап/M2), как в cap-gdp выше.
@@ -491,8 +494,8 @@ export default function BuffettPage() {
                     onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
                     alertAxes={ALERTS_ENABLED ? ['secondary'] : undefined}
                     horizontalLines={alertLevels}
-                    primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
-                    secondaryLabel={isMobile ? 'Кап / M2' : 'Капитализация / M2'}
+                    primaryLabel={isMobile ? t('Кап. (₽)') : t('Капитализация (трлн ₽)')}
+                    secondaryLabel={isMobile ? 'Cap / M2' : t('Капитализация / M2')}
                     loading={loading}
                     showValueHeader={false}
                     legendPosition="top"
@@ -509,7 +512,7 @@ export default function BuffettPage() {
 
             {/* Onboarding tour */}
             <OnboardingTour
-                steps={buffettTourSteps}
+                steps={tourSteps}
                 open={tour.open}
                 onClose={tour.close}
             />
@@ -519,7 +522,7 @@ export default function BuffettPage() {
                 <CreateAlertModal
                     indicator="buffett"
                     asset="buffett"
-                    assetName="Индикатор Баффета"
+                    assetName={t('Индикатор Баффета')}
                     metrics={buffettMetrics}
                     prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold, currentLabel: chartAlertPrefill.currentLabel }}
                     onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}

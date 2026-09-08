@@ -22,6 +22,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useFabric } from './useFabric';
+import { t } from '../../i18n';
 import type { Canvas as FabricCanvas, FabricObject } from 'fabric';
 
 export type AnnotationTool = 'select' | 'pen' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text';
@@ -387,7 +388,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     // Текст без обводки: пользователь просил убрать чёрную
                     // окантовку глифов. Рисуем чистой заливкой выбранного цвета —
                     // ни stroke-контура, ни shadow-гало.
-                    const text = new fabric.IText('Текст', {
+                    const text = new fabric.IText(t('Текст'), {
                         left: p.x,
                         top: p.y - fontSize / 2,
                         fill: c,
@@ -777,7 +778,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ minHeight: 0 }}>
                     <Loader2 className="animate-spin" size={36} style={{ color: 'var(--accent)' }} />
                     <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>
-                        Загружаем инструменты рисования…
+                        {t('Загружаем инструменты рисования…')}
                     </span>
                 </div>
             );

@@ -10,6 +10,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, PlayCircle, type LucideIcon } from 'lucide-react';
 import { clearTourSeen } from '../../hooks/useFirstVisit';
+import { t } from '../../i18n';
 
 interface MethodologyWrapperProps {
   icon: LucideIcon;
@@ -24,7 +25,7 @@ export function MethodologyWrapper({
   icon: Icon,
   title,
   backTo,
-  backLabel = 'К индикатору',
+  backLabel,
   children,
 }: MethodologyWrapperProps) {
   return (
@@ -35,7 +36,7 @@ export function MethodologyWrapper({
         style={{ color: 'var(--text-secondary)' }}
       >
         <ArrowLeft size={14} />
-        {backLabel}
+        {backLabel ?? t('К индикатору')}
       </Link>
 
       {/* Собственный header — single H1 «Методология · [Индикатор]».
@@ -62,7 +63,7 @@ export function MethodologyWrapper({
             lineHeight: 1.15,
           }}
         >
-          Методология{' '}
+          {t('Методология')}{' '}
           <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>·</span>{' '}
           <span style={{ color: 'var(--text-primary)' }}>{title}</span>
         </h1>
@@ -84,7 +85,7 @@ export function MethodologyWrapper({
               borderRadius: 'var(--radius-md, 8px)',
             }}
           >
-            Перейти к индикатору
+            {t('Перейти к индикатору')}
           </Link>
         </div>
       </div>
@@ -161,7 +162,7 @@ export function ActionBlock({ icon: Icon, title, desc }: { icon: LucideIcon; tit
 export function ReplayTourButton({
   tourKey,
   indicatorPath,
-  label = 'Показать вводный тур ещё раз',
+  label,
 }: {
   /** Ключ тура — должен совпадать с тем что используется в useFirstVisit. */
   tourKey: string;
@@ -186,7 +187,7 @@ export function ReplayTourButton({
       }}
     >
       <PlayCircle size={16} />
-      {label}
+      {label ?? t('Показать вводный тур ещё раз')}
     </button>
   );
 }

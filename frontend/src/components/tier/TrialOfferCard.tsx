@@ -20,6 +20,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { trackEvent } from '../../hooks/useYandexMetrica';
 import { signupUrlForIntent } from '../../utils/checkoutIntent';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 
 type Tier = 'basic' | 'pro';
 type Period = 'monthly' | 'yearly';
@@ -37,6 +39,7 @@ interface Prices {
 
 export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
     const { isAuthenticated } = useAuth();
+    const { t } = useTranslation();
     const { track } = useAnalytics();
     const navigate = useNavigate();
     const [eligible, setEligible] = useState<boolean | null>(null);
@@ -89,8 +92,8 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
     if (!isAuthenticated) {
         if (!trialEnabled) return null;
         const lead = lockedTier
-            ? `Попробуйте ${lockedTier === 'pro' ? 'Pro' : 'Basic'} бесплатно — ${TRIAL_DAYS[lockedTier]} дней`
-            : 'Бесплатный период: Basic — 14 дней, Pro — 7 дней';
+            ? t('Попробуйте {{tier}} бесплатно — {{days}} дней', { tier: lockedTier === 'pro' ? 'Pro' : 'Basic', days: TRIAL_DAYS[lockedTier] })
+            : t('Бесплатный период: Basic — 14 дней, Pro — 7 дней');
         return (
             <div style={{
                 background: 'var(--bg-tertiary, #f5f1e8)',
@@ -110,8 +113,7 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                     <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>{lead}</span>
                 </div>
                 <div style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-sm)', marginBottom: 14, lineHeight: 1.5 }}>
-                    Зарегистрируйтесь и пользуйтесь бесплатно. Карта спишется только по
-                    окончании пробного периода, если не отмените.
+                    {t('Зарегистрируйтесь и пользуйтесь бесплатно. Карта спишется только по окончании пробного периода, если не отмените.')}
                 </div>
                 <button
                     type="button"
@@ -129,7 +131,7 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                         fontSize: 'var(--fs-base)', cursor: 'pointer', minHeight: 48,
                     }}
                 >
-                    Зарегистрироваться и попробовать
+                    {t('Зарегистрироваться и попробовать')}
                 </button>
             </div>
         );
@@ -141,7 +143,7 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
     const tierRu = tier === 'pro' ? 'Pro' : tier === 'basic' ? 'Basic' : '';
     const price = tier && period ? prices[tier][period] : undefined;
     const chargeDate = days
-        ? new Date(Date.now() + days * 86400000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+        ? new Date(Date.now() + days * 86400000).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' })
         : '';
     const ready = !!tier && !!period && consent && !submitting;
 
@@ -159,11 +161,11 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
             });
             const b = await r.json().catch(() => ({}));
             if (!r.ok || !b.payment_url) {
-                throw new Error(b.detail || b.error?.message || 'Не удалось начать пробный период');
+                throw new Error(b.detail || b.error?.message || t('Не удалось начать пробный период'));
             }
             window.location.href = b.payment_url; // → T-Bank AddCard
         } catch (e) {
-            setErr(e instanceof Error ? e.message : 'Ошибка');
+            setErr(e instanceof Error ? e.message : t('Ошибка'));
             setSubmitting(false);
         }
     }
@@ -218,26 +220,26 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 }}>
                     <Gift size={16} strokeWidth={2.4} color="#fff" />
                 </span>
-                <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>Бесплатный пробный период</span>
+                <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>{t('Бесплатный пробный период')}</span>
             </div>
             <div style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-sm)', marginBottom: 12 }}>
-                Карта не спишется сейчас. Спишем только по окончании, если не отмените.
+                {t('Карта не спишется сейчас. Спишем только по окончании, если не отмените.')}
             </div>
 
             {/* Выбор тарифа — только когда не из замка (на странице тарифов) */}
             {!lockedTier && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                    {choiceBtn(tier === 'basic', () => setTier('basic'), 'Basic', '14 дней')}
-                    {choiceBtn(tier === 'pro', () => setTier('pro'), 'Pro', '7 дней')}
+                    {choiceBtn(tier === 'basic', () => setTier('basic'), 'Basic', t('{{n}} дней', { n: 14 }))}
+                    {choiceBtn(tier === 'pro', () => setTier('pro'), 'Pro', t('{{n}} дней', { n: 7 }))}
                 </div>
             )}
 
             {/* Выбор периода списания после триала */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                {choiceBtn(period === 'monthly', () => setPeriod('monthly'), 'Помесячно',
-                    tier ? fmtRub(prices[tier].monthly) + '/мес' : '—')}
-                {choiceBtn(period === 'yearly', () => setPeriod('yearly'), 'За год',
-                    tier ? fmtRub(prices[tier].yearly) + '/год' : '—')}
+                {choiceBtn(period === 'monthly', () => setPeriod('monthly'), t('Помесячно'),
+                    tier ? fmtRub(prices[tier].monthly) + t('/мес') : '—')}
+                {choiceBtn(period === 'yearly', () => setPeriod('yearly'), t('За год'),
+                    tier ? fmtRub(prices[tier].yearly) + t('/год') : '—')}
             </div>
 
             {tier && period && (
@@ -245,9 +247,9 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                     fontSize: 'var(--fs-sm)', color: 'var(--text-secondary, #666)',
                     marginBottom: 12, lineHeight: 1.5,
                 }}>
-                    Бесплатно {days} дней, затем <b>{fmtRub(price)}</b> за {tierRu}{' '}
-                    ({period === 'monthly' ? 'в месяц' : 'в год'}). Первое списание <b>{chargeDate}</b>.
-                    Отменить и отвязать карту можно в любой момент до этой даты.
+                    {t('Бесплатно {{days}} дней, затем', { days })} <b>{fmtRub(price)}</b> {t('за {{tier}}', { tier: tierRu })}{' '}
+                    ({period === 'monthly' ? t('в месяц') : t('в год')}). {t('Первое списание')} <b>{chargeDate}</b>.{' '}
+                    {t('Отменить и отвязать карту можно в любой момент до этой даты.')}
                 </div>
             )}
 
@@ -263,10 +265,9 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                     style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0, accentColor: 'var(--accent, #FF5C2B)' }}
                 />
                 <span>
-                    Согласен(на), что по окончании пробного периода спишется выбранная сумма и
-                    подписка будет продлеваться автоматически до моей отмены.{' '}
+                    {t('Согласен(на), что по окончании пробного периода спишется выбранная сумма и подписка будет продлеваться автоматически до моей отмены.')}{' '}
                     <Link to="/offer" target="_blank" style={{ color: 'var(--accent, #FF5C2B)' }}>
-                        Условия
+                        {t('Условия')}
                     </Link>.
                 </span>
             </label>
@@ -295,10 +296,10 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 }}
             >
                 {submitting
-                    ? 'Открываем…'
+                    ? t('Открываем…')
                     : days
-                        ? `Начать бесплатно — ${days} дней`
-                        : 'Начать бесплатно'}
+                        ? t('Начать бесплатно — {{days}} дней', { days })
+                        : t('Начать бесплатно')}
             </button>
         </div>
     );

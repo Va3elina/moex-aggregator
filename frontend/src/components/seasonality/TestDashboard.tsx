@@ -6,6 +6,7 @@
 // Отдельный компонент, чтобы не раздувать SeasonalityPage.tsx.
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Maximize2, X, ChevronDown } from 'lucide-react';
 import type { SeasonalityResponse, SeasonalityMode, YearlySeasonalityResponse } from '../../services/api';
 import SeasonalityHistogram from './SeasonalityHistogram';
@@ -14,6 +15,7 @@ import InstrumentSearchModal from '../InstrumentSearchModal';
 
 const TEST_MODES: SeasonalityMode[] = ['intraday', 'weekday', 'monthday', 'monthly'];
 
+// Русские подписи = ключи перевода; оборачиваются t() в рендере.
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
   weekday: 'По дням недели',
@@ -83,6 +85,7 @@ export default function TestDashboard({
   loading,
   error,
 }: TestDashboardProps) {
+  const { t } = useTranslation();
   // Модалка "развернуть": показывает выбранный чарт на 90vw/90vh с возможностью
   // переключаться между yearly и 4 режимами гистограмм + сменить актив.
   const [modalView, setModalView] = useState<ModalView>(null);
@@ -102,7 +105,7 @@ export default function TestDashboard({
     return (
       <div className="rounded-2xl border p-4 flex items-center justify-center text-center"
         style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', aspectRatio: '16/9', color: 'var(--text-muted)' }}>
-        Выберите хотя бы один "Период с" в меню выше
+        {t('Выберите хотя бы один "Период с" в меню выше')}
       </div>
     );
   }
@@ -112,7 +115,7 @@ export default function TestDashboard({
         style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', aspectRatio: '16/9' }}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#06b6d4] border-t-transparent rounded-full animate-spin" />
-          <span className="text-theme-secondary">Загрузка...</span>
+          <span className="text-theme-secondary">{t('Загрузка...')}</span>
         </div>
       </div>
     );
@@ -134,7 +137,7 @@ export default function TestDashboard({
       {loading && hasAny && (
         <div className="absolute top-2 right-2 z-30 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
           <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-theme-secondary">Обновление...</span>
+          <span className="text-xs text-theme-secondary">{t('Обновление...')}</span>
         </div>
       )}
 
@@ -167,7 +170,7 @@ export default function TestDashboard({
             fontSize: 'clamp(10px, 0.7cqi, 13px)',
             lineHeight: 1.3,
           }}>
-          Сезонный тренд {selectedName}
+          {t('Сезонный тренд {{name}}', { name: selectedName })}
           {yearsRangeLabel && (
             <span className="text-theme-muted font-normal"> {yearsRangeLabel}</span>
           )}
@@ -185,7 +188,7 @@ export default function TestDashboard({
         ) : (
           <div className="flex items-center justify-center"
             style={{ height: YEARLY_HEIGHT, color: 'var(--text-muted)' }}>
-            Нет данных
+            {t('Нет данных')}
           </div>
         )}
       </div>
@@ -222,12 +225,12 @@ export default function TestDashboard({
                   fontSize: 'clamp(9px, 2.3cqi, 12px)',
                   lineHeight: 1.3,
                 }}>
-                {MODE_LABELS[m]}
+                {t(MODE_LABELS[m])}
               </h4>
               {bars.length === 0 ? (
                 <div className="flex items-center justify-center"
                   style={{ minHeight: 240, color: 'var(--text-muted)' }}>
-                  Нет данных
+                  {t('Нет данных')}
                 </div>
               ) : (
                 <SeasonalityHistogram
@@ -289,12 +292,13 @@ export default function TestDashboard({
 
 /** Кнопка «развернуть» в углу чарт-карточки. Две диагональные стрелки (Maximize2). */
 function ExpandButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
       onClick={onClick}
-      title="Развернуть"
-      aria-label="Развернуть график"
+      title={t('Развернуть')}
+      aria-label={t('Развернуть график')}
       className="absolute top-2 right-2 z-10 p-1.5 rounded-md opacity-50 hover:opacity-100 hover:bg-white/5 transition-all"
       style={{ color: 'var(--text-secondary)' }}
     >
@@ -331,6 +335,7 @@ function ExpandedChartModal({
   chartTooltip, setChartTooltip, histTooltips, setHistTooltips,
   testChartFetchIds,
 }: ExpandedChartModalProps) {
+  const { t } = useTranslation();
   const isYearly = view === 'yearly';
   const currentHist = !isYearly ? histData[view] : null;
   const histBars = currentHist?.bars || [];
@@ -385,10 +390,10 @@ function ExpandedChartModal({
           {/* Tabs: yearly + 4 histogram modes — pill-group */}
           <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
             style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-            <ModalTab active={view === 'yearly'} onClick={() => setView('yearly')}>Годовая</ModalTab>
+            <ModalTab active={view === 'yearly'} onClick={() => setView('yearly')}>{t('Годовая')}</ModalTab>
             {TEST_MODES.map(m => (
               <ModalTab key={m} active={view === m} onClick={() => setView(m)}>
-                {MODE_LABELS[m]}
+                {t(MODE_LABELS[m])}
               </ModalTab>
             ))}
           </div>
@@ -398,8 +403,8 @@ function ExpandedChartModal({
             onClick={() => setView(null)}
             className="p-2 rounded-lg hover:bg-white/5 transition-colors"
             style={{ color: 'var(--text-secondary)' }}
-            title="Закрыть (ESC)"
-            aria-label="Закрыть"
+            title={t('Закрыть (ESC)')}
+            aria-label={t('Закрыть')}
           >
             <X size={18} />
           </button>
@@ -436,7 +441,7 @@ function ExpandedChartModal({
                 chartHeight={600}
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-theme-muted">Нет данных</div>
+              <div className="h-full flex items-center justify-center text-theme-muted">{t('Нет данных')}</div>
             )
           ) : (
             histBars.length > 0 ? (
@@ -451,7 +456,7 @@ function ExpandedChartModal({
                 niceXLabels={view === 'monthday'}
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-theme-muted">Нет данных</div>
+              <div className="h-full flex items-center justify-center text-theme-muted">{t('Нет данных')}</div>
             )
           )}
         </div>

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { popPostLoginNext } from '../utils/postLoginRedirect';
+import { useTranslation } from 'react-i18next';
 
 /**
  * OAuth callback handler.
@@ -20,6 +21,7 @@ import { popPostLoginNext } from '../utils/postLoginRedirect';
 export default function AuthCallback() {
     const navigate = useNavigate();
     const auth = useAuth();
+    const { t } = useTranslation();
     const [searchParams] = useSearchParams();
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
     const [errorMsg, setErrorMsg] = useState('');
@@ -34,12 +36,12 @@ export default function AuthCallback() {
         else if (path.includes('yandex')) provider = 'yandex';
         else if (path.includes('telegram')) provider = 'telegram';
 
-        const names: Record<string, string> = { google: 'Google', vk: 'VK', yandex: 'Яндекс', telegram: 'Telegram' };
+        const names: Record<string, string> = { google: 'Google', vk: 'VK', yandex: t('Яндекс'), telegram: 'Telegram' };
         setProviderName(names[provider] || provider);
 
         if (!provider) {
             setStatus('error');
-            setErrorMsg('Неизвестный провайдер');
+            setErrorMsg(t('Неизвестный провайдер'));
             return;
         }
 
@@ -68,7 +70,7 @@ export default function AuthCallback() {
 
             if (!tgData.id || !tgData.hash) {
                 setStatus('error');
-                setErrorMsg('Не удалось получить данные от Telegram. Убедитесь, что вы вошли в Telegram и разрешили доступ.');
+                setErrorMsg(t('Не удалось получить данные от Telegram. Убедитесь, что вы вошли в Telegram и разрешили доступ.'));
                 return;
             }
 
@@ -79,7 +81,7 @@ export default function AuthCallback() {
             })
                 .then(async (resp) => {
                     const data = await resp.json();
-                    if (!resp.ok) throw new Error(data.error?.message || data.detail || 'Ошибка авторизации');
+                    if (!resp.ok) throw new Error(data.error?.message || data.detail || t('Ошибка авторизации'));
                     await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
                     setStatus('success');
                     // Telegram всегда без email → synthetic → ведём подтвердить почту
@@ -89,7 +91,7 @@ export default function AuthCallback() {
                 })
                 .catch((err) => {
                     setStatus('error');
-                    setErrorMsg(err.message || 'Ошибка авторизации через Telegram');
+                    setErrorMsg(err.message || t('Ошибка авторизации через Telegram'));
                 });
             return;
         }
@@ -98,7 +100,7 @@ export default function AuthCallback() {
         const code = searchParams.get('code');
         if (!code) {
             setStatus('error');
-            setErrorMsg('Не удалось получить код авторизации');
+            setErrorMsg(t('Не удалось получить код авторизации'));
             return;
         }
 
@@ -124,7 +126,7 @@ export default function AuthCallback() {
             localStorage.removeItem('yandex_oauth_state');
             if (!storedState || !returnedState || storedState !== returnedState) {
                 setStatus('error');
-                setErrorMsg('Проверка безопасности не пройдена (CSRF). Начните вход заново.');
+                setErrorMsg(t('Проверка безопасности не пройдена (CSRF). Начните вход заново.'));
                 sessionStorage.removeItem(storageKey);
                 return;
             }
@@ -162,7 +164,7 @@ export default function AuthCallback() {
                 const data = await resp.json();
 
                 if (!resp.ok) {
-                    throw new Error(data.error?.message || data.detail || 'Ошибка авторизации');
+                    throw new Error(data.error?.message || data.detail || t('Ошибка авторизации'));
                 }
 
                 // Сохраняем токены через AuthContext
@@ -177,7 +179,7 @@ export default function AuthCallback() {
             })
             .catch((err) => {
                 setStatus('error');
-                setErrorMsg(err.message || 'Произошла ошибка');
+                setErrorMsg(err.message || t('Произошла ошибка'));
                 // Очищаем флаг чтобы можно было повторить
                 sessionStorage.removeItem(storageKey);
             });
@@ -194,24 +196,24 @@ export default function AuthCallback() {
                     <>
                         <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: 'var(--accent)' }} />
                         <p className="text-lg" style={{ color: 'var(--text-primary)' }}>
-                            {providerName ? `Входим через ${providerName}...` : 'Авторизация...'}
+                            {providerName ? t('Входим через {{name}}...', { name: providerName }) : t('Авторизация...')}
                         </p>
-                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>Подождите, проверяем данные</p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>{t('Подождите, проверяем данные')}</p>
                     </>
                 )}
 
                 {status === 'success' && (
                     <>
                         <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Успешно!</p>
-                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>Перенаправляем...</p>
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>{t('Успешно!')}</p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>{t('Перенаправляем...')}</p>
                     </>
                 )}
 
                 {status === 'error' && (
                     <>
                         <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Ошибка авторизации</p>
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>{t('Ошибка авторизации')}</p>
                         <p className="text-sm mt-2 text-red-400">{errorMsg}</p>
                         <button
                             onClick={() => navigate('/login')}
@@ -221,7 +223,7 @@ export default function AuthCallback() {
                                 color: 'var(--text-primary)',
                             }}
                         >
-                            Попробовать снова
+                            {t('Попробовать снова')}
                         </button>
                     </>
                 )}

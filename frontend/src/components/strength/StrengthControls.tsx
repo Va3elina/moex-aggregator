@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import SegmentedControl from '../SegmentedControl';
 import Dropdown from '../Dropdown';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -44,6 +45,7 @@ export default function StrengthControls({
     onEmaPeriodChange,
     trailingSlot,
 }: StrengthControlsProps) {
+    const { t } = useTranslation();
     const strengthAccess = useTierAccess('strength');
     const { showUpgrade } = useUpgradePrompt();
 
@@ -61,8 +63,8 @@ export default function StrengthControls({
                 отражать что universe = 100 ликвидных акций (не реально все). */}
             <SegmentedControl<'imoex' | 'all'>
                 options={[
-                    { key: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
-                    { key: 'all', label: '100 акций', locked: universeAllLocked },
+                    { key: 'imoex', label: currency === 'usd' ? t('Индекс RTSI') : t('Индекс IMOEX') },
+                    { key: 'all', label: t('100 акций'), locked: universeAllLocked },
                 ]}
                 value={universeBase}
                 onChange={onUniverseBaseChange}
@@ -71,7 +73,7 @@ export default function StrengthControls({
                     if (tier) {
                         showUpgrade({
                             tier,
-                            featureName: 'вселенная «100 акций»',
+                            featureName: t('вселенная «100 акций»'),
                             indicator: 'strength',
                         });
                     }
@@ -94,7 +96,7 @@ export default function StrengthControls({
                         if (tier) {
                             showUpgrade({
                                 tier,
-                                featureName: 'долларовый режим',
+                                featureName: t('долларовый режим'),
                                 indicator: 'strength',
                             });
                         }
@@ -120,7 +122,7 @@ export default function StrengthControls({
             <SegmentedControl<Period>
                 options={(Object.keys(PERIOD_LABELS) as Period[]).map((p) => ({
                     key: p,
-                    label: PERIOD_LABELS[p],
+                    label: t(PERIOD_LABELS[p]),
                     // tier-замок по ПЕР-ИНДИКАТОРНОМУ canUsePeriod (бэковый
                     // max_history_days strength), а не глобальному GUEST_MAX='1y'.
                     locked: strengthAccess.isLoading ? false : !strengthAccess.canUsePeriod(p),
@@ -134,7 +136,7 @@ export default function StrengthControls({
                     // уводить гостя на логин за глубокий период больше не за что.
                     const tier = strengthAccess.requiredTierFor({ period: p });
                     if (tier) {
-                        showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'strength' });
+                        showUpgrade({ tier, featureName: t('период «{{p}}»', { p: t(PERIOD_LABELS[p]) }), indicator: 'strength' });
                     }
                 }}
             />

@@ -1,4 +1,5 @@
 import { Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 /**
@@ -43,6 +44,7 @@ export default function DelayedDataBadge({
   cta?: string;
   compactCta?: string;
 }) {
+  const { t } = useTranslation();
   const { limits, isLoading } = useTierAccess(indicator);
   const delayed =
     !isLoading &&
@@ -67,13 +69,13 @@ export default function DelayedDataBadge({
         style={{ color: 'var(--accent)', flexShrink: 0 }}
         aria-hidden="true"
       />
-      <span style={{ fontWeight: 600 }}>Данные с задержкой</span>
-      <span style={{ opacity: 0.72 }}>{compact ? compactMessage : message}</span>
+      <span style={{ fontWeight: 600 }}>{t('Данные с задержкой')}</span>
+      <span style={{ opacity: 0.72 }}>{t(compact ? compactMessage : message)}</span>
       <a
         href="/pricing"
         style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'underline' }}
       >
-        {compact ? compactCta : cta}
+        {t(compact ? compactCta : cta)}
       </a>
     </div>
   );

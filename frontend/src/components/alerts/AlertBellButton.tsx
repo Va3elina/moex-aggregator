@@ -8,6 +8,7 @@ import { AlarmClock, Lock } from 'lucide-react';
 import CreateAlertModal, { type AlertMetricOption } from './CreateAlertModal';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import { t } from '../../i18n';
 
 interface Props {
     indicator: string;            // 'open_interest' | ...
@@ -26,7 +27,7 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
     const handleClick = () => {
         if (locked) {
             // Замочек уже виден; клик объясняет почему и ведёт на апгрейд.
-            showUpgrade({ tier: 'basic', featureName: 'Уведомления в мессенджере', indicator: 'alerts' });
+            showUpgrade({ tier: 'basic', featureName: t('Уведомления в мессенджере'), indicator: 'alerts' });
             return;
         }
         setOpen(true);
@@ -47,10 +48,10 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
                         width: 44,
                         height: 44,
                     }}
-                    aria-label={locked ? 'Уведомления доступны на тарифе Basic и Pro' : 'Создать уведомление'}
+                    aria-label={locked ? t('Уведомления доступны на тарифе Basic и Pro') : t('Создать уведомление')}
                     title={locked
-                        ? 'Уведомления в мессенджере доступны на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
-                        : 'Создать уведомление в мессенджере'}
+                        ? t('Уведомления в мессенджере доступны на тарифе Basic и Pro. Нажмите, чтобы улучшить.')
+                        : t('Создать уведомление в мессенджере')}
                 >
                     <AlarmClock size={22} />
                 </button>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
 import HelpTooltip from '../components/HelpTooltip';
@@ -101,6 +102,7 @@ const INDEX_COLOR = 'var(--funds-flow-positive)';
 const NAV_COLOR   = 'var(--accent)';
 
 export default function FundsMoneyPage() {
+    const { t, i18n } = useTranslation();
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -265,9 +267,11 @@ export default function FundsMoneyPage() {
     // соответствующий контрол — иначе юзер читает про СЧА а на графике
     // ещё Притоки (или наоборот).
     const tour = useOnboardingTour('funds-money');
+    // i18n.language в зависимостях — тур пересобирается при смене языка.
     const fundsMoneyTourSteps = useMemo(
       () => buildFundsMoneyTour(setViewMode),
-      [setViewMode],
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [setViewMode, i18n.language],
     );
     // Загрузка данных
     // Stale-guard: при быстром переключении категории/периода медленный ранний
@@ -291,16 +295,16 @@ export default function FundsMoneyPage() {
             if (!handleTierError(err, {
                 showUpgrade,
                 indicator: 'funds_money',
-                featureName: 'индикатор «Деньги в фондах»',
+                featureName: t('индикатор «Деньги в фондах»'),
                 onTier: () => setError(null),
             })) {
-                setError('Ошибка загрузки данных');
+                setError(t('Ошибка загрузки данных'));
             }
             console.error(err);
         } finally {
             if (!isStale()) setLoading(false);
         }
-    }, [category, period, showUpgrade, periodLocked]);
+    }, [category, period, showUpgrade, periodLocked, t]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -398,7 +402,7 @@ export default function FundsMoneyPage() {
                 if (!handleTierError(err, {
                     showUpgrade,
                     indicator: 'funds_money',
-                    featureName: 'притоки-оттоки фондов',
+                    featureName: t('притоки-оттоки фондов'),
                     onTier: () => setFlowsData({ category, timeframe: flowTimeframe, period, flows: [] }),
                 })) {
                     console.error('Flows error:', err);
@@ -408,7 +412,7 @@ export default function FundsMoneyPage() {
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, flowRolling, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked, awaitingFundsList]);
+    }, [viewMode, category, flowTimeframe, flowRolling, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked, awaitingFundsList, t]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
@@ -541,23 +545,24 @@ export default function FundsMoneyPage() {
     // Режим сглаживания — от ОТОБРАЖАЕМОЙ пары (эхо бека), не от контрола:
     // при переключении заголовок не должен опережать бары.
     const pairRolling = flowsPair?.flows.rolling === '3m';
+    const pairGenitive = pairCategory ? t(pairCategory.genitive) : '';
     const flowTitle = pairRolling
         ? (useShortFlowLabels
-            ? 'Потоки за скользящие 3 месяца (млрд ₽)'
-            : `Потоки из фондов ${pairCategory?.genitive ?? ''} за скользящие 3 месяца (млрд ₽)`)
+            ? t('Потоки за скользящие 3 месяца (млрд ₽)')
+            : t('Потоки из фондов {{cat}} за скользящие 3 месяца (млрд ₽)', { cat: pairGenitive }))
         : (useShortFlowLabels
-            ? 'Чистые притоки и оттоки (млрд ₽)'
-            : `Чистые притоки и оттоки из фондов ${pairCategory?.genitive ?? ''} (млрд ₽)`);
+            ? t('Чистые притоки и оттоки (млрд ₽)')
+            : t('Чистые притоки и оттоки из фондов {{cat}} (млрд ₽)', { cat: pairGenitive }));
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             <PageHeader
                 icon={Wallet}
-                title="Деньги в фондах"
-                subtitle="Динамика СЧА фондов и индексов"
+                title={t('Деньги в фондах')}
+                subtitle={t('Динамика СЧА фондов и индексов')}
                 help={METHODOLOGY.fundsMoney}
                 helpLink="/methodology/funds-money"
-                sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
+                sourceNote={t('Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа')}
             />
 
             {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
@@ -573,11 +578,11 @@ export default function FundsMoneyPage() {
                 onChange={selectCategory}
                 items={CATEGORIES.map(c => ({
                     key: c.key,
-                    label: c.name,
-                    sublabel: c.comingSoon ? 'Скоро' : undefined,
+                    label: t(c.name),
+                    sublabel: c.comingSoon ? t('Скоро') : undefined,
                     Icon: c.icon,
                     disabled: c.comingSoon,
-                    title: c.comingSoon ? 'Раздел скоро появится' : c.name,
+                    title: c.comingSoon ? t('Раздел скоро появится') : t(c.name),
                 }))}
             />
 
@@ -598,7 +603,7 @@ export default function FundsMoneyPage() {
                     // апселл на Basic (FundPickerModal locked). Так видно, что
                     // именно даёт тариф, вместо голого замка.
                     onClick={() => setFundPickerOpen(true)}
-                    title={canPickFunds ? 'Выбрать фонды для графика' : 'Выбор фондов — на тарифе Basic или Pro'}
+                    title={canPickFunds ? t('Выбрать фонды для графика') : t('Выбор фондов — на тарифе Basic или Pro')}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
                         color: 'var(--text-primary)',
@@ -612,7 +617,7 @@ export default function FundsMoneyPage() {
                     {CatIcon && <CatIcon size={24} strokeWidth={2.2} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />}
                     <div className="flex-1 text-left" style={{ minWidth: 0 }}>
                         <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            Фонды: {currentCategory?.name ?? ''}
+                            {t('Фонды: {{name}}', { name: currentCategory ? t(currentCategory.name) : '' })}
                         </div>
                         {/* Счётчик выбранных — цифры в небольшом сером бейдже (как в
                             прошлой версии кнопки). При частичном выборе бейдж
@@ -648,7 +653,7 @@ export default function FundsMoneyPage() {
                         .filter(p => AUM_PERIODS.includes(p))
                         .map((p) => ({
                             key: p,
-                            label: PERIOD_LABELS[p],
+                            label: t(PERIOD_LABELS[p]),
                             // tier-замок по ПЕР-ИНДИКАТОРНОМУ лимиту funds_money
                             // (canUsePeriod = бэковый max_history_days, 180д для гостя),
                             // а НЕ по глобальному GUEST_MAX_PERIOD='1y'. Иначе «1Г» для
@@ -667,7 +672,7 @@ export default function FundsMoneyPage() {
                                 && (fundsAccess.isLoading || fundsAccess.canUseTimeframe(t)));
                             if (tf) { setFlowTimeframeRaw(tf); setPeriod(p); return; }
                             const tier = fundsAccess.requiredTierFor({ timeframe: '1d' });
-                            if (tier) { showUpgrade({ tier, featureName: 'дневной таймфрейм', indicator: 'funds_money' }); return; }
+                            if (tier) { showUpgrade({ tier, featureName: t('дневной таймфрейм'), indicator: 'funds_money' }); return; }
                         }
                         setPeriod(p);
                     }}
@@ -677,7 +682,7 @@ export default function FundsMoneyPage() {
                         if (!fundsAccess.canUsePeriod(p)) {
                             const tier = fundsAccess.requiredTierFor({ period: p });
                             if (tier) {
-                                showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'funds_money' });
+                                showUpgrade({ tier, featureName: t('период «{{p}}»', { p: t(PERIOD_LABELS[p]) }), indicator: 'funds_money' });
                                 return;
                             }
                         }
@@ -692,8 +697,8 @@ export default function FundsMoneyPage() {
                     options={[
                         // Потоки для free недоступны целиком (лимит 180д vs ≥1Г + дневной
                         // ТФ=Pro) → показываем замок, а не «кликабельно но сразу 403».
-                        { key: 'flows', label: 'Притоки-Оттоки', locked: !fundsAccess.isLoading && !flowsTierOk },
-                        { key: 'aum',   label: 'СЧА' },
+                        { key: 'flows', label: t('Притоки-Оттоки'), locked: !fundsAccess.isLoading && !flowsTierOk },
+                        { key: 'aum',   label: t('СЧА') },
                     ]}
                     value={viewMode}
                     onChange={(m) => {
@@ -711,13 +716,13 @@ export default function FundsMoneyPage() {
                         // «Притоки-Оттоки» заперты тарифом (реальный блокер — лимит
                         // истории: потокам нужен ≥1Г, а free=180д) → upgrade-промпт.
                         const tier = fundsAccess.requiredTierFor({ period: '1y' }) ?? 'basic';
-                        showUpgrade({ tier, featureName: 'притоки-оттоки фондов', indicator: 'funds_money' });
+                        showUpgrade({ tier, featureName: t('притоки-оттоки фондов'), indicator: 'funds_money' });
                     }}
                     trailing={
                         <HelpTooltip
                             sections={[
-                                { heading: 'Притоки-Оттоки', body: 'Показывают чистый приток средств: буквально, сколько людей внесли деньги в тот или иной инструмент. Это общее настроение рынка.' },
-                                { heading: 'СЧА', body: 'Ознакомительный режим: видно, сколько всего средств под управлением и как менялась эта сумма. Но динамика СЧА зависит ещё и от доходности фонда, поэтому не показывает, сколько денег люди действительно внесли.' },
+                                { heading: t('Притоки-Оттоки'), body: t('Показывают чистый приток средств: буквально, сколько людей внесли деньги в тот или иной инструмент. Это общее настроение рынка.') },
+                                { heading: t('СЧА'), body: t('Ознакомительный режим: видно, сколько всего средств под управлением и как менялась эта сумма. Но динамика СЧА зависит ещё и от доходности фонда, поэтому не показывает, сколько денег люди действительно внесли.') },
                             ]}
                             size={18}
                         />
@@ -732,12 +737,12 @@ export default function FundsMoneyPage() {
                         options={[
                             {
                                 key: '1d',
-                                label: '1д',
+                                label: t('1д'),
                                 // Free → только 1w/1m, дневной заблокирован
                                 locked: !fundsAccess.isLoading && !fundsAccess.canUseTimeframe('1d'),
                             },
-                            { key: '1w', label: '1н' },
-                            { key: '1m', label: '1м' },
+                            { key: '1w', label: t('1н') },
+                            { key: '1m', label: t('1м') },
                         ]}
                         value={flowTimeframe}
                         onChange={setFlowTimeframe}
@@ -746,7 +751,7 @@ export default function FundsMoneyPage() {
                             if (tier) {
                                 showUpgrade({
                                     tier,
-                                    featureName: 'дневной таймфрейм',
+                                    featureName: t('дневной таймфрейм'),
                                     indicator: 'funds_money',
                                 });
                             }
@@ -767,10 +772,10 @@ export default function FundsMoneyPage() {
                     layers={[
                         {
                             key: 'index',
-                            label: 'Индекс',
+                            label: t('Индекс'),
                             hint: viewMode === 'aum'
-                                ? `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`
-                                : `Панель ${currentCategory?.index ?? 'индекса'} над гистограммой`,
+                                ? t('Линия {{index}} на левой оси', { index: currentCategory?.index ?? t('Индекс') })
+                                : t('Панель {{index}} над гистограммой', { index: currentCategory?.index ?? t('Индекс') }),
                             checked: showIndex,
                             onChange: setShowIndex,
                         },
@@ -778,8 +783,8 @@ export default function FundsMoneyPage() {
                         // горячем ряду контролов (решение 2026-06-12).
                         ...(viewMode === 'flows' ? [{
                             key: 'rolling3m',
-                            label: 'Сумма за 3 месяца',
-                            hint: 'Столбец — суммарный чистый поток за скользящие 3 месяца, как показывают потоки глобальные управляющие компании. Сглаживает шум и проявляет устойчивые волны притоков и оттоков.',
+                            label: t('Сумма за 3 месяца'),
+                            hint: t('Столбец — суммарный чистый поток за скользящие 3 месяца, как показывают потоки глобальные управляющие компании. Сглаживает шум и проявляет устойчивые волны притоков и оттоков.'),
                             checked: flowRolling === '3m',
                             onChange: (v: boolean) => setFlowRolling(v ? '3m' : 'none'),
                         }] : []),
@@ -794,7 +799,7 @@ export default function FundsMoneyPage() {
                         visibleTickers: data?.funds
                             ?.filter(f => !f.tier_locked && !hiddenFunds.has(f.fund_id))
                             ?.map(f => f.ticker) ?? [],
-                        categoryOptions: CATEGORIES.map(c => ({ value: c.key, label: c.name })),
+                        categoryOptions: CATEGORIES.map(c => ({ value: c.key, label: t(c.name) })),
                     })}
                 />
                 {/* Сигналы по фондам. Только в режиме притоков-оттоков.
@@ -819,7 +824,7 @@ export default function FundsMoneyPage() {
                             data-export-ignore="true"
                             onClick={() => {
                                 if (alertsLocked) {
-                                    showUpgrade({ tier: 'basic', featureName: 'Сигналы по фондам', indicator: 'alerts' });
+                                    showUpgrade({ tier: 'basic', featureName: t('Сигналы по фондам'), indicator: 'alerts' });
                                     return;
                                 }
                                 setFundAlertOpen(true);
@@ -833,10 +838,10 @@ export default function FundsMoneyPage() {
                                 color: 'var(--text-primary)',
                                 opacity: alertsLocked ? 0.78 : 1,
                             }}
-                            aria-label={alertsLocked ? 'Сигналы по фондам — доступно на тарифе Basic и Pro' : 'Создать сигнал по фондам'}
+                            aria-label={alertsLocked ? t('Сигналы по фондам — доступно на тарифе Basic и Pro') : t('Создать сигнал по фондам')}
                             title={alertsLocked
-                                ? 'Сигналы в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
-                                : 'Создать сигнал по аномальному потоку фондов'}
+                                ? t('Сигналы в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.')
+                                : t('Создать сигнал по аномальному потоку фондов')}
                         >
                             <AlarmClock size={18} />
                         </button>
@@ -864,13 +869,13 @@ export default function FundsMoneyPage() {
                         // На скриншоте главный заголовок — название индикатора
                         // «Деньги в фондах», а не категория. asset не задаём (иначе он
                         // станет primary-заголовком); категория уходит в subtitle-чипы.
-                        title: 'Деньги в фондах',
+                        title: t('Деньги в фондах'),
                         details: [
-                            currentCategory?.name ?? category,
-                            viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки',
-                            PERIOD_LABELS[period] ?? period,
-                            viewMode === 'flows' ? (flowTimeframe === '1d' ? 'День' : flowTimeframe === '1w' ? 'Неделя' : 'Месяц') : null,
-                            viewMode === 'flows' && flowRolling === '3m' ? 'Сумма 3М' : null,
+                            currentCategory ? t(currentCategory.name) : category,
+                            viewMode === 'aum' ? t('СЧА') : t('Притоки-Оттоки'),
+                            PERIOD_LABELS[period] ? t(PERIOD_LABELS[period]) : period,
+                            viewMode === 'flows' ? (flowTimeframe === '1d' ? t('День') : flowTimeframe === '1w' ? t('Неделя') : t('Месяц')) : null,
+                            viewMode === 'flows' && flowRolling === '3m' ? t('Сумма 3М') : null,
                         ].filter(Boolean) as string[],
                     }}
                     getExportStyles={(): Record<string, string> => {
@@ -886,7 +891,7 @@ export default function FundsMoneyPage() {
                 />
                 {/* Тип графика применим только в режиме СЧА (линейный SimpleChart);
                     «Притоки-Оттоки» — гистограмма, там в модалке только палитра. */}
-                <ChartSettings showType={viewMode === 'aum'} scopeLabels={{ primary: 'СЧА', secondary: 'Индекс' }} />
+                <ChartSettings showType={viewMode === 'aum'} scopeLabels={{ primary: t('СЧА'), secondary: t('Индекс') }} />
                 </ChartActionsMenu>
 
                 {/* Вход в песочницу — крайняя справа в строке контролов
@@ -904,7 +909,7 @@ export default function FundsMoneyPage() {
                 <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
-                        <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
+                        <p className="text-sm text-theme-secondary mt-2">{t('Попробуйте обновить страницу')}</p>
                     </div>
                 </div>
             ) : viewMode === 'aum' ? (
@@ -931,8 +936,8 @@ export default function FundsMoneyPage() {
                         formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                         formatSecondaryValue={formatNav}
                         formatSecondaryAxis={formatNav}
-                        primaryLabel={currentCategory?.index || 'Индекс'}
-                        secondaryLabel={`СЧА фондов ${currentCategory?.genitive ?? ''} (млрд ₽)`}
+                        primaryLabel={currentCategory?.index || t('Индекс')}
+                        secondaryLabel={t('СЧА фондов {{cat}} (млрд ₽)', { cat: currentCategory ? t(currentCategory.genitive) : '' })}
                         loading={loading}
                         showValueHeader={false}
                         legendPosition="top"
@@ -977,7 +982,7 @@ export default function FundsMoneyPage() {
                     onToggleFundVisibility={toggleFundVisibility}
                     locked={!canPickFunds}
                     onClose={() => setFundPickerOpen(false)}
-                    categoryGenitive={currentCategory?.genitive}
+                    categoryGenitive={currentCategory ? t(currentCategory.genitive) : undefined}
                     maxDate={fundsMaxDate || undefined}
                     hasStale={fundsHasStale}
                     aggregatedData={aggregatedData}

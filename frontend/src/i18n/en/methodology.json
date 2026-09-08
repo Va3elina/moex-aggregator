@@ -1,0 +1,19 @@
+{
+  "Все акции рынка на одном экране в виде плиток.": "Every stock on the market on one screen, as tiles.",
+  "Размер плитки — капитализация компании. Цвет отражает изменение цены за выбранный период: зелёный — рост, красный — падение. Интенсивность цвета зависит от величины движения.": "Tile size is the company's market cap. Colour shows the price change over the selected period: green for gains, red for losses. Colour intensity scales with the size of the move.",
+  "Количество открытых позиций по инструменту.": "Number of open positions in an instrument.",
+  "Движение денег в российских биржевых фондах.": "Money flows in Russian exchange-traded funds.",
+  "Стоимость активов фонда и её изменение во времени. Фонды сгруппированы по направлениям: акции, облигации, золото, валюты и другие. На графиках — динамика стоимости и притоки-оттоки за период.": "Fund net asset value and how it changes over time. Funds are grouped by asset class: equities, bonds, gold, currencies and others. Charts show NAV dynamics and inflows/outflows over the period.",
+  "Что именно входит в состав каждого фонда.": "What exactly each fund holds.",
+  "Список бумаг и их доля в портфеле фонда. Данные берутся из официальных отчётов управляющих компаний. На странице — круговые диаграммы и таблицы составов.": "The list of securities and their weight in the fund's portfolio. Data comes from official asset-manager disclosures. The page shows donut charts and holdings tables.",
+  "Оценка рынка через отношение к экономике страны.": "Market valuation relative to the size of the economy.",
+  "Суммарная капитализация публичных компаний, делённая на валовой внутренний продукт. Значение ниже 50% считается дешёвым, выше 100% — дорогим. На графике — значение в процентах и зоны оценки.": "Total market cap of public companies divided by GDP. Below 50% is considered cheap, above 100% expensive. The chart shows the ratio in percent and the valuation zones.",
+  "Доля акций выше своей средней цены.": "Share of stocks trading above their moving average.",
+  "Показывает какой процент акций индекса сейчас торгуется выше своей скользящей средней. Чем выше значение — тем шире рост по всему рынку. На графике — текущее значение и его изменение во времени.": "Shows what percentage of index stocks currently trade above their moving average. The higher the value, the broader the rally across the market. The chart shows the current value and its history.",
+  "Среднее изменение цены по периодам года.": "Average price change by period of the year.",
+  "Средняя и медианная динамика цены по дням недели, месяцам, годам. На графиках — столбцы средних изменений за период и график цены по годам.": "Mean and median price dynamics by day of week, month and year. Charts show bars of average change per period and a price chart by year.",
+  "Главные показатели рынка на одной странице.": "Key market indicators on one page.",
+  "Ключевые котировки, настроение рынка, лидеры роста и падения, движение по секторам и фондам. Обновляется автоматически в торговое время.": "Key quotes, market sentiment, top gainers and losers, sector and fund moves. Updates automatically during trading hours.",
+  "Кто покупает, кто продаёт на бирже по категориям участников.": "Who is buying and who is selling on the exchange, by participant type.",
+  "Среднемесячные нетто-покупки и нетто-продажи по типам участников торгов: нерезиденты, банки, физические лица, фонды и другие. Положительные значения — покупки, отрицательные — продажи. Источник: ежемесячный обзор Банка России (ОРФР).": "Average monthly net purchases and net sales by participant type: non-residents, banks, retail investors, funds and others. Positive values are purchases, negative are sales. Source: the Bank of Russia's monthly Financial Market Risks Review."
+}

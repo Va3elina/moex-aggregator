@@ -11,6 +11,7 @@
  * а не состояние страницы.
  */
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, X, Clock, Gift } from 'lucide-react';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { FEATURE_HINTS, FeatureHintRow } from './featureHints';
@@ -109,6 +110,7 @@ interface Props {
 export default function TierPlanCard({
   tier, title, variant, period, monthlyAmount, trialDays, isCurrent, children,
 }: Props) {
+  const { t } = useTranslation();
   const meta = TIER_META[tier] || TIER_META.free;
 
   return (
@@ -134,7 +136,7 @@ export default function TierPlanCard({
           className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
           style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
         >
-          Текущий
+          {t('Текущий')}
         </div>
       )}
 
@@ -170,17 +172,17 @@ export default function TierPlanCard({
                 ).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
               </span>
               <span className="text-sm text-theme-secondary leading-none">
-                /мес
+                {t('/мес')}
               </span>
             </div>
             {period === 'yearly' && (
               <div className="mt-1.5 space-y-0.5">
                 <div className="text-xs text-theme-muted">
-                  Оплата раз в год
+                  {t('Оплата раз в год')}
                 </div>
                 {!!monthlyAmount && monthlyAmount * 12 > variant.amount && (
                   <div className="text-xs" style={{ color: meta.color, fontWeight: 600 }}>
-                    Вы экономите {(monthlyAmount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽ в год
+                    {t('Вы экономите {{sum}} ₽ в год', { sum: (monthlyAmount * 12 - variant.amount).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) })}
                   </div>
                 )}
               </div>
@@ -194,7 +196,7 @@ export default function TierPlanCard({
               whiteSpace: 'nowrap',
             }}
           >
-            Бесплатно
+            {t('Бесплатно')}
           </div>
         )}
       </div>
@@ -211,7 +213,7 @@ export default function TierPlanCard({
           }}
         >
           <Gift size={20} strokeWidth={2.4} className="flex-shrink-0" />
-          <span>{trialDays} дней бесплатно</span>
+          <span>{t('{{n}} дней бесплатно', { n: trialDays })}</span>
         </div>
       )}
 
@@ -227,7 +229,7 @@ export default function TierPlanCard({
           {CARD_FEATURES.map((f, i) => {
             const v = f[(tier === 'basic' || tier === 'pro' ? tier : 'free')];
             const included = v !== false;
-            const label = typeof v === 'string' ? v : f.label;
+            const label = t(typeof v === 'string' ? v : f.label);
             // soon = фича в этом тарифе заявлена, но ещё не работает:
             // часы вместо галки и приглушённый текст, чтобы её не
             // приняли за уже доступную.

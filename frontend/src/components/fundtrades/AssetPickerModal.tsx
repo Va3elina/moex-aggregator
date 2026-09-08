@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import ModalLayer from '../../components/ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
@@ -44,6 +45,7 @@ const COL: Record<SortCol, number> = { volume: 96 };
 // табов слева направо; показываем ТОЛЬКО непустые корзины + «Все» всегда последней.
 // 'share' — дефолтный таб: «Потоки по компании» в первую очередь про акции, а
 // облигации/ОФЗ/фонды засоряли список (см. securities_ref.sec_type).
+// Значения — ключи t(), оборачиваются при рендере.
 const CAT_LABELS: Record<string, string> = {
   share: 'Акции',
   bond: 'Облигации',
@@ -70,6 +72,7 @@ const normCat = (a: AssetPickerAsset) => a.category ?? 'other';
  * избранного (localStorage 'favoriteFundTradeAssets', id = asset.key).
  */
 export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPickerModalProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortCol, setSortCol] = useState<SortCol>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -284,7 +287,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           onClick={(e) => toggleFavorite(asset.key, e)}
           className="p-1.5 transition-colors flex-shrink-0"
           style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
-          aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+          aria-label={isFavorite ? t('Убрать из избранных') : t('Добавить в избранные')}
         >
           <Star size={16} fill={isFavorite ? 'currentColor' : 'transparent'} />
         </button>
@@ -330,7 +333,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Поиск актива"
+                    placeholder={t('Поиск актива')}
                     className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
                     style={{
                       backgroundColor: 'var(--bg-primary)',
@@ -348,7 +351,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                     border: '1.5px solid var(--text-primary)',
                     background: 'var(--bg-primary)', color: 'var(--text-primary)',
                   } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8, marginRight: -8 }}
-                  aria-label="Закрыть"
+                  aria-label={t('Закрыть')}
                 >
                   <X size={isMobile ? 18 : 22} strokeWidth={isMobile ? 2.4 : 2} />
                 </button>
@@ -360,7 +363,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                 <div className="flex flex-wrap gap-2 mt-3">
                   {[...presentCats, 'all'].map((cat) => {
                     const isActive = effectiveCat === cat;
-                    const label = cat === 'all' ? 'Все' : (CAT_LABELS[cat] ?? cat);
+                    const label = cat === 'all' ? t('Все') : (CAT_LABELS[cat] ? t(CAT_LABELS[cat]) : cat);
                     return (
                       <button
                         key={cat}
@@ -399,15 +402,15 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                   className="flex-1 uppercase font-bold"
                   style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
                 >
-                  Бумага
+                  {t('Бумага')}
                 </span>
-                {renderSortHeader('volume', 'Суммарный объём в фондах', 'Суммарный объём бумаги в портфелях фондов, ₽')}
+                {renderSortHeader('volume', t('Суммарный объём в фондах'), t('Суммарный объём бумаги в портфелях фондов, ₽'))}
                 <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
               </div>
 
               {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
                 <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                  Ничего не найдено
+                  {t('Ничего не найдено')}
                 </div>
               ) : (
                 <>
@@ -418,7 +421,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                         className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
                         style={{ color: 'var(--text-secondary)' }}
                       >
-                        Избранные
+                        {t('Избранные')}
                       </h3>
                       <div className="instrument-list">
                         {favoriteAssets.map(renderItem)}

@@ -21,6 +21,7 @@
  * позже, при сборке LwSeries.
  */
 
+import { t } from '../i18n';
 /** Точка ряда: время + значение. `value` для свечей = close (инвариант LwPoint). */
 export interface IndPoint<T = number> { time: T; value: number }
 
@@ -182,6 +183,11 @@ export const SOURCE_LABELS: Record<IndSource, string> = {
   hl2: '(макс+мин)/2', hlc3: '(макс+мин+закр)/3', ohlc4: '(откр+макс+мин+закр)/4',
   hlcc4: '(макс+мин+закр+закр)/4',
 };
+
+/** Подпись источника на текущем языке (SOURCE_LABELS — русские ключи словаря). */
+export function sourceLabel(src: IndSource): string {
+  return t(SOURCE_LABELS[src]);
+}
 
 /** Пересобрать ряд под выбранный источник. Если OHLC не пришли (ряд не свечной),
  *  всё вырождается в value — расчёт не падает, просто источник ни на что не влияет. */

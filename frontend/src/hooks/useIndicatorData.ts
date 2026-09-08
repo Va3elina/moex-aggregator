@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
 import { useRealtimeData } from './useRealtimeData';
 import { handleTierError, type UpgradeTier } from '../utils/tierError';
+import { t } from '../i18n';
 
 interface TierConfig {
     showUpgrade: (props: { tier: UpgradeTier; featureName?: string; indicator?: string }) => void;
@@ -96,7 +97,7 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
 
     const resolveError = (err: unknown): string =>
         typeof errorMessage === 'function' ? errorMessage(err)
-            : (errorMessage ?? 'Ошибка загрузки данных');
+            : (errorMessage ?? t('Ошибка загрузки данных'));
 
     const reload = useCallback(async (opts?: { realtime?: boolean }) => {
         if (enabled === false) return;

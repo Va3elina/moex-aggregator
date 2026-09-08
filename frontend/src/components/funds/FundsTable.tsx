@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, Lock, AlertCircle, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
@@ -158,6 +159,7 @@ export default function FundsTable({
     onSetNavSortDir,
     bare = false,
 }: FundsTableProps) {
+    const { t } = useTranslation();
     const { showUpgrade } = useUpgradePrompt();
     const fundsAccess = useTierAccess('funds_money');
     // Колонка сортировки: СЧА (nav) или доходность за 1 год (y1). Направление —
@@ -279,13 +281,13 @@ export default function FundsTable({
                     style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}
                 >
                     <div className="flex items-baseline" style={{ gap: 'var(--sp-2)' }}>
-                        <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
+                        <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>{t('Фонды категории')}</h3>
                         {maxDate && (
                             <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
-                                данные на {fmtDate(maxDate)}
+                                {t('данные на {{date}}', { date: fmtDate(maxDate) })}
                                 {hasStaleFunds && (
                                     <>
-                                        , часть фондов запаздывает (отмечены{' '}
+                                        {t(', часть фондов запаздывает (отмечены')}{' '}
                                         <AlertCircle
                                             size={13}
                                             strokeWidth={2.2}
@@ -298,9 +300,9 @@ export default function FundsTable({
                         )}
                     </div>
                     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>Суммарная СЧА выбранных:</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>{t('Суммарная СЧА выбранных:')}</span>
                         <span className="font-mono font-bold" style={{ color: 'var(--funds-flow-positive)', fontSize: 'var(--fs-sm)' }}>
-                            {aggregatedData.totalCurrentNav.toFixed(2)} млрд ₽
+                            {t('{{v}} млрд ₽', { v: aggregatedData.totalCurrentNav.toFixed(2) })}
                         </span>
                     </div>
                 </div>
@@ -335,13 +337,13 @@ export default function FundsTable({
                             {/* bare: все заголовки — типографика шапки поиска ОИ
                                 (uppercase, 800, fs-xs, letter-spacing). Название и
                                 Тикер не сортируются — просто текст text-secondary. */}
-                            <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Название</th>
-                            {!bare && <th className="px-4 font-medium py-2">Тикер</th>}
+                            <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>{t('Название')}</th>
+                            {!bare && <th className="px-4 font-medium py-2">{t('Тикер')}</th>}
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
-                                {renderSortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
+                                {renderSortButton('nav', t('СЧА'), t('Стоимость чистых активов фонда, млрд ₽'))}
                             </th>
                             <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
-                                {renderSortButton('y1', 'Доходность', 'Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
+                                {renderSortButton('y1', t('Доходность'), t('Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).'))}
                             </th>
                         </tr>
                     </thead>
@@ -368,7 +370,7 @@ export default function FundsTable({
                                     </div>
                                 </td>
                                 <td colSpan={bare ? 1 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
-                                    <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
+                                    <span className="text-sm font-bold text-theme-primary">{t('Выбрать все')}</span>
                                 </td>
                                 {bare && (
                                     <>
@@ -469,7 +471,7 @@ export default function FundsTable({
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
-                                                            {subcat === 'Управляемые фонды акций' ? 'Управляемые фонды' : subcat}
+                                                            {subcat === 'Управляемые фонды акций' ? t('Управляемые фонды') : t(subcat)}
                                                         </span>
                                                         {subcat && SUBCATEGORY_HELP[subcat] && (
                                                             <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
@@ -478,7 +480,7 @@ export default function FundsTable({
                                                         )}
                                                         {subcat && COMING_SOON_SUBCATS.has(subcat) && (
                                                             <span className="rounded-full shrink-0" style={{ fontSize: 'var(--fs-2xs)', padding: 'calc(var(--sp-1)) var(--sp-2)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 700 }}>
-                                                                Скоро
+                                                                {t('Скоро')}
                                                             </span>
                                                         )}
                                                     </div>
@@ -511,7 +513,7 @@ export default function FundsTable({
                                                 const requiredTier = fundsAccess.requiredTierFor({});
                                                 showUpgrade({
                                                     tier: requiredTier || 'basic',
-                                                    featureName: `фонд ${fund.name} (${fund.ticker})`,
+                                                    featureName: t('фонд {{name}} ({{ticker}})', { name: fund.name, ticker: fund.ticker }),
                                                     indicator: 'funds_money',
                                                 });
                                             };
@@ -533,7 +535,7 @@ export default function FundsTable({
                                                         ...(bare ? { height: 41, borderTop: SOFT_BORDER } : {}),
                                                         ...(isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : {}),
                                                     }}
-                                                    title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
+                                                    title={isLocked ? t('Доступно на повышенном тарифе') : undefined}
                                                 >
                                                     <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                         {isLocked ? (
@@ -598,7 +600,7 @@ export default function FundsTable({
                                                                         <span
                                                                             className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
                                                                             style={{ opacity: 0.6 }}
-                                                                            title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                            title={t('СЧА этого фонда отстаёт от общей даты данных. Актуальна на {{date}}', { date: fmtDate(lastData.date) })}
                                                                         >
                                                                             <AlertCircle size={17} strokeWidth={2.2} />
                                                                         </span>
@@ -611,7 +613,7 @@ export default function FundsTable({
                                                                         <span
                                                                             className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
                                                                             style={{ opacity: 0.6 }}
-                                                                            title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                            title={t('СЧА этого фонда отстаёт от общей даты данных. Актуальна на {{date}}', { date: fmtDate(lastData.date) })}
                                                                         >
                                                                             <AlertCircle size={17} strokeWidth={2.2} />
                                                                         </span>
@@ -645,7 +647,7 @@ export default function FundsTable({
                                                                     <>
                                                                         {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
                                                                         {br.label !== '1г' && (
-                                                                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3 }}>{br.label}</span>
+                                                                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3 }}>{t(br.label)}</span>
                                                                         )}
                                                                     </>
                                                                 )}

@@ -13,6 +13,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import { CheckCircle2, Clock, AlertCircle, RotateCw } from 'lucide-react';
 import { apiFetch } from '../services/api';
 import { useAnalytics } from '../contexts/AnalyticsContext';
@@ -27,6 +29,7 @@ interface Status {
 }
 
 export default function BillingSuccessPage() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<Status | null>(null);
   const [state, setState] = useState<'pending' | 'active' | 'timeout'>('pending');
   const [syncing, setSyncing] = useState(false);
@@ -147,22 +150,22 @@ export default function BillingSuccessPage() {
       {state === 'pending' && (
         <>
           <Clock className="w-16 h-16 mx-auto mb-4 text-blue-400 animate-pulse" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Обрабатываем оплату...</h1>
-          <p className="text-theme-secondary">Обычно занимает несколько секунд. Не закрывай страницу.</p>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Обрабатываем оплату...')}</h1>
+          <p className="text-theme-secondary">{t('Обычно занимает несколько секунд. Не закрывай страницу.')}</p>
         </>
       )}
       {state === 'active' && status && (
         <>
           <CheckCircle2 className="w-16 h-16 mx-auto mb-4 text-green-400" />
           <h1 className="text-2xl font-bold text-theme-primary mb-2">
-            {trialActivated ? 'Успешно! Пробный период активирован' : 'Оплата прошла!'}
+            {trialActivated ? t('Успешно! Пробный период активирован') : t('Оплата прошла!')}
           </h1>
           <p className="text-theme-secondary mb-2">
-            Тариф: <strong className="text-theme-primary">{status.tier.toUpperCase()}</strong>
+            {t('Тариф:')} <strong className="text-theme-primary">{status.tier.toUpperCase()}</strong>
           </p>
           {status.expires_at && (
             <p className="text-theme-secondary text-sm mb-6">
-              Действует до {new Date(status.expires_at).toLocaleDateString('ru-RU')}
+              {t('Действует до')} {new Date(status.expires_at).toLocaleDateString(dateLocale())}
             </p>
           )}
           <div className="flex gap-3 justify-center">
@@ -171,14 +174,14 @@ export default function BillingSuccessPage() {
               className="px-5 py-3 rounded-xl text-sm font-medium"
               style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
             >
-              На главную
+              {t('На главную')}
             </Link>
             <Link
               to="/profile"
               className="px-5 py-3 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
-              Мой профиль
+              {t('Мой профиль')}
             </Link>
           </div>
         </>
@@ -186,10 +189,9 @@ export default function BillingSuccessPage() {
       {state === 'timeout' && (
         <>
           <AlertCircle className="w-16 h-16 mx-auto mb-4 text-amber-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Подтверждение задерживается</h1>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Подтверждение задерживается')}</h1>
           <p className="text-theme-secondary mb-6">
-            Платёж возможно прошёл, но webhook ещё не дошёл до нас.
-            Нажми «Проверить статус» — мы сами спросим у Т-Банка.
+            {t('Платёж возможно прошёл, но webhook ещё не дошёл до нас. Нажми «Проверить статус» — мы сами спросим у Т-Банка.')}
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <button
@@ -199,18 +201,18 @@ export default function BillingSuccessPage() {
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
             >
               <RotateCw size={16} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Проверяем…' : 'Проверить статус'}
+              {syncing ? t('Проверяем…') : t('Проверить статус')}
             </button>
             <Link
               to="/profile"
               className="px-5 py-3 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
-              В профиль
+              {t('В профиль')}
             </Link>
           </div>
           <p className="mt-6 text-xs" style={{ color: 'var(--text-muted)' }}>
-            Если статус так и не подтвердится — напиши на{' '}
+            {t('Если статус так и не подтвердится — напиши на')}{' '}
             <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }} className="hover:underline">
               frameinfo@mail.ru
             </a>

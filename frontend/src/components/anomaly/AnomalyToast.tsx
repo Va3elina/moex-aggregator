@@ -12,6 +12,7 @@
 import { TrendingUp, TrendingDown, X, Lock, Bell, ArrowRight, Check, ExternalLink } from 'lucide-react';
 import type { AnomalyItem } from '../../services/api';
 import { tradeDateLabel } from './anomalyActions';
+import { t } from '../../i18n';
 
 const TYPE_META: Record<string, { label: string; dot: string }> = {
   oi_move:         { label: 'Открытый интерес', dot: 'var(--accent-orange, #FF9100)' },
@@ -39,6 +40,7 @@ export function AnomalyToast({
   onOpen, onSubscribe, onClose, onPause, onResume,
 }: Props) {
   const meta = TYPE_META[item.type] ?? { label: 'Сигнал', dot: 'var(--text-muted)' };
+  const metaLabel = t(meta.label);
   const isPromo = item.type === 'promo';
   // «Инфо»-типы без направления/подписки (промо канала, релиз данных): вместо
   // строки «стрелка + ×N» показываем текст context, кнопку «Получать» прячем.
@@ -57,7 +59,7 @@ export function AnomalyToast({
   // Торговый день движения («за 26 июня») — данные позиций/СЧА выходят с лагом ~T+1,
   // поэтому время обнаружения тоста ≠ дата самих торгов. Показываем явно.
   const dateLbl = tradeDateLabel(item.signal_date);
-  const metaLine = [assetLine, dateLbl ? `за ${dateLbl}` : ''].filter(Boolean).join(' · ');
+  const metaLine = [assetLine, dateLbl ? t('за {{date}}', { date: dateLbl }) : ''].filter(Boolean).join(' · ');
   const locked = !!item.link_required_tier;
 
   return (
@@ -76,7 +78,7 @@ export function AnomalyToast({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', fontSize: 12 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
-          {meta.label}
+          {metaLabel}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {item.mine && (
@@ -84,10 +86,10 @@ export function AnomalyToast({
               background: 'color-mix(in srgb, var(--success, #00E676) 14%, transparent)',
               color: 'var(--success, #00E676)', fontSize: 11, padding: '2px 7px', borderRadius: 6,
             }}>
-              ваш сигнал
+              {t('ваш сигнал')}
             </span>
           )}
-          <button onClick={onClose} aria-label="Закрыть" style={iconBtn}>
+          <button onClick={onClose} aria-label={t('Закрыть')} style={iconBtn}>
             <X size={16} color="var(--text-muted)" />
           </button>
         </div>
@@ -128,14 +130,14 @@ export function AnomalyToast({
           }}
         >
           {locked && !isInfo && <Lock size={14} />}
-          {isPromo ? 'Открыть канал' : isInfo ? 'Открыть' : 'Открыть график'}
+          {isPromo ? t('Открыть канал') : isInfo ? t('Открыть') : t('Открыть график')}
           {isPromo ? <ExternalLink size={15} /> : (!locked && <ArrowRight size={15} />)}
         </button>
         {!isInfo && (
         <button
           onClick={onSubscribe}
           disabled={subscribing || subscribed}
-          aria-label="Получать сигнал"
+          aria-label={t('Получать сигнал')}
           style={{
             display: 'flex', alignItems: 'center', gap: 5, background: 'transparent',
             border: '0.5px solid var(--border-color, rgba(255,255,255,0.14))',
@@ -145,7 +147,7 @@ export function AnomalyToast({
           }}
         >
           {subscribed ? <Check size={15} /> : <Bell size={15} />}
-          {subscribed ? 'Готово' : 'Получать'}
+          {subscribed ? t('Готово') : t('Получать')}
         </button>
         )}
       </div>

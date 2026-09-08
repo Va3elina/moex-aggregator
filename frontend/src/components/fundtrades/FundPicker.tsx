@@ -14,13 +14,15 @@
 //                           Кнопка-триггер = «тикер · имя» с аватаром УК.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 import ModalLayer from '../ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X } from 'lucide-react';
 import { UK_LOGOS, stripUkName } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import HelpTooltip from '../HelpTooltip';
-import { INDEX_FUNDS_HELP } from './PortfolioFundPicker';
+import { indexFundsHelp } from './PortfolioFundPicker';
 
 export interface FundPickerFund {
     ticker: string;
@@ -108,7 +110,7 @@ function groupByUk(funds: FundPickerFund[]): UkGroup[] {
             g = {
                 key: groupKey,
                 ukId: f.uk_id,
-                name: name || 'Прочие',
+                name: name || t('Прочие'),
                 funds: [],
             };
             map.set(groupKey, g);
@@ -137,6 +139,7 @@ function FundPickerModal({
     onClose: () => void;
     indexTickers?: string[];
 }) {
+    const { t } = useTranslation();
     const [searchQuery, setSearchQuery] = useState('');
     const [hover, setHover] = useState<string | null>(null);
     // На мобиле делаем ✕ заметной кнопкой с обводкой (как панель УК) — бледный
@@ -250,7 +253,7 @@ function FundPickerModal({
                     <div className="px-6 pt-6 pb-4">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                Выбор фонда
+                                {t('Выбор фонда')}
                             </h2>
                             <button
                                 onClick={onClose}
@@ -261,7 +264,7 @@ function FundPickerModal({
                                     border: '1.5px solid var(--text-primary)',
                                     background: 'var(--bg-primary)', color: 'var(--text-primary)',
                                 } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
-                                aria-label="Закрыть"
+                                aria-label={t('Закрыть')}
                             >
                                 <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
                             </button>
@@ -279,7 +282,7 @@ function FundPickerModal({
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Поиск по тикеру или имени"
+                                placeholder={t('Поиск по тикеру или имени')}
                                 className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
                                 style={{
                                     backgroundColor: 'var(--bg-primary)',
@@ -299,8 +302,8 @@ function FundPickerModal({
                                     className="editorial-press"
                                     aria-pressed={indexOff}
                                     title={indexOff
-                                        ? `Индексные фонды выключены (${idxTickers.length})`
-                                        : `Выключить индексные фонды (${idxTickers.length})`}
+                                        ? t('Индексные фонды выключены ({{n}})', { n: idxTickers.length })
+                                        : t('Выключить индексные фонды ({{n}})', { n: idxTickers.length })}
                                     style={{
                                         padding: '4px 14px',
                                         borderRadius: 999,
@@ -315,10 +318,10 @@ function FundPickerModal({
                                         transition: 'background-color 0.12s ease, color 0.12s ease',
                                     }}
                                 >
-                                    Без индексных фондов
+                                    {t('Без индексных фондов')}
                                 </button>
                                 {/* float — окно с overflow:hidden обрезало бы поповер. */}
-                                <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
+                                <HelpTooltip content={indexFundsHelp()} size={16} float />
                             </div>
                         )}
                     </div>
@@ -372,13 +375,13 @@ function FundPickerModal({
                                         </svg>
                                     )}
                                 </span>
-                                Все фонды
+                                {t('Все фонды')}
                             </button>
                         )}
 
                         {groups.length === 0 ? (
                             <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                                {funds.length === 0 ? 'Нет фондов' : 'Ничего не найдено'}
+                                {funds.length === 0 ? t('Нет фондов') : t('Ничего не найдено')}
                             </div>
                         ) : (
                             groups.map((g) => (
@@ -567,7 +570,7 @@ function FundPickerModal({
                                     boxShadow: '3px 3px 0 var(--text-primary)',
                                 }}
                             >
-                                Готово{allActive ? '' : ` · ${selected.size}`}
+                                {t('Готово')}{allActive ? '' : ` · ${selected.size}`}
                             </button>
                         </div>
                     )}
@@ -586,6 +589,7 @@ export default function FundPicker({
     minWidth = 220,
     indexTickers,
 }: FundPickerProps) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
 
     const total = funds.length;
@@ -601,11 +605,11 @@ export default function FundPicker({
     // Текст кнопки. Кастомный buttonLabel имеет приоритет в multi.
     const label = (() => {
         if (mode === 'single') {
-            if (!selectedFund) return 'Выбрать фонд';
+            if (!selectedFund) return t('Выбрать фонд');
             return `${selectedFund.ticker} · ${selectedFund.name}`;
         }
         if (buttonLabel) return buttonLabel(selected.size, total);
-        return allActive ? 'Все фонды' : `${selected.size} фондов`;
+        return allActive ? t('Все фонды') : t('{{n}} фондов', { n: selected.size });
     })();
 
     const active = mode === 'single' ? !!selectedFund : !allActive;

@@ -14,16 +14,17 @@ import { useAnomalies } from '../../contexts/AnomalyContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { openAnomaly, tradeDateLabel } from './anomalyActions';
 import type { AnomalyItem } from '../../services/api';
+import { t } from '../../i18n';
 
 export function relTime(iso?: string | null): string {
   if (!iso) return '';
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1) return 'только что';
-  if (m < 60) return `${m} мин`;
+  if (m < 1) return t('только что');
+  if (m < 60) return t('{{m}} мин', { m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} ч`;
+  if (h < 24) return t('{{h}} ч', { h });
   const d = Math.floor(h / 24);
-  return d === 1 ? 'вчера' : `${d} дн`;
+  return d === 1 ? t('вчера') : t('{{d}} дн', { d });
 }
 
 export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
@@ -52,20 +53,20 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
       {oiLocked && (
         <button
           type="button"
-          onClick={() => { showUpgrade({ tier: 'basic', featureName: 'сигналы по открытым позициям', indicator: 'oi_screener' }); onClose(); }}
+          onClick={() => { showUpgrade({ tier: 'basic', featureName: t('сигналы по открытым позициям'), indicator: 'oi_screener' }); onClose(); }}
           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
             background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: 'none',
             borderBottom: '0.5px solid var(--border-color)', padding: '9px 14px', cursor: 'pointer' }}
         >
           <Lock size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
           <span style={{ color: 'var(--text-primary)', fontSize: 12.5, lineHeight: 1.35 }}>
-            Резкие сдвиги позиций — на тарифе Basic
+            {t('Резкие сдвиги позиций — на тарифе Basic')}
           </span>
         </button>
       )}
       {merged.length === 0 && !oiLocked ? (
         <div style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-          Пока тихо — ничего нового
+          {t('Пока тихо — ничего нового')}
         </div>
       ) : (
         merged.slice(0, 30).map((row) => {
@@ -101,7 +102,7 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
                 border: 'none', borderBottom: '0.5px solid var(--border-color)', padding: '10px 14px', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                  {item.asset_name || item.asset_id}{item.mine ? ' · ваш сигнал' : ''}
+                  {item.asset_name || item.asset_id}{item.mine ? ` · ${t('ваш сигнал')}` : ''}
                 </span>
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(item.created_at)}</span>
               </div>
@@ -117,7 +118,7 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
                     <span style={{ color: c, fontSize: 12, fontWeight: 500 }}>×{item.severity_value.toFixed(1)}</span>
                   )}
                   {dateLbl && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· за {dateLbl}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {t('за {{date}}', { date: dateLbl })}</span>
                   )}
                 </div>
               )}
@@ -127,9 +128,9 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
       )}
 
       <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Всплывающие уведомления</span>
+        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t('Всплывающие уведомления')}</span>
         <button onClick={() => setToastsEnabled(!toastsEnabled)} role="switch" aria-checked={toastsEnabled}
-          aria-label="Показывать всплывающие аномалии"
+          aria-label={t('Показывать всплывающие аномалии')}
           style={{ width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', flexShrink: 0,
             background: toastsEnabled ? 'var(--success, #00E676)' : 'var(--bg-tertiary, #333)', position: 'relative' }}>
           <span style={{ position: 'absolute', top: 2, left: toastsEnabled ? 18 : 2, width: 16, height: 16,

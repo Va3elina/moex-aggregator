@@ -8,6 +8,7 @@ import { useRef, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useAnomalies } from '../../contexts/AnomalyContext';
 import { AnomalyFeedPanel } from './AnomalyFeedPanel';
+import { t } from '../../i18n';
 
 export function AnomalyBell() {
   const { unseenCount, markAllSeen, bellOpen, setBellOpen } = useAnomalies();
@@ -30,7 +31,7 @@ export function AnomalyBell() {
 
   return (
     <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <button onClick={toggle} aria-label="Аномалии рынка"
+      <button onClick={toggle} aria-label={t('Аномалии рынка')}
         className="editorial-press grid place-items-center rounded-full"
         style={{ position: 'relative', color: 'var(--accent)', border: '1.5px solid var(--text-primary)',
           backgroundColor: 'transparent', cursor: 'pointer',
@@ -52,7 +53,7 @@ export function AnomalyBell() {
           border: '0.5px solid var(--border-color, rgba(255,255,255,0.12))', borderRadius: 12,
           boxShadow: '0 12px 36px rgba(0,0,0,0.45)', zIndex: 1300 }}>
           <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--border-color)' }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>Новости и сигналы</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>{t('Новости и сигналы')}</span>
           </div>
           <AnomalyFeedPanel onClose={() => setBellOpen(false)} />
         </div>

@@ -34,6 +34,7 @@ import { Lock } from 'lucide-react';
 import { useTierAccess, type IndicatorLimits } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './UpgradeModal';
 import type { ReactNode } from 'react';
+import { t } from '../../i18n';
 
 
 export interface TierLockProps {
@@ -113,7 +114,7 @@ export function TierLock({
                 ...style,
             }}
             title={requiredTier
-                ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
+                ? t('Доступно на тарифе {{tier}}', { tier: requiredTier === 'basic' ? 'Basic' : 'Pro' })
                 : undefined}
         >
             {/* Children без затемнения (2026-08-10): элемент выглядит обычным,

@@ -14,6 +14,7 @@ import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import HlsVideo from '../HlsVideo';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 export interface Indicator {
   /** Название индикатора (короткое, для заголовка карточки) */
@@ -55,6 +56,7 @@ interface GroupProps {
 }
 
 export default function IndicatorGroup({ title, subtitle, indicators }: GroupProps) {
+  const { t } = useTranslation();
   return (
     <section className="mb-14 md:mb-20">
       {/* Header группы — editorial: H2 Archivo + подзаголовок. */}
@@ -68,13 +70,13 @@ export default function IndicatorGroup({ title, subtitle, indicators }: GroupPro
             lineHeight: 1.05,
           }}
         >
-          {title}
+          {t(title)}
         </h2>
         <p
           className="text-sm md:text-base"
           style={{ color: 'var(--text-secondary)', lineHeight: 1.55, maxWidth: '60ch' }}
         >
-          {subtitle}
+          {t(subtitle)}
         </p>
       </div>
 
@@ -97,6 +99,7 @@ export default function IndicatorGroup({ title, subtitle, indicators }: GroupPro
  * Видео занимает ~770px ширины на десктопе (1280-padding-text-area-gaps).
  */
 function IndicatorCard({ indicator }: { indicator: Indicator }) {
+  const { t } = useTranslation();
   const { title, desc, icon, ctaIcon, href, videoUrl, posterUrl, illustration, ctaLabel = 'Открыть', badge, aspectRatio = '16 / 10' } = indicator;
 
   return (
@@ -151,7 +154,7 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
               lineHeight: 1.2,
             }}
           >
-            {title}
+            {t(title)}
           </h3>
           {badge && (
             <span
@@ -167,7 +170,7 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
                 whiteSpace: 'nowrap',
               }}
             >
-              {badge}
+              {t(badge)}
             </span>
           )}
         </div>
@@ -177,7 +180,7 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
           className="text-sm md:text-base mb-5"
           style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
         >
-          {desc}
+          {t(desc)}
         </p>
 
         {/* CTA — uppercase в editorial-стиле */}
@@ -189,7 +192,7 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
             letterSpacing: '0.16em',
           }}
         >
-          {ctaLabel}
+          {t(ctaLabel)}
           {ctaIcon && <span className="inline-flex">{ctaIcon}</span>}
         </span>
       </div>
@@ -221,6 +224,7 @@ function MediaArea({
   videoUrl, posterUrl, illustration,
 }: { videoUrl?: string; posterUrl?: string; illustration?: ReactNode }) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   if (videoUrl) {
     const themeSuffix = theme === 'editorial-light' ? '-light' : '';
     const baseName = videoUrl.replace(/\.webm$/, '').replace(/^\/videos\//, '') + themeSuffix;
@@ -239,7 +243,7 @@ function MediaArea({
       className="w-full h-full flex items-center justify-center text-xs"
       style={{ color: 'var(--text-muted)' }}
     >
-      (превью скоро)
+      {t('(превью скоро)')}
     </div>
   );
 }

@@ -17,6 +17,8 @@
 // selected: Set тикеров, пусто = все (канон: полный набор схлопывается в пусто).
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t, getLang, monthGenitive } from '../../i18n';
 import ModalLayer from '../ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock, Wallet } from 'lucide-react';
@@ -120,6 +122,7 @@ function bestReturn(r?: FundWithHistory['returns']): { v: number; label: string 
     if (r.m1 != null) return { v: r.m1, label: '1м' };
     return null;
 }
+// label — ключ для t() (`1г` — эталонный период, подпись не рисуется).
 
 interface SubcatGroup {
     key: string;
@@ -134,8 +137,8 @@ interface SubcatGroup {
 // Подпись подкатегории — как в FundsTable: «Управляемые фонды акций» в списке
 // фондов акций сокращается до «Управляемые фонды» (категория и так про акции).
 const subcatLabel = (subcat: string | null): string => {
-    if (!subcat) return 'Прочие';
-    return subcat === 'Управляемые фонды акций' ? 'Управляемые фонды' : subcat;
+    if (!subcat) return t('Прочие');
+    return subcat === 'Управляемые фонды акций' ? t('Управляемые фонды') : t(subcat);
 };
 
 // Группировка по ПОДКАТЕГОРИЯМ (Индекс МосБиржи / Управляемые фонды / Авторские) —
@@ -172,10 +175,13 @@ function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
 const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
     'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-// «2026-07-31» → «июль 2026». Месяц берём из строки, а не через Date: ISO-дата
-// парсится как UTC и в западных таймзонах month-end съезжает на месяц назад.
-const monthYearLower = (iso: string): string =>
-    `${MONTHS_LOWER[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+// «2026-07-31» → «июль 2026» (en: «July 2026»). Месяц берём из строки, а не через
+// Date: ISO-дата парсится как UTC и в западных таймзонах month-end съезжает назад.
+const monthYearLower = (iso: string): string => {
+    const i = Number(iso.slice(5, 7)) - 1;
+    const m = getLang() === 'en' ? monthGenitive(i) : MONTHS_LOWER[i];
+    return `${m} ${iso.slice(0, 4)}`;
+};
 const monthKey = (iso: string): string => iso.slice(0, 7);
 
 /** Тикеры индексных фондов набора — их снимает тумблер «Без индексных фондов». */
@@ -186,11 +192,11 @@ export const indexFundTickers = (funds: FundWithHistory[]): string[] =>
 export const defaultPortfolioTickers = (funds: FundWithHistory[]): string[] =>
     funds.filter((f) => !isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
 
-export const INDEX_FUNDS_HELP =
-    'Индексные фонды механически повторяют индекс Мосбиржи: составы у них практически '
-    + 'одинаковые, а сделки — техническая ребалансировка вслед за индексом, а не решения '
-    + 'управляющих. Поэтому по умолчанию они не входят в общий портфель. Выключите тумблер, '
-    + 'если хотите видеть весь рынок фондов акций, включая индексные.';
+/** Подсказка «?» у тумблера «Без индексных фондов». Функция, а не константа —
+ *  t() нельзя звать на верхнем уровне модуля. */
+// eslint-disable-next-line react-refresh/only-export-components -- фабрика t(), как indexFundTickers выше
+export const indexFundsHelp = (): string =>
+    t('Индексные фонды механически повторяют индекс Мосбиржи: составы у них практически одинаковые, а сделки — техническая ребалансировка вслед за индексом, а не решения управляющих. Поэтому по умолчанию они не входят в общий портфель. Выключите тумблер, если хотите видеть весь рынок фондов акций, включая индексные.');
 
 // ── Модалка (шелл — fundPickerOpen из FundsMoneyPage) ────────────────────────
 function PickerModal({
@@ -215,6 +221,7 @@ function PickerModal({
      *  ничего не применяет (2026-08-10; блюр убран — гейтим действия). */
     locked?: boolean;
 }) {
+    const { t } = useTranslation();
     const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
     // Черновик: пусто в persisted-наборе = все выбраны. У запертого тира
     // «пусто» означает бэковый дефолт «без индексных» (_default_nonindex_funds)
@@ -232,7 +239,7 @@ function PickerModal({
     const { showUpgrade } = useUpgradePrompt();
     const setDraft: typeof setRawDraft = (next) => {
         if (locked) {
-            showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'fund_trades' });
+            showUpgrade({ tier: 'basic', featureName: t('выбор фондов'), indicator: 'fund_trades' });
             return;
         }
         setRawDraft(next);
@@ -377,13 +384,12 @@ function PickerModal({
             && (!last || monthKey(last) < monthKey(freshestMonth));
         if (behind) {
             const tail = last
-                ? `Последний доступный состав — ${monthYearLower(last)}.`
-                : 'Опубликованных составов пока нет.';
-            return `Состав за ${monthYearLower(freshestMonth!)} ещё не опубликован. ${tail}`;
+                ? t('Последний доступный состав — {{month}}.', { month: monthYearLower(last) })
+                : t('Опубликованных составов пока нет.');
+            return t('Состав за {{month}} ещё не опубликован. {{tail}}', { month: monthYearLower(freshestMonth!), tail });
         }
         if (targetMonth && excludedTickers?.has(f.ticker)) {
-            return `Состава за ${monthYearLower(targetMonth)} у фонда нет,`
-                + ' поэтому в портфель этого месяца он не включён.';
+            return t('Состава за {{month}} у фонда нет, поэтому в портфель этого месяца он не включён.', { month: monthYearLower(targetMonth) });
         }
         return null;
     };
@@ -449,7 +455,7 @@ function PickerModal({
                             тут не пишем: об этом говорят сама прожатая таблетка и плашка
                             поверх размытой группы. */}
                         <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                            выбрано {draft.size} из {allTickers.length - (indexOff ? idxTickers.length : 0)}
+                            {t('выбрано {{n}} из {{total}}', { n: draft.size, total: allTickers.length - (indexOff ? idxTickers.length : 0) })}
                         </span>
                         {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
                             счётчиком: прожата — три индексных фонда сняты (счётчик сразу
@@ -462,8 +468,8 @@ function PickerModal({
                                     className="editorial-press"
                                     aria-pressed={indexOff}
                                     title={indexOff
-                                        ? `Индексные фонды выключены (${idxTickers.length})`
-                                        : `Выключить индексные фонды (${idxTickers.length})`}
+                                        ? t('Индексные фонды выключены ({{n}})', { n: idxTickers.length })
+                                        : t('Выключить индексные фонды ({{n}})', { n: idxTickers.length })}
                                     style={{
                                         padding: '4px 14px',
                                         borderRadius: 999,
@@ -478,18 +484,18 @@ function PickerModal({
                                         transition: 'background-color 0.12s ease, color 0.12s ease',
                                     }}
                                 >
-                                    Без индексных фондов
+                                    {t('Без индексных фондов')}
                                 </button>
                                 {/* float — окно модалки с overflow:hidden обрезало бы
                                     поповер по своему краю (особенно на узком экране). */}
-                                <HelpTooltip content={INDEX_FUNDS_HELP} size={16} float />
+                                <HelpTooltip content={indexFundsHelp()} size={16} float />
                             </span>
                         )}
                         <button
                             onClick={applyAndClose}
                             className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
                             style={{ color: 'var(--text-secondary)' }}
-                            aria-label="Закрыть"
+                            aria-label={t('Закрыть')}
                         >
                             <X size={22} />
                         </button>
@@ -513,12 +519,12 @@ function PickerModal({
                             <thead>
                                 <tr className="text-left" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
                                     <th className="pl-2 pr-0 py-2 w-10"></th>
-                                    <th className="pl-1 pr-2 py-2" style={HEAD_STYLE}>Название</th>
+                                    <th className="pl-1 pr-2 py-2" style={HEAD_STYLE}>{t('Название')}</th>
                                     <th className="px-2 py-2 text-right whitespace-nowrap">
-                                        {sortButton('nav', 'СЧА', 'Стоимость чистых активов фонда, млрд ₽')}
+                                        {sortButton('nav', t('СЧА'), t('Стоимость чистых активов фонда, млрд ₽'))}
                                     </th>
                                     <th className="px-2 py-2 text-right whitespace-nowrap">
-                                        {sortButton('y1', 'Доходность', 'Доходность пая за 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
+                                        {sortButton('y1', t('Доходность'), t('Доходность пая за 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).'))}
                                     </th>
                                 </tr>
                             </thead>
@@ -534,7 +540,7 @@ function PickerModal({
                                         </div>
                                     </td>
                                     <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
-                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>Выбрать все</span>
+                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{t('Выбрать все')}</span>
                                     </td>
                                     <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
                                         {navSumBln(funds).toFixed(2)}
@@ -586,7 +592,7 @@ function PickerModal({
                                                             фондах»; клик по «?» не сворачивает группу. */}
                                                         {g.subcat && SUBCATEGORY_HELP[g.subcat] && (
                                                             <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
-                                                                <HelpTooltip content={SUBCATEGORY_HELP[g.subcat]} size={18} float />
+                                                                <HelpTooltip content={t(SUBCATEGORY_HELP[g.subcat])} size={18} float />
                                                             </span>
                                                         )}
                                                         {gAny && !gAll && (
@@ -681,7 +687,7 @@ function PickerModal({
                                                                 <>
                                                                     {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
                                                                     {br.label !== '1г' && (
-                                                                        <span style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3, color: 'var(--text-secondary)' }}>{br.label}</span>
+                                                                        <span style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3, color: 'var(--text-secondary)' }}>{t(br.label)}</span>
                                                                     )}
                                                                 </>
                                                             )}
@@ -711,7 +717,7 @@ function PickerModal({
                                                                 type="button"
                                                                 onClick={toggleIndexOff}
                                                                 className="editorial-press"
-                                                                title="Индексные фонды выключены таблеткой в шапке. Нажмите, чтобы вернуть их в портфель."
+                                                                title={t('Индексные фонды выключены таблеткой в шапке. Нажмите, чтобы вернуть их в портфель.')}
                                                                 style={{
                                                                     pointerEvents: 'auto',
                                                                     padding: '5px 16px',
@@ -726,7 +732,7 @@ function PickerModal({
                                                                     boxShadow: '3px 3px 0 var(--text-primary)',
                                                                 }}
                                                             >
-                                                                Выключены · вернуть
+                                                                {t('Выключены · вернуть')}
                                                             </button>
                                                         </div>
                                                     </td>
@@ -761,7 +767,7 @@ function PickerModal({
                                 boxShadow: '3px 3px 0 var(--text-primary)',
                             }}
                         >
-                            Готово{allSelected ? '' : ` · ${draft.size}`}
+                            {t('Готово')}{allSelected ? '' : ` · ${draft.size}`}
                         </button>
                     </div>
                 </div>
@@ -798,9 +804,12 @@ export interface PortfolioFundPickerProps {
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers,
-    title = 'Фонды акций', allLabel = 'Все фонды акций',
+    title, allLabel,
     resetWhenLocked = false, compact = false, iconOnly = false,
 }: PortfolioFundPickerProps) {
+    const { t } = useTranslation();
+    const modalTitle = title ?? t('Фонды акций');
+    const allLabelText = allLabel ?? t('Все фонды акций');
     const [open, setOpen] = useState(false);
 
     // Выбор своего пула фондов — с Basic (матрица fund_trades.fund_picker,
@@ -832,7 +841,7 @@ export default function PortfolioFundPicker({
     // Заперт → таблетка всегда в «нейтральном» виде: акцентная заливка означает
     // «фильтр применён», а у locked-тира он не применён и применён быть не может.
     const active = !allActive && canPick;
-    const label = allActive || !canPick ? allLabel : `${selected.size} из ${pool} фондов`;
+    const label = allActive || !canPick ? allLabelText : t('{{n}} из {{total}} фондов', { n: selected.size, total: pool });
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
@@ -842,7 +851,7 @@ export default function PortfolioFundPicker({
                 // внутри слегка заблюрен, поверх апселл на Basic (как в пикере
                 // «Денег в фондах»). Так видно, что именно даёт тариф.
                 onClick={() => setOpen(true)}
-                title={canPick ? undefined : 'Выбор фондов — на тарифе Basic или Pro'}
+                title={canPick ? undefined : t('Выбор фондов — на тарифе Basic или Pro')}
                 className={compact ? undefined : 'editorial-press'}
                 style={compact ? {
                     // Панельный вид: та же геометрия, что у PillGroup/Dropdown в
@@ -891,7 +900,7 @@ export default function PortfolioFundPicker({
                     selected={selected}
                     targetMonth={targetMonth}
                     excludedTickers={excludedTickers}
-                    title={title}
+                    title={modalTitle}
                     locked={!canPick}
                     onApply={onChange}
                     onClose={() => setOpen(false)}

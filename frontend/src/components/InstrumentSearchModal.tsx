@@ -10,6 +10,7 @@ import { useTierAccess, useCurrentTier } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useInstrumentFilter } from '../hooks/useInstrumentFilter';
+import { useTranslation } from 'react-i18next';
 
 interface Instrument {
   sec_id: string;
@@ -74,6 +75,7 @@ interface InstrumentSearchModalProps {
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
 export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true, hideLowActivity = false }: InstrumentSearchModalProps) {
+  const { t } = useTranslation();
   // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
   // Мемоизируем: используется и в renderItem, и как keepVisibleSectypes хука
   // (нестабильная ссылка каждый рендер ломала бы мемоизацию фильтра).
@@ -346,7 +348,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           onClose();
           showUpgrade({
             tier: requiredTier,
-            featureName: `актив ${inst.name} (${inst.sectype})`,
+            featureName: t('актив {{name}} ({{ticker}})', { name: inst.name, ticker: inst.sectype }),
             indicator,
           });
         }
@@ -373,7 +375,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             : undefined,
         }}
         title={!accessible && requiredTier
-          ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
+          ? t('Доступно на тарифе {{tier}}', { tier: requiredTier === 'basic' ? 'Basic' : 'Pro' })
           : undefined}
       >
         {/* Чекбокс-слот (только multi-режим): галочка у выбранных активов. */}
@@ -424,7 +426,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           {isAdmin && lowActivitySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0"
-              title={`Скрыт от пользователей: мало физлиц-трейдеров${lowActivityThreshold ? ` (порог ${lowActivityThreshold})` : ''}. Если активность упала неожиданно — проверь, обновляются ли данные по активу.`}
+              title={t('Скрыт от пользователей: мало физлиц-трейдеров{{threshold}}. Если активность упала неожиданно — проверь, обновляются ли данные по активу.', { threshold: lowActivityThreshold ? t(' (порог {{n}})', { n: lowActivityThreshold }) : '' })}
               style={{
                 alignSelf: 'center',
                 padding: '1px 6px',
@@ -437,13 +439,13 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 whiteSpace: 'nowrap',
               }}
             >
-              скрыт
+              {t('скрыт')}
             </span>
           )}
           {showIntradayBadge && intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"
-              title="Данные позиций обновляются только на конец дня, внутридневных (5м и 1ч) пока нет"
+              title={t('Данные позиций обновляются только на конец дня, внутридневных (5м и 1ч) пока нет')}
               style={{
                 width: 18,
                 height: 18,
@@ -500,7 +502,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         {/* Lock-слот (фикс. 18px — звезда не смещается между заблок./доступными) */}
         <span style={{ width: 18, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
           {!accessible && (
-            <Lock size={15} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} aria-label="Доступно на повышенном тарифе" />
+            <Lock size={15} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} aria-label={t('Доступно на повышенном тарифе')} />
           )}
         </span>
 
@@ -509,7 +511,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           onClick={(e) => toggleFavorite(inst.sectype, e)}
           className="p-1.5 transition-colors flex-shrink-0"
           style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
-          aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+          aria-label={isFavorite ? t('Убрать из избранных') : t('Добавить в избранные')}
         >
           <Star size={16} fill={isFavorite ? 'currentColor' : 'transparent'} />
         </button>
@@ -561,7 +563,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Поиск актива"
+                    placeholder={t('Поиск актива')}
                     className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
                     style={{
                       backgroundColor: 'var(--bg-primary)',
@@ -574,7 +576,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                   onClick={onClose}
                   className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
                   style={{ color: 'var(--text-secondary)' }}
-                  aria-label="Закрыть"
+                  aria-label={t('Закрыть')}
                 >
                   <X size={22} />
                 </button>
@@ -597,7 +599,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                         boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
                       }}
                     >
-                      {cat.label}
+                      {t(cat.label)}
                     </button>
                   );
                 })}
@@ -622,10 +624,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                     {/* При активной категории — контекстная подпись «весь сектор»,
                         чтобы было очевидно, что добавится именно текущий сектор. */}
                     {categoryFilter !== 'all'
-                      ? `Выбрать весь сектор: «${
-                          CATEGORY_FILTERS.find((c) => c.key === categoryFilter)?.label ?? categoryFilter
-                        }»`
-                      : 'Выбрать все'}
+                      ? t('Выбрать весь сектор: «{{sector}}»', {
+                          sector: t(CATEGORY_FILTERS.find((c) => c.key === categoryFilter)?.label ?? categoryFilter),
+                        })
+                      : t('Выбрать все')}
                   </button>
                   <button
                     type="button"
@@ -640,7 +642,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                     }}
                   >
                     <Star size={14} fill="currentColor" style={{ color: 'var(--accent)' }} />
-                    Все избранные
+                    {t('Все избранные')}
                   </button>
                   {/* Снять весь выбор — иначе после «Выбрать все» (100+ активов)
                       не убрать руками по одному. Появляется только когда есть что снимать. */}
@@ -658,7 +660,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                       }}
                     >
                       <X size={14} />
-                      Снять выбор ({selectedSet.size})
+                      {t('Снять выбор ({{n}})', { n: selectedSet.size })}
                     </button>
                   )}
                 </div>
@@ -685,8 +687,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                       (Изм./Объём). Слева — растягивающийся спейсер, чтобы контролы
                       сортировки оставались выровнены по колонкам строк. */}
                   <span className="flex-1" aria-hidden="true" />
-                  {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
-                  {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
+                  {renderSortHeader('volume', t('Объём'), t('Объём торгов за день, ₽'))}
+                  {renderSortHeader('change', t('Изм. %'), t('Изменение цены за торговый день, %'))}
                   <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
                   <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
                 </div>
@@ -710,7 +712,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                         className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
                         style={{ color: 'var(--text-secondary)' }}
                       >
-                        Избранные
+                        {t('Избранные')}
                       </h3>
                       <div className="instrument-list">
                         {favoriteInstruments.map(renderItem)}
@@ -723,7 +725,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                       ниже) через разделитель + заголовок, а не еле заметную линию. */}
                   {regularInstruments.length === 0 && favoriteInstruments.length === 0 ? (
                     <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                      Ничего не найдено
+                      {t('Ничего не найдено')}
                     </div>
                   ) : (
                     <>
@@ -734,7 +736,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                             className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
                             style={{ color: 'var(--text-secondary)' }}
                           >
-                            Остальные
+                            {t('Остальные')}
                           </h3>
                         </>
                       )}
@@ -765,7 +767,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                     fontSize: 'var(--fs-base)',
                   }}
                 >
-                  Готово ({selectedSet.size})
+                  {t('Готово ({{n}})', { n: selectedSet.size })}
                 </button>
               </div>
             )}

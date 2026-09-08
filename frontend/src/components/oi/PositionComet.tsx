@@ -26,7 +26,9 @@
  * вдвое мельче относительно строки. ≤768px = базовый размер, ≥1600px = ×1,5.
  */
 import type { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { getLang } from '../../i18n';
 
 interface Props {
   netPct: number | null;         // перекос сегодня, −100…+100
@@ -61,11 +63,16 @@ function cometScale(vw: number): number {
   return clamp(1 + ((vw - 768) / (1600 - 768)) * 0.5, 1, 1.5);
 }
 
+// Десятичный разделитель по языку: «4,3» в русском, «4.3» в английском.
+function fmtDec(v: number): string {
+  const s = Math.abs(v).toFixed(1);
+  return getLang() === 'en' ? s : s.replace('.', ',');
+}
 function fmtPct(p: number): string {
-  return Math.abs(p).toFixed(1).replace('.', ',') + '%';
+  return fmtDec(p) + '%';
 }
 function fmtSigned(p: number): string {
-  return (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1).replace('.', ',');
+  return (p >= 0 ? '+' : '−') + fmtDec(p);
 }
 
 /** «Теплота» ×N в размахе дня 0…1 — радиус головы 4…10px до масштаба; вырожденный размах
@@ -78,9 +85,12 @@ export function ratioHeat(ratio: number, lo: number, hi: number): number {
 
 export default function PositionComet({
   netPct, netPctPrev, ratio, ratioLo, ratioHi,
-  prevLabel = 'вчера', deltaLabel = 'за день',
+  prevLabel, deltaLabel,
   scaleOverride,
 }: Props) {
+  const { t } = useTranslation();
+  const prevWord = prevLabel ?? t('вчера');
+  const deltaWord = deltaLabel ?? t('за день');
   const vw = useViewportWidth();
   const s = scaleOverride ?? cometScale(vw);
   const H = Math.round(32 * s);   // высота контейнера, px
@@ -141,10 +151,11 @@ export default function PositionComet({
     };
   }
 
-  const title = `Перекос сегодня ${fmtPct(netPct)} ${long ? 'лонг' : 'шорт'}`
-    + (netPctPrev != null ? ` · ${prevLabel} ${fmtPct(netPctPrev)} ${netPctPrev >= 0 ? 'лонг' : 'шорт'}` : '')
-    + (delta != null ? ` · ${deltaLabel} ${fmtSigned(delta)} п.п.` : '')
-    + (ratio != null ? ` · сила ×${ratio.toFixed(1).replace('.', ',')}` : '');
+  const sideWord = (isLong: boolean) => (isLong ? t('лонг') : t('шорт'));
+  const title = t('Перекос сегодня {{pct}} {{side}}', { pct: fmtPct(netPct), side: sideWord(long) })
+    + (netPctPrev != null ? ` · ${prevWord} ${fmtPct(netPctPrev)} ${sideWord(netPctPrev >= 0)}` : '')
+    + (delta != null ? ` · ${deltaWord} ${t('{{delta}} п.п.', { delta: fmtSigned(delta) })}` : '')
+    + (ratio != null ? ` · ${t('сила ×{{ratio}}', { ratio: fmtDec(ratio) })}` : '');
 
   // border-box (глобальный preflight): ширина включает ободок 2px → +4 к
   // диаметру, чтобы ВИДИМЫЙ цветной радиус остался headR.

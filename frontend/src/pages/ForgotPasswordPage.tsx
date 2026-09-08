@@ -31,10 +31,12 @@ import {
   confirmPasswordReset,
   ApiError,
 } from '../services/api';
+import { useTranslation } from 'react-i18next';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
   const auth = useAuth();
+  const { t } = useTranslation();
   const [step, setStep] = useState<'email' | 'code' | 'password'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -58,13 +60,13 @@ export default function ForgotPasswordPage() {
     try {
       await requestPasswordReset(email.trim().toLowerCase());
       setStep('code');
-      setInfo(`Если аккаунт с адресом ${email.trim()} существует, код отправлен на почту.`);
+      setInfo(t('Если аккаунт с адресом {{email}} существует, код отправлен на почту.', { email: email.trim() }));
       setCooldown(60);
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
-        setError('Слишком много запросов. Попробуйте через несколько минут.');
+        setError(t('Слишком много запросов. Попробуйте через несколько минут.'));
       } else {
-        setError(err instanceof Error ? err.message : 'Не удалось отправить код');
+        setError(err instanceof Error ? err.message : t('Не удалось отправить код'));
       }
     } finally {
       setSubmitting(false);
@@ -76,7 +78,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     setInfo(null);
     if (!/^\d{6}$/.test(code.trim())) {
-      setError('Код состоит из 6 цифр');
+      setError(t('Код состоит из 6 цифр'));
       return;
     }
     setSubmitting(true);
@@ -84,7 +86,7 @@ export default function ForgotPasswordPage() {
       await verifyPasswordResetCode(email.trim().toLowerCase(), code.trim());
       setStep('password');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось проверить код');
+      setError(err instanceof Error ? err.message : t('Не удалось проверить код'));
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +97,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     setInfo(null);
     if (password.length < 8) {
-      setError('Пароль должен быть не короче 8 символов');
+      setError(t('Пароль должен быть не короче 8 символов'));
       return;
     }
     setSubmitting(true);
@@ -108,9 +110,9 @@ export default function ForgotPasswordPage() {
       // Код мог протухнуть между шагами — тогда возвращаем к его вводу.
       if (err instanceof ApiError && err.status === 400) {
         setStep('code');
-        setError('Код больше не действует. Запросите новый и введите его.');
+        setError(t('Код больше не действует. Запросите новый и введите его.'));
       } else {
-        setError(err instanceof Error ? err.message : 'Не удалось сменить пароль');
+        setError(err instanceof Error ? err.message : t('Не удалось сменить пароль'));
       }
     } finally {
       setSubmitting(false);
@@ -123,10 +125,10 @@ export default function ForgotPasswordPage() {
     setInfo(null);
     try {
       await requestPasswordReset(email.trim().toLowerCase());
-      setInfo('Код отправлен повторно.');
+      setInfo(t('Код отправлен повторно.'));
       setCooldown(60);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось отправить код');
+      setError(err instanceof Error ? err.message : t('Не удалось отправить код'));
     }
   };
 
@@ -156,7 +158,7 @@ export default function ForgotPasswordPage() {
           onClick={() => navigate('/')}
           className="absolute top-4 right-4 p-2.5 -m-1 rounded-lg transition-all hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
           style={{ color: 'var(--text-muted)' }}
-          aria-label="Закрыть"
+          aria-label={t('Закрыть')}
         >
           <X size={20} />
         </button>
@@ -170,17 +172,17 @@ export default function ForgotPasswordPage() {
           </div>
           <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             {step === 'email'
-              ? 'Восстановление пароля'
+              ? t('Восстановление пароля')
               : step === 'code'
-                ? 'Код из письма'
-                : 'Новый пароль'}
+                ? t('Код из письма')
+                : t('Новый пароль')}
           </h2>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             {step === 'email'
-              ? 'Пришлём код на почту аккаунта'
+              ? t('Пришлём код на почту аккаунта')
               : step === 'code'
-                ? `Отправили шестизначный код на ${email.trim()}`
-                : 'Придумайте новый пароль — им и войдёте'}
+                ? t('Отправили шестизначный код на {{email}}', { email: email.trim() })
+                : t('Придумайте новый пароль — им и войдёте')}
           </p>
         </div>
 
@@ -232,7 +234,7 @@ export default function ForgotPasswordPage() {
                 <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  Прислать код
+                  {t('Прислать код')}
                   <ArrowRight size={16} />
                 </>
               )}
@@ -247,7 +249,7 @@ export default function ForgotPasswordPage() {
                   className="block text-sm font-medium mb-1.5"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  Код из письма
+                  {t('Код из письма')}
                 </label>
                 <input
                   id="reset-code"
@@ -302,7 +304,7 @@ export default function ForgotPasswordPage() {
                   <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    Продолжить
+                    {t('Продолжить')}
                     <ArrowRight size={16} />
                   </>
                 )}
@@ -316,7 +318,7 @@ export default function ForgotPasswordPage() {
               className="w-full mt-3 py-2 text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
               style={{ color: 'var(--accent)' }}
             >
-              {cooldown > 0 ? `Отправить код повторно (${cooldown}с)` : 'Отправить код повторно'}
+              {cooldown > 0 ? t('Отправить код повторно ({{n}}с)', { n: cooldown }) : t('Отправить код повторно')}
             </button>
           </>
         ) : (
@@ -327,7 +329,7 @@ export default function ForgotPasswordPage() {
                 className="block text-sm font-medium mb-1.5"
                 style={{ color: 'var(--text-primary)' }}
               >
-                Новый пароль
+                {t('Новый пароль')}
               </label>
               <div className={fieldWrap}>
                 <Lock size={16} className={fieldIcon} style={{ color: 'var(--text-muted)' }} />
@@ -337,7 +339,7 @@ export default function ForgotPasswordPage() {
                   autoComplete="new-password"
                   value={password}
                   onChange={(ev) => setPassword(ev.target.value)}
-                  placeholder="минимум 8 символов"
+                  placeholder={t('минимум 8 символов')}
                   required
                   minLength={8}
                   autoFocus
@@ -368,7 +370,7 @@ export default function ForgotPasswordPage() {
                 <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  Сменить пароль и войти
+                  {t('Сменить пароль и войти')}
                   <ArrowRight size={16} />
                 </>
               )}
@@ -377,9 +379,9 @@ export default function ForgotPasswordPage() {
         )}
 
         <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-          Вспомнили пароль?{' '}
+          {t('Вспомнили пароль?')}{' '}
           <Link to="/login" className="font-medium hover:underline" style={{ color: 'var(--accent)' }}>
-            Войти
+            {t('Войти')}
           </Link>
         </div>
       </div>
