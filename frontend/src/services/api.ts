@@ -7,6 +7,7 @@ import type {
   StatsResponse,
   TopInstrumentsResponse
 } from '../types';
+import { t } from '../i18n';
 
 // Для Cloudflare Tunnel и локалки используем относительный /api через Vite proxy.
 // При необходимости можно переопределить через VITE_API_BASE.
@@ -71,7 +72,7 @@ const DEFAULT_TIMEOUT_MS = 20000;
 /** Ошибка таймаута — отличима от AbortError (отмена устаревшего запроса
  * stale-guard'ом) и от сетевых ошибок, чтобы UI показал «превышено время». */
 export class TimeoutError extends Error {
-  constructor(msg = 'Превышено время ожидания ответа сервера') {
+  constructor(msg = t('Превышено время ожидания ответа сервера')) {
     super(msg);
     this.name = 'TimeoutError';
   }
@@ -135,7 +136,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     const data = await response.json().catch(() => ({} as Record<string, unknown>));
     const msg = (data as { detail?: string })?.detail
       || (data as { error?: { message?: string } })?.error?.message
-      || 'Доступ ограничен';
+      || t('Доступ ограничен');
     throw new Error(msg);
   }
 
@@ -189,7 +190,7 @@ export function apiErrorFromBody(data: unknown, fallback: string): string {
   const details = body?.error?.details;
   if (Array.isArray(details) && details.length > 0) {
     const parts = details
-      .map(d => (d?.field ? `${d.field}: ${d.message || 'некорректное значение'}` : d?.message))
+      .map(d => (d?.field ? `${d.field}: ${d.message || t('некорректное значение')}` : d?.message))
       .filter(Boolean);
     if (parts.length > 0) return parts.join('; ');
   }
@@ -210,7 +211,7 @@ export async function addEmail(email: string): Promise<void> {
     body: JSON.stringify({ email }),
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось привязать email');
+    const message = await parseApiError(response, t('Не удалось привязать email'));
     throw new ApiError(response.status, message);
   }
 }
@@ -226,7 +227,7 @@ export async function verifyEmail(code: string): Promise<void> {
     body: JSON.stringify({ code }),
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось подтвердить email');
+    const message = await parseApiError(response, t('Не удалось подтвердить email'));
     throw new ApiError(response.status, message);
   }
 }
@@ -238,7 +239,7 @@ export async function resendVerification(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось отправить код');
+    const message = await parseApiError(response, t('Не удалось отправить код'));
     throw new ApiError(response.status, message);
   }
 }
@@ -257,7 +258,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
     body: JSON.stringify({ email }),
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось отправить код');
+    const message = await parseApiError(response, t('Не удалось отправить код'));
     throw new ApiError(response.status, message);
   }
 }
@@ -273,7 +274,7 @@ export async function verifyPasswordResetCode(email: string, code: string): Prom
     body: JSON.stringify({ email, code }),
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось проверить код');
+    const message = await parseApiError(response, t('Не удалось проверить код'));
     throw new ApiError(response.status, message);
   }
 }
@@ -294,7 +295,7 @@ export async function confirmPasswordReset(
     body: JSON.stringify({ email, code, new_password: newPassword }),
   });
   if (!response.ok) {
-    const message = await parseApiError(response, 'Не удалось сменить пароль');
+    const message = await parseApiError(response, t('Не удалось сменить пароль'));
     throw new ApiError(response.status, message);
   }
   return response.json();
@@ -740,8 +741,8 @@ export async function getFundHoldings(fundId: number): Promise<FundHoldingsRespo
 // всегда пустые; current_holdings заполнен только для stocks/bonds.
 export async function getFundsDetail(fundId: number): Promise<FundTradesDetail> {
   const response = await apiFetch(`${API_BASE}/api/funds/detail/${fundId}`);
-  if (response.status === 404) throw new Error('Фонд не найден');
-  if (!response.ok) throw new Error('Не удалось загрузить детали фонда');
+  if (response.status === 404) throw new Error(t('Фонд не найден'));
+  if (!response.ok) throw new Error(t('Не удалось загрузить детали фонда'));
   return response.json();
 }
 
@@ -1111,7 +1112,7 @@ export async function getAnalyticsStats(opts: {
   if (opts.device) params.set('device', opts.device);
   const response = await apiFetch(`${API_BASE}/api/analytics/stats?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch analytics stats');
   }
   return response.json();
@@ -1172,7 +1173,7 @@ export async function listAdminUsers(opts: {
   if (opts.filter && opts.filter !== 'all') params.set('filter', opts.filter);
   const response = await apiFetch(`${API_BASE}/api/analytics/users?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch users');
   }
   return response.json();
@@ -1230,8 +1231,8 @@ export interface UserDetailResponse {
 export async function getAdminUserDetail(userId: number, days: number = 30): Promise<UserDetailResponse> {
   const response = await apiFetch(`${API_BASE}/api/analytics/users/${userId}?days=${days}`);
   if (!response.ok) {
-    if (response.status === 404) throw new Error('Пользователь не найден');
-    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 404) throw new Error(t('Пользователь не найден'));
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch user detail');
   }
   return response.json();
@@ -1270,8 +1271,8 @@ export interface CbrFlowsResponse {
 export async function getCbrFlows(type: CbrInstrumentType): Promise<CbrFlowsResponse> {
   const response = await apiFetch(`${API_BASE}/api/cbr-flows?type=${type}`);
   if (!response.ok) {
-    if (response.status === 404) throw new Error('Данные ЦБ ещё не загружены');
-    throw new Error('Не удалось получить данные');
+    if (response.status === 404) throw new Error(t('Данные ЦБ ещё не загружены'));
+    throw new Error(t('Не удалось получить данные'));
   }
   return response.json();
 }
@@ -1302,8 +1303,8 @@ export interface RepoVolumeResponse {
 export async function getRepoVolume(ticker: string): Promise<RepoVolumeResponse> {
   const response = await apiFetch(`${API_BASE}/api/repo/history?ticker=${ticker}`);
   if (!response.ok) {
-    if (response.status === 502) throw new Error('ISS MOEX недоступен, попробуйте позже');
-    throw new Error('Не удалось получить данные');
+    if (response.status === 502) throw new Error(t('ISS MOEX недоступен, попробуйте позже'));
+    throw new Error(t('Не удалось получить данные'));
   }
   return response.json();
 }
@@ -1328,7 +1329,7 @@ export interface ApiKeyCreated extends ApiKeyInfo {
 
 export async function listApiKeys(): Promise<ApiKeyInfo[]> {
     const resp = await apiFetch(`${API_BASE}/api/keys`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
     if (!resp.ok) throw new Error('Failed to list API keys');
     return resp.json();
 }
@@ -1348,20 +1349,20 @@ export async function createApiKey(
         throw new Error(
             data?.error?.message
             || data?.detail
-            || 'Доступно на тарифе Pro',
+            || t('Доступно на тарифе Pro'),
         );
     }
     if (resp.status === 400) {
         const data = await resp.json().catch(() => ({}));
-        throw new Error(data?.error?.message || data?.detail || 'Не удалось создать ключ');
+        throw new Error(data?.error?.message || data?.detail || t('Не удалось создать ключ'));
     }
-    if (!resp.ok) throw new Error('Не удалось создать ключ');
+    if (!resp.ok) throw new Error(t('Не удалось создать ключ'));
     return resp.json();
 }
 
 export async function revokeApiKey(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/keys/${id}`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать ключ');
+    if (!resp.ok && resp.status !== 204) throw new Error(t('Не удалось отозвать ключ'));
 }
 
 // ─── Extension tokens (расширение для терминала Т-Инвестиций) ───────────────
@@ -1379,21 +1380,21 @@ export interface ExtensionTokenCreated {
 }
 export async function listExtensionTokens(): Promise<ExtensionTokenInfo[]> {
     const resp = await apiFetch(`${API_BASE}/api/extension/token`);
-    if (!resp.ok) throw new Error('Не удалось загрузить токены');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить токены'));
     return resp.json();
 }
 export async function createExtensionToken(): Promise<ExtensionTokenCreated> {
     const resp = await apiFetch(`${API_BASE}/api/extension/token`, { method: 'POST' });
     if (resp.status === 403) {
         const data = await resp.json().catch(() => ({}));
-        throw new Error(data?.detail || data?.error?.message || 'Токен доступен только на тарифе Pro');
+        throw new Error(data?.detail || data?.error?.message || t('Токен доступен только на тарифе Pro'));
     }
-    if (!resp.ok) throw new Error('Не удалось сгенерировать токен');
+    if (!resp.ok) throw new Error(t('Не удалось сгенерировать токен'));
     return resp.json();
 }
 export async function revokeExtensionToken(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/extension/token/${id}`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать токен');
+    if (!resp.ok && resp.status !== 204) throw new Error(t('Не удалось отозвать токен'));
 }
 
 export interface ExtensionExchange {
@@ -1415,7 +1416,7 @@ export async function exchangeExtensionToken(token: string): Promise<ExtensionEx
         // Пробрасываем HTTP-статус, чтобы embed отличил 403 (подписка кончилась)
         // от 401 (нет/невалиден/отозван токен) и показал правильный экран.
         const err = new Error(
-            data?.detail || (resp.status === 403 ? 'Токен требует активную подписку PRO' : 'Недействительный токен'),
+            data?.detail || (resp.status === 403 ? t('Токен требует активную подписку PRO') : t('Недействительный токен')),
         ) as Error & { status?: number };
         err.status = resp.status;
         throw err;
@@ -1431,8 +1432,8 @@ export interface ApiKeyUsageStats {
 
 export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
     const resp = await apiFetch(`${API_BASE}/api/keys/usage?days=${days}`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить статистику');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить статистику'));
     return resp.json();
 }
 
@@ -1644,15 +1645,15 @@ export async function getFundPortfolio(
     if (as_of) params.set('as_of', as_of);
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/portfolio${qs ? `?${qs}` : ''}`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить общий портфель');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить общий портфель'));
     return resp.json();
 }
 
 export async function listFundsWithHistory(): Promise<{ funds: FundWithHistory[]; count: number }> {
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/funds`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить фонды');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить фонды'));
     return resp.json();
 }
 
@@ -1671,9 +1672,9 @@ export async function getFundTradesDetail(
     const resp = await apiFetch(
         `${API_BASE}/api/fund-trades/fund/${encodeURIComponent(ticker)}?${params}`,
     );
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (resp.status === 404) throw new Error(`Фонд ${ticker} не найден`);
-    if (!resp.ok) throw new Error('Не удалось загрузить детали фонда');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (resp.status === 404) throw new Error(t('Фонд {{ticker}} не найден', { ticker }));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить детали фонда'));
     return resp.json();
 }
 
@@ -1703,8 +1704,8 @@ export async function getFundTradesMovers(
     const managerParam = managers ?? manager;
     if (managerParam) params.set('manager', managerParam);
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/movers?${params}`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить топ движений');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить топ движений'));
     return resp.json();
 }
 
@@ -1770,9 +1771,9 @@ export async function getFundSnapshots(ticker: string): Promise<FundSnapshotsLis
     const resp = await apiFetch(
         `${API_BASE}/api/fund-trades/snapshots/${encodeURIComponent(ticker)}`,
     );
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (resp.status === 404) throw new Error(`Фонд ${ticker} не найден`);
-    if (!resp.ok) throw new Error('Не удалось загрузить список снапшотов');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (resp.status === 404) throw new Error(t('Фонд {{ticker}} не найден', { ticker }));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить список снапшотов'));
     return resp.json();
 }
 
@@ -1784,9 +1785,9 @@ export async function getFundSnapshotReview(
     const resp = await apiFetch(
         `${API_BASE}/api/fund-trades/snapshot/${encodeURIComponent(ticker)}${params}`,
     );
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (resp.status === 404) throw new Error('Снапшот не найден');
-    if (!resp.ok) throw new Error('Не удалось загрузить обзор снапшота');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (resp.status === 404) throw new Error(t('Снапшот не найден'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить обзор снапшота'));
     return resp.json();
 }
 
@@ -1824,9 +1825,9 @@ export async function getAssetHistory(
     const resp = await apiFetch(
         `${API_BASE}/api/fund-trades/asset-history/${encodeURIComponent(ticker)}?${params}`,
     );
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (resp.status === 404) throw new Error('История по позиции не найдена');
-    if (!resp.ok) throw new Error('Не удалось загрузить историю');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (resp.status === 404) throw new Error(t('История по позиции не найдена'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить историю'));
     return resp.json();
 }
 
@@ -1866,8 +1867,8 @@ export interface CompanyFlowsResponse {
 
 export async function listFundTradeAssets(): Promise<FundTradeAssetsResponse> {
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/assets`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить список бумаг');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить список бумаг'));
     return resp.json();
 }
 
@@ -1881,8 +1882,8 @@ export async function getCompanyFlows(
     if (opts.metric) params.set('metric', opts.metric);
 
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/company-flows?${params}`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить потоки по компании');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить потоки по компании'));
     return resp.json();
 }
 
@@ -1919,8 +1920,8 @@ export async function getCompanyWeights(
     else throw new Error('isin or asset_name required');
 
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/company-weights?${params}`);
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (!resp.ok) throw new Error('Не удалось загрузить историю доли');
+    if (resp.status === 403) throw new Error(t('Доступно на тарифе Pro'));
+    if (!resp.ok) throw new Error(t('Не удалось загрузить историю доли'));
     return resp.json();
 }
 
@@ -1947,7 +1948,7 @@ export interface CompanyPriceWeeklyResponse {
 export async function getCompanyPriceWeekly(ticker: string): Promise<CompanyPriceWeeklyResponse> {
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/price-weekly?ticker=${encodeURIComponent(ticker)}`);
     if (resp.status === 404) throw new Error('NO_PRICE_HISTORY');
-    if (!resp.ok) throw new Error('Не удалось загрузить историю цены');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить историю цены'));
     return resp.json();
 }
 
@@ -2030,7 +2031,7 @@ export interface AlertContext {
 
 export async function getTelegramStatus(): Promise<TelegramStatusInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/telegram/status`);
-    if (!resp.ok) throw new Error('Не удалось получить статус Telegram');
+    if (!resp.ok) throw new Error(t('Не удалось получить статус Telegram'));
     return resp.json();
 }
 export async function getAlertContext(
@@ -2038,12 +2039,12 @@ export async function getAlertContext(
 ): Promise<AlertContext> {
     const params = new URLSearchParams({ indicator, asset, clgroup });
     const resp = await apiFetch(`${API_BASE}/api/alerts/context?${params}`);
-    if (!resp.ok) throw new Error('Не удалось получить контекст уведомления');
+    if (!resp.ok) throw new Error(t('Не удалось получить контекст уведомления'));
     return resp.json();
 }
 export async function getNotifySettings(): Promise<NotifySettings> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/settings`);
-    if (!resp.ok) throw new Error('Не удалось получить настройки доставки');
+    if (!resp.ok) throw new Error(t('Не удалось получить настройки доставки'));
     return resp.json();
 }
 export async function updateNotifySettings(default_channels: string[]): Promise<NotifySettings> {
@@ -2052,23 +2053,23 @@ export async function updateNotifySettings(default_channels: string[]): Promise<
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ default_channels }),
     });
-    if (!resp.ok) throw new Error('Не удалось сохранить настройки доставки');
+    if (!resp.ok) throw new Error(t('Не удалось сохранить настройки доставки'));
     return resp.json();
 }
 export async function getRecentFires(since = 0, limit = 20): Promise<RecentFire[]> {
     const params = new URLSearchParams({ since: String(since), limit: String(limit) });
     const resp = await apiFetch(`${API_BASE}/api/alerts/recent-fires?${params}`);
-    if (!resp.ok) throw new Error('Не удалось получить срабатывания');
+    if (!resp.ok) throw new Error(t('Не удалось получить срабатывания'));
     return resp.json();
 }
 export async function createTelegramLink(): Promise<TelegramLinkInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/telegram/link`, { method: 'POST' });
-    if (!resp.ok) throw new Error('Не удалось создать ссылку привязки');
+    if (!resp.ok) throw new Error(t('Не удалось создать ссылку привязки'));
     return resp.json();
 }
 export async function unlinkTelegram(): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/telegram`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отвязать Telegram');
+    if (!resp.ok && resp.status !== 204) throw new Error(t('Не удалось отвязать Telegram'));
 }
 // Список алертов пользователя — плоский массив AlertOut + общее число в
 // заголовке X-Total-Count (для пагинации в кабинете). ?limit (деф 200) & ?offset.
@@ -2078,7 +2079,7 @@ export async function listAlerts(opts?: { limit?: number; offset?: number }): Pr
     if (opts?.offset != null) params.set('offset', String(opts.offset));
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/alerts${qs ? `?${qs}` : ''}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить уведомления');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить уведомления'));
     const items: AlertInfo[] = await resp.json();
     // X-Total-Count может отсутствовать (старый бэк / прокси режет заголовок) —
     // фолбэк на длину текущей страницы, чтобы UI не падал.
@@ -2097,7 +2098,7 @@ export async function getAlertFires(
     if (opts?.offset != null) params.set('offset', String(opts.offset));
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/alerts/${alertId}/fires${qs ? `?${qs}` : ''}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить историю срабатываний');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить историю срабатываний'));
     const items: AlertFire[] = await resp.json();
     const totalHeader = resp.headers.get('X-Total-Count');
     const total = totalHeader != null ? Number(totalHeader) : items.length;
@@ -2108,7 +2109,7 @@ export async function getAlertFires(
 export async function getAlertsStats(days?: number): Promise<AlertsStats> {
     const qs = days != null ? `?days=${days}` : '';
     const resp = await apiFetch(`${API_BASE}/api/analytics/alerts-stats${qs}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить статистику уведомлений');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить статистику уведомлений'));
     return resp.json();
 }
 export async function createAlert(payload: AlertCreatePayload): Promise<AlertInfo> {
@@ -2119,9 +2120,9 @@ export async function createAlert(payload: AlertCreatePayload): Promise<AlertInf
     });
     if (resp.status === 403) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d?.detail || d?.error?.message || 'Уведомления доступны на тарифе Basic и Pro');
+        throw new Error(d?.detail || d?.error?.message || t('Уведомления доступны на тарифе Basic и Pro'));
     }
-    if (!resp.ok) throw new Error('Не удалось создать уведомление');
+    if (!resp.ok) throw new Error(t('Не удалось создать уведомление'));
     return resp.json();
 }
 export interface AlertBatchResult { created: number; skipped: number; errors: string[]; }
@@ -2135,31 +2136,31 @@ export async function createAlertsBatch(alerts: AlertCreatePayload[]): Promise<A
     });
     if (resp.status === 403) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d?.detail || d?.error?.message || 'Уведомления доступны на тарифе Basic и Pro');
+        throw new Error(d?.detail || d?.error?.message || t('Уведомления доступны на тарифе Basic и Pro'));
     }
-    if (!resp.ok) throw new Error('Не удалось создать уведомления');
+    if (!resp.ok) throw new Error(t('Не удалось создать уведомления'));
     return resp.json();
 }
 export async function deleteAlert(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить уведомление');
+    if (!resp.ok && resp.status !== 204) throw new Error(t('Не удалось удалить уведомление'));
 }
 // Массовое удаление всех алертов пользователя (если случайно создал группу из 100).
 export async function deleteAllAlerts(): Promise<{ deleted: number }> {
     const resp = await apiFetch(`${API_BASE}/api/alerts`, { method: 'DELETE' });
-    if (!resp.ok) throw new Error('Не удалось удалить уведомления');
+    if (!resp.ok) throw new Error(t('Не удалось удалить уведомления'));
     return resp.json();
 }
 export async function setAlertStatus(id: number, status: 'active' | 'paused'): Promise<AlertInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?status=${status}`, { method: 'PATCH' });
-    if (!resp.ok) throw new Error('Не удалось изменить уведомление');
+    if (!resp.ok) throw new Error(t('Не удалось изменить уведомление'));
     return resp.json();
 }
 // Таймфрейм источника сигнала ('5m'|'1h'|'1d') — только для oi_move/oi_participants/
 // oi_level (см. TIMEFRAME_INDICATORS в api/routers/alerts.py); для остальных бэк вернёт 400.
 export async function setAlertTimeframe(id: number, timeframe: '5m' | '1h' | '1d'): Promise<AlertInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?timeframe=${timeframe}`, { method: 'PATCH' });
-    if (!resp.ok) throw new Error('Не удалось изменить таймфрейм');
+    if (!resp.ok) throw new Error(t('Не удалось изменить таймфрейм'));
     return resp.json();
 }
 
@@ -2223,7 +2224,7 @@ export async function getAnomalyFeed(
     if (opts?.maxAgeHours != null) params.set('max_age_hours', String(opts.maxAgeHours));
     const qs = params.toString();
     const resp = await apiFetch(`${API_BASE}/api/anomalies/feed${qs ? `?${qs}` : ''}`);
-    if (!resp.ok) throw new Error('Не удалось загрузить ленту аномалий');
+    if (!resp.ok) throw new Error(t('Не удалось загрузить ленту аномалий'));
     return resp.json();
 }
 // Сдвинуть серверный маркер «просмотрено» (только залогиненные; гость — localStorage).
@@ -2232,7 +2233,7 @@ export async function markAnomaliesSeen(lastId: number): Promise<void> {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ last_id: lastId }),
     });
-    if (!resp.ok) throw new Error('Не удалось пометить просмотренным');
+    if (!resp.ok) throw new Error(t('Не удалось пометить просмотренным'));
 }
 // Вкл/выкл всплывающие тосты (залогиненные; гость — localStorage).
 export async function setAnomalyToasts(enabled: boolean): Promise<void> {
@@ -2240,7 +2241,7 @@ export async function setAnomalyToasts(enabled: boolean): Promise<void> {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
     });
-    if (!resp.ok) throw new Error('Не удалось изменить настройку');
+    if (!resp.ok) throw new Error(t('Не удалось изменить настройку'));
 }
 // Создать личный сигнал из аномалии (кнопка «🔔 Получать»). 403 → текст с «тарифе»
 // для handleTierError (апселл-модалка).
@@ -2248,9 +2249,9 @@ export async function subscribeAnomaly(id: number): Promise<{ ok: boolean; alert
     const resp = await apiFetch(`${API_BASE}/api/anomalies/${id}/subscribe`, { method: 'POST' });
     if (resp.status === 403) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d?.detail || d?.error?.message || 'Сигналы доступны на тарифе Basic и Pro');
+        throw new Error(d?.detail || d?.error?.message || t('Сигналы доступны на тарифе Basic и Pro'));
     }
-    if (!resp.ok) throw new Error('Не удалось создать сигнал');
+    if (!resp.ok) throw new Error(t('Не удалось создать сигнал'));
     return resp.json();
 }
 // Последние посты каналов для виджета «Новости каналов» на главной. Публичный
@@ -2357,7 +2358,7 @@ export async function listContentCandidates(
   if (opts.source) params.set('source', opts.source);
   const response = await apiFetch(`${API_BASE}/api/admin/content-candidates?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch content candidates');
   }
   return response.json();
@@ -2372,7 +2373,7 @@ export interface ContentCandidateSourceStats {
 export async function getContentCandidateStatsBySource(): Promise<ContentCandidateSourceStats[]> {
   const response = await apiFetch(`${API_BASE}/api/admin/content-candidates/stats/by-source`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch content candidate source stats');
   }
   return response.json();
@@ -2381,8 +2382,8 @@ export async function getContentCandidateStatsBySource(): Promise<ContentCandida
 export async function getContentCandidateDetail(id: number): Promise<ContentCandidateDetail> {
   const response = await apiFetch(`${API_BASE}/api/admin/content-candidates/${id}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Кандидат не найден');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Кандидат не найден'));
     throw new Error('Failed to fetch content candidate detail');
   }
   return response.json();
@@ -2398,11 +2399,11 @@ export async function updateContentCandidateStatus(
     body: JSON.stringify({ status }),
   });
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Кандидат не найден');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Кандидат не найден'));
     if (response.status === 422) {
       const body = await response.json().catch(() => null);
-      throw new Error(body?.detail || 'Недопустимый переход статуса');
+      throw new Error(body?.detail || t('Недопустимый переход статуса'));
     }
     throw new Error('Failed to update content candidate status');
   }
@@ -2455,8 +2456,8 @@ export interface RepaintSeries {
 export async function getRepaintScreener(): Promise<{ window_days: number; rows: RepaintScreenerRow[] }> {
   const response = await apiFetch(`${API_BASE}/api/admin/repaint/screener`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить скринер перекраски');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить скринер перекраски'));
   }
   return response.json();
 }
@@ -2466,9 +2467,9 @@ export async function getRepaintSeries(secId: string, days = 365): Promise<Repai
     `${API_BASE}/api/admin/repaint/series/${encodeURIComponent(secId)}?days=${days}`,
   );
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Нет данных по этому тикеру');
-    throw new Error('Не удалось загрузить данные перекраски');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Нет данных по этому тикеру'));
+    throw new Error(t('Не удалось загрузить данные перекраски'));
   }
   return response.json();
 }
@@ -2521,8 +2522,8 @@ export async function getDashboardOverview(fresh = false): Promise<DashboardOver
   const qs = fresh ? '?fresh=true' : '';
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/overview${qs}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить снимок состояния');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить снимок состояния'));
   }
   return response.json();
 }
@@ -2551,8 +2552,8 @@ export interface DashboardLive {
 export async function getDashboardLive(): Promise<DashboardLive> {
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/live`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить живое состояние');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить живое состояние'));
   }
   return response.json();
 }
@@ -2635,8 +2636,8 @@ export async function getPostList(opts: {
   }
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/posts?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить список кандидатов');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить список кандидатов'));
   }
   return response.json();
 }
@@ -2644,9 +2645,9 @@ export async function getPostList(opts: {
 export async function getPostDetail(id: number): Promise<PostDetail> {
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/posts/${id}`);
   if (!response.ok) {
-    if (response.status === 404) throw new Error('Кандидат не найден');
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить разбор');
+    if (response.status === 404) throw new Error(t('Кандидат не найден'));
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить разбор'));
   }
   return response.json();
 }
@@ -2671,7 +2672,7 @@ export interface OwnershipGraph {
 }
 export async function getOwnershipGraph(): Promise<OwnershipGraph> {
   const r = await apiFetch(`${API_BASE}/api/admin/dashboard/graph`);
-  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить граф');
+  if (!r.ok) throw new Error(r.status === 403 ? t('Доступ только для администратора') : t('Не удалось загрузить граф'));
   return r.json();
 }
 
@@ -2687,7 +2688,7 @@ export async function getOwnershipSignals(opts: { status?: string; only_strong?:
   if (opts.only_strong) p.set('only_strong', 'true');
   if (opts.limit) p.set('limit', String(opts.limit));
   const r = await apiFetch(`${API_BASE}/api/admin/ownership-signals?${p}`);
-  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить сигналы');
+  if (!r.ok) throw new Error(r.status === 403 ? t('Доступ только для администратора') : t('Не удалось загрузить сигналы'));
   return r.json();
 }
 /** Отметка разбора. Подтверждение НИЧЕГО не пишет в граф — ребро заводится руками. */
@@ -2695,7 +2696,7 @@ export async function reviewOwnershipSignal(id: number, status: 'подтвер�
   Promise<{ id: number; status: string }> {
   const p = new URLSearchParams({ status, note });
   const r = await apiFetch(`${API_BASE}/api/admin/ownership-signals/${id}?${p}`, { method: 'PATCH' });
-  if (!r.ok) throw new Error('Не удалось сохранить отметку');
+  if (!r.ok) throw new Error(t('Не удалось сохранить отметку'));
   return r.json();
 }
 
@@ -2712,7 +2713,7 @@ export interface Pulse {
 }
 export async function getDashboardPulse(hours = 24): Promise<Pulse> {
   const r = await apiFetch(`${API_BASE}/api/admin/dashboard/pulse?hours=${hours}`);
-  if (!r.ok) throw new Error(r.status === 403 ? 'Доступ только для администратора' : 'Не удалось загрузить пульс');
+  if (!r.ok) throw new Error(r.status === 403 ? t('Доступ только для администратора') : t('Не удалось загрузить пульс'));
   return r.json();
 }
 
@@ -2756,8 +2757,8 @@ export interface DbSliceResult {
 export async function getDbSlices(): Promise<DbSlices> {
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/db/slices`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить список срезов');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить список срезов'));
   }
   return response.json();
 }
@@ -2771,9 +2772,9 @@ export async function getDbSlice(
   params.set('offset', String(offset));
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/db/slices/${encodeURIComponent(код)}?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Нет такого среза');
-    let detail = 'Не удалось загрузить срез';
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Нет такого среза'));
+    let detail = t('Не удалось загрузить срез');
     try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
     throw new Error(detail);
   }
@@ -2805,8 +2806,8 @@ export interface IndicatorDetail {
 export async function getIndicatorList(): Promise<{ индикаторы: Array<IndicatorPassport & { свежесть: IndicatorFreshness[] }> }> {
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/indicators`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    throw new Error('Не удалось загрузить индикаторы');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error(t('Не удалось загрузить индикаторы'));
   }
   return response.json();
 }
@@ -2817,9 +2818,9 @@ export async function getIndicatorDetail(id: string, obj?: string, period?: stri
   if (period) params.set('period', period);
   const response = await apiFetch(`${API_BASE}/api/admin/dashboard/indicators/${encodeURIComponent(id)}?${params}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Нет такого индикатора');
-    throw new Error('Не удалось загрузить индикатор');
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Нет такого индикатора'));
+    throw new Error(t('Не удалось загрузить индикатор'));
   }
   return response.json();
 }
@@ -2867,9 +2868,9 @@ async function brainFetch<T>(path: string, params: Record<string, string | numbe
   const qs = p.toString();
   const response = await apiFetch(`${API_BASE}/api/internal/brain/${path}${qs ? '?' + qs : ''}`);
   if (!response.ok) {
-    if (response.status === 403) throw new Error('Доступ только для администратора');
-    if (response.status === 404) throw new Error('Такого узла в карте нет');
-    let detail = 'Второй мозг не ответил';
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    if (response.status === 404) throw new Error(t('Такого узла в карте нет'));
+    let detail = t('Второй мозг не ответил');
     try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
     throw new Error(detail);
   }
@@ -2889,7 +2890,7 @@ async function brainPatch<T>(path: string, params: Record<string, string | numbe
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
   const response = await apiFetch(`${API_BASE}/api/internal/brain/${path}?${p}`, { method: 'PATCH' });
   if (!response.ok) {
-    let detail = 'Не удалось сохранить решение';
+    let detail = t('Не удалось сохранить решение');
     try { detail = (await response.json()).detail ?? detail; } catch { /* тело не JSON */ }
     throw new Error(detail);
   }

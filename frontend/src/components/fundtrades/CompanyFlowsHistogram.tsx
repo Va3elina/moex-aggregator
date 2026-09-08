@@ -20,6 +20,8 @@ import {
     useState,
 } from 'react';
 import { BarChart3 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { t, dateLocale } from '../../i18n';
 import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
 import { useNoChartAnim } from '../chart/chartAnim';
@@ -67,14 +69,14 @@ interface CompanyFlowsHistogramProps {
 // Число потока в млн без знака/единиц: целое с разделителем тысяч при ≥10 млн,
 // иначе 1 знак после запятой — мелкие потоки (<10 млн) не схлопываются в «0».
 function fmtMlnNumber(abs: number): string {
-    return abs >= 10 ? Math.round(abs).toLocaleString('ru-RU') : abs.toFixed(1);
+    return abs >= 10 ? Math.round(abs).toLocaleString(dateLocale()) : abs.toFixed(1);
 }
 
 // Формат значения потока — млн ₽ (раньше млрд). Типичные месячные потоки тут
 // десятки–сотни млн: в млрд это «0.07» и плохо читается. Знак + / −.
 function fmtFlow(v: number): string {
     const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    return `${sign}${fmtMlnNumber(Math.abs(v))} млн ₽`;
+    return `${sign}${fmtMlnNumber(Math.abs(v))} ${t('млн ₽')}`;
 }
 
 // Подпись оси Y — короткая (без «млн ₽»), как в макете.
@@ -92,13 +94,15 @@ function monthToDate(m: string): Date {
 export default function CompanyFlowsHistogram({
     months: monthsAll,
     series: seriesAll,
-    title = 'Чистые покупки и продажи (млн ₽)',
+    title,
     height = 420,
     loading = false,
     noFundsSelected = false,
     animTrigger,
     tooltipLabels,
 }: CompanyFlowsHistogramProps) {
+    const { t } = useTranslation();
+    const chartTitle = title ?? t('Чистые покупки и продажи (млн ₽)');
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
@@ -288,28 +292,28 @@ export default function CompanyFlowsHistogram({
                         <BarChart3 size={28} strokeWidth={2.4} color="#FFFFFF" />
                     </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                        Не выбрано ни одного фонда
+                        {t('Не выбрано ни одного фонда')}
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
-                        Отметьте фонды в фильтре выше, чтобы увидеть чистый поток по бумаге.
+                        {t('Отметьте фонды в фильтре выше, чтобы увидеть чистый поток по бумаге.')}
                     </div>
                 </div>
             ) : loading && !hasData && animated.length === 0 ? (
                 <div className="flex items-center justify-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)' }}>
                     <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
                         <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>{t('Загрузка...')}</span>
                     </div>
                 </div>
             ) : !hasData ? (
                 <div className="flex items-center justify-center text-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)', color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                    Нет данных по потокам за период
+                    {t('Нет данных по потокам за период')}
                 </div>
             ) : (<>
                 {loading && (
                     <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
                         <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{t('Обновление...')}</span>
                     </div>
                 )}
 
@@ -319,7 +323,7 @@ export default function CompanyFlowsHistogram({
                         на --chart-legend-top-gap от верхней границы, как в SimpleChart. */}
                     <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                         <ChartLegend
-                            items={[{ color: 'transparent', label: title, marker: 'none' }]}
+                            items={[{ color: 'transparent', label: chartTitle, marker: 'none' }]}
                             fontWeight={600}
                             itemGap={6}
                             gap="clamp(6px, 1vw, 16px)"
@@ -432,7 +436,7 @@ export default function CompanyFlowsHistogram({
                                     <TooltipRow
                                         hideDot
                                         color={netColor}
-                                        label={net >= 0 ? (tooltipLabels?.pos ?? 'Чистая покупка') : (tooltipLabels?.neg ?? 'Чистая продажа')}
+                                        label={net >= 0 ? (tooltipLabels?.pos ?? t('Чистая покупка')) : (tooltipLabels?.neg ?? t('Чистая продажа'))}
                                         value={fmtFlow(net)}
                                         labelClass="font-bold"
                                         labelColor="var(--text-primary)"
@@ -459,7 +463,7 @@ export default function CompanyFlowsHistogram({
                                             ))}
                                             {extra > 0 && (
                                                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
-                                                    и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
+                                                    {t('и ещё {{n}}', { n: extra })} {t(extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов')}
                                                 </div>
                                             )}
                                         </div>
@@ -499,7 +503,7 @@ export default function CompanyFlowsHistogram({
                                     const idx = Math.min(Math.round(i * (visibleMonths.length - 1) / Math.max(tickCount - 1, 1)), visibleMonths.length - 1);
                                     if (!visibleMonths[idx]) return null;
                                     return (
-                                        <span key={i}>{monthToDate(visibleMonths[idx]).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
+                                        <span key={i}>{monthToDate(visibleMonths[idx]).toLocaleDateString(dateLocale(), { month: 'short', year: '2-digit' })}</span>
                                     );
                                 });
                             })()}
@@ -543,7 +547,7 @@ export default function CompanyFlowsHistogram({
                         gridOffsetFrac: 0.03,
                         chartAreaHeight: chartAreaH,
                     });
-                    const dateStr = monthToDate(m).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+                    const dateStr = monthToDate(m).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
                     const plotLeft = cont.offsetLeft + (svgRect.left - containerRect.left);
                     return (
                         <ChartDatePill

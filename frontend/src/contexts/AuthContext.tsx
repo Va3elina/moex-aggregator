@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiFetch } from '../services/api';
 import { hydrateSettingsFromServer } from '../services/settingsSync';
+import { t } from '../i18n';
 
 interface User {
   id: number;
@@ -120,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         background: 'var(--color-bg, #0a0a0f)',
         color: 'var(--color-text-secondary, #888)',
       }}>
-        Загрузка...
+        {t('Загрузка...')}
       </div>
     );
   }

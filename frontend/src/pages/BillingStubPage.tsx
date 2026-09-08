@@ -11,9 +11,11 @@
  */
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Info, XCircle } from 'lucide-react';
 
 export default function BillingStubPage() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const paymentId = params.get('payment_id') || '';
   const amount = params.get('amount') || '0';
@@ -30,11 +32,11 @@ export default function BillingStubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payment_id: paymentId, status }),
       });
-      if (!r.ok) throw new Error('Ошибка симуляции');
+      if (!r.ok) throw new Error(t('Ошибка симуляции'));
       // Возвращаемся на return_url
       window.location.href = returnUrl;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка');
+      setError(e instanceof Error ? e.message : t('Ошибка'));
       setLoading(null);
     }
   };
@@ -44,11 +46,10 @@ export default function BillingStubPage() {
       <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 mb-4">
           <Info className="text-amber-400" size={28} />
-          <h1 className="text-xl font-bold text-theme-primary">Тестовый режим оплаты</h1>
+          <h1 className="text-xl font-bold text-theme-primary">{t('Тестовый режим оплаты')}</h1>
         </div>
         <p className="text-theme-secondary text-sm mb-4">
-          ЮKassa ещё не подключена. Это заглушка для разработки — здесь можно имитировать
-          результат оплаты и проверить что всё работает на уровне БД/логики.
+          {t('ЮKassa ещё не подключена. Это заглушка для разработки — здесь можно имитировать результат оплаты и проверить что всё работает на уровне БД/логики.')}
         </p>
         <div className="rounded-xl p-4 mb-6 text-sm" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
           <div className="flex justify-between mb-2">
@@ -56,7 +57,7 @@ export default function BillingStubPage() {
             <code className="text-xs text-theme-primary">{paymentId}</code>
           </div>
           <div className="flex justify-between">
-            <span className="text-theme-secondary">Сумма:</span>
+            <span className="text-theme-secondary">{t('Сумма:')}</span>
             <span className="text-theme-primary font-semibold">{amount} ₽</span>
           </div>
         </div>
@@ -68,7 +69,7 @@ export default function BillingStubPage() {
             className="flex-1 py-2.5 rounded-xl font-medium disabled:opacity-50"
             style={{ backgroundColor: 'var(--success)', color: 'var(--text-inverse)' }}
           >
-            {loading === 'succeed' ? 'Обработка...' : '✓ Симулировать успех'}
+            {loading === 'succeed' ? t('Обработка...') : t('✓ Симулировать успех')}
           </button>
           <button
             onClick={() => simulate('canceled')}
@@ -77,7 +78,7 @@ export default function BillingStubPage() {
             style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
           >
             <XCircle size={16} className="inline mr-1" />
-            Отменить
+            {t('Отменить', { context: 'checkout' })}
           </button>
         </div>
 

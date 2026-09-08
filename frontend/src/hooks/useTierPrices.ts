@@ -11,6 +11,7 @@
  * /plans на каждый показ незачем.
  */
 import { useEffect, useState } from 'react';
+import { t } from '../i18n';
 
 export interface TierPrice {
     /** Годовая цена, пересчитанная на месяц: round(yearly / 12). */
@@ -68,5 +69,5 @@ export function useTierPrices(): TierPrices {
 }
 
 export function fmtRubMonthly(n: number): string {
-    return `${n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽/мес`;
+    return t('{{n}} ₽/мес', { n: n.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) });
 }

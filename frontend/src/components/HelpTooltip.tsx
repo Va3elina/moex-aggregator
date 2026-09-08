@@ -12,6 +12,7 @@
  * индикатор перейдёт на `linkTo` и popover с текстом станет просто
  * коротким preview-сниппетом.
  */
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { HelpCircle, Info, X, ArrowUpRight } from 'lucide-react';
@@ -113,8 +114,10 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
     };
   }, [float, open, align]);
 
-  const shortText = entry?.short ?? title ?? '';
-  const fullText = entry?.full ?? content ?? '';
+  const { t } = useTranslation();
+  // Подсказки из data/methodology.ts — русские ключи, переводятся здесь (один потребитель).
+  const shortText = t(entry?.short ?? title ?? '');
+  const fullText = t(entry?.full ?? content ?? '');
 
   const hoverOpen = () => { if (!isMobile) setOpen(true); };
   const hoverClose = () => { if (!isMobile) setOpen(false); };
@@ -171,7 +174,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
             border: 'none',
             cursor: 'pointer',
           }}
-          aria-label="Закрыть"
+          aria-label={t('Закрыть')}
         >
           <X size={16} />
         </button>
@@ -214,7 +217,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
             textDecoration: 'none',
           }}
         >
-          Подробнее о методологии <ArrowUpRight size={12} />
+          {t('Подробнее о методологии')} <ArrowUpRight size={12} />
         </Link>
       )}
     </div>
@@ -228,8 +231,8 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
           ref={triggerRef as React.RefObject<HTMLAnchorElement>}
           to={linkTo}
           style={iconStyle}
-          aria-label="Методология индикатора"
-          title="Методология индикатора"
+          aria-label={t('Методология индикатора')}
+          title={t('Методология индикатора')}
         >
           <IconCmp size={size} strokeWidth={1.8} />
         </Link>
@@ -247,7 +250,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
         onMouseEnter={hoverOpen}
         onMouseLeave={hoverClose}
         style={{ ...iconStyle, cursor: 'help', background: 'transparent', border: 'none', padding: 0 }}
-        aria-label={icon === 'info' ? 'Как считается метрика' : 'Подсказка о методологии'}
+        aria-label={icon === 'info' ? t('Как считается метрика') : t('Подсказка о методологии')}
         aria-expanded={open}
       >
         <IconCmp size={size} strokeWidth={1.8} />

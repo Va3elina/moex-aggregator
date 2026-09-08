@@ -11,9 +11,11 @@
  * терминале.
  */
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Clock } from 'lucide-react';
 
 export default function BillingUnavailablePage() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-xl mx-auto px-6 py-12 text-center">
       <Clock
@@ -24,20 +26,19 @@ export default function BillingUnavailablePage() {
         className="text-2xl font-bold mb-2"
         style={{ color: 'var(--text-primary)' }}
       >
-        Оплата временно недоступна
+        {t('Оплата временно недоступна')}
       </h1>
       <p
         className="mb-2"
         style={{ color: 'var(--text-secondary)' }}
       >
-        Приём платежей ещё не запущен, поэтому подписка не оформлена.
+        {t('Приём платежей ещё не запущен, поэтому подписка не оформлена.')}
       </p>
       <p
         className="mb-6 text-sm"
         style={{ color: 'var(--text-muted)' }}
       >
-        Деньги не списаны, карта не сохранена. О запуске оплаты объявим в
-        Телеграм-канале.
+        {t('Деньги не списаны, карта не сохранена. О запуске оплаты объявим в Телеграм-канале.')}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
         <a
@@ -50,7 +51,7 @@ export default function BillingUnavailablePage() {
             color: '#fff',
           }}
         >
-          Подписаться на канал
+          {t('Подписаться на канал')}
         </a>
         <Link
           to="/"
@@ -60,14 +61,14 @@ export default function BillingUnavailablePage() {
             color: 'var(--text-primary)',
           }}
         >
-          На главную
+          {t('На главную')}
         </Link>
       </div>
       <p
         className="mt-8 text-xs"
         style={{ color: 'var(--text-muted)' }}
       >
-        Возникли вопросы? Напиши на{' '}
+        {t('Возникли вопросы? Напиши на')}{' '}
         <a
           href="mailto:frameinfo@mail.ru"
           style={{ color: 'var(--accent)' }}

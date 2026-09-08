@@ -14,6 +14,7 @@ import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
 import TrialOfferCard from './TrialOfferCard';
+import { useTranslation } from 'react-i18next';
 
 
 interface UpgradePromptProps {
@@ -31,6 +32,7 @@ const UpgradeContext = createContext<UpgradeContextValue | null>(null);
 
 // Цена НЕ хардкодится: показываем годовую в пересчёте на месяц (yearly / 12),
 // как на карточках PricingPage — тянется из /api/billing/plans (useTierPrices).
+// desc — русские ключи, переводятся через t() в рендере (не на верхнем уровне модуля).
 const TIER_LABELS: Record<string, { ru: string; desc: string }> = {
     basic: {
         ru: 'Basic',
@@ -40,17 +42,23 @@ const TIER_LABELS: Record<string, { ru: string; desc: string }> = {
     },
     pro: {
         ru: 'Pro',
-        // API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка.
-        // TradingView убран из обеих строк (2026-08-10): интеграции нет, а в модалке
-        // замочка это читалось как обещание функции, которой у нас не существует.
-        desc: 'Всё из Basic + ' + [
-            PUBLIC_API_ENABLED ? 'API' : null,
-            CSV_EXPORT_ENABLED ? 'экспорт CSV' : null,
-            'индикаторы Т-терминала',
-            'безлимитные уведомления',
-        ].filter(Boolean).join(', ') + '.',
+        desc: '',
     },
 };
+
+// Описание тарифа для модалки. Считается в рендере, чтобы t() брал текущий язык.
+// API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка.
+// TradingView убран из обеих строк (2026-08-10): интеграции нет, а в модалке
+// замочка это читалось как обещание функции, которой у нас не существует.
+function tierDesc(t: (k: string) => string, tier: 'basic' | 'pro'): string {
+    if (tier === 'basic') return t(TIER_LABELS.basic.desc);
+    return t('Всё из Basic + ') + [
+        PUBLIC_API_ENABLED ? 'API' : null,
+        CSV_EXPORT_ENABLED ? t('экспорт CSV') : null,
+        t('индикаторы Т-терминала'),
+        t('безлимитные уведомления'),
+    ].filter(Boolean).join(', ') + '.';
+}
 
 
 export function UpgradePromptProvider({ children }: { children: ReactNode }) {
@@ -90,6 +98,7 @@ export function useUpgradePrompt(): UpgradeContextValue {
 
 function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { onClose: () => void }) {
     const label = TIER_LABELS[tier];
+    const { t } = useTranslation();
     const prices = useTierPrices();
     const width = useViewportWidth();
     const isMobile = width < 768;
@@ -171,7 +180,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         fontSize: 'var(--fs-xl)',
                         fontWeight: 700, margin: 0,
                     }}>
-                        Доступно на тарифе {label.ru}
+                        {t('Доступно на тарифе {{tier}}', { tier: label.ru })}
                     </h2>
                 </div>
 
@@ -181,7 +190,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         marginBottom: 12,
                         fontSize: 'var(--fs-base)',
                     }}>
-                        Чтобы использовать «{featureName}», нужен тариф {tier === 'basic' ? 'Basic или Pro' : 'Pro'}.
+                        {t('Чтобы использовать «{{feature}}», нужен тариф {{tier}}.', { feature: featureName, tier: tier === 'basic' ? t('Basic или Pro') : 'Pro' })}
                     </p>
                 )}
 
@@ -209,13 +218,13 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         color: 'var(--text-muted, #999)',
                         fontSize: 'var(--fs-xs)', marginBottom: 6,
                     }}>
-                        при оплате за год
+                        {t('при оплате за год')}
                     </div>
                     <div style={{
                         color: 'var(--text-secondary, #666)',
                         fontSize: 'var(--fs-base)', lineHeight: 1.5,
                     }}>
-                        {label.desc}
+                        {tierDesc(t, tier)}
                     </div>
                 </div>
 
@@ -240,7 +249,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                             minHeight: 44,  // mobile touch target
                         }}
                     >
-                        Закрыть
+                        {t('Закрыть')}
                     </button>
                     <Link
                         to="/pricing"
@@ -260,7 +269,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                             minHeight: 44,
                         }}
                     >
-                        Перейти на {label.ru} →
+                        {t('Перейти на {{tier}} →', { tier: label.ru })}
                     </Link>
                 </div>
             </div>

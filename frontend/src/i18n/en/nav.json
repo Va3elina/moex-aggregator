@@ -65,5 +65,6 @@
   "Изменение": "Change",
   "Доступно по подписке": "Available with subscription",
   "Только по подписке Pro": "Pro subscription only",
-  "Оформить подписку": "Subscribe"
+  "Оформить подписку": "Subscribe",
+  "Осталось {{n}} дней": "{{n}} days left"
 }

@@ -13,6 +13,7 @@
  */
 
 import type { FrameOptions } from './types';
+import { dateLocale } from '../../i18n';
 
 const DEFAULT_PADDING = 18;
 const SITE_URL = 'framedata.ru';
@@ -221,7 +222,7 @@ function drawFooter(
     ctx.fillText(SITE_URL, x, cy);
 
     // Дата справа — формат "7 мая 2026"
-    const dateStr = new Date().toLocaleDateString('ru-RU', {
+    const dateStr = new Date().toLocaleDateString(dateLocale(), {
         day: 'numeric',
         month: 'long',
         year: 'numeric',

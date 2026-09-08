@@ -1,4 +1,6 @@
 import { useRef, useMemo, useState, useLayoutEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 import ChartNavigator from '../ChartNavigator';
 import type { PriceChartResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, PADDING, cssVar, ANIMATION } from '../../config/chartTheme';
@@ -33,6 +35,7 @@ export default function SeasonalityPriceChart({
   setTooltip,
   chartHeight,
 }: SeasonalityPriceChartProps) {
+  const { t } = useTranslation();
   const divHoverRef = useRef(false);
 
   // Анимация путей: reveal на первом рендере (rAF clip-rect — только линии,
@@ -155,7 +158,7 @@ export default function SeasonalityPriceChart({
   // эффект гейтит `if (!targetRaw.length)`.
   if (pricePoints.length === 0) {
     return (
-      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>{t('Нет данных')}</div>
     );
   }
 
@@ -185,8 +188,8 @@ export default function SeasonalityPriceChart({
       <div style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
         <ChartLegend
           items={[
-            { color: CHART_COLORS.accent, label: 'Цена' },
-            ...(hasAdj ? [{ color: CHART_COLORS.adjusted, label: 'Без дивидендных гэпов' }] : []),
+            { color: CHART_COLORS.accent, label: t('Цена') },
+            ...(hasAdj ? [{ color: CHART_COLORS.adjusted, label: t('Без дивидендных гэпов') }] : []),
           ]}
           fontWeight={600}
           gap={20}
@@ -260,7 +263,7 @@ export default function SeasonalityPriceChart({
         {tooltip?.priceDate && (
           <div className="absolute pointer-events-none" style={{ top: PT - 14, left: 0, right: 0, zIndex: 5 }}>
             <ChartDateLabel
-              date={new Date(tooltip.priceDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+              date={new Date(tooltip.priceDate).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}
               x={tooltip.x}
               padLeft={PL}
               padRight={PR}
@@ -325,7 +328,7 @@ export default function SeasonalityPriceChart({
           {visibleDivs.map((d, i) => (
             <ChartMarker
               key={i}
-              label="Д"
+              label={t('Д')}
               xPct={d.pct}
               guideHeight={`calc(100% - ${PB + 14}px)`}
               onHover={() => { divHoverRef.current = true; setTooltip(null); }}
@@ -339,9 +342,9 @@ export default function SeasonalityPriceChart({
         {/* Value tooltip */}
         {tooltip?.priceDate && (
           <ChartTooltip x={tooltip.x} y={tooltip.y} clampTop={PT} clampBottom={PB}>
-            <TooltipRow color={CHART_COLORS.accent} label="Цена" value={`${tooltip.priceClose?.toFixed(2)} ₽`} />
+            <TooltipRow color={CHART_COLORS.accent} label={t('Цена')} value={`${tooltip.priceClose?.toFixed(2)} ₽`} />
             {tooltip.priceAdj !== tooltip.priceClose && (
-              <TooltipRow color={CHART_COLORS.adjusted} label="Без гэпов" value={`${tooltip.priceAdj?.toFixed(2)} ₽`} />
+              <TooltipRow color={CHART_COLORS.adjusted} label={t('Без гэпов')} value={`${tooltip.priceAdj?.toFixed(2)} ₽`} />
             )}
           </ChartTooltip>
         )}

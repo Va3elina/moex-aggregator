@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import { Activity } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
 import PageHeader from '../components/PageHeader';
@@ -38,7 +40,7 @@ import { computeChartTopLineY } from '../components/chart/datePillLayout';
 import ChartDatePill from '../components/chart/ChartDatePill';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { strengthTourSteps } from '../data/tours/strength';
+import { getStrengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 type Period = '1y' | '5y' | '10y' | '20y' | 'all';
@@ -66,6 +68,7 @@ const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
+    const { t, i18n } = useTranslation();
     const { isAuthenticated } = useAuth();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
@@ -77,6 +80,7 @@ export default function StrengthPage() {
 
     // Onboarding tour
     const tour = useOnboardingTour('strength');
+    const tourSteps = useMemo(() => getStrengthTourSteps(), [i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
     const [currency, setCurrency] = usePersistedState<'rub' | 'usd'>('frame:strength:currency', 'rub');
     const [universeBase, setUniverseBase] = usePersistedState<'all' | 'imoex'>('frame:strength:universeBase', 'imoex');
     // Итоговый universe: добавляем _usd при долларовом режиме
@@ -117,12 +121,12 @@ export default function StrengthPage() {
         },
         deps: [emaPeriod, period, universe, universeBase, currency],
         channels: ['daily', 'breadth'],
-        errorMessage: 'Не удалось загрузить данные',
+        errorMessage: t('Не удалось загрузить данные'),
         tier: {
             showUpgrade,
             indicator: 'strength',
-            featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
-                currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+            featureName: universeBase === 'all' ? t('вселенная «100 акций»') :
+                currency === 'usd' ? t('долларовый режим') : t('индикатор «Сила рынка»'),
         },
     });
     const current = data?.current ?? null;
@@ -184,7 +188,7 @@ export default function StrengthPage() {
     // фактически отрисован: IMOEX в рублях или RTS в долларах. От universeBase
     // (выбора набора акций для breadth-метрики на нижнем графике) НЕ зависит —
     // верхний график одинаков во всех режимах, и label должен это отражать.
-    const priceChartLabel = currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX';
+    const priceChartLabel = currency === 'usd' ? t('Индекс RTS') : t('Индекс IMOEX');
     // Короткий лейбл для hover tooltip (где места меньше)
     const priceChartShort = currency === 'usd' ? 'RTS' : 'IMOEX';
 
@@ -268,15 +272,15 @@ export default function StrengthPage() {
     // metric = период EMA. Общий реестр для кнопки-будильника и «+».
     const strengthMetrics = useMemo<AlertMetricOption[]>(() => [{
         key: 'strength_level',
-        label: `Сила рынка — % акций выше EMA${emaPeriod}`,
+        label: t('Сила рынка — % акций выше EMA{{n}}', { n: emaPeriod }),
         indicator: 'strength_level', metric: String(emaPeriod), unit: '%',
         ops: [
-            { value: 'cross', label: 'Пересечение (в любую сторону)' },
-            { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
-            { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
+            { value: 'cross', label: t('Пересечение (в любую сторону)') },
+            { value: 'cross_up', label: t('↑ Пересечение (снизу вверх)') },
+            { value: 'cross_down', label: t('↓ Пересечение (сверху вниз)') },
         ],
-        hint: `Сработает, когда доля акций выше EMA${emaPeriod} пересечёт заданный уровень в %.`,
-    }], [emaPeriod]);
+        hint: t('Сработает, когда доля акций выше EMA{{n}} пересечёт заданный уровень в %.', { n: emaPeriod }),
+    }], [emaPeriod, t]);
 
     // Уровни активных strength-алертов текущего вида (EMA + вселенная) → пунктир.
     const alertLevels = useMemo(() => {
@@ -290,9 +294,9 @@ export default function StrengthPage() {
 
     // Клик «+» на оси % → модалка (уровень + текущее значение).
     const handleCreateAlertFromChart = useCallback((levelPct: number, currentPct: number) => {
-        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' }); return; }
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: t('Уведомления'), indicator: 'alerts' }); return; }
         setChartAlertPrefill({ metricKey: 'strength_level', threshold: Math.round(levelPct * 10) / 10, currentLabel: `${currentPct.toFixed(1)}%` });
-    }, [alertsLocked, showUpgrade]);
+    }, [alertsLocked, showUpgrade, t]);
 
     // Extracted pointer handler — общая логика для mouse + touch.
     // Раньше вся логика была inline в handleMouseMove → touch не работал.
@@ -354,11 +358,11 @@ export default function StrengthPage() {
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             <PageHeader
                 icon={Activity}
-                title="Сила рынка"
-                subtitle={`% ${universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA${emaPeriod}`}
+                title={t('Сила рынка')}
+                subtitle={universe === 'imoex' ? t('% акций индекса MOEX выше EMA{{n}}', { n: emaPeriod }) : t('% акций выше EMA{{n}}', { n: emaPeriod })}
                 help={METHODOLOGY.strength}
                 helpLink="/methodology/strength"
-                sourceNote="Индекс IMOEX/RTSI: ПАО Московская Биржа"
+                sourceNote={t('Индекс IMOEX/RTSI: ПАО Московская Биржа')}
             />
 
             {/* Editorial frame — обнимает controls + chart в один контейнер */}
@@ -383,8 +387,8 @@ export default function StrengthPage() {
                     <LayersButton
                         tourId="strength-layers"
                         layers={[
-                            { key: 'price', label: 'Индекс', hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
-                            { key: 'histogram', label: 'Гистограмма', hint: 'Столбики вместо линии', checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
+                            { key: 'price', label: t('Индекс'), hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
+                            { key: 'histogram', label: t('Гистограмма'), hint: t('Столбики вместо линии'), checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
                         ]}
                     />
                     <CsvExportButton
@@ -400,16 +404,16 @@ export default function StrengthPage() {
                         getTargetElement={() => containerRef.current}
                         filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
                         metadata={{
-                            title: 'Сила рынка',
+                            title: t('Сила рынка'),
                             asset: priceChartLabel,
                             details: [
                                 `EMA${emaPeriod}`,
-                                period === '1y' ? '1 год' :
-                                period === '5y' ? '5 лет' :
-                                period === '10y' ? '10 лет' :
-                                period === '20y' ? '20 лет' : 'Всё',
+                                period === '1y' ? t('1 год') :
+                                period === '5y' ? t('5 лет') :
+                                period === '10y' ? t('10 лет') :
+                                period === '20y' ? t('20 лет') : t('Всё'),
                                 currency === 'usd' ? 'USD' : 'RUB',
-                                chartMode === 'histogram' ? 'Гистограмма' : 'Линия',
+                                chartMode === 'histogram' ? t('Гистограмма') : t('Линия'),
                             ].filter(Boolean),
                         }}
                     />
@@ -418,7 +422,7 @@ export default function StrengthPage() {
                         <AlertBellButton
                             indicator="strength"
                             asset={universe}
-                            assetName="Сила рынка"
+                            assetName={t('Сила рынка')}
                             metrics={strengthMetrics}
                         />
                     )}
@@ -466,7 +470,7 @@ export default function StrengthPage() {
                     <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 16 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 + 68 }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                            <span className="text-theme-secondary">Загрузка...</span>
+                            <span className="text-theme-secondary">{t('Загрузка...')}</span>
                         </div>
                     </div>
                 ) : error && !current ? (
@@ -489,7 +493,7 @@ export default function StrengthPage() {
                             }}
                         >
                             <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                            <span className="text-theme-secondary">Обновление...</span>
+                            <span className="text-theme-secondary">{t('Обновление...')}</span>
                         </div>
                     )}
 
@@ -508,7 +512,7 @@ export default function StrengthPage() {
                         const cardWidth = Math.max(140, Math.min(190, Math.round(vw * 0.37)));
                         const cardLeft = isRightHalf ? hoverX - cardWidth - 12 : hoverX + 12;
 
-                        const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
+                        const dateStr = new Date(hoverData.time).toLocaleDateString(dateLocale(), {
                             day: 'numeric', month: 'short', year: 'numeric'
                         });
 
@@ -567,14 +571,14 @@ export default function StrengthPage() {
                                                     <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{priceChartShort}</span>
                                                 </div>
                                                 <span className={`${TOOLTIP.valueClass} text-theme-primary`} style={TOOLTIP.valueStyle}>
-                                                    {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                                                    {hoverData.imoex.toLocaleString(dateLocale(), { maximumFractionDigits: 0 })}
                                                 </span>
                                             </div>
                                         )}
                                         <div className="flex items-center justify-between gap-3 py-0.5">
                                             <div className="flex items-center gap-1.5">
                                                 <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: breadthColor }} />
-                                                <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>% выше EMA</span>
+                                                <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{t('% выше EMA')}</span>
                                             </div>
                                             <span className={`${TOOLTIP.valueClass} text-theme-primary`} style={TOOLTIP.valueStyle}>
                                                 {hoverData.breadth.toFixed(1)}%
@@ -618,7 +622,7 @@ export default function StrengthPage() {
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 }}>
                         <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
-                                items={[{ color: 'var(--accent)', label: `% акций выше EMA${emaPeriod}` }]}
+                                items={[{ color: 'var(--accent)', label: t('% акций выше EMA{{n}}', { n: emaPeriod }) }]}
                                 fontWeight={600}
                                 style={{ color: 'var(--text-primary)' }}
                             />
@@ -637,7 +641,7 @@ export default function StrengthPage() {
                             />
                         ) : (
                             <div className="h-48 flex items-center justify-center text-theme-muted">
-                                Нет данных для отображения
+                                {t('Нет данных для отображения')}
                             </div>
                         )}
                     </div>
@@ -665,7 +669,7 @@ export default function StrengthPage() {
             </div>{/* /editorial-frame */}
 
             <OnboardingTour
-                steps={strengthTourSteps}
+                steps={tourSteps}
                 open={tour.open}
                 onClose={tour.close}
             />
@@ -675,7 +679,7 @@ export default function StrengthPage() {
                 <CreateAlertModal
                     indicator="strength"
                     asset={universe}
-                    assetName="Сила рынка"
+                    assetName={t('Сила рынка')}
                     metrics={strengthMetrics}
                     prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold, currentLabel: chartAlertPrefill.currentLabel }}
                     onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}

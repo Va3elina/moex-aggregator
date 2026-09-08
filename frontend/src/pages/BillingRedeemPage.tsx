@@ -13,6 +13,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import { CheckCircle2, XCircle, Gift, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, parseApiError } from '../services/api';
@@ -32,6 +34,7 @@ type State =
 const SIGNUP_URL = '/login?mode=register&next=/billing/redeem';
 
 export default function BillingRedeemPage() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
@@ -56,7 +59,7 @@ export default function BillingRedeemPage() {
           : { kind: 'error', message: appliedResult.message });
         return;
       }
-      setState({ kind: 'error', message: 'Ссылка не содержит токен' });
+      setState({ kind: 'error', message: t('Ссылка не содержит токен') });
       return;
     }
 
@@ -83,7 +86,7 @@ export default function BillingRedeemPage() {
           // parseApiError, а не err.detail: бэкенд заворачивает ошибки в
           // {success:false,error:{message}}, и «Срок действия ссылки истёк»
           // схлопывалось в безликое «Ошибка активации».
-          setState({ kind: 'error', message: await parseApiError(r, 'Ошибка активации') });
+          setState({ kind: 'error', message: await parseApiError(r, t('Ошибка активации')) });
           return;
         }
         const data = await r.json();
@@ -96,10 +99,11 @@ export default function BillingRedeemPage() {
       })
       .catch((e) => {
         if (!cancelled) {
-          setState({ kind: 'error', message: e.message || 'Сетевая ошибка' });
+          setState({ kind: 'error', message: e.message || t('Сетевая ошибка') });
         }
       });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, isAuthenticated, appliedResult]);
 
   // Гостю даём 2 секунды прочитать, что происходит, и уводим на регистрацию
@@ -114,40 +118,40 @@ export default function BillingRedeemPage() {
       {state.kind === 'loading' && (
         <>
           <Gift className="w-16 h-16 mx-auto mb-4 text-indigo-400 animate-pulse" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Активируем подписку...</h1>
-          <p className="text-theme-secondary">Секунду...</p>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Активируем подписку...')}</h1>
+          <p className="text-theme-secondary">{t('Секунду...')}</p>
         </>
       )}
 
       {state.kind === 'need-login' && (
         <>
           <UserPlus className="w-16 h-16 mx-auto mb-4 text-blue-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Нужен аккаунт</h1>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Нужен аккаунт')}</h1>
           <p className="text-theme-secondary mb-4">
-            Создай аккаунт или войди в существующий.<br />
-            Подписка активируется сразу после этого, возвращаться по ссылке не нужно.
+            {t('Создай аккаунт или войди в существующий.')}<br />
+            {t('Подписка активируется сразу после этого, возвращаться по ссылке не нужно.')}
           </p>
           <Link
             to={SIGNUP_URL}
             className="inline-block px-6 py-3 rounded-xl font-medium"
             style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
           >
-            Создать аккаунт
+            {t('Создать аккаунт')}
           </Link>
-          <div className="text-xs text-theme-muted mt-4">Перенаправляем через 2 секунды...</div>
+          <div className="text-xs text-theme-muted mt-4">{t('Перенаправляем через 2 секунды...')}</div>
         </>
       )}
 
       {state.kind === 'success' && (
         <>
           <CheckCircle2 className="w-16 h-16 mx-auto mb-4 text-green-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Подписка активирована!</h1>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Подписка активирована!')}</h1>
           <p className="text-theme-secondary mb-2">
-            Тариф: <strong className="text-theme-primary uppercase">{state.tier}</strong>
+            {t('Тариф:')} <strong className="text-theme-primary uppercase">{state.tier}</strong>
           </p>
           {state.expires_at && (
             <p className="text-sm text-theme-secondary mb-6">
-              Действует до {new Date(state.expires_at).toLocaleDateString('ru-RU', {
+              {t('Действует до')} {new Date(state.expires_at).toLocaleDateString(dateLocale(), {
                 day: 'numeric', month: 'long', year: 'numeric',
               })}
             </p>
@@ -162,7 +166,7 @@ export default function BillingRedeemPage() {
               className="rounded-xl border p-4 mb-6 text-sm"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
             >
-              Остался один шаг: подтверди почту. Код уже отправлен на{' '}
+              {t('Остался один шаг: подтверди почту. Код уже отправлен на')}{' '}
               <strong className="text-theme-primary">{user?.email}</strong>.
             </div>
           )}
@@ -173,7 +177,7 @@ export default function BillingRedeemPage() {
                 className="px-5 py-2 rounded-xl text-sm font-medium"
                 style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
               >
-                Подтвердить почту
+                {t('Подтвердить почту')}
               </Link>
             )}
             <Link
@@ -185,14 +189,14 @@ export default function BillingRedeemPage() {
                 ? { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }
                 : { backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
             >
-              На главную
+              {t('На главную')}
             </Link>
             <Link
               to="/profile"
               className="px-5 py-2 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
-              Профиль
+              {t('Профиль')}
             </Link>
           </div>
         </>
@@ -201,14 +205,14 @@ export default function BillingRedeemPage() {
       {state.kind === 'error' && (
         <>
           <XCircle className="w-16 h-16 mx-auto mb-4 text-red-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Не удалось применить</h1>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Не удалось применить')}</h1>
           <p className="text-red-300 mb-6">{state.message}</p>
           <Link
             to="/pricing"
             className="inline-block px-5 py-2 rounded-xl text-sm font-medium border"
             style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           >
-            Перейти к тарифам
+            {t('Перейти к тарифам')}
           </Link>
         </>
       )}

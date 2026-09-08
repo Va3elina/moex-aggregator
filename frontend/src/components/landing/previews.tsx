@@ -9,6 +9,7 @@
  * → адаптируются к контейнеру carousel'а (aspect 16:10).
  */
 import type { ReactNode } from 'react';
+import { t, monthShort } from '../../i18n';
 
 // Общие константы — цвета из chartTheme
 const C_GREEN = '#2EE59D';
@@ -25,7 +26,7 @@ function SvgFrame({ children, label }: { children: ReactNode; label?: string }) 
     <svg viewBox="0 0 400 250" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
       {label && (
         <text x="16" y="24" fontSize="10" fill={C_MUTED} letterSpacing="1.5" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
-          {label.toUpperCase()}
+          {t(label).toUpperCase()}
         </text>
       )}
       {children}
@@ -128,8 +129,8 @@ export function FundsFlowPreview() {
         return <rect key={i} x={x} y={y} width={xStep - 6} height={h} fill={c} opacity="0.85" rx="2" />;
       })}
       {/* Labels */}
-      <text x="20" y="80" fontSize="9" fill={C_MUTED} style={{ fontFamily: "'IBM Plex Mono', monospace" }}>+80 млрд</text>
-      <text x="20" y="190" fontSize="9" fill={C_MUTED} style={{ fontFamily: "'IBM Plex Mono', monospace" }}>−40 млрд</text>
+      <text x="20" y="80" fontSize="9" fill={C_MUTED} style={{ fontFamily: "'IBM Plex Mono', monospace" }}>+80 {t('млрд')}</text>
+      <text x="20" y="190" fontSize="9" fill={C_MUTED} style={{ fontFamily: "'IBM Plex Mono', monospace" }}>−40 {t('млрд')}</text>
     </SvgFrame>
   );
 }
@@ -170,7 +171,7 @@ export function FundsDonutPreview() {
         36
       </text>
       <text x={cx} y={cy + 14} fontSize="9" fill={C_MUTED} textAnchor="middle">
-        фондов
+        {t('фондов')}
       </text>
     </SvgFrame>
   );
@@ -238,12 +239,8 @@ export function BuffettPreview() {
 
 /** 8. Сезонность — histogram (positive/negative bars) */
 export function SeasonalityPreview() {
-  const bars = [
-    { m: 'Янв', v: 1.8 }, { m: 'Фев', v: -2.3 }, { m: 'Мар', v: 0.5 },
-    { m: 'Апр', v: 2.1 }, { m: 'Май', v: -0.8 }, { m: 'Июн', v: 0.3 },
-    { m: 'Июл', v: 1.2 }, { m: 'Авг', v: -1.5 }, { m: 'Сен', v: -0.6 },
-    { m: 'Окт', v: 1.9 }, { m: 'Ноя', v: 2.4 }, { m: 'Дек', v: 1.1 },
-  ];
+  const bars = [1.8, -2.3, 0.5, 2.1, -0.8, 0.3, 1.2, -1.5, -0.6, 1.9, 2.4, 1.1]
+    .map((v, i) => ({ m: monthShort(i), v }));
   const W = 340, xStep = W / bars.length;
   const maxAbs = 3;
   return (

@@ -8,6 +8,8 @@
  *   getAlertFires(id, {limit, offset}) → { items: AlertFire[]; total: number }
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../../i18n';
 import { getAlertFires, type AlertFire } from '../../services/api';
 
 const PAGE = 20;
@@ -17,7 +19,7 @@ function fmtFired(iso: string | null): string {
     if (!iso) return '—';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleString('ru-RU', {
+    return d.toLocaleString(dateLocale(), {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
     });
 }
@@ -51,6 +53,7 @@ interface Props {
 }
 
 export default function AlertFiresList({ alertId, unit }: Props) {
+    const { t } = useTranslation();
     const [items, setItems] = useState<AlertFire[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -65,11 +68,11 @@ export default function AlertFiresList({ alertId, unit }: Props) {
             setTotal(page.total);
             setItems((prev) => (offset === 0 ? page.items : [...prev, ...page.items]));
         } catch (e) {
-            setError((e as Error).message || 'Не удалось загрузить историю');
+            setError((e as Error).message || t('Не удалось загрузить историю'));
         } finally {
             setLoading(false);
         }
-    }, [alertId]);
+    }, [alertId, t]);
 
     useEffect(() => { loadPage(0); }, [loadPage]);
 
@@ -82,11 +85,11 @@ export default function AlertFiresList({ alertId, unit }: Props) {
     }
 
     if (loading && items.length === 0) {
-        return <div style={{ color: sub, fontSize: 'var(--fs-xs)', padding: '8px 0' }}>Загрузка истории…</div>;
+        return <div style={{ color: sub, fontSize: 'var(--fs-xs)', padding: '8px 0' }}>{t('Загрузка истории…')}</div>;
     }
 
     if (items.length === 0) {
-        return <div style={{ color: sub, fontSize: 'var(--fs-xs)', padding: '8px 0' }}>Сигналов ещё не было.</div>;
+        return <div style={{ color: sub, fontSize: 'var(--fs-xs)', padding: '8px 0' }}>{t('Сигналов ещё не было.')}</div>;
     }
 
     return (
@@ -116,7 +119,7 @@ export default function AlertFiresList({ alertId, unit }: Props) {
                         color: 'var(--accent)', fontSize: 'var(--fs-xs)', cursor: 'pointer',
                     }}
                 >
-                    {loading ? 'Загрузка…' : `Показать ещё (${total - items.length})`}
+                    {loading ? t('Загрузка…') : t('Показать ещё ({{n}})', { n: total - items.length })}
                 </button>
             )}
         </div>

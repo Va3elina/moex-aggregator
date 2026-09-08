@@ -20,7 +20,9 @@
  *   - false → БАЗОВАЯ карточка: шапка + СЧА + доходность + притоки-оттоки.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import ModalLayer from '../ModalLayer';
+import { t as tt, getLang, monthShort } from '../../i18n';
 import { Calendar } from 'lucide-react';
 import {
     getAssetHistory,
@@ -52,9 +54,9 @@ import { useViewportHeight } from '../../hooks/useViewportHeight';
 export function formatRubShort(amount: number | null): string {
     if (amount === null || amount === undefined) return '—';
     const abs = Math.abs(amount);
-    if (abs >= 1e9) return `${(amount / 1e9).toFixed(2)} млрд ₽`;
-    if (abs >= 1e6) return `${(amount / 1e6).toFixed(1)} млн ₽`;
-    if (abs >= 1e3) return `${(amount / 1e3).toFixed(0)} тыс ₽`;
+    if (abs >= 1e9) return tt('{{v}} млрд ₽', { v: (amount / 1e9).toFixed(2) });
+    if (abs >= 1e6) return tt('{{v}} млн ₽', { v: (amount / 1e6).toFixed(1) });
+    if (abs >= 1e3) return tt('{{v}} тыс ₽', { v: (amount / 1e3).toFixed(0) });
     return `${amount.toFixed(0)} ₽`;
 }
 
@@ -79,15 +81,13 @@ export function returnColor(v: number | null | undefined): string {
 function formatSnapshotDate(iso: string): string {
     // 2026-04-30 → "30 апр 2026"
     const d = new Date(iso);
-    const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    return `${d.getDate()} ${monthShort(d.getMonth())} ${d.getFullYear()}`;
 }
 
 // "2025-08-29" → "авг 2025" — компактный месяц+год для оси и тултипа графика.
 function formatMonthYearShort(iso: string): string {
     const d = new Date(iso);
-    const mm = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-    return `${mm[d.getMonth()]} ${d.getFullYear()}`;
+    return `${monthShort(d.getMonth())} ${d.getFullYear()}`;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -110,11 +110,23 @@ function plural(n: number, one: string, few: string, many: string): string {
     return many;
 }
 
+// «22 позиции» / «22 positions»: у английского своя (простая) логика множественного
+// числа, русское склонение через plural().
+function positionsWord(n: number): string {
+    if (getLang() === 'en') return n === 1 ? 'position' : 'positions';
+    return plural(n, 'позиция', 'позиции', 'позиций');
+}
+
+// Десятичный разделитель: «14,1» по-русски, «14.1» по-английски.
+function dec(s: string): string {
+    return getLang() === 'en' ? s : s.replace('.', ',');
+}
+
 // Компактный объём: «12.7 млрд», «540 млн», «12 тыс» (без ₽ — единица в шапке).
 function fmtVolShort(v: number): string {
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1)} млрд`;
-    if (v >= 1e6) return `${(v / 1e6).toFixed(0)} млн`;
-    return `${Math.round(v / 1e3)} тыс`;
+    if (v >= 1e9) return tt('{{v}} млрд', { v: (v / 1e9).toFixed(1) });
+    if (v >= 1e6) return tt('{{v}} млн', { v: (v / 1e6).toFixed(0) });
+    return tt('{{v}} тыс', { v: Math.round(v / 1e3) });
 }
 
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру; ОФЗ — иконка RB;
@@ -196,8 +208,12 @@ function splitAdjustPositions(
         const n = s.ratio >= 1 ? Math.round(s.ratio) : Math.round(1 / s.ratio);
         return {
             time: s.date,
-            label: 'Сплит',
-            description: `Сплит акций ~1:${n}${s.ratio < 1 ? ' (обратный)' : ''} · ${formatMonthYearShort(s.date)}. Кол-во и цена в графике/таблице скорректированы под сплит.`,
+            label: tt('Сплит'),
+            description: tt('Сплит акций ~1:{{n}}{{rev}} · {{date}}. Кол-во и цена в графике/таблице скорректированы под сплит.', {
+                n,
+                rev: s.ratio < 1 ? tt(' (обратный)') : '',
+                date: formatMonthYearShort(s.date),
+            }),
             color: 'var(--accent)',
             textColor: 'var(--text-inverse)',
         };
@@ -234,6 +250,7 @@ export default function FundDetailModal({
     enableDrilldown,
     onClose,
 }: FundDetailModalProps) {
+    const { t } = useTranslation();
     const [data, setData] = useState<FundTradesDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -300,9 +317,9 @@ export default function FundDetailModal({
     // и подписывает «млн ₽» — масштаб потоков одного фонда как раз миллионный).
     const flowSeries = useMemo(
         () => flows
-            ? [{ label: 'Чистый поток', color: 'var(--accent)', values: flows.flows.map((f) => f.flow * 1e9) }]
+            ? [{ label: t('Чистый поток'), color: 'var(--accent)', values: flows.flows.map((f) => f.flow * 1e9) }]
             : [],
-        [flows],
+        [flows, t],
     );
 
     // loadDetail обычно — inline-замыкание от родителя (новая ссылка на каждый
@@ -439,7 +456,7 @@ export default function FundDetailModal({
                                     }}
                                 >
                                     <Calendar size={12} style={{ display: 'inline-block', verticalAlign: '-0.15em', marginRight: 5 }} />
-                                    Состав на {formatSnapshotDate(data.current_snapshot_date)}
+                                    {t('Состав на {{date}}', { date: formatSnapshotDate(data.current_snapshot_date) })}
                                 </span>
                             )}
                         </h2>
@@ -460,7 +477,7 @@ export default function FundDetailModal({
                     </div>
 
                     <div style={{ padding: isMobile ? 12 : 20 }}>
-                        {loading && !data && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
+                        {loading && !data && <div style={{ color: 'var(--text-muted)' }}>{t('Загружаем…')}</div>}
                         {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
                         {data && !error && (
                             <>
@@ -479,7 +496,7 @@ export default function FundDetailModal({
                                             marginBottom: 2,
                                         }}
                                     >
-                                        Объём (СЧА)
+                                        {t('Объём (СЧА)')}
                                     </div>
                                     <div
                                         style={{
@@ -511,7 +528,7 @@ export default function FundDetailModal({
                                                 <SimpleChart
                                                     data={chartData}
                                                     height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
-                                                    primaryLabel="Цена пая, ₽"
+                                                    primaryLabel={t('Цена пая, ₽')}
                                                     legendPosition="top"
                                                     formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
                                                     formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
@@ -536,7 +553,7 @@ export default function FundDetailModal({
                                                             background: 'var(--bg-secondary)',
                                                         }}
                                                     >
-                                                        Недостаточно истории для графика цены пая
+                                                        {t('Недостаточно истории для графика цены пая')}
                                                     </div>
                                                 </div>
                                             )}
@@ -555,11 +572,11 @@ export default function FundDetailModal({
                                                 }}
                                             >
                                                 {[
-                                                    { label: '1 мес', v: ret?.m1 },
-                                                    { label: '3 мес', v: ret?.m3 },
-                                                    { label: '6 мес', v: ret?.m6 },
-                                                    { label: '1 год', v: ret?.y1 },
-                                                    { label: 'Всё время', v: ret?.all },
+                                                    { label: t('1 мес'), v: ret?.m1 },
+                                                    { label: t('3 мес'), v: ret?.m3 },
+                                                    { label: t('6 мес'), v: ret?.m6 },
+                                                    { label: t('1 год'), v: ret?.y1 },
+                                                    { label: t('Всё время'), v: ret?.all },
                                                 ].filter(({ v }) => v != null).map(({ label, v }) => (
                                                     <div
                                                         key={label}
@@ -597,8 +614,7 @@ export default function FundDetailModal({
                                             </div>
                                             {hasDist && (
                                                 <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                                                    Плашки — полная доходность, с&nbsp;учётом выплат дохода.
-                                                    Линия графика — цена пая: в&nbsp;даты выплат она снижается.
+                                                    {t('Плашки — полная доходность, с учётом выплат дохода. Линия графика — цена пая: в даты выплат она снижается.')}
                                                 </div>
                                             )}
                                         </div>
@@ -616,7 +632,7 @@ export default function FundDetailModal({
                                                 marginBottom: 12,
                                             }}
                                         >
-                                            Состав фонда
+                                            {t('Состав фонда')}
                                         </h3>
                                         {data.current_holdings.length > 0 ? (() => {
                                             // (G) holdings пончика = топ-10 + «Прочее»; colors — параллельный
@@ -629,12 +645,13 @@ export default function FundDetailModal({
                                             const TOP = 10;
                                             const topHolds = holds.slice(0, TOP);
                                             const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
+                                            const restName = t('Прочее');
                                             const donutHoldings = [
                                                 ...topHolds.map((h) => ({ name: h.asset_name, weight: (h.weight ?? 0) / 100 })),
-                                                ...(restWeight > 0 ? [{ name: 'Прочее', weight: restWeight / 100 }] : []),
+                                                ...(restWeight > 0 ? [{ name: restName, weight: restWeight / 100 }] : []),
                                             ];
                                             const donutColors = donutHoldings.map((h, i) =>
-                                                h.name === 'Прочее'
+                                                h.name === restName
                                                     ? 'var(--text-muted)'
                                                     : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
                                             );
@@ -692,7 +709,7 @@ export default function FundDetailModal({
                                                                             {navValue != null && (
                                                                                 <>
                                                                                     <p style={{ margin: '0 0 8px', fontSize: 9, letterSpacing: '0.16em', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                                                                                        Объём (СЧА)
+                                                                                        {t('Объём (СЧА)')}
                                                                                     </p>
                                                                                     <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: navFont, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
                                                                                         {formatRubShort(navValue)}
@@ -700,16 +717,16 @@ export default function FundDetailModal({
                                                                                 </>
                                                                             )}
                                                                             <p style={{ margin: navValue != null ? '8px 0 0' : 0, fontSize: 11, color: 'var(--text-secondary)' }}>
-                                                                                {holds.length} {plural(holds.length, 'позиция', 'позиции', 'позиций')}
+                                                                                {holds.length} {positionsWord(holds.length)}
                                                                             </p>
                                                                         </>
                                                                     ) : restActive ? (
                                                                         <>
                                                                             <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>
-                                                                                Прочие ({Math.max(0, holds.length - topHolds.length)})
+                                                                                {t('Прочие ({{n}})', { n: Math.max(0, holds.length - topHolds.length) })}
                                                                             </p>
                                                                             <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                                                                                {restWeight.toFixed(1).replace('.', ',')}%
+                                                                                {dec(restWeight.toFixed(1))}%
                                                                             </p>
                                                                         </>
                                                                     ) : (
@@ -726,7 +743,7 @@ export default function FundDetailModal({
                                                                                 {fundAssetName(h!.asset_name, h!.isin)}
                                                                             </p>
                                                                             <p style={{ margin: 0, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                                                                                {h!.weight != null ? `${h!.weight.toFixed(1).replace('.', ',')}%` : '—'}
+                                                                                {h!.weight != null ? `${dec(h!.weight.toFixed(1))}%` : '—'}
                                                                             </p>
                                                                             {h!.amount_rub != null && (
                                                                                 <p style={{ margin: '5px 0 0', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
@@ -750,11 +767,11 @@ export default function FundDetailModal({
                                                     {/* Концентрация: сколько позиций и сколько весит топ-10 —
                                                         отличает индексный фонд от концентрированного. */}
                                                     <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
-                                                        {holds.length} позиций · топ-10 занимают {Math.min(top10W, 100).toFixed(1).replace('.', ',')}%
+                                                        {t('{{n}} позиций · топ-10 занимают {{pct}}%', { n: holds.length, pct: dec(Math.min(top10W, 100).toFixed(1)) })}
                                                     </div>
                                                     {/* Шапка списка — как в «Обзоре портфеля». */}
                                                     <div style={{ display: 'grid', gridTemplateColumns: listGrid, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                                                        <span /><span>Бумага</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>Доля</span>{!isMobile && <span style={{ textAlign: 'right' }}>Объём</span>}
+                                                        <span /><span>{t('Бумага')}</span>{!isMobile && <span />}<span style={{ textAlign: 'right' }}>{t('Доля')}</span>{!isMobile && <span style={{ textAlign: 'right' }}>{t('Объём')}</span>}
                                                     </div>
                                                     {shownHolds.map((h, i) => {
                                                         const selected = isSelected(h);
@@ -771,7 +788,7 @@ export default function FundDetailModal({
                                                                 role="button"
                                                                 tabIndex={0}
                                                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAsset(h); } }}
-                                                                title={`По бумаге: ${fundAssetName(h.asset_name, h.isin)}`}
+                                                                title={t('По бумаге: {{name}}', { name: fundAssetName(h.asset_name, h.isin) })}
                                                                 style={{
                                                                     display: 'grid',
                                                                     gridTemplateColumns: listGrid,
@@ -824,8 +841,8 @@ export default function FundDetailModal({
                                                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
                                                             >
                                                                 {showAllHoldings
-                                                                    ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
-                                                                    : <>Прочие бумаги · ещё {holds.length - TOP} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                                    ? <>{t('Свернуть')} <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                    : <>{t('Прочие бумаги · ещё {{n}}', { n: holds.length - TOP })} <span style={{ fontSize: '0.85em' }}>↓</span></>}
                                                             </button>
                                                         </div>
                                                     )}
@@ -841,7 +858,7 @@ export default function FundDetailModal({
                                                     fontSize: 'var(--fs-sm)',
                                                 }}
                                             >
-                                                Состав не публикуется
+                                                {t('Состав не публикуется')}
                                             </div>
                                         )}
 
@@ -880,7 +897,7 @@ export default function FundDetailModal({
                                             const sectionLabel = (text: string, up: boolean) => (
                                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: '0 0 4px' }}>
                                                     {text}<span style={{ fontSize: '0.95em', fontWeight: 700 }}>{up ? '↑' : '↓'}</span>
-                                                    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({moneyMode ? scale.unit : 'п.п.'})</span>
+                                                    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0, color: 'var(--text-muted)' }}>({moneyMode ? scale.unit : t('п.п.')})</span>
                                                 </div>
                                             );
                                             const diffRow = (d: typeof data.diff[number], i: number, last: boolean) => {
@@ -896,7 +913,7 @@ export default function FundDetailModal({
                                                         role="button"
                                                         tabIndex={0}
                                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDiffAsset(); } }}
-                                                        title={`По бумаге: ${fundAssetName(d.asset_name, d.isin ?? null)}${meta ? ` · ${meta.label}` : ''}`}
+                                                        title={`${t('По бумаге: {{name}}', { name: fundAssetName(d.asset_name, d.isin ?? null) })}${meta ? ` · ${t(meta.label)}` : ''}`}
                                                         style={{
                                                             display: 'grid',
                                                             gridTemplateColumns: rowGrid,
@@ -938,7 +955,7 @@ export default function FundDetailModal({
                                                         {sectionLabel(label, up)}
                                                         {shown.length === 0 ? (
                                                             <div style={{ padding: '10px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-                                                                Ничего {up ? 'не купили' : 'не продали'}
+                                                                {up ? t('Ничего не купили') : t('Ничего не продали')}
                                                             </div>
                                                         ) : shown.map((d, i) => diffRow(d, i, i === shown.length - 1))}
                                                     </div>
@@ -960,23 +977,23 @@ export default function FundDetailModal({
                                                                     margin: 0,
                                                                 }}
                                                             >
-                                                                Что купили и продали
+                                                                {t('Что купили и продали')}
                                                             </h3>
                                                             <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
                                                                 {diffRange
-                                                                    ? <>{monthRangeLabel(diffRange.from, diffRange.to)} · свой диапазон</>
+                                                                    ? <>{monthRangeLabel(diffRange.from, diffRange.to)} · {t('свой диапазон')}</>
                                                                     : hasDiff
-                                                                        ? <>Изменения состава: {formatSnapshotDate(data.previous_snapshot_date!)} → {formatSnapshotDate(data.current_snapshot_date!)} (месячные срезы)</>
-                                                                        : <>Месячные срезы состава</>}
+                                                                        ? <>{t('Изменения состава: {{from}} → {{to}} (месячные срезы)', { from: formatSnapshotDate(data.previous_snapshot_date!), to: formatSnapshotDate(data.current_snapshot_date!) })}</>
+                                                                        : <>{t('Месячные срезы состава')}</>}
                                                             </span>
                                                         </div>
                                                         {/* align-items: stretch — кнопка-календарь тянется в высоту сегментов. */}
                                                         <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
                                                             <SegmentedControl<string>
                                                                 options={[
-                                                                    { key: '1m', label: '1М' },
-                                                                    { key: '6m', label: '6М' },
-                                                                    { key: '1y', label: '1Г' },
+                                                                    { key: '1m', label: t('1М') },
+                                                                    { key: '6m', label: t('6М') },
+                                                                    { key: '1y', label: t('1Г') },
                                                                 ]}
                                                                 // Свой диапазон — активной пилюли нет (период показывает календарь).
                                                                 value={diffRange ? 'custom' : diffPeriod}
@@ -995,10 +1012,10 @@ export default function FundDetailModal({
                                                     {!hasDiff ? (
                                                         <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
                                                             {loading
-                                                                ? 'Загружаем…'
+                                                                ? t('Загружаем…')
                                                                 : diffRange
-                                                                    ? 'Нет среза состава на начало выбранного диапазона.'
-                                                                    : 'Нет более раннего среза за выбранный период.'}
+                                                                    ? t('Нет среза состава на начало выбранного диапазона.')
+                                                                    : t('Нет более раннего среза за выбранный период.')}
                                                         </div>
                                                     ) : (
                                                     <>
@@ -1012,8 +1029,8 @@ export default function FundDetailModal({
                                                         opacity: loading ? 0.5 : 1,
                                                         transition: 'opacity 0.15s ease',
                                                     }}>
-                                                        {column(buys, 'Покупки', true)}
-                                                        {column(sells, 'Продажи', false)}
+                                                        {column(buys, t('Покупки'), true)}
+                                                        {column(sells, t('Продажи'), false)}
                                                     </div>
                                                     {hiddenCount > 0 && (
                                                         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
@@ -1024,8 +1041,8 @@ export default function FundDetailModal({
                                                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
                                                             >
                                                                 {showAllDiff
-                                                                    ? <>Свернуть <span style={{ fontSize: '0.85em' }}>↑</span></>
-                                                                    : <>Все изменения · ещё {hiddenCount} <span style={{ fontSize: '0.85em' }}>↓</span></>}
+                                                                    ? <>{t('Свернуть')} <span style={{ fontSize: '0.85em' }}>↑</span></>
+                                                                    : <>{t('Все изменения · ещё {{n}}', { n: hiddenCount })} <span style={{ fontSize: '0.85em' }}>↓</span></>}
                                                             </button>
                                                         </div>
                                                     )}
@@ -1053,21 +1070,20 @@ export default function FundDetailModal({
                                                 marginBottom: 4,
                                             }}
                                         >
-                                            Приток и отток денег
+                                            {t('Приток и отток денег')}
                                         </h3>
                                         <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
-                                            Сколько денег инвесторы занесли в фонд и забрали из него по месяцам.
-                                            Рост рынка вычтен — это не доходность, а именно движение денег.
+                                            {t('Сколько денег инвесторы занесли в фонд и забрали из него по месяцам. Рост рынка вычтен — это не доходность, а именно движение денег.')}
                                         </div>
                                         <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
                                             <CompanyFlowsHistogram
                                                 months={flowMonths}
                                                 series={flowSeries}
-                                                title="Чистый приток и отток денег (млн ₽)"
+                                                title={t('Чистый приток и отток денег (млн ₽)')}
                                                 height={isMobile ? 260 : 320}
                                                 loading={flowsLoading}
                                                 animTrigger={ticker}
-                                                tooltipLabels={{ pos: 'Приток', neg: 'Отток' }}
+                                                tooltipLabels={{ pos: t('Приток'), neg: t('Отток') }}
                                             />
                                         </div>
                                     </div>
@@ -1110,6 +1126,7 @@ export function AssetHistoryModal({
     isin: string | null;
     onClose: () => void;
 }) {
+    const { t } = useTranslation();
     const [data, setData] = useState<AssetHistory | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -1186,7 +1203,7 @@ export function AssetHistoryModal({
                             fontSize: 24, cursor: 'pointer', color: 'var(--text-tertiary)',
                             padding: '4px 8px',
                         }}
-                        aria-label="Закрыть"
+                        aria-label={t('Закрыть')}
                     >
                         ×
                     </button>
@@ -1194,7 +1211,7 @@ export function AssetHistoryModal({
 
                 {loading && (
                     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                        Загрузка истории...
+                        {t('Загрузка истории...')}
                     </div>
                 )}
                 {error && (
@@ -1208,6 +1225,7 @@ export function AssetHistoryModal({
 }
 
 function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; assetName: string; ticker: string }) {
+    const { t } = useTranslation();
     const chartAnchorRef = useRef<HTMLDivElement>(null);
     const isMobile = useViewportWidth() < 768;
     const vh = useViewportHeight();
@@ -1247,7 +1265,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
     // в этом масштабе (не дублируем «млн» на каждой метке).
     const yMaxAbs = chartData.reduce((m, d) => Math.max(m, Math.abs(d.value)), 1);
     const yScale = yMaxAbs >= 1e6 ? 1e6 : yMaxAbs >= 1e3 ? 1e3 : 1;
-    const yUnit = yScale === 1e6 ? 'млн шт' : yScale === 1e3 ? 'тыс шт' : 'шт';
+    const yUnit = yScale === 1e6 ? t('млн шт') : yScale === 1e3 ? t('тыс шт') : t('шт');
     const fmtYScaled = (v: number) => {
         const x = v / yScale;
         return yScale === 1
@@ -1259,12 +1277,12 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
     const [snapSort, setSnapSort] = useState<'date' | 'positions' | 'delta' | 'amount' | 'price' | 'weight'>('date');
     const [snapDir, setSnapDir] = useState<'asc' | 'desc'>('desc');
     const snapColumns = [
-        { key: 'date', label: 'Дата', align: 'left' },
-        { key: 'positions', label: 'Штук', align: 'right' },
+        { key: 'date', label: t('Дата'), align: 'left' },
+        { key: 'positions', label: t('Штук'), align: 'right' },
         { key: 'delta', label: 'Δ', align: 'right' },
-        { key: 'amount', label: 'На сумму', align: 'right' },
-        { key: 'price', label: 'Цена', align: 'right' },
-        { key: 'weight', label: 'Доля', align: 'right' },
+        { key: 'amount', label: t('На сумму'), align: 'right' },
+        { key: 'price', label: t('Цена'), align: 'right' },
+        { key: 'weight', label: t('Доля'), align: 'right' },
     ] as const;
     const sortedTimeline = useMemo(() => {
         const num = (v: number | null) => (v == null ? -Infinity : v);
@@ -1298,23 +1316,25 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                 marginBottom: 20, padding: '12px 0',
             }}>
                 <SummaryStat
-                    label="ПЕРВЫЙ СНАПШОТ"
+                    label={t('ПЕРВЫЙ СНАПШОТ')}
                     value={formatSnapshotDate(data.first_seen)}
-                    sub={`${formatShares(firstPos)} шт`}
+                    sub={t('{{n}} шт', { n: formatShares(firstPos) })}
                 />
                 <SummaryStat
-                    label="ПОСЛЕДНИЙ СНАПШОТ"
+                    label={t('ПОСЛЕДНИЙ СНАПШОТ')}
                     value={formatSnapshotDate(data.last_seen)}
-                    sub={`${formatShares(lastPos)} шт`}
+                    sub={t('{{n}} шт', { n: formatShares(lastPos) })}
                 />
                 <SummaryStat
-                    label="ИЗМЕНЕНИЕ"
-                    value={`${totalDelta >= 0 ? '+' : ''}${formatShares(totalDelta)} шт`}
-                    sub={`за ${data.snapshots_count} снапшота${data.snapshots_count > 1 ? 'ов' : ''}`}
+                    label={t('ИЗМЕНЕНИЕ')}
+                    value={t('{{n}} шт', { n: `${totalDelta >= 0 ? '+' : ''}${formatShares(totalDelta)}` })}
+                    sub={data.snapshots_count > 1
+                        ? t('за {{n}} снапшотов', { n: data.snapshots_count })
+                        : t('за {{n}} снапшота', { n: data.snapshots_count })}
                     color={totalDeltaColor}
                 />
                 <SummaryStat
-                    label="ТЕКУЩАЯ ДОЛЯ"
+                    label={t('ТЕКУЩАЯ ДОЛЯ')}
                     value={points[points.length - 1]?.weight !== null
                         ? `${points[points.length - 1].weight!.toFixed(2)}%`
                         : '—'}
@@ -1355,7 +1375,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         metadata={{
                             title: assetName,
                             asset: ticker,
-                            details: ['Позиции по снапшотам, шт'],
+                            details: [t('Позиции по снапшотам, шт')],
                         }}
                     />
                 </div>
@@ -1369,7 +1389,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                     letterSpacing: '0.08em', marginBottom: 8,
                     paddingBottom: 4, borderBottom: '1.5px solid var(--text-primary)',
                 }}>
-                    ВСЕ СНАПШОТЫ
+                    {t('ВСЕ СНАПШОТЫ')}
                 </div>
                 <table style={{
                     width: '100%', borderCollapse: 'collapse',

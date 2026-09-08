@@ -7,6 +7,7 @@
  */
 import { type CSSProperties } from 'react';
 import { Send, MessageCircle } from 'lucide-react';
+import { t } from '../../i18n';
 
 interface Props {
     onTelegram: () => void;
@@ -28,7 +29,8 @@ const badge: CSSProperties = {
     border: '1.5px solid currentColor', lineHeight: 1.4,
 };
 
-export default function MessengerChoice({ onTelegram, busy, title = 'Выберите мессенджер' }: Props) {
+export default function MessengerChoice({ onTelegram, busy, title }: Props) {
+    if (title === undefined) title = t('Выберите мессенджер');
     return (
         <div>
             {title && (
@@ -46,11 +48,11 @@ export default function MessengerChoice({ onTelegram, busy, title = 'Выбер�
                         background: 'var(--accent)', color: 'var(--text-inverse)',
                         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1,
                     }}
-                    aria-label="Подключить Telegram"
+                    aria-label={t('Подключить Telegram')}
                 >
                     <Send size={26} />
                     <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>Telegram</span>
-                    <span style={{ ...badge, opacity: 0.9 }}>{busy ? '…' : 'Подключить'}</span>
+                    <span style={{ ...badge, opacity: 0.9 }}>{busy ? '…' : t('Подключить')}</span>
                 </button>
 
                 {/* ── МАКС — в разработке ── */}
@@ -60,17 +62,16 @@ export default function MessengerChoice({ onTelegram, busy, title = 'Выбер�
                         background: 'var(--bg-secondary)', color: 'var(--text-secondary)',
                         cursor: 'not-allowed', opacity: 0.65, filter: 'grayscale(0.4)',
                     }}
-                    title="Мессенджер МАКС — в разработке, добавим позже"
+                    title={t('Мессенджер МАКС — в разработке, добавим позже')}
                     aria-disabled="true"
                 >
                     <MessageCircle size={26} />
                     <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>МАКС</span>
-                    <span style={badge}>Скоро</span>
+                    <span style={badge}>{t('Скоро')}</span>
                 </div>
             </div>
             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.5 }}>
-                Сейчас уведомления доступны в&nbsp;Telegram. Мессенджер&nbsp;<b>МАКС</b> в&nbsp;разработке,
-                подключим позже. Мессенджер можно сменить в&nbsp;любой момент в&nbsp;профиле.
+                {t('Сейчас уведомления доступны в Telegram. Мессенджер')}&nbsp;<b>{t('МАКС')}</b>&nbsp;{t('в разработке, подключим позже. Мессенджер можно сменить в любой момент в профиле.')}
             </p>
         </div>
     );

@@ -35,6 +35,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { CalendarRange, CandlestickChart, ChevronDown, Coins, Hourglass, Percent, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
 import {
@@ -80,6 +81,7 @@ type Metric = 'amount' | 'weight';
 // Период графика — окно последних N месяцев. «Всё» = вся доступная история
 // (левый пустой хвост всё равно обрезает сам чарт).
 type Period = '1y' | '3y' | 'all';
+// Значения PERIOD_LABELS / MODE_LABELS / MODE_HELP — ключи t(), оборачиваются при рендере.
 const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 года', 'all': 'Всё' };
 const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
 const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
@@ -142,6 +144,7 @@ function AssetMark({ name, isin, size = 22 }: { name: string; isin?: string | nu
     );
 }
 
+// Форма слова «фонд» — ключ t() (en: fund / funds).
 function pluralFunds(n: number): string {
     const mod10 = n % 10;
     const mod100 = n % 100;
@@ -251,6 +254,7 @@ export default function CompanyFlowsTab({
     presetAsset, onPresetConsumed, showChartActions = false, embedded = false, controlsTarget = null,
     mobile = null,
 }: CompanyFlowsTabProps = {}) {
+    const { t } = useTranslation();
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     // min = 475: карточка графика = chartHeight + ~39px (padding + легенда/навигатор),
     // то есть floor даёт блок ~514px — ровно фиксированный размер блока в «Силе рынка»
@@ -393,7 +397,7 @@ export default function CompanyFlowsTab({
             })
             .catch(err => {
                 if (cancelled) return;
-                setAssetsError(err instanceof Error ? err.message : 'Не удалось загрузить список бумаг');
+                setAssetsError(err instanceof Error ? err.message : t('Не удалось загрузить список бумаг'));
             })
             .finally(() => {
                 if (!cancelled) setAssetsLoading(false);
@@ -401,6 +405,7 @@ export default function CompanyFlowsTab({
         return () => {
             cancelled = true;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Список фондов с метаданными — один раз, независимо от выбранной бумаги.
@@ -460,7 +465,7 @@ export default function CompanyFlowsTab({
             })
             .catch(err => {
                 if (cancelled) return;
-                setFlowsError(err instanceof Error ? err.message : 'Не удалось загрузить потоки');
+                setFlowsError(err instanceof Error ? err.message : t('Не удалось загрузить потоки'));
                 setFlows(null);
             })
             .finally(() => {
@@ -469,6 +474,7 @@ export default function CompanyFlowsTab({
         return () => {
             cancelled = true;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedAsset, metric]);
 
     // Цена для «Карты сделок» и «Доли»: грузим при входе в режим / смене бумаги.
@@ -492,7 +498,7 @@ export default function CompanyFlowsTab({
             .catch(err => {
                 if (cancelled) return;
                 setPrice(null);
-                setPriceError(err instanceof Error ? err.message : 'Не удалось загрузить историю цены');
+                setPriceError(err instanceof Error ? err.message : t('Не удалось загрузить историю цены'));
             })
             .finally(() => {
                 if (!cancelled) setPriceLoading(false);
@@ -500,6 +506,7 @@ export default function CompanyFlowsTab({
         return () => {
             cancelled = true;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, selectedTicker, price]);
 
     // История позиции: грузим при смене бумаги, независимо от режима (ffcap
@@ -523,7 +530,7 @@ export default function CompanyFlowsTab({
                 if (cancelled) return;
                 setWeightsData(null);
                 setWeightsKey(null);
-                setWeightsError(err instanceof Error ? err.message : 'Не удалось загрузить историю доли');
+                setWeightsError(err instanceof Error ? err.message : t('Не удалось загрузить историю доли'));
             })
             .finally(() => {
                 if (!cancelled) setWeightsLoading(false);
@@ -531,6 +538,7 @@ export default function CompanyFlowsTab({
         return () => {
             cancelled = true;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, selectedAsset, weightsData, weightsKey]);
 
     // Фонды для пикера — только держатели этой бумаги (flows.funds), но карточкой
@@ -753,13 +761,13 @@ export default function CompanyFlowsTab({
     const fundsCaption = useMemo(() => {
         const all = flows?.funds ?? [];
         const base = effectiveFunds.size === all.length
-            ? 'Все фонды'
-            : `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`;
+            ? t('Все фонды')
+            : `${effectiveFunds.size} ${t(pluralFunds(effectiveFunds.size))}`;
         const tickers = all.filter(f => effectiveFunds.has(f.ticker)).map(f => f.ticker);
         return tickers.length && tickers.length <= FUNDS_IN_CAPTION_MAX
             ? `${base} (${tickers.join(', ')})`
             : base;
-    }, [flows, effectiveFunds]);
+    }, [flows, effectiveFunds, t]);
 
     // Триггер сброса навигатора и морфа при смене бумаги, набора фондов,
     // периода, режима ИЛИ веса доли. Entrance-анимации (волна/reveal) играют
@@ -785,19 +793,19 @@ export default function CompanyFlowsTab({
     const mobileAssetName = selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined;
     const mobileFundsShort = (() => {
         const all = flows?.funds.length ?? 0;
-        if (!flows || effectiveFunds.size === all) return 'Все фонды';
-        return `${effectiveFunds.size} ${pluralFunds(effectiveFunds.size)}`;
+        if (!flows || effectiveFunds.size === all) return t('Все фонды');
+        return `${effectiveFunds.size} ${t(pluralFunds(effectiveFunds.size))}`;
     })();
     useEffect(() => {
         if (!onMobileSummary) return;
         onMobileSummary({
             assetName: mobileAssetName,
             ticker: selectedTicker,
-            time: PERIOD_LABELS[period],
-            options: `${MODE_LABELS[effectiveMode]} · ${mobileFundsShort}`,
-            subtitle: `${mobileAssetName ?? 'Бумага'} · ${MODE_LABELS[effectiveMode]} · ${PERIOD_LABELS[period]}`,
+            time: t(PERIOD_LABELS[period]),
+            options: `${t(MODE_LABELS[effectiveMode])} · ${mobileFundsShort}`,
+            subtitle: `${mobileAssetName ?? t('Бумага')} · ${t(MODE_LABELS[effectiveMode])} · ${t(PERIOD_LABELS[period])}`,
         });
-    }, [onMobileSummary, mobileAssetName, selectedTicker, period, effectiveMode, mobileFundsShort]);
+    }, [onMobileSummary, mobileAssetName, selectedTicker, period, effectiveMode, mobileFundsShort, t]);
 
     // ── Мобильный рендер: график на всю площадь + sheet'ы рейла ──
     if (mobile) {
@@ -831,7 +839,7 @@ export default function CompanyFlowsTab({
                             <MobileSkeleton variant="chart" height="100%" />
                         ) : assetsError || assets.length === 0 ? (
                             <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-                                {assetsError ?? 'Потоки по компаниям появятся, когда накопится история составов фондов.'}
+                                {assetsError ?? t('Потоки по компаниям появятся, когда накопится история составов фондов.')}
                             </div>
                         ) : (
                             <MobileCompanyChart
@@ -863,7 +871,7 @@ export default function CompanyFlowsTab({
                 )}
 
                 {/* 🕐 Время — окно последних N месяцев */}
-                <MobileSheet open={mobile.timeOpen} onClose={() => mobile.onClose('time')} title="Период">
+                <MobileSheet open={mobile.timeOpen} onClose={() => mobile.onClose('time')} title={t('Период')}>
                     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {CF_PERIODS.map(p => (
                             <button
@@ -872,21 +880,21 @@ export default function CompanyFlowsTab({
                                 onClick={() => { setPeriod(p); mobile.onClose('time'); }}
                                 style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
                             >
-                                {PERIOD_LABELS[p]}
+                                {t(PERIOD_LABELS[p])}
                             </button>
                         ))}
                         <p style={MOBILE_SHEET_HINT}>
-                            Окно последних месяцев истории составов. «Всё» — вся доступная история по бумаге.
+                            {t('Окно последних месяцев истории составов. «Всё» — вся доступная история по бумаге.')}
                         </p>
                     </div>
                 </MobileSheet>
 
                 {/* ⚙️ Опции — разделы страницы (optionsHead) + режим + бумага + фонды */}
-                <MobileSheet open={mobile.optionsOpen} onClose={() => mobile.onClose('options')} title="Опции">
+                <MobileSheet open={mobile.optionsOpen} onClose={() => mobile.onClose('options')} title={t('Опции')}>
                     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
                         {mobile.optionsHead}
                         <div data-tour="ft-company-modes">
-                            <div style={MOBILE_SHEET_LABEL}>Что на графике</div>
+                            <div style={MOBILE_SHEET_LABEL}>{t('Что на графике')}</div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                 {visibleModes.map(m => (
                                     <button
@@ -896,14 +904,14 @@ export default function CompanyFlowsTab({
                                         style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', gap: 6 }}
                                     >
                                         {MODE_ICONS[m]}
-                                        {MODE_LABELS[m]}
+                                        {t(MODE_LABELS[m])}
                                     </button>
                                 ))}
                             </div>
-                            <p style={MOBILE_SHEET_HINT}>{MODE_HELP[effectiveMode]}</p>
+                            <p style={MOBILE_SHEET_HINT}>{t(MODE_HELP[effectiveMode])}</p>
                         </div>
                         <div>
-                            <div style={MOBILE_SHEET_LABEL}>Бумага</div>
+                            <div style={MOBILE_SHEET_LABEL}>{t('Бумага')}</div>
                             <button
                                 className="fm-chip"
                                 data-tour="ft-company-asset"
@@ -913,28 +921,28 @@ export default function CompanyFlowsTab({
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                                     {selectedAsset && <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} size={22} />}
                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {mobileAssetName ?? 'Выберите бумагу'}
+                                        {mobileAssetName ?? t('Выберите бумагу')}
                                     </span>
                                 </span>
                                 <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>
-                                    {selectedTicker ?? (selectedAsset ? `${selectedAsset.funds_count} ${pluralFunds(selectedAsset.funds_count)}` : '')} ▾
+                                    {selectedTicker ?? (selectedAsset ? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}` : '')} ▾
                                 </span>
                             </button>
                         </div>
                         {pickerFunds.length > 0 && (
                             <div>
-                                <div style={MOBILE_SHEET_LABEL}>Фонды</div>
+                                <div style={MOBILE_SHEET_LABEL}>{t('Фонды')}</div>
                                 {/* Тот же пикер, что в «Общем портфеле» и на десктопе этой
                                     вкладки: набор сужен до держателей бумаги. */}
                                 <PortfolioFundPicker
                                     funds={pickerFunds}
                                     selected={effectiveFunds}
                                     onChange={handleFundsChange}
-                                    title="Фонды с этой бумагой"
-                                    allLabel="Все фонды"
+                                    title={t('Фонды с этой бумагой')}
+                                    allLabel={t('Все фонды')}
                                 />
                                 <p style={MOBILE_SHEET_HINT}>
-                                    По умолчанию индексные фонды выключены: их сделки — ребалансировка вслед за индексом.
+                                    {t('По умолчанию индексные фонды выключены: их сделки — ребалансировка вслед за индексом.')}
                                 </p>
                             </div>
                         )}
@@ -995,10 +1003,10 @@ export default function CompanyFlowsTab({
                     <TrendingUp size={28} strokeWidth={2.4} color="#FFFFFF" />
                 </div>
                 <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                    Нет данных по бумагам
+                    {t('Нет данных по бумагам')}
                 </div>
                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
-                    Потоки по компаниям появятся, когда накопится история составов фондов.
+                    {t('Потоки по компаниям появятся, когда накопится история составов фондов.')}
                 </div>
             </div>
         );
@@ -1058,11 +1066,11 @@ export default function CompanyFlowsTab({
                             className="font-medium"
                             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         >
-                            {selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : 'Выберите бумагу'}
+                            {selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : t('Выберите бумагу')}
                         </div>
                         {selectedAsset && !embedded && (
                             <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
-                                {selectedTicker ?? `${selectedAsset.funds_count} ${pluralFunds(selectedAsset.funds_count)}`}
+                                {selectedTicker ?? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}`}
                             </div>
                         )}
                     </div>
@@ -1077,8 +1085,8 @@ export default function CompanyFlowsTab({
                     funds={pickerFunds}
                     selected={effectiveFunds}
                     onChange={handleFundsChange}
-                    title="Фонды с этой бумагой"
-                    allLabel="Все фонды"
+                    title={t('Фонды с этой бумагой')}
+                    allLabel={t('Все фонды')}
                     compact={embedded}
                     iconOnly={embedded && tbCompact}
                 />
@@ -1095,7 +1103,7 @@ export default function CompanyFlowsTab({
                 {embedded ? (
                     <PillGroup<ChartMode>
                         value={effectiveMode}
-                        options={visibleModes.map(m => ({ id: m, label: MODE_LABELS[m], icon: MODE_ICONS[m] }))}
+                        options={visibleModes.map(m => ({ id: m, label: t(MODE_LABELS[m]), icon: MODE_ICONS[m] }))}
                         onChange={setMode}
                         compact={tbCompact}
                     />
@@ -1104,8 +1112,8 @@ export default function CompanyFlowsTab({
                 <Dropdown<ChartMode>
                     options={visibleModes.map(m => ({
                         key: m,
-                        label: MODE_LABELS[m],
-                        help: { title: MODE_LABELS[m], content: MODE_HELP[m] },
+                        label: t(MODE_LABELS[m]),
+                        help: { title: t(MODE_LABELS[m]), content: t(MODE_HELP[m]) },
                     }))}
                     value={effectiveMode}
                     onChange={setMode}
@@ -1117,8 +1125,8 @@ export default function CompanyFlowsTab({
                         // карточка графика идёт следующим позиционированным соседом и
                         // выигрывает по порядку в дереве.
                         <HelpTooltip
-                            title={MODE_LABELS[effectiveMode]}
-                            content={MODE_HELP[effectiveMode]}
+                            title={t(MODE_LABELS[effectiveMode])}
+                            content={t(MODE_HELP[effectiveMode])}
                             size={18}
                             float
                         />
@@ -1135,15 +1143,15 @@ export default function CompanyFlowsTab({
                     // тулбар в скролл (фидбек Вадима).
                     <EmbDropdown<Period>
                         value={period}
-                        options={CF_PERIODS.map(p => ({ id: p, label: PERIOD_LABELS[p] }))}
+                        options={CF_PERIODS.map(p => ({ id: p, label: t(PERIOD_LABELS[p]) }))}
                         onChange={setPeriod}
-                        title="Период"
+                        title={t('Период')}
                         icon={<CalendarRange size={14} />}
                         compact={tbCompact}
                     />
                 ) : (
                 <SegmentedControl<Period>
-                    options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
+                    options={CF_PERIODS.map(p => ({ key: p, label: t(PERIOD_LABELS[p]) }))}
                     value={period}
                     onChange={setPeriod}
                 />
@@ -1158,7 +1166,7 @@ export default function CompanyFlowsTab({
                             getTargetElement={() => chartAnchorRef.current}
                             filename={`frame-company-flows-${effectiveMode}-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
                             metadata={{
-                                title: 'Сделки фондов',
+                                title: t('Сделки фондов'),
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
                                 ticker: selectedTicker,
                                 details: [
@@ -1168,8 +1176,8 @@ export default function CompanyFlowsTab({
                                     // доля в обращении или навес. Числа у режимов
                                     // несопоставимы (рубли, проценты, дни), так что
                                     // картинка без режима читается неверно.
-                                    MODE_LABELS[effectiveMode],
-                                    PERIOD_LABELS[period],
+                                    t(MODE_LABELS[effectiveMode]),
+                                    t(PERIOD_LABELS[period]),
                                     // «Все фонды» ⇔ не выключен ни один держатель;
                                     // иначе сколько именно осталось, а до пяти —
                                     // ещё и тикерами (см. fundsCaption).

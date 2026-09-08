@@ -18,7 +18,7 @@ import PageSEO from './PageSEO';
 import MobileFallbackChrome from './mobile/MobileFallbackChrome';
 import OnboardingTour from './onboarding/OnboardingTour';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
-import { terminalIntroTour } from '../data/tours/terminal-intro';
+import { getTerminalIntroTour } from '../data/tours/terminal-intro';
 
 /* Маршруты с собственной мобильной версией (ResponsiveRoute → Mobile*Page
    с MobileLayout): им chrome не нужен — рисуют свой. Остальные маршруты
@@ -157,7 +157,7 @@ export default function Layout() {
                 </>
               )}
               <span
-                title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
+                title={connected ? t('Live: данные обновляются автоматически') : t('Нет соединения с сервером')}
                 className={`w-2 h-2 rounded-full hidden xl:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
               />
             </NavLink>
@@ -228,7 +228,7 @@ export default function Layout() {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {item.badge}
+                          {t(item.badge)}
                         </span>
                       )}
                       {/* Editorial active stripe — 3px accent-линия под текстом */}
@@ -288,8 +288,8 @@ export default function Layout() {
                     width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                     height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
-                  title="Статистика сайта"
-                  aria-label="Статистика сайта (admin)"
+                  title={t('Статистика сайта')}
+                  aria-label={t('Статистика сайта (admin)')}
                 >
                   <BarChart3
                     style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
@@ -310,8 +310,8 @@ export default function Layout() {
                     width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                     height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
-                  title="Новости (content-пайплайн)"
-                  aria-label="Новости (admin)"
+                  title={t('Новости (content-пайплайн)')}
+                  aria-label={t('Новости (admin)')}
                 >
                   <Newspaper
                     style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
@@ -333,8 +333,8 @@ export default function Layout() {
                     width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                     height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
-                  title="Личный кабинет"
-                  aria-label="Личный кабинет"
+                  title={t('Личный кабинет')}
+                  aria-label={t('Личный кабинет')}
                 >
                   <User
                     style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
@@ -356,10 +356,10 @@ export default function Layout() {
                   style={{
                     color: 'var(--text-secondary)',
                   }}
-                  aria-label="Войти"
+                  aria-label={t('Войти')}
                 >
                   <LogIn style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }} />
-                  <span className="hidden min-[1700px]:inline">Войти</span>
+                  <span className="hidden min-[1700px]:inline">{t('Войти')}</span>
                 </button>
               )}
 
@@ -384,7 +384,7 @@ export default function Layout() {
                         }
                       : { backgroundColor: 'var(--accent-pink)' }
                   }
-                  title="Перейти к тарифам"
+                  title={t('Перейти к тарифам')}
                 >
                   Plus
                 </button>
@@ -397,7 +397,7 @@ export default function Layout() {
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="lg:hidden grid place-items-center w-10 h-10 rounded-lg transition-opacity hover:opacity-70"
                 style={{ color: 'var(--text-secondary)' }}
-                aria-label={mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
+                aria-label={mobileMenuOpen ? t('Закрыть меню') : t('Открыть меню')}
                 aria-expanded={mobileMenuOpen}
                 aria-controls="mobile-nav-drawer"
               >
@@ -473,7 +473,7 @@ export default function Layout() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {item.badge}
+                      {t(item.badge)}
                     </span>
                   )}
                 </NavLink>
@@ -496,7 +496,7 @@ export default function Layout() {
                   >
                     {(user?.email || '?')[0].toUpperCase()}
                   </div>
-                  Личный кабинет
+                  {t('Личный кабинет')}
                 </button>
               ) : (
                 <button
@@ -509,7 +509,7 @@ export default function Layout() {
                   }}
                 >
                   <LogIn size={16} />
-                  Войти
+                  {t('Войти')}
                 </button>
               )}
 
@@ -531,7 +531,7 @@ export default function Layout() {
                     : { backgroundColor: 'var(--accent-pink)' }
                 }
               >
-                Plus версия
+                {t('Plus версия')}
               </button>
             </div>
           </div>
@@ -547,7 +547,7 @@ export default function Layout() {
           просмотрен, анонс молчит — иначе на первом визите две модалки
           наложились бы. У страниц без тура gate не активен (undefined). */}
       <OnboardingTour
-        steps={terminalIntroTour}
+        steps={getTerminalIntroTour()}
         open={terminalTour.open}
         onClose={terminalTour.close}
       />
@@ -586,7 +586,7 @@ export default function Layout() {
               тех, где показаны индексы (Порядок проведения аудита, п.3.5.5).
               Футер общий для всех страниц — этим требование и закрывается. */}
           <span style={{ color: 'var(--text-muted)' }}>
-            Биржевая информация:{' '}
+            {t('Биржевая информация:')}{' '}
             <a
               href="https://www.moex.com"
               target="_blank"
@@ -594,26 +594,26 @@ export default function Layout() {
               className="transition-opacity hover:opacity-80"
               style={{ color: 'var(--text-secondary)' }}
             >
-              © ПАО Московская Биржа
+              {t('© ПАО Московская Биржа')}
             </a>
           </span>
           <Link to="/faq" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             FAQ
           </Link>
           <Link to="/glossary" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Глоссарий
+            {t('Глоссарий')}
           </Link>
           <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Контакты
+            {t('Контакты')}
           </Link>
           <Link to="/refund" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Возврат
+            {t('Возврат')}
           </Link>
           <Link to="/delivery" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Услуга
+            {t('Услуга')}
           </Link>
           <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Политика обработки данных
+            {t('Политика обработки данных')}
           </Link>
           {/* Соглашение обязано быть доступно с ЛЮБОЙ страницы: в нём лежат
               предупреждения об ограничениях использования Биржевой информации,
@@ -622,7 +622,7 @@ export default function Layout() {
               ссылка была только на /pricing — анонимный посетитель индикаторов
               её не видел никогда. */}
           <Link to="/agreement" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-            Пользовательское соглашение
+            {t('Пользовательское соглашение')}
           </Link>
           <a
             href="https://t.me/+vbt614-Qq1w1YWYy"
@@ -630,7 +630,7 @@ export default function Layout() {
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-80"
             style={{ color: 'var(--text-secondary)' }}
-            aria-label="Telegram-канал FRAME"
+            aria-label={t('Telegram-канал FRAME')}
           >
             <svg
               viewBox="0 0 24 24"
@@ -652,7 +652,7 @@ export default function Layout() {
           className="text-[10px] md:text-xs opacity-70"
           style={{ color: 'var(--text-muted)' }}
         >
-          ИП Тория А.Р. · ИНН 782627792630 · ОГРНИП 325784700029296
+          {t('ИП Тория А.Р.')} · {t('ИНН')} 782627792630 · {t('ОГРНИП')} 325784700029296
         </div>
         </div>
       </footer>

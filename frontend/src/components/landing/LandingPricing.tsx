@@ -21,6 +21,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import TierPlanCard, { TIER_META, type PlanVariant } from '../pricing/TierPlanCard';
 import { apiFetch } from '../../services/api';
 import { signupUrlForIntent, type CheckoutIntent } from '../../utils/checkoutIntent';
@@ -41,6 +42,7 @@ interface PlansResponse {
 
 export default function LandingPricing() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [data, setData] = useState<PlansResponse | null>(null);
   // Годовой по умолчанию — как на /pricing (выгоднее, и цена сопоставима «в лоб»).
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly');
@@ -87,7 +89,7 @@ export default function LandingPricing() {
             opacity: 0.8,
           }}
         >
-          FRAME · ОТКРЫТЫЙ ДОСТУП
+          {t('FRAME · ОТКРЫТЫЙ ДОСТУП')}
         </p>
         <h2
           className="font-bold mb-4 mx-auto"
@@ -99,8 +101,8 @@ export default function LandingPricing() {
             maxWidth: '14ch',
           }}
         >
-          Начни разбираться<br/>
-          <span style={{ fontStyle: 'italic' }}>в рынке</span>
+          {t('Начни разбираться')}<br/>
+          <span style={{ fontStyle: 'italic' }}>{t('в рынке')}</span>
         </h2>
         <p
           className="max-w-xl mx-auto"
@@ -111,8 +113,7 @@ export default function LandingPricing() {
             lineHeight: 1.55,
           }}
         >
-          Бесплатный доступ к базовым индикаторам: без оплаты и без карты.
-          Тарифы Basic и Pro пригодятся, когда понадобятся данные в реальном времени, расширенная история и продвинутые режимы.
+          {t('Бесплатный доступ к базовым индикаторам: без оплаты и без карты. Тарифы Basic и Pro пригодятся, когда понадобятся данные в реальном времени, расширенная история и продвинутые режимы.')}
         </p>
       </section>
 
@@ -136,7 +137,7 @@ export default function LandingPricing() {
                   color: period === 'monthly' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 }}
               >
-                Месяц
+                {t('Месяц')}
               </button>
               <button
                 onClick={() => setPeriod('yearly')}
@@ -150,7 +151,7 @@ export default function LandingPricing() {
                   color: period === 'yearly' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 }}
               >
-                Год
+                {t('Год')}
                 <span
                   className="rounded-full font-bold"
                   style={{ background: 'var(--accent)', color: 'var(--bg-primary)', padding: '1px 6px', fontSize: 11 }}
@@ -189,7 +190,7 @@ export default function LandingPricing() {
                     className="w-full py-3 rounded-xl text-sm font-semibold transition-colors"
                     style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                   >
-                    {trialDays ? 'Зарегистрироваться и попробовать' : 'Оформить'}
+                    {trialDays ? t('Зарегистрироваться и попробовать') : t('Оформить')}
                   </button>
                 </TierPlanCard>
               );

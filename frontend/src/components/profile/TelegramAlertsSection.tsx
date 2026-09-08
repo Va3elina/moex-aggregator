@@ -8,6 +8,8 @@
  * Рендерится внутри карточки ProfilePage (как ExtensionTokenSection).
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t as tr, getLang } from '../../i18n';
 import {
     AlarmClock, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle,
     ChevronDown, ChevronRight, Search, Zap, Clock, Wallet,
@@ -32,7 +34,7 @@ const BellGlyph = () => (
         width: 18, height: 18, borderRadius: '50%', margin: '0 2px',
         border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)',
         color: 'var(--text-primary)', verticalAlign: '-4px',
-    }} aria-label="колокол уведомлений">
+    }} aria-label={tr('колокол уведомлений')}>
         <AlarmClock size={11} strokeWidth={2.2} />
     </span>
 );
@@ -77,17 +79,18 @@ const METRIC_LABEL: Record<string, string> = {
 };
 
 // Человеческое условие алерта. oi_extreme особый: op = направление рекорда,
-// threshold = период (дни 30/90/0=всё).
+// threshold = период (дни 30/90/0=всё). Русские метки — ключи i18n, переводятся
+// через tr() в момент вызова (функция зовётся из рендера).
 function condLabel(a: AlertInfo): string {
     if (a.indicator === 'oi_extreme') {
-        const clg = a.clgroup === 'YUR' ? 'юрлица' : a.clgroup === 'FIZ' ? 'физлица' : 'в целом';
-        const kind = a.op === 'new_low' ? 'новый минимум'
-            : a.op === 'new_extreme' ? 'новый максимум или минимум' : 'новый максимум';
-        const per = { 365: 'за год', 730: 'за 2 года', 1095: 'за 3 года',
-            1460: 'за 4 года', 1825: 'за 5 лет' }[Number(a.threshold)] || 'за всё время';
-        return `чистая позиция (${clg}) — ${kind} перекоса ${per}`;
+        const clg = a.clgroup === 'YUR' ? tr('юрлица') : a.clgroup === 'FIZ' ? tr('физлица') : tr('в целом');
+        const kind = a.op === 'new_low' ? tr('новый минимум')
+            : a.op === 'new_extreme' ? tr('новый максимум или минимум') : tr('новый максимум');
+        const per = tr({ 365: 'за год', 730: 'за 2 года', 1095: 'за 3 года',
+            1460: 'за 4 года', 1825: 'за 5 лет' }[Number(a.threshold)] || 'за всё время');
+        return tr('чистая позиция ({{clg}}) — {{kind}} перекоса {{per}}', { clg, kind, per });
     }
-    return `${METRIC_LABEL[a.indicator] || a.indicator} ${OP_LABEL[a.op] || a.op} ${a.threshold}${unitFor(a)}`;
+    return `${tr(METRIC_LABEL[a.indicator] || a.indicator)} ${tr(OP_LABEL[a.op] || a.op)} ${a.threshold}${unitFor(a)}`;
 }
 const STATUS_LABEL: Record<string, string> = {
     active: 'Активен', paused: 'Пауза', fired: 'Сработал',
@@ -114,7 +117,7 @@ function unitFor(a: AlertInfo): string {
 // «Все фонды» / «Акции, Облигации» / «N фондов»); фолбэк — карта категорий по
 // asset (старые алерты), затем сам asset.
 function assetLabel(a: AlertInfo): string {
-    if (a.indicator === 'funds_flow') return a.asset_name || FUNDS_CATEGORY_NAME[a.asset] || a.asset;
+    if (a.indicator === 'funds_flow') return a.asset_name || tr(FUNDS_CATEGORY_NAME[a.asset] || a.asset);
     return a.asset_name || a.asset;
 }
 
@@ -125,8 +128,9 @@ const PAGE_LIMIT = 200;
 const NO_SECTOR = 'Без сектора';
 type SortKey = 'date' | 'fires';
 
-// «N сигналов» с правильным склонением.
+// «N сигналов» с правильным склонением (в английском — только 1 / много).
 function firesLabel(n: number): string {
+    if (getLang() === 'en') return n === 1 ? tr('{{n}} сигнал', { n }) : tr('{{n}} сигналов', { n });
     const mod10 = n % 10, mod100 = n % 100;
     if (mod10 === 1 && mod100 !== 11) return `${n} сигнал`;
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} сигнала`;
@@ -134,6 +138,7 @@ function firesLabel(n: number): string {
 }
 
 export default function TelegramAlertsSection() {
+    const { t } = useTranslation();
     const quota = useCommonFeatures().telegram_alerts_quota; // 0 / число / null(∞)
     const { showUpgrade } = useUpgradePrompt();
     const [linked, setLinked] = useState<boolean | null>(null);
@@ -206,7 +211,7 @@ export default function TelegramAlertsSection() {
         finally { setBusy(false); }
     };
     const handleUnlink = async () => {
-        if (!window.confirm('Отвязать Telegram? Уведомления перестанут приходить.')) return;
+        if (!window.confirm(t('Отвязать Telegram? Уведомления перестанут приходить.'))) return;
         setBusy(true); setMsg(null);
         try { await unlinkTelegram(); setLinked(false); setUsername(null); setLinkUrl(null); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
@@ -222,14 +227,14 @@ export default function TelegramAlertsSection() {
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
     const remove = async (a: AlertInfo) => {
-        if (!window.confirm('Удалить уведомление?')) return;
+        if (!window.confirm(t('Удалить уведомление?'))) return;
         try { await deleteAlert(a.id); refresh(); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
     // Массовое удаление — на случай, если случайно создал группу из десятков алертов.
     const removeAll = async () => {
-        if (!window.confirm(`Удалить ВСЕ ${alerts.length} уведомлений? Это необратимо.`)) return;
-        try { const r = await deleteAllAlerts(); refresh(); setMsg({ type: 'ok', text: `Удалено ${r.deleted}` }); }
+        if (!window.confirm(t('Удалить ВСЕ {{n}} уведомлений? Это необратимо.', { n: alerts.length }))) return;
+        try { const r = await deleteAllAlerts(); refresh(); setMsg({ type: 'ok', text: t('Удалено {{n}}', { n: r.deleted }) }); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
 
@@ -291,7 +296,7 @@ export default function TelegramAlertsSection() {
         };
         const map = new Map<string, AlertInfo[]>();
         for (const a of oiAlerts) {
-            const key = a.sector || NO_SECTOR;
+            const key = a.sector || t(NO_SECTOR);
             const arr = map.get(key);
             if (arr) arr.push(a); else map.set(key, [a]);
         }
@@ -305,58 +310,58 @@ export default function TelegramAlertsSection() {
             ? y.fires - x.fires
             : y.list.length - x.list.length);
         return groups;
-    }, [oiAlerts, sortKey]);
+    }, [oiAlerts, sortKey, t]);
 
     return (
         <div>
             <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-                <AlarmClock size={18} style={{ color: link }} /> Уведомления в мессенджере
+                <AlarmClock size={18} style={{ color: link }} /> {t('Уведомления в мессенджере')}
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                Сообщения при достижении уровней (цена, аномалии открытых позиций). Создаются с индикаторов кнопкой<BellGlyph />.
-                Сейчас доступен Telegram, мессенджер&nbsp;МАКС в&nbsp;разработке.
+                {t('Сообщения при достижении уровней (цена, аномалии открытых позиций). Создаются с индикаторов кнопкой')}<BellGlyph />.
+                {' '}{t('Сейчас доступен Telegram, мессенджер МАКС в разработке.')}
             </p>
 
             {quota === 0 ? (
-                <button onClick={() => showUpgrade({ tier: 'basic', featureName: 'Уведомления в мессенджере', indicator: 'alerts' })}
+                <button onClick={() => showUpgrade({ tier: 'basic', featureName: t('Уведомления в мессенджере'), indicator: 'alerts' })}
                     className="editorial-press" style={{ padding: '10px 16px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 600 }}>
-                    Доступно на Basic и Pro — улучшить тариф
+                    {t('Доступно на Basic и Pro — улучшить тариф')}
                 </button>
             ) : (
                 <>
                     {/* ── Статус Telegram ── */}
                     <div className="rounded-xl p-4 mb-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                         {linked === null ? (
-                            <span style={{ color: sub }}>Загрузка…</span>
+                            <span style={{ color: sub }}>{t('Загрузка…')}</span>
                         ) : linked ? (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <Send size={16} style={{ color: link }} />
-                                    <span>Подключён: <b>Telegram</b>{username ? ` · @${username}` : ''}</span>
+                                    <span>{t('Подключён:')} <b>Telegram</b>{username ? ` · @${username}` : ''}</span>
                                 </span>
                                 <span style={{ display: 'flex', gap: 'var(--sp-2)' }}>
-                                    <button onClick={handleConnect} disabled={busy} title="Сменить чат или мессенджер" className="editorial-press" style={{ ...chipBtn, color: link }}>Переподключить</button>
-                                    <button onClick={handleUnlink} disabled={busy} className="editorial-press" style={{ ...chipBtn, color: sub }}>Отвязать</button>
+                                    <button onClick={handleConnect} disabled={busy} title={t('Сменить чат или мессенджер')} className="editorial-press" style={{ ...chipBtn, color: link }}>{t('Переподключить')}</button>
+                                    <button onClick={handleUnlink} disabled={busy} className="editorial-press" style={{ ...chipBtn, color: sub }}>{t('Отвязать')}</button>
                                 </span>
                             </div>
                         ) : linkUrl ? (
                             <div>
                                 <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', textDecoration: 'none', fontWeight: 600 }}>
-                                    <ExternalLink size={15} /> Открыть @framesignalbot
+                                    <ExternalLink size={15} /> {t('Открыть @framesignalbot')}
                                 </a>
-                                <div style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>Нажмите Start в боте — статус обновится сам.</div>
-                                <button onClick={() => setLinkUrl(null)} className="editorial-press" style={{ ...chipBtn, color: sub, fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>← выбрать другой мессенджер</button>
+                                <div style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>{t('Нажмите Start в боте — статус обновится сам.')}</div>
+                                <button onClick={() => setLinkUrl(null)} className="editorial-press" style={{ ...chipBtn, color: sub, fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>{t('← выбрать другой мессенджер')}</button>
                             </div>
                         ) : (
                             <div>
-                                <div style={{ color: sub, marginBottom: 12 }}>Мессенджер не подключён.</div>
+                                <div style={{ color: sub, marginBottom: 12 }}>{t('Мессенджер не подключён.')}</div>
                                 <MessengerChoice onTelegram={handleConnect} busy={busy} title={null} />
                             </div>
                         )}
                         {linked === false && activeCount > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', marginTop: 8 }}>
-                                <AlertTriangle size={14} /> {activeCount} активных уведомлений не придут, пока не подключите мессенджер.
+                                <AlertTriangle size={14} /> {t('{{n}} активных уведомлений не придут, пока не подключите мессенджер.', { n: activeCount })}
                             </div>
                         )}
                     </div>
@@ -364,14 +369,14 @@ export default function TelegramAlertsSection() {
                     {/* ── Список алертов ── */}
                     {alerts.length === 0 ? (
                         <div style={{ color: sub, fontSize: 'var(--fs-sm)' }}>
-                            Пока нет уведомлений. Создайте кнопкой<BellGlyph /> на индикаторе («Открытые позиции» или «Деньги в фондах»).
+                            {t('Пока нет уведомлений. Создайте кнопкой')}<BellGlyph /> {t('на индикаторе («Открытые позиции» или «Деньги в фондах»).')}
                         </div>
                     ) : (
                         <>
                         {/* ── Секция «Открытые позиции» (source='oi') ── */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--sp-2)' }}>
                             <Zap size={16} style={{ color: link }} />
-                            <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>Открытые позиции</h3>
+                            <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>{t('Открытые позиции')}</h3>
                             <span style={{ color: sub, fontSize: 'var(--fs-xs)' }}>{oiAlerts.length}</span>
                         </div>
 
@@ -382,7 +387,7 @@ export default function TelegramAlertsSection() {
                                 <input
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
-                                    placeholder="Поиск по тикеру…"
+                                    placeholder={t('Поиск по тикеру…')}
                                     style={{
                                         width: '100%', minHeight: 36, padding: '7px 10px 7px 30px', borderRadius: 8,
                                         border: '1.5px solid var(--border-color)', background: 'var(--bg-primary)',
@@ -397,7 +402,7 @@ export default function TelegramAlertsSection() {
                                     aria-pressed={sortKey === 'date'}
                                     style={{ ...chipBtn, fontSize: 'var(--fs-xs)', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', gap: 4, background: sortKey === 'date' ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: sortKey === 'date' ? 'var(--text-primary)' : sub }}
                                 >
-                                    <Clock size={13} /> По дате
+                                    <Clock size={13} /> {t('По дате')}
                                 </button>
                                 <button
                                     onClick={() => setSortKey('fires')}
@@ -405,7 +410,7 @@ export default function TelegramAlertsSection() {
                                     aria-pressed={sortKey === 'fires'}
                                     style={{ ...chipBtn, fontSize: 'var(--fs-xs)', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', gap: 4, background: sortKey === 'fires' ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: sortKey === 'fires' ? 'var(--text-primary)' : sub }}
                                 >
-                                    <Zap size={13} /> По сигналам
+                                    <Zap size={13} /> {t('По сигналам')}
                                 </button>
                             </div>
                         </div>
@@ -413,7 +418,7 @@ export default function TelegramAlertsSection() {
                         {/* Аккордеоны по секторам (схлопнуты по умолчанию — не вываливаем весь список) */}
                         {oiAlerts.length === 0 ? (
                             <div style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                                {query ? 'Ничего не найдено по запросу.' : 'Нет уведомлений по открытым позициям.'}
+                                {query ? t('Ничего не найдено по запросу.') : t('Нет уведомлений по открытым позициям.')}
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -452,11 +457,11 @@ export default function TelegramAlertsSection() {
                                                                         <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{a.asset_name || a.asset}</div>
                                                                         <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
                                                                             {condLabel(a)}
-                                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
+                                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{t(STATUS_LABEL[a.status] || a.status)}</span>
                                                                         </div>
                                                                         {TF_ELIGIBLE.has(a.indicator) && (
                                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
-                                                                                <span style={{ color: sub, fontSize: 'var(--fs-2xs)' }}>Проверка:</span>
+                                                                                <span style={{ color: sub, fontSize: 'var(--fs-2xs)' }}>{t('Проверка:')}</span>
                                                                                 {TIMEFRAMES.map((tf) => {
                                                                                     const intraday = tf.key !== '1d';
                                                                                     const disabled = intraday && !intradaySet.has(a.asset);
@@ -466,12 +471,12 @@ export default function TelegramAlertsSection() {
                                                                                             key={tf.key}
                                                                                             type="button"
                                                                                             disabled={disabled}
-                                                                                            title={disabled ? 'Внутридневные данные недоступны для этого актива' : undefined}
+                                                                                            title={disabled ? t('Внутридневные данные недоступны для этого актива') : undefined}
                                                                                             onClick={() => changeTimeframe(a, tf.key)}
                                                                                             className="editorial-press"
                                                                                             style={tfPill(active, disabled)}
                                                                                         >
-                                                                                            {tf.label}
+                                                                                            {t(tf.label)}
                                                                                         </button>
                                                                                     );
                                                                                 })}
@@ -495,11 +500,11 @@ export default function TelegramAlertsSection() {
                                                                     </div>
                                                                     <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
                                                                         {a.status !== 'fired' && (
-                                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
+                                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? t('Пауза') : t('Возобновить')} aria-label={a.status === 'active' ? t('Пауза') : t('Возобновить')} className="editorial-press" style={{ ...iconBtn, color: sub }}>
                                                                                 {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
                                                                             </button>
                                                                         )}
-                                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить уведомление" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                                        <button onClick={() => remove(a)} title={t('Удалить')} aria-label={t('Удалить уведомление')} className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
                                                                     </div>
                                                                 </div>
                                                                 {firesOpen && firesN > 0 && (
@@ -519,7 +524,7 @@ export default function TelegramAlertsSection() {
                         {/* Пагинация: догрузка остатка по total (X-Total-Count) */}
                         {alerts.length < total && (
                             <button onClick={loadMore} disabled={loadingMore} className="editorial-press" style={{ ...chipBtn, fontSize: 'var(--fs-sm)', marginBottom: 12, color: link }}>
-                                {loadingMore ? 'Загрузка…' : `Показать ещё (${total - alerts.length})`}
+                                {loadingMore ? t('Загрузка…') : t('Показать ещё ({{n}})', { n: total - alerts.length })}
                             </button>
                         )}
 
@@ -528,7 +533,7 @@ export default function TelegramAlertsSection() {
                             <>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--sp-2)' }}>
                                     <Wallet size={16} style={{ color: link }} />
-                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>Сигналы по фондам</h3>
+                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>{t('Сигналы по фондам')}</h3>
                                     <span style={{ color: sub, fontSize: 'var(--fs-xs)' }}>{fundsAlerts.length}</span>
                                 </div>
                                 <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -541,8 +546,8 @@ export default function TelegramAlertsSection() {
                                                     <div style={{ minWidth: 0 }}>
                                                         <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{assetLabel(a)}</div>
                                                         <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
-                                                            {METRIC_LABEL[a.indicator] || a.indicator} ≥ {a.threshold}{unitFor(a)}
-                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
+                                                            {t(METRIC_LABEL[a.indicator] || a.indicator)} ≥ {a.threshold}{unitFor(a)}
+                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{t(STATUS_LABEL[a.status] || a.status)}</span>
                                                         </div>
                                                         <button
                                                             onClick={() => setOpenFires(firesOpen ? null : a.id)}
@@ -562,11 +567,11 @@ export default function TelegramAlertsSection() {
                                                     </div>
                                                     <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
                                                         {a.status !== 'fired' && (
-                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
+                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? t('Пауза') : t('Возобновить')} aria-label={a.status === 'active' ? t('Пауза') : t('Возобновить')} className="editorial-press" style={{ ...iconBtn, color: sub }}>
                                                                 {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
                                                             </button>
                                                         )}
-                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить уведомление" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                        <button onClick={() => remove(a)} title={t('Удалить')} aria-label={t('Удалить уведомление')} className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
                                                     </div>
                                                 </div>
                                                 {firesOpen && firesN > 0 && (
@@ -582,17 +587,17 @@ export default function TelegramAlertsSection() {
                             <div className="rounded-xl p-4" style={{ background: 'var(--bg-secondary)', border: '1px dashed var(--border-color)', marginBottom: 16 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <Wallet size={16} style={{ color: sub }} />
-                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: sub }}>Сигналы по фондам</h3>
+                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: sub }}>{t('Сигналы по фондам')}</h3>
                                 </div>
                                 <p style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6, lineHeight: 1.4 }}>
-                                    Создайте сигнал по аномальному притоку-оттоку на индикаторе «Деньги в фондах» (режим Притоки-Оттоки, кнопка<BellGlyph />).
+                                    {t('Создайте сигнал по аномальному притоку-оттоку на индикаторе «Деньги в фондах» (режим Притоки-Оттоки, кнопка')}<BellGlyph />).
                                 </p>
                             </div>
                         )}
 
                         {alerts.length > 1 && (
                             <button onClick={removeAll} className="editorial-press" style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}>
-                                <Trash2 size={14} /> Удалить все ({total || alerts.length})
+                                <Trash2 size={14} /> {t('Удалить все ({{n}})', { n: total || alerts.length })}
                             </button>
                         )}
                         </>

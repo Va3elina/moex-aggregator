@@ -1,5 +1,7 @@
 import { Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import { dateLocale } from '../../i18n';
 
 /**
  * LockedSnapshotTeaser — тизер заблокированного (свежего) среза фонда для Free/гостя.
@@ -19,19 +21,20 @@ export default function LockedSnapshotTeaser({
   latestDate?: string | null;
   requiredTier?: string;
 }) {
+  const { t } = useTranslation();
   const { showUpgrade } = useUpgradePrompt();
   const tier = requiredTier === 'pro' ? 'pro' : 'basic';
   const open = () =>
-    showUpgrade({ tier, featureName: 'свежий срез фондов', indicator: 'fund_trades' });
+    showUpgrade({ tier, featureName: t('свежий срез фондов'), indicator: 'fund_trades' });
 
   const dateStr = latestDate
-    ? new Date(latestDate + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    ? new Date(latestDate + 'T00:00:00').toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' })
     : null;
 
   // Фейковые ряды-заглушки (НЕ данные) — только форма для блюра.
   const sections: Array<{ title: string; color: string; rows: number[] }> = [
-    { title: 'Нарастили', color: 'var(--mood-green, #34d17a)', rows: [72, 50, 31] },
-    { title: 'Сократили', color: 'var(--mood-red, #f2685f)', rows: [40, 18] },
+    { title: t('Нарастили'), color: 'var(--mood-green, #34d17a)', rows: [72, 50, 31] },
+    { title: t('Сократили'), color: 'var(--mood-red, #f2685f)', rows: [40, 18] },
   ];
 
   return (
@@ -66,17 +69,20 @@ export default function LockedSnapshotTeaser({
           <Lock size={22} strokeWidth={2.3} />
         </div>
         <div style={{ fontWeight: 800, fontSize: 'var(--fs-md, 1rem)', color: 'var(--text-primary)' }}>
-          Свежий срез — по подписке
+          {t('Свежий срез — по подписке')}
         </div>
         <div style={{ fontSize: 'var(--fs-sm, .9rem)', color: 'var(--text-secondary)', maxWidth: 340, lineHeight: 1.5 }}>
-          Что фонды купили и продали {dateStr ? `в срезе за ${dateStr}` : 'в свежей выборке'} — доступно на тарифе {tier === 'pro' ? 'Pro' : 'Basic или Pro'}.
+          {t('Что фонды купили и продали {{when}} — доступно на тарифе {{tier}}.', {
+            when: dateStr ? t('в срезе за {{date}}', { date: dateStr }) : t('в свежей выборке'),
+            tier: tier === 'pro' ? 'Pro' : t('Basic или Pro'),
+          })}
         </div>
         <button
           onClick={open}
           className="editorial-press"
           style={{ background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 800, fontSize: 'var(--fs-sm, .9rem)', border: '2px solid var(--text-primary)', borderRadius: 999, padding: '10px 20px', cursor: 'pointer', boxShadow: '3px 3px 0 var(--text-primary)' }}
         >
-          Открыть свежий срез
+          {t('Открыть свежий срез')}
         </button>
       </div>
     </div>

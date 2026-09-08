@@ -25,6 +25,7 @@ import { AnomalyToast } from './AnomalyToast';
 import { openAnomaly, subscribeAnomalyAction } from './anomalyActions';
 import { emitEmbedSignal, isEmbedRoute } from '../../utils/embedContext';
 import { Activity, X } from 'lucide-react';
+import { t } from '../../i18n';
 
 const SESSION_CAP = 5;
 const DIGEST_THRESHOLD = 4;       // >этого свежих разом → дайджест вместо серии
@@ -177,8 +178,8 @@ export function ToastHost() {
           display: 'flex', alignItems: 'center', gap: 12 }}>
           <Activity size={20} color="var(--accent-orange, #FF9100)" />
           <div style={{ flex: 1 }}>
-            <div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 500 }}>Рынок штормит</div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{digest.count} заметных аномалий</div>
+            <div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 500 }}>{t('Рынок штормит')}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t('{{n}} заметных аномалий', { n: digest.count })}</div>
           </div>
           <button onClick={() => {
             // В embed'е колокола нет: «Посмотреть» открывает нашу панель «Сигналы»
@@ -189,8 +190,8 @@ export function ToastHost() {
           }}
             style={{ background: 'transparent', border: '0.5px solid var(--border-color, rgba(255,255,255,0.14))',
               color: 'var(--text-primary)', fontSize: 13, fontWeight: 500, padding: '6px 12px',
-              borderRadius: 8, cursor: 'pointer' }}>Посмотреть</button>
-          <button onClick={() => setDigest(null)} aria-label="Закрыть"
+              borderRadius: 8, cursor: 'pointer' }}>{t('Посмотреть')}</button>
+          <button onClick={() => setDigest(null)} aria-label={t('Закрыть')}
             style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}>
             <X size={16} color="var(--text-muted)" />
           </button>

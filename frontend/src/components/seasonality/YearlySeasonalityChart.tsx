@@ -1,4 +1,6 @@
 import { useLayoutEffect, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { dateLocale, monthShort } from '../../i18n';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { ANIMATION, CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
@@ -50,6 +52,7 @@ export default function YearlySeasonalityChart({
   chartHeight,
   showCurrentYear = true,
 }: YearlySeasonalityChartProps) {
+  const { t } = useTranslation();
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
   const isMobile = useIsMobile();
@@ -109,7 +112,7 @@ export default function YearlySeasonalityChart({
   const series = seriesData && seriesData.length > 0 ? seriesData : [yearlyData];
   const meta: SeriesMeta[] = seriesMeta && seriesMeta.length > 0
     ? seriesMeta
-    : [{ key: 'base', label: `Период с ${yearlyData.years_range?.split('-')[0] ?? ''}`, color: CHART_COLORS.muted }];
+    : [{ key: 'base', label: t('Период с {{y}}', { y: yearlyData.years_range?.split('-')[0] ?? '' }), color: CHART_COLORS.muted }];
   const safeCount = Math.min(series.length, meta.length);
   const allSeries = series.slice(0, safeCount);
   const allMeta: SeriesMeta[] = meta.slice(0, safeCount);
@@ -159,7 +162,11 @@ export default function YearlySeasonalityChart({
   });
 
   // Month separators (из base avg для вертикальных линий)
-  const monthLabels = ['', 'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+  // Индекс = номер месяца (1..12); подписи с заглавной («Янв» / «Jan»).
+  const monthLabels = ['', ...Array.from({ length: 12 }, (_, i) => {
+    const m = monthShort(i);
+    return m.charAt(0).toUpperCase() + m.slice(1);
+  })];
   const monthPositions: { td: number; label: string }[] = [];
   const seenMonths = new Set<number>();
   for (const p of baseAvg) {
@@ -248,7 +255,7 @@ export default function YearlySeasonalityChart({
 
   if (!yearlyData || yearlyData.average.length === 0) {
     return (
-      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>{t('Нет данных')}</div>
     );
   }
 
@@ -319,7 +326,7 @@ export default function YearlySeasonalityChart({
     const snappedX = PL + scX(snappedTD) * chartW;
     // Формат как у даты в SimpleChart (OI): «7 апр. 2026 г.» — не сырой ISO.
     const displayDate = closestCur?.date
-      ? new Date(closestCur.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+      ? new Date(closestCur.date).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' })
       : `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
 
     setTooltip({
@@ -673,11 +680,11 @@ export default function YearlySeasonalityChart({
                   const basePt = visAllSeries[0]?.average?.find(p => p.td === tooltip.yearlyTd);
                   return (
                     <>
-                      Отклонение: <span className="font-semibold" style={{ color }}>
+                      {t('Отклонение:')} <span className="font-semibold" style={{ color }}>
                         {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
                       </span>
                       {basePt?.std_pct ? (
-                        <span className="opacity-60 ml-1">(разброс ±{basePt.std_pct.toFixed(1)}%)</span>
+                        <span className="opacity-60 ml-1">{t('(разброс ±{{v}}%)', { v: basePt.std_pct.toFixed(1) })}</span>
                       ) : null}
                     </>
                   );

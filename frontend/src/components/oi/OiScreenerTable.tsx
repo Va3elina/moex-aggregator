@@ -30,6 +30,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 import { Star } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { t as tt, getLang } from '../../i18n';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
@@ -50,20 +52,22 @@ type Clgroup = 'FIZ' | 'YUR';
 // ⚠️ Не подписывать сегменты числами («1 день», «2 дня»): дневной срез позиций
 // по большинству фьючерсов приходит T+1, и точная цифра на кнопке обещала бы
 // свежесть, которой у ленты нет. Множественное число это скрадывает честно.
-const HORIZON_OPTIONS = [
-  { key: 'short' as const, label: 'Дни', title: 'Горизонт — один торговый день. Движение позиции за день против её обычного дневного размаха (ATR-14). Это те же сигналы, что уходят в уведомления в Telegram.' },
-  { key: 'medium' as const, label: 'Недели', title: 'Горизонт — 14 торговых дней (около двух недель). Сдвиг позиции за этот срок против того, сколько актив обычно проходит за такой же период. Ловит то, что копилось неделями и в дневной ленте не видно.' },
+// i18n: функции, а не константы модуля — t() должен считаться в рендере.
+const horizonOptions = () => [
+  { key: 'short' as const, label: tt('Дни'), title: tt('Горизонт — один торговый день. Движение позиции за день против её обычного дневного размаха (ATR-14). Это те же сигналы, что уходят в уведомления в Telegram.') },
+  { key: 'medium' as const, label: tt('Недели'), title: tt('Горизонт — 14 торговых дней (около двух недель). Сдвиг позиции за этот срок против того, сколько актив обычно проходит за такой же период. Ловит то, что копилось неделями и в дневной ленте не видно.') },
 ];
 
 // Пояснение к тумблеру горизонта («?» внутри пилюли). Про лаг данных здесь
 // НЕ говорим — фактическую дату расчёта (дневные/интрадей) уже показывает
 // индикатор свежести в тулбаре справа, дублировать её текстом смысла нет.
-const HORIZON_HELP = [
-  { heading: 'Дни', body: 'Движение позиции за один торговый день против обычного дневного размаха актива (ATR-14). Ловит резкие однодневные сдвиги. Это те же сигналы, что уходят в уведомления в Telegram.' },
-  { heading: 'Недели', body: 'Сдвиг позиции за 14 торговых дней (около двух недель) против того, сколько актив обычно проходит за такой же срок. Показывает то, что копилось неделями и в дневной ленте незаметно.' },
+const horizonHelp = () => [
+  { heading: tt('Дни'), body: tt('Движение позиции за один торговый день против обычного дневного размаха актива (ATR-14). Ловит резкие однодневные сдвиги. Это те же сигналы, что уходят в уведомления в Telegram.') },
+  { heading: tt('Недели'), body: tt('Сдвиг позиции за 14 торговых дней (около двух недель) против того, сколько актив обычно проходит за такой же срок. Показывает то, что копилось неделями и в дневной ленте незаметно.') },
 ];
 
-// Реальные значения instruments.group (как в пикере активов).
+// Реальные значения instruments.group (как в пикере активов). Ключи — данные,
+// не переводятся; подписи — через t().
 const GROUP_OPTIONS = [
   { key: 'all', label: 'Все категории' },
   { key: 'Индексы', label: 'Индексы' },
@@ -75,11 +79,13 @@ const GROUP_OPTIONS = [
 
 const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пикером активов
 
+// «4,3×» в русском, «4.3×» в английском.
 function fmtRatio(r: number): string {
-  return r.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
+  return r.toLocaleString(getLang() === 'en' ? 'en-GB' : 'ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
 }
 /** «1 актив / 2 актива / 5 активов» */
 function pluralAssets(n: number): string {
+  if (getLang() === 'en') return n === 1 ? '1 asset' : `${n} assets`;
   const mod10 = n % 10, mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return `${n} актив`;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} актива`;
@@ -136,6 +142,7 @@ interface Props {
 }
 
 export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
@@ -275,10 +282,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     };
   }, [visible]);
 
-  const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
-  const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
+  const groupWord = clgroup === 'FIZ' ? t('физлица') : t('юрлица');
+  const mirrorWord = clgroup === 'FIZ' ? t('юрлица') : t('физлица');
   // Родительный для заголовка колонки: «Позиция физлиц», не «физлица».
-  const groupGen = clgroup === 'FIZ' ? 'физлиц' : 'юрлиц';
+  const groupGen = clgroup === 'FIZ' ? t('физлиц') : t('юрлиц');
 
   // Формулировки горизонта. Лента переключается целиком, поэтому тексты
   // меняются вместе с ней: в среднесрочной нельзя говорить «за день» и
@@ -287,12 +294,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // на проде — см. MED_SHARP_RATIO в api/services/oi_screener.py).
   const isMed = horizon === 'medium';
   const W = {
-    over: isMed ? 'за 2 недели' : 'за день',
-    prev: isMed ? '2 недели назад' : 'вчера',
-    move: isMed ? 'Изменение позиции за 2 недели' : 'Дневное изменение позиции',
-    usual: isMed ? 'обычного движения этого актива за 2 недели' : 'обычного дневного движения этого актива',
+    over: isMed ? t('за 2 недели') : t('за день'),
+    prev: isMed ? t('2 недели назад') : t('вчера'),
+    move: isMed ? t('Изменение позиции за 2 недели') : t('Дневное изменение позиции'),
+    usual: isMed ? t('обычного движения этого актива за 2 недели') : t('обычного дневного движения этого актива'),
     thr: isMed ? '3×' : '2×',
-    note: isMed ? 'обычные 2 недели' : 'обычный день',
+    note: isMed ? t('обычные 2 недели') : t('обычный день'),
   };
   // Порог «резко» этого горизонта — база ступеней бейджа «Силы» (×1,5 —
   // сильное, ×2,5 — особо сильное). Совпадает с sharp_ratio из ответа бэка.
@@ -301,9 +308,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Рекорд перекоса. Окна: квартал, полгода, 1..5 лет, всё время (месячного
   // на бэке нет — слишком часто). Метка достаётся сильнейшему пробитому окну.
   const PERIOD_WORD: Record<string, string> = {
-    all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
-    '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год', '6m': 'за полгода',
-    '3m': 'за квартал',
+    all: t('за всё время'), '5y': t('за 5 лет'), '4y': t('за 4 года'),
+    '3y': t('за 3 года'), '2y': t('за 2 года'), '1y': t('за год'), '6m': t('за полгода'),
+    '3m': t('за квартал'),
   };
   // Рекорд ВМЕСТО обычного сигнала, а не рядом с ним. Раньше метка висела
   // справа от текста, и строка читалась противоречиво: «обычный день · ист
@@ -315,15 +322,20 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (r.net_record) {
       const high = r.net_record.kind === 'high';
       return {
-        text: high ? 'Ист. макс' : 'Ист. мин',
-        title: `Чистая позиция ${groupGen} (в контрактах) — исторический ${high ? 'максимум' : 'минимум'} за всё время наблюдений. Это сильнее дневной кратности: позиция могла прийти сюда без единого резкого дня.`,
+        text: high ? t('Ист. макс') : t('Ист. мин'),
+        title: high
+          ? t('Чистая позиция {{group}} (в контрактах) — исторический максимум за всё время наблюдений. Это сильнее дневной кратности: позиция могла прийти сюда без единого резкого дня.', { group: groupGen })
+          : t('Чистая позиция {{group}} (в контрактах) — исторический минимум за всё время наблюдений. Это сильнее дневной кратности: позиция могла прийти сюда без единого резкого дня.', { group: groupGen }),
       };
     }
     if (r.record) {
       const high = r.record.kind === 'high';
+      const period = PERIOD_WORD[r.record.period];
       return {
-        text: `${high ? 'Макс' : 'Мин'} ${PERIOD_WORD[r.record.period]}`,
-        title: `Перекос ${groupGen} пробил ${high ? 'максимум (рекордный лонг)' : 'минимум (рекордный шорт)'} ${PERIOD_WORD[r.record.period]}.`,
+        text: `${high ? t('Макс') : t('Мин')} ${period}`,
+        title: high
+          ? t('Перекос {{group}} пробил максимум (рекордный лонг) {{period}}.', { group: groupGen, period })
+          : t('Перекос {{group}} пробил минимум (рекордный шорт) {{period}}.', { group: groupGen, period }),
       };
     }
     return null;
@@ -348,7 +360,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (r.status !== 'sharp') {
       return (
         <span
-          title={`${W.move} ${groupGen} в ${fmtRatio(r.ratio)} от ${W.usual} — ниже порога «резко» (${W.thr})`}
+          title={t('{{move}} {{group}} в {{ratio}} от {{usual}} — ниже порога «резко» ({{thr}})', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, thr: W.thr })}
           style={{ ...pill, borderColor: 'var(--text-muted)', color: 'var(--text-muted)' }}
         >
           {fmtRatio(r.ratio)}
@@ -365,11 +377,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     const strong = r.ratio >= sharpThr * 2 || (leader && r.ratio >= sharpThr * 1.5);
     const mid = r.ratio >= sharpThr * 1.5;
     const tierNote = strong
-      ? ' — особо сильное движение'
-      : mid ? ' — сильное движение' : '';
+      ? t(' — особо сильное движение')
+      : mid ? t(' — сильное движение') : '';
     return (
       <span
-        title={`${W.move} ${groupGen} в ${fmtRatio(r.ratio)} сильнее ${W.usual}${tierNote}`}
+        title={t('{{move}} {{group}} в {{ratio}} сильнее {{usual}}{{note}}', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, note: tierNote })}
         style={{
           ...pill,
           borderColor: mid ? 'var(--accent)' : 'var(--text-primary)',
@@ -407,10 +419,17 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       const netLong = r.net >= 0;
       const grewExposure = netLong === (r.direction === 'up');
       const verb = netLong
-        ? (grewExposure ? 'Набрали лонг' : 'Сократили лонг')
-        : (grewExposure ? 'Нарастили шорт' : 'Сократили шорт');
+        ? (grewExposure ? t('Набрали лонг') : t('Сократили лонг'))
+        : (grewExposure ? t('Нарастили шорт') : t('Сократили шорт'));
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const full = `${cap(groupWord)} резко ${grewExposure ? 'нарастили' : 'сократили'} ${netLong ? 'длинную' : 'короткую'} позицию по «${r.name}»: изменение чистой позиции ${W.over} в ${fmtRatio(r.ratio)} сильнее ${W.usual} («резко» — от ${W.thr}). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
+      const vars = { group: cap(groupWord), name: r.name, over: W.over, ratio: fmtRatio(r.ratio), usual: W.usual, thr: W.thr, mirror: mirrorWord };
+      const full = netLong
+        ? (grewExposure
+            ? t('{{group}} резко нарастили длинную позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars)
+            : t('{{group}} резко сократили длинную позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars))
+        : (grewExposure
+            ? t('{{group}} резко нарастили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars)
+            : t('{{group}} резко сократили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars));
       return (
         <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
           {verb}
@@ -424,16 +443,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       r.status === 'normal'
         ? W.note
         : r.status === 'illiquid'
-          ? 'мало участников'
-          : 'мало истории';
+          ? t('мало участников')
+          : t('мало истории');
     const noteTitle =
       r.status === 'illiquid'
-        ? `На стороне ${groupWord}: ${r.npart} участников — ниже порога ликвидности ${minPart}. Движение по такому контракту считаем шумом, а не сигналом (у юрлиц участников структурно меньше, поэтому порог свой).`
+        ? t('На стороне {{group}}: {{n}} участников — ниже порога ликвидности {{min}}. Движение по такому контракту считаем шумом, а не сигналом (у юрлиц участников структурно меньше, поэтому порог свой).', { group: groupWord, n: r.npart, min: minPart })
         : r.status === 'nodata'
           ? (isMed
-              ? 'Мало истории: для среднесрочного сигнала нужна норма минимум за 30 торговых дней до окна движения.'
-              : 'Мало истории для расчёта ATR-14.')
-          : `Сдвиг чистой позиции ${W.over} в пределах обычного${r.ratio != null ? ` (${fmtRatio(r.ratio)})` : ''} — ниже порога «резко» (${W.thr}).`;
+              ? t('Мало истории: для среднесрочного сигнала нужна норма минимум за 30 торговых дней до окна движения.')
+              : t('Мало истории для расчёта ATR-14.'))
+          : t('Сдвиг чистой позиции {{over}} в пределах обычного{{ratio}} — ниже порога «резко» ({{thr}}).', { over: W.over, ratio: r.ratio != null ? ` (${fmtRatio(r.ratio)})` : '', thr: W.thr });
     return (
       <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
     );
@@ -495,8 +514,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         >
           <Star size={18} fill="var(--accent)" strokeWidth={0} style={{ flexShrink: 0 }} />
           <span style={{ fontSize: 'var(--fs-sm)', minWidth: 0 }}>
-            <strong>{alertPrompt.name}</strong> в избранном. Настройте уведомление,
-            чтобы о резком движении сообщили сами, а не следить вручную.
+            <strong>{alertPrompt.name}</strong> {t('в избранном. Настройте уведомление, чтобы о резком движении сообщили сами, а не следить вручную.')}
           </span>
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
             <button
@@ -509,11 +527,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               }}
               onClick={() => { onRequestAlert?.(alertPrompt.sectype, alertPrompt.name, clgroup); setAlertPrompt(null); }}
             >
-              Создать уведомление
+              {t('Создать уведомление')}
             </button>
             <button
               type="button"
-              aria-label="Закрыть"
+              aria-label={t('Закрыть')}
               onClick={() => setAlertPrompt(null)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)', lineHeight: 1, padding: 4 }}
             >
@@ -528,8 +546,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       <div data-tour="screener-toolbar" className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
         <SegmentedControl<Clgroup>
           options={[
-            { key: 'FIZ', label: 'Физлица' },
-            { key: 'YUR', label: 'Юрлица', title: 'Сигналы юрлиц зеркальны физлицам по кратности, но проценты и ликвидность — свои' },
+            { key: 'FIZ', label: t('Физлица') },
+            { key: 'YUR', label: t('Юрлица'), title: t('Сигналы юрлиц зеркальны физлицам по кратности, но проценты и ликвидность — свои') },
           ]}
           value={clgroup}
           onChange={(g) => { lockHeight(); setClgroup(g); }}
@@ -540,16 +558,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             подсказка про сроки и лаг данных привязана к тумблеру общей
             обводкой, а не висит отдельным кружком в тулбаре. */}
         <SegmentedControl<OiScreenerHorizon>
-          options={HORIZON_OPTIONS}
+          options={horizonOptions()}
           value={horizon}
           // Строки гасим сразу, в том же рендере, что и смену горизонта: иначе
           // один кадр старая лента рисуется уже новыми порогами (среднесрочный
           // 7× против дневного порога 4×) и бейджи успевают мигнуть заливкой.
           onChange={(h) => { lockHeight(); setRows(null); setHorizon(h); }}
-          trailing={<HelpTooltip sections={HORIZON_HELP} size={18} />}
+          trailing={<HelpTooltip sections={horizonHelp()} size={18} />}
         />
         <Dropdown<string>
-          options={GROUP_OPTIONS.map((g) => ({ key: g.key, label: g.label }))}
+          options={GROUP_OPTIONS.map((g) => ({ key: g.key, label: t(g.label) }))}
           value={group}
           onChange={setGroup}
         />
@@ -559,7 +577,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           data-tour="screener-favorites"
           onClick={() => setOnlyFav((v) => !v)}
           aria-pressed={onlyFav}
-          title="Показать только избранные активы"
+          title={t('Показать только избранные активы')}
           className="editorial-press rounded-full font-semibold inline-flex items-center"
           style={{
             gap: 6,
@@ -572,7 +590,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           }}
         >
           <Star size={15} fill={onlyFav ? 'var(--text-inverse)' : 'none'} strokeWidth={2.2} />
-          Избранные
+          {t('Избранные')}
           {favorites.length > 0 && (
             <span style={{ ...MONO, fontSize: 'var(--fs-xs)', fontWeight: 700, opacity: 0.75 }}>
               {favorites.length}
@@ -597,9 +615,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div style={{ minWidth: 1000 }}>
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 8px 12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
-            <span style={headCell}>Актив</span>
-            <span style={headCell} title={`Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где ${groupWord} стоят сейчас, хвост = сдвиг ${W.over}, размер головы = сила движения. Точные проценты — при наведении на строку.`}>
-              Позиция {groupGen}
+            <span style={headCell}>{t('Актив')}</span>
+            <span style={headCell} title={t('Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку.', { group: groupWord, over: W.over })}>
+              {t('Позиция {{group}}', { group: groupGen })}
             </span>
             {/* Сила — числовая колонка: заголовок и число по центру, чтобы
                 отступы слева (комета) и справа (сигнал) были симметричны. */}
@@ -607,30 +625,30 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               type="button"
               style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'center' }}
               onClick={() => setSortDir((d) => (d === -1 ? 1 : -1))}
-              title={`Во сколько раз изменение позиции ${W.over} сильнее ${W.usual}. Клик — перевернуть порядок.`}
+              title={t('Во сколько раз изменение позиции {{over}} сильнее {{usual}}. Клик — перевернуть порядок.', { over: W.over, usual: W.usual })}
             >
-              Сила{sortDir === -1 ? ' ▼' : ' ▲'}
+              {t('Сила')}{sortDir === -1 ? ' ▼' : ' ▲'}
             </button>
-            <span style={{ ...headCell, justifySelf: 'center' }}>Сигнал</span>
+            <span style={{ ...headCell, justifySelf: 'center' }}>{t('Сигнал')}</span>
             <span />
           </div>
 
           {/* Состояния */}
           {error && (
             <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)' }}>
-              Не удалось загрузить данные — попробуйте обновить страницу
+              {t('Не удалось загрузить данные — попробуйте обновить страницу')}
             </div>
           )}
           {!error && rows === null && (
-            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)' }}>Загрузка…</div>
+            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)' }}>{t('Загрузка…')}</div>
           )}
           {!error && rows !== null && visible.length === 0 && (
             <div style={{ padding: '40px 18px', textAlign: 'center' }}>
               <div style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-lg)', fontWeight: 700 }}>
-                {onlyFav ? 'Среди избранных активов пусто' : 'Нет активов по фильтру'}
+                {onlyFav ? t('Среди избранных активов пусто') : t('Нет активов по фильтру')}
               </div>
               <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                Попробуйте снять фильтры
+                {t('Попробуйте снять фильтры')}
               </div>
             </div>
           )}
@@ -670,7 +688,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                           конец дня, внутридневных (5м/1ч) нет → сигнал T+1. */}
                       {!r.has_intraday && (
                         <span
-                          title="Данные позиций обновляются только на конец дня — внутридневных (5м/1ч) нет. Сигнал по этому активу — на следующий день (T+1)."
+                          title={t('Данные позиций обновляются только на конец дня — внутридневных (5м/1ч) нет. Сигнал по этому активу — на следующий день (T+1).')}
                           style={{
                             flexShrink: 0, width: 16, height: 16, borderRadius: 999,
                             border: '1px solid var(--text-muted)', color: 'var(--text-secondary)',
@@ -711,7 +729,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 <button
                   type="button"
                   onClick={(e) => toggleFavorite(r.sectype, e)}
-                  aria-label={isFav ? 'Убрать из избранного' : 'В избранное'}
+                  aria-label={isFav ? t('Убрать из избранного') : t('В избранное')}
                   className="oi-screener-fav"
                   style={{
                     // Зона клика на всю высоту строки и ширину колонки: звезда
@@ -737,10 +755,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
             {isMed
-              ? `Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Бейдж с цветной рамкой — сильное движение (от ${fmtRatio(sharpThr * 1.5)}), залитый — особо сильное (от ${fmtRatio(sharpThr * 2)} или сильнейшее в списке). Точный перекос и дельта — при наведении на комету.`
-              : `Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Бейдж с цветной рамкой — сильное движение (от ${fmtRatio(sharpThr * 1.5)}), залитый — особо сильное (от ${fmtRatio(sharpThr * 2)} или сильнейшее в списке). Точный перекос и дневная дельта — при наведении на комету.`}
+              ? t('Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Бейдж с цветной рамкой — сильное движение (от {{mid}}), залитый — особо сильное (от {{strong}} или сильнейшее в списке). Точный перекос и дельта — при наведении на комету.', { mid: fmtRatio(sharpThr * 1.5), strong: fmtRatio(sharpThr * 2) })
+              : t('Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Бейдж с цветной рамкой — сильное движение (от {{mid}}), залитый — особо сильное (от {{strong}} или сильнейшее в списке). Точный перекос и дневная дельта — при наведении на комету.', { mid: fmtRatio(sharpThr * 1.5), strong: fmtRatio(sharpThr * 2) })}
           </span>
-          <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? '2 недели' : 'день'}</span>
+          <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? t('2 недели') : t('день')}</span>
         </div>
       )}
       </div>

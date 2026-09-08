@@ -17,6 +17,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, X } from 'lucide-react';
 import FundsTable from './FundsTable';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -64,6 +65,7 @@ export default function FundPickerModal({
   navSortDir,
   onSetNavSortDir,
 }: Props) {
+  const { t } = useTranslation();
   // Портал в body лежит вне .sb-panel, где в песочнице висит data-theme панели:
   // без явного атрибута окно красилось бы темой оболочки (светлый список фондов
   // поверх тёмной панели). Вне песочницы значение равно корневому — хук отдаёт
@@ -77,7 +79,7 @@ export default function FundPickerModal({
   // изменения открывает апселл. Гейтим колбэки, а не рисуем блюр.
   const { showUpgrade } = useUpgradePrompt();
   const promptPickerUpgrade = () =>
-    showUpgrade({ tier: 'basic', featureName: 'выбор фондов', indicator: 'funds_money' });
+    showUpgrade({ tier: 'basic', featureName: t('выбор фондов'), indicator: 'funds_money' });
   const guardedToggle = locked ? (_id: number) => promptPickerUpgrade() : onToggleFundVisibility;
   const guardedSetHidden: React.Dispatch<React.SetStateAction<Set<number>>> = locked
     ? () => promptPickerUpgrade()
@@ -136,17 +138,17 @@ export default function FundPickerModal({
           style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
         >
           <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
-            Фонды {categoryGenitive ?? ''}
+            {t('Фонды {{cat}}', { cat: categoryGenitive ?? '' })}
           </span>
           {maxDate && (
             <span className="inline-flex items-center" style={{ gap: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-              <span>На {fmtDate(maxDate)}</span>
+              <span>{t('На {{date}}', { date: fmtDate(maxDate) })}</span>
               {hasStale && (
                 <>
                   <span style={{ opacity: 0.45 }}>•</span>
                   <span className="inline-flex items-center" style={{ gap: 5 }}>
                     <AlertCircle size={13} strokeWidth={2.2} style={{ opacity: 0.6, flexShrink: 0 }} />
-                    часть фондов запаздывает
+                    {t('часть фондов запаздывает')}
                   </span>
                 </>
               )}
@@ -156,7 +158,7 @@ export default function FundPickerModal({
             onClick={onClose}
             className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
             style={{ color: 'var(--text-secondary)' }}
-            aria-label="Закрыть"
+            aria-label={t('Закрыть')}
           >
             <X size={22} />
           </button>
@@ -206,7 +208,7 @@ export default function FundPickerModal({
               boxShadow: '3px 3px 0 var(--text-primary)',
             }}
           >
-            Готово{allSelected ? '' : ` · ${selectedCount}`}
+            {t('Готово')}{allSelected ? '' : ` · ${selectedCount}`}
           </button>
         </div>
       </div>

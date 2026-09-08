@@ -10,6 +10,7 @@
 
 import { MousePointer2, Pencil, Minus, MoveUpRight, Square, Circle as CircleIcon, Type, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { AnnotationTool } from './AnnotationCanvas';
+import { useTranslation } from 'react-i18next';
 
 /** 6 preset colors — editorial palette. Theme-aware через CSS vars где возможно. */
 export const COLOR_PRESETS = [
@@ -59,6 +60,7 @@ export default function AnnotationToolbar({
     onRedo,
     onClear,
 }: Props) {
+    const { t } = useTranslation();
     const buttonStyle = {
         backgroundColor: 'var(--bg-primary)',
         border: '1.5px solid var(--text-primary)',
@@ -83,8 +85,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('select')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'select' ? activeButtonStyle : buttonStyle}
-                    aria-label="Выделение"
-                    title="Выделение / перемещение / Delete для удаления"
+                    aria-label={t('Выделение')}
+                    title={t('Выделение / перемещение / Delete для удаления')}
                 >
                     <MousePointer2 size={20} />
                 </button>
@@ -92,8 +94,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('pen')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'pen' ? activeButtonStyle : buttonStyle}
-                    aria-label="Карандаш"
-                    title="Карандаш"
+                    aria-label={t('Карандаш')}
+                    title={t('Карандаш')}
                 >
                     <Pencil size={20} />
                 </button>
@@ -101,8 +103,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('line')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'line' ? activeButtonStyle : buttonStyle}
-                    aria-label="Линия"
-                    title="Линия"
+                    aria-label={t('Линия')}
+                    title={t('Линия')}
                 >
                     <Minus size={20} />
                 </button>
@@ -110,8 +112,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('arrow')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'arrow' ? activeButtonStyle : buttonStyle}
-                    aria-label="Стрелка"
-                    title="Стрелка"
+                    aria-label={t('Стрелка')}
+                    title={t('Стрелка')}
                 >
                     <MoveUpRight size={20} />
                 </button>
@@ -119,8 +121,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('rectangle')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'rectangle' ? activeButtonStyle : buttonStyle}
-                    aria-label="Прямоугольник"
-                    title="Прямоугольник"
+                    aria-label={t('Прямоугольник')}
+                    title={t('Прямоугольник')}
                 >
                     <Square size={20} />
                 </button>
@@ -128,8 +130,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('circle')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'circle' ? activeButtonStyle : buttonStyle}
-                    aria-label="Эллипс"
-                    title="Эллипс"
+                    aria-label={t('Эллипс')}
+                    title={t('Эллипс')}
                 >
                     <CircleIcon size={20} />
                 </button>
@@ -137,8 +139,8 @@ export default function AnnotationToolbar({
                     onClick={() => onToolChange('text')}
                     className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
                     style={tool === 'text' ? activeButtonStyle : buttonStyle}
-                    aria-label="Текст"
-                    title="Текст"
+                    aria-label={t('Текст')}
+                    title={t('Текст')}
                 >
                     <Type size={20} />
                 </button>
@@ -173,8 +175,8 @@ export default function AnnotationToolbar({
                                 outlineOffset: 1,
                                 cursor: 'pointer',
                             }}
-                            aria-label={`Цвет: ${preset.label}`}
-                            title={preset.label}
+                            aria-label={t('Цвет: {{name}}', { name: t(preset.label) })}
+                            title={t(preset.label)}
                         />
                     );
                 })}
@@ -204,8 +206,8 @@ export default function AnnotationToolbar({
                                 backgroundColor: isActive ? 'var(--accent)' : 'transparent',
                                 border: '1px solid var(--text-primary)',
                             }}
-                            aria-label={preset.label}
-                            title={preset.label}
+                            aria-label={t(preset.label)}
+                            title={t(preset.label)}
                         >
                             <span
                                 style={{
@@ -231,8 +233,8 @@ export default function AnnotationToolbar({
                 disabled={!canUndo}
                 className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
-                aria-label="Отменить"
-                title="Отменить (последнее действие)"
+                aria-label={t('Отменить')}
+                title={t('Отменить (последнее действие)')}
             >
                 <RotateCcw size={20} />
             </button>
@@ -241,8 +243,8 @@ export default function AnnotationToolbar({
                 disabled={!canRedo}
                 className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
-                aria-label="Вернуть"
-                title="Вернуть"
+                aria-label={t('Вернуть')}
+                title={t('Вернуть')}
             >
                 <RotateCw size={20} />
             </button>
@@ -251,8 +253,8 @@ export default function AnnotationToolbar({
                 disabled={!canClear}
                 className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
-                aria-label="Очистить всю разметку"
-                title="Очистить всю разметку"
+                aria-label={t('Очистить всю разметку')}
+                title={t('Очистить всю разметку')}
             >
                 <Trash2 size={20} />
             </button>

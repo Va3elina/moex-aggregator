@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION, cssVar } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
@@ -59,6 +60,9 @@ export default function SeasonalityHistogram({
   periodLabel,
   niceXLabels = false,
 }: SeasonalityHistogramProps) {
+  // Подписи баров (Пн/Янв/10:00) приходят с бэкенда по-русски — переводим
+  // при показе: t() возвращает ключ, если перевода нет (часы так и остаются).
+  const { t } = useTranslation();
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
 
@@ -167,7 +171,7 @@ export default function SeasonalityHistogram({
 
   if (bars.length === 0) {
     return (
-      <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>Нет данных</div>
+      <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>{t('Нет данных')}</div>
     );
   }
 
@@ -394,7 +398,7 @@ export default function SeasonalityHistogram({
               <>
                 {/* Label header — bigger/bolder для лучшей читаемости. Особенно
                     важно в monthday/monthly modes где X-axis labels прорежены. */}
-                <div className="text-sm text-theme-primary mb-1 font-bold">{tooltip.bar!.label}</div>
+                <div className="text-sm text-theme-primary mb-1 font-bold">{t(tooltip.bar!.label)}</div>
                 {safeMeta.map((style, s) => {
                   const seriesBar = safeSeries[s]?.bars?.[idx];
                   if (!seriesBar) return null;
@@ -423,9 +427,9 @@ export default function SeasonalityHistogram({
                 <>
                   {/* Label header (день/месяц/час) — prominent даже когда X-axis
                       label прорежены adaptive thinning'ом. */}
-                  <div className="text-sm text-theme-primary mb-1 font-bold">{bar.label}</div>
-                  <TooltipRow color={color} label={bar.avg_change >= 0 ? 'Рост' : 'Падение'} value={valStr} />
-                  <div className="text-2xs text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
+                  <div className="text-sm text-theme-primary mb-1 font-bold">{t(bar.label)}</div>
+                  <TooltipRow color={color} label={bar.avg_change >= 0 ? t('Рост') : t('Падение')} value={valStr} />
+                  <div className="text-2xs text-theme-secondary mt-0.5">{t('{{n}} наблюдений', { n: bar.count })}</div>
                 </>
               );
             })()}
@@ -497,7 +501,7 @@ export default function SeasonalityHistogram({
             : (step === 1 || i % step === 0);
           return (
             <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
-              {showLabel ? bar.label : ''}
+              {showLabel ? t(bar.label) : ''}
             </span>
           );
         })}

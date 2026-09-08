@@ -28,6 +28,7 @@
 import FrameLogo from './FrameLogo';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
+import { useTranslation } from 'react-i18next';
 
 interface SandboxEntryButtonProps {
     /** Форма кнопки. По умолчанию кружок с глифом. */
@@ -63,18 +64,19 @@ function openTerminalWindow() {
 export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryButtonProps) {
     const { user } = useAuth();
     const { showUpgrade } = useUpgradePrompt();
+    const { t } = useTranslation();
 
     // Тир берём из роли пользователя (как ExtensionTokenSection): матрица
     // features.py про песочницу ничего не знает — это не индикатор.
     const isPro = user?.role === 'pro' || user?.role === 'admin';
-    const title = isPro ? TITLE_OPEN : TITLE_LOCKED;
+    const title = isPro ? t(TITLE_OPEN) : t(TITLE_LOCKED);
 
     const onClick = () => {
         if (isPro) {
             openTerminalWindow();
             return;
         }
-        showUpgrade({ tier: 'pro', featureName: 'Терминал — рабочий стол с индикаторами' });
+        showUpgrade({ tier: 'pro', featureName: t('Терминал — рабочий стол с индикаторами') });
     };
 
     if (variant === 'pill') {
@@ -97,7 +99,7 @@ export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryBut
                 }}
             >
                 <FrameLogo size={16} showWordmark={false} color="var(--accent)" />
-                <span className="hidden 2xl:inline">Терминал</span>
+                <span className="hidden 2xl:inline">{t('Терминал')}</span>
             </button>
         );
     }

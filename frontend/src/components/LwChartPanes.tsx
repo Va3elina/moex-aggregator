@@ -36,6 +36,8 @@ import {
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash,
 } from './chart/lwTypes';
 import { captureFontScale } from './chart/chartTypography';
+import { useTranslation } from 'react-i18next';
+import i18n, { t, dateLocale } from '../i18n';
 
 const BASE_FONT_SIZE = 11;
 
@@ -324,6 +326,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity,
   drawFill, drawFillColor, drawFillOpacity, onToolReset,
 }: LwChartPanesProps, forwardedRef) {
+  // Ре-рендер при смене языка (title кнопок через t()).
+  useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   // Колбэк догрузки держим в ref: подписка на диапазон живёт один раз, а
   // проп пересоздаётся каждый рендер владельца.
@@ -333,6 +337,16 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // СЛЕВА и компенсируем сдвиг логических индексов (см. конец эффекта серий).
   const prevFirstTimeRef = useRef<number | null>(null);
   const chartsRef = useRef<IChartApi[]>([]);
+  // Смена языка: локаль кросхейра и подписи оси (monthShort) пересчитываем без ремонта.
+  useEffect(() => {
+    const onLang = () => {
+      for (const ch of chartsRef.current) {
+        try { ch.applyOptions({ localization: { locale: dateLocale() } }); } catch { /* снят */ }
+      }
+    };
+    i18n.on('languageChanged', onLang);
+    return () => { i18n.off('languageChanged', onLang); };
+  }, []);
   const apisRef = useRef<AnySeries[][]>([]);          // [pane][series]
   // ⚠️ Определения серий храним ПАРАЛЛЕЛЬНО apisRef, а не читаем из panesRef.
   // panesRef присваивается во время рендера, apisRef — в эффекте: это разные
@@ -643,7 +657,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
         autoSize: true,
         layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: BASE_FONT_SIZE },
         localization: {
-          locale: 'ru-RU',
+          locale: dateLocale(),
           // Снапшот на монтаже — как в LwChart: сам факт «формат включён» не
           // меняется на лету, меняется только подпись (через ref).
           ...(crossFmtRef.current ? { timeFormatter: (t: Time) => crossFmtRef.current!(t as unknown as number) } : {}),
@@ -1365,7 +1379,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         textEditEl = inp;
         inp.type = 'text';
         inp.value = initial;
-        inp.placeholder = 'Текст…';
+        inp.placeholder = t('Текст…');
         inp.dataset.exportIgnore = 'true';
         inp.style.cssText = 'position:absolute;z-index:30;transform:translate(-50%,-50%);width:150px;'
           + 'padding:4px 8px;border-radius:7px;font:600 12.5px Inter,-apple-system,sans-serif;'
@@ -1464,20 +1478,20 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           const dBars = Math.round(Math.abs(d.pts[1].logical - d.pts[0].logical));
           const fmtN = (n: number) => (Math.abs(n) >= 100 ? n.toFixed(0) : Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(4));
           const timeAt = (logical: number): number | null => { const dt = primaryDef()?.data; if (!dt || !dt.length) return null; const L = Math.max(0, Math.min(dt.length - 1, Math.round(logical))); return dt[L].time; };
-          const fmtDur = (secs: number): string => { const s = Math.abs(secs), dd = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); return dd >= 1 ? (hh > 0 ? `${dd}д ${hh}ч` : `${dd}д`) : hh >= 1 ? (mm > 0 ? `${hh}ч ${mm}м` : `${hh}ч`) : `${mm}м`; };
+          const fmtDur = (secs: number): string => { const s = Math.abs(secs), dd = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); const D = t('д'), H = t('ч'), M = t('м'); return dd >= 1 ? (hh > 0 ? `${dd}${D} ${hh}${H}` : `${dd}${D}`) : hh >= 1 ? (mm > 0 ? `${hh}${H} ${mm}${M}` : `${hh}${H}`) : `${mm}${M}`; };
           const t0 = timeAt(d.pts[0].logical), t1 = timeAt(d.pts[1].logical);
           const span = t0 != null && t1 != null ? ` · ${fmtDur(t1 - t0)}` : '';
-          const label = `${dP >= 0 ? '+' : ''}${fmtN(dP)} (${dPct >= 0 ? '+' : ''}${dPct.toFixed(2)}%) · ${dBars} бар${span}`;
+          const label = `${dP >= 0 ? '+' : ''}${fmtN(dP)} (${dPct >= 0 ? '+' : ''}${dPct.toFixed(2)}%) · ${t('{{n}} бар', { n: dBars })}${span}`;
           const cx = x + rw / 2, lbW = label.length * 5.6 + 12, top = y - 4;
           drawSvg.appendChild(svgEl('rect', { x: cx - lbW / 2, y: top - 16, width: lbW, height: 16, rx: 4, fill: mc, opacity: op }));
-          const t = svgEl('text', { x: cx, y: top - 4.5, fill: '#fff', 'font-size': 10.5, 'font-family': 'Inter,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op }); t.textContent = label;
-          drawSvg.appendChild(t);
+          const txt = svgEl('text', { x: cx, y: top - 4.5, fill: '#fff', 'font-size': 10.5, 'font-family': 'Inter,sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: op }); txt.textContent = label;
+          drawSvg.appendChild(txt);
           if (sel) { dot(a.x, a.y); dot(b.x, b.y); }
         } else if (d.tool === 'text') {
           const xy = lp2xy(d.pts[0]); if (!xy) return;
           const fs = d.textSize ?? (13 + w * 2);
           const fill = d.textColor || col;
-          const label = d.text || 'Текст';
+          const label = d.text || t('Текст');
           if (d.textBg) {
             const bw = label.length * fs * 0.56 + 10, bh = fs + 6;
             drawSvg.appendChild(svgEl('rect', {
@@ -1485,9 +1499,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
               fill: 'var(--bg-secondary,#17161A)', 'fill-opacity': op, stroke: fill, 'stroke-opacity': String(Number(op) * 0.45), 'stroke-width': 1,
             }));
           }
-          const t = svgEl('text', { x: xy.x, y: xy.y, fill, 'font-size': fs, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': d.textBold === false ? 500 : 600, opacity: op });
-          t.textContent = label;
-          drawSvg.appendChild(t);
+          const txt = svgEl('text', { x: xy.x, y: xy.y, fill, 'font-size': fs, 'font-family': 'Inter,-apple-system,sans-serif', 'font-weight': d.textBold === false ? 500 : 600, opacity: op });
+          txt.textContent = label;
+          drawSvg.appendChild(txt);
           if (sel) dot(xy.x - 4, xy.y - 5);
         }
       };
@@ -1560,7 +1574,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         if (d.tool === 'vline') return { x: pts[0].x + ox, y: oy, w: 0, h: pb.height };
         if (d.tool === 'text') {
           const fs = d.textSize ?? (13 + d.width * 2);
-          return { x: pts[0].x + ox, y: pts[0].y - fs + oy, w: Math.max(40, (d.text || 'Текст').length * fs * 0.58), h: fs };
+          return { x: pts[0].x + ox, y: pts[0].y - fs + oy, w: Math.max(40, (d.text || t('Текст')).length * fs * 0.58), h: fs };
         }
         if (d.tool === 'ellipse') {
           // Габарит наклонённого овала шире, чем бокс его опорных точек.
@@ -1678,7 +1692,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           else if (d.tool === 'rect' || d.tool === 'ruler') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), rw = Math.abs(a.x - b.x), rh = Math.abs(a.y - b.y); if (bx >= x - 5 && bx <= x + rw + 5 && by >= y - 5 && by <= y + rh + 5) return d; } }
           else if (d.tool === 'fib') { const a = lp2xy(d.pts[0]), b = lp2xy(d.pts[1]); if (a && b) { const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x); if (bx >= xL - 5 && bx <= xR + 5) { const p0 = d.pts[0].price, p1 = d.pts[1].price; for (const lv of FIB) { const yy = priceY(p0 + (p1 - p0) * lv); if (yy != null && Math.abs(by - yy) < 6) return d; } } } }
           else if (d.tool === 'brush') { const pnts = d.pts.map(lp2xy).filter(Boolean) as { x: number; y: number }[]; for (let j = 1; j < pnts.length; j++) if (distToSeg(bx, by, pnts[j - 1].x, pnts[j - 1].y, pnts[j].x, pnts[j].y) < 6) return d; }
-          else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); const fs = d.textSize ?? (13 + d.width * 2); const half = Math.max(30, (d.text || 'Текст').length * fs * 0.3); if (xy && bx > xy.x - 6 && bx < xy.x + half * 2 && Math.abs(by - (xy.y - fs * 0.35)) < fs * 0.8 + 4) return d; }
+          else if (d.tool === 'text') { const xy = lp2xy(d.pts[0]); const fs = d.textSize ?? (13 + d.width * 2); const half = Math.max(30, (d.text || t('Текст')).length * fs * 0.3); if (xy && bx > xy.x - 6 && bx < xy.x + half * 2 && Math.abs(by - (xy.y - fs * 0.35)) < fs * 0.8 + 4) return d; }
         }
         return null;
       };
@@ -2468,7 +2482,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         try {
           const al = api.createPriceLine({
             price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
-            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? 'уведомление',
+            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? t('уведомление'),
           });
           lineRegRef.current.push({ line: al, token: pl.color ?? 'var(--accent)', pane: pi });
         } catch { /* серия уже снята */ }
@@ -2715,8 +2729,8 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       <button
         type="button"
         onClick={jumpToLatest}
-        title="Прокрутить до текущего бара"
-        aria-label="Прокрутить до текущего бара"
+        title={t('Прокрутить до текущего бара')}
+        aria-label={t('Прокрутить до текущего бара')}
         style={{
           position: 'absolute', right, bottom, zIndex: 8,
           width: d, height: d, borderRadius: '50%', padding: 0,

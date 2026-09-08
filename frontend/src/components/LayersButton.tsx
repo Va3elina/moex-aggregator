@@ -8,6 +8,7 @@
  * индикаторов со слоями.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Layers } from 'lucide-react';
 import CenteredModalShell from './CenteredModalShell';
 import { ToggleRow } from './ToggleRow';
@@ -28,6 +29,7 @@ interface LayersButtonProps {
 }
 
 export default function LayersButton({ layers, tourId, className = '' }: LayersButtonProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -45,13 +47,13 @@ export default function LayersButton({ layers, tourId, className = '' }: LayersB
           width: 44,
           height: 44,
         }}
-        aria-label="Слои графика"
-        title="Слои графика"
+        aria-label={t('Слои графика')}
+        title={t('Слои графика')}
       >
         <Layers size={22} />
       </button>
       {/* Модалка не закрывается на каждый тумблер — юзер может щёлкнуть оба сразу */}
-      <CenteredModalShell open={open} onClose={() => setOpen(false)} title="Слои графика">
+      <CenteredModalShell open={open} onClose={() => setOpen(false)} title={t('Слои графика')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {layers.map((l) => (
             <ToggleRow key={l.key} label={l.label} hint={l.hint} checked={l.checked} onChange={l.onChange} />

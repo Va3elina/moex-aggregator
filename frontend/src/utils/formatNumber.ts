@@ -23,6 +23,8 @@
  *    formatNumber(-169238)        → "-169 238"
  *    formatNumber(14.16, 2)       → "14.16"
  */
+
+import { t } from '../i18n';
 export function formatNumber(value: number, decimals: number = 0): string {
   // toLocaleString('ru-RU') даёт " " (NBSP, U+00A0) между тысячами и "," для дробной.
   // Заменяем запятую на точку — получаем "1 234.56".
@@ -66,9 +68,9 @@ export function formatPrice(value: number): string {
  */
 export function formatCompact(value: number, decimals: number = 1): string {
   const abs = Math.abs(value);
-  if (abs >= 1e12) return `${formatNumber(value / 1e12, decimals)} трлн`;
-  if (abs >= 1e9)  return `${formatNumber(value / 1e9, decimals)} млрд`;
-  if (abs >= 1e6)  return `${formatNumber(value / 1e6, decimals)} млн`;
-  if (abs >= 1e3)  return `${formatNumber(value / 1e3, decimals)} тыс`;
+  if (abs >= 1e12) return `${formatNumber(value / 1e12, decimals)} ${t('трлн')}`;
+  if (abs >= 1e9)  return `${formatNumber(value / 1e9, decimals)} ${t('млрд')}`;
+  if (abs >= 1e6)  return `${formatNumber(value / 1e6, decimals)} ${t('млн')}`;
+  if (abs >= 1e3)  return `${formatNumber(value / 1e3, decimals)} ${t('тыс')}`;
   return formatNumber(value, decimals);
 }

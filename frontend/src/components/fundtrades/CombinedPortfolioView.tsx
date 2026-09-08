@@ -17,6 +17,8 @@
 // средняя доля по фондам); выбранный режим персистится снаружи (`mode`).
 
 import { Fragment, useMemo, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t, getLang, monthGenitive, dateLocale } from '../../i18n';
 import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundTicker, isOfzBond } from '../../config/fundConfig';
 import Donut from '../funds/Donut';
 import InstrumentIcon from '../InstrumentIcon';
@@ -87,21 +89,21 @@ function plural(n: number, one: string, few: string, many: string): string {
 
 const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
     'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
-const MONTHS_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
-// "2026-07-31" → "июль 2026" — для пилюли актуальности данных.
+// "2026-07-31" → "июль 2026" (en: "July 2026") — для пилюли актуальности данных.
 function monthYearLower(iso: string): string {
     const d = new Date(iso);
-    return `${MONTHS_LOWER[d.getMonth()]} ${d.getFullYear()}`;
+    const m = getLang() === 'en' ? monthGenitive(d.getMonth()) : MONTHS_LOWER[d.getMonth()];
+    return `${m} ${d.getFullYear()}`;
 }
 
-// "2026-07-23" → "23 июля 2026" — для подсказки «доходность на дату». Месяц/день
-// читаем из строки, а не через Date().getMonth(): парсинг ISO-даты как UTC-полночи
-// в западных таймзонах сдвигает день/месяц назад (тот же приём, что и в PortfolioFundPicker).
+// "2026-07-23" → "23 июля 2026" / "23 July 2026" — для подсказки «доходность на
+// дату». Месяц/день читаем из строки, а не через Date().getMonth(): парсинг
+// ISO-даты как UTC-полночи в западных таймзонах сдвигает день/месяц назад
+// (тот же приём, что и в PortfolioFundPicker).
 function dayMonthYear(iso: string): string {
     const [y, m, d] = iso.slice(0, 10).split('-');
-    return `${Number(d)} ${MONTHS_GENITIVE[Number(m) - 1]} ${y}`;
+    return `${Number(d)} ${monthGenitive(Number(m) - 1)} ${y}`;
 }
 
 // "2026-07-31" → "Июль 2026" — для пунктов month-picker (с заглавной).
@@ -131,7 +133,7 @@ function lagInfo(portfolio: FundPortfolio): LagInfo | null {
         onTime: portfolio.num_funds,
         lagging: excluded
             .map((f) => ({ name: f.name, month: f.snapshot_date ? monthYearLower(f.snapshot_date) : null }))
-            .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+            .sort((a, b) => a.name.localeCompare(b.name, dateLocale())),
     };
 }
 
@@ -139,12 +141,12 @@ function lagInfo(portfolio: FundPortfolio): LagInfo | null {
 // их последнего известного состава).
 const LAG_LIST_MAX = 8;
 function lagTitle(lag: LagInfo, targetISO: string): string {
-    const head = `Состав за ${monthYearLower(targetISO)} опубликовали ${lag.onTime} из ${lag.total} фондов.`
-        + '\nОстальные в портфель не включены, их последний состав:';
+    const head = t('Состав за {{month}} опубликовали {{n}} из {{total}} фондов.', { month: monthYearLower(targetISO), n: lag.onTime, total: lag.total })
+        + '\n' + t('Остальные в портфель не включены, их последний состав:');
     const shown = lag.lagging.slice(0, LAG_LIST_MAX)
         .map((f) => `• ${f.name}${f.month ? ` · ${f.month}` : ''}`).join('\n');
     const rest = lag.lagging.length > LAG_LIST_MAX
-        ? `\n• и ещё ${lag.lagging.length - LAG_LIST_MAX}` : '';
+        ? `\n• ${t('и ещё {{n}}', { n: lag.lagging.length - LAG_LIST_MAX })}` : '';
     return `${head}\n${shown}${rest}`;
 }
 
@@ -152,7 +154,7 @@ function lagTitle(lag: LagInfo, targetISO: string): string {
 // разделённые тонкими линиями. Палитра нейтральная — направление несёт только
 // знак-стрелка (▲/▼), размер и толщина цифр одинаковы для всех периодов
 // (не выделяем годовую крупнее месячной). Нет данных за период → «—».
-const RET_COLS: { key: PeriodKey; label: string }[] = [
+const RET_COLS: { key: PeriodKey; label: string }[] = [ // label — ключ t()
     { key: 'm1', label: '1 мес' },
     { key: 'y1', label: '1 год' },
     { key: 'y3', label: '3 года' },
@@ -166,18 +168,19 @@ function fmtRetAbs(v: number | null | undefined): string {
 }
 
 function ReturnsByPeriod({ returns, asOf, compact }: { returns: FundReturns; asOf?: string | null; compact?: boolean }) {
+    const { t } = useTranslation();
     return (
         <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: compact ? '11px 14px' : '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 10 }}>
-                <span style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность по периодам</span>
+                <span style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{t('Доходность по периодам')}</span>
                 {/* Доходность взвешена по фондам портфеля, а те обновляются не в один
                     день — «на дату» показывает САМЫЙ СТАРЫЙ последний день цены пая
                     среди них: после него не все фонды учтены поровну. */}
                 {asOf && (
                     <HelpTooltip
                         size={13}
-                        title="Дата расчёта"
-                        content={`На ${dayMonthYear(asOf)} — когда обновился самый отстающий фонд.`}
+                        title={t('Дата расчёта')}
+                        content={t('На {{date}} — когда обновился самый отстающий фонд.', { date: dayMonthYear(asOf) })}
                     />
                 )}
             </div>
@@ -189,7 +192,7 @@ function ReturnsByPeriod({ returns, asOf, compact }: { returns: FundReturns; asO
                         <Fragment key={key}>
                             {i > 0 && <div style={{ width: 1, background: 'color-mix(in srgb, var(--text-primary) 10%, transparent)', flexShrink: 0 }} />}
                             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-                                <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', textAlign: 'center' }}>{label}</div>
+                                <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', textAlign: 'center' }}>{t(label)}</div>
                                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 4 }}>
                                     {arrow && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{arrow}</span>}
                                     <span style={{ fontSize: 'var(--fs-lg, 18px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>{fmtRetAbs(v)}</span>
@@ -218,9 +221,9 @@ function StatTile({ label, value, color }: { label: string; value: string; color
 
 // Компактный объём: «112.7 млрд», «540 млн», «12 тыс» (без ₽ — валюта в шапке).
 function fmtVolShort(v: number): string {
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1)} млрд`;
-    if (v >= 1e6) return `${(v / 1e6).toFixed(0)} млн`;
-    return `${Math.round(v / 1e3)} тыс`;
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1)} ${t('млрд')}`;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(0)} ${t('млн')}`;
+    return `${Math.round(v / 1e3)} ${t('тыс')}`;
 }
 
 // Объём для колонки таблицы: голое число в млрд, единица вынесена в заголовок
@@ -231,8 +234,8 @@ function fmtVolBln(v: number): string {
 
 // Итог структуры: «196,0 млрд ₽» — запятая как в остальных рублёвых шапках.
 function fmtTotalRub(v: number): string {
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1).replace('.', ',')} млрд ₽`;
-    return `${(v / 1e6).toFixed(0)} млн ₽`;
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1).replace('.', ',')} ${t('млрд ₽')}`;
+    return `${(v / 1e6).toFixed(0)} ${t('млн ₽')}`;
 }
 
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру (внутри свой фолбэк-круг),
@@ -249,6 +252,7 @@ function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; 
 }
 
 export default function CombinedPortfolioView({ portfolio, loading, mode, variant = 'desktop', onModeChange, onAssetClick, availableMonths, asOf, onAsOfChange, monthLocked, onMonthLockedClick }: Props) {
+    const { t } = useTranslation();
     const [modalOpen, setModalOpen] = useState(false);
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const isMobile = variant === 'mobile';
@@ -273,9 +277,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         const top = sorted.slice(0, DONUT_TOP);
         const otherW = sorted.slice(DONUT_TOP).reduce((s, h) => s + wOf(h), 0);
         const items = top.map((h) => ({ name: fundAssetName(h.asset_name, h.isin), weight: wOf(h) }));
-        if (otherW > 0.5) items.push({ name: 'Прочее', weight: otherW });
+        if (otherW > 0.5) items.push({ name: t('Прочее'), weight: otherW });
         const colors = items.map((it, i) =>
-            it.name === 'Прочее'
+            i >= top.length
                 ? 'var(--text-muted)'
                 : (fundAssetColor(top[i]?.asset_name ?? it.name, top[i]?.isin ?? null) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
         );
@@ -297,7 +301,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         return (
             <div style={{ ...wrapStyle, textAlign: 'center' }}>
                 <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 420, margin: '12px auto', lineHeight: 1.5 }}>
-                    Нет данных по выбранным управляющим компаниям. Выберите другие УК или дождитесь публикации составов.
+                    {t('Нет данных по выбранным управляющим компаниям. Выберите другие УК или дождитесь публикации составов.')}
                 </p>
             </div>
         );
@@ -335,7 +339,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 role={click ? 'button' : undefined}
                 tabIndex={click ? 0 : undefined}
                 onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
-                title={click ? `По бумаге: ${fundAssetName(h.asset_name, h.isin)}` : undefined}
+                title={click ? t('По бумаге: {{name}}', { name: fundAssetName(h.asset_name, h.isin) }) : undefined}
                 style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <AssetLogo h={h} size={30} color={color} />
@@ -372,7 +376,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                     <div style={{ flex: 1, minWidth: 0, height: 6, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 4, overflow: 'hidden' }}>
                         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }} />
                     </div>
-                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, minWidth: 92, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVolShort(h.value_rub)} ₽ · {h.funds_holding} ф.</span>
+                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, minWidth: 92, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVolShort(h.value_rub)} ₽ · {t('{{n}} ф.', { n: h.funds_holding })}</span>
                 </div>
             </div>
         );
@@ -380,7 +384,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
 
     const listHeader = (
         <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            <span /><span>Бумага</span><span /><span style={{ textAlign: 'right' }}>Доля</span><span style={{ textAlign: 'right' }}>млрд ₽</span><span style={{ textAlign: 'right' }}>Фнд</span>
+            <span /><span>{t('Бумага')}</span><span /><span style={{ textAlign: 'right' }}>{t('Доля')}</span><span style={{ textAlign: 'right' }}>{t('млрд ₽')}</span><span style={{ textAlign: 'right' }}>{t('Фнд')}</span>
         </div>
     );
 
@@ -399,7 +403,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 onBlur={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
             >
-                Прочие бумаги · ещё {rest.length} <span style={{ fontSize: '0.85em' }}>↓</span>
+                {t('Прочие бумаги · ещё {{n}}', { n: rest.length })} <span style={{ fontSize: '0.85em' }}>↓</span>
             </button>
         </div>
     );
@@ -409,8 +413,8 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         <div onClick={() => setModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', borderRadius: 16, boxShadow: '6px 6px 0 var(--text-primary)', width: 'min(720px, 100%)', maxHeight: '84vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1.5px solid var(--text-primary)' }}>
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800 }}>Полный состав · {portfolio.num_assets} {plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}</span>
-                    <button onClick={() => setModalOpen(false)} aria-label="Закрыть" style={{ width: 32, height: 32, flexShrink: 0, border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)', borderRadius: 8, cursor: 'pointer', fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>✕</button>
+                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800 }}>{t('Полный состав')} · {portfolio.num_assets} {t(plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг'))}</span>
+                    <button onClick={() => setModalOpen(false)} aria-label={t('Закрыть')} style={{ width: 32, height: 32, flexShrink: 0, border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)', borderRadius: 8, cursor: 'pointer', fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>✕</button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 14px' }}>
                     {/* Шапка списка липкая: z-index — чтобы строки уходили ПОД неё, а не
@@ -429,22 +433,22 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
         return (
             <div style={wrapStyle}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 13, borderBottom: '1.5px solid var(--text-primary)' }}>
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Состав портфеля</span>
+                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>{t('Состав портфеля')}</span>
                     {/* Мобилка: месяц-пикер живёт в ⚙️-sheet, пилюли тут нет — неполноту
                         среза вешаем на счётчик фондов (янтарный кружок + «17 из 19»). */}
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {lag && (
                             <span title={lagHint} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warning, #E0A020)', flexShrink: 0 }} />
-                                <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{lag.onTime} из {lag.total}</span>
+                                <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{t('{{n}} из {{total}}', { n: lag.onTime, total: lag.total })}</span>
                                 <span aria-hidden>·</span>
                             </span>
                         )}
-                        {portfolio.num_funds} ф. · {portfolio.num_assets} бум.
+                        {t('{{n}} ф.', { n: portfolio.num_funds })} · {t('{{n}} бум.', { n: portfolio.num_assets })}
                     </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                    <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
+                    <StatTile label={t('Объём в фондах')} value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
                     <ReturnsByPeriod returns={rr} asOf={portfolio.returns_as_of} compact />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
@@ -477,7 +481,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
             hoverIdx={hoverIdx}
             onHoverChange={setHoverIdx}
             onItemClick={onAssetClick ? (i) => onAssetClick(tmTop[i]) : undefined}
-            clickHint="потоки по компании"
+            clickHint={t('потоки по компании')}
         />
     );
 
@@ -506,9 +510,9 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 иначе центрирование топило их ниже относительно общей рамки. */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div>
-                    <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Состав портфеля</div>
+                    <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>{t('Состав портфеля')}</div>
                     <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                        {portfolio.num_funds} {plural(portfolio.num_funds, 'фонд', 'фонда', 'фондов')} · {portfolio.num_assets} {plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}
+                        {portfolio.num_funds} {t(plural(portfolio.num_funds, 'фонд', 'фонда', 'фондов'))} · {portfolio.num_assets} {t(plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг'))}
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -523,7 +527,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                                 видна только при наведении. */}
                             {isFreshest && (
                                 <span
-                                    title={lag ? lagHint : 'Актуальные данные — показан самый свежий доступный срез портфеля'}
+                                    title={lag ? lagHint : t('Актуальные данные — показан самый свежий доступный срез портфеля')}
                                     style={{ width: 10, height: 10, borderRadius: '50%', background: lag ? 'var(--warning, #E0A020)' : 'var(--mood-green, #4a9959)', flexShrink: 0, cursor: 'help' }}
                                 />
                             )}
@@ -532,7 +536,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                                     title={lagHint}
                                     style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', cursor: 'help' }}
                                 >
-                                    {lag.onTime} из {lag.total}
+                                    {t('{{n}} из {{total}}', { n: lag.onTime, total: lag.total })}
                                 </span>
                             )}
                             <Dropdown<string>
@@ -544,29 +548,29 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                             />
                         </div>
                     ) : freshISO && (
-                        <div title={lag ? lagHint : 'Месяц самого свежего снапшота выбранных фондов'} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: lag ? 'help' : undefined }}>
+                        <div title={lag ? lagHint : t('Месяц самого свежего снапшота выбранных фондов')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: lag ? 'help' : undefined }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: lag ? 'var(--warning, #E0A020)' : 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
-                            {lag ? 'Данные частично' : 'Актуальные данные'}
+                            {lag ? t('Данные частично') : t('Актуальные данные')}
                             <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
-                                · {monthYearLower(freshISO)}{lag ? ` · ${lag.onTime} из ${lag.total}` : ''}
+                                · {monthYearLower(freshISO)}{lag ? ` · ${t('{{n}} из {{total}}', { n: lag.onTime, total: lag.total })}` : ''}
                             </span>
                         </div>
                     )}
                     {onModeChange && (
                         <SegmentedControl<'rub' | 'share'>
                             options={[
-                                { key: 'rub', label: 'По капиталу' },
-                                { key: 'share', label: 'По доле' },
+                                { key: 'rub', label: t('По капиталу') },
+                                { key: 'share', label: t('По доле') },
                             ]}
                             value={mode}
                             onChange={onModeChange}
                             trailing={
                                 <HelpTooltip
                                     align="right"
-                                    title="Как считается вес"
+                                    title={t('Как считается вес')}
                                     sections={[
-                                        { heading: 'По капиталу', body: 'Доля бумаги от суммарной стоимости всех позиций выбранных фондов: крупные фонды влияют сильнее.' },
-                                        { heading: 'По доле', body: 'Средняя доля бумаги по фондам, каждый фонд с равным весом — виден консенсус управляющих без перекоса на гигантов.' },
+                                        { heading: t('По капиталу'), body: t('Доля бумаги от суммарной стоимости всех позиций выбранных фондов: крупные фонды влияют сильнее.') },
+                                        { heading: t('По доле'), body: t('Средняя доля бумаги по фондам, каждый фонд с равным весом — виден консенсус управляющих без перекоса на гигантов.') },
                                     ]}
                                 />
                             }
@@ -589,7 +593,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 {/* Структура + доходность */}
                 <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '2px 0 10px' }}>
-                        Структура · <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtTotalRub(portfolio.total_value_rub)}</span>
+                        {t('Структура')} · <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtTotalRub(portfolio.total_value_rub)}</span>
                     </div>
                     {treemap}
                     <div style={{ marginTop: 16 }}>

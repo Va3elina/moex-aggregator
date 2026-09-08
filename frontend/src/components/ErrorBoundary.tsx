@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react';
 import { isChunkLoadError, reloadOnceForChunk } from '../utils/chunkReload';
+import { t } from '../i18n';
 
 interface Props {
   children: ReactNode;
@@ -62,10 +63,10 @@ export default class ErrorBoundary extends Component<Props, State> {
         }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>&#9888;&#65039;</div>
           <h2 style={{ color: '#E2E8F0', marginBottom: '0.5rem', fontSize: '1.25rem' }}>
-            Что-то пошло не так
+            {t('Что-то пошло не так')}
           </h2>
           <p style={{ marginBottom: '1.5rem', textAlign: 'center', maxWidth: '400px', fontSize: '0.875rem' }}>
-            Произошла ошибка при отображении страницы. Попробуйте перезагрузить.
+            {t('Произошла ошибка при отображении страницы. Попробуйте перезагрузить.')}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -75,11 +76,11 @@ export default class ErrorBoundary extends Component<Props, State> {
               border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem',
             }}
           >
-            Перезагрузить
+            {t('Перезагрузить')}
           </button>
           {this.state.error && (
             <details style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#6B7280', maxWidth: '600px' }}>
-              <summary style={{ cursor: 'pointer' }}>Детали ошибки</summary>
+              <summary style={{ cursor: 'pointer' }}>{t('Детали ошибки')}</summary>
               <pre style={{ marginTop: '0.5rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 {this.state.error.message}
               </pre>

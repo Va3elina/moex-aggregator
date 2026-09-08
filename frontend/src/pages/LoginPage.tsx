@@ -4,10 +4,12 @@ import { Mail, Lock, Eye, EyeOff, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { safeInternalPath, setPostLoginNext } from '../utils/postLoginRedirect';
 import { apiErrorFromBody } from '../services/api';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 
 // SVG иконки провайдеров — официальные стили (Yandex 2021 rebrand, VK ID 2021)
 const VKIcon = () => (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-label="ВКонтакте">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-label="VK">
         <rect width="24" height="24" rx="5" fill="#0077FF" />
         <path
             d="M12.79 16.5c-4.74 0-7.45-3.25-7.56-8.66h2.37c.08 3.97 1.82 5.65 3.2 5.99V7.84h2.24v3.42c1.36-.15 2.79-1.71 3.28-3.42h2.24c-.37 2.11-1.93 3.67-3.04 4.31 1.11.53 2.88 1.89 3.55 4.35h-2.46c-.54-1.66-1.85-2.94-3.57-3.11v3.11h-.25z"
@@ -17,7 +19,7 @@ const VKIcon = () => (
 );
 
 const YandexIcon = () => (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-label="Яндекс">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-label="Yandex">
         <circle cx="12" cy="12" r="12" fill="#FC3F1D" />
         <path
             d="M13.27 18.4h2.04V5.6h-2.96c-2.98 0-4.55 1.53-4.55 3.79 0 1.8.86 2.86 2.4 3.96L7.55 18.4h2.2l2.95-5.2-1.04-.7c-1.25-.85-1.86-1.51-1.86-2.92 0-1.24.87-2.08 2.51-2.08h.96V18.4z"
@@ -46,11 +48,11 @@ const MIN_PASSWORD_LENGTH = 8;
  * Регистры, цифры и спецсимволы там влияют только на score, отказом не служат.
  */
 function passwordProblems(pwd: string): string[] {
-    if (pwd.length < MIN_PASSWORD_LENGTH) return [`Минимум ${MIN_PASSWORD_LENGTH} символов`];
+    if (pwd.length < MIN_PASSWORD_LENGTH) return [passwordHint()];
     return [];
 }
 
-const PASSWORD_HINT = `Минимум ${MIN_PASSWORD_LENGTH} символов`;
+const passwordHint = () => t('Минимум {{n}} символов', { n: MIN_PASSWORD_LENGTH });
 
 /**
  * Тело ответа как JSON, но без падения на не-JSON. Отбойники стоят ДО
@@ -74,21 +76,22 @@ async function readJsonSafe(resp: Response): Promise<Partial<AuthTokens> | null>
 /** Токены из ответа. Ответ без них — сломанный, ловим здесь, а не падением ниже. */
 function requireTokens(body: Partial<AuthTokens> | null): AuthTokens {
     if (!body?.access_token || !body?.refresh_token) {
-        throw new Error('Сервис вернул неожиданный ответ, попробуйте ещё раз');
+        throw new Error(t('Сервис вернул неожиданный ответ, попробуйте ещё раз'));
     }
     return { access_token: body.access_token, refresh_token: body.refresh_token };
 }
 
 /** Осмысленный текст по одному лишь статусу — когда тела нет или оно не JSON. */
 function statusFallback(status: number): string {
-    if (status === 429) return 'Слишком много попыток. Подождите минуту и попробуйте снова.';
-    if (status === 502 || status === 503 || status === 504) return 'Сервис недоступен, попробуйте через минуту';
-    return 'Ошибка';
+    if (status === 429) return t('Слишком много попыток. Подождите минуту и попробуйте снова.');
+    if (status === 502 || status === 503 || status === 504) return t('Сервис недоступен, попробуйте через минуту');
+    return t('Ошибка');
 }
 
 export default function LoginPage() {
     const navigate = useNavigate();
     const auth = useAuth();
+    const { t } = useTranslation();
     const [searchParams] = useSearchParams();
     // Куда вернуть после входа (?next=). Валидируем (только внутренние пути).
     const urlNext = safeInternalPath(searchParams.get('next'));
@@ -135,7 +138,7 @@ export default function LoginPage() {
             if (mode === 'register') {
                 const problems = passwordProblems(password);
                 if (problems.length > 0) {
-                    throw new Error(`Пароль не подходит: ${problems.join(', ').toLowerCase()}`);
+                    throw new Error(t('Пароль не подходит: {{problems}}', { problems: problems.join(', ').toLowerCase() }));
                 }
             }
 
@@ -171,8 +174,8 @@ export default function LoginPage() {
                     // второй запрос ловит 429.
                     setMode('login');   // форма уже готова к входу, вводить заново не надо
                     throw new Error(loginResp.status === 429
-                        ? 'Аккаунт создан. Слишком много попыток подряд — подождите минуту и войдите.'
-                        : 'Аккаунт создан. Войдите, чтобы продолжить.');
+                        ? t('Аккаунт создан. Слишком много попыток подряд — подождите минуту и войдите.')
+                        : t('Аккаунт создан. Войдите, чтобы продолжить.'));
                 }
                 await auth.login(requireTokens(loginData));
                 // Раньше здесь безусловно стоял '/verify-email' — и next терялся:
@@ -186,7 +189,7 @@ export default function LoginPage() {
             await auth.login(requireTokens(data));
             navigate(urlNext || '/');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Произошла ошибка');
+            setError(err instanceof Error ? err.message : t('Произошла ошибка'));
         } finally {
             setLoading(false);
         }
@@ -231,10 +234,10 @@ export default function LoginPage() {
                 }
                 window.location.href = data.url;
             } else {
-                setError(data.detail || 'OAuth не настроен');
+                setError(data.detail || t('OAuth не настроен'));
             }
         } catch {
-            setError('OAuth не настроен. Ключи будут добавлены позже.');
+            setError(t('OAuth не настроен. Ключи будут добавлены позже.'));
         }
     };
 
@@ -274,6 +277,7 @@ export default function LoginPage() {
                     onClick={handleClose}
                     className="absolute top-4 right-4 p-2.5 -m-1 rounded-lg transition-all hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
                     style={{ color: 'var(--text-muted)' }}
+                    aria-label={t('Закрыть')}
                 >
                     <X size={20} />
                 </button>
@@ -281,10 +285,10 @@ export default function LoginPage() {
                 {/* Заголовок */}
                 <div className="text-center mb-6">
                     <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                        {mode === 'login' ? 'Войти в аккаунт' : 'Создать аккаунт'}
+                        {mode === 'login' ? t('Войти в аккаунт') : t('Создать аккаунт')}
                     </h2>
                     <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                        {mode === 'login' ? 'Добро пожаловать в Фрейм' : 'Регистрация в Фрейм'}
+                        {mode === 'login' ? t('Добро пожаловать в Фрейм') : t('Регистрация в Фрейм')}
                     </p>
                 </div>
 
@@ -309,10 +313,10 @@ export default function LoginPage() {
                         >
                             {providerIcons[p.id]}
                             <span className="text-sm">
-                                {mode === 'login' ? 'Войти' : 'Регистрация'} через {p.name}
+                                {mode === 'login' ? t('Войти через {{name}}', { name: p.name }) : t('Регистрация через {{name}}', { name: p.name })}
                             </span>
                             {!p.configured && (
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>скоро</span>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>{t('скоро')}</span>
                             )}
                         </button>
                     ))}
@@ -321,7 +325,7 @@ export default function LoginPage() {
                 {/* Divider */}
                 <div className="flex items-center gap-4 mb-5">
                     <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>или по email</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('или по email')}</span>
                     <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
                 </div>
 
@@ -363,7 +367,7 @@ export default function LoginPage() {
 
                     {/* Password */}
                     <div>
-                        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Пароль</label>
+                        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('Пароль')}</label>
                         <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <input
@@ -385,6 +389,7 @@ export default function LoginPage() {
                                 onClick={() => setShowPassword(!showPassword)}
                                 className="absolute right-0.5 top-1/2 -translate-y-1/2 p-3.5 transition-colors hover:opacity-80"
                                 style={{ color: 'var(--text-muted)' }}
+                                aria-label={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
                             >
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
@@ -393,7 +398,7 @@ export default function LoginPage() {
                             только по отказу с бэкенда, причём без текста. */}
                         {mode === 'register' && (
                             <div className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                                {PASSWORD_HINT}
+                                {passwordHint()}
                             </div>
                         )}
                     </div>
@@ -421,14 +426,14 @@ export default function LoginPage() {
                                 }}
                             />
                             <span className="text-xs leading-relaxed">
-                                Я даю согласие на обработку персональных данных в соответствии с{' '}
+                                {t('Я даю согласие на обработку персональных данных в соответствии с')}{' '}
                                 <a
                                     href="/privacy"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{ color: 'var(--accent)', textDecoration: 'underline' }}
                                 >
-                                    Политикой конфиденциальности
+                                    {t('Политикой конфиденциальности')}
                                 </a>
                             </span>
                         </label>
@@ -445,7 +450,7 @@ export default function LoginPage() {
                             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
                             <>
-                                {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+                                {mode === 'login' ? t('Войти') : t('Зарегистрироваться')}
                                 <ArrowRight size={16} />
                             </>
                         )}
@@ -460,7 +465,7 @@ export default function LoginPage() {
                             className="text-sm font-medium hover:underline"
                             style={{ color: 'var(--accent)' }}
                         >
-                            Забыли пароль?
+                            {t('Забыли пароль?')}
                         </Link>
                     </div>
                 )}
@@ -469,24 +474,24 @@ export default function LoginPage() {
                 <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                     {mode === 'login' ? (
                         <>
-                            Нет аккаунта?{' '}
+                            {t('Нет аккаунта?')}{' '}
                             <button
                                 onClick={() => { setMode('register'); setError(''); }}
                                 className="font-medium hover:underline"
                                 style={{ color: 'var(--accent)' }}
                             >
-                                Зарегистрироваться
+                                {t('Зарегистрироваться')}
                             </button>
                         </>
                     ) : (
                         <>
-                            Уже есть аккаунт?{' '}
+                            {t('Уже есть аккаунт?')}{' '}
                             <button
                                 onClick={() => { setMode('login'); setError(''); }}
                                 className="font-medium hover:underline"
                                 style={{ color: 'var(--accent)' }}
                             >
-                                Войти
+                                {t('Войти')}
                             </button>
                         </>
                     )}

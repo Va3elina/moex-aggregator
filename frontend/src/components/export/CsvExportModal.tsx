@@ -14,6 +14,8 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { X, Download, FileText, FileArchive, Check, Plus } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
+import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 
 const MultiInstrumentSearchModal = lazy(() => import('./MultiInstrumentSearchModal'));
 
@@ -131,6 +133,7 @@ interface FormProps {
  * при выводе экспорта на мобилку.
  */
 export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange }: FormProps) {
+    useTranslation(); // ре-рендер при смене языка
     const { track } = useAnalytics();
     const sheet = layout === 'sheet';
 
@@ -216,7 +219,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
             const resp = await apiFetch(url);
             if (!resp.ok) {
                 // eslint-disable-next-line no-alert
-                alert(`Не удалось скачать (статус ${resp.status})`);
+                alert(t('Не удалось скачать (статус {{status}})', { status: resp.status }));
                 return;
             }
             const blob = await resp.blob();
@@ -232,7 +235,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
         } catch (err) {
             console.error('[CsvExportModal] download failed:', err);
             // eslint-disable-next-line no-alert
-            alert('Ошибка скачивания. Проверьте подключение и попробуйте ещё раз.');
+            alert(t('Ошибка скачивания. Проверьте подключение и попробуйте ещё раз.'));
         } finally {
             setBusy(false);
         }
@@ -242,7 +245,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
         <>
             {/* Layers */}
             {config.layers.length > 1 && (
-                <Section title="Что включить" dense={sheet}>
+                <Section title={t('Что включить')} dense={sheet}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {config.layers.map((layer) => {
                             const checked = selectedLayers.has(layer.id);
@@ -269,7 +272,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                                         style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
                                     />
                                     <span style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{layer.label}</div>
+                                        <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{t(layer.label)}</div>
                                         <div
                                             style={{
                                                 fontSize: 'var(--fs-xs)',
@@ -278,7 +281,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                                                 lineHeight: 1.4,
                                             }}
                                         >
-                                            {layer.description}
+                                            {t(layer.description)}
                                         </div>
                                     </span>
                                 </label>
@@ -290,7 +293,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
 
             {/* Selectors — параметры экспорта */}
             {config.selectors.length > 0 && (
-                <Section title="Параметры экспорта" dense={sheet}>
+                <Section title={t('Параметры экспорта')} dense={sheet}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         {config.selectors.map((sel) => (
                             <SelectorControl
@@ -305,14 +308,14 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
             )}
 
             {/* Format selector — radio: CSV vs XLSX */}
-            <Section title="Формат файла" dense={sheet}>
+            <Section title={t('Формат файла')} dense={sheet}>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <FormatButton
                         active={format === 'csv'}
                         onClick={() => setFormat('csv')}
                         icon={isZip ? <FileArchive size={14} /> : <FileText size={14} />}
                         label={isZip ? `ZIP · ${totalCombinations} CSV` : 'CSV'}
-                        description="UTF-8 · открывается в Excel/Numbers/любом редакторе"
+                        description={t('UTF-8 · открывается в Excel/Numbers/любом редакторе')}
                     />
                     <FormatButton
                         active={format === 'xlsx'}
@@ -321,8 +324,8 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                         label="XLSX"
                         description={
                             totalCombinations > 1
-                                ? `Excel · ${totalCombinations} sheet'ов в одном файле`
-                                : 'Excel · нативный формат'
+                                ? t('Excel · {{n}} листов в одном файле', { n: totalCombinations })
+                                : t('Excel · нативный формат')
                         }
                     />
                 </div>
@@ -361,7 +364,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                         }}
                     >
                         <Download size={16} />
-                        {downloading ? 'Скачиваем…' : 'Скачать'}
+                        {downloading ? t('Скачиваем…') : t('Скачать')}
                     </button>
                 </div>
             ) : (
@@ -380,7 +383,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                             cursor: downloading ? 'wait' : 'pointer',
                         }}
                     >
-                        Отмена
+                        {t('Отмена')}
                     </button>
                     <button
                         onClick={handleDownload}
@@ -401,7 +404,7 @@ export function CsvExportForm({ config, onClose, layout = 'dialog', onBusyChange
                         }}
                     >
                         <Download size={16} />
-                        {downloading ? 'Скачиваем…' : 'Скачать'}
+                        {downloading ? t('Скачиваем…') : t('Скачать')}
                     </button>
                 </div>
             )}
@@ -485,12 +488,12 @@ export default function CsvExportModal({ config, onClose }: Props) {
                             margin: 0,
                         }}
                     >
-                        {config.title}
+                        {t(config.title)}
                     </h2>
                     <button
                         onClick={onClose}
                         disabled={downloading}
-                        aria-label="Закрыть"
+                        aria-label={t('Закрыть')}
                         style={{
                             background: 'transparent',
                             border: 'none',
@@ -611,7 +614,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                         marginBottom: 6,
                     }}
                 >
-                    {selector.label}
+                    {t(selector.label)}
                 </label>
                 <select
                     value={(value as string) ?? selector.default}
@@ -629,7 +632,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                 >
                     {selector.options.map((opt) => (
                         <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {t(opt.label)}
                         </option>
                     ))}
                 </select>
@@ -654,7 +657,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                         marginBottom: 6,
                     }}
                 >
-                    {selector.label}
+                    {t(selector.label)}
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {selector.options.map((opt) => {
@@ -679,7 +682,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                                 }}
                             >
                                 {selected && <Check size={12} strokeWidth={3} />}
-                                {opt.label}
+                                {t(opt.label)}
                             </button>
                         );
                     })}
@@ -693,7 +696,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                             lineHeight: 1.4,
                         }}
                     >
-                        {selector.hint}
+                        {t(selector.hint)}
                     </div>
                 )}
             </div>
@@ -734,7 +737,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                     marginBottom: 6,
                 }}
             >
-                {selector.label}
+                {t(selector.label)}
             </label>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <input
@@ -793,7 +796,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                     marginBottom: 6,
                 }}
             >
-                {selector.label}
+                {t(selector.label)}
             </label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 {value.map((ticker) => (
@@ -816,7 +819,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                         <button
                             type="button"
                             onClick={() => removeTicker(ticker)}
-                            aria-label={`Убрать ${ticker}`}
+                            aria-label={t('Убрать {{ticker}}', { ticker })}
                             style={{
                                 background: 'transparent',
                                 border: 'none',
@@ -849,7 +852,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                     }}
                 >
                     <Plus size={12} strokeWidth={2.5} />
-                    {value.length === 0 ? 'Выбрать' : 'Изменить'}
+                    {value.length === 0 ? t('Выбрать') : t('Изменить')}
                 </button>
             </div>
             {selector.hint && (
@@ -861,7 +864,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                         lineHeight: 1.4,
                     }}
                 >
-                    {selector.hint}
+                    {t(selector.hint)}
                 </div>
             )}
             {pickerOpen && (
@@ -870,7 +873,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                         initial={value}
                         source={selector.source ?? 'instruments'}
                         filterType={selector.filterType}
-                        title={selector.pickerTitle ?? 'Выберите инструменты'}
+                        title={t(selector.pickerTitle ?? 'Выберите инструменты')}
                         maxItems={selector.maxItems ?? 6}
                         onConfirm={(tickers) => {
                             onChange(tickers);
@@ -916,7 +919,7 @@ function PeriodControl({ selector, value, onChange }: PeriodControlProps) {
                     marginBottom: 6,
                 }}
             >
-                {selector.label}
+                {t(selector.label)}
             </label>
 
             {/* Tabs: Period preset vs Date range */}
@@ -931,14 +934,14 @@ function PeriodControl({ selector, value, onChange }: PeriodControlProps) {
                     }
                     style={tabStyle(!isRange)}
                 >
-                    Период
+                    {t('Период')}
                 </button>
                 <button
                     type="button"
                     onClick={() => onChange(isRange ? value : defaultRange)}
                     style={tabStyle(isRange)}
                 >
-                    Даты
+                    {t('Даты')}
                 </button>
             </div>
 
@@ -963,7 +966,7 @@ function PeriodControl({ selector, value, onChange }: PeriodControlProps) {
                                     cursor: 'pointer',
                                 }}
                             >
-                                {p.label}
+                                {t(p.label)}
                             </button>
                         );
                     })}
@@ -974,13 +977,13 @@ function PeriodControl({ selector, value, onChange }: PeriodControlProps) {
             {value.type === 'range' && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                     <DateInput
-                        label="С"
+                        label={t('С')}
                         value={value.from}
                         onChange={(d) => onChange({ type: 'range', from: d, to: value.to })}
                     />
                     <span style={{ color: 'var(--text-muted)' }}>—</span>
                     <DateInput
-                        label="По"
+                        label={t('По')}
                         value={value.to}
                         onChange={(d) => onChange({ type: 'range', from: value.from, to: d })}
                     />

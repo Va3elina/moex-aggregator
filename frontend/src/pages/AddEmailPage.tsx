@@ -22,10 +22,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { addEmail, ApiError } from '../services/api';
 import { safeInternalPath } from '../utils/postLoginRedirect';
 import { emailStepUrl } from '../utils/checkoutIntent';
+import { useTranslation } from 'react-i18next';
 
 export default function AddEmailPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   // ?next= — цель, ради которой юзера сюда прислали (обычно оформление
   // подписки). Передаём её дальше на /verify-email, иначе после ввода кода
@@ -51,7 +53,7 @@ export default function AddEmailPage() {
     setErrorIsConflict(false);
     const trimmed = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-      setError('Введите корректный email (например, user@example.com)');
+      setError(t('Введите корректный email (например, user@example.com)'));
       return;
     }
     setSubmitting(true);
@@ -62,7 +64,7 @@ export default function AddEmailPage() {
     } catch (err) {
       const isConflict = err instanceof ApiError && err.status === 409;
       setErrorIsConflict(isConflict);
-      setError(err instanceof Error ? err.message : 'Не удалось привязать email');
+      setError(err instanceof Error ? err.message : t('Не удалось привязать email'));
     } finally {
       setSubmitting(false);
     }
@@ -88,14 +90,12 @@ export default function AddEmailPage() {
             <Mail size={20} style={{ color: 'var(--accent)' }} />
           </div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Укажите ваш email
+            {t('Укажите ваш email')}
           </h1>
         </div>
 
         <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-          {user?.oauth_providers[0] === 'telegram' ? 'Через Telegram' : 'Через VK'} мы
-          email не получаем. Оставьте свой — на него придёт чек при оплате и
-          ссылка для восстановления доступа.
+          {t('Через {{provider}} мы email не получаем. Оставьте свой — на него придёт чек при оплате и ссылка для восстановления доступа.', { provider: user?.oauth_providers[0] === 'telegram' ? 'Telegram' : 'VK' })}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -139,9 +139,7 @@ export default function AddEmailPage() {
                 <div>{error}</div>
                 {errorIsConflict && (
                   <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    Если у вас уже есть аккаунт с этим email — выйдите и войдите
-                    через провайдера, которым вы регистрировались раньше
-                    (Yandex/Google). Мы откроем существующий аккаунт.
+                    {t('Если у вас уже есть аккаунт с этим email — выйдите и войдите через провайдера, которым вы регистрировались раньше (Yandex/Google). Мы откроем существующий аккаунт.')}
                   </div>
                 )}
               </div>
@@ -157,7 +155,7 @@ export default function AddEmailPage() {
               color: 'var(--accent-text, #fff)',
             }}
           >
-            {submitting ? 'Сохраняем…' : 'Привязать email'}
+            {submitting ? t('Сохраняем…') : t('Привязать email')}
           </button>
         </form>
 
@@ -167,7 +165,7 @@ export default function AddEmailPage() {
           className="w-full mt-4 py-2 text-sm transition-opacity hover:opacity-70"
           style={{ color: 'var(--text-muted)' }}
         >
-          Позже
+          {t('Позже')}
         </button>
       </div>
     </div>

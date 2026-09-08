@@ -23,6 +23,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { MoreVertical } from 'lucide-react';
 
 interface ChartActionsMenuProps {
@@ -34,6 +35,7 @@ interface ChartActionsMenuProps {
 }
 
 export default function ChartActionsMenu({ children, containerRef, tourId }: ChartActionsMenuProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -81,9 +83,9 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
         type="button"
         data-export-ignore="true"
         onClick={() => setOpen((o) => !o)}
-        aria-label="Действия с графиком"
+        aria-label={t('Действия с графиком')}
         aria-expanded={open}
-        title="Действия с графиком"
+        title={t('Действия с графиком')}
         className="editorial-press rounded-full inline-flex items-center justify-center"
         style={{
           backgroundColor: 'var(--bg-secondary)',

@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { t as tt, getLang } from '../i18n';
 import { ChevronDown, BarChart3, ListFilter } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DelayedDataBadge from '../components/DelayedDataBadge';
@@ -34,8 +36,8 @@ import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { oiTourSteps } from '../data/tours/oi';
-import { oiScreenerTourSteps } from '../data/tours/oiScreener';
+import { getOiTourSteps } from '../data/tours/oi';
+import { getOiScreenerTourSteps } from '../data/tours/oiScreener';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
@@ -50,10 +52,11 @@ type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type Period = '1w' | '1m' | '6m' | '1y' | '5y' | 'all';
 
 // Подписи «ног» величины ОИ (что показано на правой оси в текущем режиме).
-const OI_LEG_LABEL: Record<'net' | 'long' | 'short' | 'oi' | 'npart', string> = {
-  net: 'чистая позиция', long: 'длинные позиции', short: 'короткие позиции',
-  oi: 'открытый интерес', npart: 'число участников',
-};
+// i18n: функция, а не константа — t() должен считаться в рендере.
+const oiLegLabelOf = (leg: 'net' | 'long' | 'short' | 'oi' | 'npart'): string => ({
+  net: tt('чистая позиция'), long: tt('длинные позиции'), short: tt('короткие позиции'),
+  oi: tt('открытый интерес'), npart: tt('число участников'),
+})[leg];
 
 // Метрики алертов для «Открытого интереса»: цена (TradingView-стиль: пересечение/
 // больше/меньше) + наши аномалии по резкому движению (ATR ×N). Общий список для
@@ -61,76 +64,78 @@ const OI_LEG_LABEL: Record<'net' | 'long' | 'short' | 'oi' | 'npart', string> = 
 // Направление рекорда для oi_extreme. «Любой» (new_extreme) закрывает случай,
 // когда неважно, в какую сторону пробило: сработает и на новом максимуме, и на
 // новом минимуме перекоса. Бэк (compute_value) сам определит фактическую сторону.
-const EXTREME_OPS = [
-  { value: 'new_high', label: 'новый максимум (лонг-рекорд)' },
-  { value: 'new_low', label: 'новый минимум (шорт-рекорд)' },
-  { value: 'new_extreme', label: 'любой — максимум или минимум' },
+const extremeOps = () => [
+  { value: 'new_high', label: tt('новый максимум (лонг-рекорд)') },
+  { value: 'new_low', label: tt('новый минимум (шорт-рекорд)') },
+  { value: 'new_extreme', label: tt('любой — максимум или минимум') },
 ];
 // Окна рекорда. Короткие мес/полугода убраны — охотимся за редкими рекордами.
 // Горизонты 1…5 лет + всё время (данные позиций у основных тикеров с 2019).
 // Значение уходит в threshold как дни.
-const EXTREME_PERIODS = [
-  { value: '365', label: 'за год' },
-  { value: '730', label: 'за 2 года' },
-  { value: '1095', label: 'за 3 года' },
-  { value: '1460', label: 'за 4 года' },
-  { value: '1825', label: 'за 5 лет' },
-  { value: '0', label: 'за всё время' },
+const extremePeriods = () => [
+  { value: '365', label: tt('за год') },
+  { value: '730', label: tt('за 2 года') },
+  { value: '1095', label: tt('за 3 года') },
+  { value: '1460', label: tt('за 4 года') },
+  { value: '1825', label: tt('за 5 лет') },
+  { value: '0', label: tt('за всё время') },
 ];
 
-const OI_ALERT_METRICS: AlertMetricOption[] = [
+const crossOps = () => [
+  { value: 'cross', label: tt('Пересечение (в любую сторону)') },
+  { value: 'cross_up', label: tt('↑ Пересечение (снизу вверх)') },
+  { value: 'cross_down', label: tt('↓ Пересечение (сверху вниз)') },
+];
+
+const buildOiAlertMetrics = (): AlertMetricOption[] => [
   {
-    key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
-    ops: [
-      { value: 'cross', label: 'Пересечение (в любую сторону)' },
-      { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
-      { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
-    ],
-    hint: 'Сработает, когда цена фьючерса пересечёт заданный уровень. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.',
+    key: 'price', label: tt('Цена'), indicator: 'price', metric: 'close', unit: '₽',
+    ops: crossOps(),
+    hint: tt('Сработает, когда цена фьючерса пересечёт заданный уровень. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.'),
   },
   {
     // «move_all» (clgroup ALL) — считается по тем же net-данным (источник net —
     // FIZ), но текст НЕЙТРАЛЬНЫЙ, без роли субъекта. «Общий ракурс» сигнала.
-    key: 'move_all', label: 'Резкое движение позиции — в целом',
+    key: 'move_all', label: tt('Резкое движение позиции — в целом'),
     indicator: 'oi_move', metric: 'atr', clgroup: 'ALL', unit: '×', defaultThreshold: 3,
-    ops: [{ value: 'gt', label: 'превысит' }],
-    hint: 'Сработает, когда чистая позиция изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+    ops: [{ value: 'gt', label: tt('превысит') }],
+    hint: tt('Сработает, когда чистая позиция изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.'),
   },
   {
-    key: 'move_fiz', label: 'Резкое движение позиции — физлица',
+    key: 'move_fiz', label: tt('Резкое движение позиции — физлица'),
     indicator: 'oi_move', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
-    ops: [{ value: 'gt', label: 'превысит' }],
-    hint: 'Сработает, когда чистая позиция физлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+    ops: [{ value: 'gt', label: tt('превысит') }],
+    hint: tt('Сработает, когда чистая позиция физлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.'),
   },
   {
-    key: 'move_yur', label: 'Резкое движение позиции — юрлица',
+    key: 'move_yur', label: tt('Резкое движение позиции — юрлица'),
     indicator: 'oi_move', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
-    ops: [{ value: 'gt', label: 'превысит' }],
-    hint: 'Сработает, когда чистая позиция юрлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+    ops: [{ value: 'gt', label: tt('превысит') }],
+    hint: tt('Сработает, когда чистая позиция юрлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.'),
   },
   {
     // «Новый экстремум перекоса за период» — ловит ПЛАВНЫЙ дрейф позиционирования,
     // который «резкое движение» (ATR) пропускает. op = направление (макс/мин/любой),
     // period = окно (уходит в threshold как дни: 365/730/1095/1460/1825/0=всё время).
-    key: 'extreme_all', label: 'Новый максимум/минимум позиции — в целом',
+    key: 'extreme_all', label: tt('Новый максимум/минимум позиции — в целом'),
     indicator: 'oi_extreme', metric: 'net', clgroup: 'ALL',
-    ops: EXTREME_OPS,
-    periodControl: EXTREME_PERIODS,
-    hint: 'Сработает, когда чистая позиция достигнет нового перекоса-рекорда за выбранный период — без разбивки на группы (физ и юр зеркальны). Ловит МЕДЛЕННЫЙ дрейф: позиция может ползти неделями и поставить рекорд без единого резкого дня.',
+    ops: extremeOps(),
+    periodControl: extremePeriods(),
+    hint: tt('Сработает, когда чистая позиция достигнет нового перекоса-рекорда за выбранный период — без разбивки на группы (физ и юр зеркальны). Ловит МЕДЛЕННЫЙ дрейф: позиция может ползти неделями и поставить рекорд без единого резкого дня.'),
   },
   {
-    key: 'extreme_fiz', label: 'Новый максимум/минимум позиции — физлица',
+    key: 'extreme_fiz', label: tt('Новый максимум/минимум позиции — физлица'),
     indicator: 'oi_extreme', metric: 'net', clgroup: 'FIZ',
-    ops: EXTREME_OPS,
-    periodControl: EXTREME_PERIODS,
-    hint: 'Сработает, когда чистая позиция физлиц достигнет нового перекоса-рекорда за выбранный период. В отличие от «резкого движения», ловит МЕДЛЕННЫЙ дрейф: позиция может ползти неделями и поставить рекорд без единого резкого дня.',
+    ops: extremeOps(),
+    periodControl: extremePeriods(),
+    hint: tt('Сработает, когда чистая позиция физлиц достигнет нового перекоса-рекорда за выбранный период. В отличие от «резкого движения», ловит МЕДЛЕННЫЙ дрейф: позиция может ползти неделями и поставить рекорд без единого резкого дня.'),
   },
   {
-    key: 'extreme_yur', label: 'Новый максимум/минимум позиции — юрлица',
+    key: 'extreme_yur', label: tt('Новый максимум/минимум позиции — юрлица'),
     indicator: 'oi_extreme', metric: 'net', clgroup: 'YUR',
-    ops: EXTREME_OPS,
-    periodControl: EXTREME_PERIODS,
-    hint: 'Сработает, когда чистая позиция юрлиц достигнет нового перекоса-рекорда за выбранный период. Ловит медленный дрейф позиционирования, невидимый «резкому движению».',
+    ops: extremeOps(),
+    periodControl: extremePeriods(),
+    hint: tt('Сработает, когда чистая позиция юрлиц достигнет нового перекоса-рекорда за выбранный период. Ловит медленный дрейф позиционирования, невидимый «резкому движению».'),
   },
 ];
 
@@ -160,6 +165,8 @@ const COLORS = {
 };
 
 export default function OpenInterestPage() {
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
   const { theme: _theme } = useTheme();
@@ -411,24 +418,23 @@ export default function OpenInterestPage() {
       default: return 'net';
     }
   }, [displayMode, oiVariant]);
-  const oiLegLabel = OI_LEG_LABEL[oiLeg];
-  const oiLegUnit = oiLeg === 'npart' ? 'участников' : 'контрактов';
+  const oiLegLabel = oiLegLabelOf(oiLeg);
+  const oiLegUnit = oiLeg === 'npart' ? t('участников') : t('контрактов');
 
   // Реестр метрик OI: цена + УРОВЕНЬ ОИ (нога+clgroup = как на графике) + аномалии.
   // Общий для кнопки-колокола и «+». oi_level отражает текущий вид графика.
+  // lang в deps — пересобрать подписи при смене языка.
   const oiAlertMetrics = useMemo<AlertMetricOption[]>(() => {
+    const base = buildOiAlertMetrics();
     const oiLevel: AlertMetricOption = {
-      key: 'oi_level', label: `Открытый интерес — ${oiLegLabel}`,
+      key: 'oi_level', label: t('Открытый интерес — {{leg}}', { leg: oiLegLabel }),
       indicator: 'oi_level', metric: oiLeg, clgroup, unit: '',
-      ops: [
-        { value: 'cross', label: 'Пересечение (в любую сторону)' },
-        { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
-        { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
-      ],
-      hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.`,
+      ops: crossOps(),
+      hint: t('Сработает, когда «{{leg}}» ({{group}}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.', { leg: oiLegLabel, group: clgroup === 'FIZ' ? t('физлица') : t('юрлица') }),
     };
-    return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
-  }, [clgroup, oiLeg, oiLegLabel]);
+    return [base[0], oiLevel, ...base.slice(1)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clgroup, oiLeg, oiLegLabel, lang]);
 
   // Уровни алертов текущего актива → пунктир: price на ЛЕВОЙ оси, oi_level на ПРАВОЙ.
   const alertLevels = useMemo(() => {
@@ -447,12 +453,12 @@ export default function OpenInterestPage() {
   // Клик по «+» пилюле оси → открыть модалку с префиллом уровня + текущим значением.
   const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
     if (alertsLocked) {
-      showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' });
+      showUpgrade({ tier: 'basic', featureName: t('Уведомления'), indicator: 'alerts' });
       return;
     }
     const isOi = p.axis === 'secondary';
     const currentLabel = isOi
-      ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} ${oiLegUnit}`
+      ? `${Math.round(p.currentValue).toLocaleString(getLang() === 'en' ? 'en-GB' : 'ru-RU')} ${oiLegUnit}`
       : `${formatPrice(p.currentValue)} ₽`;
     setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.level, currentLabel });
   };
@@ -607,7 +613,7 @@ export default function OpenInterestPage() {
     useState<{ sectype: string; name: string; clgroup: 'FIZ' | 'YUR' } | null>(null);
   const handleScreenerAlert = (sectype: string, name: string, clg: 'FIZ' | 'YUR') => {
     if (alertsLocked) {
-      showUpgrade({ tier: 'basic', featureName: 'Уведомления', indicator: 'alerts' });
+      showUpgrade({ tier: 'basic', featureName: t('Уведомления'), indicator: 'alerts' });
       return;
     }
     setScreenerAlertAsset({ sectype, name, clgroup: clg });
@@ -733,15 +739,14 @@ export default function OpenInterestPage() {
 
   const getLabels = () => {
     const isPositions = displayMode === 'positions';
+    const longLabel = isPositions ? t('Покупки', { context: 'oi' }) : t('Покупатели');
+    const shortLabel = isPositions ? t('Продажи', { context: 'oi' }) : t('Продавцы');
     switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытый интерес', third: '' };
-      case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
-      case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
-      case 'both': return {
-        secondary: isPositions ? 'Покупки' : 'Покупатели',
-        third: isPositions ? 'Продажи' : 'Продавцы'
-      };
-      case 'net': return { secondary: 'Чистая позиция', third: '' };
+      case 'oi': return { secondary: t('Открытый интерес'), third: '' };
+      case 'long': return { secondary: longLabel, third: '' };
+      case 'short': return { secondary: shortLabel, third: '' };
+      case 'both': return { secondary: longLabel, third: shortLabel };
+      case 'net': return { secondary: t('Чистая позиция'), third: '' };
       default: return { secondary: '', third: '' };
     }
   };
@@ -767,14 +772,18 @@ export default function OpenInterestPage() {
     });
   }, [filteredData?.contract_switches, showExpirations]);
 
+  // Шаги туров собираются функциями (t() внутри) и пересобираются при смене языка.
+  const tourSteps = useMemo(() => getOiTourSteps(), [lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const screenerTourSteps = useMemo(() => getOiScreenerTourSteps(), [lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
       <div ref={headerRef}>
         <PageHeader
           icon={BarChart3}
-          title="Открытые позиции"
-          subtitle="Анализ позиций участников по фьючерсам MOEX"
-          help={METHODOLOGY.oi}
+          title={t('Открытые позиции')}
+          subtitle={t('Анализ позиций участников по фьючерсам MOEX')}
+          help={{ short: t(METHODOLOGY.oi.short), full: t(METHODOLOGY.oi.full) }}
           helpLink="/methodology/oi"
         />
       </div>
@@ -783,8 +792,8 @@ export default function OpenInterestPage() {
           (data_delay_hours=24 в features.py → get_effective_end_date). */}
       <DelayedDataBadge
         indicator="open_interest"
-        message="— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке."
-        cta="Открыть свежие данные →"
+        message={t('— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке.')}
+        cta={t('Открыть свежие данные →')}
       />
 
       {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
@@ -798,8 +807,8 @@ export default function OpenInterestPage() {
         onChange={setActiveTab}
         tourId="screener-tabs"
         items={[
-          { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
-          { key: 'screener', label: 'Скринер сигналов', Icon: ListFilter },
+          { key: 'chart', label: t('Открытые позиции'), Icon: BarChart3 },
+          { key: 'screener', label: t('Скринер сигналов'), Icon: ListFilter },
         ]}
       />
 
@@ -870,10 +879,10 @@ export default function OpenInterestPage() {
                 const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
                 return {
                   key: String(int),
-                  label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
+                  label: t(INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS]),
                   // Нет данных → серый + тултип, без замочка и без апгрейда.
                   disabled: !available,
-                  title: !available ? 'У этого инструмента нет данных в этом таймфрейме' : undefined,
+                  title: !available ? t('У этого инструмента нет данных в этом таймфрейме') : undefined,
                   // Тарифный лок — только когда данные есть.
                   locked: available && (!allowedLegacy || !allowedTier),
                 };
@@ -895,7 +904,7 @@ export default function OpenInterestPage() {
                 if (requiredTier) {
                   showUpgrade({
                     tier: requiredTier,
-                    featureName: `${int === 5 ? '5-минутный' : `${int}-часовой`} таймфрейм`,
+                    featureName: int === 5 ? t('5-минутный таймфрейм') : t('{{n}}-часовой таймфрейм', { n: int }),
                     indicator: 'open_interest',
                   });
                   return;
@@ -912,7 +921,7 @@ export default function OpenInterestPage() {
           <SegmentedControl<Period>
             options={(Object.keys(PERIOD_LABELS) as Period[]).map((p) => ({
               key: p,
-              label: PERIOD_LABELS[p],
+              label: t(PERIOD_LABELS[p]),
               // Замочек только за тариф/гостевой гейт. Технически недоступный на
               // текущем ТФ период НЕ локаем — он кликабелен и сам переключит ТФ.
               // Гейт = глобальный guest (isPeriodAllowed) ИЛИ пер-индикаторный лимит
@@ -940,7 +949,7 @@ export default function OpenInterestPage() {
               if (!oiAccess.canUsePeriod(p)) {
                 const tier = oiAccess.requiredTierFor({ period: p });
                 if (tier) {
-                  showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'open_interest' });
+                  showUpgrade({ tier, featureName: t('период «{{p}}»', { p: t(PERIOD_LABELS[p]) }), indicator: 'open_interest' });
                   return;
                 }
               }
@@ -954,12 +963,12 @@ export default function OpenInterestPage() {
             <div data-tour="oi-clgroup">
             <Dropdown<'FIZ' | 'YUR'>
               options={[
-                { key: 'FIZ', label: 'Физлица' },
-                { key: 'YUR', label: 'Юрлица', locked: yurLocked },
+                { key: 'FIZ', label: t('Физлица') },
+                { key: 'YUR', label: t('Юрлица'), locked: yurLocked },
               ]}
               value={clgroup}
               onChange={setClgroup}
-              onLockedClick={yurLocked ? () => promptSettingsUpgrade('данные по юрлицам', 'clgroup_yur') : undefined}
+              onLockedClick={yurLocked ? () => promptSettingsUpgrade(t('данные по юрлицам'), 'clgroup_yur') : undefined}
             />
             </div>
           )}
@@ -968,12 +977,12 @@ export default function OpenInterestPage() {
           <div data-tour="oi-display-mode">
             <Dropdown<DisplayMode>
               options={[
-                { key: 'positions', label: 'Объём позиций' },
-                { key: 'participants', label: 'Число трейдеров', locked: tradersLocked },
+                { key: 'positions', label: t('Объём позиций') },
+                { key: 'participants', label: t('Число трейдеров'), locked: tradersLocked },
               ]}
               value={displayMode}
               onChange={setDisplayMode}
-              onLockedClick={tradersLocked ? () => promptSettingsUpgrade('режим числа трейдеров', 'metric_traders') : undefined}
+              onLockedClick={tradersLocked ? () => promptSettingsUpgrade(t('режим числа трейдеров'), 'metric_traders') : undefined}
             />
           </div>
 
@@ -982,11 +991,11 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi },
-                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
-                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
-                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
-                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)', help: OI_VARIANT_HELP.net },
+                { key: 'oi',    label: t('Открытый интерес'), color: 'var(--oi-amber)', help: { title: t(OI_VARIANT_HELP.oi.title), content: t(OI_VARIANT_HELP.oi.content) } },
+                { key: 'long',  label: displayMode === 'positions' ? t('Покупки', { context: 'oi' }) : t('Покупатели'), color: 'var(--oi-green)' },
+                { key: 'short', label: displayMode === 'positions' ? t('Продажи', { context: 'oi' }) : t('Продавцы'), color: 'var(--oi-red)' },
+                { key: 'both',  label: displayMode === 'positions' ? t('Покупки + Продажи') : t('Покупатели + Продавцы'), color: 'var(--oi-purple)' },
+                { key: 'net',   label: t('Чистая позиция'), color: 'var(--oi-cyan)', help: { title: t(OI_VARIANT_HELP.net.title), content: t(OI_VARIANT_HELP.net.content) } },
               ]}
               value={oiVariant}
               onChange={setOiVariant}
@@ -1002,8 +1011,8 @@ export default function OpenInterestPage() {
             <LayersButton
               tourId="oi-layers"
               layers={[
-                { key: 'price', label: 'Цена', hint: 'Линия цены фьючерса', checked: showPrice, onChange: setShowPrice },
-                { key: 'expirations', label: 'Экспирации', hint: 'Метки смены контракта', checked: showExpirations, onChange: setShowExpirations },
+                { key: 'price', label: t('Цена'), hint: t('Линия цены фьючерса'), checked: showPrice, onChange: setShowPrice },
+                { key: 'expirations', label: t('Экспирации'), hint: t('Метки смены контракта'), checked: showExpirations, onChange: setShowExpirations },
               ]}
             />
           )}
@@ -1024,20 +1033,20 @@ export default function OpenInterestPage() {
               // displayMode сразу в title — попадает в первую строку subtitle
               // экспорта («Открытые позиции — Объём позиций · 1 час · ...»), сразу
               // видно режим без копания в tag-list.
-              title: `Открытые позиции — ${displayMode === 'price' ? 'Цена' : displayMode === 'positions' ? 'Объём позиций' : 'Число трейдеров'}`,
+              title: `${t('Открытые позиции')} — ${displayMode === 'price' ? t('Цена') : displayMode === 'positions' ? t('Объём позиций') : t('Число трейдеров')}`,
               // Не фолбэчим на ticker — иначе при ещё-не-загрузившемся instrumentName
               // получим asset=ticker и дубликат в header. composeFramedCanvas сам
               // сделает primary fallback на title если asset undefined.
               asset: instrumentName || undefined,
               ticker: frontContract || selectedInstrument,
               details: [
-                INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`,
-                PERIOD_LABELS[period],
-                clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
+                t(INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`),
+                t(PERIOD_LABELS[period]),
+                clgroup === 'FIZ' ? t('Физлица') : t('Юрлица'),
               ].filter(Boolean),
             }}
           />
-          <ChartSettings ohlcHere scopeLabels={{ primary: 'Цена', secondary: 'Линии ОИ' }} />
+          <ChartSettings ohlcHere scopeLabels={{ primary: t('Цена'), secondary: t('Линии ОИ') }} />
           {ALERTS_ENABLED && (
           <AlertBellButton
             indicator="open_interest"
@@ -1155,7 +1164,7 @@ export default function OpenInterestPage() {
           визита для графика и для скринера. Чартовый тур не стартует на
           скринере (его якоря скрыты), и наоборот. */}
       <OnboardingTour
-        steps={activeTab === 'screener' ? oiScreenerTourSteps : oiTourSteps}
+        steps={activeTab === 'screener' ? screenerTourSteps : tourSteps}
         open={activeTab === 'screener' ? screenerTour.open : tour.open}
         onClose={activeTab === 'screener' ? screenerTour.close : tour.close}
       />

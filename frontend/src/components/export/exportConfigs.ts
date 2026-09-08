@@ -13,6 +13,7 @@
 import type { CsvExportConfig, CsvSelectOption } from './CsvExportModal';
 import { periodToQuery } from '../../utils/csvPeriod';
 import { getCategoryShortLabel } from '../cbr/cbrCategoryInfo';
+import { t } from '../../i18n';
 
 // ────────────────────────────────────────────────────────────────────
 // Индикатор Баффета
@@ -195,7 +196,7 @@ export function buildOiExportConfig(ui: {
     };
     return {
         indicator: 'open_interest',
-        title: `Экспорт: Открытые позиции · ${instrumentName || instrument}`,
+        title: t('Экспорт: Открытые позиции · {{name}}', { name: instrumentName || instrument }),
         layers: [{
             id: 'oi',
             label: 'История позиций',
@@ -412,7 +413,7 @@ export function buildSeasonalityExportConfig(ui: {
     const { ticker, name } = ui;
     return {
         indicator: 'seasonality',
-        title: `Экспорт: Сезонность · ${name}`,
+        title: t('Экспорт: Сезонность · {{name}}', { name }),
         layers: [
             { id: 'daily', label: 'Дневные свечи',
               description: 'OHLCV + change_pct + декомпозиция (year/month/weekday)',

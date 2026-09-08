@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Текст специально без тире и кавычек.
 export const DOLLAR_STALE_TEXT =
@@ -16,6 +17,7 @@ interface DollarStaleHintProps {
  * кнопки $. Поповер position:fixed, чтобы не обрезался overflow-hidden графика.
  */
 export default function DollarStaleHint({ className, style }: DollarStaleHintProps) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
     const btnRef = useRef<HTMLButtonElement>(null);
@@ -58,7 +60,7 @@ export default function DollarStaleHint({ className, style }: DollarStaleHintPro
             <button
                 ref={btnRef}
                 type="button"
-                aria-label="Доллар не обновляется на выходных"
+                aria-label={t('Доллар не обновляется на выходных')}
                 onClick={toggle}
                 className={className}
                 style={{
@@ -112,7 +114,7 @@ export default function DollarStaleHint({ className, style }: DollarStaleHintPro
                         lineHeight: 1.45,
                     }}
                 >
-                    {DOLLAR_STALE_TEXT}
+                    {t(DOLLAR_STALE_TEXT)}
                 </div>
             )}
         </>

@@ -36,6 +36,8 @@ import AnnotationCanvas, {
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
+import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 
 /** Значения палитры — стабильная ссылка для AnnotationCanvas (prop в deps). */
 const COLOR_PRESET_VALUES = COLOR_PRESETS.map((p) => p.value);
@@ -89,6 +91,7 @@ interface Props {
 }
 
 export default function ExportModal({ targetElement, filename, metadata, exportStyles, beforeCapture, afterCapture, onClose }: Props) {
+    useTranslation(); // ре-рендер при смене языка
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
@@ -238,7 +241,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                         else targetElement.style.removeProperty(prop);
                     }
                 }
-                const msg = err instanceof Error ? err.message : 'Не удалось снять график';
+                const msg = err instanceof Error ? err.message : t('Не удалось снять график');
                 setState({ phase: 'error', message: msg });
             }
         })();
@@ -263,7 +266,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         if (state.phase === 'annotating') {
             const count = annotationRef.current?.getObjectsCount() ?? 0;
             if (count > 0) {
-                if (!window.confirm('Закрыть окно? Разметка будет потеряна.')) return;
+                if (!window.confirm(t('Закрыть окно? Разметка будет потеряна.'))) return;
             }
         }
         onClose();
@@ -278,7 +281,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
             await downloadCanvas(canvasToDownload, filename, 'png');
             setState({ phase: 'preview', canvas: canvasToDownload });
         } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Не удалось скачать файл';
+            const msg = err instanceof Error ? err.message : t('Не удалось скачать файл');
             setState({ phase: 'error', message: msg });
         }
     };
@@ -288,7 +291,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         if (state.phase !== 'annotating') return;
         const composite = annotationRef.current?.exportToCanvas();
         if (!composite) {
-            setState({ phase: 'error', message: 'Не удалось собрать разметку' });
+            setState({ phase: 'error', message: t('Не удалось собрать разметку') });
             return;
         }
         const original = state.canvas;
@@ -300,7 +303,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
             // в state — берём из original.
             setState({ phase: 'annotating', canvas: original });
         } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Не удалось скачать файл';
+            const msg = err instanceof Error ? err.message : t('Не удалось скачать файл');
             setState({ phase: 'error', message: msg });
         }
     };
@@ -331,7 +334,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     const handleClear = () => {
         const count = annotationRef.current?.getObjectsCount() ?? 0;
         if (count === 0) return;
-        if (!window.confirm('Удалить всю разметку?')) return;
+        if (!window.confirm(t('Удалить всю разметку?'))) return;
         annotationRef.current?.clear();
     };
 
@@ -379,7 +382,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             letterSpacing: '-0.01em',
                         }}
                     >
-                        {state.phase === 'annotating' ? 'Разметка графика' : 'Экспорт графика'}
+                        {state.phase === 'annotating' ? t('Разметка графика') : t('Экспорт графика')}
                     </h2>
                     <button
                         onClick={tryClose}
@@ -389,7 +392,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             border: '1.5px solid var(--text-primary)',
                             color: 'var(--text-primary)',
                         }}
-                        aria-label="Закрыть"
+                        aria-label={t('Закрыть')}
                     >
                         <X size={18} />
                     </button>
@@ -433,7 +436,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                                 className="text-theme-secondary"
                                 style={{ fontSize: 'var(--fs-sm)' }}
                             >
-                                Снимаем график…
+                                {t('Снимаем график…')}
                             </span>
                         </div>
                     )}
@@ -469,7 +472,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                                 className="text-theme-secondary"
                                 style={{ fontSize: 'var(--fs-sm)' }}
                             >
-                                Скачиваем…
+                                {t('Скачиваем…')}
                             </span>
                         </div>
                     )}
@@ -481,7 +484,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                                 className="text-theme-primary font-semibold"
                                 style={{ fontSize: 'var(--fs-base)' }}
                             >
-                                Ошибка
+                                {t('Ошибка')}
                             </span>
                             <span
                                 className="text-theme-secondary text-center max-w-md"
@@ -508,7 +511,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             fontSize: 'var(--fs-sm)',
                         }}
                     >
-                        Отмена
+                        {t('Отмена')}
                     </button>
 
                     {/* "Рисовать" — только в preview */}
@@ -524,7 +527,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             }}
                         >
                             <Pencil size={16} />
-                            Рисовать
+                            {t('Рисовать')}
                         </button>
                     )}
 
@@ -540,13 +543,13 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                                 color: copyStatus === 'error' ? 'var(--danger, #dc2626)' : 'var(--text-primary)',
                                 fontSize: 'var(--fs-sm)',
                             }}
-                            title="Скопировать изображение в буфер обмена"
+                            title={t('Скопировать изображение в буфер обмена')}
                         >
                             {copyStatus === 'copied' ? <Check size={16} /> : <Copy size={16} />}
-                            {copyStatus === 'copied' ? 'Скопировано'
-                                : copyStatus === 'copying' ? 'Копирую…'
-                                : copyStatus === 'error' ? 'Не вышло'
-                                : 'Скопировать'}
+                            {copyStatus === 'copied' ? t('Скопировано')
+                                : copyStatus === 'copying' ? t('Копирую…')
+                                : copyStatus === 'error' ? t('Не вышло')
+                                : t('Скопировать')}
                         </button>
                     )}
 
@@ -568,7 +571,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             }}
                         >
                             <Download size={16} />
-                            {state.phase === 'annotating' ? 'Скачать с разметкой' : 'Скачать'}
+                            {state.phase === 'annotating' ? t('Скачать с разметкой') : t('Скачать')}
                         </button>
                     )}
 
@@ -588,7 +591,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             }}
                         >
                             <Download size={16} />
-                            Скачать
+                            {t('Скачать')}
                         </button>
                     )}
                 </div>

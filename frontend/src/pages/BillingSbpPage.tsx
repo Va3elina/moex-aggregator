@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Clock, AlertCircle, RotateCw, Smartphone } from 'lucide-react';
 import { apiFetch } from '../services/api';
 
@@ -32,6 +33,7 @@ interface Status {
 }
 
 export default function BillingSbpPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const sbp = (location.state || {}) as SbpNavState;
@@ -104,16 +106,16 @@ export default function BillingSbpPage() {
     return (
       <div className="max-w-xl mx-auto px-6 py-12 text-center">
         <AlertCircle className="w-16 h-16 mx-auto mb-4 text-amber-400" />
-        <h1 className="text-2xl font-bold text-theme-primary mb-2">QR-код недоступен</h1>
+        <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('QR-код недоступен')}</h1>
         <p className="text-theme-secondary mb-6">
-          Похоже, страница была обновлена. Вернись к тарифам и сгенерируй новый QR.
+          {t('Похоже, страница была обновлена. Вернись к тарифам и сгенерируй новый QR.')}
         </p>
         <Link
           to="/pricing"
           className="px-5 py-3 rounded-xl text-sm font-medium"
           style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
         >
-          К тарифам
+          {t('К тарифам')}
         </Link>
       </div>
     );
@@ -121,16 +123,16 @@ export default function BillingSbpPage() {
 
   return (
     <div className="max-w-xl mx-auto px-6 py-12 text-center">
-      <h1 className="text-2xl font-bold text-theme-primary mb-2">Оплата через СБП</h1>
+      <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Оплата через СБП')}</h1>
       <p className="text-theme-secondary mb-6">
-        Отсканируй QR-код камерой или приложением банка. На телефоне — нажми кнопку ниже.
+        {t('Отсканируй QR-код камерой или приложением банка. На телефоне — нажми кнопку ниже.')}
       </p>
 
       {/* QR-код (T-Bank GetQr DataType=IMAGE → data-URL). Фон белый для контраста. */}
       <div className="inline-block p-4 rounded-2xl bg-white mb-4">
         <img
           src={sbp.qr_image}
-          alt="СБП QR-код для оплаты"
+          alt={t('СБП QR-код для оплаты')}
           width={240}
           height={240}
           style={{ display: 'block', width: 240, height: 240 }}
@@ -147,7 +149,7 @@ export default function BillingSbpPage() {
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium"
             style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
           >
-            <Smartphone size={16} /> Открыть приложение банка
+            <Smartphone size={16} /> {t('Открыть приложение банка')}
           </a>
         </div>
       )}
@@ -155,12 +157,12 @@ export default function BillingSbpPage() {
       {/* Статус ожидания / таймаут */}
       {state === 'await' ? (
         <p className="inline-flex items-center gap-2 text-theme-secondary text-sm">
-          <Clock size={16} className="animate-pulse" /> Ждём подтверждение оплаты…
+          <Clock size={16} className="animate-pulse" /> {t('Ждём подтверждение оплаты…')}
         </p>
       ) : (
         <div>
           <p className="text-theme-secondary text-sm mb-3">
-            Если ты уже оплатил, но статус не обновился — проверь вручную.
+            {t('Если ты уже оплатил, но статус не обновился — проверь вручную.')}
           </p>
           <button
             onClick={handleManualSync}
@@ -169,13 +171,13 @@ export default function BillingSbpPage() {
             style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
           >
             <RotateCw size={16} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Проверяем…' : 'Проверить статус'}
+            {syncing ? t('Проверяем…') : t('Проверить статус')}
           </button>
         </div>
       )}
 
       <p className="mt-8 text-xs" style={{ color: 'var(--text-muted)' }}>
-        Подписка продлевается автоматически по СБП. Отменить можно в профиле.
+        {t('Подписка продлевается автоматически по СБП. Отменить можно в профиле.')}
       </p>
     </div>
   );

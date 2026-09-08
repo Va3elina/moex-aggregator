@@ -15,6 +15,10 @@
 
 export type UpgradeTier = 'basic' | 'pro';
 
+// Бэкенд шлёт русский текст; фронтовые фолбэки (services/api.ts) в en-режиме
+// переведены — ловим оба варианта («на тарифе» / «plan», «недоступ» / «not available»).
+const TIER_RE = /тарифе|недоступ|\bplan\b|not available/i;
+
 type ShowUpgrade = (props: { tier: UpgradeTier; featureName?: string; indicator?: string }) => void;
 
 function extractMessage(err: unknown): string {
@@ -24,7 +28,7 @@ function extractMessage(err: unknown): string {
 /** true, если ошибка — отказ по тарифу (а не сетевая/500/прочая). */
 export function isTierError(err: unknown): boolean {
     const msg = extractMessage(err);
-    return msg.includes('тарифе') || msg.includes('недоступ');
+    return TIER_RE.test(msg);
 }
 
 /** Дефолтный резолвер: «Pro» в тексте → 'pro', иначе 'basic'. */
@@ -37,7 +41,7 @@ function defaultTierResolver(msg: string): UpgradeTier {
  * Эквивалент прежнему `msg.includes('5мин') || msg.includes('Pro') ? 'pro' : 'basic'`.
  */
 export function oiTierResolver(msg: string): UpgradeTier {
-    return msg.includes('5мин') || msg.includes('Pro') ? 'pro' : 'basic';
+    return msg.includes('5мин') || msg.includes('5-min') || msg.includes('Pro') ? 'pro' : 'basic';
 }
 
 interface HandleTierErrorOpts {
@@ -63,7 +67,7 @@ interface HandleTierErrorOpts {
  */
 export function handleTierError(err: unknown, opts: HandleTierErrorOpts): boolean {
     const msg = extractMessage(err);
-    if (!(msg.includes('тарифе') || msg.includes('недоступ'))) return false;
+    if (!TIER_RE.test(msg)) return false;
     const tier = (opts.tierResolver ?? defaultTierResolver)(msg);
     const featureName = typeof opts.featureName === 'function' ? opts.featureName(msg) : opts.featureName;
     opts.showUpgrade({ tier, featureName, indicator: opts.indicator });

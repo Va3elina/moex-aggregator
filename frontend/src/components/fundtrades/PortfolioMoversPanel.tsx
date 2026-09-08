@@ -16,6 +16,8 @@
 // пресет не подсвечен, а кнопка залита accent'ом.
 
 import { type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t, monthShort } from '../../i18n';
 import { fundAssetName, resolveFundTicker, isOfzBond } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
@@ -26,7 +28,7 @@ import type { FundTradesMovers, FundTradesMover } from '../../services/api';
 // '3y' убран из пресетов (2026-07): произвольный диапазон через календарь
 // покрывает и более длинные периоды, отдельная пилюля стала избыточной.
 export type MoversPeriod = '1m' | '6m' | '1y';
-const PERIOD_SUB: Record<MoversPeriod, string> = { '1m': 'за 1 месяц', '6m': 'за полгода', '1y': 'за год' };
+const PERIOD_SUB: Record<MoversPeriod, string> = { '1m': 'за 1 месяц', '6m': 'за полгода', '1y': 'за год' }; // ключи t()
 const PERIOD_MONTHS: Record<MoversPeriod, number> = { '1m': 1, '6m': 6, '1y': 12 };
 
 interface Props {
@@ -54,18 +56,15 @@ const isIsin = (s?: string | null): s is string => !!s && /^[A-Z]{2}[A-Z0-9]{10}
 // Единица одна на весь блок (по максимуму) и вынесена в подзаголовок — не в
 // каждую строку. Масштаб задаёт делитель и число знаков: млрд 2, млн 1, тыс 0.
 export function scaleOf(maxAbs: number): { unit: string; div: number; dec: number } {
-    if (maxAbs >= 1e9) return { unit: 'млрд ₽', div: 1e9, dec: 2 };
-    if (maxAbs >= 1e6) return { unit: 'млн ₽', div: 1e6, dec: 1 };
-    return { unit: 'тыс ₽', div: 1e3, dec: 0 };
+    if (maxAbs >= 1e9) return { unit: t('млрд ₽'), div: 1e9, dec: 2 };
+    if (maxAbs >= 1e6) return { unit: t('млн ₽'), div: 1e6, dec: 1 };
+    return { unit: t('тыс ₽'), div: 1e3, dec: 0 };
 }
 
 // Величина со знаком в общей единице блока: «+9.02», «−4.39».
 export function fmtSignedNum(v: number, div: number, dec: number): string {
     return `${v > 0 ? '+' : '−'}${(Math.abs(v) / div).toFixed(dec)}`;
 }
-
-const MONTHS_LOWER = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
-    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 // Длинное имя обрезаем не многоточием, а плавным затуханием справа (fade-out).
 const FADE_MASK = 'linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%)';
@@ -79,7 +78,7 @@ const nameFade: CSSProperties = {
 function monthRangeLabel(endISO: string, period: MoversPeriod): string {
     const end = new Date(endISO);
     const start = new Date(end.getFullYear(), end.getMonth() - PERIOD_MONTHS[period], 1);
-    const sM = MONTHS_LOWER[start.getMonth()], eM = MONTHS_LOWER[end.getMonth()];
+    const sM = monthShort(start.getMonth()), eM = monthShort(end.getMonth());
     if (start.getFullYear() === end.getFullYear()) return `${sM} – ${eM} ${end.getFullYear()}`;
     return `${sM} ${start.getFullYear()} – ${eM} ${end.getFullYear()}`;
 }
@@ -111,6 +110,7 @@ export default function PortfolioMoversPanel({
     movers, loading, period, variant = 'desktop', onAssetClick, onPeriodChange,
     range = null, onRangeChange, availableMonths, monthLocked, onMonthLockedClick,
 }: Props) {
+    const { t } = useTranslation();
     const isMobile = variant === 'mobile';
     const embedded = variant === 'embedded';
     // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
@@ -134,14 +134,14 @@ export default function PortfolioMoversPanel({
         ? customRangeLabel(range.from, range.to)
         : movers?.resolved_month
             ? monthRangeLabel(movers.resolved_month, period)
-            : PERIOD_SUB[period];
+            : t(PERIOD_SUB[period]);
 
     const head = (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
             {/* Заголовок + период стопкой, выровнены по верху — текст не провисает
                 относительно высокого сегмент-контрола справа. */}
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>Сделки</span>
+                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--text-primary)' }}>{t('Сделки')}</span>
                 <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</span>
             </div>
             {onPeriodChange && (
@@ -149,9 +149,9 @@ export default function PortfolioMoversPanel({
                 <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
                     <SegmentedControl<string>
                         options={[
-                            { key: '1m', label: '1М' },
-                            { key: '6m', label: '6М' },
-                            { key: '1y', label: '1Г' },
+                            { key: '1m', label: t('1М') },
+                            { key: '6m', label: t('6М') },
+                            { key: '1y', label: t('1Г') },
                         ]}
                         // Свой диапазон — ключа нет ни у одного сегмента, активной
                         // пилюли не остаётся (период показывает кнопка-календарь).
@@ -198,7 +198,7 @@ export default function PortfolioMoversPanel({
                 role={click ? 'button' : undefined}
                 tabIndex={click ? 0 : undefined}
                 onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
-                title={click ? `По бумаге: ${fundAssetName(m.asset_name, isin)}` : undefined}
+                title={click ? t('По бумаге: {{name}}', { name: fundAssetName(m.asset_name, isin) }) : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                 style={{ display: 'grid', gridTemplateColumns: '30px 112px minmax(40px, 1fr) max-content', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
@@ -226,13 +226,13 @@ export default function PortfolioMoversPanel({
             {head}
             {empty ? (
                 <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-                    Нет данных за этот период по выбранным УК. Выберите другие управляющие компании.
+                    {t('Нет данных за этот период по выбранным УК. Выберите другие управляющие компании.')}
                 </div>
             ) : (
                 <>
-                    {buys.length > 0 && sectionLabel('Чистые покупки', true)}
+                    {buys.length > 0 && sectionLabel(t('Чистые покупки'), true)}
                     {buys.slice(0, 5).map((m, i) => row(m, i === Math.min(5, buys.length) - 1))}
-                    {sells.length > 0 && sectionLabel('Чистые продажи', false, 16)}
+                    {sells.length > 0 && sectionLabel(t('Чистые продажи'), false, 16)}
                     {sells.slice(0, 5).map((m, i) => row(m, i === Math.min(5, sells.length) - 1))}
                 </>
             )}

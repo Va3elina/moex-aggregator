@@ -10,6 +10,7 @@
  *   - Каждая инфографика самодостаточна и подписана (figcaption).
  */
 import type { ReactNode } from 'react';
+import { t } from '../../i18n';
 
 // Единая палитра инфографик (лонг/шорт/рост/падение — одинаково в свет/тёмной).
 // Нейтральные элементы рисуем currentColor (цвет задаёт Figure).
@@ -58,19 +59,19 @@ export function Figure({
  */
 export function NetPositionFigure() {
   return (
-    <Figure caption={<>«Чистая позиция» — это <b>перевес одной стороны</b>: покупки минус продажи. Здесь покупателей больше — перевес в лонг.</>}>
-      <svg viewBox="0 0 320 118" style={{ width: '100%', display: 'block' }} role="img" aria-label="Чистая позиция как разница покупок и продаж">
+    <Figure caption={<>{t('«Чистая позиция» — это')} <b>{t('перевес одной стороны')}</b>{t(': покупки минус продажи. Здесь покупателей больше — перевес в лонг.')}</>}>
+      <svg viewBox="0 0 320 118" style={{ width: '100%', display: 'block' }} role="img" aria-label={t('Чистая позиция как разница покупок и продаж')}>
         {/* Покупки */}
-        <text x="8" y="26" fontSize="11" fontWeight="700" fill={GREEN}>Покупки</text>
+        <text x="8" y="26" fontSize="11" fontWeight="700" fill={GREEN}>{t('Покупки')}</text>
         <rect x="78" y="16" width="210" height="16" rx="4" fill={GREEN} opacity="0.85" />
         {/* Продажи */}
-        <text x="8" y="58" fontSize="11" fontWeight="700" fill={RED}>Продажи</text>
+        <text x="8" y="58" fontSize="11" fontWeight="700" fill={RED}>{t('Продажи')}</text>
         <rect x="78" y="48" width="140" height="16" rx="4" fill={RED} opacity="0.85" />
         {/* Разница = чистая позиция */}
         <line x1="218" y1="40" x2="218" y2="86" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
         <line x1="288" y1="24" x2="288" y2="86" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
         <rect x="218" y="80" width="70" height="14" rx="4" fill={GREEN} />
-        <text x="253" y="108" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>чистая позиция</text>
+        <text x="253" y="108" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>{t('чистая позиция')}</text>
       </svg>
     </Figure>
   );
@@ -81,8 +82,8 @@ export function NetPositionFigure() {
  */
 export function PerekosAxisFigure() {
   return (
-    <Figure caption={<>«Перекос» — <b>насколько скошена</b> чистая позиция группы: 0 = поровну, +100% = все в лонг, −100% = все в шорт. Это про <b>позицию</b>, не про число участников.</>}>
-      <svg viewBox="0 0 320 106" style={{ width: '100%', display: 'block' }} role="img" aria-label="Ось перекоса от минус ста до плюс ста процентов">
+    <Figure caption={<>{t('«Перекос» —')} <b>{t('насколько скошена')}</b> {t('чистая позиция группы: 0 = поровну, +100% = все в лонг, −100% = все в шорт. Это про')} <b>{t('позицию')}</b>{t(', не про число участников.')}</>}>
+      <svg viewBox="0 0 320 106" style={{ width: '100%', display: 'block' }} role="img" aria-label={t('Ось перекоса от минус ста до плюс ста процентов')}>
         <rect x="20" y="44" width="130" height="16" rx="4" fill={RED} opacity="0.14" />
         <rect x="150" y="44" width="150" height="16" rx="4" fill={GREEN} opacity="0.16" />
         <line x1="20" y1="52" x2="300" y2="52" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
@@ -90,13 +91,13 @@ export function PerekosAxisFigure() {
         {/* маркер «сейчас» на +60% */}
         <circle cx="234" cy="52" r="7" fill={GREEN} />
         <line x1="234" y1="28" x2="234" y2="45" stroke={GREEN} strokeWidth="1" opacity="0.8" />
-        <text x="234" y="22" textAnchor="middle" fontSize="10" fontWeight="700" fill={GREEN}>+60% лонг</text>
+        <text x="234" y="22" textAnchor="middle" fontSize="10" fontWeight="700" fill={GREEN}>{t('+60% лонг')}</text>
         {/* ряд 1: слова под зонами (разнесены — центры зон, не сталкиваются) */}
-        <text x="85" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={RED}>весь шорт</text>
-        <text x="225" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>весь лонг</text>
+        <text x="85" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={RED}>{t('весь шорт')}</text>
+        <text x="225" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>{t('весь лонг')}</text>
         {/* ряд 2: проценты по краям + ноль по центру */}
         <text x="20" y="99" textAnchor="start" fontSize="9.5" fill={RED} opacity="0.9">−100%</text>
-        <text x="150" y="99" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">0 · поровну</text>
+        <text x="150" y="99" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">{t('0 · поровну')}</text>
         <text x="300" y="99" textAnchor="end" fontSize="9.5" fill={GREEN} opacity="0.9">+100%</text>
       </svg>
     </Figure>
@@ -109,18 +110,18 @@ export function PerekosAxisFigure() {
 export function SharpMoveFigure() {
   const base = [26, 18, 30, 22, 27, 20, 25]; // «обычные» дни
   return (
-    <Figure caption={<>«Резкое движение» — сегодняшний сдвиг чистой позиции <b>во сколько раз сильнее обычного дня</b> (сравниваем со средним шагом за 2 недели). 2× — заметно, 5× — экстремально.</>}>
-      <svg viewBox="0 0 320 110" style={{ width: '100%', display: 'block' }} role="img" aria-label="Сравнение обычного дневного шага и резкого движения">
+    <Figure caption={<>{t('«Резкое движение» — сегодняшний сдвиг чистой позиции')} <b>{t('во сколько раз сильнее обычного дня')}</b> {t('(сравниваем со средним шагом за 2 недели). 2× — заметно, 5× — экстремально.')}</>}>
+      <svg viewBox="0 0 320 110" style={{ width: '100%', display: 'block' }} role="img" aria-label={t('Сравнение обычного дневного шага и резкого движения')}>
         <line x1="20" y1="86" x2="300" y2="86" stroke="currentColor" strokeWidth="1" opacity="0.4" />
         {base.map((h, i) => (
           <rect key={i} x={26 + i * 20} y={86 - h} width="12" height={h} rx="2" fill="currentColor" opacity="0.35" />
         ))}
-        <text x="86" y="102" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">обычные дни</text>
+        <text x="86" y="102" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">{t('обычные дни')}</text>
         {/* сегодня — крупный */}
         <rect x="228" y="18" width="26" height="68" rx="3" fill="#FF5C2B" />
         <line x1="228" y1="52" x2="200" y2="52" stroke="currentColor" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
-        <text x="241" y="12" textAnchor="middle" fontSize="11" fontWeight="800" fill="#FF5C2B">сегодня · ×3</text>
-        <text x="278" y="102" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">резкий сдвиг</text>
+        <text x="241" y="12" textAnchor="middle" fontSize="11" fontWeight="800" fill="#FF5C2B">{t('сегодня · ×3')}</text>
+        <text x="278" y="102" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">{t('резкий сдвиг')}</text>
       </svg>
     </Figure>
   );
@@ -134,18 +135,18 @@ export function RecordFigure() {
   // ВЫШЕ его = новый максимум.
   const pts = '20,80 54,58 96,44 138,64 182,52 224,40 266,24';
   return (
-    <Figure caption={<>«Новый максимум / минимум» — перекос группы дошёл до уровня, которого <b>не было за выбранный период</b> (год, 2, 3, 5 лет или за всё время). Ловит медленный дрейф, который резкое движение пропускает.</>}>
-      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Линия перекоса ставит новый максимум выше прошлого пика">
+    <Figure caption={<>{t('«Новый максимум / минимум» — перекос группы дошёл до уровня, которого')} <b>{t('не было за выбранный период')}</b> {t('(год, 2, 3, 5 лет или за всё время). Ловит медленный дрейф, который резкое движение пропускает.')}</>}>
+      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label={t('Линия перекоса ставит новый максимум выше прошлого пика')}>
         {/* прошлый пик — на уровне первого (старого) пика */}
         <line x1="20" y1="44" x2="300" y2="44" stroke="currentColor" strokeWidth="1" strokeDasharray="4 3" opacity="0.45" />
-        <text x="20" y="38" fontSize="9.5" fill="currentColor" opacity="0.7">прошлый пик</text>
+        <text x="20" y="38" fontSize="9.5" fill="currentColor" opacity="0.7">{t('прошлый пик')}</text>
         <polyline points={pts} fill="none" stroke={GREEN} strokeWidth="2" opacity="0.85" />
         {/* старый пик — маркер на прошлом уровне */}
         <circle cx="96" cy="44" r="4" fill="currentColor" opacity="0.45" />
         {/* новый максимум — выше */}
         <circle cx="266" cy="24" r="6" fill={GREEN} />
         <line x1="266" y1="17" x2="222" y2="17" stroke={GREEN} strokeWidth="1" opacity="0.7" />
-        <text x="218" y="20" textAnchor="end" fontSize="10" fontWeight="800" fill={GREEN}>★ новый максимум</text>
+        <text x="218" y="20" textAnchor="end" fontSize="10" fontWeight="800" fill={GREEN}>{t('★ новый максимум')}</text>
       </svg>
     </Figure>
   );

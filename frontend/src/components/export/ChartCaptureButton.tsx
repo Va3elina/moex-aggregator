@@ -16,6 +16,7 @@ import { useState, lazy, Suspense } from 'react';
 import { Camera } from 'lucide-react';
 import type { ExportMetadata } from './types';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
+import { useTranslation } from 'react-i18next';
 
 // Lazy-import — modal + html2canvas chunk выделяется отдельно
 const ExportModal = lazy(() => import('./ExportModal'));
@@ -43,6 +44,7 @@ export default function ChartCaptureButton({
     getExportStyles,
     className = '',
 }: Props) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const [target, setTarget] = useState<HTMLElement | null>(null);
     const [styles, setStyles] = useState<Record<string, string> | undefined>(undefined);
@@ -90,8 +92,8 @@ export default function ChartCaptureButton({
                     width: 44,
                     height: 44,
                 }}
-                aria-label="Скачать график"
-                title="Скачать график"
+                aria-label={t('Скачать график')}
+                title={t('Скачать график')}
             >
                 <Camera size={22} />
             </button>

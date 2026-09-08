@@ -11,6 +11,8 @@
  * Поддерживает PNG (lossless, ~500KB) и JPEG (smaller ~200KB, для Telegram).
  */
 
+import { t } from '../../i18n';
+
 export type ExportFormat = 'png' | 'jpeg';
 
 export async function downloadCanvas(
@@ -66,12 +68,12 @@ export async function downloadCanvas(
  */
 export async function copyCanvasToClipboard(canvas: HTMLCanvasElement): Promise<void> {
     if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
-        throw new Error('Браузер не поддерживает копирование изображений');
+        throw new Error(t('Браузер не поддерживает копирование изображений'));
     }
 
     const blobPromise = new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(
-            (b) => (b ? resolve(b) : reject(new Error('Не удалось создать изображение'))),
+            (b) => (b ? resolve(b) : reject(new Error(t('Не удалось создать изображение')))),
             'image/png',
         );
     });

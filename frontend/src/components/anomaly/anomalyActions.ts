@@ -7,6 +7,7 @@
 import type { NavigateFunction } from 'react-router-dom';
 import { handleTierError, type UpgradeTier } from '../../utils/tierError';
 import { subscribeAnomaly as apiSubscribe, type AnomalyItem, type AnomalyDeepLink } from '../../services/api';
+import { t, dateLocale } from '../../i18n';
 
 type ShowUpgrade = (p: { tier: UpgradeTier; featureName?: string; indicator?: string }) => void;
 
@@ -36,7 +37,7 @@ export function tradeDateLabel(signalDate?: string | null): string {
   if (!signalDate) return '';
   const d = new Date(`${signalDate}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+  return d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long', timeZone: 'UTC' });
 }
 
 /** Открыть график аномалии. Если цель закрыта тарифом (link_required_tier) —
@@ -63,14 +64,14 @@ export async function subscribeAnomalyAction(
   item: AnomalyItem, isAuthenticated: boolean, showUpgrade: ShowUpgrade,
 ): Promise<'ok' | 'guest' | 'error'> {
   if (!isAuthenticated) {
-    showUpgrade({ tier: 'basic', featureName: 'сигналы', indicator: 'anomaly' });
+    showUpgrade({ tier: 'basic', featureName: t('сигналы'), indicator: 'anomaly' });
     return 'guest';
   }
   try {
     await apiSubscribe(item.id);
     return 'ok';
   } catch (e) {
-    handleTierError(e, { showUpgrade, indicator: 'anomaly', featureName: 'сигналы' });
+    handleTierError(e, { showUpgrade, indicator: 'anomaly', featureName: t('сигналы') });
     return 'error';
   }
 }

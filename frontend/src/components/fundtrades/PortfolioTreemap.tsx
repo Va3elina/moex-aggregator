@@ -12,6 +12,7 @@
 // позиция бумаги в отсортированном списке.
 
 import type { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export const TREEMAP_TOP = 10;
 const TM_CHUNKS = [2, 3, 3, 2];
@@ -44,6 +45,7 @@ interface Props {
 }
 
 export default function PortfolioTreemap({ items, restWeight, hoverIdx, onHoverChange, onItemClick, clickHint, style }: Props) {
+    const { t } = useTranslation();
     const topSum = Math.max(items.reduce((s, it) => s + it.weight, 0), 0.0001);
     const rows: { it: TreemapItem; idx: number }[][] = [];
     let cursor = 0;
@@ -95,7 +97,7 @@ export default function PortfolioTreemap({ items, restWeight, hoverIdx, onHoverC
             })}
             {restWeight > 0.5 && (
                 <div style={{ height: 42, borderRadius: 10, background: 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-primary))', color: 'var(--text-primary)', padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)' }}>Прочие бумаги</span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)' }}>{t('Прочие бумаги')}</span>
                     <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', fontVariantNumeric: 'tabular-nums' }}>{restWeight.toFixed(1).replace('.', ',')}%</span>
                 </div>
             )}

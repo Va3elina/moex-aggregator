@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Grid3X3 } from 'lucide-react';
+import { dateLocale, getLang } from '../i18n';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import AdaptiveSegmented from '../components/AdaptiveSegmented';
@@ -11,14 +13,14 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { heatmapTourSteps } from '../data/tours/heatmap';
+import { getHeatmapTourSteps } from '../data/tours/heatmap';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useElementWidth } from '../hooks/useElementWidth';
 
-// Опции для фильтров
+// Опции для фильтров. Русские label = ключи перевода, оборачиваются t() в рендере.
 const PERIOD_OPTIONS = [
   { value: '1d', label: '1Д', color: 'change_1d', volume: 'value_1d' },
   { value: '1w', label: '1Н', color: 'change_1w', volume: 'value_1w' },
@@ -37,16 +39,19 @@ const GROUP_OPTIONS = [
 ];
 
 // Подпись карты последним торговым днём на выходных/праздниках.
-// ISO («2026-06-19») → «пятницу 19 июня» (вин. падеж под «Данные за …»).
+// ISO («2026-06-19») → «пятницу 19 июня» (вин. падеж под «Данные за …»);
+// в английской версии — «Friday 19 June» (падежей нет).
 const WEEKDAY_ACC: Record<string, string> = { среда: 'среду', пятница: 'пятницу', суббота: 'субботу' };
 function formatLastTradingDay(iso: string): string {
   // Полдень по МСК, чтобы дата не «съехала» через таймзону браузера.
   const d = new Date(`${iso}T12:00:00+03:00`);
   if (Number.isNaN(d.getTime())) return '';
   const opts = { timeZone: 'Europe/Moscow' } as const;
-  const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long', ...opts });
-  const dayMonth = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...opts });
-  return `${WEEKDAY_ACC[weekday] || weekday} ${dayMonth}`;
+  const locale = dateLocale();
+  const weekday = d.toLocaleDateString(locale, { weekday: 'long', ...opts });
+  const dayMonth = d.toLocaleDateString(locale, { day: 'numeric', month: 'long', ...opts });
+  const weekdayForm = getLang() === 'ru' ? (WEEKDAY_ACC[weekday] || weekday) : weekday;
+  return `${weekdayForm} ${dayMonth}`;
 }
 
 // Squarify алгоритм для treemap
@@ -147,6 +152,7 @@ function squarify(
 }
 
 export default function HeatmapPage() {
+  const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   // Outer paper-card ref — used for capture (включает watermark в snapshot)
   const captureRef = useRef<HTMLDivElement>(null);
@@ -180,8 +186,10 @@ export default function HeatmapPage() {
   const [period, setPeriod] = usePersistedState<string>('frame:heatmap:period', '1d');
   const [groupBy, setGroupBy] = usePersistedState<string>('frame:heatmap:groupBy', 'sector');
 
-  // Onboarding tour
+  // Onboarding tour — шаги пересобираются при смене языка.
   const tour = useOnboardingTour('heatmap');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tourSteps = useMemo(() => getHeatmapTourSteps(), [i18n.language]);
 
   // Вычисляемые значения из периода
   const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
@@ -270,7 +278,7 @@ export default function HeatmapPage() {
       data.stocks.forEach((s: HeatmapStock) => {
         if (s.prev_close > 0) prevCloseMap.current[s.secId] = s.prev_close;
       });
-      setLastUpdate(data.updated_at || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      setLastUpdate(data.updated_at || new Date().toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' }));
       setIsLive(data.is_live !== false);
       setDataDate(data.data_date || '');
       hasDataRef.current = true;
@@ -280,11 +288,11 @@ export default function HeatmapPage() {
       handleTierError(error, {
         showUpgrade,
         indicator: 'heatmap',
-        featureName: 'режим «Все акции»',
+        featureName: t('режим «Все акции»'),
       });
     }
     if (!isStale()) setLoading(false);
-  }, [mapMode, groupBy, showUpgrade]);
+  }, [mapMode, groupBy, showUpgrade, t]);
 
   // Tier-guard для восстановленного режима: если из localStorage пришёл
   // mapMode='all', но тариф его не разрешает (Free → только IMOEX) — откатываем
@@ -325,7 +333,7 @@ export default function HeatmapPage() {
           change_1d: Math.round((newPrice - prevClose) / prevClose * 10000) / 100,
         };
       }));
-      setLastUpdate(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }));
+      setLastUpdate(new Date().toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }));
     } catch { /* ignore */ }
   }, 5000);
 
@@ -611,10 +619,10 @@ export default function HeatmapPage() {
     <div className="max-w-full mx-auto px-2 md:px-4 py-6 md:py-8">
       <PageHeader
         icon={Grid3X3}
-        title="Карта рынка"
+        title={t('Карта рынка')}
         subtitle={!isLive && dataDate
-          ? `Данные за ${formatLastTradingDay(dataDate)}`
-          : `Обновлено в ${lastUpdate || '--:--'}`}
+          ? t('Данные за {{day}}', { day: formatLastTradingDay(dataDate) })
+          : t('Обновлено в {{time}}', { time: lastUpdate || '--:--' })}
         help={METHODOLOGY.heatmap}
         helpLink="/methodology/heatmap"
       />
@@ -631,10 +639,10 @@ export default function HeatmapPage() {
         <div data-tour="heatmap-map-mode">
         <Dropdown<'imoex' | 'all'>
           options={[
-            { key: 'imoex', label: 'Индекс IMOEX' },
+            { key: 'imoex', label: t('Индекс IMOEX') },
             {
               key: 'all',
-              label: 'Все акции',
+              label: t('Все акции'),
               locked: !heatAccess.isLoading && !heatAccess.canUseMode('all'),
             },
           ]}
@@ -645,7 +653,7 @@ export default function HeatmapPage() {
             if (tier) {
               showUpgrade({
                 tier,
-                featureName: 'режим «Все акции»',
+                featureName: t('режим «Все акции»'),
                 indicator: 'heatmap',
               });
             }
@@ -657,13 +665,13 @@ export default function HeatmapPage() {
             неё). Оба под одним data-tour="heatmap-size" — тур описывает их вместе. */}
         <div data-tour="heatmap-size" className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<string>
-          options={GROUP_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+          options={GROUP_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: t(o.label) }))}
           value={groupBy}
           onChange={setGroupBy}
         />
 
         <AdaptiveSegmented<string>
-          options={SIZE_OPTIONS.map((o) => ({ key: o.value, label: o.label }))}
+          options={SIZE_OPTIONS.map((o) => ({ key: o.value, label: t(o.label) }))}
           value={sizeBy}
           onChange={setSizeBy}
           collapsed={compactControls}
@@ -672,7 +680,7 @@ export default function HeatmapPage() {
 
         <div data-tour="heatmap-period">
         <AdaptiveSegmented<string>
-          options={PERIOD_OPTIONS.map((o) => ({ key: o.value, label: o.label }))}
+          options={PERIOD_OPTIONS.map((o) => ({ key: o.value, label: t(o.label) }))}
           value={period}
           onChange={setPeriod}
           collapsed={compactControls}
@@ -688,12 +696,12 @@ export default function HeatmapPage() {
           metadata={{
             // Главный заголовок скриншота — всегда «Карта рынка». Режим
             // (Индекс IMOEX / Все акции) уходит первым тегом в подзаголовок.
-            title: 'Карта рынка',
+            title: t('Карта рынка'),
             details: [
-              mapMode === 'imoex' ? 'Индекс IMOEX' : 'Все акции',
-              SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy,
-              PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period,
-              GROUP_OPTIONS.find(o => o.value === groupBy)?.label ?? groupBy,
+              mapMode === 'imoex' ? t('Индекс IMOEX') : t('Все акции'),
+              t(SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy),
+              t(PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period),
+              t(GROUP_OPTIONS.find(o => o.value === groupBy)?.label ?? groupBy),
             ].filter(Boolean),
           }}
         />
@@ -718,7 +726,7 @@ export default function HeatmapPage() {
           <div className="absolute inset-0 flex items-center justify-center text-slate-400">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-              <span className="text-sm text-theme-secondary">Загрузка карты...</span>
+              <span className="text-sm text-theme-secondary">{t('Загрузка карты...')}</span>
             </div>
           </div>
         ) : treemapData && treemapData.type === 'grouped' ? (
@@ -793,10 +801,10 @@ export default function HeatmapPage() {
           </div>
           <div className="flex items-center" style={{ fontSize: 'var(--fs-2xs)', gap: 'var(--sp-3)' }}>
             {[
-              { label: 'Д', value: tooltip.stock.change_1d },
-              { label: 'Н', value: tooltip.stock.change_1w },
-              { label: 'М', value: tooltip.stock.change_1m },
-              { label: 'Г', value: tooltip.stock.change_1y },
+              { label: t('Д'), value: tooltip.stock.change_1d },
+              { label: t('Н'), value: tooltip.stock.change_1w },
+              { label: t('М'), value: tooltip.stock.change_1m },
+              { label: t('Г'), value: tooltip.stock.change_1y },
             ].map(({ label, value }) => (
               <span key={label} className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
                 <span className="text-theme-muted">{label}</span>
@@ -810,7 +818,7 @@ export default function HeatmapPage() {
       )}
 
       <OnboardingTour
-        steps={heatmapTourSteps}
+        steps={tourSteps}
         open={tour.open}
         onClose={tour.close}
       />

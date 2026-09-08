@@ -14,6 +14,8 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import {
   X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
@@ -91,6 +93,7 @@ interface BillingStatus {
 }
 
 export default function PricingPage() {
+  const { t } = useTranslation();
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -142,10 +145,12 @@ export default function PricingPage() {
         setLoading(false);
       })
       .catch(e => {
-        setError('Не удалось загрузить тарифы');
+        setError(t('Не удалось загрузить тарифы'));
         setLoading(false);
         console.error(e);
       });
+    // t — стабильный, планы грузим один раз при mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Параллельно — реальный статус подписки user'а. Для гостя 401, billing=null.
@@ -246,7 +251,7 @@ export default function PricingPage() {
     // которого бэкенд ответит 400, хуже, чем просто показать тарифы. Заодно
     // подтягиваем переключатель Месяц/Год к тому периоду, что человек выбрал.
     const owner = data.tiers.find(
-      (t) => t.monthly?.plan_id === intent.planId || t.yearly?.plan_id === intent.planId,
+      (x) => x.monthly?.plan_id === intent.planId || x.yearly?.plan_id === intent.planId,
     );
     if (!owner) return;
     setPeriod(owner.yearly?.plan_id === intent.planId ? 'yearly' : 'monthly');
@@ -270,11 +275,11 @@ export default function PricingPage() {
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payment_url) {
-        throw new Error(body.detail || body.error?.message || 'Не удалось начать пробный период');
+        throw new Error(body.detail || body.error?.message || t('Не удалось начать пробный период'));
       }
       window.location.href = body.payment_url; // → привязка карты (T-Bank AddCard)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка');
+      setError(e instanceof Error ? e.message : t('Ошибка'));
       setCheckoutLoading(null);
       setPendingTrial(null);
     }
@@ -301,7 +306,7 @@ export default function PricingPage() {
       });
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.error?.message || 'Ошибка создания платежа');
+        throw new Error(errData.detail || errData.error?.message || t('Ошибка создания платежа'));
       }
       const body = await resp.json();
       if (rail === 'sbp') {
@@ -320,7 +325,7 @@ export default function PricingPage() {
       // Карта: full-page redirect на pay.tbank.ru (или /billing/stub).
       window.location.href = body.confirmation_url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка');
+      setError(e instanceof Error ? e.message : t('Ошибка'));
       setCheckoutLoading(null);
       setPendingPlanId(null);
     }
@@ -331,7 +336,7 @@ export default function PricingPage() {
   const consentReady = agreementConsent;
 
   if (loading) return (
-    <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">Загрузка тарифов...</div>
+    <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">{t('Загрузка тарифов...')}</div>
   );
   if (error && !data) return (
     <div className="max-w-6xl mx-auto p-8 text-center text-red-400">{error}</div>
@@ -343,7 +348,7 @@ export default function PricingPage() {
       {/* Заголовок без описательной подписи — оставляем чистый «Тарифы»,
           подробности по способам оплаты есть в блоке внизу. */}
       <div className="text-center mb-6 md:mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
+        <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">{t('Тарифы')}</h1>
       </div>
 
       {/* Плашка «Мы пересматриваем тарифный план» убрана 2026-08-24: тарифы
@@ -376,15 +381,14 @@ export default function PricingPage() {
               <Heart size={17} strokeWidth={2.4} color="#fff" fill="#fff" />
             </span>
             <span style={{ fontWeight: 800, fontSize: 'var(--fs-lg, 1.15rem)' }}>
-              Спасибо, что были первым — дарим месяц Pro
+              {t('Спасибо, что были первым — дарим месяц Pro')}
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)', lineHeight: 1.55, margin: '0 0 8px' }}>
-            Бесплатно {billing.founder_offer.days} дней Pro. Для привязки карты спишется 1&nbsp;₽ и сразу
-            вернётся; полное списание — только по окончании периода, если не отмените.
+            {t('Бесплатно {{n}} дней Pro. Для привязки карты спишется 1 ₽ и сразу вернётся; полное списание — только по окончании периода, если не отмените.', { n: billing.founder_offer.days })}
           </p>
           <p style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-xs, 0.8rem)', lineHeight: 1.5, margin: '0 0 14px' }}>
-            Будем рады услышать ваш опыт — пишите{' '}
+            {t('Будем рады услышать ваш опыт — пишите')}{' '}
             <a href="https://t.me/TorSasha" target="_blank" rel="noopener noreferrer"
                style={{ color: 'var(--accent, #FF5C2B)', fontWeight: 700, textDecoration: 'none' }}>
               @TorSasha
@@ -402,7 +406,7 @@ export default function PricingPage() {
               boxShadow: 'var(--shadow-hard-chip, 2px 2px 0 var(--text-primary, #0A0A0A))',
             }}
           >
-            Активировать месяц Pro
+            {t('Активировать месяц Pro')}
           </button>
         </div>
       )}
@@ -411,7 +415,7 @@ export default function PricingPage() {
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
       {data.provider === 'stub' && (
         <div className="mb-6 mx-auto max-w-3xl rounded-xl border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-4 py-3 text-sm text-[var(--warning)]">
-          ⚙️ <strong>Тестовый режим:</strong> эквайринг ещё не подключён, платежи не спишутся.
+          ⚙️ <strong>{t('Тестовый режим:')}</strong> {t('эквайринг ещё не подключён, платежи не спишутся.')}
         </div>
       )}
 
@@ -435,7 +439,7 @@ export default function PricingPage() {
               color: period === 'monthly' ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
           >
-            Месяц
+            {t('Месяц')}
           </button>
           <button
             onClick={() => setPeriod('yearly')}
@@ -449,7 +453,7 @@ export default function PricingPage() {
               color: period === 'yearly' ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
           >
-            Год
+            {t('Год')}
             <span
               className="rounded-full font-bold"
               style={{ background: 'var(--accent)', color: 'var(--bg-primary)', padding: '1px 6px', fontSize: 11 }}
@@ -467,7 +471,7 @@ export default function PricingPage() {
           таблице ниже. Бэкенд продолжает отдавать free в /api/billing/plans —
           фильтруем на рендере, чтобы вернуть карточку одной строкой. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 max-w-3xl mx-auto">
-        {data.tiers.filter((t) => t.tier !== 'free').map((tier) => {
+        {data.tiers.filter((x) => x.tier !== 'free').map((tier) => {
           const meta = TIER_META[tier.tier] || TIER_META.free;
           const variant = tier.tier === 'free' ? null : (period === 'yearly' ? tier.yearly : tier.monthly);
 
@@ -526,7 +530,7 @@ export default function PricingPage() {
                   className="w-full py-2.5 rounded-xl text-sm font-medium opacity-50 cursor-not-allowed border"
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
                 >
-                  {isCurrent ? 'Текущий тариф' : 'Доступен всем'}
+                  {isCurrent ? t('Текущий тариф') : t('Доступен всем')}
                 </button>
               ) : isLocked ? (
                 <button
@@ -535,17 +539,17 @@ export default function PricingPage() {
                   style={{ borderColor: meta.color, color: meta.color }}
                   title={
                     isAdmin
-                      ? 'У админа полный доступ ко всем функциям'
+                      ? t('У админа полный доступ ко всем функциям')
                       : isSamePlan
-                      ? 'Этот план уже активен. Изменить — после окончания текущего периода.'
-                      : `У вас активен более высокий тариф (${effectiveTier.toUpperCase()})`
+                      ? t('Этот план уже активен. Изменить — после окончания текущего периода.')
+                      : t('У вас активен более высокий тариф ({{tier}})', { tier: effectiveTier.toUpperCase() })
                   }
                 >
                   {isAdmin
-                    ? 'Admin-доступ'
+                    ? t('Admin-доступ')
                     : isSamePlan
-                    ? 'Текущий план'
-                    : 'Меньший тариф'}
+                    ? t('Текущий план')
+                    : t('Меньший тариф')}
                 </button>
               ) : canTrial ? (
                 <button
@@ -555,10 +559,10 @@ export default function PricingPage() {
                   style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                 >
                   {checkoutLoading === `trial_${tier.tier}`
-                    ? 'Открываем...'
+                    ? t('Открываем...')
                     : isAuthenticated
-                      ? `Попробовать ${trialDays} дней бесплатно`
-                      : 'Зарегистрироваться и попробовать'}
+                      ? t('Попробовать {{n}} дней бесплатно', { n: trialDays })
+                      : t('Зарегистрироваться и попробовать')}
                 </button>
               ) : (
                 <button
@@ -568,14 +572,14 @@ export default function PricingPage() {
                   style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                 >
                   {checkoutLoading === variant?.plan_id
-                    ? 'Создаём...'
+                    ? t('Создаём...')
                     : (isCurrent && billing?.cancelled_at)
-                      ? 'Продлить'
+                      ? t('Продлить')
                       : (isCurrent && cardLevel === effectiveLevel)
-                        ? 'Сменить период'
+                        ? t('Сменить период')
                         : (billing?.is_active && cardLevel > effectiveLevel)
-                          ? `Перейти на ${tier.title}`
-                          : 'Оформить'}
+                          ? t('Перейти на {{tier}}', { tier: tier.title })
+                          : t('Оформить')}
                 </button>
               )}
             </TierPlanCard>
@@ -600,17 +604,17 @@ export default function PricingPage() {
       {/* Footer с FAQ */}
       <div className="mt-8 text-center text-sm text-theme-muted">
         <p>
-          Есть вопросы? Напиши в{' '}
+          {t('Есть вопросы? Напиши в')}{' '}
           <a href="https://t.me/TorSasha" target="_blank" rel="noreferrer" className="text-theme-primary hover:underline">
             Telegram
           </a>
-          {' '}или на{' '}
+          {' '}{t('или на')}{' '}
           <a href="mailto:frameinfo@mail.ru" className="text-theme-primary hover:underline">
             frameinfo@mail.ru
           </a>
-          . Подробнее об{' '}
+          . {t('Подробнее об')}{' '}
           <a href="/refund" className="text-theme-primary hover:underline">
-            условиях возврата
+            {t('условиях возврата')}
           </a>
           .
         </p>
@@ -635,14 +639,14 @@ export default function PricingPage() {
       {/* Consent для триала: то же окно, но с раскрытием суммы/даты первого
           списания (ЗоЗПП ст.10) — информированное согласие на автосписание. */}
       {pendingTrial && (() => {
-        const tcard = data.tiers.find((t) => t.tier === pendingTrial.tier);
+        const tcard = data.tiers.find((x) => x.tier === pendingTrial.tier);
         const v = pendingTrial.period === 'yearly' ? tcard?.yearly : tcard?.monthly;
         // Founder получает 30 дней (из founder_offer), остальные — публичные trial_days.
         const days = billing?.founder_offer
           ? billing.founder_offer.days
           : (data.trial_days?.[pendingTrial.tier] ?? 7);
         const chargeDate = new Date(Date.now() + days * 86400000)
-          .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+          .toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' });
         return (
           <ConsentModal
             agreementConsent={agreementConsent}
@@ -655,7 +659,7 @@ export default function PricingPage() {
               tierRu: pendingTrial.tier === 'pro' ? 'Pro' : 'Basic',
               days,
               amount: v?.amount ?? 0,
-              periodRu: pendingTrial.period === 'yearly' ? 'год' : 'месяц',
+              periodRu: pendingTrial.period === 'yearly' ? t('год') : t('месяц'),
               chargeDate,
             }}
           />
@@ -700,6 +704,7 @@ function ConsentModal({
   // суммы/даты первого списания + явное согласие на автосписание).
   trialInfo?: { tierRu: string; days: number; amount: number; periodRu: string; chargeDate: string };
 }) {
+  const { t } = useTranslation();
   const amountStr = trialInfo ? trialInfo.amount.toLocaleString('ru-RU') : '';
   return (
     <div
@@ -723,7 +728,7 @@ function ConsentModal({
         {/* Close X — 44px touch-target (мобилка) */}
         <button
           onClick={onClose}
-          aria-label="Закрыть"
+          aria-label={t('Закрыть')}
           className="absolute top-2 right-2 w-11 h-11 rounded-full flex items-center justify-center transition-colors"
           style={{
             color: 'var(--text-secondary)',
@@ -746,7 +751,7 @@ function ConsentModal({
             paddingRight: '2rem',
           }}
         >
-          {trialInfo ? 'Бесплатный пробный период' : 'Подтверждение'}
+          {trialInfo ? t('Бесплатный пробный период') : t('Подтверждение')}
         </h2>
         <p
           style={{
@@ -757,8 +762,8 @@ function ConsentModal({
           }}
         >
           {trialInfo
-            ? `Бесплатно ${trialInfo.days} дней, затем автоматическое списание. Подтвердите согласие:`
-            : 'Перед оплатой подтвердите согласие со следующими условиями:'}
+            ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
+            : t('Перед оплатой подтвердите согласие со следующими условиями:')}
         </p>
 
         {trialInfo && (
@@ -774,10 +779,9 @@ function ConsentModal({
               lineHeight: 1.5,
             }}
           >
-            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Для привязки
-            карты спишется <b>1&nbsp;₽</b> и сразу вернётся. Первое полное списание{' '}
-            <b>{amountStr} ₽</b> за {trialInfo.periodRu} — <b>{trialInfo.chargeDate}</b>, и только
-            если до этой даты не отмените. Отменить и отвязать карту можно в любой момент в профиле.
+            {t('Тариф')} <b>{trialInfo.tierRu}</b> — {t('бесплатно')} <b>{t('{{n}} дней', { n: trialInfo.days })}</b>. {t('Для привязки карты спишется')}{' '}
+            <b>1&nbsp;₽</b> {t('и сразу вернётся. Первое полное списание')}{' '}
+            <b>{amountStr} ₽</b> {t('за {{period}}', { period: trialInfo.periodRu })} — <b>{trialInfo.chargeDate}</b>, {t('и только если до этой даты не отмените. Отменить и отвязать карту можно в любой момент в профиле.')}
           </div>
         )}
 
@@ -790,13 +794,13 @@ function ConsentModal({
           onChange={onAgreementChange}
           label={
             <>
-              Я согласен с{' '}
+              {t('Я согласен с')}{' '}
               <Link
                 to="/agreement"
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Пользовательским соглашением
+                {t('Пользовательским соглашением')}
               </Link>
               ,{' '}
               <Link
@@ -804,19 +808,19 @@ function ConsentModal({
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Политикой конфиденциальности
+                {t('Политикой конфиденциальности')}
               </Link>
-              {' '}и{' '}
+              {' '}{t('и')}{' '}
               <Link
                 to="/recurring"
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Договором о рекуррентных платежах
+                {t('Договором о рекуррентных платежах')}
               </Link>
               .{' '}
               <span style={{ color: 'var(--text-muted)' }}>
-                Подписка автоматически продлевается, отменить можно в профиле.
+                {t('Подписка автоматически продлевается, отменить можно в профиле.')}
               </span>
             </>
           }
@@ -835,7 +839,7 @@ function ConsentModal({
               background: 'transparent',
             }}
           >
-            Отменить
+            {t('Отменить', { context: 'checkout' })}
           </button>
           <button
             onClick={onConfirm}
@@ -847,8 +851,8 @@ function ConsentModal({
             }}
           >
             {isLoading
-              ? (trialInfo ? 'Открываем…' : 'Создаём…')
-              : (trialInfo ? 'Начать бесплатно' : 'Оплатить')}
+              ? (trialInfo ? t('Открываем…') : t('Создаём…'))
+              : (trialInfo ? t('Начать бесплатно') : t('Оплатить'))}
           </button>
         </div>
 
@@ -940,7 +944,9 @@ function ConsentRow({
  * Desktop: классическая горизонтальная матрица 3 столбца × N строк.
  */
 function ComparisonMatrix() {
+  const { t } = useTranslation();
   // Структура: [section_title, icon, [row_label, free_val, basic_val, pro_val]]
+  // Строки — русские ключи, переводятся при рендере через t().
   // Иконки взяты из methodology-страниц индикаторов — единый visual язык.
   const sections: Array<{
     title: string;
@@ -1134,7 +1140,7 @@ function ComparisonMatrix() {
           letterSpacing: '0.01em',
         }}
       >
-        Что входит в каждый тариф
+        {t('Что входит в каждый тариф')}
       </h3>
 
       <div className="overflow-x-auto -mx-4 px-4 styled-scrollbar">
@@ -1148,7 +1154,7 @@ function ComparisonMatrix() {
         >
           <thead>
             <tr>
-              <th style={{ ...headerStyle, textAlign: 'left', width: '38%' }}>Возможность</th>
+              <th style={{ ...headerStyle, textAlign: 'left', width: '38%' }}>{t('Возможность')}</th>
               <th style={headerStyle}>Free</th>
               <th style={{ ...headerStyle, color: 'var(--accent)' }}>Basic</th>
               <th style={{ ...headerStyle, color: 'var(--accent)' }}>Pro</th>
@@ -1197,7 +1203,7 @@ function ComparisonMatrix() {
                             letterSpacing: '-0.005em',
                           }}
                         >
-                          {section.title}
+                          {t(section.title)}
                         </span>
                       </div>
                     </td>
@@ -1205,10 +1211,10 @@ function ComparisonMatrix() {
                   {/* Sub-rows — indented, label приглушённый, значения с tier-coloring */}
                   {section.rows.map(([label, free, basic, pro], ri) => (
                     <tr key={`${si}-${ri}`}>
-                      <td style={subRowLabelStyle}>{label}</td>
-                      <td style={valueStyle(free, 'free')}>{free}</td>
-                      <td style={valueStyle(basic, 'basic')}>{basic}</td>
-                      <td style={valueStyle(pro, 'pro')}>{pro}</td>
+                      <td style={subRowLabelStyle}>{t(label)}</td>
+                      <td style={valueStyle(free, 'free')}>{t(free)}</td>
+                      <td style={valueStyle(basic, 'basic')}>{t(basic)}</td>
+                      <td style={valueStyle(pro, 'pro')}>{t(pro)}</td>
                     </tr>
                   ))}
                 </React.Fragment>
@@ -1229,6 +1235,7 @@ function ComparisonMatrix() {
  * юзер увидит все доступные варианты прямо на pay.tbank.ru.
  */
 function PaymentMethods() {
+  const { t } = useTranslation();
   return (
     <div
       className="mt-12 pt-8 border-t"
@@ -1243,7 +1250,7 @@ function PaymentMethods() {
           fontWeight: 700,
         }}
       >
-        Способы оплаты
+        {t('Способы оплаты')}
       </p>
 
       {/* Логотип Банка-эквайера + ссылка на tbank.ru — обязательное требование */}
@@ -1254,7 +1261,7 @@ function PaymentMethods() {
           rel="noreferrer noopener"
           className="inline-flex items-center gap-2 transition-opacity hover:opacity-80"
           style={{ textDecoration: 'none' }}
-          aria-label="Эквайринг от Т-Банка — перейти на tbank.ru"
+          aria-label={t('Эквайринг от Т-Банка — перейти на tbank.ru')}
         >
           {/* T-Bank жёлтый щит-логотип */}
           <span
@@ -1277,14 +1284,14 @@ function PaymentMethods() {
               fontSize: 'var(--fs-sm)',
             }}
           >
-            Эквайринг от Т-Банка
+            {t('Эквайринг от Т-Банка')}
           </span>
         </a>
         <p
           className="text-xs"
           style={{ color: 'var(--text-muted)' }}
         >
-          Платежи защищены банком-эквайером по стандарту PCI DSS.{' '}
+          {t('Платежи защищены банком-эквайером по стандарту PCI DSS.')}{' '}
           <a
             href="https://tbank.ru"
             target="_blank"

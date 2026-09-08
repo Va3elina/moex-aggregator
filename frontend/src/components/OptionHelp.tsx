@@ -17,6 +17,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HelpCircle, X } from 'lucide-react';
+import { t } from '../i18n';
 
 interface OptionHelpProps {
   /** Заголовок поповера (опционально). */
@@ -93,7 +94,7 @@ export default function OptionHelp({ title, content }: OptionHelpProps) {
       ref={iconRef}
       role="button"
       tabIndex={0}
-      aria-label="Что это и как считается"
+      aria-label={t('Что это и как считается')}
       onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
       onMouseEnter={hoverOpen}
       onMouseLeave={hoverClose}
@@ -134,7 +135,7 @@ export default function OptionHelp({ title, content }: OptionHelpProps) {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-              aria-label="Закрыть"
+              aria-label={t('Закрыть')}
               style={{
                 position: 'absolute', top: 8, right: 8, padding: 4,
                 color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer',

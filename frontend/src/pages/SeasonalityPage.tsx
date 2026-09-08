@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, CalendarDays } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
@@ -26,7 +27,7 @@ import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySe
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { seasonalityTourSteps } from '../data/tours/seasonality';
+import { getSeasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { displayTicker } from '../utils/displayTicker';
@@ -34,6 +35,7 @@ import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError as handleTierErrorUtil } from '../utils/tierError';
 
+// Русские подписи = ключи перевода; оборачиваются t() в рендере.
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
   weekday: 'По дням недели',
@@ -62,6 +64,7 @@ const FULL_HISTORY_ITERS = 9999;
 
 
 export default function SeasonalityPage() {
+  const { t, i18n } = useTranslation();
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
   usePrefetchLogos();
@@ -87,8 +90,10 @@ export default function SeasonalityPage() {
     getSeasonalityIntradayUnsupported().then(setIntradayUnsupported).catch(() => {});
   }, []);
 
-  // Onboarding tour
+  // Onboarding tour — шаги пересобираются при смене языка.
   const tour = useOnboardingTour('seasonality');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tourSteps = useMemo(() => getSeasonalityTourSteps(), [i18n.language]);
   const [chartType, setChartType] = usePersistedState<ChartType>('frame:seasonality:chartType', 'histogram');
   const [priceDays, setPriceDays] = usePersistedState('frame:seasonality:priceDays', 365);
 
@@ -251,18 +256,18 @@ export default function SeasonalityPage() {
       setMonthlySeries(results.length > 1 ? results : null);
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
-      if (!handleTierError(e, `режим «Календарь»`)) {
+      if (!handleTierError(e, t('режим «Календарь»'))) {
         // Чистим bars от предыдущего успешного mode/тикера — иначе они переживают
         // ошибку (404 «нет интрадей данных» и т.п.) и рендерятся как валидные,
         // маскируя error-текст (error && bars.length===0 не срабатывает).
         setDataRaw(null);
         setMonthlySeries(null);
-        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+        setError(e instanceof Error ? e.message : t('Ошибка загрузки'));
       }
     } finally {
       if (reqId === seasonalityReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, mode, periods, availableYears, handleTierError]);
+  }, [selectedStock, mode, periods, availableYears, handleTierError, t]);
 
   // Fetch price data
   const fetchPrice = useCallback(async () => {
@@ -273,13 +278,13 @@ export default function SeasonalityPage() {
       setPriceData(res);
       setPriceNavRange(null);
     } catch (e: unknown) {
-      if (!handleTierError(e, 'график цены')) {
-        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!handleTierError(e, t('график цены'))) {
+        setError(e instanceof Error ? e.message : t('Ошибка загрузки'));
       }
     } finally {
       setLoading(false);
     }
-  }, [selectedStock, priceDays, handleTierError]);
+  }, [selectedStock, priceDays, handleTierError, t]);
 
   // Fetch yearly seasonality — тот же паттерн что histogram.
   // Порядок: periods[] — должен совпадать с seriesMeta.
@@ -311,13 +316,13 @@ export default function SeasonalityPage() {
       setYearlySeries(results.length > 1 ? results : null);
     } catch (e: unknown) {
       if (reqId !== yearlyReqIdRef.current) return;
-      if (!handleTierError(e, 'годовая сезонность')) {
-        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!handleTierError(e, t('годовая сезонность'))) {
+        setError(e instanceof Error ? e.message : t('Ошибка загрузки'));
       }
     } finally {
       if (reqId === yearlyReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, periods, availableYears, handleTierError]);
+  }, [selectedStock, periods, availableYears, handleTierError, t]);
 
   // Fetch для Test-режима — ПРОГРЕССИВНЫЙ:
   //   1) Yearly (пришёл первым → пользователь видит топ-чарт ~300ms)
@@ -377,11 +382,11 @@ export default function SeasonalityPage() {
       }
     } catch (e: unknown) {
       if (reqId !== testReqIdRef.current) return;
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      setError(e instanceof Error ? e.message : t('Ошибка загрузки'));
     } finally {
       if (reqId === testReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, periods, availableYears]);
+  }, [selectedStock, periods, availableYears, t]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -419,15 +424,15 @@ export default function SeasonalityPage() {
     const meta: { key: string; label: string; color: string }[] = [];
     periods.forEach((p, idx) => {
       // Модификаторы в подписи дизамбигуируют дубли года ("С 2000" vs "С 2000 · медиана").
-      const mods = [p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean);
+      const mods = [p.median && t('медиана'), p.excludeDividends && t('без див.')].filter(Boolean);
       meta.push({
         key: p.id,
-        label: `С ${p.sinceYear} г.${mods.length ? ` (${mods.join(', ')})` : ''}`,
+        label: `${t('С {{y}} г.', { y: p.sinceYear })}${mods.length ? ` (${mods.join(', ')})` : ''}`,
         color: FUND_PALETTE[idx % FUND_PALETTE.length],
       });
     });
     return meta;
-  }, [periods]);
+  }, [periods, t]);
 
   // Описание периода для single-mode легенды гистограммы («С 2008 г.»).
   // В multi-mode возвращаем undefined — там периоды видны как метки серий.
@@ -442,8 +447,8 @@ export default function SeasonalityPage() {
     const periodMeta = seriesMeta.filter(m => m.key !== 'exact');
     if (periodMeta.length === 0) return null;
     if (periodMeta.length === 1) return periodMeta[0].label;
-    return `Периоды: ${periodMeta.map(m => m.label).join('; ')}`;
-  }, [seriesMeta]);
+    return t('Периоды: {{list}}', { list: periodMeta.map(m => m.label).join('; ') });
+  }, [seriesMeta, t]);
 
   // Инструменты без дивидендов: индексы, валюты, сырьё.
   // Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
@@ -479,7 +484,7 @@ export default function SeasonalityPage() {
         if (tier) {
           showUpgrade({
             tier,
-            featureName: patch.median ? 'фильтр «Без выбросов»' : 'фильтр «Без дивидендных гэпов»',
+            featureName: patch.median ? t('фильтр «Без выбросов»') : t('фильтр «Без дивидендных гэпов»'),
             indicator: 'seasonality',
           });
           return;
@@ -524,18 +529,18 @@ export default function SeasonalityPage() {
               hasDividends={hasDividends}
               onChange={(patch) => applyPeriodPatch(p.id, patch)}
               title={isOnly
-                ? `Период с ${p.sinceYear} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».`
-                : `Серия "Период с ${p.sinceYear} г." — клик открывает настройки (медиана / без дивидендов). Значения по годам от ${p.sinceYear} до сегодня.`}
+                ? t('Период с {{y}} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».', { y: p.sinceYear })
+                : t('Серия "Период с {{y}} г." — клик открывает настройки (медиана / без дивидендов). Значения по годам от {{y}} до сегодня.', { y: p.sinceYear })}
             />
           );
         })}
         {addableYears.length > 0 && !compareLimitReached && (
           <Dropdown<string>
             options={[
-              { key: '', label: '+ Период с' },
+              { key: '', label: t('+ Период с') },
               ...addableYears.map((y): DropdownOption<string> => ({
                 key: String(y),
-                label: `С ${y} г.`,
+                label: t('С {{y}} г.', { y }),
               })),
             ]}
             value=""
@@ -556,9 +561,9 @@ export default function SeasonalityPage() {
               color: 'var(--text-muted)',
               padding: 'var(--sp-2) var(--sp-3)',
             }}
-            title={`Достигнут лимит ${MAX_COMPARE_SERIES} пользовательских серий. Уберите одну, чтобы добавить новую.`}
+            title={t('Достигнут лимит {{n}} пользовательских серий. Уберите одну, чтобы добавить новую.', { n: MAX_COMPARE_SERIES })}
           >
-            Лимит {MAX_COMPARE_SERIES} серий
+            {t('Лимит {{n}} серий', { n: MAX_COMPARE_SERIES })}
           </span>
         )}
       </>
@@ -575,8 +580,8 @@ export default function SeasonalityPage() {
     <div className={containerClass}>
       <PageHeader
         icon={CalendarDays}
-        title="Сезонность"
-        subtitle="Среднее изменение цены по временным периодам"
+        title={t('Сезонность')}
+        subtitle={t('Среднее изменение цены по временным периодам')}
         help={METHODOLOGY.seasonality}
         helpLink="/methodology/seasonality"
       />
@@ -634,13 +639,13 @@ export default function SeasonalityPage() {
           options={[
             {
               key: 'histogram',
-              label: 'Календарь',
+              label: t('Календарь'),
               // Сейчас всегда разрешено (features.py: allowed_modes=None на всех
               // тирах) — замок не рисуется. Проверка оставлена осознанно: она
               // обобщённая, читает матрицу и сама оживёт, если гейт вернут.
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram'),
             },
-            { key: 'yearly', label: 'Годовая' },
+            { key: 'yearly', label: t('Годовая') },
           ]}
           value={chartType === 'price' || chartType === 'test' ? 'histogram' : chartType}
           onChange={setChartType}
@@ -649,7 +654,7 @@ export default function SeasonalityPage() {
             if (tier) {
               showUpgrade({
                 tier,
-                featureName: 'режим «Календарь»',
+                featureName: t('режим «Календарь»'),
                 indicator: 'seasonality',
               });
             }
@@ -657,8 +662,8 @@ export default function SeasonalityPage() {
           trailing={
             <HelpTooltip
               sections={[
-                { heading: 'Календарь', body: 'Средняя доходность по календарным периодам (по месяцам, дням недели, числам месяца, часам) в виде столбиков. Видно, какие периоды исторически были сильными, а какие слабыми.' },
-                { heading: 'Годовая', body: 'Усреднённая траектория цены внутри года по всей истории: типичная форма года, когда актив обычно растёт, а когда снижается. Поверх можно наложить текущий год для сравнения.' },
+                { heading: t('Календарь'), body: t('Средняя доходность по календарным периодам (по месяцам, дням недели, числам месяца, часам) в виде столбиков. Видно, какие периоды исторически были сильными, а какие слабыми.') },
+                { heading: t('Годовая'), body: t('Усреднённая траектория цены внутри года по всей истории: типичная форма года, когда актив обычно растёт, а когда снижается. Поверх можно наложить текущий год для сравнения.') },
               ]}
               size={18}
             />
@@ -670,7 +675,7 @@ export default function SeasonalityPage() {
           <Dropdown<SeasonalityMode>
             options={(Object.keys(MODE_LABELS) as SeasonalityMode[]).map((m): DropdownOption<SeasonalityMode> => ({
               key: m,
-              label: MODE_LABELS[m],
+              label: t(MODE_LABELS[m]),
               // Сейчас всегда разрешено (включая intraday, бывший Pro-only) —
               // проверка по матрице оставлена осознанно, см. коммент выше.
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode(m),
@@ -685,7 +690,7 @@ export default function SeasonalityPage() {
               if (tier) {
                 showUpgrade({
                   tier,
-                  featureName: `режим «${MODE_LABELS[m]}»`,
+                  featureName: t('режим «{{mode}}»', { mode: t(MODE_LABELS[m]) }),
                   indicator: 'seasonality',
                 });
               }
@@ -699,7 +704,7 @@ export default function SeasonalityPage() {
           <Dropdown<string>
             options={PRICE_PERIODS.map((p): DropdownOption<string> => ({
               key: String(p.days),
-              label: p.label,
+              label: t(p.label),
             }))}
             value={String(priceDays)}
             onChange={(k) => setPriceDays(Number(k))}
@@ -712,7 +717,7 @@ export default function SeasonalityPage() {
           периодов и «+», экспорт. flex-wrap — перенос только если не влезает. */}
         {chartType === 'price' && priceData && (
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
+            {t('{{n}} торговых дней', { n: priceData.data.length })} • {t('{{n}} дивидендных отсечек', { n: priceData.ex_dates_count })}
           </div>
         )}
 
@@ -732,8 +737,8 @@ export default function SeasonalityPage() {
               layers={[
                 {
                   key: 'currentYear',
-                  label: 'Текущий год',
-                  hint: 'Линия динамики с начала текущего года',
+                  label: t('Текущий год'),
+                  hint: t('Линия динамики с начала текущего года'),
                   checked: showCurrentYear,
                   onChange: setShowCurrentYear,
                 },
@@ -751,12 +756,12 @@ export default function SeasonalityPage() {
               // Заголовок скрина — «Сезонность по {название}» + бейдж тикера.
               // asset не задаём: тогда primary = title, а подзаголовок несёт
               // только details (режим + период) без дубля слова «Сезонность».
-              title: `Сезонность по ${selectedName}`,
+              title: t('Сезонность по {{name}}', { name: selectedName }),
               ticker: displayTicker(selectedStock),
               details: [
-                chartType === 'histogram' ? MODE_LABELS[mode] :
-                chartType === 'price' ? `${priceDays === 9999 ? 'Всё' : priceDays + ' дн'}` :
-                chartType === 'yearly' ? 'Годовая' : '',
+                chartType === 'histogram' ? t(MODE_LABELS[mode]) :
+                chartType === 'price' ? `${priceDays === 9999 ? t('Всё') : t('{{n}} дн', { n: priceDays })}` :
+                chartType === 'yearly' ? t('Годовая') : '',
                 // Период выборки — для histogram/yearly (для price неактуально).
                 // Модификаторы (медиана / без дивгэпов) уже зашиты в подписи периодов.
                 (chartType === 'histogram' || chartType === 'yearly') ? periodsExportLabel : null,
@@ -822,14 +827,14 @@ export default function SeasonalityPage() {
             }}
           >
             <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-            <span className="text-theme-secondary">Обновление...</span>
+            <span className="text-theme-secondary">{t('Обновление...')}</span>
           </div>
         )}
         {loading && bars.length === 0 && !priceData && !yearlyData ? (
           <div className="flex items-center justify-center" style={{ aspectRatio: '16/9' }}>
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-              <span className="text-theme-secondary">Загрузка...</span>
+              <span className="text-theme-secondary">{t('Загрузка...')}</span>
             </div>
           </div>
         ) : error && bars.length === 0 ? (
@@ -839,7 +844,7 @@ export default function SeasonalityPage() {
         ) : chartType === 'histogram' ? (
           bars.length === 0 && periods.length === 0 ? (
             <div className="flex items-center justify-center text-center px-4" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>
-              Выберите хотя бы один "Период с" в меню выше
+              {t('Выберите хотя бы один "Период с" в меню выше')}
             </div>
           ) : (
             // Без key-ремоунта: волна играет один раз (первое открытие),
@@ -866,7 +871,7 @@ export default function SeasonalityPage() {
               chartHeight={chartHeight}
             />
           ) : (
-            <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+            <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>{t('Нет данных')}</div>
           )
         ) : yearlyData ? (
           // Без key-ремоунта: reveal играет один раз, смена периодов морфит линии.
@@ -881,7 +886,7 @@ export default function SeasonalityPage() {
           />
         ) : (
           <div className="flex items-center justify-center text-center px-4" style={{ height: chartHeight, color: 'var(--text-muted)' }}>
-            {periods.length === 0 ? 'Выберите хотя бы один "Период с" в меню выше' : 'Нет данных'}
+            {periods.length === 0 ? t('Выберите хотя бы один "Период с" в меню выше') : t('Нет данных')}
           </div>
         )}
       </div>
@@ -894,24 +899,27 @@ export default function SeasonalityPage() {
       {chartType !== 'yearly' && (
         <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
           {chartType === 'histogram'
-            ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
+            ? t('Среднее изменение ({{basis}}) {{mode}}', {
+                basis: mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close',
+                mode: t(MODE_LABELS[mode]).toLowerCase(),
+              })
             : chartType === 'price'
-            ? `График цены ${displayTicker(selectedStock)} — с дивидендными гэпами и без (adjusted close)`
+            ? t('График цены {{ticker}} — с дивидендными гэпами и без (adjusted close)', { ticker: displayTicker(selectedStock) })
             : chartType === 'test'
-            ? `Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно`
+            ? t('Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно')
             : null
           }
           {(chartType === 'histogram' || chartType === 'test') && periods.some(p => p.excludeDividends) && (
             <span className="ml-2 text-green-500">
-              • {mode === 'intraday' && chartType === 'histogram' ? 'Экс-дивидендные дни исключены' : 'Дивидендные гэпы убраны'}
+              • {mode === 'intraday' && chartType === 'histogram' ? t('Экс-дивидендные дни исключены') : t('Дивидендные гэпы убраны')}
             </span>
           )}
-          {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}
+          {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• {t('Выходные привязаны к понедельнику')}</span>}
         </div>
       )}
 
       <OnboardingTour
-        steps={seasonalityTourSteps}
+        steps={tourSteps}
         open={tour.open}
         onClose={tour.close}
       />

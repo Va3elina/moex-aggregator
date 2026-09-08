@@ -42,6 +42,8 @@ import {
     useState,
 } from 'react';
 import { Percent } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { t, dateLocale } from '../../i18n';
 import { GRID, CROSSHAIR, ANIMATION, FUND_PALETTE, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
@@ -110,7 +112,7 @@ interface CompanyShareChartProps {
 // ── Форматтеры ──
 function fmtPct(v: number): string {
     const d = v >= 10 ? 1 : v >= 0.1 ? 2 : 3;
-    return `${v.toLocaleString('ru-RU', { maximumFractionDigits: d })}%`;
+    return `${v.toLocaleString(dateLocale(), { maximumFractionDigits: d })}%`;
 }
 
 // Рубли — адаптивно (решение владельца 2026-08-10): по одной бумаге позиция
@@ -122,31 +124,31 @@ function fmtRub(v: number, suffix = true): string {
     if (v >= 1e9) {
         const b = v / 1e9;
         const d = b >= 100 ? 0 : b >= 10 ? 1 : 2;
-        return `${b.toLocaleString('ru-RU', { maximumFractionDigits: d })} млрд${sfx}`;
+        return `${b.toLocaleString(dateLocale(), { maximumFractionDigits: d })} ${t('млрд')}${sfx}`;
     }
     if (v >= 1e6) {
         const m = v / 1e6;
-        return `${m.toLocaleString('ru-RU', { maximumFractionDigits: m >= 10 ? 0 : 1 })} млн${sfx}`;
+        return `${m.toLocaleString(dateLocale(), { maximumFractionDigits: m >= 10 ? 0 : 1 })} ${t('млн')}${sfx}`;
     }
-    return `${(v / 1e3).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} тыс${sfx}`;
+    return `${(v / 1e3).toLocaleString(dateLocale(), { maximumFractionDigits: 0 })} ${t('тыс')}${sfx}`;
 }
 
 // Дни (режим «Навес»): навес по бумаге гуляет от долей дня до сотен дней,
 // поэтому знаки — адаптивно, как у рублей.
 function fmtDays(v: number): string {
     const d = v >= 10 ? 0 : v >= 1 ? 1 : 2;
-    return `${v.toLocaleString('ru-RU', { maximumFractionDigits: d })} дн`;
+    return `${v.toLocaleString(dateLocale(), { maximumFractionDigits: d })} ${t('дн')}`;
 }
 
 function fmtPrice(v: number): string {
-    if (v >= 1000) return Math.round(v).toLocaleString('ru-RU');
+    if (v >= 1000) return Math.round(v).toLocaleString(dateLocale());
     if (v >= 100) return v.toFixed(1);
     if (v >= 1) return v.toFixed(2);
     return v.toFixed(4);
 }
 
 function monthLabel(m: string): string {
-    return new Date(`${m}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    return new Date(`${m}-01T00:00:00`).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
 }
 
 export default function CompanyShareChart({
@@ -165,6 +167,7 @@ export default function CompanyShareChart({
     animTrigger,
     bare = false,
 }: CompanyShareChartProps) {
+    const { t } = useTranslation();
     const isMobile = useIsMobile();
     // Обёртка обеих панелей — общая система координат для курсора и тултипа.
     const wrapRef = useRef<HTMLDivElement>(null);
@@ -621,8 +624,8 @@ export default function CompanyShareChart({
         return null;
     }, [visMonthIdx, shareVals]);
 
-    const shareModeLabel = shareMode === 'rub' ? 'Позиция фондов'
-        : shareMode === 'overhang' ? 'Навес' : '% в обращении';
+    const shareModeLabel = shareMode === 'rub' ? t('Позиция фондов')
+        : shareMode === 'overhang' ? t('Навес') : t('% в обращении');
     // Значения режима: rub — рубли (адаптив млн/млрд), overhang — дни, cap — %.
     const fmtVal = (v: number) => (shareMode === 'rub' ? fmtRub(v)
         : shareMode === 'overhang' ? fmtDays(v) : fmtPct(v));
@@ -678,28 +681,28 @@ export default function CompanyShareChart({
                         <Percent size={28} strokeWidth={2.4} color="#FFFFFF" />
                     </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
-                        Не выбрано ни одного фонда
+                        {t('Не выбрано ни одного фонда')}
                     </div>
                     <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
-                        Отметьте фонды в фильтре выше, чтобы увидеть долю бумаги в их портфелях.
+                        {t('Отметьте фонды в фильтре выше, чтобы увидеть долю бумаги в их портфелях.')}
                     </div>
                 </div>
             ) : loading && !hasData ? (
                 <div className="flex items-center justify-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)' }}>
                     <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
                         <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>{t('Загрузка...')}</span>
                     </div>
                 </div>
             ) : !hasData ? (
                 <div className="flex items-center justify-center text-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)', color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                    Нет данных за период
+                    {t('Нет данных за период')}
                 </div>
             ) : (<>
                 {loading && (
                     <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
                         <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{t('Обновление...')}</span>
                     </div>
                 )}
 
@@ -735,7 +738,7 @@ export default function CompanyShareChart({
                         <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
-                                    items={[{ color: PRICE_LINE_COLOR, label: assetName || 'Цена' }]}
+                                    items={[{ color: PRICE_LINE_COLOR, label: assetName || t('Цена') }]}
                                     fontWeight={600}
                                     style={{ color: 'var(--text-primary)' }}
                                 />
@@ -810,7 +813,7 @@ export default function CompanyShareChart({
                             легенда сидит ровно посередине между полосой и графиком. */}
                         <div className="flex items-center justify-center relative z-10" style={{ marginBottom: showPricePanel ? 'var(--sp-2)' : 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
-                                items={[{ color: BAR_COLOR, label: `${shareModeLabel} (${shareMode === 'rub' ? '₽' : shareMode === 'overhang' ? 'дни' : '%'})` }]}
+                                items={[{ color: BAR_COLOR, label: `${shareModeLabel} (${shareMode === 'rub' ? '₽' : shareMode === 'overhang' ? t('дни') : '%'})` }]}
                                 fontWeight={600}
                                 style={{ color: 'var(--text-primary)' }}
                             />
@@ -878,7 +881,7 @@ export default function CompanyShareChart({
                                         const idx = Math.min(Math.round(i * (vis.length - 1) / Math.max(tickCount - 1, 1)), vis.length - 1);
                                         if (!vis[idx]) return null;
                                         return (
-                                            <span key={i}>{new Date(`${vis[idx]}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
+                                            <span key={i}>{new Date(`${vis[idx]}-01T00:00:00`).toLocaleDateString(dateLocale(), { month: 'short', year: '2-digit' })}</span>
                                         );
                                     });
                                 })()}
@@ -917,7 +920,7 @@ export default function CompanyShareChart({
                                     {hoverPrice != null && (
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
-                                            label={assetName || 'Цена'}
+                                            label={assetName || t('Цена')}
                                             value={`${fmtPrice(hoverPrice)} ₽`}
                                             labelClass="font-bold"
                                             labelColor="var(--text-primary)"
@@ -951,7 +954,7 @@ export default function CompanyShareChart({
                                         ))}
                                         {extra > 0 && (
                                             <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
-                                                и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
+                                                {t('и ещё {{n}}', { n: extra })} {t(extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов')}
                                             </div>
                                         )}
                                     </div>

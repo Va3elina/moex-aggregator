@@ -16,6 +16,7 @@
  *   - OGRN_PLACEHOLDER — ОГРНИП / ОГРН
  */
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Mail, Send, MapPin, Building2 } from 'lucide-react';
 
 const SUPPORT_EMAIL = 'frameinfo@mail.ru';
@@ -26,6 +27,7 @@ const INN = '782627792630';
 const OGRNIP = '325784700029296';
 
 export default function ContactsPage() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 md:py-12">
       {/* Header */}
@@ -36,7 +38,7 @@ export default function ContactsPage() {
           style={{ color: 'var(--text-secondary)' }}
         >
           <ArrowLeft size={14} />
-          На главную
+          {t('На главную')}
         </Link>
       </div>
 
@@ -58,29 +60,29 @@ export default function ContactsPage() {
             className="text-2xl md:text-3xl font-semibold"
             style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
           >
-            Контакты
+            {t('Контакты')}
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Связь со службой поддержки и реквизиты
+            {t('Связь со службой поддержки и реквизиты')}
           </p>
         </div>
       </div>
 
-      <Section title="Служба поддержки">
+      <Section title={t('Служба поддержки')}>
         <div className="space-y-4">
           <ContactRow
             icon={<Mail size={18} />}
-            label="Электронная почта"
+            label={t('Электронная почта')}
             value={
               <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--accent)' }}>
                 {SUPPORT_EMAIL}
               </a>
             }
-            hint="Среднее время ответа — в течение 1 рабочего дня."
+            hint={t('Среднее время ответа — в течение 1 рабочего дня.')}
           />
           <ContactRow
             icon={<Send size={18} />}
-            label="Телеграм"
+            label={t('Телеграм')}
             value={
               <a
                 href={SUPPORT_TELEGRAM}
@@ -91,51 +93,51 @@ export default function ContactsPage() {
                 @TorSasha
               </a>
             }
-            hint="Режим работы: понедельник–пятница, 10:00–19:00 МСК."
+            hint={t('Режим работы: понедельник–пятница, 10:00–19:00 МСК.')}
           />
         </div>
       </Section>
 
-      <Section title="Реквизиты предприятия">
+      <Section title={t('Реквизиты предприятия')}>
         <div className="space-y-4">
           <ContactRow
             icon={<Building2 size={18} />}
-            label="Наименование"
+            label={t('Наименование')}
             value={<span>{LEGAL_NAME}</span>}
           />
           <ContactRow
             icon={<MapPin size={18} />}
-            label="Адрес местонахождения"
+            label={t('Адрес местонахождения')}
             value={<span>{LEGAL_ADDRESS}</span>}
           />
           <ContactRow
             icon={<span className="font-mono text-xs">№</span>}
-            label="ИНН"
+            label={t('ИНН')}
             value={<span className="font-mono">{INN}</span>}
           />
           <ContactRow
             icon={<span className="font-mono text-xs">№</span>}
-            label="ОГРНИП"
+            label={t('ОГРНИП')}
             value={<span className="font-mono">{OGRNIP}</span>}
           />
         </div>
       </Section>
 
-      <Section title="Связанные документы">
+      <Section title={t('Связанные документы')}>
         <ul className="list-disc pl-6 space-y-2">
           <li>
             <Link to="/privacy" style={{ color: 'var(--accent)' }}>
-              Политика обработки персональных данных
+              {t('Политика обработки персональных данных')}
             </Link>
           </li>
           <li>
             <Link to="/refund" style={{ color: 'var(--accent)' }}>
-              Условия возврата и отмены
+              {t('Условия возврата и отмены')}
             </Link>
           </li>
           <li>
             <Link to="/delivery" style={{ color: 'var(--accent)' }}>
-              Условия и сроки предоставления услуги
+              {t('Условия и сроки предоставления услуги')}
             </Link>
           </li>
         </ul>
@@ -148,9 +150,7 @@ export default function ContactsPage() {
           color: 'var(--text-muted)',
         }}
       >
-        Сервис «Frame» (домен <strong>framedata.ru</strong>) — аналитическая
-        платформа по российскому фондовому рынку. По вопросам сотрудничества и
-        технической поддержки используйте контакты выше.
+        {t('Сервис «Frame» (домен')} <strong>framedata.ru</strong>{t(') — аналитическая платформа по российскому фондовому рынку. По вопросам сотрудничества и технической поддержки используйте контакты выше.')}
       </div>
     </div>
   );

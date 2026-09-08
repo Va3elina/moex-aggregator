@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { dateLocale } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import {
@@ -99,7 +101,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('ru-RU', {
+  return new Date(dateStr).toLocaleDateString(dateLocale(), {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -107,6 +109,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function ProfilePage() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -169,10 +172,8 @@ export default function ProfilePage() {
   // списание невозможно; активная подписка доживает до expires_at.
   const handleDeletePaymentMethod = async (pmId: number) => {
     if (!window.confirm(
-      'Отвязать способ оплаты?\n\n' +
-      'Данные привязки будут удалены, авто-продление подписки перестанет работать. ' +
-      'Оплаченный период продолжит действовать до конца. ' +
-      'Привязать способ оплаты снова можно при следующей оплате.'
+      t('Отвязать способ оплаты?') + '\n\n' +
+      t('Данные привязки будут удалены, авто-продление подписки перестанет работать. Оплаченный период продолжит действовать до конца. Привязать способ оплаты снова можно при следующей оплате.')
     )) return;
     setPmActionId(pmId);
     try {
@@ -194,7 +195,7 @@ export default function ProfilePage() {
       // отмены. «Всё равно отменить» в модалке зовёт с force=true.
       if (billing.retention_eligible) { setShowRetention(true); return; }
       if (!window.confirm(
-        'Отменить подписку?\n\nАвто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.'
+        t('Отменить подписку?') + '\n\n' + t('Авто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.')
       )) return;
     }
     setCancelLoading(true);
@@ -261,13 +262,13 @@ export default function ProfilePage() {
       });
       if (!resp.ok) {
         const data = await resp.json();
-        throw new Error(data.detail || 'Ошибка');
+        throw new Error(data.detail || t('Ошибка'));
       }
       setCurrentPassword('');
       setNewPassword('');
-      setPwMsg({ type: 'ok', text: 'Пароль успешно изменён' });
+      setPwMsg({ type: 'ok', text: t('Пароль успешно изменён') });
     } catch (err) {
-      setPwMsg({ type: 'err', text: err instanceof Error ? err.message : 'Ошибка' });
+      setPwMsg({ type: 'err', text: err instanceof Error ? err.message : t('Ошибка') });
     } finally {
       setPwLoading(false);
     }
@@ -292,7 +293,7 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-        Личный кабинет
+        {t('Личный кабинет')}
       </h1>
 
       {/* ============ Секция 1: Шапка профиля ============ */}
@@ -314,7 +315,7 @@ export default function ProfilePage() {
                 className="px-2.5 py-0.5 text-xs font-medium rounded-full"
                 style={{ backgroundColor: roleStyle.bg, color: roleStyle.text }}
               >
-                {ROLE_LABELS[user.role] || user.role}
+                {t(ROLE_LABELS[user.role] || user.role)}
               </span>
             </div>
           </div>
@@ -329,7 +330,7 @@ export default function ProfilePage() {
           )}
           <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
             <Calendar size={16} style={{ color: 'var(--text-muted)' }} />
-            <span>Регистрация: {formatDate(user.created_at)}</span>
+            <span>{t('Регистрация:')} {formatDate(user.created_at)}</span>
           </div>
         </div>
 
@@ -348,15 +349,15 @@ export default function ProfilePage() {
             <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {isOAuthLocal ? (
                 <>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Укажите email.</span>{' '}
-                  Без подтверждённого email нельзя получать чеки и оформить оплату.{' '}
-                  <Link to="/add-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>Указать →</Link>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Укажите email.')}</span>{' '}
+                  {t('Без подтверждённого email нельзя получать чеки и оформить оплату.')}{' '}
+                  <Link to="/add-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>{t('Указать →')}</Link>
                 </>
               ) : (
                 <>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Email не подтверждён.</span>{' '}
-                  Подтвердите адрес, чтобы получать чеки и оформить оплату.{' '}
-                  <Link to="/verify-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>Подтвердить →</Link>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Email не подтверждён.')}</span>{' '}
+                  {t('Подтвердите адрес, чтобы получать чеки и оформить оплату.')}{' '}
+                  <Link to="/verify-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>{t('Подтвердить →')}</Link>
                 </>
               )}
             </div>
@@ -370,7 +371,7 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <Crown size={20} style={{ color: 'var(--accent)' }} />
-            {user.role === 'admin' ? 'Доступ' : 'Подписка'}
+            {user.role === 'admin' ? t('Доступ') : t('Подписка')}
           </h2>
           {user.role === 'admin' ? (
             <span
@@ -392,7 +393,7 @@ export default function ProfilePage() {
                 color: billing.is_active ? 'var(--success)' : 'var(--accent)',
               }}
             >
-              {TIER_LABELS[billing.tier] || billing.tier}
+              {t(TIER_LABELS[billing.tier] || billing.tier)}
             </span>
           )}
         </div>
@@ -401,15 +402,15 @@ export default function ProfilePage() {
           // === Admin — полный доступ, без CTA ===
           <>
             <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-              Полный административный доступ ко всем функциям платформы — без ограничений по тарифу.
+              {t('Полный административный доступ ко всем функциям платформы — без ограничений по тарифу.')}
             </p>
             <div className="space-y-2 mb-2">
               {[
-                'Все индикаторы и инструменты',
-                'Полная история данных по всем тикерам',
-                'Все таймфреймы (5мин / 1ч / 1д / 1мес)',
-                'Аналитика сайта (/admin/stats)',
-                'Управление подписками и invite-ссылками',
+                t('Все индикаторы и инструменты'),
+                t('Полная история данных по всем тикерам'),
+                t('Все таймфреймы (5мин / 1ч / 1д / 1мес)'),
+                t('Аналитика сайта (/admin/stats)'),
+                t('Управление подписками и invite-ссылками'),
               ].map((text, i) => (
                 <div key={i} className="flex items-center gap-2.5 text-sm">
                   <Check size={16} style={{ color: 'var(--success)' }} className="shrink-0" />
@@ -431,16 +432,16 @@ export default function ProfilePage() {
                   color: 'var(--text-secondary)',
                 }}
               >
-                <strong style={{ color: 'var(--warning)' }}>Подписка отменена.</strong>{' '}
-                Доступ к Pro-функциям сохранится до{' '}
+                <strong style={{ color: 'var(--warning)' }}>{t('Подписка отменена.')}</strong>{' '}
+                {t('Доступ к Pro-функциям сохранится до')}{' '}
                 <strong style={{ color: 'var(--text-primary)' }}>
                   {billing.expires_at ? formatDate(billing.expires_at) : '—'}
                 </strong>
-                . После этой даты аккаунт перейдёт на бесплатный план.
+                . {t('После этой даты аккаунт перейдёт на бесплатный план.')}
               </div>
             ) : (
               <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-                Активна до{' '}
+                {t('Активна до')}{' '}
                 <strong style={{ color: 'var(--text-primary)' }}>
                   {billing.expires_at ? formatDate(billing.expires_at) : '—'}
                 </strong>
@@ -451,13 +452,13 @@ export default function ProfilePage() {
             {TIER_FEATURES[billing.tier] && (
               <>
                 <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-                  {TIER_FEATURES[billing.tier].tagline}
+                  {t(TIER_FEATURES[billing.tier].tagline)}
                 </p>
                 <div className="space-y-2 mb-5">
                   {TIER_FEATURES[billing.tier].features.map((text, i) => (
                     <div key={i} className="flex items-center gap-2.5 text-sm">
                       <Check size={16} style={{ color: 'var(--success)' }} className="shrink-0" />
-                      <span style={{ color: 'var(--text-secondary)' }}>{text}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{t(text)}</span>
                     </div>
                   ))}
                 </div>
@@ -475,7 +476,7 @@ export default function ProfilePage() {
                   border: '1.5px solid var(--text-primary)',
                 }}
               >
-                Сменить тариф
+                {t('Сменить тариф')}
                 <ExternalLink size={14} />
               </Link>
 
@@ -490,7 +491,7 @@ export default function ProfilePage() {
                     border: '1.5px solid var(--text-primary)',
                   }}
                 >
-                  Возобновить
+                  {t('Возобновить')}
                 </button>
               ) : (
                 <button
@@ -503,7 +504,7 @@ export default function ProfilePage() {
                     border: '1.5px solid var(--danger)',
                   }}
                 >
-                  Отменить подписку
+                  {t('Отменить подписку')}
                 </button>
               )}
             </div>
@@ -523,10 +524,9 @@ export default function ProfilePage() {
                 >
                   <div className="text-center">
                     <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>−40%</div>
-                    <h3 className="text-lg font-bold mb-2">Останьтесь со скидкой</h3>
+                    <h3 className="text-lg font-bold mb-2">{t('Останьтесь со скидкой')}</h3>
                     <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Не уходите — следующее продление со&nbsp;скидкой <b style={{ color: 'var(--text-primary)' }}>40%</b>. Подписка
-                      останется активной, дальше — по&nbsp;обычной цене. Предложение одноразовое.
+                      {t('Не уходите — следующее продление со скидкой')} <b style={{ color: 'var(--text-primary)' }}>40%</b>. {t('Подписка останется активной, дальше — по обычной цене. Предложение одноразовое.')}
                     </p>
                   </div>
                   <div className="flex flex-col gap-2.5">
@@ -541,7 +541,7 @@ export default function ProfilePage() {
                         boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
                       }}
                     >
-                      {cancelLoading ? 'Применяем…' : 'Получить скидку 40%'}
+                      {cancelLoading ? t('Применяем…') : t('Получить скидку 40%')}
                     </button>
                     <button
                       onClick={() => handleSubAction('cancel', { force: true })}
@@ -549,7 +549,7 @@ export default function ProfilePage() {
                       className="w-full px-4 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
                       style={{ backgroundColor: 'transparent', color: 'var(--text-muted)' }}
                     >
-                      Всё равно отменить
+                      {t('Всё равно отменить')}
                     </button>
                   </div>
                 </div>
@@ -560,15 +560,15 @@ export default function ProfilePage() {
           // === Free user — features list + CTA ===
           <>
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-              Все инструменты доступны с базовыми ограничениями
+              {t('Все инструменты доступны с базовыми ограничениями')}
             </p>
             <div className="space-y-2.5 mb-5">
               {[
-                { ok: true, text: 'Все инструменты и индикаторы' },
-                { ok: true, text: 'Обзор рынка в реальном времени' },
-                { ok: true, text: 'Дневной таймфрейм' },
-                { ok: false, text: 'Короткие таймфреймы (5мин, 1ч)' },
-                { ok: false, text: 'Полная история данных' },
+                { ok: true, text: t('Все инструменты и индикаторы') },
+                { ok: true, text: t('Обзор рынка в реальном времени') },
+                { ok: true, text: t('Дневной таймфрейм') },
+                { ok: false, text: t('Короткие таймфреймы (5мин, 1ч)') },
+                { ok: false, text: t('Полная история данных') },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-2.5 text-sm">
                   {item.ok ? (
@@ -593,7 +593,7 @@ export default function ProfilePage() {
               }}
             >
               <Sparkles size={16} />
-              Перейти к тарифам
+              {t('Перейти к тарифам')}
             </Link>
           </>
         )}
@@ -609,18 +609,17 @@ export default function ProfilePage() {
         <div className="rounded-2xl border p-6" style={cardStyle}>
           <h2 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <Lock size={20} style={{ color: 'var(--text-muted)' }} />
-            Способы оплаты
+            {t('Способы оплаты')}
           </h2>
           <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-            Используются для авто-продления подписки. Отвязать можно в любой момент —
-            авто-продление остановится, оплаченный период сохранится.
+            {t('Используются для авто-продления подписки. Отвязать можно в любой момент — авто-продление остановится, оплаченный период сохранится.')}
           </p>
           <div className="space-y-3">
             {paymentMethods.map((pm) => {
               const isSbp = pm.method_type === 'sbp';
-              const badge = isSbp ? 'СБП' : (pm.card_brand || 'КАРТА');
+              const badge = isSbp ? t('СБП') : (pm.card_brand || t('КАРТА'));
               const label = isSbp
-                ? (pm.display_name || 'Счёт по СБП')
+                ? (pm.display_name || t('Счёт по СБП'))
                 : `···· ${pm.card_last4 || '????'}`;
               return (
                 <div
@@ -652,7 +651,7 @@ export default function ProfilePage() {
                     </span>
                     {pm.is_default && paymentMethods.length > 1 && (
                       <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        основной
+                        {t('основной')}
                       </span>
                     )}
                   </div>
@@ -666,7 +665,7 @@ export default function ProfilePage() {
                       color: 'var(--text-muted)',
                     }}
                   >
-                    {pmActionId === pm.id ? 'Отвязываем…' : 'Отвязать'}
+                    {pmActionId === pm.id ? t('Отвязываем…') : t('Отвязать')}
                   </button>
                 </div>
               );
@@ -689,7 +688,7 @@ export default function ProfilePage() {
           >
             <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Calendar size={20} style={{ color: 'var(--text-muted)' }} />
-              История платежей
+              {t('История платежей')}
               <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', fontWeight: 400 }}>
                 ({history.length})
               </span>
@@ -711,12 +710,12 @@ export default function ProfilePage() {
                     : h.status === 'failed' ? 'var(--danger)'
                     : 'var(--text-muted)';
                   const statusLabel =
-                    h.status === 'active' ? 'активна'
-                    : h.status === 'pending' ? 'ожидает оплаты'
-                    : h.status === 'refunded' ? 'возврат'
-                    : h.status === 'cancelled' ? 'отменена'
-                    : h.status === 'expired' ? 'истекла'
-                    : h.status === 'failed' ? 'не оплачена'
+                    h.status === 'active' ? t('активна')
+                    : h.status === 'pending' ? t('ожидает оплаты')
+                    : h.status === 'refunded' ? t('возврат')
+                    : h.status === 'cancelled' ? t('отменена')
+                    : h.status === 'expired' ? t('истекла')
+                    : h.status === 'failed' ? t('не оплачена')
                     : h.status;
                   return (
                     <div
@@ -729,12 +728,12 @@ export default function ProfilePage() {
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {TIER_LABELS[h.tier] || h.tier}
+                          {t(TIER_LABELS[h.tier] || h.tier)}
                           {h.plan_id?.endsWith('_yearly') && (
-                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>год</span>
+                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>{t('год')}</span>
                           )}
                           {h.plan_id?.endsWith('_monthly') && (
-                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>месяц</span>
+                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>{t('месяц')}</span>
                           )}
                         </div>
                         <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -759,11 +758,11 @@ export default function ProfilePage() {
                 })}
               </div>
               <p className="mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-                Возврат денег — через поддержку{' '}
+                {t('Возврат денег — через поддержку')}{' '}
                 <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }} className="hover:underline">
                   frameinfo@mail.ru
                 </a>
-                . Чеки 54-ФЗ приходят на email сразу после оплаты.
+                . {t('Чеки 54-ФЗ приходят на email сразу после оплаты.')}
               </p>
             </div>
           )}
@@ -783,7 +782,7 @@ export default function ProfilePage() {
             перебивает Tailwind mb-*, поэтому отступ задаём инлайном (бьёт всё). */}
         <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)', marginBottom: '2rem' }}>
           <Shield size={20} style={{ color: 'var(--text-muted)' }} />
-          Безопасность
+          {t('Безопасность')}
         </h2>
 
         {/* Форма смены пароля — единственный контент секции, поэтому без
@@ -797,7 +796,7 @@ export default function ProfilePage() {
                   type={showCurrentPw ? 'text' : 'password'}
                   value={currentPassword}
                   onChange={e => setCurrentPassword(e.target.value)}
-                  placeholder="Текущий пароль"
+                  placeholder={t('Текущий пароль')}
                   required
                   className="w-full pl-10 pr-11 py-2.5 rounded-xl border outline-none transition-all text-sm"
                   style={inputStyle}
@@ -817,7 +816,7 @@ export default function ProfilePage() {
                   type={showNewPw ? 'text' : 'password'}
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  placeholder="Новый пароль (минимум 8 символов)"
+                  placeholder={t('Новый пароль (минимум 8 символов)')}
                   required
                   minLength={8}
                   className="w-full pl-10 pr-11 py-2.5 rounded-xl border outline-none transition-all text-sm"
@@ -852,7 +851,7 @@ export default function ProfilePage() {
                 style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
               >
                 <Lock size={16} />
-                {pwLoading ? 'Сохранение...' : 'Сменить пароль'}
+                {pwLoading ? t('Сохранение...') : t('Сменить пароль')}
               </button>
             </form>
           </div>
@@ -898,7 +897,7 @@ export default function ProfilePage() {
         }}
       >
         <LogOut size={16} />
-        Выйти из аккаунта
+        {t('Выйти из аккаунта')}
       </button>
     </div>
   );
@@ -918,6 +917,7 @@ function PrivacyOptOutSection() {
     }
   })();
 
+  const { t } = useTranslation();
   const [optedOut, setOptedOut] = useState(isOptedOut);
   const { setConsent, logConsentChange } = useAnalytics();
 
@@ -949,11 +949,11 @@ function PrivacyOptOutSection() {
       backgroundColor: 'var(--bg-secondary)',
     }}>
       <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-base)' }}>
-        Аналитика
+        {t('Аналитика')}
       </h3>
       <p className="mb-3" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-        Мы собираем обезличенную статистику посещений (страницы, события, время) для улучшения сервиса.{' '}
-        <Link to="/privacy" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Подробнее</Link>
+        {t('Мы собираем обезличенную статистику посещений (страницы, события, время) для улучшения сервиса.')}{' '}
+        <Link to="/privacy" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>{t('Подробнее')}</Link>
       </p>
       <label className="flex items-center gap-2 cursor-pointer">
         <input
@@ -963,7 +963,7 @@ function PrivacyOptOutSection() {
           style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
         />
         <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-sm)' }}>
-          Не собирать аналитику обо мне
+          {t('Не собирать аналитику обо мне')}
         </span>
       </label>
     </div>
