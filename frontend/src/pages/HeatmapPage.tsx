@@ -742,7 +742,7 @@ export default function HeatmapPage() {
               const labelFs = Math.min(12, Math.max(9, label.height - 4));
               const padX = 9;
               const availableW = label.width - padX * 2;
-              const displayName = fitText(label.name, availableW, labelFs);
+              const displayName = fitText(t(label.name), availableW, labelFs);
               return (
                 <text
                   key={label.name}
