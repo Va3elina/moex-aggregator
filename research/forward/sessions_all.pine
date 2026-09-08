@@ -1,0 +1,163 @@
+//@version=6
+strategy("Сессионные тройки — 5 бумаг, без фильтра и без комиссии", overlay=true,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     calc_on_every_tick=false, commission_value=0, slippage=0,
+     initial_capital=10000000, margin_long=100, margin_short=100,
+     close_entries_rule="ANY")
+
+// ═════════════════════════════════════════════════════════════════════════
+// ГРАФИК: 5-МИНУТНЫЙ. Бумага определяется по тикеру сама. Время московское.
+//
+// ПРАВИЛО
+//   1. Смотрим ход цены от точки A к точке B внутри одного дня.
+//   2. Если |ход| >= 0.1% — открываем позицию в конце получаса B.
+//      «Продолжение» = входим ПО ходу, «разворот» = ПРОТИВ хода.
+//   3. Выходим в точке C на СЛЕДУЮЩИЙ торговый день. Ни стопов, ни тейков.
+//
+// ⚠️ ЧАСЫ — ЭТО МЕТКИ ПОЛУЧАСОВЫХ СЛОТОВ, цена берётся в КОНЦЕ слота.
+//    Метка 11:30 означает сделку в 12:00. Замер по началу слота съедал
+//    от 3% до 56% результата — ловушка 2 в PROTOCOL.md.
+//
+// ─── ЧТО ОЖИДАТЬ (замер вне выборки, БЕЗ комиссии) ──────────────────────
+//   Часы отобраны на первой половине истории, цифры — со второй.
+//
+//   бумага          A→B→выход             напр.        на сделку
+//   Самолёт     SS  11:30→17:30→10:30     продолжение    +0.484%
+//   Сбер-преф   SP  20:30→23:00→10:00     разворот       +0.287%
+//   АФК         AK  10:00→17:00→11:00     продолжение    +0.222%
+//   Магнит      MN  13:00→16:00→12:30     продолжение    +0.063%
+//   Сургут-преф SG  09:00→09:30→10:00     разворот       -0.018%
+//
+// ⚠️ РАЗМЕР ПОЗИЦИИ — ФИКСИРОВАННЫЙ, 1 КОНТРАКТ. НЕ МЕНЯЙ НА
+//    percent_of_equity: на фьючерсах MOEX это давало позицию 85 млн ₽ при
+//    счёте 1 млн, TradingView резал её маржин-коллами в часы, которых в
+//    коде нет, и винрейт падал с 68% до 42% (ловушка 8).
+//
+// ⚠️ Сургут УБЫТОЧЕН и оставлен только для полноты картины.
+// ⚠️ Конкретные часы неустойчивы: удаление 10% данных сдвигало их у четырёх
+//    бумаг из пяти. Настоящее здесь — попадание в верхнюю сотню, а не цифры.
+// ═════════════════════════════════════════════════════════════════════════
+
+threshold  = input.float(0.1, "Порог хода, %", minval=0.01, step=0.01) / 100
+allowLong  = input.bool(true, "Разрешить лонги", group="Стороны")
+allowShort = input.bool(true, "Разрешить шорты", group="Стороны")
+
+manual = input.bool(false, "Ручной режим (тикер не из списка)", group="Ручной режим")
+uH = input.int(11, "A: час", minval=0, maxval=23, group="Ручной режим")
+uM = input.int(30, "A: мин", minval=0, maxval=59, step=30, group="Ручной режим")
+vH = input.int(17, "B: час", minval=0, maxval=23, group="Ручной режим")
+vM = input.int(30, "B: мин", minval=0, maxval=59, step=30, group="Ручной режим")
+wH = input.int(10, "C: час", minval=0, maxval=23, group="Ручной режим")
+wM = input.int(30, "C: мин", minval=0, maxval=59, step=30, group="Ручной режим")
+uRev = input.bool(false, "Ручной режим: разворот", group="Ручной режим")
+
+tz = "Europe/Moscow"
+tk = str.upper(syminfo.ticker)
+
+isSS = str.contains(tk, "SS1!") or str.contains(tk, "SMLT")
+isSP = str.contains(tk, "SP1!") or str.contains(tk, "SBPR") or str.contains(tk, "SBERP")
+isMN = str.contains(tk, "MN1!") or str.contains(tk, "MGNT")
+isAK = str.contains(tk, "AK1!") or str.contains(tk, "AFKS")
+isSG = str.contains(tk, "SG1!") or str.contains(tk, "SNGP") or str.contains(tk, "SNGSP")
+known  = isSS or isSP or isMN or isAK or isSG
+active = known or manual
+
+//                  Самолёт  Сбер-п   Магнит   АФК     Сургут   ручной
+aH = isSS ? 11 : isSP ? 20 : isMN ? 13 : isAK ? 10 : isSG ? 9  : uH
+aM = isSS ? 30 : isSP ? 30 : isMN ? 0  : isAK ? 0  : isSG ? 0  : uM
+bH = isSS ? 17 : isSP ? 23 : isMN ? 16 : isAK ? 17 : isSG ? 9  : vH
+bM = isSS ? 30 : isSP ? 0  : isMN ? 0  : isAK ? 0  : isSG ? 30 : vM
+cH = isSS ? 10 : isSP ? 10 : isMN ? 12 : isAK ? 11 : isSG ? 10 : wH
+cM = isSS ? 30 : isSP ? 0  : isMN ? 30 : isAK ? 0  : isSG ? 0  : wM
+
+isRev  = isSP or isSG or (not known and manual and uRev)
+nameOf = isSS ? "Самолёт" : isSP ? "Сбербанк-преф" : isMN ? "Магнит" :
+         isAK ? "АФК Система" : isSG ? "Сургут-преф" : "ручной режим"
+
+h = hour(time, tz)
+m = minute(time, tz)
+dayId = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+
+// первый бар ПОСЛЕ конца получасового слота
+atSlotEnd(hh, mm) =>
+    e  = hh * 60 + mm + 30
+    ec = e >= 1440 ? 1435 : e
+    eh = math.floor(ec / 60)
+    em = ec % 60
+    (h > eh) or (h == eh and m >= em)
+
+// цена = close ПОСЛЕДНЕГО бара уходящего слота
+slotPrice = dayId == dayId[1] ? close[1] : close
+
+var float aPrice   = na
+var int   aDay     = 0
+var int   bDay     = 0
+var int   entryDay = 0
+var int   exitDay  = 0
+var int   pending  = 0
+
+if active
+    // 1. ВЫХОД первым. Ориентир — день ВХОДА, а не день сигнала: у Сургута
+    //    выход позже следующего входа, привязка к сигналу запирала позицию.
+    if atSlotEnd(cH, cM) and exitDay != dayId and strategy.position_size != 0 and dayId != entryDay
+        strategy.close_all()
+        exitDay := dayId
+        pending := 0
+
+    // 2. Утренняя точка отсчёта
+    if atSlotEnd(aH, aM) and aDay != dayId
+        aPrice := slotPrice
+        aDay   := dayId
+
+    // 3. Решение
+    if atSlotEnd(bH, bM) and bDay != dayId and aDay == dayId and not na(aPrice)
+        chg = slotPrice / aPrice - 1
+        bDay := dayId
+        raw  = chg >= threshold ? 1 : chg <= -threshold ? -1 : 0
+        sig  = isRev ? -raw : raw
+        ok   = (sig == 1 and allowLong) or (sig == -1 and allowShort)
+        if sig != 0 and ok
+            // висящую позицию закрываем явно, иначе Pine проглотит вход молча
+            if strategy.position_size != 0
+                strategy.close_all()
+            if sig == 1
+                strategy.entry("Лонг", strategy.long)
+            else
+                strategy.entry("Шорт", strategy.short)
+            entryDay := dayId
+            pending  := sig
+        else
+            pending := 0
+
+plotshape(active and pending != 0 and bDay == dayId and atSlotEnd(bH, bM) and not atSlotEnd(bH, bM)[1],
+     style=shape.triangleup, location=location.belowbar,
+     color=pending == 1 ? color.new(#1baf7a, 0) : color.new(#e34948, 0), size=size.tiny)
+
+var table t = table.new(position.top_right, 1, 3, border_width=1)
+if barstate.islast
+    sides = (allowLong ? "лонг" : "") + (allowLong and allowShort ? " + " : "") + (allowShort ? "шорт" : "")
+    table.cell(t, 0, 0, active ? nameOf : "ТИКЕР НЕ РАСПОЗНАН — включи ручной режим",
+         text_size=size.small, text_color=color.white,
+         bgcolor = active ? color.new(#2a78d6, 20) : color.new(#e34948, 10))
+    table.cell(t, 0, 1, active ?
+         str.format("{0,number,00}:{1,number,00} -> {2,number,00}:{3,number,00} -> {4,number,00}:{5,number,00}   {6}",
+              aH, aM, bH, bM, cH, cM, isRev ? "разворот" : "продолжение") : "",
+         text_size=size.small, text_color=color.gray)
+    table.cell(t, 0, 2, "стороны: " + (sides == "" ? "ВСЁ ВЫКЛЮЧЕНО" : sides) + "   комиссия: 0",
+         text_size=size.tiny, text_color=color.gray)
+
+// ─────────────────────────────────────────────────────────────────────────
+// ТИКЕРЫ: фьючерсы SS1! SP1! MN1! AK1! SG1!  (на них считаны цифры)
+//         акции    SMLT SBERP MGNT AFKS SNGSP (часы те же, результат другой)
+//
+// КАК СМОТРЕТЬ. Торгуется РОВНО ОДИН контракт, поэтому общий процент от
+// счёта будет маленьким — это правильно. Открой «Список сделок» и смотри
+// колонку «Доходность» по каждой сделке, она сравнима с цифрами выше.
+//
+// Число сделок должно быть примерно ОДНА В ДЕНЬ. Вдвое больше — значит
+// позицию режет, ищи плечо.
+//
+// СВЕРЕНО симулятором pine_sim.py 08.09.2026: расхождение последовательной
+// модели с расчётом от -0.014 до +0.002 п.п. на сделку, число сделок
+// сходится (708 против 704 у Самолёта).
+// ─────────────────────────────────────────────────────────────────────────
