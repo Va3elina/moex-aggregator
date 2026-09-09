@@ -110,6 +110,16 @@ _ROW = {
 }
 
 
+class _НетСледа:
+    """След в тестах брифа не проверяем — но и ронять сборку он не должен."""
+
+    def record(self, *a, **k):
+        pass
+
+
+_НЕТ_СЛЕДА = _НетСледа()
+
+
 def _stub_brief_sources(monkeypatch):
     monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
     monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "в 3 раза"})
@@ -118,7 +128,16 @@ def _stub_brief_sources(monkeypatch):
     # ⚠️ Каждый НОВЫЙ источник данных брифа обязан попасть в эту заглушку. Именно
     # так тест паритета и поймал добавление _related_context: без подмены он полез
     # в db=None. Это и есть польза от проверки инварианта, а не набора полей.
-    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
+    #
+    # ⚠️ И заглушка обязана брать **kwargs: сборщик зовёт источники по именам
+    # (trace=, мозг=). Заглушка на одних *a молча падает TypeError и роняет тест
+    # паритета там, где брифы на самом деле совпадают.
+    monkeypatch.setattr(CA, "_related_context", lambda *a, **k: ({}, {}))
+    monkeypatch.setattr(CA, "_rating_history", lambda *a, **k: {})
+    monkeypatch.setattr(CA, "_brain_contexts", lambda *a, **k: {})
+    monkeypatch.setattr(CA, "_brain_block", lambda *a, **k: {})
+    monkeypatch.setattr(CA, "_company_fundamentals", lambda *a, **k: {})
+    monkeypatch.setattr(CA, "трассировать", lambda *a, **k: _НЕТ_СЛЕДА)
 
 
 def _brief_of(payload: str) -> dict:
@@ -210,13 +229,11 @@ def test_service_keys_never_reach_the_model(monkeypatch):
     """Ключи «_код_» — для кода. В брифе их быть не должно: любое видимое поле
     модель считает обязанной израсходовать (тот же механизм, что убил
     market_rank и recent_signals)."""
-    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
+    _stub_brief_sources(monkeypatch)
     monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {
         "_код_период_главного_числа": "за_год", "_код_фраза_главного_числа": "лонг вырос в 3 раза",
         "ГЛАВНОЕ_ЧИСЛО": "за_год: лонг вырос в 3 раза"})
     monkeypatch.setattr(CA, "_price_context", lambda *a: dict(_PRICE))
-    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
-    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
     for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
                           ("судья", CA._step_g_payload(None, _ROW, "tok"))):
         assert "_код_" not in payload, f"служебный ключ утёк в бриф {name}"
@@ -375,26 +392,61 @@ def test_snippet_is_capped_and_safe_on_junk():
 def test_related_block_absent_when_no_links(monkeypatch):
     """Пустое «связанные_компании: {}» в брифе провоцирует придумать связь —
     поле должно исчезать целиком (тот же механизм, что убил market_rank)."""
-    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
-    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "x"})
-    monkeypatch.setattr(CA, "_price_context", lambda *a: {})
-    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
-    monkeypatch.setattr(CA, "_related_context", lambda *a: {})
+    _stub_brief_sources(monkeypatch)
     for payload in (CA._step_c_payload(None, _ROW, "t"), CA._step_g_payload(None, _ROW, "t")):
         assert "связанные_компании" not in payload
 
 
 def test_related_block_carries_context_warning(monkeypatch):
     """Если связь есть — рядом обязана быть подпись «контекст, не причина»."""
-    monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
-    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "x"})
-    monkeypatch.setattr(CA, "_price_context", lambda *a: {})
-    monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
-    monkeypatch.setattr(CA, "_related_context", lambda *a: {
-        "OZON": {"связь": "крупный акционер"},
-        "ПОЯСНЕНИЕ": "КОНТЕКСТ, НЕ ПРИЧИНА. …"})
+    _stub_brief_sources(monkeypatch)
+    monkeypatch.setattr(CA, "_related_context", lambda *a, **k: (
+        {"OZON": {"связь": "крупный акционер"},
+         "ПОЯСНЕНИЕ": "КОНТЕКСТ, НЕ ПРИЧИНА. …"}, {}))
     payload = CA._step_c_payload(None, _ROW, "t")
     assert "связанные_компании" in payload and "НЕ ПРИЧИНА" in payload
+
+
+_LINK_ROW = {"id": 1638, "tickers": ["AFKS"],
+             "headline": "АКРА понизило рейтинг АФК «Система»",
+             "raw_text": "Среди активов холдинга — Озон"}
+
+
+class _LinksDB:
+    """Фейк ровно под три запроса блока связей.
+
+    ⚠️ Колонок у _SELECT_ENTITY_LINKS ЧЕТЫРЕ (entities, statement, лет,
+    confidence). Фейк на двух колонках однажды уже отгнил молча: тест падал
+    ValueError и выглядел «сломанным тестом», хотя описывал живое правило.
+    """
+
+    def __init__(self, pair_date=None, name="Озон", лет=1, conf=0.9,
+                 entities=("AFKS", "OZON"), statement="Система — крупный акционер Озона"):
+        self.pair_date, self.name, self.лет, self.conf = pair_date, name, лет, conf
+        self.entities, self.statement = list(entities), statement
+
+    def execute(self, q, params=None):
+        sql = str(q)
+        внешний = self
+
+        class _R:
+            @staticmethod
+            def fetchall():
+                if "world_facts" in sql:
+                    return [(внешний.entities, внешний.statement,
+                             внешний.лет, внешний.conf)]
+                return []
+
+            @staticmethod
+            def first():
+                if "news_archive" in sql and внешний.pair_date:
+                    return (внешний.pair_date, 2)
+                return None
+
+            @staticmethod
+            def scalar():
+                return внешний.name if "instruments" in sql else None
+        return _R()
 
 
 def test_links_block_states_where_it_goes(monkeypatch):
@@ -405,30 +457,99 @@ def test_links_block_states_where_it_goes(monkeypatch):
     не из слов, а из порядка абзацев — значит и лечить это надо там, где данные, а
     не очередным правилом в промпте.
     """
-    calls = {}
-
-    class _DB:
-        def execute(self, q, params=None):
-            sql = str(q)
-            calls["sql"] = sql
-
-            class _R:
-                @staticmethod
-                def fetchall():
-                    if "world_facts" in sql:
-                        return [(["AFKS", "OZON"], "Система — крупный акционер Озона")]
-                    return []
-
-                @staticmethod
-                def scalar():
-                    return "Озон"
-            return _R()
-
-    import datetime as _d
-    blk = CA._related_context(_DB(), ["AFKS"], _d.date(2026, 9, 1))
+    blk, _ = CA._related_context(_LinksDB(), _LINK_ROW, _dt.date(2026, 9, 1))
     assert "МЕСТО В ТЕКСТЕ" in blk["ПОЯСНЕНИЕ"]
     assert "РАНЬШЕ" in blk["ПОЯСНЕНИЕ"]
     assert "НЕ ПРИЧИНА" in blk["ПОЯСНЕНИЕ"], "старое предупреждение не должно пропасть"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Решение «упоминать ли связь» принимает агент, а не наличие ребра в графе
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_link_only_in_the_graph_never_reaches_the_writer():
+    """Кандидат 1933: НОВАТЭК ведёт переговоры с Petrovietnam — а в черновике
+    абзац про долю Газпрома по снимку 25.03.2021.
+
+    Модель его не выдумала: ребро владения есть, значит поле в брифе есть, значит
+    поле надо израсходовать. Лечится не запретом в промпте, а тем, что связь без
+    признаков присутствия в сюжете до писателя не доезжает ВОВСЕ.
+    """
+    db = _LinksDB(pair_date=None, name="Газпром", entities=("NVTK", "GAZP"),
+                  statement="Газпром владеет косвенно долей 10% в НОВАТЭК")
+    row = {"id": 1933, "tickers": ["NVTK"],
+           "headline": "НОВАТЭК рассматривает с Petrovietnam проект во Вьетнаме",
+           "raw_text": "Переговоры вышли на продвинутую стадию, поставки СПГ с 2027 года"}
+    assert CA._related_context(db, row, _dt.date(2026, 9, 9)) == ({}, {})
+
+
+def test_link_named_in_the_news_itself_reaches_the_writer():
+    """Обратная сторона: если связанная компания названа в самой новости, связь в
+    сюжете есть — и писатель обязан увидеть, ПОЧЕМУ она здесь."""
+    db = _LinksDB(pair_date=None, name="Озон")
+    row = {"id": 1638, "tickers": ["AFKS"],
+           "headline": "АКРА понизило рейтинг АФК «Система»",
+           "raw_text": "Среди активов холдинга — Озон и Сегежа"}
+    blk, спорные = CA._related_context(db, row, _dt.date(2026, 9, 1))
+    assert "OZON" in blk and not спорные
+    признаки = blk["OZON"]["почему_она_здесь"]
+    assert any("названа в самой новости" in p for p in признаки), признаки
+
+
+def test_recent_shared_story_also_counts_as_a_live_link():
+    """Второй признак — общий сюжет: обе компании были в одной новости недавно."""
+    db = _LinksDB(pair_date=_dt.date(2026, 8, 20), name="Озон")
+    row = {"id": 1, "tickers": ["AFKS"], "headline": "Рейтинг", "raw_text": "Без имён"}
+    blk, спорные = CA._related_context(db, row, _dt.date(2026, 9, 1))
+    assert any("в одной новости" in p for p in blk["OZON"]["почему_она_здесь"])
+    assert not спорные, "компании из разных секторов — общий сюжет, а не отраслевой фон"
+
+
+def test_shared_story_inside_one_sector_is_only_a_question(monkeypatch):
+    """Кандидат 1933 во второй раз: NVTK и GAZP попадали в одну новость десять раз
+    за месяц — «экспорт СПГ вырос», «Новак о поставках в Китай». Обе компании там
+    подлежащие, но к переговорам во Вьетнаме это отношения не имеет.
+
+    Значит совместное упоминание однокашников по сектору — не фактура, а вопрос: без
+    цены, без архива и БЕЗ указаний, как писать абзац."""
+    monkeypatch.setattr(CA, "_sector_of", lambda *a, **k: "Нефть и газ")
+    db = _LinksDB(pair_date=_dt.date(2026, 9, 4), name="Газпром",
+                  entities=("NVTK", "GAZP"),
+                  statement="Газпром владеет косвенно долей 10% в НОВАТЭК")
+    row = {"id": 1933, "tickers": ["NVTK"],
+           "headline": "НОВАТЭК рассматривает с Petrovietnam проект во Вьетнаме",
+           "raw_text": "Переговоры вышли на продвинутую стадию"}
+    blk, спорные = CA._related_context(db, row, _dt.date(2026, 9, 9))
+    assert blk == {}, "слабая связь не должна ехать фактурой"
+    assert "ОТВЕТ ПО УМОЛЧАНИЮ — НЕТ" in спорные["ВОПРОС"]
+    assert "отраслевой обзор" in " ".join(спорные["GAZP"]["почему_она_здесь"])
+    assert "цена_за_месяц" not in спорные["GAZP"]
+    assert "МЕСТО В ТЕКСТЕ" not in _json.dumps(спорные, ensure_ascii=False), (
+        "указания «как писать абзац» рядом со спорной связью — то, от чего "
+        "писателю нечем отказаться")
+
+
+def test_writer_is_told_the_decision_is_his():
+    """Карта отсеивает мёртвые связи; уместность живой — вопрос смысла, и решает
+    его писатель. Если этой строки нет, «связь в брифе» снова читается как
+    «связь в посте»."""
+    blk, _ = CA._related_context(_LinksDB(), _LINK_ROW, _dt.date(2026, 9, 1))
+    п = blk["ПОЯСНЕНИЕ"]
+    assert "РЕШАЕШЬ ТЫ" in п and "почему_она_здесь" in п
+    assert "не упоминай её вовсе" in п
+
+
+def test_neighbourhood_in_news_is_a_hint_not_a_link():
+    """«Рядом в новостях» — уровень D, соседство, а не отношение: как признак
+    показываем, но живой связь одно только соседство не делает."""
+    мозг = {"AFKS": {"вместе_в_новостях": {"элементы": [{"заголовок": "Озон"}]}}}
+    row = {"id": 1, "tickers": ["AFKS"], "headline": "Рейтинг", "raw_text": "Без имён"}
+    db = _LinksDB(pair_date=None, name="Озон")
+    blk, спорные = CA._related_context(db, row, _dt.date(2026, 9, 1), мозг=мозг)
+    assert blk == {}, "соседство в новостях — не фактура"
+    признаки, сила = CA._link_evidence(db, row, ["AFKS"], "OZON", "Озон",
+                                       _dt.date(2026, 9, 1), мозг)
+    assert сила == "слабая" and any("[D" in p for p in признаки)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
