@@ -257,6 +257,17 @@ export default function LoginPage() {
         navigate(urlNext || '/');
     };
 
+    // Esc закрывает — как у любой модалки. Крестик и клик по подложке есть,
+    // клавиши не было.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') handleClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [urlNext]);
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center px-4"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}

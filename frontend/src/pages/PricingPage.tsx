@@ -242,6 +242,22 @@ export default function PricingPage() {
     INTENT_PARAM_NAMES.forEach((name) => cleaned.delete(name));
     setSearchParams(cleaned, { replace: true });
 
+    // Гость сюда возвращается только одним путём: он закрыл окно регистрации,
+    // куда его увёл клик «Оформить». Доигрывать клик в этом случае нельзя —
+    // handleCheckout снова отправит его на /login?next=/pricing?plan=…, оттуда
+    // закрытие снова сюда, и окно регистрации становится незакрываемым.
+    // Оставляем человека на тарифах, только подкручиваем период под выбор.
+    if (!isAuthenticated) {
+      if (intent.kind === 'trial') setPeriod(intent.period);
+      else {
+        const guestOwner = data.tiers.find(
+          (x) => x.monthly?.plan_id === intent.planId || x.yearly?.plan_id === intent.planId,
+        );
+        if (guestOwner) setPeriod(guestOwner.yearly?.plan_id === intent.planId ? 'yearly' : 'monthly');
+      }
+      return;
+    }
+
     if (intent.kind === 'trial') {
       setPeriod(intent.period);
       handleTrialStart(intent.tier, intent.period);
@@ -257,7 +273,7 @@ export default function PricingPage() {
     setPeriod(owner.yearly?.plan_id === intent.planId ? 'yearly' : 'monthly');
     handleCheckout(intent.planId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, searchParams]);
+  }, [data, searchParams, isAuthenticated]);
 
   // Подтверждение триала: создаём триал + привязку карты → редирект на T-Bank.
   const confirmTrial = async () => {
