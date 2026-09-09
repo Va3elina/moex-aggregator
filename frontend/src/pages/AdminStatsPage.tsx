@@ -511,7 +511,7 @@ const PLAN_COLORS: Record<string, string> = {
  * Подписка по пригласительной ссылке помечается отдельно — иначе в таблице она
  * неотличима от купленной, и «платных» читается больше, чем есть на самом деле.
  */
-function PlanBadge({ plan, expiresAt, isInvite }: { plan: string | null; expiresAt?: string | null; isInvite?: boolean }) {
+function PlanBadge({ plan, expiresAt, isInvite, inviteNote }: { plan: string | null; expiresAt?: string | null; isInvite?: boolean; inviteNote?: string | null }) {
   if (!plan) {
     return <span className="text-xs" style={{ color: 'var(--text-muted)' }}>free</span>;
   }
@@ -534,10 +534,12 @@ function PlanBadge({ plan, expiresAt, isInvite }: { plan: string | null; expires
             backgroundColor: 'color-mix(in srgb, var(--text-muted) 15%, transparent)',
             color: 'var(--text-secondary)',
           }}
-          title="Подписка выдана по пригласительной ссылке, не оплачена"
+          title={inviteNote ? `Инвайт: ${inviteNote}` : 'Подписка выдана по пригласительной ссылке, не оплачена'}
         >
+          {/* Слово «инвайт» рядом с подарком ничего не добавляет — иконки
+              достаточно, а место лучше отдать заметке с именем человека. */}
           <Gift size={11} />
-          инвайт
+          {inviteNote}
         </span>
       )}
       {expiresAt && (
@@ -718,7 +720,7 @@ function UsersBlock({ days }: { days: number }) {
                 </td>
 
                 <td className="px-2 py-2">
-                  <PlanBadge plan={u.plan} expiresAt={u.plan_expires_at} isInvite={u.is_invite} />
+                  <PlanBadge plan={u.plan} expiresAt={u.plan_expires_at} isInvite={u.is_invite} inviteNote={u.invite_note} />
                 </td>
 
                 <td className="px-2 py-2 hidden md:table-cell">

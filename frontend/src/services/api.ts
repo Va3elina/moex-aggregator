@@ -1144,6 +1144,8 @@ export interface AdminUser {
   plan_period?: string | null;
   /** Подписка выдана по пригласительной ссылке, не куплена */
   is_invite?: boolean;
+  /** Заметка админа с инвайта — обычно имя человека, которому он выдан */
+  invite_note?: string | null;
   /** Подписка куплена за деньги (инвайты сюда НЕ входят) */
   is_paid?: boolean;
   sessions_count: number;

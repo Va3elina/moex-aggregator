@@ -671,6 +671,13 @@ async def list_users(
                 sub.tier AS plan,
                 sub.expires_at AS plan_expires_at,
                 sub.period AS plan_period,
+                -- Заметка админа с инвайта (кому и зачем выдан): в таблице по
+                -- одному email непонятно, кто это, а в note вписано имя.
+                (SELECT si.note
+                   FROM subscription_invite_redemptions ir
+                   JOIN subscription_invites si ON si.token = ir.token
+                  WHERE ir.subscription_id = sub.id
+                  LIMIT 1) AS invite_note,
                 (SELECT COUNT(DISTINCT ae.session_id) FROM analytics_events ae
                   WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
                 (SELECT COUNT(*) FROM analytics_events ae
@@ -689,7 +696,7 @@ async def list_users(
                 ) AS last_active_ts
             FROM users u
             LEFT JOIN LATERAL (
-                SELECT s.tier, s.expires_at, s.period
+                SELECT s.id, s.tier, s.expires_at, s.period
                 FROM subscriptions s
                 WHERE s.user_id = u.id AND s.status = 'active'
                 -- Оплаченная подписка бьёт инвайт, даже если инвайт применён
@@ -746,9 +753,11 @@ async def list_users(
                 "plan_period": r[13],
                 "is_invite": r[13] == "invite",
                 "is_paid": r[11] is not None and r[13] != "invite",
-                "sessions_count": int(r[14]) if r[14] else 0,
-                "events_count": int(r[15]) if r[15] else 0,
-                "last_active_ts": r[16].isoformat() if r[16] else None,
+                # Заметка видна только на инвайтной подписке — на купленной её нет.
+                "invite_note": r[14] if r[13] == "invite" else None,
+                "sessions_count": int(r[15]) if r[15] else 0,
+                "events_count": int(r[16]) if r[16] else 0,
+                "last_active_ts": r[17].isoformat() if r[17] else None,
             }
             for r in rows
         ],
