@@ -19,6 +19,7 @@ import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useElementWidth } from '../hooks/useElementWidth';
+import { formatCompact } from '../utils/formatNumber';
 
 // Опции для фильтров. Русские label = ключи перевода, оборачиваются t() в рендере.
 const PERIOD_OPTIONS = [
@@ -195,6 +196,12 @@ export default function HeatmapPage() {
   const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
   const colorBy = periodConfig.color;
   const volumeKey = periodConfig.volume;
+
+  // Оборот за период, которым карта меряет размер плитки в режиме «Оборот»,
+  // и его короткая метка (Д/Н/М) для тултипа. Период «1Г» считает оборот за
+  // месяц — метка следует за фактическим ключом, а не за выбранным периодом.
+  const getTurnover = (stock: HeatmapStock): number => (stock[volumeKey as keyof HeatmapStock] as number) || 0;
+  const turnoverLabel = volumeKey === 'value_1w' ? t('Н') : volumeKey === 'value_1m' ? t('М') : t('Д');
 
   // Адаптивный тулбар: размер (Капитализация/Оборот) и период показываем
   // горизонтальными сегментами, пока ряду хватает ширины; на узких десктоп/
@@ -814,6 +821,30 @@ export default function HeatmapPage() {
               </span>
             ))}
           </div>
+          {/* Капитализация и оборот — величины, по которым строится размер плитки
+              (переключатель «Размер»). Оборот берём за тот же период, что и
+              размер карты (1Г использует месячный оборот, см. PERIOD_OPTIONS).
+              API quirk: market_cap приходит в МИЛЛИАРДАХ ₽, value_* — в рублях. */}
+          {(tooltip.stock.market_cap > 0 || getTurnover(tooltip.stock) > 0) && (
+            <div className="flex items-center mt-1" style={{ fontSize: 'var(--fs-2xs)', gap: 'var(--sp-3)' }}>
+              {tooltip.stock.market_cap > 0 && (
+                <span className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
+                  <span className="text-theme-muted">{t('Капитализация')}</span>
+                  <span className="text-theme-primary font-semibold whitespace-nowrap">
+                    {formatCompact(tooltip.stock.market_cap * 1e9)} ₽
+                  </span>
+                </span>
+              )}
+              {getTurnover(tooltip.stock) > 0 && (
+                <span className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
+                  <span className="text-theme-muted">{t('Оборот')} {turnoverLabel}</span>
+                  <span className="text-theme-primary font-semibold whitespace-nowrap">
+                    {formatCompact(getTurnover(tooltip.stock))} ₽
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
