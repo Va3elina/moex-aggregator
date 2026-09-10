@@ -31,6 +31,7 @@ import ChartWatermark from './ChartWatermark';
 import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
 import { VolumeProfilePrimitive, type VolumeProfileOptions } from './chart/volumeProfilePrimitive';
 import { BandsPrimitive } from './chart/bandsPrimitive';
+import { createPriceLineBadge, RenderTickPrimitive, type PriceLineBadge } from './chart/priceLineBadge';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash,
@@ -119,8 +120,12 @@ interface LwChartPanesProps {
   /** Показывать время в подписях оси (интрадей). Без него ось никогда не даёт
    *  тик-марки типа Time, и 5м/1ч физически не отображаются. */
   timeVisible?: boolean;
-  /** Уровни-пунктиры (активные алерты). pane — на какой панели, по умолчанию 0. */
-  priceLines?: { price: number; color?: string; scale?: 'left' | 'right'; title?: string; pane?: number }[];
+  /** Уровни-пунктиры (активные алерты). pane — на какой панели, по умолчанию 0.
+   *  `id` + onRemovePriceLine → у линии появляется бейдж «колокольчик + крестик»
+   *  с фиксированным отступом от шкалы; без id бейджа нет. */
+  priceLines?: { price: number; color?: string; scale?: 'left' | 'right'; title?: string; pane?: number; id?: string | number }[];
+  /** Крестик на бейдже уровня → удалить уведомление с этим id. */
+  onRemovePriceLine?: (id: string | number) => void;
   /** Водяной знак «Фрейм» в углу (как в LwChart). false — выключить. */
   watermark?: boolean;
   /** Не рисовать встроенную легенду: её заменяет React-список индикаторов. */
@@ -151,6 +156,10 @@ function themeColors(dark: boolean) {
     grid: dark ? 'rgba(245,241,232,0.07)' : 'rgba(10,10,10,0.06)',
     cross: dark ? 'rgba(245,241,232,0.42)' : 'rgba(10,10,10,0.42)',
     lab: dark ? '#26262B' : '#E7E2D6',
+    // Подпись уровня уведомления на оси: СЕРАЯ, чтобы не путалась с пилсом
+    // текущего значения (тот в цвете серии).
+    alertLab: dark ? '#4A4A52' : '#BDB8AD',
+    alertLabText: dark ? '#E7E2D6' : '#26262B',
   };
 }
 
@@ -321,7 +330,7 @@ const LOAD_MORE_BARS_AHEAD = 400;
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
   panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true, onReachStart,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
-  watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, expirations, volumeProfile, onCreateAlert, alertAxes,
+  watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, onRemovePriceLine, expirations, volumeProfile, onCreateAlert, alertAxes,
   paneOverlay, paneSizes, onPaneSizesChange, staticView,
   selectedDrawId, onSelectDraw, onSelectionRect, drawHidden, drawLocked, drawDash, drawOpacity,
   drawFill, drawFillColor, drawFillOpacity, onToolReset,
@@ -357,7 +366,10 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // Примитивы зон и созданные price line'ы: applyOptions'ом их не достать иначе —
   // ссылки на них сейчас выбрасывались сразу после создания.
   const bandsRef = useRef<(BandsPrimitive | null)[][]>([]);
-  const lineRegRef = useRef<{ line: IPriceLine; token: string; pane: number }[]>([]);
+  const lineRegRef = useRef<{ line: IPriceLine; token: string; pane: number; alert?: boolean }[]>([]);
+  // Бейджи уровней уведомлений (DOM). Живут вместе с линиями: пересоздание
+  // серий и чартов их сносит и создаёт заново.
+  const badgesRef = useRef<PriceLineBadge[]>([]);
   // Невидимые ряды-хребты, по одному на панель: держат общее индексное
   // пространство времени (см. spineTimes в эффекте серий). Хранятся отдельно от
   // apisRef, чтобы не сбить парность apisRef[i][k] ↔ mapsRef[i][k] в тултипе.
@@ -414,6 +426,7 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   const vpRef = useRef<{ prim: VolumeProfilePrimitive; api: AnySeries } | null>(null);
   const syncVpRef = useRef<(() => void) | null>(null);
   const onCreateAlertRef = useRef(onCreateAlert); onCreateAlertRef.current = onCreateAlert;
+  const onRemovePriceLineRef = useRef(onRemovePriceLine); onRemovePriceLineRef.current = onRemovePriceLine;
   const onPaneSizesChangeRef = useRef(onPaneSizesChange); onPaneSizesChangeRef.current = onPaneSizesChange;
   const staticViewRef = useRef(staticView); staticViewRef.current = staticView;
   const alertAxesRef = useRef(alertAxes); alertAxesRef.current = alertAxes;
@@ -2068,6 +2081,8 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         for (const sd of ['left', 'right'] as const) per[sd]?.box.parentNode?.removeChild(per[sd]!.box);
       });
       pillsRef.current = [];
+      badgesRef.current.forEach((b) => b.destroy());
+      badgesRef.current = [];
       chartsRef.current = [];
       apisRef.current = [];
     };
@@ -2154,7 +2169,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           d.bands.upperColor, d.bands.lowerColor, d.bands.middleColor] : null,
       ])),
       chartPrefs?.lineWidth, chartPrefs?.lastValue,
-      (priceLines ?? []).map((l) => [l.price, l.color, l.pane, l.scale, l.title]),
+      (priceLines ?? []).map((l) => [l.price, l.color, l.pane, l.scale, l.title, l.id]),
       staticView,
     ]);
     const sameShape = seriesSig === seriesSigRef.current
@@ -2250,6 +2265,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
     bandsRef.current = panes.map(() => []);
     // Линии живут вместе с сериями: removeSeries снёс их выше, ссылки забываем.
     lineRegRef.current = [];
+    // Бейджи — DOM, сами не исчезнут.
+    badgesRef.current.forEach((b) => b.destroy());
+    badgesRef.current = [];
 
     // Какие оси заняты хоть где-то в стеке — от этого зависит видимость шкал на
     // ВСЕХ панелях сразу (см. комментарий у applyOptions ниже).
@@ -2480,11 +2498,36 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         const bx = boxes[pi];
         if (!api || !bx) continue;
         try {
+          const tc = themeColors(darkRef.current !== false);
+          // Подпись «уведомление» на поле не рисуем: её роль играет бейдж с
+          // колокольчиком у шкалы. На оси остаётся только значение, серым.
           const al = api.createPriceLine({
             price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
-            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? t('уведомление'),
+            lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? '',
+            axisLabelColor: tc.alertLab, axisLabelTextColor: tc.alertLabText,
           });
-          lineRegRef.current.push({ line: al, token: pl.color ?? 'var(--accent)', pane: pi });
+          lineRegRef.current.push({ line: al, token: pl.color ?? 'var(--accent)', pane: pi, alert: true });
+          const ch = charts[pi];
+          if (pl.id != null && onRemovePriceLineRef.current && ch) {
+            const id = pl.id;
+            const badge = createPriceLineBadge({
+              side: sc, titleBell: t('Уведомление'), titleRemove: t('Удалить уведомление'),
+              onRemove: () => onRemovePriceLineRef.current?.(id),
+            });
+            badge.setTheme(darkRef.current !== false);
+            bx.appendChild(badge.el);
+            badgesRef.current.push(badge);
+            // Переставляем на КАЖДУЮ перерисовку пейна: только так бейдж
+            // следует за уровнем при вертикальном зуме и автомасштабе.
+            const price = pl.price;
+            api.attachPrimitive(new RenderTickPrimitive(() => {
+              let y: number | null = null;
+              let axisW = 0;
+              try { y = api.priceToCoordinate(price); } catch { /* серия снята */ }
+              try { axisW = ch.priceScale(sc).width() || 0; } catch { /* §R2-30 */ }
+              badge.place(y, Math.max(0, bx.clientWidth - axisW), bx.clientHeight);
+            }));
+          }
         } catch { /* серия уже снята */ }
       }
     }
@@ -2666,11 +2709,14 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           }
         });
       });
+      const tc = themeColors(dark);
       for (const reg of lineRegRef.current) {
         const box = boxes[reg.pane];
         const c = box && probeColor(box, reg.token);
-        if (c) { try { reg.line.applyOptions({ color: c }); } catch { /* линия снята с серией */ } }
+        const extra = reg.alert ? { axisLabelColor: tc.alertLab, axisLabelTextColor: tc.alertLabText } : {};
+        if (c) { try { reg.line.applyOptions({ color: c, ...extra }); } catch { /* линия снята с серией */ } }
       }
+      badgesRef.current.forEach((b) => b.setTheme(dark));
       syncVpRef.current?.();
       drawShapesRef.current?.();
     });
