@@ -896,13 +896,84 @@ def _waiting_for_reaction(db, row) -> bool:
 #
 # Отраслевые хэштеги — для новостей без тикеров: пост MarketTwits про Уренгой шёл
 # только с «#газ». Ключи — как в issuers.sector.
+#
+# База — руками на каждую отрасль: пол, чтобы теги были и у редких отраслей. Сверху —
+# автоматика из архива (_sector_tags): хэштег, который за два года почти всегда стоит
+# рядом с тикерами ОДНОЙ отрасли, считается её тегом. Архив растёт — список пополняется
+# сам, пересчёт раз в сутки.
 _SECTOR_TAGS = {
     "Нефть и газ": ["#нефть", "#газ", "#спг", "#бензин", "#опек", "#ормуз"],
-    "Металлы": ["#металлы", "#золото", "#сталь", "#никель", "#алюминий"],
-    "Финансы": ["#банки", "#дкп"],
-    "Энергетика": ["#электроэнергия"],
-    "Застройщики": ["#ипотека", "#недвижимость"],
+    "Металлы": ["#металлы", "#золото", "#сталь", "#никель", "#алюминий", "#алмазы", "#уголь"],
+    "Финансы": ["#банки", "#дкп", "#биржи", "#брокеры"],
+    "Энергетика": ["#электроэнергия", "#энергетика"],
+    "Застройщики": ["#ипотека", "#недвижимость", "#девелопмент"],
+    "Потреб. сектор": ["#ритейл", "#продукты", "#аптеки"],
+    "IT": ["#маркетплейсы", "#мессенджеры", "#ecommerce", "#it"],
+    "Транспорт": ["#авиа", "#жд", "#контейнеры", "#логистика"],
+    "Химия": ["#удобрения", "#лпк"],
+    "Здравоохранение": ["#фарма", "#медицина"],
+    "Машиностроение": ["#авто", "#авиа"],
+    "Телеком": ["#связь", "#телеком", "#цод"],
 }
+# Автоматика путает отрасль с географией и рубриками: у нефтегаза за два года «#китай»
+# 85/108, «#европа» 64/73, «#сп» 62/62 — это про экспорт и сокращения канала, а не про
+# отрасль. Такие теги всплывают у разных отраслей, поэтому стоп-лист, а не порог.
+_TAG_STOP = {"#россия", "#сша", "#китай", "#европа", "#украина", "#иран", "#германия",
+             "#турция", "#сербия", "#венгрия", "#индия", "#япония", "#казахстан",
+             "#геополитика", "#санкции", "#макро", "#экономика", "#прогноз", "#акции",
+             "#событие", "#обзор", "#отчетность", "#облигации", "#дивиденды", "#инсайдер",
+             "#делистинг", "#делиcтинг", "#сп", "#сс", "#тп", "#торги", "#рынки",
+             "#инструменты", "#физики", "#крипто", "#telegram", "#игры", "#сделановсбере"}
+_TAG_MIN_N = 4          # упоминаний рядом с отраслью за два года
+_TAG_MIN_SHARE = 0.75   # доля этих упоминаний среди всех упоминаний тега с тикерами
+_TAGS_TTL_SEC = 24 * 3600
+_tags_cache: dict = {"at": None, "map": {}}
+
+# Посты с 1–3 тикерами: дайджесты с десятком тикеров приписали бы тег всем отраслям.
+# Тикер строчными («#smlt») — не тема, его отсекаем.
+_SELECT_TAG_SECTORS = text("""
+    WITH p AS (
+        SELECT row_number() OVER () AS id, hashtags, tickers FROM news_archive
+        WHERE posted_at >= now() - interval '2 years'
+          AND coalesce(array_length(tickers, 1), 0) BETWEEN 1 AND 3
+    ), ps AS (
+        SELECT DISTINCT p.id, i.sector FROM p, unnest(p.tickers) tk
+        JOIN issuer_securities s ON s.secid = tk JOIN issuers i USING (issuer_id)
+        WHERE coalesce(i.sector, '') <> ''
+    ), hs AS (
+        SELECT DISTINCT p.id, lower(h) AS h FROM p, unnest(p.hashtags) h
+        WHERE h !~ '^#[A-Z0-9]+$'
+          AND upper(substr(h, 2)) NOT IN (SELECT secid FROM issuer_securities)
+    ), c AS (SELECT ps.sector, hs.h, count(*) AS n FROM ps JOIN hs USING (id) GROUP BY 1, 2)
+    SELECT c.sector, c.h, c.n, sum(c.n) OVER (PARTITION BY c.h) AS nh FROM c
+""")
+
+
+def _pick_sector_tags(rows) -> dict:
+    """(отрасль, тег, упоминаний рядом с отраслью, всего) → {отрасль: [теги]}."""
+    out: dict = {}
+    for sector, tag, n, total in rows:
+        if tag in _TAG_STOP or n < _TAG_MIN_N or not total or n / total < _TAG_MIN_SHARE:
+            continue
+        out.setdefault(sector, []).append(tag)
+    return out
+
+
+def _sector_tags(sector: str) -> list:
+    """База + автоматика из архива. Своя сессия: сбой запроса не должен откатить то,
+    что сборщик брифа уже записал в своей транзакции. Упал — остаётся база."""
+    if _tags_cache["at"] is None or time.monotonic() - _tags_cache["at"] > _TAGS_TTL_SEC:
+        s = SessionLocal()
+        try:
+            _tags_cache["map"] = _pick_sector_tags(s.execute(_SELECT_TAG_SECTORS).fetchall())
+        except Exception as e:  # noqa: BLE001 — автоматика необязательна, база есть всегда
+            print(f"[content_ai] автотеги отраслей не посчитались: {type(e).__name__}: {e}")
+        finally:
+            s.close()
+        _tags_cache["at"] = time.monotonic()
+    tags = list(dict.fromkeys(_SECTOR_TAGS.get(sector, []) + _tags_cache["map"].get(sector, [])))
+    # Пустой массив pg8000 не типизирует — подставляем тег, которого не бывает.
+    return tags or ["#-"]
 _AROUND_BEFORE_DAYS = 2
 _AROUND_AFTER_DAYS = 5
 # Чужая новость попадает в бриф, только если после неё наша бумага за два часа
@@ -988,8 +1059,7 @@ def _news_around(db, row, news_date) -> list:
     if secid not in peers:
         peers.append(secid)
     sector = db.execute(_SELECT_SECTOR, {"secid": secid}).scalar() or ""
-    # Пустой массив pg8000 не типизирует — подставляем тег, которого не бывает.
-    tags = _SECTOR_TAGS.get(sector) or ["#-"]
+    tags = _sector_tags(sector)
     news = db.execute(_SELECT_NEWS_AROUND, {
         "since": since.replace(tzinfo=_MSK), "until": until.replace(tzinfo=_MSK),
         "peers": peers, "tags": tags,

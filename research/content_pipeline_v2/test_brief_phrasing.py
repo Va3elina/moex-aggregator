@@ -276,6 +276,24 @@ def test_events_block_is_in_both_briefs(monkeypatch):
         assert "события_вокруг_новости" in payload, name
 
 
+def test_sector_tags_come_from_the_archive_minus_geography():
+    """Цифры — реальный подсчёт по архиву за два года (10.09.2026)."""
+    rows = [("Нефть и газ", "#газ", 169, 169), ("Нефть и газ", "#китай", 85, 108),
+            ("Нефть и газ", "#сп", 62, 62), ("Здравоохранение", "#фарма", 4, 5),
+            ("Транспорт", "#каршеринг", 4, 4), ("Финансы", "#крипто", 65, 83),
+            ("IT", "#редкий", 3, 3), ("Металлы", "#общий", 10, 20)]
+    assert CA._pick_sector_tags(rows) == {
+        "Нефть и газ": ["#газ"], "Здравоохранение": ["#фарма"], "Транспорт": ["#каршеринг"]}
+
+
+def test_every_sector_has_base_tags_and_none_is_stoplisted():
+    for sector in ("Энергетика", "Финансы", "Потреб. сектор", "Металлы", "IT", "Нефть и газ",
+                   "Транспорт", "Химия", "Застройщики", "Здравоохранение", "Машиностроение",
+                   "Телеком"):
+        assert CA._SECTOR_TAGS.get(sector), sector
+    assert not set(sum(CA._SECTOR_TAGS.values(), [])) & CA._TAG_STOP
+
+
 def test_position_block_has_no_long_horizon_numbers(monkeypatch):
     """Горизонты до года — не костяк. Остаётся только разворот за год."""
     import signals.db as sdb
