@@ -8,6 +8,7 @@
 import importlib.util
 import inspect
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -66,7 +67,30 @@ def test_snapshot_size_counts_only_matched_securities():
     sql = _sync()._СОБЫТИЯ_ФОНДОВ
     полный = sql[sql.index("full_snap AS"):sql.index("s0 AS")]
     assert "FROM h" in полный and "fund_holdings_history" not in полный
-    assert sql.index("WITH h AS") < sql.index("full_snap AS")
+    assert sql.index("h AS (SELECT") < sql.index("full_snap AS")
+
+
+def test_fund_events_use_site_sources_only():
+    """10.09: реконструкция cbonds лежала в те же даты рядом с документами УК, доли в срезе
+    складывались до 160 % — треть событий была мнимой. Источник — тот же, что у /fund-trades."""
+    s = _sync()
+    ft = (ROOT / "api" / "routers" / "fund_trades.py").read_text(encoding="utf-8")
+    строка = re.search(r"^MONTHLY_SOURCES = \((.*?)\)", ft, re.M).group(1)
+    assert s._ФОНД_ИСТОЧНИКИ == re.findall(r'"([^"]+)"', строка)
+    sql = s._СОБЫТИЯ_ФОНДОВ
+    assert "source = ANY(:источники)" in sql and "src.source = h.source" in sql
+    assert "DISTINCT ON (fund_id, snapshot_date)" in sql, "один источник на срез"
+    assert "<= CAST(:сумма AS numeric)" in sql and 100 < s._ФОНД_СУММА_МАКС <= 130
+
+
+def test_fund_rebuild_starts_clean():
+    """Смена правил отбора: мнимые события старых правил не должны пережить пересборку."""
+    s = _sync()
+    src = inspect.getsource(s.события_фондов)
+    assert "_водяной(conn, _ФОНД_ВЕРСИЯ)" in src and "_отметить(conn, _ФОНД_ВЕРСИЯ" in src
+    assert s._ФОНД_ВЕРСИЯ != "fund_events", "новая версия ключа — один полный прогон"
+    чистка = src[src.index("if вод is None"):src.index("п = {")]
+    assert "kind = 'событие_фонда'" in чистка and "kind = 'fund_event'" in чистка
 
 
 def test_index_events_compare_neighbouring_dates():

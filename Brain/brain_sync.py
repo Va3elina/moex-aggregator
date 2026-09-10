@@ -450,15 +450,36 @@ _ФОНД_СРЕЗ_МИН = 5       # бумаг в срезе, чтобы сч�
 _ФОНД_ВЕС_МИН = 1.0      # % фонда: вход и выход считаем только для весомой бумаги
 _ФОНД_ИЗМ = 0.5          # изменение числа бумаг на половину и больше
 _ФОНД_ДНЕЙ = 730
+# Источник — тот же, что у страницы сделок фондов (api/routers/fund_trades.py, MONTHLY_SOURCES):
+# только документы УК. Прогон 10.09: реконструкция cbonds/cbonds_calc лежит в те же даты рядом с
+# документами, доли в срезе складывались до 160 %, и 483 события из 1 416 были мнимыми —
+# облигационный фонд «сокращал» X5 в 10 раз и через месяц «наращивал» обратно.
+_ФОНД_ИСТОЧНИКИ = ["vim_sdr", "interfax_manual"]
+_ФОНД_СУММА_МАКС = 120   # % фонда: срез, где доли в сумме больше, склеен из двух раскрытий
+# Водяной знак с версией: смена правил отбора требует пересобрать события целиком, а не
+# дописать новые поверх мнимых. Новая версия ключа = один полный прогон с очисткой.
+_ФОНД_ВЕРСИЯ = "fund_events:2"
 
 _СОБЫТИЯ_ФОНДОВ = """
     -- ⚠️ Пороги — с явным типом: pg8000 выводит тип параметра из соседа, и 0,5 рядом с
     -- bigint-колонкой positions приходил как «bigint 0.5» → ошибка ввода.
     -- Одна бумага в срезе бывает несколькими строками (лоты, разные источники):
     -- складываем, иначе событие дублируется и ON CONFLICT падает на повторе.
-    WITH h AS (SELECT h.fund_id, h.snapshot_date, h.isin, SUM(h.positions) AS positions,
+    -- Один источник на срез — только документы УК (_ФОНД_ИСТОЧНИКИ). В одну дату бывают и
+    -- vim_sdr, и interfax_manual: берём тот, чьи доли в сумме ближе к 100. Срез, где сумма
+    -- выше потолка, склеен из двух раскрытий — в сравнение не идёт.
+    WITH src AS (SELECT DISTINCT ON (fund_id, snapshot_date) fund_id, snapshot_date, source
+                   FROM (SELECT fund_id, snapshot_date, source, SUM(weight) AS s
+                           FROM fund_holdings_history
+                          WHERE snapshot_date >= CAST(:окно AS date) AND source = ANY(:источники)
+                          GROUP BY fund_id, snapshot_date, source) x
+                  WHERE COALESCE(s, 0) <= CAST(:сумма AS numeric)
+                  ORDER BY fund_id, snapshot_date, ABS(COALESCE(s, 0) - 100), source),
+         h AS (SELECT h.fund_id, h.snapshot_date, h.isin, SUM(h.positions) AS positions,
                       SUM(h.weight) AS weight, MIN(m.company_id) AS company_id
-                 FROM fund_holdings_history h JOIN brain_ticker_map m ON m.ticker = h.isin
+                 FROM fund_holdings_history h
+                 JOIN src ON src.fund_id = h.fund_id AND src.snapshot_date = h.snapshot_date AND src.source = h.source
+                 JOIN brain_ticker_map m ON m.ticker = h.isin
                 -- окно: события считаем за недавние срезы, прежний срез — в пределах года до них
                 WHERE h.snapshot_date >= CAST(:окно AS date)
                 GROUP BY h.fund_id, h.snapshot_date, h.isin),
@@ -508,10 +529,15 @@ def события_фондов(conn, full: bool) -> int:
     """Фонд открыл, закрыл, нарастил или сократил позицию — между соседними полными
     срезами одного фонда, только по нашим компаниям, за два года. Уровень A: раскрытие
     управляющей компании. Событие связано и с компанией, и с фондом."""
-    вод = None if full else _водяной(conn, "fund_events")
+    вод = None if full else _водяной(conn, _ФОНД_ВЕРСИЯ)
+    if вод is None:
+        # полная пересборка — с чистого листа; вектора уходят каскадом (brain_embeddings)
+        conn.execute(text("DELETE FROM brain_edges WHERE kind = 'событие_фонда'"))
+        conn.execute(text("DELETE FROM brain_nodes WHERE kind = 'fund_event'"))
     п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc),
          "с": datetime.now(timezone.utc) - timedelta(days=_ФОНД_ДНЕЙ),
-         "срез": _ФОНД_СРЕЗ_МИН, "вес": _ФОНД_ВЕС_МИН, "изм": _ФОНД_ИЗМ}
+         "срез": _ФОНД_СРЕЗ_МИН, "вес": _ФОНД_ВЕС_МИН, "изм": _ФОНД_ИЗМ,
+         "источники": _ФОНД_ИСТОЧНИКИ, "сумма": _ФОНД_СУММА_МАКС}
     # ⚠️ Скорость. Прогон 10.09: 44 с — расчёт шёл дважды (узлы и связи) и по всей истории
     # с 2021 года, а синк мозга каждые 15 минут обычно укладывается в 10–20 с. Считаем
     # один раз во временную таблицу и только в окне: прежний срез — не старше года.
@@ -546,7 +572,7 @@ def события_фондов(conn, full: bool) -> int:
           CROSS JOIN LATERAL (VALUES (ev.company_id), ('fund:' || f.ticker)) x(dst)
         ON CONFLICT DO NOTHING
     """))
-    _отметить(conn, "fund_events", conn.execute(text(
+    _отметить(conn, _ФОНД_ВЕРСИЯ, conn.execute(text(
         "SELECT CAST(MAX(snapshot_date) AS timestamptz) FROM fund_holdings_history")).scalar(), n)
     return n
 
