@@ -25,9 +25,9 @@ const X_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" strok
 
 export interface PriceLineBadge {
   el: HTMLDivElement;
-  /** Переставить на уровень `y` (px от верха панели); `inset` — расстояние от
-   *  края панели до кромки шкалы (ширина поля за вычетом... см. showPill). */
-  place(y: number | null, inset: number, paneHeight: number): void;
+  /** Переставить на уровень `y` (px от верха панели); `axisW` — ширина шкалы
+   *  СВОЕЙ стороны: бейдж ставится с её внутренней кромки, отступ AXIS_GAP. */
+  place(y: number | null, axisW: number, paneHeight: number): void;
   setTheme(dark: boolean): void;
   destroy(): void;
 }
@@ -83,10 +83,10 @@ export function createPriceLineBadge(o: PriceLineBadgeOptions): PriceLineBadge {
 
   return {
     el,
-    place(y, inset, paneHeight) {
+    place(y, axisW, paneHeight) {
       if (y == null || !Number.isFinite(y) || y < 0 || y > paneHeight) { el.style.display = 'none'; return; }
-      if (o.side === 'left') { el.style.left = `${inset + AXIS_GAP}px`; el.style.right = 'auto'; }
-      else { el.style.right = `${inset + AXIS_GAP}px`; el.style.left = 'auto'; }
+      if (o.side === 'left') { el.style.left = `${axisW + AXIS_GAP}px`; el.style.right = 'auto'; }
+      else { el.style.right = `${axisW + AXIS_GAP}px`; el.style.left = 'auto'; }
       el.style.top = `${y}px`;
       el.style.display = 'flex';
     },
