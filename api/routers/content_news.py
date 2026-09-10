@@ -934,12 +934,26 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         # написан по актуальному контракту брифа. Судья (Шаг Г) берёт лишь
         # актуальную версию — иначе он валит старые черновики на воротах фактуры
         # за поля, которых в новом брифе уже нет (миграция 059).
+        # ⚠️ НОВЫЙ ЧЕРНОВИК — НОВЫЙ СУД. Всё, что судья сказал о прошлом тексте, к
+        # этому не относится, поэтому обнуляем вердикт, разбор, отметку о правке и
+        # счётчик попыток. Найдено 10.09 на кандидате 1933 (Новатэк): писатель
+        # переписал пост по новому брифу, а в карточке осталась плашка «текст
+        # ПОПРАВЛЕН СУДЬЁЙ» с заметкой о правке СТАРОГО текста. Хуже того, очередь
+        # судьи берёт только кандидатов с пустым вердиктом (_SELECT_JUDGE_PENDING
+        # в content_ai.py), так что переписанный черновик не судился вовсе, а бот
+        # сразу слал его со старым вердиктом.
         db.execute(text("""
             UPDATE content_candidates
             SET draft_text = :draft_text, draft_text_ai = :draft_text,
                 brief_version = :brief_version,
                 style_profile = CAST(:style AS jsonb),
-                synth_declined_reason = NULL, updated_at = now()
+                synth_declined_reason = NULL,
+                judge_verdict = NULL, judge_failed = NULL, judge_defects = NULL,
+                judge_note = NULL, judge_items = NULL, judge_paragraphs = NULL,
+                judge_checked_at = NULL, judge_gave_up_at = NULL,
+                judge_fixed_at = NULL, judge_fix_note = NULL,
+                judge_dispatch_attempts = 0,
+                updated_at = now()
             WHERE id = :id
         """), {"id": candidate_id, "draft_text": body.draft_text,
                 "brief_version": _BRIEF_VERSION,

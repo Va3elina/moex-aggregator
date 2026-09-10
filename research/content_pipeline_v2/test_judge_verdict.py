@@ -366,3 +366,17 @@ def test_decline_must_be_explicit():
     assert "not body.draft_text and not body.declined_reason" in src
     assert "422" in src
     assert "отказом НЕ считается" in src
+
+
+def test_new_draft_resets_everything_the_judge_said():
+    """Кандидат 1933 (10.09): новый черновик писателя пришёл в карточку с плашкой
+    «ПОПРАВЛЕН СУДЬЁЙ» от прошлого текста, а очередь судьи (judge_verdict IS NULL)
+    его вообще не взяла — вердикт остался старым. Приёмка черновика обязана
+    стирать всё, что судья сказал о предыдущей версии."""
+    import inspect
+    from api.routers import content_news as cn
+    src = inspect.getsource(cn.apply_step_c)
+    for поле in ("judge_verdict = NULL", "judge_paragraphs = NULL", "judge_checked_at = NULL",
+                 "judge_gave_up_at = NULL", "judge_fixed_at = NULL", "judge_fix_note = NULL",
+                 "judge_dispatch_attempts = 0"):
+        assert поле in src, поле
