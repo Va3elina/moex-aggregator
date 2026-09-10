@@ -89,7 +89,7 @@
   "Опции": "Options",
   "Что на графике": "What the chart shows",
   "Выберите бумагу": "Select a security",
-  "Фонды с этой бумагой": "Funds holding this security",
+  "не держит бумагу": "does not hold this security",
   "По умолчанию индексные фонды выключены: их сделки — ребалансировка вслед за индексом.": "Index funds are off by default: their trades are rebalancing that follows the index.",
   "Нет данных по бумагам": "No securities data",
   "дн": "d",

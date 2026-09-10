@@ -170,6 +170,10 @@ function pluralFunds(n: number): string {
 // сделки это ребалансировка вслед за индексом, а не решения управляющих.
 // Считаем по ГЛОБАЛЬНОМУ списку фондов, а не по держателям текущей бумаги,
 // иначе индексные, не державшие первую открытую бумагу, всплыли бы на второй.
+//
+// По той же причине ПИКЕР показывает весь список фондов, а не держателей
+// текущей бумаги: снятое на редкой бумаге должно выключаться и на Сбере.
+// Фонды, не держащие текущую бумагу, помечены подписью (см. absentTickers).
 const FUNDS_OFF_KEY = 'frame:companyflows:funds-off';
 // Ключи прежней схемы (выбранные + флаг «трогал пикер») — чистим при первом
 // заходе, чтобы не оставлять в localStorage мусор, который уже никто не читает.
@@ -541,14 +545,20 @@ export default function CompanyFlowsTab({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, selectedAsset, weightsData, weightsKey]);
 
-    // Фонды для пикера — только держатели этой бумаги (flows.funds), но карточкой
-    // из /funds: СЧА, доходность, подкатегория, дата последнего состава. Пока
-    // метаданные не пришли (или не пришли вовсе) — минимальная карточка из flows,
-    // чтобы фильтр работал с первой же секунды.
+    // Фонды для пикера — ВЕСЬ список фондов акций (/funds), а не только держатели
+    // этой бумаги. Фильтр один на все бумаги, и пикер обязан показывать всё, чем
+    // он управляет: когда список был сужен до держателей, фонды, не державшие
+    // текущую бумагу, оставались невидимыми и включёнными — «выбрал 3 фонда» на
+    // редкой бумаге оборачивалось пятью на Сбере. Не-держатели помечены в
+    // пикере (absentTickers), их состояние тоже правится отсюда.
+    // Держатели, которых нет в /funds (или пока он не доехал), — минимальной
+    // карточкой из flows, чтобы фильтр работал с первой же секунды.
     const pickerFunds: FundWithHistory[] = useMemo(() => {
         if (!flows) return [];
         const meta = new Map(fundsMeta.map(f => [f.ticker, f]));
-        return flows.funds.map((f, idx) => meta.get(f.ticker) ?? ({
+        const holders = new Set(flows.funds.map(f => f.ticker));
+        const rest = fundsMeta.filter(f => !holders.has(f.ticker));
+        const holderCards = flows.funds.map((f, idx) => meta.get(f.ticker) ?? ({
             fund_id: -1 - idx,
             ticker: f.ticker,
             name: f.fund_name,
@@ -563,7 +573,14 @@ export default function CompanyFlowsTab({
             returns: { m1: null, m3: null, m6: null, y1: null },
             top_holdings: [],
         } satisfies FundWithHistory));
+        return [...holderCards, ...rest];
     }, [flows, fundsMeta]);
+
+    // Тикеры фондов, не держащих текущую бумагу, — пикер помечает их подписью.
+    const absentTickers = useMemo(() => {
+        const holders = new Set(flows?.funds.map(f => f.ticker) ?? []);
+        return new Set(pickerFunds.map(f => f.ticker).filter(t => !holders.has(t)));
+    }, [flows, pickerFunds]);
 
     // Разовая уборка ключей прежней схемы фильтра (см. FUNDS_OFF_KEY выше).
     useEffect(() => {
@@ -594,32 +611,34 @@ export default function CompanyFlowsTab({
         return new Set(flows.funds.map(f => f.ticker).filter(t => !offFunds.has(t)));
     }, [flows, offFunds]);
 
-    // Правка из пикера: пришёл набор ВЫБРАННЫХ держателей этой бумаги, переводим
-    // его в дельту выключенных. Фонды, которые бумагу не держат, не трогаем —
-    // они остаются в том состоянии, в котором их оставили на своих бумагах.
-    //
-    // Индексные — исключение: тумблер «Без индексных фондов» глобальный по смыслу
-    // («не хочу видеть механическую ребалансировку»), поэтому его переключение
-    // распространяем на все индексные фонды сразу, а не только на держателей.
+    // Что отмечено в пикере: весь его список минус выключенные (включая
+    // не-держателей — иначе они в пикере выглядели бы снятыми, оставаясь
+    // включёнными на других бумагах).
+    const pickedFunds = useMemo(
+        () => new Set(pickerFunds.map(f => f.ticker).filter(t => !offFunds.has(t))),
+        [pickerFunds, offFunds],
+    );
+
+    // Правка из пикера: пришёл набор ВЫБРАННЫХ из всего списка пикера, переводим
+    // его в выключенные. Список пикера — все фонды акций, поэтому снятые на
+    // любой бумаге выключаются везде, а не только там, где они держатели.
+    // Индексные в этом списке всегда есть целиком, отдельной «глобальной»
+    // ветки для тумблера «Без индексных фондов» больше не нужно.
     const handleFundsChange = useCallback((next: Set<string>) => {
-        const holders = flows?.funds.map(f => f.ticker) ?? [];
+        const universe = pickerFunds.map(f => f.ticker);
         // КОНТРАКТ ПИКЕРА: когда отмечены все фонды, он отдаёт ПУСТОЙ набор
         // (у него семантика «пусто = все»), а «снять все» схлопывает в пул
         // доступных — пустым «ничего не выбрано» он не присылает никогда.
-        // Понятый буквально, пустой набор выключал разом всех держателей, и
-        // попытка вернуть все фонды давала «Не выбрано ни одного фонда».
-        const chosen = next.size === 0 ? new Set(holders) : next;
+        // Понятый буквально, пустой набор выключал разом всех, и попытка
+        // вернуть все фонды давала «Не выбрано ни одного фонда».
+        const chosen = next.size === 0 ? new Set(universe) : next;
 
+        // Стартуем от текущего набора, а не с нуля: тикеры вне списка пикера
+        // (например, пока /funds не доехал) сохраняют своё состояние.
         const nextOff = new Set(offFunds);
-        holders.forEach(t => (chosen.has(t) ? nextOff.delete(t) : nextOff.add(t)));
-
-        const idxHolders = holders.filter(t => indexTickers.includes(t));
-        if (idxHolders.length > 0) {
-            const indexShown = idxHolders.some(t => chosen.has(t));
-            indexTickers.forEach(t => (indexShown ? nextOff.delete(t) : nextOff.add(t)));
-        }
+        universe.forEach(t => (chosen.has(t) ? nextOff.delete(t) : nextOff.add(t)));
         setFundsOff([...nextOff]);
-    }, [flows, offFunds, indexTickers, setFundsOff]);
+    }, [pickerFunds, offFunds, setFundsOff]);
 
     // ITEM 2 — фонды, попадающие в чарт: фильтр по выбранным тикерам (пусто = все).
     // Цвет фонда привязан к индексу в ПОЛНОМ списке (стабилен при фильтрации).
@@ -933,12 +952,12 @@ export default function CompanyFlowsTab({
                             <div>
                                 <div style={MOBILE_SHEET_LABEL}>{t('Фонды')}</div>
                                 {/* Тот же пикер, что в «Общем портфеле» и на десктопе этой
-                                    вкладки: набор сужен до держателей бумаги. */}
+                                    вкладки: весь список фондов, не-держатели помечены. */}
                                 <PortfolioFundPicker
                                     funds={pickerFunds}
-                                    selected={effectiveFunds}
+                                    selected={pickedFunds}
                                     onChange={handleFundsChange}
-                                    title={t('Фонды с этой бумагой')}
+                                    absentTickers={absentTickers}
                                     allLabel={t('Все фонды')}
                                 />
                                 <p style={MOBILE_SHEET_HINT}>
@@ -1079,13 +1098,13 @@ export default function CompanyFlowsTab({
 
                 {/* Фонды — тот же пикер, что в «Общем портфеле»: таблица со СЧА и
                     доходностью, группы-подкатегории, «Выбрать все», таблетка «Без
-                    индексных фондов», применение по закрытию. Набор сужен до
-                    держателей бумаги — отсюда свои заголовок и подпись таблетки. */}
+                    индексных фондов», применение по закрытию. Список — все фонды
+                    акций, не-держатели текущей бумаги помечены подписью. */}
                 <PortfolioFundPicker
                     funds={pickerFunds}
-                    selected={effectiveFunds}
+                    selected={pickedFunds}
                     onChange={handleFundsChange}
-                    title={t('Фонды с этой бумагой')}
+                    absentTickers={absentTickers}
                     allLabel={t('Все фонды')}
                     compact={embedded}
                     iconOnly={embedded && tbCompact}

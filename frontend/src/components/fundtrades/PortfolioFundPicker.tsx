@@ -204,6 +204,7 @@ function PickerModal({
     selected,
     targetMonth,
     excludedTickers,
+    absentTickers,
     title,
     onApply,
     onClose,
@@ -213,6 +214,7 @@ function PickerModal({
     selected: Set<string>;
     targetMonth?: string | null;
     excludedTickers?: Set<string>;
+    absentTickers?: Set<string>;
     title: string;
     onApply: (next: Set<string>) => void;
     onClose: () => void;
@@ -616,6 +618,7 @@ function PickerModal({
                                                 // но строка остаётся кликабельной.
                                                 const blurred = indexOff && isIndexSubcategory(fund.subcategory);
                                                 const stale = staleInfo(fund);
+                                                const absent = absentTickers?.has(fund.ticker) ?? false;
                                                 return (
                                                     <tr
                                                         key={fund.ticker}
@@ -658,6 +661,17 @@ function PickerModal({
                                                                 >
                                                                     {fund.ticker}
                                                                 </span>
+                                                                {/* «По бумаге»: фонд не держит текущую бумагу.
+                                                                    Строка остаётся в списке и кликабельна —
+                                                                    фильтр общий на все бумаги. */}
+                                                                {absent && (
+                                                                    <span
+                                                                        className="flex-shrink-0"
+                                                                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                                    >
+                                                                        {t('не держит бумагу')}
+                                                                    </span>
+                                                                )}
                                                                 {/* Фонд не отчитался за месяц среза — «!» с месяцем
                                                                     его последнего состава (как в списке фондов
                                                                     «Денег в фондах»). */}
@@ -785,6 +799,9 @@ export interface PortfolioFundPickerProps {
     targetMonth?: string | null;
     /** Тикеры, не опубликовавшие состав за месяц среза (excluded_funds из /portfolio). */
     excludedTickers?: Set<string>;
+    /** «По бумаге»: фонды, не держащие текущую бумагу — в списке остаются
+     *  (фильтр общий на все бумаги), но помечены подписью. */
+    absentTickers?: Set<string>;
     /** Заголовок модалки. По умолчанию — весь набор фондов акций. */
     title?: string;
     /** Подпись таблетки, когда выбран весь пул. */
@@ -803,7 +820,7 @@ export interface PortfolioFundPickerProps {
 }
 
 export default function PortfolioFundPicker({
-    funds, selected, onChange, targetMonth, excludedTickers,
+    funds, selected, onChange, targetMonth, excludedTickers, absentTickers,
     title, allLabel,
     resetWhenLocked = false, compact = false, iconOnly = false,
 }: PortfolioFundPickerProps) {
@@ -900,6 +917,7 @@ export default function PortfolioFundPicker({
                     selected={selected}
                     targetMonth={targetMonth}
                     excludedTickers={excludedTickers}
+                    absentTickers={absentTickers}
                     title={modalTitle}
                     locked={!canPick}
                     onApply={onChange}
