@@ -106,7 +106,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 19   # v19: фундамент в бриф только под повод про цифры; примеры-предложения из оговорок убраны
+BRIEF_VERSION = 20   # v20: костяк — реакция толпы вокруг новости вместо горизонтов до года
 # Окно новостей второго мозга. Было 14 дней: у АФК Системы это 13 новостей, а
 # рейтинговая история и соседи по новостям живут кварталами. Вадим 06.09: «я бы
 # увеличил радиус до пары месяцев или квартала». Окно касается только колец
@@ -608,8 +608,42 @@ def _price_context(db, asset_id: str, tickers, as_of) -> dict:
     return out
 
 
+def _move_phrase(new_v, old_v) -> str:
+    """Изменение чистой позиции ЧЕЛОВЕЧЕСКОЙ фразой: «чистый лонг вырос в 3 раза»."""
+    # ⚠️ Процент через смену знака бессмыслен: VK (лонг → шорт) давал «−369,9%»,
+    # и модель написала «позиция изменилась на −369,9%» — человек прочтёт
+    # «упало на 370%». При развороте отдаём описание разворота.
+    if not old_v:
+        return "не с чем сравнить — позиции не было"
+    word = "лонг" if new_v > 0 else "шорт"
+    if (old_v > 0) != (new_v > 0):
+        # ⚠️ Без голых контрактов. Бриф v3 отдавал «было лонг 4142, стало шорт
+        # 2333» — и черновик 1357 напечатал именно это. Вадим 31.08: «просто
+        # количество контрактов никому не интересно, нужна интерпретация».
+        was, now = ("лонг", "шорт") if old_v > 0 else ("шорт", "лонг")
+        # ⚠️ Без размерной оговорки. В v5 я добавлял «причём новый шорт крупнее
+        # прежнего лонга вдвое», чтобы не терять масштаб. Вадим по 1638:
+        # «ну и извращенское заявление, предыдущего хватает более чем». Сам факт
+        # разворота — уже сильное утверждение, и он самодостаточен; сравнение
+        # размеров двух позиций разного знака читателю ничего не добавляет.
+        return f"толпа перевернулась из чистого {was}а в чистый {now}"
+    grew = abs(new_v) > abs(old_v)
+    r = abs(new_v) / abs(old_v)
+    verb = "вырос" if grew else "сократился"
+    chg = abs(abs(new_v) - abs(old_v)) / abs(old_v) * 100
+    if grew:
+        t = _times(r)
+        if t:
+            return f"чистый {word} {verb} {t}"
+    else:
+        t = _times(1 / r) if r else ""
+        if t and chg >= 50:
+            return f"чистый {word} {verb} {t}"
+    return f"чистый {word} {verb} {_pct(chg)}"
+
+
 def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
-    """Изменение позиции ЧЕЛОВЕЧЕСКОЙ фразой + выбор главного числа.
+    """Направление позиции толпы, проверка «рекорда» и разворот за год.
 
     ⚠️ Почему не ATR-множитель. Детектор считает ratio = |Δ за день| / ATR(14):
     ×4,69 означает «дневное изменение в 4,69 раза крупнее обычного дневного», а НЕ
@@ -619,10 +653,8 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     служебным признаком аномальности и в текст поста не идёт.
     См. research/content_pipeline_v2/METRIC_MISMATCH.md.
 
-    ⚠️ Почему ГЛАВНОЕ_ЧИСЛО выбирает код, а не модель. Замер: когда бриф выкладывал
-    шесть равноправных чисел, модель добросовестно брала все — плотность оставалась
-    5 показателей на абзац против 1-2 у канала. «Дай всё и надейся, что выберет» не
-    работает; это тот же провал, что и с раздутым промптом."""
+    ⚠️ ГЛАВНОГО_ЧИСЛА здесь больше нет (v20): его выбор из горизонтов до года уводил
+    пост от новости (кандидат 1933). Костяк поста собирает _news_reaction."""
     from signals.db import get_position_series
     clg = clgroup or "FIZ"
     # ⚠️ as_of ОБЯЗАТЕЛЕН. Без него ряд заканчивается СЕГОДНЯШНИМ днём, а не датой
@@ -637,56 +669,17 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     dates = [r[0] for r in series]
     net = {r[0]: r[1] for r in series}
     last_d, last = dates[-1], net[dates[-1]]
-    prev = net[dates[-2]]
     word = "лонг" if last > 0 else "шорт"
 
-    def phrase(new_v, old_v) -> str:
-        # ⚠️ Процент через смену знака бессмыслен: VK (лонг → шорт) давал «−369,9%»,
-        # и модель написала «позиция изменилась на −369,9%» — человек прочтёт
-        # «упало на 370%». При развороте отдаём описание разворота.
-        if not old_v:
-            return "не с чем сравнить — позиции не было"
-        if (old_v > 0) != (new_v > 0):
-            # ⚠️ Без голых контрактов. Бриф v3 отдавал «было лонг 4142, стало шорт
-            # 2333» — и черновик 1357 напечатал именно это. Вадим 31.08: «просто
-            # количество контрактов никому не интересно, нужна интерпретация».
-            was, now = ("лонг", "шорт") if old_v > 0 else ("шорт", "лонг")
-            # ⚠️ Без размерной оговорки. В v5 я добавлял «причём новый шорт крупнее
-            # прежнего лонга вдвое», чтобы не терять масштаб. Вадим по 1638:
-            # «ну и извращенское заявление, предыдущего хватает более чем». Сам факт
-            # разворота — уже сильное утверждение, и он самодостаточен; сравнение
-            # размеров двух позиций разного знака читателю ничего не добавляет.
-            return f"толпа перевернулась из чистого {was}а в чистый {now}"
-        grew = abs(new_v) > abs(old_v)
-        r = abs(new_v) / abs(old_v)
-        verb = "вырос" if grew else "сократился"
-        chg = abs(abs(new_v) - abs(old_v)) / abs(old_v) * 100
-        if grew:
-            t = _times(r)
-            if t:
-                return f"чистый {word} {verb} {t}"
-        else:
-            t = _times(1 / r) if r else ""
-            if t and chg >= 50:
-                return f"чистый {word} {verb} {t}"
-        return f"чистый {word} {verb} {_pct(chg)}"
-
-    def strength(new_v, old_v) -> float:
-        if not old_v:
-            return 0.0
-        if (old_v > 0) != (new_v > 0):
-            return (abs(new_v) + abs(old_v)) / abs(old_v)
-        return abs(abs(new_v) - abs(old_v)) / abs(old_v)
-
-    periods = {"за_сутки": (phrase(last, prev), strength(last, prev))}
-    for days, label in ((7, "за_неделю"), (30, "за_месяц"),
-                        (180, "за_полгода"), (365, "за_год")):
-        target = last_d - timedelta(days=days)
-        base_d = min((d for d in dates if d >= target), default=None)
-        if base_d and base_d != last_d:
-            periods[label] = (phrase(last, net[base_d]), strength(last, net[base_d]))
-
-    lead = max(periods, key=lambda k: periods[k][1])
+    # ⚠️ ДЛИННЫЕ ГОРИЗОНТЫ — НЕ КОСТЯК (Вадим 10.09, кандидат 1933). Раньше отсюда
+    # ехали сутки/неделя/месяц/полгода/год, и ГЛАВНЫМ становился самый сильный — а
+    # за год позиция успевает вырасти в разы, за пару дней — на проценты, так что
+    # год выигрывал почти всегда и пост открывался не новостью. Остаётся только
+    # разворот за год: смена лонга на шорт меняет смысл самой реакции (толпа
+    # реагирует уже из другой позиции), а рост «в 11 раз» — нет.
+    base_d = min((d for d in dates if d >= last_d - timedelta(days=365)), default=None)
+    year_flip = bool(base_d and base_d != last_d and net[base_d]
+                     and (net[base_d] > 0) != (last > 0))
     pcts = []
     for _d, n, _npart, pl, ps in series:
         gross = (pl or 0) - (ps or 0)
@@ -697,16 +690,8 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
     # так называлось поле брифа. Переименовываем и переводим на человеческий:
     # net/gross — это доля чистой позиции в ОТКРЫТОМ ИНТЕРЕСЕ физлиц.
     share = abs(pcts[-1])
-    return {
-        # ⚠️ Ключи с «_код_» удаляет _build_brief ДО отправки модели: они нужны
-        # только коду, чтобы собрать парную связку «позиция ↔ цена» по ОДНОМУ
-        # окну. В брифе их быть не должно — любое видимое поле модель считает
-        # обязанной израсходовать, и оно вернётся числом в текст.
-        "_код_период_главного_числа": lead,
-        "_код_фраза_главного_числа": periods[lead][0],
+    out = {
         "направление_позиции": f"чистый {word.upper()}",
-        "ГЛАВНОЕ_ЧИСЛО": f"{lead}: {periods[lead][0]}",
-        "фон_упоминать_не_обязательно": {k: v[0] for k, v in periods.items() if k != lead},
 
         # ⚠️ Окно в НАЗВАНИИ поля: прежнее «перекос_диапазон_за_ряд» модель прочла
         # как «за всё время наблюдений» и написала «максимум за всё время».
@@ -727,6 +712,9 @@ def _position_phrases(asset_id: str, clgroup: str | None, as_of=None) -> dict:
                            "интерпретация: во сколько раз или на сколько процентов."),
         },
     }
+    if year_flip:
+        out["фон_за_год_одной_фразой_после_реакции"] = f"за год {_move_phrase(last, net[base_d])}"
+    return out
 
 
 def _story_frame(signal_date, news_date) -> str:
@@ -772,47 +760,131 @@ def _story_frame(signal_date, news_date) -> str:
             f"новость, не опережение» дословно.")
 
 
-_HORIZON_ORDER = ["за_месяц", "за_полгода", "за_год"]
+_MONTHS_GEN = {1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая",
+               6: "июня", 7: "июля", 8: "августа", 9: "сентября", 10: "октября",
+               11: "ноября", 12: "декабря"}
 
 
-def _pair_price_with_position(price: dict, pos: dict) -> dict:
-    """Одна готовая связка «позиция ↔ цена» по ОДНОМУ окну вместо четырёх
-    равноправных горизонтов.
+def _day_ru(d) -> str:
+    return f"{d.day} {_MONTHS_GEN[d.month]}"
 
-    ⚠️ Зачем. Судья на кандидате 1104 поставил дефект numbers_density: во втором
-    абзаце оказалось четыре числа («в 3 раза», «84%», «на 25%», «около 92») против
-    одного-двух у канала. Правило «не больше двух чисел» в промпте уже было — и не
-    сработало, потому что дело не в правиле: блок цена_акции выкладывал цену
-    сейчас и три горизонта равным весом, а любое поле брифа модель считает
-    обязанной израсходовать. Это ровно та болезнь, от которой для позиций спасло
-    ГЛАВНОЕ_ЧИСЛО; здесь тот же приём.
 
-    ⚠️ Окна называем оба и явно. Если у позиции ведущее окно «за_сутки», парного
-    окна у цены нет — тогда берём самый длинный горизонт цены и проговариваем ОБА
-    срока, а не выдаём разные окна за одно («за сутки лонг втрое, акция вдвое» —
-    ложь, которую читатель не поймает).
-    """
-    lead = pos.get("_код_период_главного_числа")
-    phrase = pos.get("_код_фраза_главного_числа")
-    if not price or not lead or not phrase:
-        return price
-    horizons = {k[len("цена_"):]: v for k, v in price.items() if k.startswith("цена_за_")}
-    if not horizons:
-        return price
-    matched = lead in horizons
-    key = lead if matched else max(horizons, key=lambda k: _HORIZON_ORDER.index(k))
-    window = key.replace("за_", "за ")
-    if matched:
-        pair = f"{window}: акция {horizons[key]}, а {phrase}"
-    else:
-        pair = (f"{phrase} ({lead.replace('за_', 'за ')}), "
-                f"а акция {horizons[key]} {window}")
-    out = {"цена_сейчас": price.get("цена_сейчас", ""),
-           "ГЛАВНОЕ_СРАВНЕНИЕ": pair + " — это и есть связка для поста"}
-    rest = {k: v for k, v in horizons.items() if k != key}
-    if rest:
-        out["остальные_горизонты_упоминать_не_обязательно"] = rest
+def _span_ru(a, b) -> str:
+    """«4 сентября», «с 4 по 8 сентября», «с 29 августа по 2 сентября»."""
+    if a == b:
+        return _day_ru(a)
+    if a.month == b.month:
+        return f"с {a.day} по {_day_ru(b)}"
+    return f"с {_day_ru(a)} по {_day_ru(b)}"
+
+
+def _net_move(new_v, old_v) -> str:
+    """Как _move_phrase, но мелочь называет мелочью. За пару дней позиция часто
+    сдвигается на доли процента: «вырос на 0,3%» — шум, выданный за событие, а
+    «почти не изменился» — честная реакция (толпа новость пропустила)."""
+    if old_v and (old_v > 0) == (new_v > 0) and abs(abs(new_v) - abs(old_v)) < 0.01 * abs(old_v):
+        return f"чистый {'лонг' if new_v > 0 else 'шорт'} почти не изменился"
+    return _move_phrase(new_v, old_v)
+
+
+def _price_move(new_p, old_p) -> str:
+    chg = (new_p - old_p) / old_p * 100
+    if abs(chg) < 0.5:
+        return "акция почти не изменилась в цене"
+    return f"акция {'подешевела' if chg < 0 else 'подорожала'} {_pct(chg)}"
+
+
+def _move_size(new_v, old_v) -> float:
+    if not old_v:
+        return 0.0
+    if (old_v > 0) != (new_v > 0):
+        return (abs(new_v) + abs(old_v)) / abs(old_v)
+    return abs(abs(new_v) - abs(old_v)) / abs(old_v)
+
+
+# Окно реакции — три торговых дня по обе стороны от новости. Сигнал, который вывел
+# кандидата, в окно попасть обязан: окно тянется до него, но не больше чем ещё на
+# неделю — сигнал за две недели до новости уже другая история.
+_REACTION_DAYS = 3
+_REACTION_REACH = 5
+
+
+def _reaction_from_series(series, prices, news_date, signal_date) -> dict:
+    """Что делали толпа и цена ВОКРУГ новости — до неё и после, с датами.
+
+    ⚠️ Зачем (Вадим 10.09, кандидат 1933). Черновик про переговоры Новатэка с
+    Petrovietnam открывался годом: «акции за год подешевели на 17%, а чистый лонг
+    вырос в 11 раз», и лишь следующим абзацем — что было за пять дней до новости.
+    Вердикт: «вот идёт новость, мы освещаем новость, говорим, как толпа
+    отреагировала за пару дней до и после — а к чему тут данные про год? они тут ни
+    к чему». Причина была в брифе, не в модели: ГЛАВНОЕ_ЧИСЛО выбиралось по силе
+    движения из горизонтов до года, и год выигрывал почти всегда.
+
+    ⚠️ Позиция и цена — по ОДНОМУ окну в одной строке (урок 1104: разные окна рядом
+    читатель сложит в одно). И числа отбирает код, а не модель: дай ей шесть
+    равноправных чисел — возьмёт все шесть.
+
+    Позиции — дневные закрытия по будням. Цена — последняя свеча не позже той же
+    даты: акции торгуются и в выходные, а в ряду позиций выходных нет."""
+    dates = [r[0] for r in series]
+    net = {r[0]: r[1] for r in series}
+    before = [d for d in dates if d < news_date]
+    after_all = [d for d in dates if d >= news_date]
+    if len(before) < 2:
+        return {}
+    i = max(0, len(before) - 1 - _REACTION_DAYS)
+    if signal_date < news_date:
+        j = max((k for k, d in enumerate(before) if d < signal_date), default=None)
+        if j is not None and len(before) - 1 - j <= _REACTION_DAYS + _REACTION_REACH:
+            i = min(i, j)
+    n_after = _REACTION_DAYS
+    if signal_date in after_all:
+        n_after = min(max(n_after, after_all.index(signal_date) + 1),
+                      _REACTION_DAYS + _REACTION_REACH)
+    after = after_all[:n_after]
+    anchor = before[-1]
+
+    px = sorted((d, float(c)) for d, c in prices if c is not None)
+
+    def price_on(d):
+        vals = [c for dd, c in px if dd <= d]
+        return vals[-1] if vals else None
+
+    def pair(a, b, first_day) -> str:
+        parts = [_net_move(net[b], net[a])]
+        pa, pb = price_on(a), price_on(b)
+        if pa and pb:
+            parts.append(_price_move(pb, pa))
+        return f"{_span_ru(first_day, b)}: " + ", ".join(parts)
+
+    out = {"до_новости": pair(before[i], anchor, before[i + 1])}
+    if after:
+        out["после_новости"] = pair(anchor, after[-1], after[0])
+    # Самый резкий день — если окно шире дня и этот день не сливается с ним.
+    window = before[i:] + after
+    steps = [(window[k], net[window[k]], net[window[k - 1]]) for k in range(1, len(window))]
+    d, n1, n0 = max(steps, key=lambda s: _move_size(s[1], s[2]))
+    one_day = {before[i + 1]} if before[i + 1] == anchor else set()
+    if after and after[0] == after[-1]:
+        one_day.add(after[0])
+    if _move_size(n1, n0) >= 0.05 and d not in one_day:
+        out["резче_всего"] = f"{_day_ru(d)}: {_net_move(n1, n0)} за день"
     return out
+
+
+def _news_reaction(db, asset_id: str, clgroup, tickers, news_date, signal_date) -> dict:
+    """Ряды для _reaction_from_series: от месяца до новости до двух недель после
+    (или до сегодня, если они ещё не прошли)."""
+    from signals.db import get_position_series
+    end = min(datetime.now(timezone.utc).date(),
+              max(news_date, signal_date) + timedelta(days=14))
+    series = get_position_series(asset_id, clgroup or "FIZ", days=45, as_of_date=end)
+    secid = (tickers or [None])[0] or db.execute(
+        _SELECT_STOCK_FOR_FUTURES, {"f": asset_id}).scalar()
+    prices = db.execute(_SELECT_PRICE_SERIES, {
+        "secid": secid, "since": end - timedelta(days=45), "as_of": end,
+    }).fetchall() if secid else []
+    return _reaction_from_series(series, prices, news_date, signal_date)
 
 
 # ⚠️ ВОЗРАСТ ФАКТА ЕДЕТ ВМЕСТЕ С ФАКТОМ. Раньше выбирался только текст, и связь,
@@ -1221,10 +1293,9 @@ def _plausible_level(tok: str) -> bool:
 # период». Эталон, который он привёл: «Акции Системы за год упали более чем в два
 # раза. За это же время физлица перешли от чистого шорта в чистый лонг».
 #
-# Это ровно то, что уже собирает ГЛАВНОЕ_СРАВНЕНИЕ в блоке цена_акции — пара
-# «цена ↔ позиция» по одному названному окну. Отдельное поле про размер позиции
-# добавляло второй, более слабый факт и тянуло пост в макро-разговор, поэтому
-# вычеркнуто, а не переформулировано.
+# Отдельное поле про размер позиции добавляло второй, более слабый факт и тянуло
+# пост в макро-разговор, поэтому вычеркнуто, а не переформулировано. С v20 и сам
+# годовой горизонт больше не костяк — см. _reaction_from_series.
 
 
 def _issuer_named_before_level(line: str, stems) -> bool:
@@ -1727,6 +1798,8 @@ def _build_brief(db, row) -> dict:
         "дата_новости": str(news_date),
         "дата_сигнала": str(row["signal_date"]),
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
+        "реакция_на_новость": _news_reaction(db, row["asset_id"], row["anomaly_clgroup"],
+                                             row["tickers"], news_date, row["signal_date"]),
         "позиции_физлиц": pos,
         "история_рейтинга": _rating_history(db, row["headline"], row["raw_text"],
                                              row["tickers"], row["signal_date"]),
@@ -1734,9 +1807,6 @@ def _build_brief(db, row) -> dict:
         "связи_под_вопросом": _спорные_связи,
         "второй_мозг": _мозг,
         "фундамент_компании": _фундамент,
-        "цена_акции": _pair_price_with_position(
-            _price_context(db, row["asset_id"], row["tickers"], row["signal_date"]),
-            pos),
         "служебное": {
             "atr_множитель": float(row["severity_value"]),
             "пояснение": ("ВНУТРЕННЕЕ. Отношение дневного изменения к обычному "
@@ -1746,12 +1816,10 @@ def _build_brief(db, row) -> dict:
     prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     if prior and not prior.startswith("(нет"):
         brief["предыдущий_пост_этого_треда"] = prior
-    for k in [k for k in pos if k.startswith("_код_")]:
-        pos.pop(k)
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
     for empty in ("связанные_компании", "связи_под_вопросом", "история_рейтинга",
-                  "второй_мозг", "фундамент_компании"):
+                  "второй_мозг", "фундамент_компании", "реакция_на_новость"):
         if not brief.get(empty):
             brief.pop(empty, None)
     return brief

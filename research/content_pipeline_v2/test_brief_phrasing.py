@@ -122,8 +122,9 @@ _НЕТ_СЛЕДА = _НетСледа()
 
 def _stub_brief_sources(monkeypatch):
     monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
-    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"ГЛАВНОЕ_ЧИСЛО": "в 3 раза"})
-    monkeypatch.setattr(CA, "_price_context", lambda *a: {"цена_сейчас": "около 92"})
+    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"направление_позиции": "чистый ЛОНГ"})
+    monkeypatch.setattr(CA, "_news_reaction", lambda *a, **k: {
+        "до_новости": "с 4 по 8 сентября: чистый лонг сократился на 9%"})
     monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
     # ⚠️ Каждый НОВЫЙ источник данных брифа обязан попасть в эту заглушку. Именно
     # так тест паритета и поймал добавление _related_context: без подмены он полез
@@ -162,12 +163,12 @@ def test_judge_receives_exactly_the_writers_brief(monkeypatch):
     )
 
 
-def test_price_block_is_in_both_briefs(monkeypatch):
-    """Именно этого поля не хватало судье — фиксируем отдельно и явно."""
+def test_reaction_block_is_in_both_briefs(monkeypatch):
+    """Судье не хватало блока цены (1104) — костяк поста фиксируем в обоих брифах явно."""
     _stub_brief_sources(monkeypatch)
     for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
                           ("судья", CA._step_g_payload(None, _ROW, "tok"))):
-        assert "цена_акции" in payload, f"{name} не получил блок цена_акции"
+        assert "реакция_на_новость" in payload, f"{name} не получил реакцию на новость"
 
 
 def test_judge_payload_carries_the_draft(monkeypatch):
@@ -178,66 +179,67 @@ def test_judge_payload_carries_the_draft(monkeypatch):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Парная связка «позиция ↔ цена»
+# Реакция вокруг новости (Вадим 10.09, кандидат 1933)
 # ─────────────────────────────────────────────────────────────────────────────
+# Реальные ряды NV/физлица и NVTK из прода: новость 09.09, сигнал 04.09.
 
-_PRICE = {"цена_сейчас": "около 92", "цена_за_месяц": "упала на 7%",
-          "цена_за_полгода": "упала примерно на 30%", "цена_за_год": "упала примерно на 25%"}
+from datetime import date as _D  # noqa: E402
 
-
-def test_pair_uses_the_same_window_as_the_lead_number():
-    """Одинаковое окно у позиции и цены — иначе сравнение не сравнение."""
-    out = CA._pair_price_with_position(dict(_PRICE), {
-        "_код_период_главного_числа": "за_год",
-        "_код_фраза_главного_числа": "чистый лонг вырос в 3 раза"})
-    assert out["ГЛАВНОЕ_СРАВНЕНИЕ"].startswith(
-        "за год: акция упала примерно на 25%, а чистый лонг вырос в 3 раза")
-    assert "за_полгода" in out["остальные_горизонты_упоминать_не_обязательно"]
-    assert "цена_за_год" not in out, "ведущий горизонт не должен дублироваться"
+_NET_1933 = [(_D(2026, 8, 27), 58278), (_D(2026, 8, 28), 58600), (_D(2026, 8, 31), 55410),
+             (_D(2026, 9, 1), 57463), (_D(2026, 9, 2), 60033), (_D(2026, 9, 3), 58426),
+             (_D(2026, 9, 4), 50693), (_D(2026, 9, 7), 50085), (_D(2026, 9, 8), 53297),
+             (_D(2026, 9, 9), 54077)]
+_SERIES_1933 = [(d, n, 0, 0, 0) for d, n in _NET_1933]
+_PX_1933 = [(_D(2026, 9, 3), 1005.1), (_D(2026, 9, 4), 1017.2), (_D(2026, 9, 5), 1015.1),
+            (_D(2026, 9, 6), 996.0), (_D(2026, 9, 7), 1024.8), (_D(2026, 9, 8), 1005.7),
+            (_D(2026, 9, 9), 979.1)]
 
 
-def test_pair_names_both_windows_when_they_differ():
-    """Ведущее окно позиции — сутки; у цены суточного горизонта нет.
-
-    Нельзя выдавать разные окна за одно: «за сутки лонг втрое, акция вдвое» —
-    ложь, которую читатель не поймает. Проговариваем оба срока явно.
-    """
-    out = CA._pair_price_with_position(dict(_PRICE), {
-        "_код_период_главного_числа": "за_сутки",
-        "_код_фраза_главного_числа": "толпа перевернулась из чистого лонга в чистый шорт"})
-    pair = out["ГЛАВНОЕ_СРАВНЕНИЕ"]
-    assert "за сутки" in pair and "за год" in pair, pair
+def test_reaction_1933_is_about_days_around_the_news():
+    out = CA._reaction_from_series(_SERIES_1933, _PX_1933, _D(2026, 9, 9), _D(2026, 9, 4))
+    assert out["до_новости"] == ("с 4 по 8 сентября: чистый лонг сократился на 9%, "
+                                 "акция почти не изменилась в цене"), out
+    assert out["после_новости"] == ("9 сентября: чистый лонг вырос на 1,5%, "
+                                    "акция подешевела на 2,6%"), out
+    assert out["резче_всего"] == "4 сентября: чистый лонг сократился на 13% за день", out
+    assert not any("год" in v for v in out.values())
 
 
-def test_pair_reduces_number_count():
-    """Смысл правки — плотность. Было 4 равноправных значения, стало 1 связка."""
-    before = len([k for k in _PRICE if k.startswith("цена_за_")]) + 1
-    out = CA._pair_price_with_position(dict(_PRICE), {
-        "_код_период_главного_числа": "за_год", "_код_фраза_главного_числа": "лонг вырос в 3 раза"})
-    top = [k for k in out if not k.startswith("остальные")]
-    assert len(top) < before, f"{len(top)} против {before}"
+def test_reaction_without_data_after_the_news_has_only_before():
+    """Шаг В стреляет в день новости — дневного закрытия после неё ещё нет."""
+    out = CA._reaction_from_series(_SERIES_1933[:-1], _PX_1933, _D(2026, 9, 9), _D(2026, 9, 4))
+    assert "после_новости" not in out and "до_новости" in out
 
 
-def test_pair_survives_missing_price_data():
-    """У фьючерса без акции блок цены пустой — связки просто нет, падать нельзя."""
-    assert CA._pair_price_with_position({}, {"_код_период_главного_числа": "за_год",
-                                             "_код_фраза_главного_числа": "x"}) == {}
-    assert CA._pair_price_with_position(dict(_PRICE), {}) == _PRICE
+def test_reaction_calls_a_tiny_move_a_tiny_move():
+    series = [(_D(2026, 9, d), n, 0, 0, 0) for d, n in ((1, 1000), (2, 1001), (3, 1002))]
+    out = CA._reaction_from_series(series, [], _D(2026, 9, 3), _D(2026, 9, 3))
+    assert out["до_новости"] == "2 сентября: чистый лонг почти не изменился", out
+    assert out["после_новости"] == "3 сентября: чистый лонг почти не изменился", out
 
 
-def test_service_keys_never_reach_the_model(monkeypatch):
-    """Ключи «_код_» — для кода. В брифе их быть не должно: любое видимое поле
-    модель считает обязанной израсходовать (тот же механизм, что убил
-    market_rank и recent_signals)."""
+def test_position_block_has_no_long_horizon_numbers(monkeypatch):
+    """Горизонты до года — не костяк. Остаётся только разворот за год."""
+    import signals.db as sdb
+    grow = [(_D(2025, 9, 10), 5000, 0, 6000, -1000), (_D(2026, 3, 2), 20000, 0, 25000, -5000),
+            (_D(2026, 9, 3), 55000, 0, 65000, -10000), (_D(2026, 9, 4), 50000, 0, 60000, -10000)]
+    monkeypatch.setattr(sdb, "get_position_series", lambda *a, **k: grow)
+    out = CA._position_phrases("NV", "FIZ", as_of=_D(2026, 9, 4))
+    assert not any(k.startswith(("ГЛАВНОЕ", "фон", "_код_")) for k in out), out
+    flip = [(grow[0][0], -5000, 0, 1000, -6000)] + grow[1:]
+    monkeypatch.setattr(sdb, "get_position_series", lambda *a, **k: flip)
+    out = CA._position_phrases("NV", "FIZ", as_of=_D(2026, 9, 4))
+    assert out["фон_за_год_одной_фразой_после_реакции"] == \
+        "за год толпа перевернулась из чистого шорта в чистый лонг"
+
+
+def test_no_long_horizon_comparison_reaches_the_model(monkeypatch):
+    """Ни «_код_», ни ГЛАВНОЕ_СРАВНЕНИЕ по горизонтам до года в бриф не едут."""
     _stub_brief_sources(monkeypatch)
-    monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {
-        "_код_период_главного_числа": "за_год", "_код_фраза_главного_числа": "лонг вырос в 3 раза",
-        "ГЛАВНОЕ_ЧИСЛО": "за_год: лонг вырос в 3 раза"})
-    monkeypatch.setattr(CA, "_price_context", lambda *a: dict(_PRICE))
     for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
                           ("судья", CA._step_g_payload(None, _ROW, "tok"))):
         assert "_код_" not in payload, f"служебный ключ утёк в бриф {name}"
-        assert "ГЛАВНОЕ_СРАВНЕНИЕ" in payload, f"{name} не получил связку"
+        assert "ГЛАВНОЕ_" not in payload and "цена_акции" not in payload, name
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,15 +286,9 @@ def test_reversal_phrase_has_no_size_clause():
     """Вадим по 1638: «ну и извращенское заявление, предыдущего хватает более чем».
     Сам факт разворота самодостаточен; сравнение размеров позиций разного знака
     читателю ничего не добавляет."""
-    from signals.db import get_position_series  # noqa: F401  (документируем зависимость)
-    # Ветка разворота живёт в замыкании phrase() внутри _position_phrases, поэтому
-    # проверяем по исходнику: фраза не должна содержать сравнения размеров.
-    import inspect
-    src = inspect.getsource(CA._position_phrases)
-    rev = src[src.index("if (old_v > 0) != (new_v > 0):"):src.index("grew = abs")]
-    assert "крупнее прежнего" not in rev and "меньше прежнего" not in rev, rev
-    assert "того же размера" not in rev
-    assert 'толпа перевернулась из чистого {was}а в чистый {now}' in rev
+    # С v20 фраза — отдельная _move_phrase, её и проверяем по выходу, а не по исходнику.
+    assert CA._move_phrase(-5000, 1000) == "толпа перевернулась из чистого лонга в чистый шорт"
+    assert CA._move_phrase(300, -9000) == "толпа перевернулась из чистого шорта в чистый лонг"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -656,8 +652,7 @@ def test_peak_comparison_is_gone_from_the_brief():
     глобального поста про макродвижения, а тут достаточно круглое число за период».
 
     Поле вычеркнуто, а не переформулировано: оно добавляло ВТОРОЕ сравнение того же
-    рода и тянуло пост в макро-разговор. Костяк — ГЛАВНОЕ_СРАВНЕНИЕ (цена ↔ позиция
-    за одно названное окно), и его достаточно.
+    рода и тянуло пост в макро-разговор. С v20 костяк — реакция вокруг новости.
     """
     import inspect
     src = inspect.getsource(CA._position_phrases)
