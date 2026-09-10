@@ -1065,6 +1065,87 @@ def вместе(conn) -> int:
     return r.rowcount
 
 
+# ── ярлыки новостей: тип события и роль компании ──────────────────────────────────
+# ⚠️ Зачем (Вадим 10.09). Новость в карте была просто «упоминает компанию»: без типа
+# события и без различия «новость про неё» / «названа мимоходом». Правило Вадима — всё
+# автоматически и с фильтром: сначала правила по хэштегам и ключевым словам (замер на
+# 4 510 новостях за 90 дней: 47 % размечаются), остаток — ночной агент (режим labels
+# аудита). Только за 90 дней — это окно, которое видит писатель; старый архив не нужен.
+#
+# ⚠️ Ярлыки — в своей таблице, а не в payload узла: новости() перезаписывает payload при
+# повторном импорте, и разметка агента пропала бы. Порядок правил — первое совпадение.
+_ЯРЛЫКИ_ДНЕЙ = 90
+_ТИПЫ_НОВОСТЕЙ = (
+    ("отчётность", ["#отчетность", "#мсфо", "#рсбу", "#отчет"], r"мсфо|рсбу|отч[её]тност|выручк|чист\w* прибыл"),
+    ("дивиденды", ["#дивиденд", "#дивиденды", "#дивы"], r"дивиденд"),
+    ("выкуп акций", ["#buyback", "#байбек", "#выкуп"], r"buyback|байб[эе]к|обратн\w* выкуп"),
+    ("размещение акций", ["#ipo", "#spo"], r"\mipo\M|\mspo\M|размещени\w* акци"),
+    ("облигации", ["#облигации", "#бонды"], r"облигаци"),
+    ("санкции", ["#санкции"], r"санкци"),
+    ("суд", ["#суд", "#иск"], r"\mсуд\M|\mсуда\M|\mиск\w*|арбитраж"),
+    ("рейтинг", [], r"рейтинг"),
+    ("мнение аналитиков", [], r"мнение:|целев\w* цен|рекомендаци"),
+    ("сделка", [], r"сделк|приобрет|слиян|поглощ"),
+    ("управление", [], r"назнач|отставк|совет директоров|гендиректор"),
+    ("операционные", [], r"операционн|добыч|перевез|производств"),
+)
+_ЯРЛЫКИ_ГОЛОВА = 150   # символов начала текста: компания в них — «главная», иначе «упоминание»
+
+
+def ярлыки_новостей(conn, full: bool) -> int:
+    """Тип события и роль компании у новостей за 90 дней — правилами, по одному разу на
+    новость. Тип, который правила не нашли, остаётся пустым — его ставит ночной агент.
+
+    Роль: компания одна — «главная»; несколько — «главная» та, чьё имя или тикер-хэштег
+    стоит в первых 150 символах, остальные — «упоминание». Роль копируется на связь
+    «упоминает», чтобы обход карты мог отличить новость про компанию от перечня."""
+    п = {"с": datetime.now(timezone.utc) - timedelta(days=_ЯРЛЫКИ_ДНЕЙ), "голова": _ЯРЛЫКИ_ГОЛОВА}
+    when = []
+    for i, (тип, теги, rx) in enumerate(_ТИПЫ_НОВОСТЕЙ):
+        # Регэкспы и теги — параметрами: без экранирования в тексте запроса и без «%».
+        when.append(f"WHEN a.hashtags && CAST(:h{i} AS text[]) OR a.text ~* :r{i} THEN CAST(:t{i} AS text)")
+        п.update({f"h{i}": теги or ["#-"], f"r{i}": rx, f"t{i}": тип})
+    r = conn.execute(text(f"""
+        INSERT INTO brain_news_labels (node_id, тип, тип_источник, роли, роли_источник, updated_at)
+        SELECT b.id, x.тип, CASE WHEN x.тип IS NOT NULL THEN 'правило' END, x.роли, 'правило', NOW()
+          FROM brain_nodes b
+          JOIN news_archive a ON a.message_id = CAST(split_part(b.id, '/', 2) AS bigint)
+               AND a.channel IN (split_part(substr(b.id, 6), '/', 1),
+                                 CASE split_part(substr(b.id, 6), '/', 1) WHEN 'markettwits' THEN 'MarketTwits'
+                                      WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' END)
+          CROSS JOIN LATERAL (
+              SELECT CASE {' '.join(when)} END AS тип,
+                     (SELECT jsonb_object_agg(e.dst,
+                               CASE WHEN cnt.n = 1
+                                      OR EXISTS (SELECT 1 FROM brain_name_rules x
+                                                  WHERE x.company_id = e.dst AND x.enabled AND NOT x.ambiguous
+                                                    AND strpos(lower(left(a.text, :голова)), lower(x.pattern)) > 0)
+                                      OR EXISTS (SELECT 1 FROM brain_ticker_map m
+                                                  WHERE m.company_id = e.dst
+                                                    AND strpos(upper(left(a.text, :голова)), '#' || m.ticker) > 0)
+                                    THEN 'главная' ELSE 'упоминание' END)
+                        FROM brain_edges e
+                        CROSS JOIN (SELECT COUNT(*) AS n FROM brain_edges e2
+                                     WHERE e2.src = b.id AND e2.kind = 'упоминает') cnt
+                       WHERE e.src = b.id AND e.kind = 'упоминает') AS роли) x
+         WHERE b.kind = 'news' AND b.ts > :с
+           AND NOT EXISTS (SELECT 1 FROM brain_news_labels l WHERE l.node_id = b.id)
+        ON CONFLICT (node_id) DO NOTHING
+    """), п)
+    # Роль — на связь «упоминает» (источник истины — таблица ярлыков).
+    conn.execute(text("""
+        UPDATE brain_edges e SET role = l.роли ->> e.dst
+          FROM brain_news_labels l
+         WHERE e.src = l.node_id AND e.kind = 'упоминает'
+           AND (l.роли ->> e.dst) IS NOT NULL AND e.role IS DISTINCT FROM (l.роли ->> e.dst)
+    """))
+    # Ярлыки новостей, которых в карте больше нет, не копим.
+    conn.execute(text("""
+        DELETE FROM brain_news_labels l WHERE NOT EXISTS (SELECT 1 FROM brain_nodes b WHERE b.id = l.node_id)
+    """))
+    return r.rowcount
+
+
 def таблицы_аудита(conn) -> None:
     """Таблицы аудита разметки по имени — зеркало db/migrations/090 (идемпотентно):
     синк создаёт их сам, миграции на проде руками не применяются."""
@@ -1089,6 +1170,13 @@ def таблицы_аудита(conn) -> None:
                     "human_decision TEXT CHECK (human_decision IN ('убрать', 'оставить'))",
                     "human_at TIMESTAMPTZ"):
         conn.execute(text(f"ALTER TABLE brain_edge_reviews ADD COLUMN IF NOT EXISTS {колонка}"))
+    # Ярлыки новостей и роль компании на связи — зеркало db/migrations/092.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS brain_news_labels (
+            node_id TEXT PRIMARY KEY, тип TEXT, тип_источник TEXT,
+            роли JSONB, роли_источник TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())
+    """))
+    conn.execute(text("ALTER TABLE brain_edges ADD COLUMN IF NOT EXISTS role TEXT"))
 
 
 def main() -> int:
@@ -1120,6 +1208,7 @@ def main() -> int:
         итог["правил_имён"] = правила_имён(conn)
         итог["новостей_по_имени"] = новости_по_имени(conn, args.full)
         итог["объявлений_биржи"] = объявления_биржи(conn, args.full)
+        итог["ярлыков_новостей"] = ярлыки_новостей(conn, args.full)
         итог["держатели"] = держатели_резолв(conn)
         итог["секторов_рёбер"] = секторы(conn)
         итог["вместе_рёбер"] = вместе(conn)

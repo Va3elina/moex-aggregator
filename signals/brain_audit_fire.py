@@ -26,21 +26,23 @@ FIRST_PASS_MIN = 50          # непроверенных больше — пе�
 WEEKLY_DAY = 6               # воскресенье
 OVERLAP = timedelta(minutes=90)
 SECOND_MIN = 20              # столько «неверно» ждут второго мнения — стреляем им в любую ночь
+LABELS_MIN = 50              # новостей без типа — стреляем режимом labels (ярлыки новостей)
+LABELS_HOUR = 4              # пока идёт первый проход аудита, ярлыкам — последнее окно ночи (04:20)
 
 
 def решение(now_msk: datetime, backlog: int, busy: int, last_main, last_review,
-            pending_second: int = 0, last_second=None):
-    """(почему не стреляем | None, сколько старых перепроверить, режим main|second).
+            pending_second: int = 0, last_second=None, labels_backlog: int = 0, last_labels=None):
+    """(почему не стреляем | None, сколько старых перепроверить, режим main|second|labels).
     Чистая — под тесты.
 
     Второе мнение идёт ПЕРВЫМ: пока его нет, «неверно» ничего не удаляет, а спор ждёт
-    человека. Основная партия и второе мнение помнят свой последний запуск раздельно,
-    иначе ночное второе мнение сбивало бы воскресную основную партию."""
+    человека. Основная партия, второе мнение и ярлыки помнят свой последний запуск
+    раздельно, иначе ночной запуск одного режима сбивал бы расписание другого."""
     if now_msk.hour not in NIGHT_HOURS:
         return "не ночь", 0, None
     if busy:
         return f"конвейер постов занят ({busy} черновиков ждут писателя или судью)", 0, None
-    last_any = max([t for t in (last_main, last_second) if t], default=None)
+    last_any = max([t for t in (last_main, last_second, last_labels) if t], default=None)
     if last_any and now_msk - last_any < OVERLAP and (not last_review or last_review < last_any):
         return "прошлая партия ещё не вернулась", 0, None
     воскресенье = now_msk.weekday() == WEEKLY_DAY
@@ -48,6 +50,10 @@ def решение(now_msk: datetime, backlog: int, busy: int, last_main, last_r
     # квоты, и первый проход растянулся бы вдвое. Остаток добирается в воскресенье.
     if pending_second >= SECOND_MIN or (pending_second and воскресенье and backlog <= FIRST_PASS_MIN):
         return None, 0, "second"
+    # Ярлыки новостей (Вадим 10.09): пока аудит в первом проходе — одно окно за ночь,
+    # потом — каждую ночь, пока есть что размечать.
+    if labels_backlog >= LABELS_MIN and (backlog <= FIRST_PASS_MIN or now_msk.hour == LABELS_HOUR):
+        return None, 0, "labels"
     if backlog > FIRST_PASS_MIN:
         return None, 0, "main"
     if воскресенье and (not last_main or now_msk - last_main > timedelta(days=6)):
@@ -81,22 +87,33 @@ def main() -> int:
                AND (draft_text IS NULL OR (judge_verdict IS NULL AND judge_gave_up_at IS NULL))
         """)).scalar() or 0
         состояние = dict(db.execute(text(
-            "SELECT source, watermark FROM brain_sync_state WHERE source IN ('audit_fire', 'audit_fire_second')")).all())
-        last_review = db.execute(text(
-            "SELECT GREATEST(MAX(reviewed_at), MAX(second_at)) FROM brain_edge_reviews")).scalar()
+            "SELECT source, watermark FROM brain_sync_state "
+            "WHERE source IN ('audit_fire', 'audit_fire_second', 'audit_fire_labels')")).all())
+        # «Партия вернулась» — по любому ответу агента: вердикту, второму мнению или ярлыку.
+        last_review = db.execute(text("""
+            SELECT GREATEST((SELECT MAX(reviewed_at) FROM brain_edge_reviews),
+                            (SELECT MAX(second_at) FROM brain_edge_reviews),
+                            (SELECT MAX(updated_at) FROM brain_news_labels WHERE тип_источник = 'агент'))
+        """)).scalar()
         pending_second = db.execute(text("""
             SELECT COUNT(*) FROM brain_edge_reviews r
               JOIN brain_edges e ON e.src = r.src AND e.dst = r.dst AND e.kind = r.kind
              WHERE r.verdict = 'неверно' AND r.second_verdict IS NULL AND r.human_decision IS NULL
         """)).scalar() or 0
+        labels_backlog = db.execute(text("""
+            SELECT COUNT(*) FROM brain_news_labels l JOIN brain_nodes b ON b.id = l.node_id
+             WHERE l.тип IS NULL AND b.ts > NOW() - INTERVAL '90 days'
+        """)).scalar() or 0
         why, resample, mode = решение(now, int(backlog), int(busy), состояние.get("audit_fire"), last_review,
-                                      int(pending_second), состояние.get("audit_fire_second"))
+                                      int(pending_second), состояние.get("audit_fire_second"),
+                                      int(labels_backlog), состояние.get("audit_fire_labels"))
         if why:
             print(f"[{now:%Y-%m-%d %H:%M}] аудит пропущен: {why}; непроверенных {backlog}, "
-                  f"ждут второго мнения {pending_second}")
+                  f"ждут второго мнения {pending_second}, новостей без типа {labels_backlog}")
             return 0
         # Второе мнение: подозрительные плюс столько же «верно» вслепую — отсюда ×2.
-        лимит = min(PARTY, 2 * int(pending_second)) if mode == "second" else PARTY
+        лимит = (min(PARTY, 2 * int(pending_second)) if mode == "second"
+                 else min(PARTY, int(labels_backlog)) if mode == "labels" else PARTY)
         payload = (f"Аудит разметки второго мозга.\n"
                    f"режим: {mode}\nлимит: {лимит}\nперепроверка: {resample}\n"
                    f"internal_token: {internal}\napi_host: {INTERNAL_API_HOST}")
@@ -110,11 +127,11 @@ def main() -> int:
             INSERT INTO brain_sync_state (source, watermark, rows_last, updated_at)
             VALUES (:src, NOW(), :n, NOW())
             ON CONFLICT (source) DO UPDATE SET watermark = NOW(), rows_last = EXCLUDED.rows_last, updated_at = NOW()
-        """), {"src": "audit_fire_second" if mode == "second" else "audit_fire",
-               "n": int(pending_second if mode == "second" else backlog)})
+        """), {"src": {"second": "audit_fire_second", "labels": "audit_fire_labels"}.get(mode, "audit_fire"),
+               "n": int({"second": pending_second, "labels": labels_backlog}.get(mode, backlog))})
         db.commit()
         print(f"[{now:%Y-%m-%d %H:%M}] аудит запущен: режим {mode}, лимит {лимит}, перепроверка {resample}; "
-              f"непроверенных {backlog}, ждут второго мнения {pending_second}")
+              f"непроверенных {backlog}, ждут второго мнения {pending_second}, новостей без типа {labels_backlog}")
         return 0
     finally:
         db.close()
