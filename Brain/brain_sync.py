@@ -380,6 +380,177 @@ def индексы(conn) -> int:
     return r.rowcount
 
 
+# ── история индексов и фондов: события «вошла / вышла», «открыл / закрыл» ─────────
+# ⚠️ Зачем (Вадим 10.09). Мозг знал только ПОСЛЕДНИЙ состав индекса и последний срез
+# фонда: «входит в IMOEX», «фонд держит». Когда бумага вошла, когда фонд её набрал —
+# терялось, а это ровно то, что двигает цену и позиции. Правило Вадима — всё, что
+# добавляем, автоматически и с фильтром: у индексов событий мало и данные чистые (вся
+# история IMOEX с 2007 года — 118 входов и 93 выхода), у фондов шума много — фильтр ниже.
+
+_СОБЫТИЯ_ИНДЕКСОВ = """
+    WITH d AS (SELECT DISTINCT index_id, trade_date FROM index_composition),
+         p AS (SELECT index_id, trade_date, lag(trade_date) OVER (PARTITION BY index_id ORDER BY trade_date) AS prev FROM d),
+         ev AS (
+            SELECT c.index_id, c.ticker, p.trade_date, p.prev, 'вход' AS тип, c.weight
+              FROM p JOIN index_composition c ON c.index_id = p.index_id AND c.trade_date = p.trade_date
+             WHERE p.prev IS NOT NULL AND p.trade_date > CAST(:вод AS date)
+               AND NOT EXISTS (SELECT 1 FROM index_composition x
+                                WHERE x.index_id = p.index_id AND x.trade_date = p.prev AND x.ticker = c.ticker)
+            UNION ALL
+            SELECT x.index_id, x.ticker, p.trade_date, p.prev, 'выход', x.weight
+              FROM p JOIN index_composition x ON x.index_id = p.index_id AND x.trade_date = p.prev
+             WHERE p.prev IS NOT NULL AND p.trade_date > CAST(:вод AS date)
+               AND NOT EXISTS (SELECT 1 FROM index_composition c
+                                WHERE c.index_id = p.index_id AND c.trade_date = p.trade_date AND c.ticker = x.ticker))
+"""
+
+
+def события_индексов(conn, full: bool) -> int:
+    """Входы и выходы бумаг из индексов МосБиржи — сравнением соседних дат состава.
+    Уровень A: состав публикует биржа. Событие связано и с компанией, и с индексом."""
+    вод = None if full else _водяной(conn, "index_events")
+    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc)}
+    r = conn.execute(text(f"""
+        {_СОБЫТИЯ_ИНДЕКСОВ}
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'index_event:' || ev.index_id || '/' || ev.ticker || '/' || ev.trade_date, 'index_event',
+               ev.index_id || '/' || ev.ticker || '/' || ev.trade_date,
+               COALESCE(c.title, ev.ticker)
+                 || CASE ev.тип WHEN 'вход' THEN ' вошла в индекс ' ELSE ' вышла из индекса ' END || ev.index_id,
+               CAST(NULL AS text), CAST(ev.trade_date AS timestamptz),
+               jsonb_build_object('индекс', ev.index_id, 'тикер', ev.ticker, 'тип', ev.тип, 'дата', ev.trade_date,
+                                  'прежний_состав_на', ev.prev, 'вес', ev.weight), NOW()
+          FROM ev
+          LEFT JOIN brain_ticker_map m ON m.ticker = ev.ticker
+          LEFT JOIN brain_nodes c ON c.id = m.company_id
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, payload = EXCLUDED.payload, updated_at = NOW()
+    """), п)
+    n = r.rowcount
+    conn.execute(text(f"""
+        {_СОБЫТИЯ_ИНДЕКСОВ}
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
+        SELECT DISTINCT 'index_event:' || ev.index_id || '/' || ev.ticker || '/' || ev.trade_date, x.dst,
+               'событие_индекса', CAST(ev.trade_date AS timestamptz), ev.weight, 'index_composition'
+          FROM ev JOIN brain_ticker_map m ON m.ticker = ev.ticker
+          CROSS JOIN LATERAL (VALUES (m.company_id), ('index:' || ev.index_id)) x(dst)
+        ON CONFLICT DO NOTHING
+    """), п)
+    _отметить(conn, "index_events", conn.execute(text(
+        "SELECT CAST(MAX(trade_date) AS timestamptz) FROM index_composition")).scalar(), n)
+    return n
+
+
+# Фильтр фондов — замер на боевой БД 10.09 (2 года, наши компании): без фильтра 2 036
+# «новых» и 1 979 «закрытых» почти поровну — признак того, что часть фондов раскрывает
+# не весь портфель, а крупнейшие бумаги, и хвост списка то появляется, то пропадает.
+# Поэтому: только полные срезы (≥ 5 бумаг; один фонд присылает по одной строке в день),
+# вход и выход — только весомой бумаги, изменение — от половины позиции.
+# ⚠️ У фондов СНИМКИ месячные, не сделки: «между срезами», а не «купил в день X».
+_ФОНД_СРЕЗ_МИН = 5       # бумаг в срезе, чтобы считать его полным
+_ФОНД_ВЕС_МИН = 1.0      # % фонда: вход и выход считаем только для весомой бумаги
+_ФОНД_ИЗМ = 0.5          # изменение числа бумаг на половину и больше
+_ФОНД_ДНЕЙ = 730
+
+_СОБЫТИЯ_ФОНДОВ = """
+    -- ⚠️ Пороги — с явным типом: pg8000 выводит тип параметра из соседа, и 0,5 рядом с
+    -- bigint-колонкой positions приходил как «bigint 0.5» → ошибка ввода.
+    -- Одна бумага в срезе бывает несколькими строками (лоты, разные источники):
+    -- складываем, иначе событие дублируется и ON CONFLICT падает на повторе.
+    WITH h AS (SELECT h.fund_id, h.snapshot_date, h.isin, SUM(h.positions) AS positions,
+                      SUM(h.weight) AS weight, MIN(m.company_id) AS company_id
+                 FROM fund_holdings_history h JOIN brain_ticker_map m ON m.ticker = h.isin
+                -- окно: события считаем за недавние срезы, прежний срез — в пределах года до них
+                WHERE h.snapshot_date >= CAST(:окно AS date)
+                GROUP BY h.fund_id, h.snapshot_date, h.isin),
+         -- ⚠️ Размер среза — по СОПОСТАВЛЕННЫМ бумагам, а не по строкам. Прогон 10.09: EQMX до
+         -- 25.08 присылал 47 строк без ISIN, с 26.08 — с ISIN, и весь портфель (Лукойл 15,7 %%)
+         -- вышел «новыми позициями». Срез, где ничего не сопоставилось, в сравнение не идёт.
+         full_snap AS (SELECT fund_id, snapshot_date, COUNT(*) AS n FROM h
+                        GROUP BY fund_id, snapshot_date HAVING COUNT(*) >= CAST(:срез AS bigint)),
+         s0 AS (SELECT fund_id, snapshot_date, n,
+                       lag(snapshot_date) OVER (PARTITION BY fund_id ORDER BY snapshot_date) AS prev,
+                       lag(n) OVER (PARTITION BY fund_id ORDER BY snapshot_date) AS prev_n FROM full_snap),
+         -- Сравниваем только срезы похожего размера. Прогон 10.09: «Индекс МосБиржи» 25.08
+         -- раскрыл урезанный список, 26.08 — полный, и Сбербанк с долей 12,8 %% вышел
+         -- «новой позицией». Разный размер срезов = разная полнота, а не сделки.
+         s AS (SELECT fund_id, snapshot_date, prev FROM s0
+                WHERE prev IS NULL OR LEAST(n, prev_n) >= 0.7 * GREATEST(n, prev_n)),
+         cur AS (SELECT s.fund_id, s.snapshot_date, s.prev, h.isin, h.company_id, h.positions, h.weight
+                   FROM s JOIN h ON h.fund_id = s.fund_id AND h.snapshot_date = s.snapshot_date
+                  WHERE s.prev IS NOT NULL AND s.snapshot_date > CAST(:с AS date) AND s.snapshot_date > CAST(:вод AS date)),
+         pre AS (SELECT s.fund_id, s.snapshot_date, s.prev, h.isin, h.company_id, h.positions, h.weight
+                   FROM s JOIN h ON h.fund_id = s.fund_id AND h.snapshot_date = s.prev
+                  WHERE s.prev IS NOT NULL AND s.snapshot_date > CAST(:с AS date) AND s.snapshot_date > CAST(:вод AS date)),
+         ev AS (
+            SELECT c.fund_id, c.snapshot_date, c.prev, c.isin, c.company_id, 'новая позиция' AS тип, c.weight,
+                   CAST(NULL AS numeric) AS было, CAST(c.positions AS numeric) AS стало
+              FROM cur c
+             WHERE COALESCE(c.weight, 0) >= CAST(:вес AS numeric)
+               AND NOT EXISTS (SELECT 1 FROM pre p WHERE p.fund_id = c.fund_id AND p.snapshot_date = c.snapshot_date AND p.isin = c.isin)
+            UNION ALL
+            SELECT p.fund_id, p.snapshot_date, p.prev, p.isin, p.company_id, 'закрыта позиция', p.weight,
+                   CAST(p.positions AS numeric), CAST(0 AS numeric)
+              FROM pre p
+             WHERE COALESCE(p.weight, 0) >= CAST(:вес AS numeric)
+               AND NOT EXISTS (SELECT 1 FROM cur c WHERE c.fund_id = p.fund_id AND c.snapshot_date = p.snapshot_date AND c.isin = p.isin)
+            UNION ALL
+            SELECT c.fund_id, c.snapshot_date, c.prev, c.isin, c.company_id,
+                   CASE WHEN c.positions > p.positions THEN 'нарастил позицию' ELSE 'сократил позицию' END, c.weight,
+                   CAST(p.positions AS numeric), CAST(c.positions AS numeric)
+              FROM cur c JOIN pre p ON p.fund_id = c.fund_id AND p.snapshot_date = c.snapshot_date AND p.isin = c.isin
+             WHERE c.positions > 0 AND p.positions > 0
+               AND ABS(c.positions - p.positions) >= CAST(:изм AS numeric) * p.positions
+               AND GREATEST(COALESCE(c.weight, 0), COALESCE(p.weight, 0)) >= CAST(:вес AS numeric) / 2)
+"""
+
+
+def события_фондов(conn, full: bool) -> int:
+    """Фонд открыл, закрыл, нарастил или сократил позицию — между соседними полными
+    срезами одного фонда, только по нашим компаниям, за два года. Уровень A: раскрытие
+    управляющей компании. Событие связано и с компанией, и с фондом."""
+    вод = None if full else _водяной(conn, "fund_events")
+    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc),
+         "с": datetime.now(timezone.utc) - timedelta(days=_ФОНД_ДНЕЙ),
+         "срез": _ФОНД_СРЕЗ_МИН, "вес": _ФОНД_ВЕС_МИН, "изм": _ФОНД_ИЗМ}
+    # ⚠️ Скорость. Прогон 10.09: 44 с — расчёт шёл дважды (узлы и связи) и по всей истории
+    # с 2021 года, а синк мозга каждые 15 минут обычно укладывается в 10–20 с. Считаем
+    # один раз во временную таблицу и только в окне: прежний срез — не старше года.
+    п["окно"] = max(п["с"], п["вод"]) - timedelta(days=400)
+    ключ = "'fund_event:' || ev.fund_id || '/' || ev.isin || '/' || ev.snapshot_date"
+    conn.execute(text("DROP TABLE IF EXISTS _fund_ev"))
+    conn.execute(text(f"CREATE TEMP TABLE _fund_ev ON COMMIT DROP AS {_СОБЫТИЯ_ФОНДОВ} SELECT * FROM ev"), п)
+    r = conn.execute(text(f"""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT {ключ}, 'fund_event', ev.fund_id || '/' || ev.isin || '/' || ev.snapshot_date,
+               COALESCE(f.name, 'фонд ' || ev.fund_id) || ' — ' || ev.тип || ': ' || COALESCE(c.title, ev.isin),
+               'между срезами ' || to_char(ev.prev, 'DD.MM.YYYY') || ' и ' || to_char(ev.snapshot_date, 'DD.MM.YYYY')
+                 || COALESCE(', было ' || ev.было || ' шт.', '') || ', стало ' || ev.стало || ' шт.'
+                 -- знак процента — chr(37): литерал «%» pg8000 читает как плейсхолдер,
+                 -- а «%%» в этом месте доезжал до базы как есть
+                 || COALESCE(', доля ' || replace(CAST(round(ev.weight, 2) AS text), '.', ',') || chr(37), ''),
+               CAST(ev.snapshot_date AS timestamptz),
+               jsonb_build_object('фонд', f.ticker, 'isin', ev.isin, 'тип', ev.тип, 'срез', ev.snapshot_date,
+                                  'прежний_срез', ev.prev, 'было', ev.было, 'стало', ev.стало, 'доля', ev.weight), NOW()
+          FROM _fund_ev ev
+          LEFT JOIN funds f ON f.fund_id = ev.fund_id
+          LEFT JOIN brain_nodes c ON c.id = ev.company_id
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
+               payload = EXCLUDED.payload, updated_at = NOW()
+    """))
+    n = r.rowcount
+    conn.execute(text(f"""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
+        SELECT DISTINCT {ключ}, x.dst, 'событие_фонда', CAST(ev.snapshot_date AS timestamptz),
+               CAST(ev.weight AS real), 'fund_holdings_history'
+          FROM _fund_ev ev JOIN funds f ON f.fund_id = ev.fund_id
+          CROSS JOIN LATERAL (VALUES (ev.company_id), ('fund:' || f.ticker)) x(dst)
+        ON CONFLICT DO NOTHING
+    """))
+    _отметить(conn, "fund_events", conn.execute(text(
+        "SELECT CAST(MAX(snapshot_date) AS timestamptz) FROM fund_holdings_history")).scalar(), n)
+    return n
+
+
 def факты(conn) -> int:
     """Связи и казначейские пакеты из world_facts. Направление — из fact_key own:A:B; доля в базе не хранится."""
     conn.execute(text("""
@@ -525,6 +696,8 @@ def _старые_рёбра_держателей(conn) -> int:  # не вызы
     "раскрытие_о":       ("B", "раскрытие_fm"),
     "объявление_о":      ("A", "moex"),      # по имени в тексте ставится явно: C, «имя»
     "отчёт_о":           ("A", "документ"),
+    "событие_индекса":   ("A", "moex"),
+    "событие_фонда":     ("A", "раскрытие_ук"),
 }
 # Обычные слова, совпадающие с именами компаний: по ним автоматически не размечаем.
 # Список сеется в brain_name_rules (ambiguous=true) и дальше правится в таблице.
@@ -938,6 +1111,8 @@ def main() -> int:
         итог["отчётов"] = отчёты(conn, args.full)
         итог["фонды_рёбер"] = фонды(conn)
         итог["индексы_рёбер"] = индексы(conn)
+        итог["событий_индексов"] = события_индексов(conn, args.full)
+        итог["событий_фондов"] = события_фондов(conn, args.full)
         итог["владение_рёбер"] = факты(conn)
         итог["аномалий"] = аномалии(conn, args.full)
         итог["сигналов"] = сигналы(conn, args.full)
