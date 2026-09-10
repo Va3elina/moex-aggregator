@@ -129,6 +129,11 @@ CONTENT_PENDING_DAYS = 5       # окно ожидания подтвержде�
 CONTENT_CHANNEL_ID = int(os.getenv("CONTENT_CHANNEL_ID", "0"))
 # users.id того же админа, что получает карточки — для reviewer_id (FK).
 CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
+# Кому ЕЩЁ, кроме админа, слать карточки черновиков (Telegram id через запятую).
+# Вадим 10.09: коллеге — только черновики. Бэкапы и мониторинг шлют другие
+# скрипты в ADMIN_CHAT_ID и эту переменную не читают.
+CONTENT_DRAFT_EXTRA_CHAT_IDS = [
+    int(x) for x in os.getenv("CONTENT_DRAFT_EXTRA_CHAT_IDS", "").split(",") if x.strip()]
 
 # Коды причин ревью (миграция 054, research/content_pipeline_v2/). Ревью без
 # машиночитаемой причины = потерянный размеченный пример: до 054 единственным

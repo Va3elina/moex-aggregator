@@ -410,6 +410,11 @@ def _notify_new_drafts() -> None:
                 db.execute(_MARK_NOTIFIED, {"id": cid})
                 db.commit()
                 _notify_failed_at.pop(cid, None)
+                # Коллеге — та же карточка, один раз: кандидат уже помечен
+                # отправленным, и его отказ карточку не вернёт (не нажал /start —
+                # Telegram ответит «chat not found», send_kb напечатает это в лог).
+                for extra in config.CONTENT_DRAFT_EXTRA_CHAT_IDS:
+                    send_kb(extra, txt, kb)
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
@@ -477,6 +482,19 @@ _awaiting_reason: dict = {}  # chat_id -> candidate_id
 # приходит отдельной карточкой. Эвристика больше не нужна.
 
 
+def _is_reviewer(chat_id) -> bool:
+    return chat_id == config.ADMIN_USER_ID or chat_id in config.CONTENT_DRAFT_EXTRA_CHAT_IDS
+
+
+def _tell_admin(chat_id, who, what: str) -> None:
+    """Решение коллеги — админу одной строкой. Копия карточки у админа сама не
+    обновится, и без этого он нажал бы кнопку по уже решённому черновику."""
+    if chat_id == config.ADMIN_USER_ID:
+        return
+    name = (who or {}).get("first_name") or (who or {}).get("username") or "коллега"
+    send(config.ADMIN_USER_ID, f"👤 {name}: {what}")
+
+
 def process_callback(cb: dict) -> None:
     cb_id = cb.get("id")
     data = (cb.get("data") or "").strip()
@@ -484,10 +502,11 @@ def process_callback(cb: dict) -> None:
     chat = msg.get("chat") or {}
     chat_id = chat.get("id")
     message_id = msg.get("message_id")
-    if chat_id is None or message_id is None:
+    if chat_id is None or message_id is None or not _is_reviewer(chat_id):
         if cb_id:
             answer_cb(cb_id)
         return
+    who = cb.get("from")
 
     # 'r:<code>:<cid>' несёт ДВА поля, остальные операции — только id.
     # Без этой развилки int("stretched_link:845") падал бы в ValueError и
@@ -510,6 +529,7 @@ def process_callback(cb: dict) -> None:
             txt, kb = _card_view(row) if row else (note, [])
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
+            _tell_admin(chat_id, who, f"✅ одобрил #{cid}: {note}")
         elif op == "x":
             ok, note = _reject(db, cid)
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
@@ -520,12 +540,14 @@ def process_callback(cb: dict) -> None:
             # ответит, теряется причина, а не сам отказ.
             if ok:
                 send_kb(chat_id, f"Почему #{cid} не годится?", _reason_kb(cid))
+                _tell_admin(chat_id, who, f"❌ отклонил #{cid}")
         elif op == "r":
             _log_feedback(db, cid, "comment", reason_code=reason_code)
             db.execute(_SET_REVIEW_REASON, {"code": reason_code, "id": cid})
             db.commit()
             label = config.REVIEW_REASON_LABELS.get(reason_code, reason_code)
             answer_cb(cb_id, f"Причина: {label}"[:190])
+            _tell_admin(chat_id, who, f"причина по #{cid}: {label}")
             if reason_code == "other":
                 _awaiting_reason[chat_id] = cid
                 edit_kb(chat_id, message_id,
@@ -572,6 +594,11 @@ def process_update(update: dict) -> None:
     txt = (msg.get("text") or "").strip()
     if not txt:
         return
+    if not _is_reviewer(chat_id):
+        if txt.split()[0].lower() == "/start":
+            send(chat_id, "Это закрытый бот ревью черновиков Frame.")
+        return
+    who = msg.get("from")
 
     # Комментарий проверяем ПЕРВЫМ: если оба состояния как-то окажутся
     # выставлены разом, текст скорее относится к последнему вопросу бота.
@@ -583,6 +610,7 @@ def process_update(update: dict) -> None:
             db.execute(_APPEND_REVIEW_REASON, {"t": txt, "id": cid})
             db.commit()
             send(chat_id, f"Записал причину к #{cid} 👍")
+            _tell_admin(chat_id, who, f"комментарий к #{cid}: {txt}")
         except Exception as e:
             db.rollback()
             send(chat_id, f"Не удалось записать причину: {_redact(e)}")
@@ -602,6 +630,7 @@ def process_update(update: dict) -> None:
             # content_ai что-то сломано, и не тянет его ради обычного поллинга.
             from signals.content_ai import fire_revision
             fire_revision(db, cid, txt)
+            _tell_admin(chat_id, who, f"✏️ правка по #{cid}: {txt}")
             send(chat_id, f"Отправил замечание агенту по #{cid} ✏️ Новый черновик пройдёт "
                            f"судью и придёт отдельной карточкой через несколько минут.")
         except Exception as e:
@@ -612,8 +641,8 @@ def process_update(update: dict) -> None:
         return
 
     if txt.split()[0].lower() == "/start":
-        send(chat_id, "👋 Review-бот content-пайплайна Frame. Карточки новых черновиков "
-                       "приходят сюда автоматически.")
+        send(chat_id, "👋 Review-бот content-пайплайна Frame. Сюда приходят только "
+                       "карточки новых черновиков.")
 
 
 def main() -> None:
