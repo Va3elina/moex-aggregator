@@ -106,7 +106,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 20   # v20: костяк — реакция толпы вокруг новости вместо горизонтов до года
+BRIEF_VERSION = 21   # v21: реакция только ПОСЛЕ новости, писатель ждёт срез после неё
 # Окно новостей второго мозга. Было 14 дней: у АФК Системы это 13 новостей, а
 # рейтинговая история и соседи по новостям живут кварталами. Вадим 06.09: «я бы
 # увеличил радиус до пары месяцев или квартала». Окно касается только колец
@@ -734,11 +734,14 @@ def _story_frame(signal_date, news_date) -> str:
     # не доказывает предвидения ни при каком отрыве. «И кто знает» — это про то,
     # что причинности в данных нет, сколько бы дней ни было.
     if d <= -2:
-        return (f"УПРЕЖДЕНИЕ: позиции менялись за {abs(d)} дн. ДО новости. Можно "
-                f"КОНСТАТИРОВАТЬ этот порядок дат. Утверждать, что толпа знала "
-                f"заранее, предвидела или спрогнозировала событие, НЕЛЬЗЯ: "
-                f"совпадение по времени не доказывает предвидение. Сам этот запрет в "
-                f"посте не проговаривай — просто не заявляй предвидение.")
+        # ⚠️ Движение ДО новости в пост не выносим (Вадим 10.09 по 1933: «не факт, что
+        # за 5 дней до новости кто-то что-то узнал — это сомнительно, хотя имеет место
+        # быть»). Даже голая констатация порядка дат читается как намёк на инсайд.
+        return (f"УПРЕЖДЕНИЕ: сигнал по позициям был за {abs(d)} дн. ДО новости. В пост "
+                f"это НЕ выносим: совпадение по времени не доказывает предвидение, а "
+                f"абзац про «до новости» читается как намёк, что кто-то знал заранее. "
+                f"Пиши только о том, что было после новости (реакция_на_новость). Сам "
+                f"этот запрет в посте не проговаривай.")
     if d == -1:
         # ⚠️ Указание НЕ ДЛЯ ТЕКСТА. Модель вынесла оговорку в пост дословно:
         # «Разворот случился за день до новости — от шума такой срок почти не
@@ -794,23 +797,22 @@ def _price_move(new_p, old_p) -> str:
     return f"акция {'подешевела' if chg < 0 else 'подорожала'} {_pct(chg)}"
 
 
-def _move_size(new_v, old_v) -> float:
-    if not old_v:
-        return 0.0
-    if (old_v > 0) != (new_v > 0):
-        return (abs(new_v) + abs(old_v)) / abs(old_v)
-    return abs(abs(new_v) - abs(old_v)) / abs(old_v)
-
-
-# Окно реакции — три торговых дня по обе стороны от новости. Сигнал, который вывел
-# кандидата, в окно попасть обязан: окно тянется до него, но не больше чем ещё на
-# неделю — сигнал за две недели до новости уже другая история.
+# Окно реакции — до трёх торговых дней после новости, от закрытия дня перед ней.
+# Если сигнал пришёл позже новости, окно тянется до него, но не больше чем ещё на
+# неделю. Писатель ждёт первый срез после новости не дольше _REACTION_WAIT_DAYS.
 _REACTION_DAYS = 3
 _REACTION_REACH = 5
+_REACTION_WAIT_DAYS = 3
 
 
 def _reaction_from_series(series, prices, news_date, signal_date) -> dict:
-    """Что делали толпа и цена ВОКРУГ новости — до неё и после, с датами.
+    """Что сделали толпа и цена ПОСЛЕ новости — одной строкой, с одной датой.
+
+    ⚠️ Только после (Вадим 10.09, вторая правка по 1933). Версия с «до новости» дала
+    абзац «с 4 по 8 сентября лонг сократился на 9%… резче всего 4 сентября, за пять
+    дней до новости» — вердикт: «много дат», «просто после новости и как сказалось»,
+    «не факт, что за 5 дней до новости кто-то что-то узнал». Движение до новости
+    читается как намёк на инсайд, а связь доказать нечем.
 
     ⚠️ Зачем (Вадим 10.09, кандидат 1933). Черновик про переговоры Новатэка с
     Petrovietnam открывался годом: «акции за год подешевели на 17%, а чистый лонг
@@ -830,13 +832,8 @@ def _reaction_from_series(series, prices, news_date, signal_date) -> dict:
     net = {r[0]: r[1] for r in series}
     before = [d for d in dates if d < news_date]
     after_all = [d for d in dates if d >= news_date]
-    if len(before) < 2:
+    if not before or not after_all:
         return {}
-    i = max(0, len(before) - 1 - _REACTION_DAYS)
-    if signal_date < news_date:
-        j = max((k for k, d in enumerate(before) if d < signal_date), default=None)
-        if j is not None and len(before) - 1 - j <= _REACTION_DAYS + _REACTION_REACH:
-            i = min(i, j)
     n_after = _REACTION_DAYS
     if signal_date in after_all:
         n_after = min(max(n_after, after_all.index(signal_date) + 1),
@@ -850,26 +847,11 @@ def _reaction_from_series(series, prices, news_date, signal_date) -> dict:
         vals = [c for dd, c in px if dd <= d]
         return vals[-1] if vals else None
 
-    def pair(a, b, first_day) -> str:
-        parts = [_net_move(net[b], net[a])]
-        pa, pb = price_on(a), price_on(b)
-        if pa and pb:
-            parts.append(_price_move(pb, pa))
-        return f"{_span_ru(first_day, b)}: " + ", ".join(parts)
-
-    out = {"до_новости": pair(before[i], anchor, before[i + 1])}
-    if after:
-        out["после_новости"] = pair(anchor, after[-1], after[0])
-    # Самый резкий день — если окно шире дня и этот день не сливается с ним.
-    window = before[i:] + after
-    steps = [(window[k], net[window[k]], net[window[k - 1]]) for k in range(1, len(window))]
-    d, n1, n0 = max(steps, key=lambda s: _move_size(s[1], s[2]))
-    one_day = {before[i + 1]} if before[i + 1] == anchor else set()
-    if after and after[0] == after[-1]:
-        one_day.add(after[0])
-    if _move_size(n1, n0) >= 0.05 and d not in one_day:
-        out["резче_всего"] = f"{_day_ru(d)}: {_net_move(n1, n0)} за день"
-    return out
+    parts = [_net_move(net[after[-1]], net[anchor])]
+    pa, pb = price_on(anchor), price_on(after[-1])
+    if pa and pb:
+        parts.append(_price_move(pb, pa))
+    return {"после_новости": f"{_span_ru(after[0], after[-1])}: " + ", ".join(parts)}
 
 
 def _news_reaction(db, asset_id: str, clgroup, tickers, news_date, signal_date) -> dict:
@@ -885,6 +867,22 @@ def _news_reaction(db, asset_id: str, clgroup, tickers, news_date, signal_date) 
         "secid": secid, "since": end - timedelta(days=45), "as_of": end,
     }).fetchall() if secid else []
     return _reaction_from_series(series, prices, news_date, signal_date)
+
+
+def _waiting_for_reaction(db, row) -> bool:
+    """Шаг В ждёт первый дневной срез позиций после новости: пост — о том, как она
+    сказалась, и без среза писать не о чем. MOEX публикует один срез за день, так что
+    в день новости его ещё нет. Не дольше _REACTION_WAIT_DAYS: если данные так и не
+    пришли (сбой источника), пост пишется без блока реакции."""
+    created_at = row.get("created_at")
+    if not created_at:
+        return False
+    news_date = created_at.date()
+    if (datetime.now(timezone.utc).date() - news_date).days > _REACTION_WAIT_DAYS:
+        return False
+    return "после_новости" not in _news_reaction(
+        db, row["asset_id"], row["anomaly_clgroup"], row["tickers"], news_date,
+        row["signal_date"])
 
 
 # ⚠️ ВОЗРАСТ ФАКТА ЕДЕТ ВМЕСТЕ С ФАКТОМ. Раньше выбирался только текст, и связь,
@@ -2041,6 +2039,10 @@ def run_once() -> dict:
                 db.execute(_GIVE_UP_STEP_C, {"id": row["id"], "reason": give_up_reason})
                 summary["step_c_gave_up"] += 1
                 step_c_gave_up.append((row["id"], give_up_reason))
+                continue
+            # Пост — о том, как новость сказалась: ждём срез позиций после неё.
+            if _waiting_for_reaction(db, row):
+                summary["step_c_waiting"] = summary.get("step_c_waiting", 0) + 1
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token))

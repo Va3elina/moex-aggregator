@@ -195,27 +195,47 @@ _PX_1933 = [(_D(2026, 9, 3), 1005.1), (_D(2026, 9, 4), 1017.2), (_D(2026, 9, 5),
             (_D(2026, 9, 9), 979.1)]
 
 
-def test_reaction_1933_is_about_days_around_the_news():
+def test_reaction_1933_is_only_after_the_news():
+    """Вадим 10.09, вторая правка по 1933: «много дат», «просто после новости и как
+    сказалось», «не факт, что за 5 дней до новости кто-то что-то узнал»."""
     out = CA._reaction_from_series(_SERIES_1933, _PX_1933, _D(2026, 9, 9), _D(2026, 9, 4))
-    assert out["до_новости"] == ("с 4 по 8 сентября: чистый лонг сократился на 9%, "
-                                 "акция почти не изменилась в цене"), out
-    assert out["после_новости"] == ("9 сентября: чистый лонг вырос на 1,5%, "
-                                    "акция подешевела на 2,6%"), out
-    assert out["резче_всего"] == "4 сентября: чистый лонг сократился на 13% за день", out
-    assert not any("год" in v for v in out.values())
+    assert out == {"после_новости": "9 сентября: чистый лонг вырос на 1,5%, "
+                                    "акция подешевела на 2,6%"}, out
 
 
-def test_reaction_without_data_after_the_news_has_only_before():
-    """Шаг В стреляет в день новости — дневного закрытия после неё ещё нет."""
-    out = CA._reaction_from_series(_SERIES_1933[:-1], _PX_1933, _D(2026, 9, 9), _D(2026, 9, 4))
-    assert "после_новости" not in out and "до_новости" in out
+def test_reaction_is_empty_until_there_is_data_after_the_news():
+    """В день новости дневного среза после неё ещё нет — реакции нет вовсе."""
+    assert CA._reaction_from_series(_SERIES_1933[:-1], _PX_1933,
+                                    _D(2026, 9, 9), _D(2026, 9, 4)) == {}
 
 
 def test_reaction_calls_a_tiny_move_a_tiny_move():
     series = [(_D(2026, 9, d), n, 0, 0, 0) for d, n in ((1, 1000), (2, 1001), (3, 1002))]
     out = CA._reaction_from_series(series, [], _D(2026, 9, 3), _D(2026, 9, 3))
-    assert out["до_новости"] == "2 сентября: чистый лонг почти не изменился", out
-    assert out["после_новости"] == "3 сентября: чистый лонг почти не изменился", out
+    assert out == {"после_новости": "3 сентября: чистый лонг почти не изменился"}, out
+
+
+def test_writer_waits_for_the_first_slice_after_the_news(monkeypatch):
+    now = _dt.datetime.now(_dt.timezone.utc)
+    row = {"created_at": now, "asset_id": "NV", "anomaly_clgroup": "FIZ",
+           "tickers": ["NVTK"], "signal_date": now.date()}
+    monkeypatch.setattr(CA, "_news_reaction", lambda *a, **k: {})
+    assert CA._waiting_for_reaction(None, row)
+    monkeypatch.setattr(CA, "_news_reaction", lambda *a, **k: {"после_новости": "x"})
+    assert not CA._waiting_for_reaction(None, row)
+    # Данные так и не пришли — не держим пост вечно.
+    row["created_at"] = now - _dt.timedelta(days=CA._REACTION_WAIT_DAYS + 1)
+    monkeypatch.setattr(CA, "_news_reaction", lambda *a, **k: {})
+    assert not CA._waiting_for_reaction(None, row)
+    import inspect
+    src = inspect.getsource(CA)
+    assert src.index("_waiting_for_reaction(db, row)") < \
+        src.index("_fire(TRIGGER_ID_STEP_C, token_c")
+
+
+def test_pre_news_moves_stay_out_of_the_post():
+    f = _frame(-5)
+    assert "НЕ выносим" in f and "КОНСТАТИРОВАТЬ" not in f, f
 
 
 def test_position_block_has_no_long_horizon_numbers(monkeypatch):
