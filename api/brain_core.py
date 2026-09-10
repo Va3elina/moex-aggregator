@@ -796,6 +796,13 @@ def аудит_имён_сводка(db: Session = None, _who: str = "agent"):
          ORDER BY r.second_at DESC LIMIT 50
     """)).mappings().all()
 
+    ярлыки = db.execute(text("""
+        SELECT COUNT(*) FILTER (WHERE тип_источник = 'правило'),
+               COUNT(*) FILTER (WHERE тип IS NOT NULL AND тип_источник <> 'правило'),
+               COUNT(*) FILTER (WHERE тип IS NULL)
+          FROM brain_news_labels
+    """)).first()
+
     def точность(r):
         n = r["верно"] + r["неверно"]
         return round(100 * r["верно"] / n) if n else None
@@ -803,6 +810,8 @@ def аудит_имён_сводка(db: Session = None, _who: str = "agent"):
     return {"непроверенных": int(осталось or 0),
             "ждут_второго_мнения": int(ждут or 0),
             "убрано": int(убрано or 0),
+            "ярлыки": {"по_правилам": int(ярлыки[0] or 0), "от_агента": int(ярлыки[1] or 0),
+                       "без_типа": int(ярлыки[2] or 0)},
             "недели": [{**dict(r), "точность": точность(r)} for r in недели],
             "спорные": [dict(r) for r in спорные],
             "предложения": [dict(r) for r in предложения]}
@@ -846,6 +855,68 @@ def решить_предложение(pid: int, decision: str = Query(..., des
     db.execute(text("UPDATE brain_rule_proposals SET status = :s, decided_at = NOW() WHERE id = :i"), {"s": статус, "i": pid})
     db.commit()
     return {"id": pid, "status": статус}
+
+
+# ── Ярлыки новостей: тип события и роль компании (режим labels аудита) ─────────────
+# Правила синка (Brain/brain_sync.py:ярлыки_новостей) размечают ~47 % новостей за 90 дней;
+# остаток — ночной агент. Список типов — тот же, что в правилах синка (тест сверяет),
+# плюс «прочее» для агента: натянутый тип хуже честного «прочее».
+_ТИПЫ_НОВОСТЕЙ = ("отчётность", "дивиденды", "выкуп акций", "размещение акций", "облигации", "санкции",
+                  "суд", "рейтинг", "мнение аналитиков", "сделка", "управление", "операционные", "прочее")
+_РОЛИ = ("главная", "упоминание")
+_БЕЗ_ТИПА = """
+    FROM brain_news_labels l JOIN brain_nodes b ON b.id = l.node_id
+   WHERE l.тип IS NULL AND b.ts > NOW() - INTERVAL '90 days'
+"""
+
+
+def ярлыки_партия(limit: int = Query(40, ge=1, le=200), db: Session = None, _who: str = "agent"):
+    """Новости за 90 дней, которым правила не нашли тип: свежие вперёд — их первыми
+    увидит писатель. У каждой — компании и роль, которую поставили правила."""
+    rows = db.execute(text(f"""
+        WITH p AS (SELECT l.node_id AS src, b.ts, l.роли {_БЕЗ_ТИПА} ORDER BY b.ts DESC LIMIT :lim)
+        SELECT p.src, p.ts, COALESCE(a.text, nn.title) AS текст,
+               (SELECT jsonb_agg(jsonb_build_object('company_id', e.dst, 'название', c.title,
+                                                    'роль_по_правилу', p.роли ->> e.dst))
+                  FROM brain_edges e JOIN brain_nodes c ON c.id = e.dst
+                 WHERE e.src = p.src AND e.kind = 'упоминает') AS компании
+          FROM p LEFT JOIN brain_nodes nn ON nn.id = p.src
+          {_текст_новости("p")}
+    """), {"lim": limit}).mappings().all()
+    осталось = db.execute(text(f"SELECT COUNT(*) {_БЕЗ_ТИПА}")).scalar()
+    return {"партия": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M"), "режим": "labels",
+            "осталось": int(осталось or 0), "типы": list(_ТИПЫ_НОВОСТЕЙ),
+            "новости": [{"id": r["src"], "дата": str(r["ts"])[:10], "компании": r["компании"] or [],
+                         "текст": " ".join((r["текст"] or "").split())[:600]} for r in rows]}
+
+
+def ярлыки_решения(body: dict, db: Session = None, _who: str = "agent"):
+    """Тип и роли от агента. Пишутся один раз — только новости без типа; тип правил агент
+    не перетирает. Не тот тип, не та роль, чужой id — отброшено и посчитано."""
+    import json
+    кто = "агент" if _who == "agent" else _who
+    принято = отброшено = 0
+    for d in body.get("ярлыки") or []:
+        id_, тип, роли = str(d.get("id") or ""), d.get("тип"), d.get("роли") or {}
+        if (not id_.startswith("news:") or тип not in _ТИПЫ_НОВОСТЕЙ or not isinstance(роли, dict)
+                or any(not str(k).startswith("company:") or v not in _РОЛИ for k, v in роли.items())):
+            отброшено += 1
+            continue
+        # ⚠️ Без литералов '{}'::jsonb: pg8000 портит их (прогон 10.09 с '[]'::jsonb).
+        r = db.execute(text("""
+            UPDATE brain_news_labels
+               SET тип = :t, тип_источник = :who,
+                   роли = COALESCE(роли, jsonb_build_object()) || CAST(:r AS jsonb),
+                   роли_источник = CASE WHEN CAST(:r AS jsonb) = jsonb_build_object() THEN роли_источник ELSE :who END,
+                   updated_at = NOW()
+             WHERE node_id = :id AND тип IS NULL
+        """), {"t": тип, "who": кто, "r": json.dumps(роли, ensure_ascii=False), "id": id_})
+        if not r.rowcount:
+            отброшено += 1
+            continue
+        принято += 1
+    db.commit()
+    return {"принято": принято, "отброшено": отброшено}
 
 
 def _соседи_для_пути(db: Session, id_: str) -> list[tuple[str, str, str]]:

@@ -142,6 +142,18 @@ def решить_предложение(pid: int, decision: str = Query(...), db
     return _вызов(ядро.решить_предложение, pid=pid, decision=decision, db=db, _who=who)
 
 
+# Ярлыки новостей (тип события, роль компании): порция и ответ — агенту, режим labels.
+@router.get("/audit/labels/batch")
+def ярлыки_партия(limit: int = Query(40, ge=1, le=200), db: Session = Depends(get_db),
+                  who: str = Depends(_доступ)):
+    return _вызов(ядро.ярлыки_партия, limit=limit, db=db, _who=who)
+
+
+@router.post("/audit/labels")
+def ярлыки_решения(body: dict = Body(...), db: Session = Depends(get_db), who: str = Depends(_доступ)):
+    return _вызов(ядро.ярлыки_решения, body=body, db=db, _who=who)
+
+
 @router.get("/path")
 def путь(a: str = Query(...), b: str = Query(...), max_depth: int = Query(3, ge=1, le=4),
          candidate_id: Optional[int] = Query(None), db: Session = Depends(get_db), who: str = Depends(_доступ)):
