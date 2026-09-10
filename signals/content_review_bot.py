@@ -21,8 +21,9 @@ draft_ready-с-черновиком кандидаты (reviewer_notified_at IS 
                  status: draft_ready → in_review → published (та же пара
                  переходов, что и ручная кнопка в админ-Kanban — держим
                  согласованно, не короткий путь в обход state machine).
-  ✏️ Править   → бот просит текст следующим сообщением, обновляет draft_text,
-                 статус НЕ меняется (остаётся draft_ready, снова на ревью).
+  ✏️ Править   → бот просит замечание словами, отправляет его ИИ-писателю (Шаг В)
+                 вместе с текущим черновиком; новый текст проходит судью и
+                 приходит новой карточкой. Статус остаётся draft_ready.
   ❌ Отклонить → draft_ready → in_review → rejected, без публикации.
 
 ⭐ Обратная связь (миграция 054, research/content_pipeline_v2/ §2). До неё ревью
@@ -63,7 +64,7 @@ from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config  # noqa: E402
 from signals.publish.telegram import (  # noqa: E402
-    send_text_post, apply_custom_emoji, with_frame_signature, with_data_annotation,
+    send_text_post, apply_custom_emoji, with_frame_signature,
 )
 
 API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
@@ -89,18 +90,36 @@ def send(chat_id, text_msg: str) -> None:
         print(f"[content_review_bot] send error: {_redact(e)}")
 
 
-def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> None:
+def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> bool:
     """text_msg уже готов к HTML-режиму (собран через _card_view — сам
     экранирует свои части). parse_mode=HTML нужен для превью фирменных
-    custom-emoji (см. apply_custom_emoji), ровно то, что увидят в канале."""
+    custom-emoji (см. apply_custom_emoji), ровно то, что увидят в канале.
+
+    ⚠️ Возвращает, ПРИНЯЛ ли Telegram сообщение. До 10.09.2026 ответ не читался
+    вовсе: ловились только обрывы соединения, а отказ самого Telegram (битая
+    HTML-разметка, превышение длины) проглатывался, и _notify_new_drafts всё
+    равно ставил карточке «отправлено». Карточка терялась молча — тот же класс
+    тихой потери, что уже был у Шага Н.
+    """
     try:
-        requests.post(f"{API_BASE}/sendMessage",
-                       json={"chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
-                             "disable_web_page_preview": True,
-                             "reply_markup": {"inline_keyboard": inline_keyboard}},
-                       timeout=15)
+        resp = requests.post(f"{API_BASE}/sendMessage",
+                             json={"chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
+                                   "disable_web_page_preview": True,
+                                   "reply_markup": {"inline_keyboard": inline_keyboard}},
+                             timeout=15)
     except requests.RequestException as e:
         print(f"[content_review_bot] send_kb error: {_redact(e)}")
+        return False
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"[content_review_bot] send_kb: ответ не JSON (HTTP {resp.status_code})")
+        return False
+    if not data.get("ok"):
+        print(f"[content_review_bot] send_kb: Telegram отклонил сообщение: "
+              f"{_redact(data.get('description') or data)}")
+        return False
+    return True
 
 
 def edit_kb(chat_id, message_id, text_msg: str, inline_keyboard: list) -> None:
@@ -342,11 +361,12 @@ def _card_view(row):
     т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
      j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note,
-     annotation) = row
-    # Превью обязано показывать ТО ЖЕ, что уйдёт в канал, вместе с аннотацией:
-    # иначе человек утверждает один текст, а публикуется другой.
-    body = apply_custom_emoji(with_frame_signature(with_data_annotation(
-        (draft_text or "")[:_DRAFT_PREVIEW_LIMIT], annotation)))
+     _annotation) = row
+    # Превью обязано показывать ТО ЖЕ, что уйдёт в канал: иначе человек утверждает
+    # один текст, а публикуется другой. Строки с числами FinanceMarker под постом с
+    # 10.09.2026 нет ни в канале, ни здесь (Вадим: «не пиши в самом посту»).
+    body = apply_custom_emoji(with_frame_signature(
+        (draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
     tick = html.escape(", ".join(tickers or []) or "—")
     txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
     txt += (_fix_line(j_fixed_at, j_fix_note)
@@ -364,6 +384,11 @@ def _card_view(row):
     return txt, kb
 
 
+# Кандидат → когда Telegram последний раз отказал в карточке (time.monotonic()).
+_notify_failed_at: dict = {}
+_NOTIFY_RETRY_SEC = 600
+
+
 def _notify_new_drafts() -> None:
     """Раз за цикл поллинга — новые draft_ready кандидаты в личку админа."""
     if not config.ADMIN_USER_ID:
@@ -372,13 +397,21 @@ def _notify_new_drafts() -> None:
     try:
         ids = [r[0] for r in db.execute(_SELECT_NEW_DRAFTS).fetchall()]
         for cid in ids:
+            # Отказ Telegram не повторяем каждый цикл поллинга: битая карточка
+            # сама не починится, а спам в лог спрячет остальное.
+            if time.monotonic() - _notify_failed_at.get(cid, float("-inf")) < _NOTIFY_RETRY_SEC:
+                continue
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
             if not row:
                 continue
             txt, kb = _card_view(row)
-            send_kb(config.ADMIN_USER_ID, txt, kb)
-            db.execute(_MARK_NOTIFIED, {"id": cid})
-            db.commit()
+            # «Отправлено» ставим ТОЛЬКО если Telegram сообщение принял (см. send_kb).
+            if send_kb(config.ADMIN_USER_ID, txt, kb):
+                db.execute(_MARK_NOTIFIED, {"id": cid})
+                db.commit()
+                _notify_failed_at.pop(cid, None)
+            else:
+                _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
         db.rollback()
         print(f"[content_review_bot] notify error: {e}")
@@ -398,14 +431,9 @@ def _approve(db, cid: int) -> tuple:
     db.execute(_TO_IN_REVIEW, {"id": cid})
     db.commit()
 
-    # Аннотация берётся с кандидата, а не собирается заново: она должна описывать те
-    # данные, на которых пост был НАПИСАН, а не те, что лежат в базе на момент выхода.
-    аннотация = db.execute(
-        text("SELECT annotation FROM content_candidates WHERE id = :i"), {"i": cid}
-    ).scalar()
-    ok, msg_id, err = send_text_post(
-        text=with_data_annotation(row[3], аннотация),
-        channel_id=config.CONTENT_CHANNEL_ID)
+    # Публикуется ровно текст черновика. Строку с числами FinanceMarker под постом
+    # больше не клеим (Вадим 10.09.2026): в канале она читалась как чужая сноска.
+    ok, msg_id, err = send_text_post(text=row[3], channel_id=config.CONTENT_CHANNEL_ID)
     if not ok:
         # Оставляем в in_review — видно в Kanban как «застряло», не откатываем
         # молча в draft_ready (не даём повторный auto-triggered показ карточки).
@@ -440,39 +468,13 @@ _awaiting_edit: dict = {}   # chat_id -> candidate_id
 # проглатывал бы любое следующее сообщение админа.
 _awaiting_reason: dict = {}  # chat_id -> candidate_id
 
-# Присланный по «Править» текст, который НЕ похож на пост — ждёт уточнения.
-# ⚠️ Зачем. Кандидат 1638: Вадим нажал «✏️ Править» и написал туда РАЗБОР
-# («спрогнозировало — спорное заявление и кто знает…»). Бот честно сделал то, о
-# чём предупреждал, — заменил текст поста критикой. Кнопка «Править» стоит первой
-# на карточке, а естественный жест после плохого черновика — сказать, что не так,
-# а не переписать пост целиком. Публикация после этого отправила бы в канал
-# разбор вместо поста.
-_pending_edit: dict = {}  # chat_id -> (candidate_id, text)
-
-
-def _looks_like_post(txt: str, current: str | None) -> bool:
-    """Похож ли присланный текст на пост, а не на комментарий к нему.
-
-    Признак — только ФОРМАТ: маркеры абзацев ◽️ либо хэштег рубрики последней
-    строкой. Пост без хэштега рубрики и так не проходит format_ok у судьи, так
-    что требование не лишнее.
-
-    ⚠️ Запаса по длине здесь СОЗНАТЕЛЬНО нет, хотя он выглядел естественно
-    («переписка редко втрое короче исходника»). Тест на реальном тексте 1638
-    показал, как он обманывается: длинный комментарий против короткого поста
-    проходит по длине и молча заменяет пост. Длина не отличает разбор от текста.
-
-    Асимметрия цен решает всё: ошибка в одну сторону — лишний вопрос с двумя
-    кнопками, в другую — критика уходит в канал как пост. Поэтому по умолчанию
-    сомневаемся.
-    """
-    body = txt.strip()
-    if not body:
-        return False
-    if "◽" in body:
-        return True
-    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
-    return bool(lines) and lines[-1].startswith("#")
+# ⚠️ «Править» = замечание ИИ-писателю, а не замена текста (Вадим 10.09.2026:
+# «я не хочу присылать готовый пост, для этого существует завод постов»). Раньше
+# кнопка просила новый текст целиком и подменяла им черновик; на кандидате 1638
+# туда ушёл разбор вместо поста, и понадобилась эвристика «похоже ли на пост».
+# Теперь любое сообщение после «Править» — это замечание: оно уходит писателю
+# (Шаг В) вместе с текущим черновиком и брифом, новый текст проходит судью и
+# приходит отдельной карточкой. Эвристика больше не нужна.
 
 
 def process_callback(cb: dict) -> None:
@@ -539,29 +541,15 @@ def process_callback(cb: dict) -> None:
             answer_cb(cb_id, "Жду комментарий ✍️")
             send(chat_id, f"Пришлите комментарий к #{cid} следующим сообщением.")
         elif op in ("ep", "ec"):
-            pending = _pending_edit.pop(chat_id, None)
-            if not pending or pending[0] != cid:
-                answer_cb(cb_id, "Текст потерялся, пришлите заново")
-                edit_kb(chat_id, message_id, f"#{cid} — текст потерялся, пришлите заново", [])
-            elif op == "ep":
-                _log_feedback(db, cid, "edited", draft_human=pending[1])
-                db.execute(_UPDATE_DRAFT, {"t": pending[1], "id": cid})
-                db.commit()
-                answer_cb(cb_id, "Черновик обновлён ✏️")
-                edit_kb(chat_id, message_id, f"#{cid} — черновик заменён вашим текстом ✏️", [])
-                send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
-            else:
-                _log_feedback(db, cid, "comment", reason_text=pending[1])
-                db.execute(_APPEND_REVIEW_REASON, {"t": pending[1], "id": cid})
-                db.commit()
-                answer_cb(cb_id, "Записал как комментарий ✍️")
-                edit_kb(chat_id, message_id,
-                        f"#{cid} — записал как комментарий, текст поста не тронут 👍", [])
+            # Кнопки старого сценария «это текст поста / это комментарий» на уже
+            # разосланных карточках. Сценария больше нет — говорим прямо.
+            answer_cb(cb_id, "Кнопка устарела — нажмите ✏️ Править заново")
         elif op == "e":
             _awaiting_edit[chat_id] = cid
-            answer_cb(cb_id, "Жду текст следующим сообщением ✏️")
-            send(chat_id, f"Пришлите новый текст поста для #{cid} следующим сообщением "
-                           f"(целиком, он заменит текущий черновик).")
+            answer_cb(cb_id, "Напишите, что поправить ✏️")
+            send(chat_id, f"Что поправить в черновике #{cid}? Напишите следующим сообщением "
+                           f"своими словами — агент перепишет пост и пришлёт новую карточку. "
+                           f"Можно прислать и готовый текст: агент возьмёт его за основу.")
         else:
             answer_cb(cb_id)
     except Exception as e:
@@ -606,33 +594,19 @@ def process_update(update: dict) -> None:
         cid = _awaiting_edit.pop(chat_id)
         db = SessionLocal()
         try:
-            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            current = row[3] if row else None
-            if not _looks_like_post(txt, current):
-                # Не подменяем пост молча: спрашиваем, что это было.
-                _pending_edit[chat_id] = (cid, txt)
-                send_kb(chat_id,
-                        f"Текст не похож на пост: нет ни ◽️, ни хэштега рубрики. "
-                        f"Черновик #{cid} НЕ изменён.\n\n"
-                        f"Это новый текст поста или комментарий к нему?",
-                        [[{"text": "📝 это текст поста", "callback_data": f"ep:{cid}"},
-                          {"text": "✍️ это комментарий", "callback_data": f"ec:{cid}"}]])
-                return
-            _log_feedback(db, cid, "edited", draft_human=txt)
-            db.execute(_UPDATE_DRAFT, {"t": txt, "id": cid})
+            # Замечание в журнал ДО запуска: суждение человека ценно, даже если
+            # запуск агента упадёт, — это размеченный пример для калибровки.
+            _log_feedback(db, cid, "revision_requested", reason_text=txt)
             db.commit()
-            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            if row:
-                card_txt, kb = _card_view(row)
-                send_kb(chat_id, "Черновик обновлён ✏️\n\n" + card_txt, kb)
-            else:
-                send(chat_id, "Черновик обновлён, но кандидат не найден при повторном чтении")
-            # Правка — тоже суждение человека: оригинал ИИ остался в
-            # draft_text_ai, но БЕЗ причины дифф не объясняет, что было не так.
-            send_kb(chat_id, f"Что было не так в черновике #{cid}?", _reason_kb(cid))
+            # Модуль конвейера — лениво: бот не должен падать при старте, если в
+            # content_ai что-то сломано, и не тянет его ради обычного поллинга.
+            from signals.content_ai import fire_revision
+            fire_revision(db, cid, txt)
+            send(chat_id, f"Отправил замечание агенту по #{cid} ✏️ Новый черновик пройдёт "
+                           f"судью и придёт отдельной карточкой через несколько минут.")
         except Exception as e:
             db.rollback()
-            send(chat_id, f"Не удалось обновить черновик: {_redact(e)}")
+            send(chat_id, f"Не удалось отправить замечание агенту по #{cid}: {_redact(e)}")
         finally:
             db.close()
         return

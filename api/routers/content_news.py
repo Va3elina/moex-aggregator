@@ -942,6 +942,11 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         # судьи берёт только кандидатов с пустым вердиктом (_SELECT_JUDGE_PENDING
         # в content_ai.py), так что переписанный черновик не судился вовсе, а бот
         # сразу слал его со старым вердиктом.
+        #
+        # ⚠️ Новый черновик — и новая карточка: отметка «отправлено» тоже обнуляется.
+        # Иначе переделка по кнопке «✏️ Править» (10.09.2026) вернулась бы только в
+        # базу, а человек так и смотрел бы на старую карточку. Бот ждёт вердикта
+        # судьи (или 30 минут) и шлёт карточку сам.
         db.execute(text("""
             UPDATE content_candidates
             SET draft_text = :draft_text, draft_text_ai = :draft_text,
@@ -953,6 +958,7 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
                 judge_checked_at = NULL, judge_gave_up_at = NULL,
                 judge_fixed_at = NULL, judge_fix_note = NULL,
                 judge_dispatch_attempts = 0,
+                reviewer_notified_at = NULL,
                 updated_at = now()
             WHERE id = :id
         """), {"id": candidate_id, "draft_text": body.draft_text,
