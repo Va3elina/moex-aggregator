@@ -106,7 +106,7 @@ TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
 # которых осмысленными оказались 2.
-BRIEF_VERSION = 21   # v21: реакция только ПОСЛЕ новости, писатель ждёт срез после неё
+BRIEF_VERSION = 22   # v22: события вокруг новости — что ещё было и как цена шла 2 часа после
 # Окно новостей второго мозга. Было 14 дней: у АФК Системы это 13 новостей, а
 # рейтинговая история и соседи по новостям живут кварталами. Вадим 06.09: «я бы
 # увеличил радиус до пары месяцев или квартала». Окно касается только колец
@@ -883,6 +883,121 @@ def _waiting_for_reaction(db, row) -> bool:
     return "после_новости" not in _news_reaction(
         db, row["asset_id"], row["anomaly_clgroup"], row["tickers"], news_date,
         row["signal_date"])
+
+
+# ── События вокруг новости ────────────────────────────────────────────────────
+# ⚠️ Зачем (Вадим 10.09, кандидат 1933). Черновик писал «новость сразу отразилась на
+# бумаге: 9 сентября акция подешевела на 2,6%». По часовым свечам: после новости о
+# Вьетнаме (15:30 МСК) цена полтора часа стояла, а упала в 18:00 — вслед за атакой
+# дронов на Новый Уренгой (17:17), Газпром в тот день тоже −2,4%. Писатель этого
+# видеть не мог: у него были только наша новость и дневные числа. Теперь он видит,
+# что ещё писали про компанию и отрасль в эти дни и как цена шла два часа после
+# каждого события, — и сам решает, к чему относится движение.
+#
+# Отраслевые хэштеги — для новостей без тикеров: пост MarketTwits про Уренгой шёл
+# только с «#газ». Ключи — как в issuers.sector.
+_SECTOR_TAGS = {
+    "Нефть и газ": ["#нефть", "#газ", "#спг", "#бензин", "#опек", "#ормуз"],
+    "Металлы": ["#металлы", "#золото", "#сталь", "#никель", "#алюминий"],
+    "Финансы": ["#банки", "#дкп"],
+    "Энергетика": ["#электроэнергия"],
+    "Застройщики": ["#ипотека", "#недвижимость"],
+}
+_AROUND_BEFORE_DAYS = 2
+_AROUND_AFTER_DAYS = 5
+# Чужая новость попадает в бриф, только если после неё наша бумага за два часа
+# сдвинулась хотя бы на столько. Иначе это 250 новостей в день, а поле, попавшее в
+# бриф, модель считает обязанной израсходовать.
+_AROUND_MOVE_PCT = 1.0
+_AROUND_MAX = 12
+# Москва без перехода на летнее время с 2014 года; свечи в БД — наивное время МСК.
+_MSK = timezone(timedelta(hours=3))
+
+_SELECT_SECTOR_PEERS = text("""
+    SELECT s.secid FROM issuers i JOIN issuer_securities s USING (issuer_id)
+    WHERE i.sector = (SELECT i2.sector FROM issuers i2 JOIN issuer_securities s2 USING (issuer_id)
+                      WHERE s2.secid = :secid LIMIT 1)
+""")
+_SELECT_NEWS_AROUND = text("""
+    SELECT posted_at, text, coalesce(tickers, '{}') AS tickers
+    FROM news_archive
+    WHERE posted_at BETWEEN :since AND :until
+      AND (tickers && CAST(:peers AS text[]) OR hashtags && CAST(:tags AS text[]))
+    ORDER BY posted_at
+    LIMIT 400
+""")
+_SELECT_HOURLY = text("""
+    SELECT begin_time, close FROM candles
+    WHERE secid = :secid AND interval = 60 AND type = 'stock'
+      AND begin_time BETWEEN :since AND :until
+    ORDER BY begin_time
+""")
+
+
+def _events_from(news, bars, secid: str, name: str, our_at) -> list:
+    """Строки «когда — что — как цена шла два часа после» по новостям вокруг нашей.
+
+    Своя новость (тикер или имя компании) попадает всегда, чужая — только если после
+    неё цена сдвинулась на _AROUND_MOVE_PCT за два часа. Цена «до» — закрытие часовой
+    свечи, закончившейся к моменту новости, «после» — закончившейся через два часа."""
+    bars = [(b, float(c)) for b, c in bars if c is not None]
+
+    def close_by(t):
+        vals = [c for b, c in bars if b + timedelta(hours=1) <= t]
+        return vals[-1] if vals else None
+
+    items, seen = [], set()
+    for posted_at, body, tks in news:
+        tks = list(tks or [])
+        t = posted_at.astimezone(_MSK).replace(tzinfo=None)
+        snippet = _pick_snippet(body, len(tks), name or secid)
+        own = secid in tks or bool(name and name.lower() in (body or "").lower())
+        traded = any(t < b + timedelta(hours=1) <= t + timedelta(hours=2) for b, _ in bars)
+        before, after = close_by(t), close_by(t + timedelta(hours=2))
+        move = (after - before) / before * 100 if traded and before and after else None
+        if not snippet or (not own and (move is None or abs(move) < _AROUND_MOVE_PCT)):
+            continue
+        snippet = re.sub(r"\s*Читать далее.*$", "", " ".join(snippet.split()))[:180]
+        key = re.sub(r"[^а-яёa-z]", "", snippet.lower())[:50]
+        if key in seen:
+            continue
+        seen.add(key)
+        ours = bool(own and our_at and abs((posted_at - our_at).total_seconds()) <= 20 * 60)
+        price = _price_move(after, before) if move is not None else "торгов не было"
+        line = f"{_day_ru(t.date())}, {t:%H:%M} МСК — {snippet} → за 2 часа {price}"
+        items.append((t, ours, own, abs(move or 0), ("[наша новость] " if ours else "") + line))
+    # Лишнее режем с конца приоритета: наша новость, потом по резкости движения цены,
+    # при равенстве — свои. Своя новость, после которой цена стояла, для сверки
+    # времени весит меньше чужой, после которой бумага ушла на полтора процента (1933:
+    # пост «#газ» про Уренгой вытесняли свои новости двухдневной давности).
+    items.sort(key=lambda x: (not x[1], -x[3], not x[2]))
+    return [x[4] for x in sorted(items[:_AROUND_MAX], key=lambda x: x[0])]
+
+
+def _news_around(db, row, news_date) -> list:
+    """Новости компании и её отрасли от двух дней до новости до пяти дней после."""
+    secid = (row["tickers"] or [None])[0] or db.execute(
+        _SELECT_STOCK_FOR_FUTURES, {"f": row["asset_id"]}).scalar()
+    if not secid:
+        return []
+    since = datetime.combine(news_date - timedelta(days=_AROUND_BEFORE_DAYS), datetime.min.time())
+    until = min(datetime.now(_MSK).replace(tzinfo=None),
+                datetime.combine(news_date + timedelta(days=_AROUND_AFTER_DAYS), datetime.max.time()))
+    peers = [r[0] for r in db.execute(_SELECT_SECTOR_PEERS, {"secid": secid}).fetchall()]
+    if secid not in peers:
+        peers.append(secid)
+    sector = db.execute(_SELECT_SECTOR, {"secid": secid}).scalar() or ""
+    # Пустой массив pg8000 не типизирует — подставляем тег, которого не бывает.
+    tags = _SECTOR_TAGS.get(sector) or ["#-"]
+    news = db.execute(_SELECT_NEWS_AROUND, {
+        "since": since.replace(tzinfo=_MSK), "until": until.replace(tzinfo=_MSK),
+        "peers": peers, "tags": tags,
+    }).fetchall()
+    bars = db.execute(_SELECT_HOURLY, {
+        "secid": secid, "since": since, "until": until + timedelta(hours=3),
+    }).fetchall()
+    name = re.sub(r"\s*\(.*?\)", "", row.get("asset_name") or "").strip()
+    return _events_from(news, bars, secid, name, row.get("created_at"))
 
 
 # ⚠️ ВОЗРАСТ ФАКТА ЕДЕТ ВМЕСТЕ С ФАКТОМ. Раньше выбирался только текст, и связь,
@@ -1798,6 +1913,7 @@ def _build_brief(db, row) -> dict:
         "рамка_сюжета": _story_frame(row["signal_date"], news_date),
         "реакция_на_новость": _news_reaction(db, row["asset_id"], row["anomaly_clgroup"],
                                              row["tickers"], news_date, row["signal_date"]),
+        "события_вокруг_новости": _news_around(db, row, news_date),
         "позиции_физлиц": pos,
         "история_рейтинга": _rating_history(db, row["headline"], row["raw_text"],
                                              row["tickers"], row["signal_date"]),
@@ -1817,7 +1933,8 @@ def _build_brief(db, row) -> dict:
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
     for empty in ("связанные_компании", "связи_под_вопросом", "история_рейтинга",
-                  "второй_мозг", "фундамент_компании", "реакция_на_новость"):
+                  "второй_мозг", "фундамент_компании", "реакция_на_новость",
+                  "события_вокруг_новости"):
         if not brief.get(empty):
             brief.pop(empty, None)
     return brief
