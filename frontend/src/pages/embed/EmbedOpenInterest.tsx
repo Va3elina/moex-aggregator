@@ -20,7 +20,7 @@ import { Clock, User, Building2, BarChart3, Users } from 'lucide-react';
 import { monthsYearsTickFmt, type LwSeries } from '../../components/chart/lwTypes';
 import LwChartPanes, { type LwChartPanesHandle, type LwPane } from '../../components/LwChartPanes';
 import { useTheme } from '../../contexts/ThemeContext';
-import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../../services/api';
+import { getChartData, getInstrument, listAlerts, deleteAlert, type AlertInfo } from '../../services/api';
 import CreateAlertModal, { type AlertMetricOption } from '../../components/alerts/CreateAlertModal';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
@@ -754,17 +754,25 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   }, [oiVariant, showPrice, oiChartIndex]);
 
   // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
+  // Подписи у линии нет: бейдж «колокольчик + крестик» у шкалы её заменяет.
   const alertLines = useMemo(() => {
-    type Line = { price: number; color: string; scale: 'left' | 'right'; pane?: number; title: string };
+    type Line = { id: number; price: number; color: string; scale: 'left' | 'right'; pane?: number };
     const lines: Line[] = myAlerts
       .filter((a) => a.status === 'active' && a.asset === instrument)
       .flatMap((a): Line[] => {
-        if (a.indicator === 'price') return [{ price: a.threshold, color: 'var(--accent)', scale: 'left', title: 'уведомление' }];
-        if (a.indicator === 'oi_level') return [{ price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex, title: 'уведомление' }];
+        if (a.indicator === 'price') return [{ id: a.id, price: a.threshold, color: 'var(--accent)', scale: 'left' }];
+        if (a.indicator === 'oi_level') return [{ id: a.id, price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex }];
         return [];
       });
     return lines.length ? lines : undefined;
   }, [myAlerts, instrument, oiChartIndex]);
+  // Крестик на бейдже: убираем линию сразу (оптимистично), сервер — следом;
+  // не удалилось — вернём список с сервера.
+  const removeAlertFromChart = useCallback((id: string | number) => {
+    const n = Number(id);
+    setMyAlerts((prev) => prev.filter((a) => a.id !== n));
+    deleteAlert(n).catch(() => reloadAlerts());
+  }, [reloadAlerts]);
 
   const chartPanes = useMemo<LwPane[]>(
     // Основной график заметно выше служебных, иначе RSI съедает цену.
@@ -957,6 +965,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
             timeVisible={interval !== 24}
             priceLines={alertLines}
+            onRemovePriceLine={removeAlertFromChart}
             drawActive={draw.drawMode}
             drawTool={draw.drawTool}
             drawings={draw.drawings}
