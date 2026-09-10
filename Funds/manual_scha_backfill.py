@@ -84,6 +84,26 @@ def is_implausible_row(positions, amount_rub) -> bool:
         return True
     return (amount_rub / positions) < GARBAGE_PRICE_MAX
 
+
+# ИНН эмитента вместо количества при ВЕРНОЙ стоимости (30.04.2026, субординированные
+# выпуски номиналом 10 млн ₽ у OBLG/OPIF-54): «количество» = ИНН 7702070139 (ВТБ) или
+# 7707083893 (Сбер), стоимость крупная → цена за штуку 0,03–0,27 ₽, и is_implausible_row
+# с порогом 0,0001 ₽ такое пропускает. Сигнатура: 10 цифр с верной контрольной суммой
+# ИНН юрлица и цена за штуку < 1 ₽. Строку не выкидываем — стоимость и доля верные, —
+# пишем без количества (миграция 094 чинила такие руками по цене за штуку).
+_INN_WEIGHTS = (2, 4, 10, 3, 5, 9, 4, 6, 8)
+INN_QTY_PRICE_MAX = 1.0  # ₽/шт
+
+
+def is_inn_as_qty(positions, amount_rub) -> bool:
+    """True если «количество» — ИНН юрлица (контрольная сумма сходится) при цене < 1 ₽/шт."""
+    if positions is None or not (10**9 <= positions < 10**10):
+        return False
+    if not amount_rub or amount_rub / positions >= INN_QTY_PRICE_MAX:
+        return False
+    d = [int(c) for c in str(int(positions))]
+    return sum(w * x for w, x in zip(_INN_WEIGHTS, d)) % 11 % 10 == d[9]
+
 # In-memory кеш ISIN → SHORTNAME (одна сессия одного запуска)
 _name_cache: dict[str, str] = {}
 
@@ -283,6 +303,15 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
                 )
                 continue
 
+            positions = a.get("positions")
+            if is_inn_as_qty(positions, a.get("value_rub")):
+                log.warning(
+                    f"  ⚠️ количество = ИНН эмитента, пишем без него fund={fund_id} "
+                    f"isin={isin} date={snap_date} positions={positions} "
+                    f"amount_rub={a.get('value_rub')} — штуки = стоимость / цена за штуку"
+                )
+                positions = None
+
             # Резолвим имя если placeholder и есть ISIN
             if name in ("(name from ISIN)", "(имя не извлечено)") and isin and resolve_names:
                 name = resolve_isin_name(isin)
@@ -309,7 +338,7 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
                     "name": name[:255],
                     "isin": isin,
                     "weight": weight,
-                    "positions": a.get("positions"),
+                    "positions": positions,
                     "amount": a.get("value_rub"),
                     "d": snap_date,
                     "src": SOURCE,
