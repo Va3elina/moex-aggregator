@@ -1635,10 +1635,6 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
         else:
             когда = "по данным на %s" % as_of.strftime("%d.%m.%Y")
         out["аннотация"] = ("Данные FinanceMarker, %s: %s." % (когда, ", ".join(части)))
-        out["_аннотация_служебное"] = (
-            "Эта строка приклеивается к посту АВТОМАТИЧЕСКИ на публикации. "
-            "НЕ переписывать её, НЕ вставлять в текст и не дублировать."
-        )
 
     if out:
         # ⚠️ БЕЗ ПРИМЕРОВ-ПРЕДЛОЖЕНИЙ. Прежняя граница разрешала «одно число, если оно
@@ -1651,9 +1647,12 @@ def _company_fundamentals(db, asset_id: str, tickers, event_type: str, as_of,
         # Сам блок теперь доезжает до писателя только под повод про цифры (см.
         # _FUND_NUMERIC_EVENTS в _build_brief) — здесь остаётся короткая граница на
         # случай, когда он доехал.
+        # ⚠️ С 10.09.2026 строки с этими числами под постом НЕТ (Вадим: «не пиши в
+        # самом посту»). Прежняя граница обещала писателю, что числа «уже уйдут
+        # отдельной строкой», — теперь это неправда, и обещание убрано.
         out["ГРАНИЦА"] = (
-            "Все эти числа УЖЕ уйдут отдельной строкой под постом. В текст бери только "
-            "то, о чём сама новость; число, которое просто описывает компанию, не брать. "
+            "Под постом эти числа НЕ публикуются. В текст бери только то, о чём сама "
+            "новость; число, которое просто описывает компанию, не брать. "
             "Остальное словами. Тезис — чужое мнение: называть с датой."
         )
     return out
@@ -1703,6 +1702,10 @@ def _build_brief(db, row) -> dict:
     if _фундамент.get("аннотация"):
         db.execute(text("UPDATE content_candidates SET annotation = :a WHERE id = :i"),
                    {"a": _фундамент["аннотация"], "i": row["id"]})
+    # ⚠️ Готовая строка «Данные FinanceMarker, …» писателю НЕ едет: под постом её с
+    # 10.09.2026 не публикуем, а увидев её в брифе, модель вставила бы её в текст.
+    # На кандидате она остаётся — как запись о том, какие числа видел бриф.
+    _фундамент.pop("аннотация", None)
     # ⚠️ ЦИФРЫ — ПОД ПОВОД ПРО ЦИФРЫ (Вадим 06.09: «если говорим про цифры, то про
     # цифры»). Отчёт, дивиденды, корпоративное действие — блок нужен, писатель пишет
     # про эти числа. Рейтинг, санкции, прочее — блока в брифе нет вовсе: поле, которое
@@ -1843,6 +1846,48 @@ def _payload(obj, internal_token: str) -> str:
 
 def _step_c_payload(db, row, internal_token: str) -> str:
     return _payload(_build_brief(db, row), internal_token)
+
+
+# Для переделки по замечанию: тот же набор полей, что у _SELECT_DRAFT_READY (его
+# читает _build_brief), но черновик уже есть и нужен сам текст.
+_SELECT_FOR_REVISION = text("""
+    SELECT c.id, c.headline, c.raw_text, c.tickers, c.event_type, c.futures_ticker,
+           c.reasoning, c.dispatch_attempts, c.forwards_count,
+           c.thread_key, c.created_at, c.draft_text,
+           a.id AS anomaly_id, a.asset_id, a.asset_name, a.type AS anomaly_type,
+           a.clgroup AS anomaly_clgroup, a.direction,
+           a.severity_value, a.signal_date, a.headline AS anomaly_headline
+    FROM content_candidates c
+    JOIN anomalies a ON a.id = c.matched_anomaly_id
+    WHERE c.id = :id AND c.status = 'draft_ready' AND c.draft_text IS NOT NULL
+""")
+
+
+def fire_revision(db, candidate_id: int, remarks: str) -> None:
+    """Переделка черновика по замечанию человека — кнопка «✏️ Править» в боте.
+
+    Писателю (Шаг В) уходит ТОТ ЖЕ бриф, что при первом черновике, плюс блок
+    правка_ревьюера: текущий черновик и замечание словами человека. Что с ним
+    делать, сказано в промпте Шага В (раздел про правку ревьюера). Новый черновик
+    приходит обычным PATCH step-c, который обнуляет вердикт и отметку «отправлено»,
+    поэтому дальше всё идёт штатно: судья, затем новая карточка в боте.
+
+    Бросает исключение, если запускать нечего или нечем, — бот покажет его текст.
+    """
+    token = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_C", "")
+    internal = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
+    if not token or not internal:
+        raise RuntimeError("в .env нет токена Шага В или внутреннего токена")
+    row = db.execute(_SELECT_FOR_REVISION, {"id": candidate_id}).mappings().first()
+    if not row:
+        raise LookupError("кандидат не ждёт ревью или у него нет черновика")
+    brief = _build_brief(db, row)
+    brief["правка_ревьюера"] = {
+        "текущий_черновик": row["draft_text"],
+        "что_поправить": (remarks or "").strip(),
+    }
+    db.commit()   # _build_brief пишет след брифа и аннотацию
+    _fire(TRIGGER_ID_STEP_C, token, _payload(brief, internal))
 
 
 def _step_g_payload(db, row, internal_token: str) -> str:

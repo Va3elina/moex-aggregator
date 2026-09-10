@@ -183,10 +183,13 @@ def test_snapshot_logged_before_every_overwrite():
 
 
 def test_every_decision_point_is_logged():
-    """Все четыре события человека попадают в журнал."""
+    """Все четыре события человека попадают в журнал.
+
+    С 10.09.2026 вместо «edited» (человек вставил текст целиком) — «revision_requested»:
+    кнопка «✏️ Править» отправляет замечание ИИ-писателю, а не заменяет пост."""
     src = inspect.getsource(BOT)
     events = set(_re.findall(r'_log_feedback\(db, cid, "(\w+)"', src))
-    assert events == {"approved", "rejected", "edited", "comment"}, events
+    assert events == {"approved", "rejected", "revision_requested", "comment"}, events
 
 
 def test_journal_failure_does_not_break_review():
@@ -378,5 +381,5 @@ def test_new_draft_resets_everything_the_judge_said():
     src = inspect.getsource(cn.apply_step_c)
     for поле in ("judge_verdict = NULL", "judge_paragraphs = NULL", "judge_checked_at = NULL",
                  "judge_gave_up_at = NULL", "judge_fixed_at = NULL", "judge_fix_note = NULL",
-                 "judge_dispatch_attempts = 0"):
+                 "judge_dispatch_attempts = 0", "reviewer_notified_at = NULL"):
         assert поле in src, поле
