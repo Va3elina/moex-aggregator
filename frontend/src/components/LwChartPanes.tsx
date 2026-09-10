@@ -2525,7 +2525,9 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
               let axisW = 0;
               try { y = api.priceToCoordinate(price); } catch { /* серия снята */ }
               try { axisW = ch.priceScale(sc).width() || 0; } catch { /* §R2-30 */ }
-              badge.place(y, Math.max(0, bx.clientWidth - axisW), bx.clientHeight);
+              // Отступ — от СВОЕГО края панели: ширина шкалы этой стороны.
+              // (Раньше сюда шла ширина поля, и бейдж уровня ОИ вставал у левой оси.)
+              badge.place(y, axisW, bx.clientHeight);
             }));
           }
         } catch { /* серия уже снята */ }
