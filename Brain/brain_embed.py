@@ -29,7 +29,8 @@ from sqlalchemy import create_engine, text
 DB_URL = os.getenv("DB_URL")
 MODEL_DIR = os.getenv("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M-int8")
 MODEL_NAME = "potion-multilingual-128M"
-ВИДЫ = ("company", "news", "candidate", "post", "fact", "signal", "anomaly", "fund", "index", "holder")
+ВИДЫ = ("company", "news", "candidate", "post", "fact", "signal", "anomaly", "fund", "index", "holder",
+        "disclosure", "exchange", "report")   # официальные события — чтобы находил поиск по смыслу
 ПАЧКА = 2000
 
 _модель = None

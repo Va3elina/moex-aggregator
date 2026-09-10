@@ -212,6 +212,125 @@ def документы(conn, full: bool) -> int:
     return n
 
 
+# ── официальные события: раскрытия, объявления биржи, отчёты ────────────────────
+# ⚠️ ВСЁ, А НЕ ТОЛЬКО КАНДИДАТЫ (Вадим 10.09.2026: «это должно попадать в мозг
+# независимо от того, кандидат это или нет»). Раньше раскрытие FinanceMarker или
+# объявление МосБиржи попадало в карту, только если сканер делал из него кандидата в
+# пост: из 78 отчётных раскрытий за 4 дня не появилось ни одного узла, из 93 объявлений
+# биржи — три. Фильтр «стоит ли поста» — дело завода постов, а не памяти.
+#
+# Служебный шум торгов (коридоры РЕПО, аукционы, риск-параметры) о компаниях ничего не
+# говорит — его в карту не несём.
+_БИРЖА_ШУМ = (r"РЕПО|ценов\w+ коридор|дискретн\w+ аукцион|депозитн\w+ аукцион|риск-параметр|"
+              r"ставк\w+ риска")
+
+
+def раскрытия(conn, full: bool) -> int:
+    """Раскрытия FinanceMarker (disclosure_events) — все, не только ставшие кандидатами.
+    Уровень B: FinanceMarker пересказывает официальное сообщение, это посредник.
+
+    ⚠️ ts — когда раскрытие появилось в ленте, а не event_date: у отчётов FinanceMarker
+    ставит дату отчёта (31.08 для отчёта, вышедшего 09.09), и свежее выглядело бы старым."""
+    вод = None if full else _водяной(conn, "disclosures")
+    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc)}
+    r = conn.execute(text("""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'disclosure:' || d.id, 'disclosure', CAST(d.id AS text),
+               CASE d.category WHEN 'REPORT' THEN 'Отчётность' WHEN 'DIVIDEND' THEN 'Дивиденды'
+                    WHEN 'INSIDER_TRANSACTION' THEN 'Сделка инсайдера'
+                    WHEN 'OPERATION' THEN 'Операционные результаты' ELSE 'Событие' END
+                 || COALESCE(' · ' || d.name, '') || ': ' || left(d.title, 200),
+               left(regexp_replace(COALESCE(d.description, ''), '\\s+', ' ', 'g'), 600),
+               COALESCE(d.created_at, CAST(d.event_date AS timestamptz)),
+               jsonb_build_object('category', d.category, 'type', d.type, 'event_date', d.event_date,
+                                  'code', d.code, 'url', COALESCE(d.dir_link, d.link),
+                                  'dividend_status', d.dividend_status, 'transaction_type', d.transaction_type), NOW()
+          FROM disclosure_events d
+         WHERE COALESCE(d.updated_at, d.created_at) > :вод
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
+               payload = EXCLUDED.payload, updated_at = NOW()
+    """), п)
+    n = r.rowcount
+    conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
+        SELECT DISTINCT 'disclosure:' || d.id, m.company_id, 'раскрытие_о',
+               COALESCE(d.created_at, CAST(d.event_date AS timestamptz)), CAST(NULL AS real), 'financemarker'
+          FROM disclosure_events d JOIN brain_ticker_map m ON m.ticker = COALESCE(d.secid, d.code)
+         WHERE COALESCE(d.updated_at, d.created_at) > :вод
+        ON CONFLICT DO NOTHING
+    """), п)
+    _отметить(conn, "disclosures", conn.execute(text(
+        "SELECT MAX(COALESCE(updated_at, created_at)) FROM disclosure_events")).scalar(), n)
+    return n
+
+
+def отчёты(conn, full: bool) -> int:
+    """Отчёты, скачанные целиком (document_versions), с цифрами, которые из них извлёк
+    агент-читатель (document_facts: значение, страница, цитата). Уровень A — это
+    собственный отчёт компании. Цифры лежат в узле отчёта (сводка и payload), отдельными
+    узлами их не плодим: ни с чем, кроме своего отчёта, они не связаны."""
+    вод = None if full else _водяной(conn, "reports")
+    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc)}
+    r = conn.execute(text("""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'report:' || v.id, 'report', CAST(v.id AS text),
+               'Отчёт ' || COALESCE(v.standard || ' ', '') || COALESCE(v.secid || ' ', '')
+                 || CASE v.period_code WHEN 'y' THEN 'за ' || v.year || ' год'
+                                       WHEN '6m' THEN 'за 6 мес. ' || v.year
+                                       WHEN '9m' THEN 'за 9 мес. ' || v.year
+                                       WHEN 'q' THEN 'за ' || COALESCE(v.month / 3, 0) || ' кв. ' || v.year
+                                       ELSE COALESCE(v.period_code || ' ', '') || COALESCE(CAST(v.year AS text), '') END,
+               NULLIF(left(COALESCE(rd.summary, '') || COALESCE(' Цифры: ' || f.цифры, ''), 1200), ''),
+               v.fetched_at,
+               jsonb_build_object('doc_type', v.doc_type, 'standard', v.standard, 'period_code', v.period_code,
+                                  'year', v.year, 'month', v.month, 'pages', v.pages, 'url', v.url,
+                                  -- ⚠️ не '[]'::jsonb: pg8000 портит литерал, база получает пустую строку
+                                  'facts', COALESCE(f.facts, jsonb_build_array())), NOW()
+          FROM document_versions v
+          -- ⚠️ summary у агента-читателя — jsonb с разделами (сегменты, дивиденды, риски…);
+          -- для узла берём «одной_фразой», остальное доступно по ссылке на отчёт.
+          LEFT JOIN LATERAL (SELECT x.summary ->> 'одной_фразой' AS summary FROM document_reads x
+                              WHERE x.version_id = v.id ORDER BY x.created_at DESC LIMIT 1) rd ON TRUE
+          -- Коды полей читателя (net_profit, revenue) — по-русски из справочника показателей;
+          -- цифра, которая не сошлась с FinanceMarker, помечается в самой строке.
+          LEFT JOIN LATERAL (
+              SELECT string_agg(COALESCE(mr.label_ru, x.field) || ' '
+                                || COALESCE(replace(CAST(x.value_num AS text), '.', ','), x.value_text, '')
+                                || COALESCE(' ' || x.unit, '') || COALESCE(' (стр. ' || x.page || ')', '')
+                                || CASE WHEN x.mismatch THEN ' — не сходится с FinanceMarker' ELSE '' END,
+                                '; ' ORDER BY x.field) AS цифры,
+                     jsonb_agg(jsonb_build_object('поле', COALESCE(mr.label_ru, x.field), 'код', x.field,
+                                                  'число', x.value_num, 'текст', x.value_text, 'ед', x.unit,
+                                                  'стр', x.page, 'цитата', left(x.quote, 200),
+                                                  'расхождение_с_fm', x.mismatch)) AS facts
+                FROM document_facts x LEFT JOIN metrics_ref mr ON mr.metric_code = x.field
+               WHERE x.version_id = v.id) f ON TRUE
+         WHERE v.superseded_at IS NULL
+           AND GREATEST(v.fetched_at, (SELECT MAX(x.created_at) FROM document_reads x WHERE x.version_id = v.id)) > :вод
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
+               payload = EXCLUDED.payload, updated_at = NOW()
+    """), п)
+    n = r.rowcount
+    conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source)
+        SELECT DISTINCT 'report:' || v.id, m.company_id, 'отчёт_о', v.fetched_at, CAST(NULL AS real), 'document_versions'
+          FROM document_versions v JOIN brain_ticker_map m ON m.ticker = v.secid
+         WHERE v.superseded_at IS NULL AND v.fetched_at > :вод
+        ON CONFLICT DO NOTHING
+    """), п)
+    # Заменённая версия отчёта (перевыпуск) из карты уходит — вместе со связями.
+    conn.execute(text("""
+        DELETE FROM brain_edges WHERE src IN (SELECT 'report:' || id FROM document_versions WHERE superseded_at IS NOT NULL)
+    """))
+    conn.execute(text("""
+        DELETE FROM brain_nodes WHERE id IN (SELECT 'report:' || id FROM document_versions WHERE superseded_at IS NOT NULL)
+    """))
+    _отметить(conn, "reports", conn.execute(text("""
+        SELECT GREATEST((SELECT MAX(fetched_at) FROM document_versions), (SELECT MAX(created_at) FROM document_reads))
+    """)).scalar(), n)
+    return n
+
+
 def фонды(conn) -> int:
     """Последний снимок каждого фонда; ISIN → бумага → компания. Рёбра «держит» пересобираются целиком (их ~1 600)."""
     conn.execute(text("""
@@ -403,6 +522,9 @@ def _старые_рёбра_держателей(conn) -> int:  # не вызы
     "владеет":           ("B", "акционеры"),
     "в_секторе":         ("B", "классификация_smartlab"),
     "вместе_в_новостях": ("D", "совместные_упоминания"),
+    "раскрытие_о":       ("B", "раскрытие_fm"),
+    "объявление_о":      ("A", "moex"),      # по имени в тексте ставится явно: C, «имя»
+    "отчёт_о":           ("A", "документ"),
 }
 # Обычные слова, совпадающие с именами компаний: по ним автоматически не размечаем.
 # Список сеется в brain_name_rules (ambiguous=true) и дальше правится в таблице.
@@ -497,6 +619,73 @@ def правила_имён(conn) -> int:
     return r.rowcount
 
 
+_ОКОНЧАНИЯ = "(а|я|у|ю|ом|ем|ём|е|ы|и|ов|ев|ам|ям|ами|ями|ах|ях|ой|ей|ью|ия|ии|ию|ией)?"
+
+
+def _проверка_имени(pattern: str, company_id: str, verify, все_имена) -> str:
+    """Регэксп проверки имени после полнотекста — общий для новостей и объявлений биржи.
+
+    Самое длинное имя побеждает: «Газпром» не срабатывает на «Газпром нефть», «Россети» —
+    на «Россети Центр»; продолжения берутся из правил других компаний, по основе (первые
+    4 буквы): «Газпром нефти» и «нефтью» — одно слово. Полнотекст стеммит («Эталон»
+    находит «эталонных»), поэтому проверка — целое слово с русскими окончаниями."""
+    продолжения = sorted({имя[len(pattern.lower()):].strip() for имя, cid in все_имена
+                          if cid != company_id and имя.startswith(pattern.lower() + " ") and len(имя) > len(pattern) + 1})
+    стоп = "(?!\\s+(" + "|".join(re.escape(x.split()[0][:4]) for x in продолжения if x) + "))" if продолжения else ""
+    return verify or ("\\m" + re.escape(pattern) + _ОКОНЧАНИЯ + "\\M" + стоп)
+
+
+def объявления_биржи(conn, full: bool) -> int:
+    """Лента объявлений МосБиржи (moex_sitenews) — всё, кроме служебного шума торгов.
+
+    Компания — по тикерам, которые нашёл сканер (A: пишет сама биржа), и по правилам имён
+    в заголовке и тексте (C). Сама Мосбиржа по имени не ставится: она издатель каждого
+    объявления. Объявление без компании остаётся узлом — его находит поиск по смыслу
+    («включение в индекс», «делистинг»)."""
+    вод = None if full else _водяной(conn, "exchange")
+    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc), "шум": _БИРЖА_ШУМ}
+    r = conn.execute(text("""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT 'exchange:' || s.id, 'exchange', CAST(s.id AS text), left(s.title, 200),
+               NULLIF(left(regexp_replace(COALESCE(s.body, ''), '\\s+', ' ', 'g'), 600), ''),
+               s.published_at,
+               jsonb_build_object('rubric', s.rubric, 'tag', s.tag, 'tickers', to_jsonb(s.tickers),
+                                  'url', 'https://www.moex.com/n' || s.id), NOW()
+          FROM moex_sitenews s
+         WHERE COALESCE(s.modified_at, s.created_at) > :вод AND s.title !~* :шум
+        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
+               payload = EXCLUDED.payload, updated_at = NOW()
+    """), п)
+    n = r.rowcount
+    conn.execute(text("""
+        INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+        SELECT DISTINCT 'exchange:' || s.id, m.company_id, 'объявление_о', s.published_at, CAST(NULL AS real),
+               'moex_sitenews', 'A', 'moex', CAST(s.published_at AS date)
+          FROM moex_sitenews s JOIN brain_ticker_map m ON m.ticker = ANY(s.tickers)
+         WHERE COALESCE(s.modified_at, s.created_at) > :вод AND s.title !~* :шум
+        ON CONFLICT DO NOTHING
+    """), п)
+    правила = conn.execute(text(
+        "SELECT pattern, company_id, exclude_regex, verify_regex FROM brain_name_rules "
+        "WHERE enabled AND NOT ambiguous AND company_id <> 'company:MOEX'")).all()
+    все_имена = [(x[0].lower(), x[1]) for x in conn.execute(text("SELECT pattern, company_id FROM brain_name_rules")).all()]
+    for pattern, company_id, excl, verify in правила:
+        conn.execute(text("""
+            INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
+            SELECT DISTINCT 'exchange:' || s.id, :cid, 'объявление_о', s.published_at, CAST(NULL AS real),
+                   'moex_sitenews', 'C', 'имя', CAST(s.published_at AS date)
+              FROM moex_sitenews s
+             WHERE COALESCE(s.modified_at, s.created_at) > :вод AND s.title !~* :шум
+               AND to_tsvector('russian', s.title || ' ' || COALESCE(s.body, '')) @@ phraseto_tsquery('russian', :q)
+               AND regexp_replace(s.title || ' ' || COALESCE(s.body, ''), :ex, '', 'gi') ~* :vf
+            ON CONFLICT DO NOTHING
+        """), {**п, "q": pattern, "cid": company_id, "ex": excl or "(?!x)x",
+               "vf": _проверка_имени(pattern, company_id, verify, все_имена)})
+    _отметить(conn, "exchange", conn.execute(text(
+        "SELECT MAX(COALESCE(modified_at, created_at)) FROM moex_sitenews")).scalar(), n)
+    return n
+
+
 def новости_по_имени(conn, full: bool) -> int:
     """Новости без хэштега тикера: разметка по имени компании полнотекстом (русская
     морфология: «Сбербанка», «Полюсом»). Уровень C, способ «имя». Только правила
@@ -510,16 +699,7 @@ def новости_по_имени(conn, full: bool) -> int:
         conn.execute(text("DELETE FROM brain_edges WHERE kind = 'упоминает' AND method = 'имя'"))
     n = 0
     for pattern, company_id, excl, verify in правила:
-        # Самое длинное имя побеждает: «Газпром» не срабатывает на «Газпром нефть»,
-        # «Россети» — на «Россети Центр». Продолжения берутся из правил других компаний.
-        продолжения = sorted({имя[len(pattern.lower()):].strip() for имя, cid in все_имена
-                              if cid != company_id and имя.startswith(pattern.lower() + " ") and len(имя) > len(pattern) + 1})
-        # Продолжение — по основе (первые 4 буквы): «Газпром нефти» и «нефтью» — одно слово.
-        стоп = "(?!\\s+(" + "|".join(re.escape(x.split()[0][:4]) for x in продолжения if x) + "))" if продолжения else ""
-        # Полнотекст стеммит: «Эталон» находит «эталонных». Проверка — целое слово с
-        # русскими окончаниями, а не префикс.
-        окончания = "(а|я|у|ю|ом|ем|ём|е|ы|и|ов|ев|ам|ям|ами|ями|ах|ях|ой|ей|ью|ия|ии|ию|ией)?"
-        проверка = verify or ("\\m" + re.escape(pattern) + окончания + "\\M" + стоп)
+        проверка = _проверка_имени(pattern, company_id, verify, все_имена)
         п = {"с": с, "вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc), "q": pattern, "cid": company_id,
              "ex": excl or "(?!x)x", "vf": проверка}
         conn.execute(text(f"""
@@ -754,6 +934,8 @@ def main() -> int:
         итог["новостей"], _ = новости(conn, args.full)
         итог["кандидатов"] = кандидаты(conn, args.full)
         итог["документов"] = документы(conn, args.full)
+        итог["раскрытий"] = раскрытия(conn, args.full)
+        итог["отчётов"] = отчёты(conn, args.full)
         итог["фонды_рёбер"] = фонды(conn)
         итог["индексы_рёбер"] = индексы(conn)
         итог["владение_рёбер"] = факты(conn)
@@ -762,6 +944,7 @@ def main() -> int:
         держатели_узлы(conn)
         итог["правил_имён"] = правила_имён(conn)
         итог["новостей_по_имени"] = новости_по_имени(conn, args.full)
+        итог["объявлений_биржи"] = объявления_биржи(conn, args.full)
         итог["держатели"] = держатели_резолв(conn)
         итог["секторов_рёбер"] = секторы(conn)
         итог["вместе_рёбер"] = вместе(conn)
