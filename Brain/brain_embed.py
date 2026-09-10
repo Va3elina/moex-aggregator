@@ -30,7 +30,8 @@ DB_URL = os.getenv("DB_URL")
 MODEL_DIR = os.getenv("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M-int8")
 MODEL_NAME = "potion-multilingual-128M"
 ВИДЫ = ("company", "news", "candidate", "post", "fact", "signal", "anomaly", "fund", "index", "holder",
-        "disclosure", "exchange", "report")   # официальные события — чтобы находил поиск по смыслу
+        "disclosure", "exchange", "report",   # официальные события — чтобы находил поиск по смыслу
+        "index_event", "fund_event")
 ПАЧКА = 2000
 
 _модель = None
