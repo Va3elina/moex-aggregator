@@ -555,12 +555,15 @@ def новости_по_имени(conn, full: bool) -> int:
         ) d WHERE e.src = d.src AND e.kind = 'упоминает' AND e.method = 'имя'
     """))
     # Решения аудита (Routine frame-brain-audit, research/brain/prompt_name_audit_routine.md):
-    # связь, которую агент признал неверной, не возвращается — ни инкрементом, ни полной
-    # пересборкой. Решение живёт в своей таблице, как решения человека по держателям.
+    # связь уходит и не возвращается — ни инкрементом, ни полной пересборкой, — только если
+    # «неверно» сказали ДВЕ независимые проверки или человек нажал «убрать». Одного агента
+    # мало: в проверочном прогоне 10.09 единственное «неверно» из 40 было его ошибкой
+    # (Sitronics «входит в АФК Систему»). «Оставить» человека сильнее любых агентов.
     conn.execute(text("""
         DELETE FROM brain_edges e USING brain_edge_reviews r
          WHERE e.src = r.src AND e.dst = r.dst AND e.kind = r.kind AND e.method = 'имя'
-           AND r.verdict = 'неверно'
+           AND (r.human_decision = 'убрать'
+                OR (r.human_decision IS NULL AND r.verdict = 'неверно' AND r.second_verdict = 'неверно'))
     """))
     # Узлы новостей, оставшиеся без единой связи, карте не нужны.
     conn.execute(text("""
@@ -727,6 +730,12 @@ def таблицы_аудита(conn) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), decided_at TIMESTAMPTZ)
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_brain_edge_reviews_when ON brain_edge_reviews (reviewed_at DESC)"))
+    # Второе мнение и решение человека — зеркало db/migrations/091.
+    for колонка in ("second_verdict TEXT CHECK (second_verdict IN ('верно', 'неверно', 'неясно'))",
+                    "second_reason TEXT", "second_at TIMESTAMPTZ",
+                    "human_decision TEXT CHECK (human_decision IN ('убрать', 'оставить'))",
+                    "human_at TIMESTAMPTZ"):
+        conn.execute(text(f"ALTER TABLE brain_edge_reviews ADD COLUMN IF NOT EXISTS {колонка}"))
 
 
 def main() -> int:

@@ -116,8 +116,14 @@ def править_правило(rule_id: int, enabled: Optional[bool] = Query(
 # сводка — панели, решение по предложенному исключению — только человеку.
 @router.get("/audit/names/batch")
 def аудит_партия(limit: int = Query(50, ge=1, le=200), resample: int = Query(0, ge=0, le=100),
-                 db: Session = Depends(get_db), who: str = Depends(_доступ)):
-    return _вызов(ядро.аудит_имён_партия, limit=limit, resample=resample, db=db, _who=who)
+                 mode: str = Query("main"), db: Session = Depends(get_db), who: str = Depends(_доступ)):
+    return _вызов(ядро.аудит_имён_партия, limit=limit, resample=resample, mode=mode, db=db, _who=who)
+
+
+@router.patch("/audit/names/decide")
+def решить_спор(id: str = Query(...), decision: str = Query(...), db: Session = Depends(get_db),
+                who: str = Depends(_только_админ)):
+    return _вызов(ядро.решить_спор, id=id, decision=decision, db=db, _who=who)
 
 
 @router.post("/audit/names")

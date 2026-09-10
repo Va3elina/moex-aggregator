@@ -22,7 +22,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, Loader2, Search } from 'lucide-react';
 import {
   decideBrainHolder, getBrainHolderQueue, getBrainNameRules, getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch,
-  getBrainSimilar, getBrainStats, getBrainTop, patchBrainNameRule, getBrainNameAudit, decideBrainProposal,
+  getBrainSimilar, getBrainStats, getBrainTop, patchBrainNameRule, getBrainNameAudit, decideBrainProposal, decideBrainDispute,
 } from '../../services/api';
 import type {
   BrainHolderReview, BrainNameRule, BrainNeighbor, BrainNode, BrainNodePage, BrainPath, BrainRing, BrainSearchHit, BrainStats,
@@ -392,6 +392,13 @@ function АудитИмён() {
     catch (e) { alert(e instanceof Error ? e.message : 'сбой'); }
     finally { setЗанят(null); }
   };
+  const [спорЗанят, setСпорЗанят] = useState<string | null>(null);
+  const рассудить = async (id: string, decision: 'убрать' | 'оставить') => {
+    setСпорЗанят(id);
+    try { await decideBrainDispute(id, decision); загрузить(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'сбой'); }
+    finally { setСпорЗанят(null); }
+  };
   if (!d) return null;
   return (
     <div className="dash-card" style={{ padding: '14px 16px' }}>
@@ -400,8 +407,11 @@ function АудитИмён() {
         <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>не проверено {числоРус(d.непроверенных)}</span>
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--d-dim)', margin: '0 0 8px', lineHeight: 1.45 }}>
-        Агент читает новость и отвечает, про эту ли компанию она. Неверные связи уходят из карты и при пересборке не возвращаются. Первый проход — по всей базе ночами, дальше раз в неделю.
+        Агент читает новость и отвечает, про эту ли компанию она. Одного «неверно» мало: связь уходит из карты, только если с ним согласна вторая, независимая проверка вслепую, или вы нажали «убрать». Расхождения — ниже, в спорных. Первый проход — по всей базе ночами, дальше раз в неделю.
       </p>
+      <div className="mono mb-2" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
+        ждут второго мнения {числоРус(d.ждут_второго_мнения)} · убрано по двум проверкам {числоРус(d.убрано)} · спорных {числоРус(d.спорные.length)}
+      </div>
       {d.недели.length === 0 && <div className="mono" style={{ fontSize: 11.5, color: 'var(--d-dim)' }}>проверок ещё не было</div>}
       <div className="flex flex-col" style={{ gap: 3 }}>
         {d.недели.map((w) => (
@@ -414,6 +424,27 @@ function АудитИмён() {
           </div>
         ))}
       </div>
+      {d.спорные.length > 0 && (
+        <>
+          <div className="mono mt-3 mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Спорные: проверки разошлись</div>
+          <div className="flex flex-col" style={{ gap: 5 }}>
+            {d.спорные.map((s) => (
+              <div key={s.id} style={{ fontSize: 12, padding: '6px 8px', borderRadius: 6, background: 'var(--d-sunk)' }}>
+                <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                  <span style={{ fontWeight: 600 }}>{s.компания ?? s.id.split('|')[1]?.replace('company:', '')}</span>
+                  <span className="mono" style={{ fontSize: 10.5, color: 'var(--d-dim)', flex: '1 1 160px' }}>первая: {s.первое} · вторая: {s.второе}</span>
+                  <button className="dash-press" disabled={спорЗанят === s.id} onClick={() => рассудить(s.id, 'оставить')} style={{ padding: '3px 10px', fontSize: 11 }}>оставить</button>
+                  <button className="dash-press" disabled={спорЗанят === s.id} onClick={() => рассудить(s.id, 'убрать')} style={{ padding: '3px 10px', fontSize: 11, color: 'var(--d-mute)' }}>убрать связь</button>
+                </div>
+                <div style={{ color: 'var(--d-mute)', fontSize: 11.5, marginTop: 3, lineHeight: 1.4 }}>«{s.текст}»</div>
+                {(s.первая_причина || s.вторая_причина) && (
+                  <div style={{ color: 'var(--d-dim)', fontSize: 11, marginTop: 2 }}>{[s.первая_причина, s.вторая_причина].filter(Boolean).join(' / ')}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {d.предложения.length > 0 && (
         <>
           <div className="mono mt-3 mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Агент предлагает исключения</div>
