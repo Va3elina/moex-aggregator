@@ -124,7 +124,9 @@ def _stub_brief_sources(monkeypatch):
     monkeypatch.setattr(CA, "_story_frame", lambda *a: "РЕАКЦИЯ")
     monkeypatch.setattr(CA, "_position_phrases", lambda *a, **k: {"направление_позиции": "чистый ЛОНГ"})
     monkeypatch.setattr(CA, "_news_reaction", lambda *a, **k: {
-        "до_новости": "с 4 по 8 сентября: чистый лонг сократился на 9%"})
+        "после_новости": "9 сентября: чистый лонг вырос на 1,5%"})
+    monkeypatch.setattr(CA, "_news_around", lambda *a, **k: [
+        "9 сентября, 17:17 МСК — пожар в Новом Уренгое → за 2 часа акция подешевела на 1,4%"])
     monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
     # ⚠️ Каждый НОВЫЙ источник данных брифа обязан попасть в эту заглушку. Именно
     # так тест паритета и поймал добавление _related_context: без подмены он полез
@@ -236,6 +238,42 @@ def test_writer_waits_for_the_first_slice_after_the_news(monkeypatch):
 def test_pre_news_moves_stay_out_of_the_post():
     f = _frame(-5)
     assert "НЕ выносим" in f and "КОНСТАТИРОВАТЬ" not in f, f
+
+
+# События вокруг новости (Вадим 10.09, 1933): реальные новости и часовые свечи NVTK
+# за 9 сентября. Свечи в БД — наивное время МСК, новости — UTC.
+_UTC = _dt.timezone.utc
+_NEWS_0909 = [
+    (_dt.datetime(2026, 9, 9, 10, 0, tzinfo=_UTC), "Лукойл обсуждает дивиденды #LKOH", ["LKOH"]),
+    (_dt.datetime(2026, 9, 9, 12, 30, 38, tzinfo=_UTC),
+     "💥🇷🇺🇻🇳#NVTK НОВАТЭК РАССМАТРИВАЕТ С PETROVIETNAM КРУПНЫЙ ПРОЕКТ ВО ВЬЕТНАМЕ", ["NVTK"]),
+    (_dt.datetime(2026, 9, 9, 14, 17, 48, tzinfo=_UTC),
+     "Возгорание произошло из-за падения обломков БПЛА на одном из промышленных объектов "
+     "в Новом Уренгое на Ямале — ТАСС #GAZP #NVTK", ["GAZP", "NVTK"]),
+    (_dt.datetime(2026, 9, 9, 14, 38, 19, tzinfo=_UTC),
+     "⚠️🛢🇷🇺#газ #россия Украинские дроны впервые атаковали Новый Уренгой (ЯНАО)", []),
+]
+_BARS_0909 = [(_dt.datetime(2026, 9, 9, h), c) for h, c in (
+    (6, 1005.8), (7, 1006.1), (8, 1004.0), (9, 997.5), (10, 996.5), (11, 1006.2),
+    (12, 1003.8), (13, 998.5), (14, 997.2), (15, 999.9), (16, 999.6), (17, 997.4),
+    (18, 985.8), (19, 982.0), (20, 984.4), (21, 984.8), (22, 984.4), (23, 980.3))]
+
+
+def test_events_show_that_the_drop_came_after_urengoy_not_after_our_news():
+    our_at = _dt.datetime(2026, 9, 9, 12, 34, 3, tzinfo=_UTC)
+    lines = CA._events_from(_NEWS_0909, _BARS_0909, "NVTK", "НОВАТЭК", our_at)
+    assert len(lines) == 3, lines   # Лукойл: чужая новость, цена почти не шла — не нужна
+    assert lines[0].startswith("[наша новость] 9 сентября, 15:30 МСК"), lines[0]
+    assert "почти не изменилась" in lines[0], lines[0]
+    assert "17:17 МСК" in lines[1] and "подешевела на 1,4%" in lines[1], lines[1]
+    assert "17:38 МСК" in lines[2] and "Новый Уренгой" in lines[2], lines[2]
+
+
+def test_events_block_is_in_both_briefs(monkeypatch):
+    _stub_brief_sources(monkeypatch)
+    for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
+                          ("судья", CA._step_g_payload(None, _ROW, "tok"))):
+        assert "события_вокруг_новости" in payload, name
 
 
 def test_position_block_has_no_long_horizon_numbers(monkeypatch):
