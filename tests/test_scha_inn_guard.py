@@ -11,10 +11,14 @@ OPIF-54) парсер записал в количество ИНН ВТБ 77020
     python tests/test_scha_inn_guard.py
     pytest tests/test_scha_inn_guard.py
 """
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# Модуль при импорте создаёт движок api.database из DB_URL. Движок ленивый — к базе
+# никто не подключается, но без URL create_engine падает (нет .env в CI/worktree).
+os.environ.setdefault("DB_URL", "postgresql+pg8000://test@localhost/test")
 
 from Funds.manual_scha_backfill import is_implausible_row, is_inn_as_qty  # noqa: E402
 
