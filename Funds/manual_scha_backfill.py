@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from sqlalchemy import text
 
 from api.database import get_engine
-from Funds.parsers.scha_parser import parse_scha
+from Funds.parsers.scha_parser import looks_like_issuer_code, parse_scha
 from Funds.parsers.scha_xls_parser import parse_scha_xls
 from Funds.parsers.scha_docx_parser import parse_scha_docx
 
@@ -85,24 +85,23 @@ def is_implausible_row(positions, amount_rub) -> bool:
     return (amount_rub / positions) < GARBAGE_PRICE_MAX
 
 
-# ИНН эмитента вместо количества при ВЕРНОЙ стоимости (30.04.2026, субординированные
-# выпуски номиналом 10 млн ₽ у OBLG/OPIF-54): «количество» = ИНН 7702070139 (ВТБ) или
-# 7707083893 (Сбер), стоимость крупная → цена за штуку 0,03–0,27 ₽, и is_implausible_row
-# с порогом 0,0001 ₽ такое пропускает. Сигнатура: 10 цифр с верной контрольной суммой
-# ИНН юрлица и цена за штуку < 1 ₽. Строку не выкидываем — стоимость и доля верные, —
-# пишем без количества (миграция 094 чинила такие руками по цене за штуку).
-_INN_WEIGHTS = (2, 4, 10, 3, 5, 9, 4, 6, 8)
+# ИНН/ОГРН эмитента вместо количества при ВЕРНОЙ стоимости (30.04.2026, выпуски номиналом
+# 1–10 млн ₽ у OBLG/OPIF-54): «количество» = ИНН ВТБ/Сбера/РЖД, стоимость крупная → цена
+# за штуку 0,03–0,27 ₽, и is_implausible_row с порогом 0,0001 ₽ такое пропускает. Корень
+# закрыт в парсере (потолок цены в _parse_assets_from_tables_rowwise), это — страховка для
+# остальных форматов. Сигнатура — looks_like_issuer_code (контрольная сумма, не кратно
+# 1000) и цена за штуку < 1 ₽. Строку не выкидываем — стоимость и доля верные, — пишем
+# без количества.
 INN_QTY_PRICE_MAX = 1.0  # ₽/шт
 
 
 def is_inn_as_qty(positions, amount_rub) -> bool:
-    """True если «количество» — ИНН юрлица (контрольная сумма сходится) при цене < 1 ₽/шт."""
-    if positions is None or not (10**9 <= positions < 10**10):
+    """True если «количество» похоже на ИНН/ОГРН эмитента при цене < 1 ₽/шт."""
+    if positions is None or positions < 10**9:
         return False
     if not amount_rub or amount_rub / positions >= INN_QTY_PRICE_MAX:
         return False
-    d = [int(c) for c in str(int(positions))]
-    return sum(w * x for w, x in zip(_INN_WEIGHTS, d)) % 11 % 10 == d[9]
+    return looks_like_issuer_code(positions)
 
 # In-memory кеш ISIN → SHORTNAME (одна сессия одного запуска)
 _name_cache: dict[str, str] = {}
