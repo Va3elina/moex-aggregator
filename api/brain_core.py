@@ -581,23 +581,86 @@ _НЕПРОВЕРЕННЫЕ = """
      AND NOT EXISTS (SELECT 1 FROM brain_edge_reviews r
                       WHERE r.src = e.src AND r.dst = e.dst AND r.kind = e.kind)
 """
+# ⚠️ ВТОРОЕ МНЕНИЕ (Вадим 10.09). Проверочный прогон: из 40 вердиктов единственное
+# «неверно» было ошибкой агента — «Sitronics (входит в АФК Систему)» признано чужим.
+# «Верно» ничего не меняет, а «неверно» удаляет связь, поэтому одного агента для
+# удаления мало: связь уходит только при согласии двух независимых проверок или по
+# решению человека. Второй проход — отдельная сессия и вслепую: к подозрительным
+# подмешано столько же случайных «верно», порядок перемешан, причина первого не видна.
+_ВТОРОЕ_ЖДЁТ = """
+    FROM brain_edge_reviews r JOIN brain_edges e ON e.src = r.src AND e.dst = r.dst AND e.kind = r.kind
+   WHERE r.verdict = 'неверно' AND r.second_verdict IS NULL AND r.human_decision IS NULL
+"""
+# Спор — ровно один из двух сказал «неверно». Связь остаётся, решает человек.
+_СПОРНО = "((r.verdict = 'неверно') <> (r.second_verdict = 'неверно')) AND r.human_decision IS NULL"
+
+
+def _текст_новости(alias: str) -> str:
+    """Полный текст новости из архива по id узла `news:<канал>/<id>` (узел хранит 160 симв.).
+    Исторический экспорт лежит под старыми именами каналов — отсюда второй вариант."""
+    return f"""
+        LEFT JOIN LATERAL (
+            SELECT x.text FROM news_archive x
+             WHERE x.message_id = CAST(split_part({alias}.src, '/', 2) AS bigint)
+               AND x.channel IN (split_part(substr({alias}.src, 6), '/', 1),
+                                 CASE split_part(substr({alias}.src, 6), '/', 1)
+                                      WHEN 'markettwits' THEN 'MarketTwits'
+                                      WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' END)
+             LIMIT 1) a ON TRUE"""
+
+
+def _окно(текст: str, имена: Optional[str], ширина: int = 600) -> str:
+    """Кусок новости, где стоит имя компании. Первые 600 символов резали упоминание: в
+    прогоне 10.09 агент не нашёл Совкомбанк в анонсе конференции — имя было дальше, и
+    честный вердикт был только «неясно». Основа имени без двух последних букв ловит
+    падежи («Совкомбанка»)."""
+    t = " ".join((текст or "").split())
+    if len(t) <= ширина:
+        return t
+    низ = t.lower()
+    позиции = [низ.find(n.strip().lower()[:max(4, len(n.strip()) - 2)])
+               for n in (имена or "").split("|") if n.strip()]
+    p = min([x for x in позиции if x >= 0], default=0)
+    if p < ширина - 150:
+        return t[:ширина]
+    return "…" + t[max(0, p - 200):max(0, p - 200) + ширина]
 
 
 def аудит_имён_партия(limit: int = Query(50, ge=1, le=200), resample: int = Query(0, ge=0, le=100),
-                      db: Session = None, _who: str = "agent"):
-    """Партия для агента: связи «по имени», которых никто не проверял (старые вперёд —
-    первый проход идёт по всей базе), плюс resample случайных, признанных верными больше
-    месяца назад, — заметить, что разметка поплыла. Текст новости — из архива полностью
-    (узел хранит только 160 символов), обрезан до 600: вывод Bash у агента конечен."""
-    rows = db.execute(text(f"""
-        WITH pick AS (
+                      mode: str = Query("main"), db: Session = None, _who: str = "agent"):
+    """Партия для агента.
+
+    main — связи «по имени», которых никто не проверял (старые вперёд — первый проход
+    идёт по всей базе), плюс resample случайных, признанных верными больше месяца назад:
+    заметить, что разметка поплыла.
+    second — второе мнение: «неверно» первого прохода вперемешку с таким же числом
+    случайных «верно»; метки «перепроверка» нет ни у одной — проверка вслепую.
+
+    Текст новости обрезан до 600 символов: вывод Bash у агента конечен."""
+    if mode not in ("main", "second"):
+        raise Ошибка(400, "mode: main | second")
+    if mode == "second":
+        ждут = int(db.execute(text(f"SELECT COUNT(*) {_ВТОРОЕ_ЖДЁТ}")).scalar() or 0)
+        половина = min(ждут, max(1, limit // 2))
+        pick = f"""
+            (SELECT r.src, r.dst, e.ts, FALSE AS повтор {_ВТОРОЕ_ЖДЁТ} ORDER BY r.reviewed_at LIMIT :half)
+            UNION ALL
+            (SELECT r.src, r.dst, e.ts, FALSE FROM brain_edge_reviews r
+               JOIN brain_edges e ON e.src = r.src AND e.dst = r.dst AND e.kind = r.kind
+              WHERE r.verdict = 'верно' AND r.second_verdict IS NULL AND r.human_decision IS NULL
+              ORDER BY random() LIMIT :half)"""
+        параметры = {"half": половина if ждут else 0}
+    else:
+        pick = f"""
             (SELECT e.src, e.dst, e.ts, FALSE AS повтор {_НЕПРОВЕРЕННЫЕ} ORDER BY e.ts LIMIT :lim)
             UNION ALL
             (SELECT e.src, e.dst, e.ts, TRUE FROM brain_edges e
                JOIN brain_edge_reviews r ON r.src = e.src AND r.dst = e.dst AND r.kind = e.kind
               WHERE e.method = 'имя' AND r.verdict = 'верно' AND r.reviewed_at < NOW() - INTERVAL '30 days'
-              ORDER BY random() LIMIT :rs)
-        )
+              ORDER BY random() LIMIT :rs)"""
+        параметры = {"lim": limit, "rs": resample}
+    rows = db.execute(text(f"""
+        WITH pick AS ({pick})
         SELECT p.src, p.dst, p.ts, p.повтор, c.title AS компания,
                -- Короткие имена: у ВТБ в правилах есть и «VTBR-9.25 (Фьючерсный контракт…)» из
                -- названий активов фондов — агенту это шум, а вывод у него конечен.
@@ -609,23 +672,18 @@ def аудит_имён_партия(limit: int = Query(50, ge=1, le=200), resam
           FROM pick p
           JOIN brain_nodes c ON c.id = p.dst
           LEFT JOIN brain_nodes nn ON nn.id = p.src
-          LEFT JOIN LATERAL (
-              SELECT x.text FROM news_archive x
-               WHERE x.message_id = CAST(split_part(p.src, '/', 2) AS bigint)
-                 AND x.channel IN (split_part(substr(p.src, 6), '/', 1),
-                                   CASE split_part(substr(p.src, 6), '/', 1)
-                                        WHEN 'markettwits' THEN 'MarketTwits'
-                                        WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' END)
-               LIMIT 1) a ON TRUE
-    """), {"lim": limit, "rs": resample}).mappings().all()
-    осталось = db.execute(text(f"SELECT COUNT(*) {_НЕПРОВЕРЕННЫЕ}")).scalar()
+          {_текст_новости("p")}
+         ORDER BY random()
+    """), параметры).mappings().all()
+    осталось = db.execute(text(f"SELECT COUNT(*) {_ВТОРОЕ_ЖДЁТ if mode == 'second' else _НЕПРОВЕРЕННЫЕ}")).scalar()
     return {
         "партия": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M"),
+        "режим": mode,
         "непроверенных_всего": int(осталось or 0),
         "связи": [{"id": f"{r['src']}|{r['dst']}", "компания": r["компания"],
                    "имена_в_правилах": r["имена"], "дата": str(r["ts"])[:10],
                    "перепроверка": bool(r["повтор"]),
-                   "текст": " ".join((r["текст"] or "").split())[:600]} for r in rows],
+                   "текст": _окно(r["текст"], r["имена"])} for r in rows],
     }
 
 
@@ -635,6 +693,7 @@ def аудит_имён_решения(body: dict, db: Session = None, _who: str
     import json
     партия = str(body.get("партия") or "")[:40]
     кто = "routine" if _who == "agent" else _who
+    второе = body.get("режим") == "second"
     принято = отброшено = предложено = 0
     for d in body.get("решения") or []:
         src, _, dst = str(d.get("id") or "").partition("|")
@@ -642,15 +701,35 @@ def аудит_имён_решения(body: dict, db: Session = None, _who: str
         if вердикт not in _ВЕРДИКТЫ or not src.startswith("news:") or not dst.startswith("company:"):
             отброшено += 1
             continue
-        db.execute(text("""
-            INSERT INTO brain_edge_reviews (src, dst, kind, verdict, reason, reviewer, batch, reviewed_at)
-            VALUES (:s, :d, 'упоминает', :v, :r, :who, :b, NOW())
-            ON CONFLICT (src, dst, kind) DO UPDATE SET verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
-                   reviewer = EXCLUDED.reviewer, batch = EXCLUDED.batch, reviewed_at = NOW()
-        """), {"s": src, "d": dst, "v": вердикт, "r": str(d.get("причина") or "")[:300] or None,
-               "who": кто, "b": партия})
+        п = {"s": src, "d": dst, "v": вердикт, "r": str(d.get("причина") or "")[:300] or None,
+             "who": кто, "b": партия}
+        if второе:
+            # Второе мнение пишется рядом с первым и только один раз — по связи, которую
+            # первый проход уже видел. Чужой id или повтор — отброшено.
+            r = db.execute(text("""
+                UPDATE brain_edge_reviews SET second_verdict = :v, second_reason = :r, second_at = NOW()
+                 WHERE src = :s AND dst = :d AND kind = 'упоминает' AND second_verdict IS NULL
+            """), п)
+            if not r.rowcount:
+                отброшено += 1
+                continue
+        else:
+            # Новый вердикт первого прохода (еженедельная перепроверка) обнуляет второе
+            # мнение, если вердикт сменился: оно было про другой ответ.
+            db.execute(text("""
+                INSERT INTO brain_edge_reviews (src, dst, kind, verdict, reason, reviewer, batch, reviewed_at)
+                VALUES (:s, :d, 'упоминает', :v, :r, :who, :b, NOW())
+                ON CONFLICT (src, dst, kind) DO UPDATE SET verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
+                       reviewer = EXCLUDED.reviewer, batch = EXCLUDED.batch, reviewed_at = NOW(),
+                       second_verdict = CASE WHEN brain_edge_reviews.verdict = EXCLUDED.verdict
+                                             THEN brain_edge_reviews.second_verdict END,
+                       second_reason = CASE WHEN brain_edge_reviews.verdict = EXCLUDED.verdict
+                                            THEN brain_edge_reviews.second_reason END,
+                       second_at = CASE WHEN brain_edge_reviews.verdict = EXCLUDED.verdict
+                                        THEN brain_edge_reviews.second_at END
+            """), п)
         принято += 1
-    for p in body.get("предложения") or []:
+    for p in ([] if второе else body.get("предложения") or []):
         cid, rx = str(p.get("company_id") or ""), str(p.get("исключение") or "")
         if not cid.startswith("company:") or not rx or len(rx) > 200:
             continue
@@ -686,14 +765,51 @@ def аудит_имён_сводка(db: Session = None, _who: str = "agent"):
          WHERE p.status = 'на_проверке' ORDER BY p.created_at DESC LIMIT 50
     """)).mappings().all()
     осталось = db.execute(text(f"SELECT COUNT(*) {_НЕПРОВЕРЕННЫЕ}")).scalar()
+    ждут = db.execute(text(f"SELECT COUNT(*) {_ВТОРОЕ_ЖДЁТ}")).scalar()
+    убрано = db.execute(text("""
+        SELECT COUNT(*) FROM brain_edge_reviews r
+         WHERE r.human_decision = 'убрать'
+            OR (r.human_decision IS NULL AND r.verdict = 'неверно' AND r.second_verdict = 'неверно')
+    """)).scalar()
+    спорные = db.execute(text(f"""
+        SELECT r.src || '|' || r.dst AS id, c.title AS компания, r.verdict AS первое, r.reason AS первая_причина,
+               r.second_verdict AS второе, r.second_reason AS вторая_причина,
+               left(regexp_replace(COALESCE(a.text, nn.title, ''), '\\s+', ' ', 'g'), 400) AS текст
+          FROM brain_edge_reviews r
+          LEFT JOIN brain_nodes c ON c.id = r.dst
+          LEFT JOIN brain_nodes nn ON nn.id = r.src
+          {_текст_новости("r")}
+         WHERE r.second_verdict IS NOT NULL AND {_СПОРНО}
+         ORDER BY r.second_at DESC LIMIT 50
+    """)).mappings().all()
 
     def точность(r):
         n = r["верно"] + r["неверно"]
         return round(100 * r["верно"] / n) if n else None
 
     return {"непроверенных": int(осталось or 0),
+            "ждут_второго_мнения": int(ждут or 0),
+            "убрано": int(убрано or 0),
             "недели": [{**dict(r), "точность": точность(r)} for r in недели],
+            "спорные": [dict(r) for r in спорные],
             "предложения": [dict(r) for r in предложения]}
+
+
+def решить_спор(id: str = Query(...), decision: str = Query(..., description="убрать | оставить"),
+                db: Session = None, _who: str = "admin"):
+    """Решение человека по спорной связи (агенты разошлись). Переживает пересборку и
+    еженедельную перепроверку; «убрать» синк применит в ближайший прогон (≤ 15 мин)."""
+    if decision not in ("убрать", "оставить"):
+        raise Ошибка(400, "decision: убрать | оставить")
+    src, _, dst = id.partition("|")
+    r = db.execute(text("""
+        UPDATE brain_edge_reviews SET human_decision = :h, human_at = NOW()
+         WHERE src = :s AND dst = :d AND kind = 'упоминает'
+    """), {"h": decision, "s": src, "d": dst})
+    if r.rowcount == 0:
+        raise Ошибка(404, "такой проверенной связи нет")
+    db.commit()
+    return {"id": id, "decision": decision}
 
 
 def решить_предложение(pid: int, decision: str = Query(..., description="принять | отклонить"),

@@ -2904,13 +2904,19 @@ export const patchBrainNameRule = (id: number, fields: { enabled?: boolean; ambi
   brainPatch<{ id: number }>(`review/names/${id}`, fields);
 export interface BrainNameAudit {
   непроверенных: number;
+  ждут_второго_мнения: number;
+  убрано: number;
   недели: Array<{ неделя: string; верно: number; неверно: number; неясно: number; точность: number | null }>;
+  спорные: Array<{ id: string; компания: string | null; первое: string; первая_причина: string | null;
+    второе: string; вторая_причина: string | null; текст: string }>;
   предложения: Array<{ id: number; company_id: string; компания: string | null; exclude_regex: string;
     examples: string[] | null; reason: string | null; created_at: string }>;
 }
 export const getBrainNameAudit = () => brainFetch<BrainNameAudit>('audit/names/summary');
 export const decideBrainProposal = (id: number, decision: 'принять' | 'отклонить') =>
   brainPatch<{ id: number; status: string }>(`audit/proposals/${id}`, { decision });
+export const decideBrainDispute = (id: string, decision: 'убрать' | 'оставить') =>
+  brainPatch<{ id: string; decision: string }>('audit/names/decide', { id, decision });
 export const getBrainNeighbors = (id: string, kind?: string, since?: number, limit = 100, offset = 0) =>
   brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
 export const getBrainSearch = (q: string, kind?: string, limit = 12, mode: 'word' | 'meaning' = 'word') =>
