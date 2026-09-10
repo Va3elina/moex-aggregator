@@ -2902,6 +2902,15 @@ export const decideBrainHolder = (holderNorm: string, decision: 'подтвер�
   brainPatch<{ status: string }>(`review/holders/${encodeURIComponent(holderNorm)}`, { decision, company_id: companyId });
 export const patchBrainNameRule = (id: number, fields: { enabled?: boolean; ambiguous?: boolean }) =>
   brainPatch<{ id: number }>(`review/names/${id}`, fields);
+export interface BrainNameAudit {
+  непроверенных: number;
+  недели: Array<{ неделя: string; верно: number; неверно: number; неясно: number; точность: number | null }>;
+  предложения: Array<{ id: number; company_id: string; компания: string | null; exclude_regex: string;
+    examples: string[] | null; reason: string | null; created_at: string }>;
+}
+export const getBrainNameAudit = () => brainFetch<BrainNameAudit>('audit/names/summary');
+export const decideBrainProposal = (id: number, decision: 'принять' | 'отклонить') =>
+  brainPatch<{ id: number; status: string }>(`audit/proposals/${id}`, { decision });
 export const getBrainNeighbors = (id: string, kind?: string, since?: number, limit = 100, offset = 0) =>
   brainFetch<BrainNeighbors>('neighbors', { id, kind, since, limit, offset });
 export const getBrainSearch = (q: string, kind?: string, limit = 12, mode: 'word' | 'meaning' = 'word') =>

@@ -22,7 +22,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, Loader2, Search } from 'lucide-react';
 import {
   decideBrainHolder, getBrainHolderQueue, getBrainNameRules, getBrainNeighbors, getBrainNode, getBrainPath, getBrainSearch,
-  getBrainSimilar, getBrainStats, getBrainTop, patchBrainNameRule,
+  getBrainSimilar, getBrainStats, getBrainTop, patchBrainNameRule, getBrainNameAudit, decideBrainProposal,
 } from '../../services/api';
 import type {
   BrainHolderReview, BrainNameRule, BrainNeighbor, BrainNode, BrainNodePage, BrainPath, BrainRing, BrainSearchHit, BrainStats,
@@ -379,6 +379,66 @@ function ПравилаИмён() {
   );
 }
 
+/** Аудит разметки по имени: агент читает новость и отвечает, про ту ли она компанию.
+ *  Неверные связи из карты уходят сами; исключения в правила — решение человека. */
+function АудитИмён() {
+  const [d, setD] = useState<Awaited<ReturnType<typeof getBrainNameAudit>> | null>(null);
+  const [занят, setЗанят] = useState<number | null>(null);
+  const загрузить = useCallback(() => { getBrainNameAudit().then(setD).catch(() => setD(null)); }, []);
+  useEffect(() => { загрузить(); }, [загрузить]);
+  const решить = async (id: number, decision: 'принять' | 'отклонить') => {
+    setЗанят(id);
+    try { await decideBrainProposal(id, decision); загрузить(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'сбой'); }
+    finally { setЗанят(null); }
+  };
+  if (!d) return null;
+  return (
+    <div className="dash-card" style={{ padding: '14px 16px' }}>
+      <div className="flex items-baseline justify-between mb-2" style={{ gap: 10 }}>
+        <div className="mono" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Проверка разметки по имени</div>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--d-dim)' }}>не проверено {числоРус(d.непроверенных)}</span>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--d-dim)', margin: '0 0 8px', lineHeight: 1.45 }}>
+        Агент читает новость и отвечает, про эту ли компанию она. Неверные связи уходят из карты и при пересборке не возвращаются. Первый проход — по всей базе ночами, дальше раз в неделю.
+      </p>
+      {d.недели.length === 0 && <div className="mono" style={{ fontSize: 11.5, color: 'var(--d-dim)' }}>проверок ещё не было</div>}
+      <div className="flex flex-col" style={{ gap: 3 }}>
+        {d.недели.map((w) => (
+          <div key={w.неделя} className="flex justify-between" style={{ fontSize: 12, gap: 10 }}>
+            <span className="mono" style={{ color: 'var(--d-mute)' }}>неделя с {w.неделя}</span>
+            <span className="mono">
+              верно {w.верно} · неверно {w.неверно} · неясно {w.неясно} ·{' '}
+              <b style={{ color: (w.точность ?? 100) >= 90 ? 'var(--d-ok)' : 'var(--d-warn)' }}>{w.точность ?? '—'}%</b>
+            </span>
+          </div>
+        ))}
+      </div>
+      {d.предложения.length > 0 && (
+        <>
+          <div className="mono mt-3 mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Агент предлагает исключения</div>
+          <div className="flex flex-col" style={{ gap: 5 }}>
+            {d.предложения.map((p) => (
+              <div key={p.id} style={{ fontSize: 12, padding: '6px 8px', borderRadius: 6, background: 'var(--d-sunk)' }}>
+                <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                  <span style={{ fontWeight: 600 }}>{p.компания ?? p.company_id.replace('company:', '')}</span>
+                  <code className="mono" style={{ fontSize: 11, flex: '1 1 200px', minWidth: 0, overflowWrap: 'anywhere' }}>{p.exclude_regex}</code>
+                  <button className="dash-press" disabled={занят === p.id} onClick={() => решить(p.id, 'принять')} style={{ padding: '3px 10px', fontSize: 11 }}>принять</button>
+                  <button className="dash-press" disabled={занят === p.id} onClick={() => решить(p.id, 'отклонить')} style={{ padding: '3px 10px', fontSize: 11, color: 'var(--d-mute)' }}>не надо</button>
+                </div>
+                {p.reason && <div style={{ color: 'var(--d-dim)', fontSize: 11.5, marginTop: 3 }}>{p.reason}</div>}
+                {(p.examples ?? []).slice(0, 2).map((ex, i) => (
+                  <div key={i} className="truncate" style={{ color: 'var(--d-mute)', fontSize: 11, marginTop: 2 }} title={ex}>«{ex}»</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Похожие({ id, onУзел }: { id: string; onУзел: (id: string) => void }) {
   const [вид, setВид] = useState<string | undefined>(undefined);
   const [d, setD] = useState<Array<BrainNode & { сходство: number }> | null>(null);
@@ -565,6 +625,7 @@ export default function BrainMap({ покрытие }: { покрытие?: Dash
             )}
             <ОчередьДержателей onУзел={открыть} />
             <ПравилаИмён />
+            <АудитИмён />
             {покрытие && (
               <div className="dash-card" style={{ padding: '14px 16px' }}>
                 <div className="mono mb-2" style={{ fontSize: 10, color: 'var(--d-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Справочник и карточки</div>

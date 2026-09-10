@@ -567,6 +567,158 @@ def править_правило(rule_id: int, enabled: Optional[bool] = Query(
     return {"id": rule_id, "enabled": enabled, "ambiguous": ambiguous}
 
 
+# ── Аудит разметки по имени (Routine frame-brain-audit) ─────────────────────────
+# Правила имён размечают новости без хэштега тикера (уровень C). Точность меряли один
+# раз, 05.09: ~90 % после правок. Агент читает новость и отвечает, про эту ли компанию
+# она: первый раз — по всей базе, дальше раз в неделю новое плюс выборка старого.
+# Неверные связи синк больше не строит (brain_sync: brain_edge_reviews); повторяющиеся
+# ошибки агент предлагает закрыть исключением в правиле — решает человек.
+# Запуск — signals/brain_audit_fire.py, инструкция — research/brain/prompt_name_audit_routine.md.
+_ВЕРДИКТЫ = ("верно", "неверно", "неясно")
+_НЕПРОВЕРЕННЫЕ = """
+    FROM brain_edges e
+   WHERE e.kind = 'упоминает' AND e.method = 'имя'
+     AND NOT EXISTS (SELECT 1 FROM brain_edge_reviews r
+                      WHERE r.src = e.src AND r.dst = e.dst AND r.kind = e.kind)
+"""
+
+
+def аудит_имён_партия(limit: int = Query(50, ge=1, le=200), resample: int = Query(0, ge=0, le=100),
+                      db: Session = None, _who: str = "agent"):
+    """Партия для агента: связи «по имени», которых никто не проверял (старые вперёд —
+    первый проход идёт по всей базе), плюс resample случайных, признанных верными больше
+    месяца назад, — заметить, что разметка поплыла. Текст новости — из архива полностью
+    (узел хранит только 160 символов), обрезан до 600: вывод Bash у агента конечен."""
+    rows = db.execute(text(f"""
+        WITH pick AS (
+            (SELECT e.src, e.dst, e.ts, FALSE AS повтор {_НЕПРОВЕРЕННЫЕ} ORDER BY e.ts LIMIT :lim)
+            UNION ALL
+            (SELECT e.src, e.dst, e.ts, TRUE FROM brain_edges e
+               JOIN brain_edge_reviews r ON r.src = e.src AND r.dst = e.dst AND r.kind = e.kind
+              WHERE e.method = 'имя' AND r.verdict = 'верно' AND r.reviewed_at < NOW() - INTERVAL '30 days'
+              ORDER BY random() LIMIT :rs)
+        )
+        SELECT p.src, p.dst, p.ts, p.повтор, c.title AS компания,
+               -- Короткие имена: у ВТБ в правилах есть и «VTBR-9.25 (Фьючерсный контракт…)» из
+               -- названий активов фондов — агенту это шум, а вывод у него конечен.
+               (SELECT string_agg(q.pattern, ' | ') FROM (
+                    SELECT DISTINCT x.pattern FROM brain_name_rules x
+                     WHERE x.company_id = p.dst AND x.enabled AND NOT x.ambiguous AND length(x.pattern) <= 40
+                     ORDER BY 1 LIMIT 6) q) AS имена,
+               COALESCE(a.text, nn.title) AS текст
+          FROM pick p
+          JOIN brain_nodes c ON c.id = p.dst
+          LEFT JOIN brain_nodes nn ON nn.id = p.src
+          LEFT JOIN LATERAL (
+              SELECT x.text FROM news_archive x
+               WHERE x.message_id = CAST(split_part(p.src, '/', 2) AS bigint)
+                 AND x.channel IN (split_part(substr(p.src, 6), '/', 1),
+                                   CASE split_part(substr(p.src, 6), '/', 1)
+                                        WHEN 'markettwits' THEN 'MarketTwits'
+                                        WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' END)
+               LIMIT 1) a ON TRUE
+    """), {"lim": limit, "rs": resample}).mappings().all()
+    осталось = db.execute(text(f"SELECT COUNT(*) {_НЕПРОВЕРЕННЫЕ}")).scalar()
+    return {
+        "партия": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M"),
+        "непроверенных_всего": int(осталось or 0),
+        "связи": [{"id": f"{r['src']}|{r['dst']}", "компания": r["компания"],
+                   "имена_в_правилах": r["имена"], "дата": str(r["ts"])[:10],
+                   "перепроверка": bool(r["повтор"]),
+                   "текст": " ".join((r["текст"] or "").split())[:600]} for r in rows],
+    }
+
+
+def аудит_имён_решения(body: dict, db: Session = None, _who: str = "agent"):
+    """Вердикты агента. Повторная проверка перезаписывает прежний вердикт; мусор в теле
+    (не тот вердикт, не тот id) отбрасывается и считается — агент увидит это в ответе."""
+    import json
+    партия = str(body.get("партия") or "")[:40]
+    кто = "routine" if _who == "agent" else _who
+    принято = отброшено = предложено = 0
+    for d in body.get("решения") or []:
+        src, _, dst = str(d.get("id") or "").partition("|")
+        вердикт = d.get("вердикт")
+        if вердикт not in _ВЕРДИКТЫ or not src.startswith("news:") or not dst.startswith("company:"):
+            отброшено += 1
+            continue
+        db.execute(text("""
+            INSERT INTO brain_edge_reviews (src, dst, kind, verdict, reason, reviewer, batch, reviewed_at)
+            VALUES (:s, :d, 'упоминает', :v, :r, :who, :b, NOW())
+            ON CONFLICT (src, dst, kind) DO UPDATE SET verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
+                   reviewer = EXCLUDED.reviewer, batch = EXCLUDED.batch, reviewed_at = NOW()
+        """), {"s": src, "d": dst, "v": вердикт, "r": str(d.get("причина") or "")[:300] or None,
+               "who": кто, "b": партия})
+        принято += 1
+    for p in body.get("предложения") or []:
+        cid, rx = str(p.get("company_id") or ""), str(p.get("исключение") or "")
+        if not cid.startswith("company:") or not rx or len(rx) > 200:
+            continue
+        try:
+            # Регэксп должен компилироваться именно в Postgres — синк применяет его там.
+            with db.begin_nested():
+                db.execute(text("SELECT '' ~* :rx"), {"rx": rx})
+        except Exception:  # noqa: BLE001 — кривое предложение просто не принимаем
+            continue
+        r = db.execute(text("""
+            INSERT INTO brain_rule_proposals (company_id, exclude_regex, examples, reason)
+            SELECT :c, :rx, CAST(:ex AS jsonb), :why
+             WHERE NOT EXISTS (SELECT 1 FROM brain_rule_proposals WHERE company_id = :c AND exclude_regex = :rx)
+        """), {"c": cid, "rx": rx, "ex": json.dumps((p.get("примеры") or [])[:5], ensure_ascii=False),
+               "why": str(p.get("причина") or "")[:300] or None})
+        предложено += r.rowcount
+    db.commit()
+    return {"принято": принято, "отброшено": отброшено, "предложено": предложено}
+
+
+def аудит_имён_сводка(db: Session = None, _who: str = "agent"):
+    """Для панели: точность разметки по неделям, сколько ещё не проверено, предложения."""
+    недели = db.execute(text("""
+        SELECT date_trunc('week', reviewed_at)::date AS неделя,
+               COUNT(*) FILTER (WHERE verdict = 'верно') AS верно,
+               COUNT(*) FILTER (WHERE verdict = 'неверно') AS неверно,
+               COUNT(*) FILTER (WHERE verdict = 'неясно') AS неясно
+          FROM brain_edge_reviews GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+    """)).mappings().all()
+    предложения = db.execute(text("""
+        SELECT p.id, p.company_id, c.title AS компания, p.exclude_regex, p.examples, p.reason, p.created_at
+          FROM brain_rule_proposals p LEFT JOIN brain_nodes c ON c.id = p.company_id
+         WHERE p.status = 'на_проверке' ORDER BY p.created_at DESC LIMIT 50
+    """)).mappings().all()
+    осталось = db.execute(text(f"SELECT COUNT(*) {_НЕПРОВЕРЕННЫЕ}")).scalar()
+
+    def точность(r):
+        n = r["верно"] + r["неверно"]
+        return round(100 * r["верно"] / n) if n else None
+
+    return {"непроверенных": int(осталось or 0),
+            "недели": [{**dict(r), "точность": точность(r)} for r in недели],
+            "предложения": [dict(r) for r in предложения]}
+
+
+def решить_предложение(pid: int, decision: str = Query(..., description="принять | отклонить"),
+                       db: Session = None, _who: str = "admin"):
+    """Принятое исключение дописывается к правилам компании (manual — пересев не трогает)
+    и работает для новых новостей; старые неверные связи уже сняты вердиктами агента."""
+    if decision not in ("принять", "отклонить"):
+        raise Ошибка(400, "decision: принять | отклонить")
+    p = db.execute(text("SELECT company_id, exclude_regex FROM brain_rule_proposals WHERE id = :i AND status = 'на_проверке'"),
+                   {"i": pid}).mappings().first()
+    if not p:
+        raise Ошибка(404, "предложения нет или оно уже решено")
+    if decision == "принять":
+        db.execute(text("""
+            UPDATE brain_name_rules
+               SET exclude_regex = CASE WHEN COALESCE(exclude_regex, '') = '' THEN :rx ELSE exclude_regex || '|' || :rx END,
+                   manual = TRUE, updated_at = NOW()
+             WHERE company_id = :c AND enabled AND NOT ambiguous
+        """), {"rx": p["exclude_regex"], "c": p["company_id"]})
+    статус = "принято" if decision == "принять" else "отклонено"
+    db.execute(text("UPDATE brain_rule_proposals SET status = :s, decided_at = NOW() WHERE id = :i"), {"s": статус, "i": pid})
+    db.commit()
+    return {"id": pid, "status": статус}
+
+
 def _соседи_для_пути(db: Session, id_: str) -> list[tuple[str, str, str]]:
     """(сосед, связь, направление), структурные связи первыми, не больше лимита."""
     строки = db.execute(text("""

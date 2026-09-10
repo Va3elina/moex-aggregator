@@ -128,6 +128,16 @@ def новости(conn, full: bool) -> tuple[int, datetime | None]:
          WHERE posted_at > :с AND imported_at > :вод
         ON CONFLICT DO NOTHING
     """), п)
+    # Дайджест с шестью и больше компаниями — обзор, а не упоминание: «Итоги дня» по 10
+    # тикерам делали новость «про» каждую из них (122 такие новости ≈ 1 000 связей на
+    # 10.09.2026). Считаем по компаниям, а не по тикерам: SBER и SBERP — одна.
+    # Узлы, оставшиеся без связей, чистит новости_по_имени.
+    conn.execute(text("""
+        DELETE FROM brain_edges e USING (
+            SELECT src FROM brain_edges WHERE kind = 'упоминает' AND COALESCE(method, 'хэштег') = 'хэштег'
+             GROUP BY src HAVING COUNT(*) > 5
+        ) d WHERE e.src = d.src AND e.kind = 'упоминает' AND COALESCE(e.method, 'хэштег') = 'хэштег'
+    """))
     новый = conn.execute(text("SELECT MAX(imported_at) FROM news_archive")).scalar()
     _отметить(conn, "news", новый, n)
     return n, новый
@@ -544,6 +554,14 @@ def новости_по_имени(conn, full: bool) -> int:
             SELECT src FROM brain_edges WHERE kind = 'упоминает' AND method = 'имя' GROUP BY src HAVING COUNT(*) >= 5
         ) d WHERE e.src = d.src AND e.kind = 'упоминает' AND e.method = 'имя'
     """))
+    # Решения аудита (Routine frame-brain-audit, research/brain/prompt_name_audit_routine.md):
+    # связь, которую агент признал неверной, не возвращается — ни инкрементом, ни полной
+    # пересборкой. Решение живёт в своей таблице, как решения человека по держателям.
+    conn.execute(text("""
+        DELETE FROM brain_edges e USING brain_edge_reviews r
+         WHERE e.src = r.src AND e.dst = r.dst AND e.kind = r.kind AND e.method = 'имя'
+           AND r.verdict = 'неверно'
+    """))
     # Узлы новостей, оставшиеся без единой связи, карте не нужны.
     conn.execute(text("""
         DELETE FROM brain_nodes n WHERE n.kind = 'news'
@@ -691,6 +709,26 @@ def вместе(conn) -> int:
     return r.rowcount
 
 
+def таблицы_аудита(conn) -> None:
+    """Таблицы аудита разметки по имени — зеркало db/migrations/090 (идемпотентно):
+    синк создаёт их сам, миграции на проде руками не применяются."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS brain_edge_reviews (
+            src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'упоминает',
+            verdict TEXT NOT NULL CHECK (verdict IN ('верно', 'неверно', 'неясно')),
+            reason TEXT, reviewer TEXT NOT NULL DEFAULT 'routine', batch TEXT,
+            reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (src, dst, kind))
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS brain_rule_proposals (
+            id BIGSERIAL PRIMARY KEY, company_id TEXT NOT NULL, exclude_regex TEXT NOT NULL,
+            examples JSONB, reason TEXT, status TEXT NOT NULL DEFAULT 'на_проверке',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), decided_at TIMESTAMPTZ)
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_brain_edge_reviews_when ON brain_edge_reviews (reviewed_at DESC)"))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="пересобрать всё, игнорируя водяные знаки")
@@ -700,6 +738,7 @@ def main() -> int:
     итог = {}
     with eng.begin() as conn:
         conn.execute(text("SET LOCAL statement_timeout = '600s'"))
+        таблицы_аудита(conn)
         итог["тикеров"] = карта_тикеров(conn)
         итог["компаний"] = компании(conn)
         итог["индексов"] = индексы_узлы(conn)
