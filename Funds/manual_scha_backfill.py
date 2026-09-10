@@ -250,6 +250,22 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
             if deleted:
                 log.info(f"  🔄 --replace: удалено {deleted} старых строк "
                          f"(fund={fund_id} date={snap_date})")
+        else:
+            # Без --replace справка всё равно замещает vim_sdr того же месяца: это та
+            # же форма 0420502 из старого скрейпера (баг ×1000 в штуках). Иначе в срезе
+            # две копии — карточка OBLG отдавала 135 строк и Σдолей 184 % (миграция 093).
+            deleted = conn.execute(
+                text("""
+                    DELETE FROM fund_holdings_history
+                    WHERE fund_id = :fid
+                      AND date_trunc('month', snapshot_date) = date_trunc('month', CAST(:d AS date))
+                      AND source = 'vim_sdr'
+                """),
+                {"fid": fund_id, "d": snap_date},
+            ).rowcount
+            if deleted:
+                log.info(f"  🔄 справка замещает vim_sdr: удалено {deleted} строк "
+                         f"(fund={fund_id} date={snap_date})")
         for a in assets:
             name = a.get("asset_name") or "(unknown)"
             isin = a.get("isin")
