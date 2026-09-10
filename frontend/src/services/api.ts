@@ -2906,6 +2906,8 @@ export interface BrainNameAudit {
   непроверенных: number;
   ждут_второго_мнения: number;
   убрано: number;
+  /** Ярлыки новостей за 90 дней: тип события и роль компании (правила синка + ночной агент). */
+  ярлыки?: { по_правилам: number; от_агента: number; без_типа: number };
   недели: Array<{ неделя: string; верно: number; неверно: number; неясно: number; точность: number | null }>;
   спорные: Array<{ id: string; компания: string | null; первое: string; первая_причина: string | null;
     второе: string; вторая_причина: string | null; текст: string }>;

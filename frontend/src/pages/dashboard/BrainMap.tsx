@@ -419,6 +419,11 @@ function АудитИмён() {
       <div className="mono mb-2" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
         ждут второго мнения {числоРус(d.ждут_второго_мнения)} · убрано по двум проверкам {числоРус(d.убрано)} · спорных {числоРус(d.спорные.length)}
       </div>
+      {d.ярлыки && (
+        <div className="mono mb-2" style={{ fontSize: 11, color: 'var(--d-dim)' }}>
+          ярлыки новостей за 90 дней: по правилам {числоРус(d.ярлыки.по_правилам)} · от агента {числоРус(d.ярлыки.от_агента)} · без типа {числоРус(d.ярлыки.без_типа)}
+        </div>
+      )}
       {d.недели.length === 0 && <div className="mono" style={{ fontSize: 11.5, color: 'var(--d-dim)' }}>проверок ещё не было</div>}
       <div className="flex flex-col" style={{ gap: 3 }}>
         {d.недели.map((w) => (
