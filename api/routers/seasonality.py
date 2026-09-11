@@ -815,7 +815,7 @@ def _compute_yearly_seasonality(
 
 
 @router.get("")
-async def get_seasonality(
+def get_seasonality(
     request: Request,
     secid: str = Query(..., description="Тикер акции"),
     mode: str = Query("weekday", description="Режим: intraday, weekday, monthday, monthly"),
@@ -1011,7 +1011,7 @@ async def get_seasonality(
 
 
 @router.get("/price")
-async def get_price_chart(
+def get_price_chart(
     request: Request,
     secid: str = Query(..., description="Тикер акции"),
     days: int = Query(365, ge=30, le=10000, description="Кол-во календарных дней"),
@@ -1139,7 +1139,7 @@ async def get_price_chart(
 
 
 @router.get("/available-years")
-async def get_available_years(
+def get_available_years(
     secid: str = Query(..., description="Тикер"),
 ):
     """
@@ -1185,7 +1185,7 @@ async def get_available_years(
 
 
 @router.get("/yearly")
-async def get_yearly_seasonality(
+def get_yearly_seasonality(
     request: Request,
     secid: str = Query(..., description="Тикер"),
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),

@@ -198,7 +198,7 @@ def _country_from_tz(tz: Optional[str]) -> Optional[str]:
 
 @ingest_router.post("/log", status_code=204)
 @router.post("/event", status_code=204)
-async def post_events(
+def post_events(
     batch: AnalyticsBatch,
     request: Request,
     user=Depends(get_current_user_optional),
@@ -509,7 +509,7 @@ def _asset_names(conn, secids: list[str]) -> dict[str, str]:
 
 
 @router.get("/stats")
-async def get_stats(
+def get_stats(
     days: int = Query(7, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
     date_from: Optional[str] = Query(None, description="Начало периода, YYYY-MM-DD по Москве"),
     date_to: Optional[str] = Query(None, description="Конец периода включительно, YYYY-MM-DD"),
@@ -749,7 +749,7 @@ def _compute_stats(rng: dict, segment: str, device: str) -> dict:
 # без джойна на (возможно удалённый) алерт. Запросы агрегатные, без N+1.
 
 @router.get("/alerts-stats")
-async def get_alerts_stats(
+def get_alerts_stats(
     days: int = Query(7, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -835,7 +835,7 @@ async def get_alerts_stats(
 # Privacy: данные включают email и активность — только role=admin.
 
 @router.get("/users")
-async def list_users(
+def list_users(
     days: int = Query(30, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -1122,7 +1122,7 @@ def _collapse_heartbeats(rows: list) -> list:
 
 
 @router.get("/users/{user_id}")
-async def user_detail(
+def user_detail(
     user_id: int,
     days: int = Query(30, ge=1, le=180),
     user=Depends(require_admin),

@@ -99,7 +99,7 @@ def _trim_to_period(data_points: list[dict], date_from_req) -> list[dict]:
 
 
 @router.get("/cap-gdp")
-async def get_buffett_cap_gdp(
+def get_buffett_cap_gdp(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(60)"),
     timeframe: str = Query("1m", description="Таймфрейм агрегации: 1w или 1m"),
@@ -225,7 +225,7 @@ async def get_buffett_cap_gdp(
 
 
 @router.get("/mcftr-m2")
-async def get_buffett_mcftr_m2(
+def get_buffett_mcftr_m2(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(60)"),
     user = Depends(get_current_user_optional),
@@ -310,7 +310,7 @@ async def get_buffett_mcftr_m2(
 
 
 @router.get("/cap-m2")
-async def get_buffett_cap_m2(
+def get_buffett_cap_m2(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(12)"),
     timeframe: str = Query("1m", description="Таймфрейм: 1d, 1w, 1m"),
