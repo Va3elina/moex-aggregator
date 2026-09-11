@@ -7,7 +7,7 @@ import { isViewAsUser, setViewAsUser } from '../services/viewMode';
 import { useYandexMetrica, useYandexMetricaUser } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
-import { Menu, X, LogIn, BarChart3, Newspaper, User } from 'lucide-react';
+import { Menu, X, LogIn, BarChart3, User } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
@@ -301,28 +301,6 @@ export default function Layout() {
                 </button>
               )}
 
-              {/* Admin Content News link — только для role=admin (📰 → панель, вкладка «Завод постов») */}
-              {isAuthenticated && user?.role === 'admin' && (
-                <button
-                  onClick={() => navigate('/admin/dashboard/posts')}
-                  className="editorial-press grid place-items-center rounded-full"
-                  style={{
-                    color: 'var(--accent)',
-                    border: '1.5px solid var(--text-primary)',
-                    backgroundColor: 'transparent',
-                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
-                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
-                  }}
-                  title={t('Новости (content-пайплайн)')}
-                  aria-label={t('Новости (admin)')}
-                >
-                  <Newspaper
-                    style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
-                    strokeWidth={2}
-                  />
-                </button>
-              )}
-
               {/* Вид сайта для админа: своя, незамедленная версия ⇄ «как у
                   пользователя» (цена акций и фьючерсов только на закрытие
                   19:00). Флаг в localStorage (services/viewMode), apiFetch
@@ -348,7 +326,7 @@ export default function Layout() {
               )}
 
               {/* Auth button — единый размер с ThemeToggle/AdminStats.
-                  Filled accent с lucide-иконкой (как BarChart3/Newspaper) — primary visual hierarchy. */}
+                  Filled accent с lucide-иконкой (как BarChart3) — primary visual hierarchy. */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
