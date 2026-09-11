@@ -523,6 +523,33 @@ async def get_stats(
     return get_or_compute(cache_key, lambda: _compute_stats(rng, segment, device), ttl=180)
 
 
+@router.get("/metrica")
+async def get_metrica(
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    user=Depends(require_admin),
+):
+    """Трафик из Яндекс Метрики за тот же период, что и /stats.
+
+    connected=False — токена нет, страница показывает инструкцию. Кэш 5 минут
+    (см. api/services/metrica.py). Роботов Метрика отсекает сама.
+    """
+    from api.services import metrica
+
+    rng = _resolve_range(days, date_from, date_to)
+    pd0 = rng["d0"] - timedelta(days=rng["n"])
+    pd1 = rng["d0"] - timedelta(days=1)
+    data = metrica.get_report(rng["d0"], rng["d1"], pd0, pd1)
+    return {
+        **data,
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "prev_date_from": pd0.isoformat(),
+        "prev_date_to": pd1.isoformat(),
+    }
+
+
 def _compute_stats(rng: dict, segment: str, device: str) -> dict:
     engine = get_engine()
     with engine.begin() as conn:
@@ -1123,39 +1150,50 @@ async def user_detail(
             ORDER BY created_at DESC
         """), {"id": user_id}).fetchall()
 
-        # Summary metrics
-        summary = conn.execute(text("""
-            SELECT
-                COUNT(*) AS events,
-                COUNT(DISTINCT session_id) AS sessions,
-                MIN(server_ts) AS first_active,
-                MAX(server_ts) AS last_active
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff
-        """), {"id": user_id, "cutoff": cutoff}).fetchone()
-
-        # Капаем gap между событиями (5 мин), как в /stats — иначе heartbeat
-        # в фоновой вкладке раздувает (MAX-MIN). avg И total считаем по ОДНОМУ
-        # набору сессий (включая одно-событийные с dur=0 → совпадает с sessions).
-        avg_session = conn.execute(text("""
-            WITH sess AS (
-                SELECT session_id,
-                       COALESCE(SUM(
-                           LEAST(EXTRACT(EPOCH FROM (client_ts - prev_ts)), 300)
-                       ), 0)::int AS dur
-                FROM (
-                    SELECT session_id,
-                           client_ts,
-                           LAG(client_ts) OVER (
-                               PARTITION BY session_id ORDER BY client_ts
-                           ) AS prev_ts
-                    FROM analytics_events
-                    WHERE user_id = :id AND server_ts >= :cutoff
-                ) ordered
-                GROUP BY session_id
+        # Summary: те же определения, что в сводке /stats. Визит — разрыв
+        # больше 30 минут; старые пульсы без флага act засчитываются только
+        # в пределах 30 минут после настоящего действия; «действия» — события
+        # без служебного пульса.
+        summary = conn.execute(text(f"""
+            WITH ue AS (
+                SELECT session_id, event_type, server_ts,
+                       (event_type = 'session_heartbeat' AND (payload->>'act') IS NULL) AS legacy_hb
+                FROM analytics_events
+                WHERE user_id = :id AND server_ts >= :cutoff
+            ),
+            lr AS (
+                SELECT ue.*,
+                       MAX(CASE WHEN NOT legacy_hb THEN server_ts END) OVER (
+                           PARTITION BY session_id ORDER BY server_ts ROWS UNBOUNDED PRECEDING
+                       ) AS last_real
+                FROM ue
+            ),
+            act AS (
+                SELECT event_type, server_ts FROM lr
+                WHERE NOT legacy_hb
+                   OR (last_real IS NOT NULL
+                       AND server_ts - last_real <= INTERVAL '{VISIT_GAP_MIN} minutes')
+            ),
+            num AS (
+                SELECT a.*,
+                       SUM(CASE WHEN prev_ts IS NULL
+                                  OR server_ts - prev_ts > INTERVAL '{VISIT_GAP_MIN} minutes'
+                                THEN 1 ELSE 0 END) OVER (ORDER BY server_ts ROWS UNBOUNDED PRECEDING) AS vno
+                FROM (SELECT act.*, LAG(server_ts) OVER (ORDER BY server_ts) AS prev_ts FROM act) a
+            ),
+            v AS (
+                SELECT vno, EXTRACT(EPOCH FROM (MAX(server_ts) - MIN(server_ts)))::int AS dur
+                FROM num GROUP BY vno
             )
-            SELECT COALESCE(AVG(dur), 0)::int, COALESCE(SUM(dur), 0)::int FROM sess
+            SELECT
+                (SELECT COUNT(*) FROM act WHERE event_type <> 'session_heartbeat'),
+                (SELECT COUNT(*) FROM v),
+                (SELECT MIN(server_ts) FROM act),
+                (SELECT MAX(server_ts) FROM act),
+                (SELECT COALESCE(AVG(dur), 0)::int FROM v),
+                (SELECT COALESCE(SUM(dur), 0)::int FROM v)
         """), {"id": user_id, "cutoff": cutoff}).fetchone()
+        avg_session = (summary[4], summary[5]) if summary else (0, 0)
 
         # Activity timeline. Сырых событий берём с запасом: heartbeat идёт раз в
         # минуту с каждой открытой вкладки, и лимит в 100 строк целиком съедался

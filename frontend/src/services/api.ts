@@ -1171,6 +1171,51 @@ export async function getAnalyticsStats(opts: AdminRange & {
   return response.json();
 }
 
+export interface MetricaSummary {
+  users: number;
+  visits: number;
+  pageviews: number;
+  avg_visit_sec: number;
+  bounce_pct: number;
+  page_depth: number;
+  new_users: number;
+}
+
+export interface MetricaRow { label: string; value: number; value2: number | null }
+
+/** Трафик из Яндекс Метрики (GET /api/analytics/metrica). connected=false —
+ *  токена на сервере нет. Любой отчёт может прийти null — тогда причина в errors. */
+export interface MetricaReport {
+  connected: boolean;
+  counter: string;
+  date_from: string;
+  date_to: string;
+  prev_date_from: string;
+  prev_date_to: string;
+  errors?: Record<string, string>;
+  summary?: MetricaSummary | null;
+  prev_summary?: MetricaSummary | null;
+  trends?: { date: string; users: number; visits: number; pageviews: number }[] | null;
+  sources?: MetricaRow[] | null;
+  search_engines?: MetricaRow[] | null;
+  search_phrases?: MetricaRow[] | null;
+  referrers?: MetricaRow[] | null;
+  social?: MetricaRow[] | null;
+  cities?: MetricaRow[] | null;
+  devices?: MetricaRow[] | null;
+  browsers?: MetricaRow[] | null;
+  entry_pages?: MetricaRow[] | null;
+  pages?: MetricaRow[] | null;
+}
+
+export async function getMetrica(range: AdminRange): Promise<MetricaReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, range);
+  const response = await apiFetch(`${API_BASE}/api/analytics/metrica?${params}`);
+  if (!response.ok) throw new Error('Не удалось получить данные Метрики');
+  return response.json();
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Admin: Users panel
 // (Funnel удалён 2026-07-16 вместе с бэкенд-эндпоинтом /api/analytics/funnel —

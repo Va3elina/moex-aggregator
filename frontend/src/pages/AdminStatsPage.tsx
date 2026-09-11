@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, UserPlus, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -36,12 +36,15 @@ import {
   getAnalyticsStats,
   listAdminUsers,
   getAlertsStats,
+  getMetrica,
 } from '../services/api';
 import type {
   AnalyticsStats,
   AdminUser,
   AlertsStats,
   AdminRange,
+  MetricaReport,
+  MetricaRow,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -57,6 +60,19 @@ const METRIC_HINTS = {
     + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
     + '5) Метрика не отделяет админов, а мы по умолчанию их исключаем. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
+  metrica_section:
+    'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками.',
+  metrica_new: 'Посетители, которые пришли на сайт впервые за всю историю счётчика. Процент — от всех посетителей периода.',
+  metrica_depth: 'Средняя глубина просмотра: сколько страниц открывают за визит.',
+  metrica_sources: 'Тип источника последнего значимого перехода: поиск, прямые заходы, ссылки на сайтах, соцсети, мессенджеры.',
+  metrica_phrases: 'Поисковые запросы, по которым пришли из Яндекса и других поисковиков. Google почти все фразы скрывает.',
+  metrica_referrers: 'Сайты, со ссылок на которых пришли посетители.',
+  metrica_entry: 'Страница, с которой начался визит.',
+  metrica_pages: 'Самые посещаемые страницы. Главная цифра — посетители, серая — просмотры.',
+  own_section:
+    'То же самое по нашему трекеру. Нужен для сверки с Метрикой и как запасной вариант, если Метрика недоступна. Цифры будут отличаться: Метрику режут блокировщики рекламы, а наш трекер не видит тех, кто отключил статистику в профиле.',
+  inside_section:
+    'Этого нет в Метрике: какие активы открывают на индикаторах, что ищут, что скачивают. Считается нашим трекером по всем посетителям, кроме отключивших статистику в профиле.',
   period:
     'Дни по московскому времени. Дельты на карточках сравнивают с таким же числом дней сразу перед выбранным периодом. Сырые события хранятся 180 дней, более ранние периоды будут пустыми.',
   segment:
@@ -212,6 +228,18 @@ export default function AdminStatsPage() {
   const [data, setData] = useState<AnalyticsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [metrica, setMetrica] = useState<MetricaReport | null>(null);
+  const [metricaLoading, setMetricaLoading] = useState(true);
+  const [showOwn, setShowOwn] = usePersistedState<boolean>('frame:admin:stats:showOwn', false);
+  // Раз в 5 минут, пока вкладка на экране, перезапрашиваем всё: Метрика
+  // обновляет отчёты с задержкой в несколько минут, бэкенд кэширует на 5.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const range = useMemo(() => presetRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
@@ -231,13 +259,25 @@ export default function AdminStatsPage() {
       .then(setData)
       .catch((e: Error) => setError(e.message || 'Не удалось загрузить статистику'))
       .finally(() => setLoading(false));
-  }, [user, range, segment, device]);
+  }, [user, range, segment, device, tick]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    setMetricaLoading(true);
+    getMetrica(range)
+      .then(setMetrica)
+      .catch(() => setMetrica(null))
+      .finally(() => setMetricaLoading(false));
+  }, [user, range, tick]);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
-  const refreshing = loading && data !== null;
+  const refreshing = (loading && data !== null) || (metricaLoading && metrica !== null);
+  const metricaOn = !!metrica?.connected;
+  // Свой трафик показываем, если Метрика не подключена или админ сам попросил сверку.
+  const ownTrafficVisible = !metricaOn || showOwn;
   const s = data?.summary;
   const p = data?.prev_summary;
 
@@ -340,6 +380,24 @@ export default function AdminStatsPage() {
       )}
 
       <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
+        {/* ═══ Трафик из Яндекс Метрики ═══ */}
+        <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
+          <MetricaBlock report={metrica} loading={metricaLoading} />
+        </Section>
+
+        {metricaOn && (
+          <button
+            type="button"
+            onClick={() => setShowOwn(!showOwn)}
+            className="editorial-press rounded-full text-xs mb-6 md:mb-8"
+            style={{ padding: 'var(--sp-1) var(--sp-3)' }}
+          >
+            {showOwn ? 'Скрыть наш трекер' : 'Сверить с нашим трекером'}
+          </button>
+        )}
+
+        {ownTrafficVisible && (
+          <Section title={metricaOn ? 'Трафик · наш трекер' : 'Трафик · наш трекер (Метрика не подключена)'} hint={METRIC_HINTS.own_section}>
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
           {s && p ? (
@@ -446,66 +504,81 @@ export default function AdminStatsPage() {
           )}
         </Section>
 
-        {/* Top lists */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8">
-          <TopList
-            title="Топ страниц"
-            hint={METRIC_HINTS.top_pages}
-            columns={['посетители', 'просмотры']}
-            items={data?.top_pages.map((r) => ({
-              label: PAGE_NAMES[r.path] || r.path,
-              note: PAGE_NAMES[r.path] ? r.path : undefined,
-              value: r.visitors,
-              value2: r.views,
-            })) || null}
-            loading={loading}
-            emptyText="Нет просмотров страниц"
-          />
-          <TopList
-            title="Топ активов"
-            hint={METRIC_HINTS.top_assets}
-            hintAlign="right"
-            columns={['посетители', 'показы']}
-            items={data?.top_assets.map((r) => ({
-              label: r.name || r.secid,
-              note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
-              value: r.visitors,
-              value2: r.views,
-            })) || null}
-            loading={loading}
-            emptyText="Данные собираются с 11.09.2026"
-          />
-          <TopList
-            title="Выбор в поиске"
-            hint={METRIC_HINTS.top_search}
-            columns={['выборы', 'посетители']}
-            items={data?.top_search.map((r) => ({
-              label: r.name || r.secid,
-              note: r.name ? r.secid : undefined,
-              value: r.picks,
-              value2: r.visitors,
-            })) || null}
-            loading={loading}
-            emptyText="Нет выборов в поиске"
-          />
-          <TopList
-            title="Источники визитов"
-            hint={METRIC_HINTS.sources}
-            hintAlign="right"
-            columns={['визиты']}
-            items={data?.sources.map((r) => ({ label: r.source, value: r.visits })) || null}
-            loading={loading}
-            emptyText="Нет визитов"
-          />
-          <TopList
-            title="Экспорты PNG"
-            hint={METRIC_HINTS.top_exports}
-            columns={['скачивания', 'посетители']}
-            items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
-            loading={loading}
-            emptyText="Никто не экспортировал"
-          />
-          <div className="grid grid-cols-1 gap-3 md:gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+              <TopList
+                title="Топ страниц"
+                hint={METRIC_HINTS.top_pages}
+                columns={['посетители', 'просмотры']}
+                items={data?.top_pages.map((r) => ({
+                  label: PAGE_NAMES[r.path] || r.path,
+                  note: PAGE_NAMES[r.path] ? r.path : undefined,
+                  value: r.visitors,
+                  value2: r.views,
+                })) || null}
+                loading={loading}
+                emptyText="Нет просмотров страниц"
+              />
+              <TopList
+                title="Источники визитов"
+                hint={METRIC_HINTS.sources}
+                columns={['визиты']}
+                items={data?.sources.map((r) => ({ label: r.source, value: r.visits })) || null}
+                loading={loading}
+                emptyText="Нет визитов"
+              />
+              {device === 'all' && (
+                <TopList
+                  title="Устройства"
+                  hint={METRIC_HINTS.devices}
+                  hintAlign="right"
+                  columns={['посетители']}
+                  items={data?.devices.map((r) => ({ label: DEVICE_NAMES[r.device] || r.device, value: r.visitors })) || null}
+                  loading={loading}
+                  emptyText="Нет данных"
+                />
+              )}
+            </div>
+          </Section>
+        )}
+
+        {/* ═══ Чего нет в Метрике ═══ */}
+        <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+            <TopList
+              title="Топ активов"
+              hint={METRIC_HINTS.top_assets}
+              columns={['посетители', 'показы']}
+              items={data?.top_assets.map((r) => ({
+                label: r.name || r.secid,
+                note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
+                value: r.visitors,
+                value2: r.views,
+              })) || null}
+              loading={loading}
+              emptyText="Данные собираются с 11.09.2026"
+            />
+            <TopList
+              title="Выбор в поиске"
+              hint={METRIC_HINTS.top_search}
+              hintAlign="right"
+              columns={['выборы', 'посетители']}
+              items={data?.top_search.map((r) => ({
+                label: r.name || r.secid,
+                note: r.name ? r.secid : undefined,
+                value: r.picks,
+                value2: r.visitors,
+              })) || null}
+              loading={loading}
+              emptyText="Нет выборов в поиске"
+            />
+            <TopList
+              title="Экспорты PNG"
+              hint={METRIC_HINTS.top_exports}
+              columns={['скачивания', 'посетители']}
+              items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
+              loading={loading}
+              emptyText="Никто не экспортировал"
+            />
             <TopList
               title="Сезонность: режимы"
               hint={METRIC_HINTS.modes}
@@ -515,19 +588,8 @@ export default function AdminStatsPage() {
               loading={loading}
               emptyText="Нет переключений режима"
             />
-            {device === 'all' && (
-              <TopList
-                title="Устройства"
-                hint={METRIC_HINTS.devices}
-                hintAlign="right"
-                columns={['посетители']}
-                items={data?.devices.map((r) => ({ label: DEVICE_NAMES[r.device] || r.device, value: r.visitors })) || null}
-                loading={loading}
-                emptyText="Нет данных"
-              />
-            )}
           </div>
-        </div>
+        </Section>
       </div>
 
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
@@ -544,6 +606,180 @@ export default function AdminStatsPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Трафик из Яндекс Метрики. Не подключена — инструкция, как дать токен. */
+function MetricaBlock({ report, loading }: { report: MetricaReport | null; loading: boolean }) {
+  if (loading && !report) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
+        {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={128} rounded="lg" />)}
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <Card padding="md">
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>Не удалось получить данные Метрики.</p>
+      </Card>
+    );
+  }
+  if (!report.connected) {
+    return (
+      <Card padding="md" className="md:p-5">
+        <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+          Метрика не подключена: на сервере нет токена доступа к API.
+        </p>
+        <ol className="text-sm list-decimal pl-5 space-y-1" style={{ color: 'var(--text-secondary)' }}>
+          <li>
+            Под аккаунтом Яндекса, у которого есть доступ к счётчику {report.counter}, создать приложение на{' '}
+            <a href="https://oauth.yandex.ru/client/new" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>oauth.yandex.ru</a>
+            {' '}с доступом «Получение статистики, чтение параметров своих и доверенных счётчиков».
+          </li>
+          <li>
+            Открыть ссылку https://oauth.yandex.ru/authorize?response_type=token&amp;client_id=ID_приложения и скопировать токен.
+          </li>
+          <li>Добавить в /opt/frame/.env строку YANDEX_METRIKA_TOKEN=токен и пересоздать контейнер api.</li>
+        </ol>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+          Пока ниже показан трафик по нашему трекеру.
+        </p>
+      </Card>
+    );
+  }
+
+  const cur = report.summary;
+  const prev = report.prev_summary;
+  const err = report.errors || {};
+  const rows = (list: MetricaRow[] | null | undefined) =>
+    list ? list.map((r) => ({ label: r.label, value: r.value, value2: r.value2 ?? undefined })) : null;
+  const empty = (key: string) => (err[key] ? `Отчёт не пришёл: ${err[key]}` : 'Нет данных за период');
+  const delta = (c: number, p0: number | undefined): Delta => {
+    if (!p0) return null;
+    return pctDelta(Math.round(((c - p0) / p0) * 100));
+  };
+  const counter = report.counter;
+
+  return (
+    <div className="space-y-3 md:space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={`https://metrika.yandex.ru/dashboard?id=${counter}`}
+          target="_blank" rel="noreferrer"
+          className="editorial-press rounded-full inline-flex items-center text-xs"
+          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
+        >
+          <ExternalLink size={12} /> Открыть Метрику
+        </a>
+        <a
+          href={`https://metrika.yandex.ru/stat/visor?id=${counter}`}
+          target="_blank" rel="noreferrer"
+          className="editorial-press rounded-full inline-flex items-center text-xs"
+          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
+        >
+          <ExternalLink size={12} /> Вебвизор
+        </a>
+      </div>
+
+      {cur ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
+          <SummaryCard
+            icon={<Users size={16} />} label="Посетители" hint={METRIC_HINTS.visitors.split('.')[0] + '. Считает Метрика по своей cookie на год.'}
+            value={cur.users.toLocaleString('ru-RU')}
+            delta={delta(cur.users, prev?.users)} prev={prev ? prev.users.toLocaleString('ru-RU') : undefined}
+          />
+          <SummaryCard
+            icon={<Activity size={16} />} label="Визиты" hint={METRIC_HINTS.visits}
+            value={cur.visits.toLocaleString('ru-RU')}
+            delta={delta(cur.visits, prev?.visits)} prev={prev ? prev.visits.toLocaleString('ru-RU') : undefined}
+          />
+          <SummaryCard
+            icon={<Eye size={16} />} label="Просмотры" hint={METRIC_HINTS.metrica_depth} hintAlign="right"
+            value={cur.pageviews.toLocaleString('ru-RU')}
+            sub={`${fmtNum(cur.page_depth)} на визит`}
+            delta={delta(cur.pageviews, prev?.pageviews)} prev={prev ? prev.pageviews.toLocaleString('ru-RU') : undefined}
+          />
+          <SummaryCard
+            icon={<Clock size={16} />} label="Время визита" hint="Среднее время визита по Метрике."
+            value={formatDuration(cur.avg_visit_sec)}
+            delta={prev && prev.visits ? {
+              text: `${cur.avg_visit_sec - prev.avg_visit_sec >= 0 ? '+' : '−'}${formatDuration(Math.abs(cur.avg_visit_sec - prev.avg_visit_sec))}`,
+              good: cur.avg_visit_sec >= prev.avg_visit_sec,
+            } : null}
+            prev={prev ? formatDuration(prev.avg_visit_sec) : undefined}
+          />
+          <SummaryCard
+            icon={<LogOut size={16} />} label="Отказы" hint={METRIC_HINTS.bounce}
+            value={`${fmtNum(cur.bounce_pct)}%`}
+            delta={prev && prev.visits ? {
+              text: `${cur.bounce_pct - prev.bounce_pct >= 0 ? '+' : '−'}${fmtNum(Math.abs(cur.bounce_pct - prev.bounce_pct))} п.п.`,
+              good: cur.bounce_pct <= prev.bounce_pct,
+            } : null}
+            prev={prev ? `${fmtNum(prev.bounce_pct)}%` : undefined}
+          />
+          <SummaryCard
+            icon={<UserPlus size={16} />} label="Новые" hint={METRIC_HINTS.metrica_new} hintAlign="right"
+            value={cur.new_users.toLocaleString('ru-RU')}
+            sub={cur.users ? `${fmtNum((cur.new_users / cur.users) * 100)}% посетителей` : undefined}
+            delta={delta(cur.new_users, prev?.new_users)} prev={prev ? prev.new_users.toLocaleString('ru-RU') : undefined}
+          />
+        </div>
+      ) : (
+        <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
+      )}
+
+      {report.trends && report.trends.length > 1 && (
+        <Card padding="md" className="md:p-5">
+          <SimpleChart
+            data={report.trends.map(t => ({ time: t.date, value: t.users }))}
+            secondaryData={report.trends.map(t => ({ time: t.date, value: t.visits }))}
+            showSecondary={true}
+            primaryColor="var(--accent)"
+            secondaryColor="var(--accent-secondary)"
+            primaryLabel="Посетители"
+            secondaryLabel="Визиты"
+            formatValue={(v) => Math.round(v).toString()}
+            formatSecondaryAxis={(v) => Math.round(v).toString()}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showNavigator={false}
+            hideTime={true}
+            height={300}
+            chartPadding={{ right: 100 }}
+          />
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+        <TopList title="Источники трафика" hint={METRIC_HINTS.metrica_sources} columns={['визиты', 'посетители']}
+          items={rows(report.sources)} loading={false} emptyText={empty('sources')} />
+        <TopList title="Поисковые фразы" hint={METRIC_HINTS.metrica_phrases} hintAlign="right" columns={['визиты', 'посетители']}
+          items={rows(report.search_phrases)} loading={false} emptyText={empty('search_phrases')} />
+        <TopList title="Поисковые системы" columns={['визиты', 'посетители']}
+          hint="Из каких поисковиков приходят." items={rows(report.search_engines)} loading={false} emptyText={empty('search_engines')} />
+        <TopList title="Сайты-источники" hint={METRIC_HINTS.metrica_referrers} hintAlign="right" columns={['визиты', 'посетители']}
+          items={rows(report.referrers)} loading={false} emptyText={empty('referrers')} />
+        <TopList title="Популярные страницы" hint={METRIC_HINTS.metrica_pages} columns={['посетители', 'просмотры']}
+          items={rows(report.pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined })) ?? null}
+          loading={false} emptyText={empty('pages')} />
+        <TopList title="Страницы входа" hint={METRIC_HINTS.metrica_entry} hintAlign="right" columns={['визиты', 'посетители']}
+          items={rows(report.entry_pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined })) ?? null}
+          loading={false} emptyText={empty('entry_pages')} />
+        <TopList title="Города" hint="География посетителей по IP, определяет Метрика." columns={['посетители', 'визиты']}
+          items={rows(report.cities)} loading={false} emptyText={empty('cities')} />
+        <TopList title="Соцсети и мессенджеры" hint="Переходы из соцсетей и мессенджеров." hintAlign="right" columns={['визиты', 'посетители']}
+          items={rows(report.social)} loading={false} emptyText={empty('social')} />
+        <TopList title="Устройства" hint="Тип устройства по Метрике." columns={['посетители', 'визиты']}
+          items={rows(report.devices)} loading={false} emptyText={empty('devices')} />
+        <TopList title="Браузеры" hint="Браузеры посетителей." hintAlign="right" columns={['посетители', 'визиты']}
+          items={rows(report.browsers)} loading={false} emptyText={empty('browsers')} />
+      </div>
+      <p className="text-xs inline-flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+        <Globe size={12} /> Обновляется раз в 5 минут. Метрика, счётчик {counter}.
+      </p>
+    </div>
+  );
+}
 
 function DateField({ label, value, max, onChange }: {
   label: string; value: string; max: string; onChange: (v: string) => void;

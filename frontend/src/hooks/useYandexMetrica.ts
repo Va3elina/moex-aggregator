@@ -57,6 +57,24 @@ export function useYandexMetrica() {
 }
 
 /**
+ * Передаёт в Метрику внутренний номер аккаунта (без email и имени), чтобы
+ * записи Вебвизора и отчёты можно было отфильтровать по конкретному
+ * пользователю: Вебвизор → фильтр «Параметры посетителей» → UserID.
+ * Раскрыто в политике обработки данных (раздел «Кому передаём»).
+ * Вызывать один раз в Layout. Гостям ничего не шлёт.
+ */
+export function useYandexMetricaUser(userId: number | null | undefined) {
+    const sentRef = useRef<number | null>(null)
+    useEffect(() => {
+        if (!userId || sentRef.current === userId) return
+        if (typeof window === 'undefined' || !window.ym) return
+        sentRef.current = userId
+        window.ym(YM_COUNTER_ID, 'setUserID', String(userId))
+        window.ym(YM_COUNTER_ID, 'userParams', { UserID: userId })
+    }, [userId])
+}
+
+/**
  * Бизнес-событие. Цели в Metrica настраиваются через интерфейс:
  *   Цели → Добавить → JavaScript-событие → имя совпадает с `name`.
  *

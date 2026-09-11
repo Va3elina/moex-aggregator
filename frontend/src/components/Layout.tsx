@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { isViewAsUser, setViewAsUser } from '../services/viewMode';
-import { useYandexMetrica } from '../hooks/useYandexMetrica';
+import { useYandexMetrica, useYandexMetricaUser } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
 import { Menu, X, LogIn, BarChart3, Newspaper, User } from 'lucide-react';
@@ -84,6 +84,8 @@ export default function Layout() {
   // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
   // Первый hit отправляется автоматически через init() в index.html.
   useYandexMetrica();
+  // Номер аккаунта в Метрику — чтобы находить записи Вебвизора по пользователю.
+  useYandexMetricaUser(user?.id);
 
   // adminOnly-вкладки видны только роли admin (оба места рендера: desktop и
   // мобильное меню используют этот список, не NAV_ITEMS напрямую).
