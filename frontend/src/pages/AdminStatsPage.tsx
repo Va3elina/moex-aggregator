@@ -23,11 +23,12 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, UserPlus, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
+import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +46,9 @@ import type {
   AdminRange,
   MetricaReport,
   MetricaRow,
+  MetricaMetric,
+  MetricaSummary,
+  MetricaBySource,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -58,14 +62,25 @@ const METRIC_HINTS = {
     + '2) Метрика узнаёт браузер по своей cookie, у нас с 11.09.2026 так же. Раньше гость у нас считался по вкладке. '
     + '3) Визит в обеих системах заканчивается после 30 минут бездействия. '
     + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
-    + '5) Метрика не отделяет админов, а мы по умолчанию их исключаем. '
+    + '5) Вошедших и админов Метрика узнаёт по номеру аккаунта, который получает с 11.09.2026, и только в браузерах, где после этого входили в аккаунт. Наш трекер знает всех вошедших. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
   metrica_section:
     'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками.',
-  metrica_new: 'Посетители, которые пришли на сайт впервые за всю историю счётчика. Процент — от всех посетителей периода.',
-  metrica_depth: 'Средняя глубина просмотра: сколько страниц открывают за визит.',
+  metrica_pageviews: 'Сколько раз открывали страницы сайта. Каждый переход на другую страницу и каждое обновление страницы — отдельный просмотр.',
+  metrica_visits: 'Заходы на сайт. Визит — серия действий одного посетителя. Если он ничего не делает 30 минут, следующее действие начинает новый визит.',
+  metrica_users: 'Разные люди, точнее браузеры: Метрика узнаёт их по своей cookie. Один человек с телефона и с ноутбука — два посетителя. За период каждый считается один раз, поэтому посетителей за месяц меньше, чем сумма по дням.',
+  metrica_new: 'Посетители, которые пришли на сайт впервые за всю историю счётчика.',
+  metrica_time: 'Средняя длительность визита: от входа на сайт до последнего действия.',
+  metrica_depth: 'Сколько страниц в среднем открывают за визит: просмотры, делённые на визиты.',
+  metrica_bounce: 'Доля визитов, где открыли одну страницу и пробыли на ней меньше 15 секунд. Рост отказов — плохо, поэтому цвета изменения перевёрнуты.',
+  metrica_chart:
+    'Выбранный показатель по дням, на периоде от 92 дней — по неделям. «Всего» — по всему сайту, цветные линии — по источникам. '
+    + 'Источник считается по последнему значимому переходу, как в Метрике по умолчанию: визит по закладке после прихода из поиска засчитывается поиску. '
+    + 'Выходные подсвечены. В легенде линии включаются и выключаются, там же итог за период.',
   metrica_sources: 'Тип источника последнего значимого перехода: поиск, прямые заходы, ссылки на сайтах, соцсети, мессенджеры.',
   metrica_phrases: 'Поисковые запросы, по которым пришли из Яндекса и других поисковиков. Google почти все фразы скрывает.',
+  metrica_phrases_unsegmented:
+    'Сегмент из шапки к фразам не применяется: Метрика скрывает поисковые фразы, если фильтровать по аккаунту. Фильтр устройства действует.',
   metrica_referrers: 'Сайты, со ссылок на которых пришли посетители.',
   metrica_entry: 'Страница, с которой начался визит.',
   metrica_pages: 'Самые посещаемые страницы. Главная цифра — посетители, серая — просмотры.',
@@ -76,7 +91,9 @@ const METRIC_HINTS = {
   period:
     'Дни по московскому времени. Дельты на карточках сравнивают с таким же числом дней сразу перед выбранным периодом. Сырые события хранятся 180 дней, более ранние периоды будут пустыми.',
   segment:
-    '«Все без админов» — вариант по умолчанию: вкладки админов открыты часами и раньше давали пятую часть всего времени на сайте. Авторизованные и гости определяются по посетителю: гость, который потом вошёл, считается авторизованным.',
+    '«Все без админов» — вариант по умолчанию: вкладки админов открыты часами и раньше давали пятую часть всего времени на сайте. Авторизованные и гости определяются по посетителю: гость, который потом вошёл, считается авторизованным. '
+    + 'Фильтры действуют и на блок Метрики. Там аккаунт виден по номеру, который Метрика получает при входе с 11.09.2026, и привязан к браузеру вместе с его прошлыми визитами. '
+    + 'Браузер, в котором после этой даты ни разу не входили, Метрика считает гостем, даже если раньше в нём входили.',
   visitors:
     'Сколько разных людей было на сайте. Вошедший в аккаунт считается по аккаунту на всех устройствах. Гость — по постоянному ID браузера, он живёт год, как cookie Метрики. События гостя до входа приклеиваются к его аккаунту, поэтому человек не двоится. До 11.09.2026 ID браузера не было, гость считался по вкладке: старые периоды немного завышены.',
   visits:
@@ -264,11 +281,11 @@ export default function AdminStatsPage() {
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     setMetricaLoading(true);
-    getMetrica(range)
+    getMetrica(range, segment, device)
       .then(setMetrica)
       .catch(() => setMetrica(null))
       .finally(() => setMetricaLoading(false));
-  }, [user, range, tick]);
+  }, [user, range, segment, device, tick]);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
@@ -616,6 +633,141 @@ export default function AdminStatsPage() {
  *  scripts/seo). Client ID не секрет: он всегда виден в ссылке авторизации. */
 const METRIKA_TOKEN_URL = 'https://oauth.yandex.ru/authorize?response_type=token&client_id=13ef24cf955147729f6ccbe3021b8f3e';
 
+type MetricaDelta = { text: string; good: boolean; up: boolean } | null;
+
+interface MetricaMetricDef {
+  key: MetricaMetric;
+  label: string;
+  hint: string;
+  format: (v: number) => string;
+  formatAxis?: (v: number) => string;
+  /** Отказы сравниваем в процентных пунктах, остальное — в процентах. */
+  points?: boolean;
+  lowerIsBetter?: boolean;
+}
+
+const fmtInt = (v: number) => Math.round(v).toLocaleString('ru-RU');
+
+/** Показатели в порядке сводки Метрики. */
+const METRICA_METRICS: MetricaMetricDef[] = [
+  { key: 'pageviews', label: 'Просмотры', hint: METRIC_HINTS.metrica_pageviews, format: fmtInt },
+  { key: 'visits', label: 'Визиты', hint: METRIC_HINTS.metrica_visits, format: fmtInt },
+  { key: 'users', label: 'Посетители', hint: METRIC_HINTS.metrica_users, format: fmtInt },
+  { key: 'new_users', label: 'Новые посетители', hint: METRIC_HINTS.metrica_new, format: fmtInt },
+  {
+    key: 'avg_visit_sec', label: 'Время на сайте', hint: METRIC_HINTS.metrica_time, format: formatDuration,
+    formatAxis: (v) => (v > 0 && v % 60 === 0 ? `${v / 60}м` : formatDuration(v)),
+  },
+  { key: 'page_depth', label: 'Глубина просмотра', hint: METRIC_HINTS.metrica_depth, format: fmtNum },
+  {
+    key: 'bounce_pct', label: 'Отказы', hint: METRIC_HINTS.metrica_bounce, format: (v) => `${fmtNum(v)}%`,
+    points: true, lowerIsBetter: true,
+  },
+];
+
+/** Стрелка — куда сдвинулось значение, цвет — хорошо это или плохо. */
+function metricaDelta(def: MetricaMetricDef, cur: number, prev: number | undefined): MetricaDelta {
+  if (prev === undefined) return null;
+  const diff = cur - prev;
+  const good = def.lowerIsBetter ? diff <= 0 : diff >= 0;
+  if (def.points) return { text: `${diff >= 0 ? '+' : '−'}${fmtNum(Math.abs(diff))} п.п.`, good, up: diff >= 0 };
+  if (!prev) return null;
+  const pct = Math.round((diff / prev) * 100);
+  return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%`, good, up: diff >= 0 };
+}
+
+/** Показатели Метрики переключателями, как на её сводке, и график выбранного по источникам. */
+function MetricaTraffic({ cur, prev, bySource, error }: {
+  cur: MetricaSummary;
+  prev: MetricaSummary | null;
+  bySource: MetricaBySource | null;
+  error?: string;
+}) {
+  const [picked, setPicked] = usePersistedState<MetricaMetric>('frame:admin-stats:metrica-metric', 'visits');
+  const def = METRICA_METRICS.find((m) => m.key === picked) ?? METRICA_METRICS[1];
+  return (
+    <Card padding="md" className="md:p-5">
+      <div role="radiogroup" aria-label="Показатель на графике" className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 mb-4 md:mb-5">
+        {METRICA_METRICS.map((m, i) => {
+          const on = m.key === def.key;
+          const d = metricaDelta(m, cur[m.key], prev?.[m.key]);
+          return (
+            <div
+              key={m.key}
+              role="radio"
+              aria-checked={on}
+              tabIndex={0}
+              onClick={() => setPicked(m.key)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPicked(m.key); }
+              }}
+              className="cursor-pointer rounded-lg min-w-0"
+              style={{
+                padding: 'var(--sp-2) var(--sp-3)',
+                background: on ? 'var(--bg-tertiary)' : 'transparent',
+                boxShadow: on ? 'inset 0 -2px 0 var(--accent)' : 'none',
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--text-muted)' }}>
+                <span
+                  aria-hidden
+                  className="shrink-0 rounded-full"
+                  style={{
+                    width: 10, height: 10,
+                    border: `2px solid ${on ? 'var(--accent)' : 'var(--text-muted)'}`,
+                    background: on ? 'var(--accent)' : 'transparent',
+                  }}
+                />
+                <span className="text-xs min-w-0 truncate">{m.label}</span>
+                <span className="inline-flex shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                  <HelpTooltip icon="help" title={m.label} content={m.hint} size={12} align={i >= 4 ? 'right' : 'left'} />
+                </span>
+              </div>
+              <div
+                className="font-bold"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontSize: 'clamp(1.2rem, 1.7vw, 1.5rem)',
+                  letterSpacing: '-0.02em',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontVariantNumeric: 'tabular-nums',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {m.format(cur[m.key])}
+              </div>
+              {d && (
+                <div
+                  className="flex items-center gap-1 text-xs mt-0.5"
+                  style={{ color: d.good ? 'var(--success)' : 'var(--danger)', fontFamily: "'IBM Plex Mono', monospace" }}
+                >
+                  {d.up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                  {d.text}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {bySource && bySource.dates.length > 0 ? (
+        <MetricaSourcesChart
+          data={bySource}
+          metric={def.key}
+          label={def.label}
+          hint={METRIC_HINTS.metrica_chart}
+          totalValue={cur[def.key]}
+          format={def.format}
+          formatAxis={def.formatAxis}
+        />
+      ) : (
+        <p className="text-sm" style={{ color: error ? 'var(--danger)' : 'var(--text-muted)' }}>
+          {error ? `График не пришёл: ${error}` : 'Нет данных за период'}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 /** Трафик из Яндекс Метрики. Токена нет или он не действует — инструкция, как выдать новый. */
 function MetricaBlock({ report, loading }: { report: MetricaReport | null; loading: boolean }) {
   if (loading && !report) {
@@ -671,10 +823,6 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
   const rows = (list: MetricaRow[] | null | undefined) =>
     list ? list.map((r) => ({ label: r.label, value: r.value, value2: r.value2 ?? undefined })) : null;
   const empty = (key: string) => (err[key] ? `Отчёт не пришёл: ${err[key]}` : 'Нет данных за период');
-  const delta = (c: number, p0: number | undefined): Delta => {
-    if (!p0) return null;
-    return pctDelta(Math.round(((c - p0) / p0) * 100));
-  };
   const counter = report.counter;
 
   return (
@@ -699,79 +847,20 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
       </div>
 
       {cur ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
-          <SummaryCard
-            icon={<Users size={16} />} label="Посетители" hint={METRIC_HINTS.visitors.split('.')[0] + '. Считает Метрика по своей cookie на год.'}
-            value={cur.users.toLocaleString('ru-RU')}
-            delta={delta(cur.users, prev?.users)} prev={prev ? prev.users.toLocaleString('ru-RU') : undefined}
-          />
-          <SummaryCard
-            icon={<Activity size={16} />} label="Визиты" hint={METRIC_HINTS.visits}
-            value={cur.visits.toLocaleString('ru-RU')}
-            delta={delta(cur.visits, prev?.visits)} prev={prev ? prev.visits.toLocaleString('ru-RU') : undefined}
-          />
-          <SummaryCard
-            icon={<Eye size={16} />} label="Просмотры" hint={METRIC_HINTS.metrica_depth} hintAlign="right"
-            value={cur.pageviews.toLocaleString('ru-RU')}
-            sub={`${fmtNum(cur.page_depth)} на визит`}
-            delta={delta(cur.pageviews, prev?.pageviews)} prev={prev ? prev.pageviews.toLocaleString('ru-RU') : undefined}
-          />
-          <SummaryCard
-            icon={<Clock size={16} />} label="Время визита" hint="Среднее время визита по Метрике."
-            value={formatDuration(cur.avg_visit_sec)}
-            delta={prev && prev.visits ? {
-              text: `${cur.avg_visit_sec - prev.avg_visit_sec >= 0 ? '+' : '−'}${formatDuration(Math.abs(cur.avg_visit_sec - prev.avg_visit_sec))}`,
-              good: cur.avg_visit_sec >= prev.avg_visit_sec,
-            } : null}
-            prev={prev ? formatDuration(prev.avg_visit_sec) : undefined}
-          />
-          <SummaryCard
-            icon={<LogOut size={16} />} label="Отказы" hint={METRIC_HINTS.bounce}
-            value={`${fmtNum(cur.bounce_pct)}%`}
-            delta={prev && prev.visits ? {
-              text: `${cur.bounce_pct - prev.bounce_pct >= 0 ? '+' : '−'}${fmtNum(Math.abs(cur.bounce_pct - prev.bounce_pct))} п.п.`,
-              good: cur.bounce_pct <= prev.bounce_pct,
-            } : null}
-            prev={prev ? `${fmtNum(prev.bounce_pct)}%` : undefined}
-          />
-          <SummaryCard
-            icon={<UserPlus size={16} />} label="Новые" hint={METRIC_HINTS.metrica_new} hintAlign="right"
-            value={cur.new_users.toLocaleString('ru-RU')}
-            sub={cur.users ? `${fmtNum((cur.new_users / cur.users) * 100)}% посетителей` : undefined}
-            delta={delta(cur.new_users, prev?.new_users)} prev={prev ? prev.new_users.toLocaleString('ru-RU') : undefined}
-          />
-        </div>
+        <MetricaTraffic cur={cur} prev={prev ?? null} bySource={report.by_source ?? null} error={err.by_source} />
       ) : (
         <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
-      )}
-
-      {report.trends && report.trends.length > 1 && (
-        <Card padding="md" className="md:p-5">
-          <SimpleChart
-            data={report.trends.map(t => ({ time: t.date, value: t.users }))}
-            secondaryData={report.trends.map(t => ({ time: t.date, value: t.visits }))}
-            showSecondary={true}
-            primaryColor="var(--accent)"
-            secondaryColor="var(--accent-secondary)"
-            primaryLabel="Посетители"
-            secondaryLabel="Визиты"
-            formatValue={(v) => Math.round(v).toString()}
-            formatSecondaryAxis={(v) => Math.round(v).toString()}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showNavigator={false}
-            hideTime={true}
-            height={300}
-            chartPadding={{ right: 100 }}
-          />
-        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
         <TopList title="Источники трафика" hint={METRIC_HINTS.metrica_sources} columns={['визиты', 'посетители']}
           items={rows(report.sources)} loading={false} emptyText={empty('sources')} />
-        <TopList title="Поисковые фразы" hint={METRIC_HINTS.metrica_phrases} hintAlign="right" columns={['визиты', 'посетители']}
+        <TopList
+          title={report.phrases_unsegmented ? 'Поисковые фразы · все посетители' : 'Поисковые фразы'}
+          hint={report.phrases_unsegmented
+            ? `${METRIC_HINTS.metrica_phrases} ${METRIC_HINTS.metrica_phrases_unsegmented}`
+            : METRIC_HINTS.metrica_phrases}
+          hintAlign="right" columns={['визиты', 'посетители']}
           items={rows(report.search_phrases)} loading={false} emptyText={empty('search_phrases')} />
         <TopList title="Поисковые системы" columns={['визиты', 'посетители']}
           hint="Из каких поисковиков приходят." items={rows(report.search_engines)} loading={false} emptyText={empty('search_engines')} />

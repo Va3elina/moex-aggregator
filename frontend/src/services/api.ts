@@ -1183,12 +1183,32 @@ export interface MetricaSummary {
 
 export interface MetricaRow { label: string; value: number; value2: number | null }
 
+export type MetricaMetric = keyof MetricaSummary;
+
+/** Показатели по дням (на длинных периодах по неделям) в разбивке по источникам
+ *  трафика. period — итог за весь период по источнику: посетителей по дням не сложить. */
+export interface MetricaBySource {
+  group: 'day' | 'week';
+  /** Начало каждого интервала; ends — его конец (отличается только у недель). */
+  dates: string[];
+  ends: string[];
+  total: Record<MetricaMetric, number[]>;
+  series: {
+    id: string;
+    name: string;
+    period: Record<MetricaMetric, number>;
+    values: Record<MetricaMetric, number[]>;
+  }[];
+}
+
 /** Трафик из Яндекс Метрики (GET /api/analytics/metrica). connected=false —
  *  токена на сервере нет, либо Метрика его не принимает (тогда есть token_error).
  *  Любой отчёт может прийти null — тогда причина в errors. */
 export interface MetricaReport {
   connected: boolean;
   token_error?: string;
+  /** Сегмент к поисковым фразам не применён: Метрика прячет их при фильтре по аккаунту. */
+  phrases_unsegmented?: boolean;
   counter: string;
   date_from: string;
   date_to: string;
@@ -1197,7 +1217,7 @@ export interface MetricaReport {
   errors?: Record<string, string>;
   summary?: MetricaSummary | null;
   prev_summary?: MetricaSummary | null;
-  trends?: { date: string; users: number; visits: number; pageviews: number }[] | null;
+  by_source?: MetricaBySource | null;
   sources?: MetricaRow[] | null;
   search_engines?: MetricaRow[] | null;
   search_phrases?: MetricaRow[] | null;
@@ -1210,9 +1230,12 @@ export interface MetricaReport {
   pages?: MetricaRow[] | null;
 }
 
-export async function getMetrica(range: AdminRange): Promise<MetricaReport> {
+/** segment и device — те же, что у getAnalyticsStats: фильтры из шапки действуют и на Метрику. */
+export async function getMetrica(range: AdminRange, segment = 'all', device = 'all'): Promise<MetricaReport> {
   const params = new URLSearchParams();
   rangeParams(params, range);
+  params.set('segment', segment);
+  params.set('device', device);
   const response = await apiFetch(`${API_BASE}/api/analytics/metrica?${params}`);
   if (!response.ok) throw new Error('Не удалось получить данные Метрики');
   return response.json();
