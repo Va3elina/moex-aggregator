@@ -17,7 +17,7 @@ Seasonality API — Сезонность
 - При exclude_dividends=True: на экс-дате return корректируется добавлением
   dividend/prev_close * 100 к дневному изменению
 """
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from sqlalchemy import text
 from datetime import date, timedelta
 import time
@@ -27,8 +27,14 @@ from api.cache import get_or_set, get_or_compute
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits, enforce_tier_limits
+from api.services.session_close import (is_live_viewer, view_tag, last_published_date,
+                                        published_next_day, secid_closes, publish_daily_closes)
 
 log = get_logger()
+
+# Сколько последних дней дневного ряда заменяем ценой 19:00 в публичной версии
+# (services/session_close). Глубже — дневная свеча как есть: это история.
+_CLOSE19_WINDOW_DAYS = 60
 
 router = APIRouter(prefix="/api/seasonality", tags=["seasonality"])
 
@@ -219,6 +225,7 @@ def _compute_monthly_returns_candles(
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
     agg_type: str = "avg",
+    pub_next=None,
 ) -> list[dict]:
     """
     Месячная сезонность через close-to-close для акций/фьючерсов из candles.
@@ -235,13 +242,20 @@ def _compute_monthly_returns_candles(
         # ТОЛЬКО будни: торги выходного дня MOEX дают субботние спот-свечи, и без
         # фильтра «последний close месяца» мог бы взять субботу вместо пятницы →
         # искажение месячного возврата. Сезонность считается по торговым будням.
+        # pub_next — публичная версия: живая дневная свеча неопубликованного
+        # дня в статистику не входит (services/session_close).
+        pub_sql = "AND begin_time < :pub_next" if pub_next else ""
+        params = {"secid": secid}
+        if pub_next:
+            params["pub_next"] = pub_next
         rows = conn.execute(text(f"""
             SELECT begin_time::date as d, close
             FROM candles
             WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
               AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
+              {pub_sql}
             ORDER BY begin_time
-        """), {"secid": secid}).fetchall()
+        """), params).fetchall()
 
     if not rows:
         return []
@@ -402,7 +416,8 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                                 ex_dates: dict[str, float],
                                 since_year: int | None = None,
                                 exclude_years: list[int] | None = None,
-                                agg_type: str = "avg") -> list[dict]:
+                                agg_type: str = "avg",
+                                pub_next=None) -> list[dict]:
     """
     Вычисляет сезонность для дневных режимов (weekday, monthday, monthly).
 
@@ -426,7 +441,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         return _compute_monthly_returns_candles(
             engine, secid, inst_type, iterations, ex_dates,
             since_year=since_year, exclude_years=exclude_years,
-            agg_type=agg_type,
+            agg_type=agg_type, pub_next=pub_next,
         )
 
     # Для index_data (не monthly) — отдельная логика
@@ -467,7 +482,13 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         join_cond = "date_trunc('month', c.begin_time::date) = ri.iter_key"
         labels = None
 
-    # Шаг 1: получаем все свечи за нужный период
+    # Шаг 1: получаем все свечи за нужный период.
+    # pub_next — публичная версия: живая дневная свеча неопубликованного дня
+    # в статистику не входит (services/session_close).
+    pub_filter = "AND c.begin_time < :pub_next" if pub_next else ""
+    day_params = {"secid": secid, "iterations": iterations}
+    if pub_next:
+        day_params["pub_next"] = pub_next
     with engine.connect() as conn:
         all_candles = conn.execute(text(f"""
             WITH recent_iters AS (
@@ -486,11 +507,12 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                   AND {type_filter}
                   AND c.open > 0
                   {extra_filter}
+                  {pub_filter}
                 ORDER BY c.begin_time
             )
             SELECT trade_date, close, grp_key
             FROM filtered
-        """), {"secid": secid, "iterations": iterations}).fetchall()
+        """), day_params).fetchall()
 
     if not all_candles:
         return []
@@ -574,9 +596,14 @@ def _compute_yearly_seasonality(
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
     agg_type: str = "avg",
+    live: bool = True,
 ) -> dict:
     """
     Годовая сезонность: кумулятивное изменение цены с начала года.
+
+    live=False — публичная версия цены (services/session_close): без
+    неопубликованного дня, последние недели ряда — цена 19:00. Это видно на
+    линии текущего года: её последняя точка — закрытие, а не цена «сейчас».
 
     Ключевой принцип: выравнивание по ТОРГОВОМУ ДНЮ (1-й, 2-й, 3-й...),
     а не по календарному дню года. Это устраняет шум от разных торговых
@@ -598,6 +625,10 @@ def _compute_yearly_seasonality(
                 WHERE secid = :secid AND close > 0
                 ORDER BY trade_date
             """), {"secid": secid}).fetchall()
+            rows = [(r[0], float(r[1])) for r in rows]
+            if not live:
+                last_pub = last_published_date()
+                rows = [r for r in rows if r[0] <= last_pub]
         else:
             type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
             rows = conn.execute(text(f"""
@@ -606,6 +637,11 @@ def _compute_yearly_seasonality(
                 WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
                 ORDER BY begin_time
             """), {"secid": secid}).fetchall()
+            rows = [(r[0], float(r[1])) for r in rows]
+            if not live:
+                closes19 = secid_closes(conn, secid, inst_type or "stock",
+                                        date.today() - timedelta(days=_CLOSE19_WINDOW_DAYS))
+                rows = publish_daily_closes(rows, closes19)
 
     if not rows:
         return {}
@@ -780,6 +816,7 @@ def _compute_yearly_seasonality(
 
 @router.get("")
 async def get_seasonality(
+    request: Request,
     secid: str = Query(..., description="Тикер акции"),
     mode: str = Query("weekday", description="Режим: intraday, weekday, monthday, monthly"),
     iterations: int = Query(90, ge=1, le=9999, description="Кол-во последних итераций"),
@@ -821,7 +858,20 @@ async def get_seasonality(
     if exclude_dividends and limits.get("filter_no_dividends") is False:
         exclude_dividends = False
 
-    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
+    # Версия цены (services/session_close). «Внутри дня» строится по
+    # внутридневным ценам, поэтому у всех, кроме админов, режим закрыт (решение
+    # владельца 2026-09-11: на сайте цена только на закрытие 19:00). Текст без
+    # слов «тариф»/«недоступ»: фронт по ним распознаёт тарифный отказ и
+    # предложил бы апгрейд, который тут не поможет.
+    live = is_live_viewer(user, request)
+    if mode == "intraday" and not live:
+        raise HTTPException(
+            status_code=403,
+            detail="Режим «Внутри дня» закрыт: цены на сайте показываются только на закрытие торгов в 19:00",
+        )
+    pub_next = None if live else published_next_day()
+
+    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}:{view_tag(live)}"
 
     def _compute() -> dict:
         # single-flight: под тяжёлые intraday-запросы на 10+ лет истории —
@@ -936,7 +986,7 @@ async def get_seasonality(
             bars = _compute_seasonality_daily(
                 engine, secid, mode, iterations, ex_dates,
                 since_year=since_year, exclude_years=excl_list,
-                agg_type=agg_type,
+                agg_type=agg_type, pub_next=pub_next,
             )
 
         if not bars:
@@ -962,6 +1012,7 @@ async def get_seasonality(
 
 @router.get("/price")
 async def get_price_chart(
+    request: Request,
     secid: str = Query(..., description="Тикер акции"),
     days: int = Query(365, ge=30, le=10000, description="Кол-во календарных дней"),
     user=Depends(get_current_user_optional),
@@ -975,7 +1026,10 @@ async def get_price_chart(
     - На каждой экс-дате: все предыдущие close умножаем на (1 + div/close_before_ex)
     - Это стандартный метод adjusted close (как у Yahoo Finance)
     """
-    cache_key = f"seasonality_price:{secid}:{days}"
+    # Версия цены (services/session_close): у всех, кроме админов, без
+    # неопубликованного дня, последние недели ряда — цена 19:00.
+    live = is_live_viewer(user, request)
+    cache_key = f"seasonality_price:{secid}:{days}:{view_tag(live)}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -1008,6 +1062,15 @@ async def get_price_chart(
                   AND begin_time::date >= :date_from
                 ORDER BY begin_time
             """), {"secid": secid, "date_from": date_from.isoformat()}).fetchall()
+
+        if not live:
+            if source == "index_data":
+                last_pub = last_published_date()
+                rows = [(r[0], float(r[1])) for r in rows if r[0] <= last_pub]
+            else:
+                closes19 = secid_closes(conn, secid, inst_type or "stock",
+                                        date_type.today() - timedelta(days=_CLOSE19_WINDOW_DAYS))
+                rows = publish_daily_closes([(r[0], float(r[1])) for r in rows], closes19)
 
     if not rows:
         raise HTTPException(404, f"Нет данных для {secid}")
@@ -1123,6 +1186,7 @@ async def get_available_years(
 
 @router.get("/yearly")
 async def get_yearly_seasonality(
+    request: Request,
     secid: str = Query(..., description="Тикер"),
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
     since_year: int | None = Query(None, description="Учитывать годы ≥ since_year"),
@@ -1160,7 +1224,8 @@ async def get_yearly_seasonality(
     if exclude_dividends and limits.get("filter_no_dividends") is False:
         exclude_dividends = False
 
-    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
+    live = is_live_viewer(user, request)
+    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}:{view_tag(live)}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -1175,7 +1240,7 @@ async def get_yearly_seasonality(
 
     data = _compute_yearly_seasonality(engine, secid, ex_dates,
                                        since_year=since_year, exclude_years=excl_list,
-                                       agg_type=agg_type)
+                                       agg_type=agg_type, live=live)
     if not data:
         raise HTTPException(404, f"Нет данных для {secid}")
 

@@ -28,13 +28,14 @@ from datetime import date, timedelta
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
 from api.models import User
 from api.routers.auth import get_current_user_optional
+from api.services.session_close import is_live_viewer, published_next_day, secid_closes
 from api.billing.tiers import user_tier
 from api.billing.features import get_indicator_limits
 
@@ -2958,8 +2959,10 @@ REDOMICILE_RATIO: dict[str, float] = {
 
 @router.get("/price-weekly")
 def price_weekly(
+    request: Request,
     ticker: str = Query(..., description="Тикер акции (secid MOEX)"),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Недельные закрытия акции из дневных свечей — фон режима «Карта сделок»
@@ -3009,17 +3012,34 @@ def price_weekly(
           AND sr.secid IS NOT NULL AND sr.secid <> :t
     """), {"t": ticker}).all()]
 
+    # Версия цены (services/session_close): у всех, кроме админов, без живой
+    # дневной свечи неопубликованного дня, а закрытие недели в последние недели
+    # — цена 19:00 (дневная свеча несёт вечернюю сессию). Глубже — история как есть.
+    from datetime import date as _date, timedelta as _td
+    live = is_live_viewer(user, request)
+    pub_next = None if live else published_next_day()
+
     # Недельные закрытия по каждому secid отдельно: масштаб старой серии
     # приводим к текущей акции, а «кто победил» на пересечении решаем ниже.
     def weekly(secid: str) -> list[tuple]:
-        return db.execute(text("""
+        pub_sql = "AND begin_time < :pub_next" if pub_next else ""
+        params = {"t": secid}
+        if pub_next:
+            params["pub_next"] = pub_next
+        rows = db.execute(text(f"""
             SELECT (date_trunc('week', begin_time))::date AS week,
-                   (array_agg(close ORDER BY begin_time DESC))[1] AS close
+                   (array_agg(close ORDER BY begin_time DESC))[1] AS close,
+                   (array_agg(begin_time::date ORDER BY begin_time DESC))[1] AS last_d
             FROM candles
             WHERE secid = :t AND interval = 24 AND type = 'stock' AND close > 0
+              {pub_sql}
             GROUP BY 1
             ORDER BY 1
-        """), {"t": secid}).all()
+        """), params).all()
+        if live:
+            return [(wk, close) for wk, close, _d in rows]
+        closes19 = secid_closes(db, secid, "stock", _date.today() - _td(days=60))
+        return [(wk, closes19.get(last_d, close)) for wk, close, last_d in rows]
 
     by_week: dict = {}
     for old in legacy:

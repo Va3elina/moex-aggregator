@@ -18,12 +18,13 @@ from datetime import datetime, timedelta, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.services.market_delay import cutoff_for_interval
+from api.services.session_close import is_live_viewer
 from api.database import get_db
 from api.models import User, Alert, AlertEvent
 from api.models.telegram_link_token import TelegramLinkToken
@@ -34,6 +35,16 @@ from api.billing.features import get_common_features
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 LINK_TOKEN_TTL_MIN = 10
+
+# Алерты по цене актива сняты (решение владельца 2026-09-11): цена на сайте
+# только на закрытие 19:00 (services/session_close), а алерт, сработавший
+# внутри дня, самим фактом срабатывания раскрывал бы внутридневную цену.
+# Остаются только у админов — вместе с незамедленной версией сайта.
+PRICE_ALERTS_OFF = "Уведомления по цене актива отключены"
+
+
+def _price_alerts_allowed(user) -> bool:
+    return (getattr(user, "role", "") or "").lower() == "admin"
 # @username бота (без @) для deep-link t.me/<username>. Дефолт = реальный бот
 # (публичный стабильный факт, не секрет); env ALERT_BOT_USERNAME может переопределить.
 ALERT_BOT_USERNAME = os.getenv("ALERT_BOT_USERNAME", "framesignalbot")
@@ -151,6 +162,7 @@ class AlertContextOut(BaseModel):
 
 @router.get("/context", response_model=AlertContextOut)
 def alert_context(
+    request: Request,
     indicator: str = Query(...),
     asset: str = Query(...),
     clgroup: str = Query("FIZ"),
@@ -162,7 +174,13 @@ def alert_context(
     Быстрый индексный запрос (sec_id IN (...), НЕ secid LIKE — тот даёт Seq-Scan
     по 8ГБ candles). Окно begin_time >= now()-14д ложится на индекс
     idx_candles_sec_interval_time. interval ∈ {5,60} → intraday=true.
+
+    Цена «сейчас» — только в незамедленной версии (админ). У остальных цена на
+    сайте одна — закрытие 19:00, а алертов по цене нет вовсе.
     """
+    if not is_live_viewer(user, request):
+        return AlertContextOut(price=AlertPriceContext())
+
     row = db.execute(
         text("""
             SELECT close, begin_time, interval
@@ -502,6 +520,8 @@ def create_alert(
     err = _validate_alert_body(body)
     if err:
         raise HTTPException(status_code=422, detail=err.capitalize())
+    if body.indicator == "price" and not _price_alerts_allowed(user):
+        raise HTTPException(status_code=422, detail=PRICE_ALERTS_OFF)
 
     channels_csv, ch_err = _normalize_channels(body.channels, user=user, default_csv=None)
     if ch_err:
@@ -597,6 +617,9 @@ def create_alerts_batch(
         err = _validate_alert_body(a)
         if err:
             errors.append(f"{a.asset}: {err}")
+            continue
+        if a.indicator == "price" and not _price_alerts_allowed(user):
+            errors.append(f"{a.asset}: {PRICE_ALERTS_OFF.lower()}")
             continue
         channels_csv, ch_err = _normalize_channels(a.channels, user=user, default_csv=None)
         if ch_err:

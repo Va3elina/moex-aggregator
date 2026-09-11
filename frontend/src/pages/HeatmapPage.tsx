@@ -8,7 +8,7 @@ import AdaptiveSegmented from '../components/AdaptiveSegmented';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import ChartWatermark from '../components/ChartWatermark';
 import { METHODOLOGY } from '../data/methodology';
-import { getHeatmapData, getHeatmapImoex } from '../services/api';
+import { getHeatmapData, getHeatmapImoex, getHeatmapPrices } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
@@ -170,6 +170,8 @@ export default function HeatmapPage() {
   // последним торговым днём (data_date), а не текущим временем.
   const [isLive, setIsLive] = useState<boolean>(true);
   const [dataDate, setDataDate] = useState<string>('');
+  // То же для SSE-обработчика (он живёт в замыкании первого рендера).
+  const isLiveRef = useRef(true);
 
   // Кэш prev_close для real-time пересчёта change_1d
   const prevCloseMap = useRef<Record<string, number>>({});
@@ -287,6 +289,7 @@ export default function HeatmapPage() {
       });
       setLastUpdate(data.updated_at || new Date().toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' }));
       setIsLive(data.is_live !== false);
+      isLiveRef.current = data.is_live !== false;
       setDataDate(data.data_date || '');
       hasDataRef.current = true;
     } catch (error) {
@@ -319,6 +322,14 @@ export default function HeatmapPage() {
   // SSE: при обновлении MV — загружаем свежие цены (lightweight) + полный reload раз в 15 мин
   const fullReloadCounter = useRef(0);
   useRealtimeData(['5min', 'mv_refresh'], async () => {
+    // Карта без живой сессии (публичная версия — цена только на закрытие
+    // 19:00, либо выходной/праздник): свежих цен внутри дня нет. Тихо
+    // перечитываем карту целиком (ответ из кеша сервера) — так после 19:10
+    // подтянется новое закрытие.
+    if (!isLiveRef.current) {
+      await loadData();
+      return;
+    }
     fullReloadCounter.current += 1;
     // Каждый 3й раз (раз в ~15 мин) — полный reload для change_1w/1m/1y
     if (fullReloadCounter.current % 3 === 0) {
@@ -327,9 +338,8 @@ export default function HeatmapPage() {
     }
     // Остальное время — только цены (lightweight)
     try {
-      const resp = await fetch('/api/heatmap/prices');
-      if (!resp.ok) return;
-      const prices: Record<string, number> = await resp.json();
+      const prices = await getHeatmapPrices();
+      if (!Object.keys(prices).length) return;
       setAllStocks(prev => prev.map(stock => {
         const newPrice = prices[stock.secId];
         const prevClose = prevCloseMap.current[stock.secId];

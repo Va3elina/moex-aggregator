@@ -3,7 +3,7 @@
   "Индикаторы": "Indicators",
   "Справка": "Reference",
   "FRAME — институциональная аналитика Московской биржи": "FRAME — institutional-grade analytics for the Moscow Exchange",
-  "Открытые позиции, индикатор Баффета, карта рынка, денежные потоки фондов и сезонность. Данные MOEX в реальном времени.": "Open interest, Buffett indicator, market map, fund flows and seasonality. Real-time MOEX data.",
+  "Открытые позиции, индикатор Баффета, карта рынка, денежные потоки фондов и сезонность по данным MOEX. Позиции участников обновляются в течение дня, цены на закрытие торгов.": "Open interest, Buffett indicator, market map, fund flows and seasonality from MOEX data. Positions update during the day, prices as of the close.",
   "Открытые позиции по фьючерсам и опционам MOEX | FRAME": "Open interest in MOEX futures and options | FRAME",
   "Позиции участников торгов на срочном рынке Мосбиржи. Различение физических лиц и юрлиц по фьючерсам и опционам.": "Positioning on the Moscow Exchange derivatives market, split between retail and institutions across futures and options.",
   "Карта российского рынка акций | FRAME": "Russian stock market map | FRAME",

@@ -42,6 +42,7 @@ import { EmbedFrame, AssetButton, PillGroup, Dropdown, ToolbarMenuButton, WheelH
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
+import { useLivePricesState } from '../../hooks/useLivePrices';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 
 type ChartType = 'histogram' | 'yearly';
@@ -244,6 +245,9 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   useEffect(() => {
     getSeasonalityIntradayUnsupported().then(setIntradayUnsupported).catch(() => {});
   }, []);
+  // «Внутри дня» строится по внутридневным ценам — только в незамедленной
+  // версии (админ). У остальных цена на сайте только на закрытие 19:00.
+  const { live: livePrices, ready: liveReady } = useLivePricesState();
 
   // Доступные годы + сброс серий при смене тикера. Ровно как на сайте: у
   // каждого инструмента своя глубина истории, перенос выбора «от прошлого
@@ -269,10 +273,10 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
   // прошлой сессии, или список только что подгрузился) — тихо переключаем на
   // дефолт вместо доёма до 404 «Нет интрадей данных».
   useEffect(() => {
-    if (mode === 'intraday' && intradayUnsupported.includes(stock)) {
+    if (mode === 'intraday' && (intradayUnsupported.includes(stock) || (liveReady && !livePrices))) {
       setMode('weekday');
     }
-  }, [mode, stock, intradayUnsupported]);
+  }, [mode, stock, intradayUnsupported, liveReady, livePrices]);
 
   // §6.11: панель песочницы принимает размер под срез — но ТОЛЬКО при спавне.
   // ⚠️ Раньше эффект висел на [chartType, mode] и бил по размеру при каждом
@@ -319,7 +323,7 @@ export default function EmbedSeasonality({ initialInstrument }: { initialInstrum
 
   // Инструменты без интрадей (index_data) — «Внутри дня» не предлагаем в
   // дропдауне (не даём выбрать заведомо нерабочий срез).
-  const supportsIntraday = !intradayUnsupported.includes(stock);
+  const supportsIntraday = !intradayUnsupported.includes(stock) && livePrices;
   const modeOptions = supportsIntraday ? MODES : MODES.filter((m) => m.id !== 'intraday');
 
   // Ключ серий для депсов эффекта: объект periods пересоздаётся на любой

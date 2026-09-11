@@ -261,7 +261,7 @@ export default function LandingPage() {
                   <SmallFeature
                     icon={<Zap size={28} strokeWidth={1.5} />}
                     title={t('Live-обновление')}
-                    desc={t('Данные обновляются каждые 5 минут в торговое время')}
+                    desc={t('Открытые позиции обновляются каждые 5 минут в торговое время, цены показываются на закрытие торгов в 19:00')}
                   />
                 </div>
               </div>

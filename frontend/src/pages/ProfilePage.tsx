@@ -565,7 +565,7 @@ export default function ProfilePage() {
             <div className="space-y-2.5 mb-5">
               {[
                 { ok: true, text: t('Все инструменты и индикаторы') },
-                { ok: true, text: t('Обзор рынка в реальном времени') },
+                { ok: true, text: t('Обзор рынка по закрытию торгов') },
                 { ok: true, text: t('Дневной таймфрейм') },
                 { ok: false, text: t('Короткие таймфреймы (5мин, 1ч)') },
                 { ok: false, text: t('Полная история данных') },

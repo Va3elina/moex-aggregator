@@ -19,6 +19,12 @@
 
 Применяется только к дневному (24) и часовому (60) ТФ. На 5-минутном последняя
 закрытая свеча и так самая свежая из имеющихся данных — там live-точка не нужна.
+
+ПУБЛИЧНАЯ ВЕРСИЯ ГРАФИКА (все, кроме админов, см. services/session_close):
+цена наружу только на закрытие 19:00, поэтому live-свечу не дописываем
+(price=False), а live-точку ОИ дописываем — ОИ под правило не подпадает. Цену
+под ней ставит растяжка (append_stretched_price с include_live_oi=True): линия
+цены просто продолжается вправо до сегодняшнего дня.
 """
 from datetime import datetime, time as dt_time
 
@@ -70,11 +76,12 @@ def strip_stretched_points(response: dict) -> bool:
     return removed
 
 
-def append_stretched_price(response: dict) -> bool:
+def append_stretched_price(response: dict, include_live_oi: bool = False) -> bool:
     """Продлевает последнюю известную цену до конца ряда ОИ.
 
-    Зачем. По лицензии MOEX цена раздаётся с задержкой 15 минут, а ОИ приходит
-    актуальным (решение владельца: ОИ не придерживаем, чтобы его не терять).
+    Зачем. Цена раздаётся не сразу (по лицензии MOEX с задержкой, а в
+    публичной версии — только на закрытие 19:00), а ОИ приходит актуальным
+    (решение владельца: ОИ не придерживаем, чтобы его не терять).
     В результате правее последней свечи висят точки ОИ, под которыми нет цены —
     выглядит как обрыв графика. Достраиваем цену горизонтально: значение то же,
     что у последней реальной свечи, флаг stretched=True.
@@ -83,6 +90,10 @@ def append_stretched_price(response: dict) -> bool:
       • при следующем обновлении они срезаются (strip_stretched_points) и на их
         месте оказывается настоящая свеча, когда та доедет;
       • фронт может отрисовать участок иначе, не выдавая заполнение за факт.
+
+    include_live_oi — растягивать и под live-точку ОИ. Нужно публичной версии:
+    live-свечи там нет, и без растяжки live-точка ОИ осталась бы без цены, а
+    фронт, выравнивая ОИ по свечам, её бы просто потерял.
 
     Возвращает True, если что-то дописали.
     """
@@ -102,8 +113,25 @@ def append_stretched_price(response: dict) -> bool:
             return False
 
         # Времена ОИ правее последней свечи — ровно тот отрезок, где цены нет.
-        gap = [p["time"] for p in oi
-               if not p.get("live") and datetime.fromisoformat(p["time"]) > last_ct]
+        # Дневной ТФ сравниваем по ДАТЕ: свечи стоят на 00:00, а точки ОИ на
+        # 23:50 того же дня. По полному времени ОИ того же дня оказывался бы
+        # «правее» свечи, и на одну дату вставала бы вторая, растянутая точка.
+        daily = response.get("interval") == 24
+        gap: list[str] = []
+        for p in oi:
+            if p.get("live") and not include_live_oi:
+                continue
+            pt = datetime.fromisoformat(p["time"])
+            if daily:
+                if pt.date() <= last_ct.date():
+                    continue
+                t_iso = datetime.combine(pt.date(), dt_time.min).isoformat()
+            else:
+                if pt <= last_ct:
+                    continue
+                t_iso = p["time"]
+            if not gap or gap[-1] != t_iso:
+                gap.append(t_iso)
         if not gap:
             return False
 
@@ -131,12 +159,16 @@ def _is_newer(candidate: datetime, last: datetime, daily: bool) -> bool:
     return candidate > last
 
 
-def append_live_points(db, response: dict) -> bool:
+def append_live_points(db, response: dict, price: bool = True) -> bool:
     """Дописывает live-точку (текущее значение) в конец candles/open_interest.
 
     Идемпотентно: сначала срезает любые хвостовые live-точки, затем добавляет
     свежие. Источник — самая свежая 5-минутная свеча активного контракта и
     самая свежая 5-минутная запись OI.
+
+    price=False — только точка ОИ (публичная версия графика: цена наружу только
+    на закрытие 19:00, а ОИ живой). Штамп времени тогда берётся у самой записи
+    ОИ: на дневке — её дата на 00:00, как у дневных свечей.
 
     Возвращает True, если хоть одна live-точка была добавлена.
 
@@ -158,78 +190,80 @@ def append_live_points(db, response: dict) -> bool:
         daily = interval == 24
         added = False
         sectype = response.get("sectype")
+        live_time_iso = None
 
-        # Календарный фронт сегодня: live-точка должна сидеть на том же контракте,
-        # что и непрерывная серия (chart.py / get_candles_continuous) — без
-        # преждевременного ролла. Если фронт известен и есть в contracts — берём
-        # 5м только из него; иначе (или если у фронта нет свежей 5м) — из всех
-        # контрактов (объёмный fallback, как раньше).
-        front = front_sec_id(db, sectype) if sectype else None
-        live_sec_ids = [front] if (front and front in sec_ids) else sec_ids
+        if price:
+            # Календарный фронт сегодня: live-точка должна сидеть на том же контракте,
+            # что и непрерывная серия (chart.py / get_candles_continuous) — без
+            # преждевременного ролла. Если фронт известен и есть в contracts — берём
+            # 5м только из него; иначе (или если у фронта нет свежей 5м) — из всех
+            # контрактов (объёмный fallback, как раньше).
+            front = front_sec_id(db, sectype) if sectype else None
+            live_sec_ids = [front] if (front and front in sec_ids) else sec_ids
 
-        # 1. Самая свежая 5-минутная свеча активного контракта.
-        #    volume > 0 отсекает zero-fill артефакты агрегации; при равном
-        #    времени берём контракт с большим объёмом (активный при ролловере).
-        #    LATERAL по каждому контракту вместо sec_id = ANY(...): глобальный
-        #    ORDER BY + LIMIT 1 с ANY заставляет планировщик вычитать ВСЕ
-        #    5-минутки актива с диска и сортировать (2-18 сек на холодных
-        #    страницах). Спуск по индексу с конца на каждый контракт — мс.
-        #    volume DESC внутри LATERAL: на один begin_time может быть две
-        #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
-        #    ⚠️ begin_time <= :cutoff — лицензия MOEX (задержка 5-минуток).
-        #    Live-точка ЧЕРПАЕТ ИЗ 5-МИНУТОК, даже когда показывается на
-        #    дневном графике, — то есть попадает под задержку по источнику
-        #    данных, а не по таймфрейму отображения. Без потолка она тянула бы
-        #    самую свежую 5-минутку мимо основного запроса свечей.
-        _LIVE_5M_SQL = text("""
-            SELECT c.begin_time, c.close, c.volume
-            FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
-            CROSS JOIN LATERAL (
-                SELECT begin_time, close, volume
-                FROM candles
-                WHERE sec_id = s.sid AND interval = 5 AND close > 0 AND volume > 0
-                  AND begin_time <= :cutoff
-                ORDER BY begin_time DESC, volume DESC
+            # 1. Самая свежая 5-минутная свеча активного контракта.
+            #    volume > 0 отсекает zero-fill артефакты агрегации; при равном
+            #    времени берём контракт с большим объёмом (активный при ролловере).
+            #    LATERAL по каждому контракту вместо sec_id = ANY(...): глобальный
+            #    ORDER BY + LIMIT 1 с ANY заставляет планировщик вычитать ВСЕ
+            #    5-минутки актива с диска и сортировать (2-18 сек на холодных
+            #    страницах). Спуск по индексу с конца на каждый контракт — мс.
+            #    volume DESC внутри LATERAL: на один begin_time может быть две
+            #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
+            #    ⚠️ begin_time <= :cutoff — лицензия MOEX (задержка 5-минуток).
+            #    Live-точка ЧЕРПАЕТ ИЗ 5-МИНУТОК, даже когда показывается на
+            #    дневном графике, — то есть попадает под задержку по источнику
+            #    данных, а не по таймфрейму отображения. Без потолка она тянула бы
+            #    самую свежую 5-минутку мимо основного запроса свечей.
+            _LIVE_5M_SQL = text("""
+                SELECT c.begin_time, c.close, c.volume
+                FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
+                CROSS JOIN LATERAL (
+                    SELECT begin_time, close, volume
+                    FROM candles
+                    WHERE sec_id = s.sid AND interval = 5 AND close > 0 AND volume > 0
+                      AND begin_time <= :cutoff
+                    ORDER BY begin_time DESC, volume DESC
+                    LIMIT 1
+                ) c
+                ORDER BY c.begin_time DESC, c.volume DESC
                 LIMIT 1
-            ) c
-            ORDER BY c.begin_time DESC, c.volume DESC
-            LIMIT 1
-        """)
-        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
-        if (not row or not row[0]) and live_sec_ids is not sec_ids:
-            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
+            """)
+            row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
+            if (not row or not row[0]) and live_sec_ids is not sec_ids:
+                row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids, "cutoff": cutoff_for_interval(5)}).fetchone()
 
-        if not row or not row[0]:
-            return False
+            if not row or not row[0]:
+                return False
 
-        live_dt = row[0]
-        live_close = float(row[1] or 0)
-        live_vol = float(row[2] or 0)
-        if live_close <= 0:
-            return False
+            live_dt = row[0]
+            live_close = float(row[1] or 0)
+            live_vol = float(row[2] or 0)
+            if live_close <= 0:
+                return False
 
-        # Штамп времени live-точки: на дневке — сегодняшняя дата 00:00 (как у
-        # дневных свечей, выравнивание OI по свечам идёт по дате); на интрадей —
-        # точное время свежей 5-минутки (выравнивание идёт по полному timestamp,
-        # поэтому live-свеча и live-OI должны нести ОДИН И ТОТ ЖЕ штамп).
-        live_time = datetime.combine(live_dt.date(), dt_time.min) if daily else live_dt
-        live_time_iso = live_time.isoformat()
+            # Штамп времени live-точки: на дневке — сегодняшняя дата 00:00 (как у
+            # дневных свечей, выравнивание OI по свечам идёт по дате); на интрадей —
+            # точное время свежей 5-минутки (выравнивание идёт по полному timestamp,
+            # поэтому live-свеча и live-OI должны нести ОДИН И ТОТ ЖЕ штамп).
+            live_time = datetime.combine(live_dt.date(), dt_time.min) if daily else live_dt
+            live_time_iso = live_time.isoformat()
 
-        last_candle_dt = datetime.fromisoformat(candles[-1]["time"])
-        if _is_newer(live_time, last_candle_dt, daily):
-            candles.append({
-                "time": live_time_iso,
-                "open": live_close,
-                "high": live_close,
-                "low": live_close,
-                "close": live_close,
-                "volume": live_vol,
-                "live": True,
-            })
-            response["candles_count"] = len(candles)
-            response["candles_end_date"] = live_time.date().isoformat()
-            response["data_end"] = live_time.date().isoformat()
-            added = True
+            last_candle_dt = datetime.fromisoformat(candles[-1]["time"])
+            if _is_newer(live_time, last_candle_dt, daily):
+                candles.append({
+                    "time": live_time_iso,
+                    "open": live_close,
+                    "high": live_close,
+                    "low": live_close,
+                    "close": live_close,
+                    "volume": live_vol,
+                    "live": True,
+                })
+                response["candles_count"] = len(candles)
+                response["candles_end_date"] = live_time.date().isoformat()
+                response["data_end"] = live_time.date().isoformat()
+                added = True
 
         # 2. Самая свежая 5-минутная запись OI (только если OI вообще показываем).
         oi = response.get("open_interest")
@@ -246,6 +280,10 @@ def append_live_points(db, response: dict) -> bool:
 
             if orow and orow[0] is not None:
                 oi_dt = datetime.combine(orow[0], orow[1] or dt_time.min)
+                if live_time_iso is None:
+                    # Публичная версия: live-свечи нет, штамп — у самой записи ОИ.
+                    live_time_iso = (datetime.combine(oi_dt.date(), dt_time.min)
+                                     if daily else oi_dt).isoformat()
                 last_oi_dt = datetime.fromisoformat(oi[-1]["time"])
                 if _is_newer(oi_dt, last_oi_dt, daily):
                     pos_long = int(orow[3] or 0)

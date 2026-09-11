@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Внутридневное текущее значение индексов MOEX (IMOEX, RTSI).
+Значение индексов MOEX (IMOEX, RTSI, IMOEX2) на закрытие дня.
 
-Назначение: держать СЕГОДНЯШНЮЮ строку index_data актуальной в течение
-торговой сессии, чтобы индикаторы (прежде всего «Сила рынка») показывали
-последнее значение индекса, а не вчерашнее закрытие. Дневной
-fetch_indices_realtime.py в 19:10 МСК перезаписывает эту же строку официальным
-закрытием (ON CONFLICT по (secid, trade_date)).
+С 2026-09-11 индексы на сайте обновляются раз в день, в конце дня (решение
+владельца вместе с правилом «цена только на закрытие 19:00», см.
+api/services/session_close). Скрипт по-прежнему крутится в 5-минутном цикле,
+но до PUBLISH_AFTER (19:10 МСК) ничего не пишет, а после пишет значение уже
+закрытой основной сессии — сегодняшняя точка «Силы рынка» появляется сразу
+после закрытия, не дожидаясь ночного прогона. Дневной fetch_indices_realtime.py
+перезаписывает эту же строку официальным закрытием (ON CONFLICT по
+(secid, trade_date)).
 
 Никакой внутридневной истории НЕ накапливаем: ровно одна строка на сегодня,
 которая всегда держит последнее значение (close = CURRENTVALUE).
@@ -63,6 +66,11 @@ INDICES = {
     # воскресеньям: IMOEX и RTSI в выходные не торгуются, IMOEX2 живой.
     "IMOEX2": "SNDX",
 }
+
+# С какого момента (МСК) значение дня публикуем: основная сессия закончилась в
+# 18:50, к 19:10 значение IMOEX/RTSI окончательное. Совпадает с
+# api/services/session_close.PUBLISH_AT.
+PUBLISH_AFTER = (19, 10)
 
 ISS_URL = "https://iss.moex.com/iss/engines/stock/markets/index/securities/{secid}.json"
 HEADERS = {
@@ -158,11 +166,25 @@ async def run_once(force: bool = False) -> int:
             print(json.dumps({"пропуск": reason}, ensure_ascii=False))
             return 0
 
+    # Внутри дня индекс не публикуем — только значение после закрытия.
+    now = get_moscow_time()
+    if (now.hour, now.minute) < PUBLISH_AFTER:
+        log.info("⏭️ Пропуск: значение индекса публикуем только после закрытия (19:10 МСК)")
+        print(json.dumps({"пропуск": "до закрытия"}, ensure_ascii=False))
+        return 0
+    weekend = now.weekday() >= 5
+
     engine = get_engine()
     written = 0
     try:
         async with aiohttp.ClientSession() as session:
             for secid, board in INDICES.items():
+                # IMOEX2 в будни продолжает считаться в вечерней сессии: после
+                # 19:05 его текущее значение — уже вечерняя цена. Нужен он только
+                # для выходных точек «Силы рынка» (выходная сессия заканчивается
+                # в 19:00), в будни верхний график рисует IMOEX.
+                if secid == "IMOEX2" and not weekend:
+                    continue
                 try:
                     rec = await fetch_current(session, secid, board)
                 except Exception as e:

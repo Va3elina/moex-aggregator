@@ -18,13 +18,14 @@ Endpoints:
 """
 from datetime import datetime, date as _date_cls
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
 from api.models import User
 from api.routers.auth import require_pro
+from api.services.session_close import is_live_viewer, publish_daily_ohlc
 from api.utils.csv_export import csv_streaming_response, zip_response, xlsx_response
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -122,6 +123,7 @@ def _date_range_clause(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/breadth.csv")
 def export_breadth(
+    request: Request,
     ema: str = Query("200", description="EMA-период(ы), comma-sep: 20,50,100,200"),
     universe: str = Query("imoex", description="all|imoex|all_usd|imoex_usd, comma-sep"),
     days: int | None = Query(None, ge=1, le=9000),
@@ -175,16 +177,21 @@ def export_breadth(
                                           "count_above", "count_total"]
 
     def stocks_data():
-        rows = db.execute(text("""
-            SELECT m.sec_id AS ticker, m.name, m.sector,
-                   m.price AS current_price,
-                   m.change_1d, m.change_1w, m.change_1m
-            FROM mv_heatmap_stocks m
-            JOIN instruments i ON i.sectype = m.sec_id
-            WHERE i.type = 'stock' AND i."group" = 'Акции'
-            ORDER BY m.sec_id ASC
-        """)).mappings().all()
-        return [dict(r) for r in rows], [
+        # Цена и изменения — в версии цены зрителя, как на карте рынка
+        # (services/session_close): у всех, кроме админов, закрытие 19:00.
+        # Состав прежний — акции раздела «Акции» из instruments.
+        from api.routers.heatmap import heatmap_rows
+        allowed = {r[0] for r in db.execute(text("""
+            SELECT sectype FROM instruments WHERE type = 'stock' AND "group" = 'Акции'
+        """)).fetchall()}
+        rows = sorted((
+            {"ticker": s["secId"], "name": s["name"], "sector": s["sector"],
+             "current_price": s["price"], "change_1d": s["change_1d"],
+             "change_1w": s["change_1w"], "change_1m": s["change_1m"]}
+            for s in heatmap_rows(is_live_viewer(user, request))
+            if s["secId"] in allowed
+        ), key=lambda r: r["ticker"])
+        return rows, [
             "ticker", "name", "sector", "current_price",
             "change_1d", "change_1w", "change_1m",
         ]
@@ -209,6 +216,7 @@ def export_breadth(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/seasonality.csv")
 def export_seasonality(
+    request: Request,
     ticker: str = Query(..., description="Тикер ИЛИ comma-sep список: SBER или SBER,GAZP,LKOH"),
     layers: str | None = Query(None, description="daily,weekday_avg,monthly_avg,monthday_avg"),
     fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
@@ -235,6 +243,7 @@ def export_seasonality(
 
     allowed = {"daily", "weekday_avg", "monthly_avg", "monthday_avg"}
     selected_layers = _parse_layers(layers, ["daily"], allowed)
+    live = is_live_viewer(user, request)
 
     def fetch_candles(tk: str) -> list[dict]:
         rows = db.execute(text("""
@@ -252,7 +261,12 @@ def export_seasonality(
               AND close > 0
             ORDER BY begin_time ASC
         """), {"ticker": tk}).mappings().all()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        if live:
+            return out
+        # Публичная версия (services/session_close): без живой дневной свечи
+        # неопубликованного дня, у последних недель OHLC — сессия до 19:00.
+        return publish_daily_ohlc(db, tk, out)
 
     def layer_daily(candles: list[dict]):
         return candles, [

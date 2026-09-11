@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
+import { isViewAsUser, setViewAsUser } from '../services/viewMode';
 import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
@@ -317,6 +318,30 @@ export default function Layout() {
                     style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
                     strokeWidth={2}
                   />
+                </button>
+              )}
+
+              {/* Вид сайта для админа: своя, незамедленная версия ⇄ «как у
+                  пользователя» (цена акций и фьючерсов только на закрытие
+                  19:00). Флаг в localStorage (services/viewMode), apiFetch
+                  шлёт X-Frame-View. Перезагрузка — чтобы все панели, SSE-
+                  подписки и клиентские кеши разом перечитали данные. */}
+              {isAuthenticated && user?.role === 'admin' && (
+                <button
+                  onClick={() => { setViewAsUser(!isViewAsUser()); window.location.reload(); }}
+                  className="editorial-press whitespace-nowrap rounded-full font-bold"
+                  style={{
+                    fontSize: 'clamp(9px, 0.45vw + 0.3rem, 12px)',
+                    padding: '3px 10px',
+                    border: '1.5px solid var(--text-primary)',
+                    color: isViewAsUser() ? '#fff' : 'var(--text-primary)',
+                    backgroundColor: isViewAsUser() ? 'var(--accent)' : 'transparent',
+                  }}
+                  title={isViewAsUser()
+                    ? t('Сайт показан как пользователю: цены только на закрытие 19:00. Нажмите, чтобы вернуть версию админа')
+                    : t('Посмотреть сайт как пользователь: цены только на закрытие 19:00')}
+                >
+                  {isViewAsUser() ? t('Вид: пользователь') : t('Вид: админ')}
                 </button>
               )}
 

@@ -33,6 +33,7 @@ import { EmbedFrame, AssetButton, Dropdown } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useLivePrices } from '../../hooks/useLivePrices';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
 import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow, type BasisOption } from './EmbedIndicators';
 
@@ -177,6 +178,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
   const oiAccess = useTierAccess('open_interest');
+  // Незамедленная цена (админ). У остальных цена — только закрытие 19:00, и
+  // алертов по цене нет (бэкенд тоже их не примет).
+  const livePrices = useLivePrices();
 
   const sf = useSeriesFormats('frame:embed:oi:fmts');   // §OI-5: формат на каждую линию
   const [instrument, setInstrument] = useState<string>(() =>
@@ -560,8 +564,11 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       ],
       hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.`,
     };
-    return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
-  }, [clgroup, oiLeg, oiLegLabel]);
+    // OI_ALERT_METRICS[0] — алерт по цене: только в незамедленной версии.
+    return livePrices
+      ? [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)]
+      : [oiLevel, ...OI_ALERT_METRICS.slice(1)];
+  }, [clgroup, oiLeg, oiLegLabel, livePrices]);
 
   // §OI-3: клик по «+» у оси → модалка с префиллом (метрика по оси + уровень +
   // «Сейчас: …»). Левая ось = цена (₽), правая = уровень ОИ (контракты/участники).
@@ -599,12 +606,20 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       // диапазоне → левая ось пустая). ≥100 → 1, ≥10 → 0.01, иначе 0.0001.
       const lastPx = Math.abs(chartData[chartData.length - 1].value);
       const pxMinMove = lastPx >= 100 ? 1 : lastPx >= 10 ? 0.01 : 0.0001;
-      out.push(applyFormat({
+      const priceSeries = applyFormat({
         id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName, minMove: pxMinMove,
         // OHLC пробрасываем — режимы «Свечи»/«Бары» рисуют по ним; линия/область берут value.
         data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value, open: p.open, high: p.high, low: p.low, close: p.close })),
         tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
-      }, sf.get('price')));
+      }, sf.get('price'));
+      // Публичная цена на интрадей — ступенька из цен закрытия 19:00 (open =
+      // high = low = close): свечи и бары рисуют её рядом чёрточек. Такую цену
+      // показываем линией; выбранный вид остаётся для дневного таймфрейма.
+      if (intraday && data?.price_view === 'pub'
+          && (priceSeries.type === 'candlestick' || priceSeries.type === 'bar')) {
+        priceSeries.type = 'line';
+      }
+      out.push(priceSeries);
     }
     if (oiSeries.secondary && oiSeries.secondary.length > 0) {
       if (oiVariant === 'both') {
@@ -629,7 +644,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
     }
     return out;
-  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get]);
+  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get, data?.price_view]);
 
   // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
   // источник правды), у линий ОИ — поле visible в карте форматов.
@@ -748,10 +763,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const alertAxes = useMemo<{ pane: number; side: 'left' | 'right' }[]>(() => {
     if (oiVariant === 'both') return [];
     const ax: { pane: number; side: 'left' | 'right' }[] = [];
-    if (showPrice) ax.push({ pane: 0, side: 'left' });
+    if (showPrice && livePrices) ax.push({ pane: 0, side: 'left' });
     ax.push({ pane: oiChartIndex, side: 'right' });
     return ax;
-  }, [oiVariant, showPrice, oiChartIndex]);
+  }, [oiVariant, showPrice, oiChartIndex, livePrices]);
 
   // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
   // Подписи у линии нет: бейдж «колокольчик + крестик» у шкалы её заменяет.
@@ -760,12 +775,12 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     const lines: Line[] = myAlerts
       .filter((a) => a.status === 'active' && a.asset === instrument)
       .flatMap((a): Line[] => {
-        if (a.indicator === 'price') return [{ id: a.id, price: a.threshold, color: 'var(--accent)', scale: 'left' }];
+        if (a.indicator === 'price') return livePrices ? [{ id: a.id, price: a.threshold, color: 'var(--accent)', scale: 'left' }] : [];
         if (a.indicator === 'oi_level') return [{ id: a.id, price: a.threshold, color: 'var(--accent)', scale: 'right', pane: oiChartIndex }];
         return [];
       });
     return lines.length ? lines : undefined;
-  }, [myAlerts, instrument, oiChartIndex]);
+  }, [myAlerts, instrument, oiChartIndex, livePrices]);
   // Крестик на бейдже: убираем линию сразу (оптимистично), сервер — следом;
   // не удалилось — вернём список с сервера.
   const removeAlertFromChart = useCallback((id: string | number) => {
