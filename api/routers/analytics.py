@@ -524,23 +524,30 @@ async def get_stats(
 
 
 @router.get("/metrica")
-async def get_metrica(
+def get_metrica(
     days: int = Query(7, ge=1, le=MAX_RANGE_DAYS),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    segment: str = Query("all", description="all (без админов) / auth / guest / admin / everyone"),
+    device: str = Query("all", description="all / mobile / desktop / tablet"),
     user=Depends(require_admin),
 ):
-    """Трафик из Яндекс Метрики за тот же период, что и /stats.
+    """Трафик из Яндекс Метрики за тот же период и с теми же фильтрами, что /stats.
 
     connected=False — токена нет, страница показывает инструкцию. Кэш 5 минут
-    (см. api/services/metrica.py). Роботов Метрика отсекает сама.
+    (см. api/services/metrica.py). Роботов Метрика отсекает сама. Обычный def,
+    а не async: запросы к Метрике синхронные и не должны держать event loop.
     """
     from api.services import metrica
 
     rng = _resolve_range(days, date_from, date_to)
     pd0 = rng["d0"] - timedelta(days=rng["n"])
     pd1 = rng["d0"] - timedelta(days=1)
-    data = metrica.get_report(rng["d0"], rng["d1"], pd0, pd1)
+    admin_ids: list[int] = []
+    if segment in ("all", "auth", "admin"):
+        with get_engine().connect() as conn:
+            admin_ids = [r[0] for r in conn.execute(text("SELECT id FROM users WHERE role = 'admin'"))]
+    data = metrica.get_report(rng["d0"], rng["d1"], pd0, pd1, segment, device, admin_ids)
     return {
         **data,
         "date_from": rng["d0"].isoformat(),
