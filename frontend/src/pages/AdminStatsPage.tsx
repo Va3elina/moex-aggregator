@@ -653,12 +653,12 @@ const METRICA_METRICS: MetricaMetricDef[] = [
   { key: 'pageviews', label: 'Просмотры', hint: METRIC_HINTS.metrica_pageviews, format: fmtInt },
   { key: 'visits', label: 'Визиты', hint: METRIC_HINTS.metrica_visits, format: fmtInt },
   { key: 'users', label: 'Посетители', hint: METRIC_HINTS.metrica_users, format: fmtInt },
-  { key: 'new_users', label: 'Новые посетители', hint: METRIC_HINTS.metrica_new, format: fmtInt },
+  { key: 'new_users', label: 'Новые', hint: METRIC_HINTS.metrica_new, format: fmtInt },
   {
     key: 'avg_visit_sec', label: 'Время на сайте', hint: METRIC_HINTS.metrica_time, format: formatDuration,
     formatAxis: (v) => (v > 0 && v % 60 === 0 ? `${v / 60}м` : formatDuration(v)),
   },
-  { key: 'page_depth', label: 'Глубина просмотра', hint: METRIC_HINTS.metrica_depth, format: fmtNum },
+  { key: 'page_depth', label: 'Глубина', hint: METRIC_HINTS.metrica_depth, format: fmtNum },
   {
     key: 'bounce_pct', label: 'Отказы', hint: METRIC_HINTS.metrica_bounce, format: (v) => `${fmtNum(v)}%`,
     points: true, lowerIsBetter: true,

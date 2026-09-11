@@ -161,7 +161,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
       </div>
 
       {asTable ? (
-        <div style={{ maxHeight: PAD_TOP + PLOT_H + AXIS_H, overflow: 'auto' }}>
+        <div style={{ maxHeight: PAD_TOP + PLOT_H + AXIS_H, overflow: 'auto', scrollbarGutter: 'stable', paddingRight: 6 }}>
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>

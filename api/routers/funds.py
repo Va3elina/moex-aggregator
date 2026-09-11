@@ -94,7 +94,7 @@ PeriodType = Literal["1w", "1m", "3m", "6m", "1y", "2y", "3y", "all"]
 
 
 @router.get("/chart")
-async def get_funds_chart(
+def get_funds_chart(
     category: CategoryType = Query(..., description="Категория фондов"),
     period: PeriodType = Query("6m", description="Период"),
     user = Depends(get_current_user_optional)
@@ -312,7 +312,7 @@ async def get_funds_chart(
 
 
 @router.get("/summary")
-async def get_funds_summary():
+def get_funds_summary():
     """
     Сводка по всем категориям фондов
     """
@@ -386,7 +386,7 @@ def _compute_funds_summary():
 
 
 @router.get("/catalog")
-async def get_funds_catalog():
+def get_funds_catalog():
     """Каталог всех фондов с метриками и составом."""
     from api.cache import get_or_set
     cache_key = "funds_catalog"
@@ -477,7 +477,7 @@ async def get_funds_catalog():
 
 
 @router.get("/holdings/{fund_id}")
-async def get_fund_holdings(fund_id: int):
+def get_fund_holdings(fund_id: int):
     """Состав фонда (топ позиции с долями)"""
     engine = get_engine()
     with engine.connect() as conn:
@@ -493,7 +493,7 @@ async def get_fund_holdings(fund_id: int):
 
 
 @router.get("/detail/{fund_id}")
-async def get_fund_detail(fund_id: int):
+def get_fund_detail(fund_id: int):
     """
     ПУБЛИЧНАЯ карточка фонда для «Деньги в фондах» — работает для ВСЕХ категорий.
 
@@ -617,7 +617,7 @@ async def get_fund_detail(fund_id: int):
 
 
 @router.get("/categories")
-async def get_categories():
+def get_categories():
     """Список категорий с фондами"""
     fund_categories = load_fund_categories()
     return {
@@ -665,7 +665,7 @@ FLOW_REORG_CORRECTIONS: dict = {
 
 
 @router.get("/flows")
-async def get_funds_flows(
+def get_funds_flows(
     category: CategoryType = Query(..., description="Категория фондов"),
     timeframe: FlowTimeframeType = Query("1w", description="Таймфрейм агрегации"),
     period: PeriodType = Query("1y", description="Общий период данных"),

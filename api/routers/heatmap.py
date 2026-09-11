@@ -369,7 +369,7 @@ def _compute_stocks_heatmap(size_by: str, color_by: str, group_by: str, live: bo
 
 
 @router.get("/stocks")
-async def get_stocks_heatmap(
+def get_stocks_heatmap(
     request: Request,
     size_by: HeatmapSizeByType = Query("value_1d", description="Размер блока"),
     color_by: HeatmapColorByType = Query("change_1d", description="Цвет блока"),
@@ -387,7 +387,7 @@ async def get_stocks_heatmap(
 
 
 @router.get("/prices")
-async def get_heatmap_prices(
+def get_heatmap_prices(
     request: Request,
     user = Depends(get_current_user_optional),
 ):
@@ -435,7 +435,7 @@ async def get_heatmap_prices(
 
 
 @router.post("/refresh")
-async def refresh_heatmap(user=Depends(require_admin)):
+def refresh_heatmap(user=Depends(require_admin)):
     """Обновляет материализованное представление"""
     from api.cache import invalidate
 

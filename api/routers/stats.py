@@ -29,7 +29,7 @@ def get_period_days(period: PeriodType) -> int:
 
 
 @router.get("")
-async def get_stats(
+def get_stats(
     period: PeriodType = Query(default="1w", description="Период: 1d, 1w, 1m, 3m, 6m, 1y, all"),
     clgroup: ClgroupType = Query(default="FIZ", description="Группа: FIZ или YUR"),
     db: Session = Depends(get_db)
@@ -140,7 +140,7 @@ async def get_stats(
 
 
 @router.get("/top")
-async def get_top_instruments(
+def get_top_instruments(
     period: PeriodType = Query(default="1w", description="Период"),
     clgroup: ClgroupType = Query(default="FIZ", description="Группа"),
     limit: int = Query(default=10, description="Количество", ge=1, le=100),
@@ -233,7 +233,7 @@ async def get_top_instruments(
 
 
 @router.get("/debug")
-async def debug_oi(
+def debug_oi(
     sectype: str = Query(default="SR", max_length=50),
     clgroup: ClgroupType = Query(default="FIZ"),
     db: Session = Depends(get_db)

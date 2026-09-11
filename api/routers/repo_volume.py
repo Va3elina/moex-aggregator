@@ -194,7 +194,7 @@ def _resolve_stock(ticker: str) -> str | None:
 
 
 @router.get("/assets")
-async def get_repo_assets(user=Depends(require_admin)):
+def get_repo_assets(user=Depends(require_admin)):
     """Акции, по которым вкладка может построить график — те, у кого есть
     дневной спот за последние 2 месяца (репо тянется с ISS уже по факту)."""
     engine = get_engine()
