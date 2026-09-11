@@ -37,6 +37,7 @@ import { getRepoVolume, type RepoVolumeResponse } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useAssetViewTracking } from '../hooks/useAssetViewTracking';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 
 // Бумага любая из наших акций — выбор через общий InstrumentSearchModal
@@ -100,6 +101,7 @@ function movingAverage(points: { time: string; value: number }[], win: number) {
 export default function RepoVolumePage() {
   const { user, loading: authLoading } = useAuth();
   const [ticker, setTicker] = usePersistedState<string>('frame:repo:ticker', DEFAULT_TICKER);
+  useAssetViewTracking('repo', ticker);
   // Имя держим отдельно, чтобы кнопка пикера была подписана до ответа API.
   const [tickerName, setTickerName] = usePersistedState<string>('frame:repo:name', DEFAULT_NAME);
   const [pickerOpen, setPickerOpen] = useState(false);

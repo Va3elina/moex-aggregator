@@ -9,6 +9,14 @@
  *  4. На beforeunload → navigator.sendBeacon (надёжная доставка при закрытии)
  *  5. Heartbeat каждые 60s пока document.visibilityState === 'visible'
  *  6. Opt-out check: cookie `frame_analytics_optout=1` ИЛИ user.analytics_optout=true → tracking выключен
+ *  7. С 2026-09-11 сбор идёт и до клика по баннеру (новая редакция соглашения):
+ *     баннер — уведомление. Не пишем только тех, кто явно отказался в профиле
+ *     (consent='minimal' или cookie отказа).
+ *  8. visitor_id — постоянный ID браузера (localStorage + cookie на год), чтобы
+ *     гость считался человеком, а не вкладкой (аналог _ym_uid у Метрики).
+ *  9. Пульс уходит, только пока вкладка на экране И человек что-то делал за
+ *     последние 5 минут: иначе забытая на мониторе вкладка «сидела на сайте»
+ *     часами. Первый пульс через 15 сек — как точный показатель отказов в Метрике.
  *
  * Privacy:
  *  - Не отправляем PII в payload (только secid/mode/period/indicator)
@@ -38,12 +46,16 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 // списки блокировщиков, и события части браузеров не доходили вообще.
 const INGEST_PATH = '/api/usage/log';
 const STORAGE_SESSION_KEY = 'frame_session_id';
+const STORAGE_VISITOR_KEY = 'frame_visitor_id';
+const COOKIE_VISITOR_NAME = 'frame_vid';
 const STORAGE_CONSENT_KEY = 'frame_consent_v1';   // 'accepted' | 'minimal' | null
 const COOKIE_CONSENT_NAME = 'frame_consent';      // зеркало выбора, чтобы он не терялся с localStorage
 const CONSENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 год
 const COOKIE_OPTOUT_NAME = 'frame_analytics_optout';
 const FLUSH_INTERVAL_MS = 5_000;     // batch flush каждые 5s
 const HEARTBEAT_INTERVAL_MS = 60_000; // heartbeat каждые 60s
+const FIRST_HEARTBEAT_MS = 15_000;    // первый пульс — через 15s (порог отказа)
+const IDLE_AFTER_MS = 5 * 60_000;     // без действий дольше 5 мин — пульс не шлём
 const MAX_BATCH = 50;
 
 // Только типы, которые реально отправляются (см. track()-вызовы по проекту).
@@ -54,6 +66,7 @@ type EventType =
   | 'consent_optin'
   | 'pageview'
   | 'instrument_select'
+  | 'asset_view'
   | 'seasonality_mode'
   | 'chart_export'
   | 'theme_toggle'
@@ -67,6 +80,7 @@ type EventType =
 
 interface PendingEvent {
   session_id: string;
+  visitor_id: string | null;
   event_type: EventType;
   event_path: string | null;
   payload: Record<string, unknown> | null;
@@ -119,6 +133,32 @@ function getOrCreateSessionId(): string {
     // Private mode / Storage disabled — session-only UUID без persistence
     return generateUUID();
   }
+}
+
+/** Постоянный ID браузера. Пишем в оба хранилища и читаем из любого — они
+ *  чистятся по-разному (как и выбор по согласию, см. readConsent). */
+function getOrCreateVisitorId(): string | null {
+  const valid = (v: string | null): v is string => !!v && v.length === 36;
+  let id: string | null = null;
+  try {
+    id = localStorage.getItem(STORAGE_VISITOR_KEY);
+  } catch {
+    /* storage disabled — пробуем cookie */
+  }
+  if (!valid(id)) id = readCookie(COOKIE_VISITOR_NAME);
+  if (!valid(id)) id = generateUUID();
+  try {
+    localStorage.setItem(STORAGE_VISITOR_KEY, id);
+  } catch {
+    /* storage disabled — остаётся cookie */
+  }
+  try {
+    document.cookie =
+      `${COOKIE_VISITOR_NAME}=${id}; path=/; max-age=${CONSENT_COOKIE_MAX_AGE}; SameSite=Lax`;
+  } catch {
+    /* cookie недоступны — остаётся localStorage */
+  }
+  return id;
 }
 
 function detectTimezone(): string | null {
@@ -222,7 +262,9 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const lastBeatRef = useRef<number>(0);  // ms-метка последнего ОТПРАВЛЕННОГО heartbeat (дедуп)
   const deviceRef = useRef<string>(detectDevice());
   const tzRef = useRef<string | null>(detectTimezone());
-  const acqSentRef = useRef<boolean>(false);  // источник (referrer/utm) шлём 1 раз за сессию
+  const acqSentRef = useRef<boolean>(false);  // источник (referrer/utm) шлём 1 раз за загрузку страницы
+  const visitorIdRef = useRef<string | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());  // последнее действие человека (для пульса)
 
   // Initialize session_id on mount (lazy, чтобы не активировать sessionStorage если consent=null)
   useEffect(() => {
@@ -231,12 +273,16 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Сбор разрешён всем, кроме явно отказавшихся (тумблер в профиле ставит
+  // consent='minimal' и cookie отказа). null = баннер ещё не закрыт — пишем.
+  const trackingAllowed = consent !== 'minimal';
+
   /** Trackable? — учитываем consent + opt-out cookie + opt-out user setting (через AuthContext). */
   const isTrackable = useCallback(() => {
-    if (consent !== 'accepted') return false;
+    if (!trackingAllowed) return false;
     if (isOptedOut()) return false;
     return true;
-  }, [consent]);
+  }, [trackingAllowed]);
 
   /** Flush queue → POST /api/usage/log. Если queue пуст или opt-out — no-op.
    *
@@ -272,6 +318,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     (type: EventType, payload: Record<string, unknown> = {}) => {
       if (!isTrackable()) return;
       if (!sessionIdRef.current) sessionIdRef.current = getOrCreateSessionId();
+      if (!visitorIdRef.current) visitorIdRef.current = getOrCreateVisitorId();
 
       const path = typeof window !== 'undefined' ? window.location.pathname : null;
 
@@ -287,6 +334,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
       queueRef.current.push({
         session_id: sessionIdRef.current,
+        visitor_id: visitorIdRef.current,
         event_type: type,
         event_path: path,
         payload: pl,
@@ -323,6 +371,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     if (!sessionIdRef.current) sessionIdRef.current = getOrCreateSessionId();
     const event: PendingEvent = {
       session_id: sessionIdRef.current,
+      visitor_id: visitorIdRef.current,
       event_type: kind === 'optout' ? 'consent_optout' : 'consent_optin',
       event_path: typeof window !== 'undefined' ? window.location.pathname : null,
       payload: null,
@@ -347,7 +396,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
   // === Periodic flush ===
   useEffect(() => {
-    if (consent !== 'accepted') return;
+    if (!trackingAllowed) return;
     const tick = () => {
       flush();
       flushTimerRef.current = window.setTimeout(tick, FLUSH_INTERVAL_MS);
@@ -357,36 +406,61 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
     };
-  }, [consent, flush]);
+  }, [trackingAllowed, flush]);
 
-  // === Heartbeat (только когда tab visible) ===
+  // === Активность человека — для пульса ===
+  // Любое действие (мышь, тач, клавиатура, прокрутка, возврат на вкладку)
+  // продлевает «присутствие» на IDLE_AFTER_MS. Слушатели пассивные, запись в ref
+  // без ре-рендеров.
+  useEffect(() => {
+    if (!trackingAllowed) return;
+    const mark = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') mark();
+    };
+    const opts: AddEventListenerOptions = { passive: true };
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'scroll', 'touchstart'] as const;
+    events.forEach((e) => window.addEventListener(e, mark, opts));
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, mark, opts));
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [trackingAllowed]);
+
+  // === Heartbeat (только когда tab visible И человек не простаивает) ===
   // Идемпотентный по времени: после sleep/wake или Chrome tab-freeze браузер может
   // возобновить эффект, не выполнив cleanup прошлой цепочки → накапливаются параллельные
   // setTimeout-цепочки (наблюдалось: после 3.4ч сна пульс ускорялся 60s→~12s на 11 часов).
   // Защита — дедуп по lastBeatRef: сколько бы цепочек ни тикало, в очередь идёт максимум
-  // один heartbeat за HEARTBEAT_INTERVAL_MS. -5s — допуск на дрейф таймера.
+  // один heartbeat за FIRST_HEARTBEAT_MS. -5s — допуск на дрейф таймера.
+  // payload.act=1 — метка «пульс с учётом активности»: бэкенд отличает его от старых
+  // пульсов, которые слались и из простаивающей вкладки.
   useEffect(() => {
-    if (consent !== 'accepted') return;
+    if (!trackingAllowed) return;
     const beat = () => {
-      if (document.visibilityState === 'visible') {
-        const now = Date.now();
-        if (now - lastBeatRef.current >= HEARTBEAT_INTERVAL_MS - 5_000) {
+      const now = Date.now();
+      const active = now - lastActivityRef.current < IDLE_AFTER_MS;
+      if (document.visibilityState === 'visible' && active) {
+        if (now - lastBeatRef.current >= FIRST_HEARTBEAT_MS - 5_000) {
           lastBeatRef.current = now;
-          track('session_heartbeat');
+          track('session_heartbeat', { act: 1 });
         }
       }
       heartbeatTimerRef.current = window.setTimeout(beat, HEARTBEAT_INTERVAL_MS);
     };
-    heartbeatTimerRef.current = window.setTimeout(beat, HEARTBEAT_INTERVAL_MS);
+    heartbeatTimerRef.current = window.setTimeout(beat, FIRST_HEARTBEAT_MS);
     return () => {
       if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
       heartbeatTimerRef.current = null;
     };
-  }, [consent, track]);
+  }, [trackingAllowed, track]);
 
   // === beforeunload → sendBeacon (надёжная доставка остатков queue) ===
   useEffect(() => {
-    if (consent !== 'accepted') return;
+    if (!trackingAllowed) return;
     const onUnload = () => {
       if (queueRef.current.length === 0 || !isTrackable()) return;
       const batch = queueRef.current.splice(0);
@@ -406,7 +480,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('beforeunload', onUnload);
       window.removeEventListener('pagehide', onUnload);
     };
-  }, [consent, isTrackable]);
+  }, [trackingAllowed, isTrackable]);
 
   const value = useMemo<AnalyticsContextValue>(
     () => ({ track, consent, setConsent, logConsentChange }),

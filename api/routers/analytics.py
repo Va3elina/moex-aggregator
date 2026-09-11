@@ -14,7 +14,8 @@ Endpoints:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+import re
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -44,6 +45,10 @@ ingest_router = APIRouter(prefix="/api/usage", tags=["analytics"])
 class AnalyticsEvent(BaseModel):
     """Одно событие. Frontend отправляет batch'ем 1-50 за раз."""
     session_id: str = Field(..., min_length=36, max_length=36)  # UUID v4
+    # Постоянный ID браузера (localStorage + cookie на год). Нужен, чтобы гость
+    # считался человеком, а не вкладкой, и чтобы видеть возвраты. Необязателен:
+    # вкладки со старым бандлом его не шлют.
+    visitor_id: Optional[str] = Field(None, min_length=36, max_length=36)
     event_type: str = Field(..., min_length=1, max_length=50)
     event_path: Optional[str] = Field(None, max_length=255)
     payload: Optional[dict[str, Any]] = None
@@ -70,6 +75,10 @@ ALLOWED_EVENT_TYPES = {
     "chart_export",
     "theme_toggle",
     "session_heartbeat",
+    # Просмотр актива на индикаторе: {secid, indicator}. Шлётся при каждой смене
+    # актива, откуда бы он ни пришёл (поиск, ссылка, сохранённый выбор, мобильный
+    # пикер) — в отличие от instrument_select, который ловит только поиск.
+    "asset_view",
     # Воронка монетизации (намерение → оплата/триал) — добавлено 2026-06-27
     "checkout_start",
     "trial_start",
@@ -132,6 +141,21 @@ def _detect_device(user_agent: str) -> str:
     return "desktop"
 
 
+# Роботы и безголовые браузеры. После отказа от гейта по согласию события
+# шлёт любой, кто исполняет JS: рендер-боты поисковиков, Lighthouse, наши же
+# Playwright-туры. Такие запросы не пишем вовсе.
+_BOT_UA = re.compile(
+    r"bot|spider|crawl|slurp|headless|lighthouse|pagespeed|phantom|puppeteer|"
+    r"playwright|selenium|prerender|yandex(?:metrika|renderresources|screenshot)|"
+    r"python-requests|curl/|wget/",
+    re.IGNORECASE,
+)
+
+
+def _is_bot(user_agent: str) -> bool:
+    return not user_agent or bool(_BOT_UA.search(user_agent))
+
+
 def _detect_country(req: Request) -> Optional[str]:
     """Извлекает country code из proxy headers если есть.
     nginx может прокидывать через CF-IPCountry / X-Country-Code.
@@ -185,6 +209,8 @@ async def post_events(
     """
     user_id = user.id if user else None
     user_agent = request.headers.get("User-Agent", "")
+    if _is_bot(user_agent):
+        return None
     device = _detect_device(user_agent)
     country = _detect_country(request)
 
@@ -201,14 +227,15 @@ async def post_events(
                 conn.execute(
                     text("""
                         INSERT INTO analytics_events
-                            (user_id, session_id, event_type, event_path,
+                            (user_id, session_id, visitor_id, event_type, event_path,
                              payload, client_ts, ip_country, device)
-                        VALUES (:user_id, :session_id, :event_type, :event_path,
+                        VALUES (:user_id, :session_id, :visitor_id, :event_type, :event_path,
                                 :payload, :client_ts, :country, :device)
                     """),
                     {
                         "user_id": user_id,
                         "session_id": ev.session_id,
+                        "visitor_id": ev.visitor_id,
                         "event_type": ev.event_type,
                         "event_path": ev.event_path,
                         "payload": _serialize_jsonb(ev.payload),
@@ -242,245 +269,414 @@ def _serialize_jsonb(payload: Optional[dict]) -> Optional[str]:
 # ════════════════════════════════════════════════════════════════════════════
 # GET /stats — admin-only aggregated metrics
 # ════════════════════════════════════════════════════════════════════════════
+#
+# Определения (переписаны 2026-09-11 после сверки с Яндекс Метрикой):
+#
+#   Посетитель — человек, насколько мы можем его узнать: аккаунт, если он
+#     хоть раз входил с этого браузера; иначе постоянный ID браузера
+#     (visitor_id, живёт в localStorage и cookie год); для старых событий без
+#     visitor_id — вкладка (session_id). Гостевые события до входа склеиваются
+#     с аккаунтом по вкладке и по браузеру, поэтому человек не двоится.
+#   Визит — как в Метрике: серия действий одного посетителя, разрыв дольше
+#     30 минут начинает новый визит. Вкладки одного человека сливаются в один
+#     визит, открытая сутками вкладка режется на отдельные заходы.
+#   Время визита — от первого до последнего события визита. Пульс
+#     (session_heartbeat) уходит только пока вкладка на экране И человек что-то
+#     делал за последние 5 минут (флаг act в payload). Старые пульсы без флага
+#     слались и в простаивающей вкладке, поэтому они засчитываются только в
+#     пределах 30 минут после настоящего действия.
+#   Отказ — как в Метрике: визит с одним просмотром короче 15 секунд.
+#   Дни — по московскому времени.
+#
+# По умолчанию админы исключены: их вкладки открыты часами и раньше давали
+# пятую часть всего «времени на сайте».
+
+# Москва без перехода на летнее время с 2014 — фиксированный сдвиг надёжнее,
+# чем tzdata в slim-образе. В SQL зона берётся из базы Postgres.
+MSK = timezone(timedelta(hours=3))
+VISIT_GAP_MIN = 30
+BOUNCE_MAX_SEC = 15
+MAX_RANGE_DAYS = 366
+
+# SQL-фрагменты сегментов. Фильтр по роли идёт по уже склеенному посетителю
+# (uid), поэтому гостевые события админа до входа тоже не попадают в «Все».
+_SEGMENT_SQL = {
+    "all": "u.role IS DISTINCT FROM 'admin'",
+    "auth": "ev.uid IS NOT NULL AND u.role IS DISTINCT FROM 'admin'",
+    "guest": "ev.uid IS NULL",
+    "admin": "u.role = 'admin'",
+    "everyone": "TRUE",
+}
+_DEVICES = {"desktop", "mobile", "tablet"}
+
+
+def _resolve_range(days: int, date_from: Optional[str], date_to: Optional[str]):
+    """Период в московских календарных днях → границы в naive-UTC (как server_ts).
+
+    days=N без явных дат — сегодня и N-1 предыдущих дней. Предыдущий период
+    для дельт — столько же дней вплотную перед текущим.
+    """
+    today = datetime.now(MSK).date()
+    if date_from and date_to:
+        try:
+            d0 = date.fromisoformat(date_from)
+            d1 = date.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(400, "Даты в формате YYYY-MM-DD")
+        if d1 > today:
+            d1 = today
+        if d0 > d1:
+            d0, d1 = d1, d0
+        if (d1 - d0).days + 1 > MAX_RANGE_DAYS:
+            d0 = d1 - timedelta(days=MAX_RANGE_DAYS - 1)
+    else:
+        d1 = today
+        d0 = today - timedelta(days=max(1, days) - 1)
+    n = (d1 - d0).days + 1
+
+    def utc(d: date) -> datetime:
+        return datetime.combine(d, dtime.min, MSK).astimezone(timezone.utc).replace(tzinfo=None)
+
+    return {
+        "d0": d0, "d1": d1, "n": n,
+        "start": utc(d0), "end": utc(d1 + timedelta(days=1)),
+        "pstart": utc(d0 - timedelta(days=n)), "pend": utc(d0),
+    }
+
+
+def _materialize_visits(conn, suffix: str, start: datetime, end: datetime,
+                        segment: str, device: str) -> None:
+    """Строит временные таблицы act_<suffix> (события после чистки) и
+    visits_<suffix> (визиты). ON COMMIT DROP — живут до конца транзакции."""
+    seg_sql = _SEGMENT_SQL.get(segment, _SEGMENT_SQL["all"])
+    dev_sql = "AND e.device = :device" if device in _DEVICES else ""
+    params: dict[str, Any] = {"start": start, "end": end}
+    if dev_sql:
+        params["device"] = device
+    conn.execute(text(f"""
+        CREATE TEMP TABLE act_{suffix} ON COMMIT DROP AS
+        WITH base AS (
+            SELECT e.user_id, e.session_id, e.visitor_id, e.event_type,
+                   e.event_path, e.payload, e.server_ts, e.device
+            FROM analytics_events e
+            WHERE e.server_ts >= :start AND e.server_ts < :end {dev_sql}
+        ),
+        sess_user AS (
+            SELECT session_id, MAX(user_id) AS uid
+            FROM base WHERE user_id IS NOT NULL GROUP BY session_id
+        ),
+        vis_user AS (
+            SELECT visitor_id, MAX(user_id) AS uid
+            FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+            GROUP BY visitor_id
+        ),
+        ev AS (
+            SELECT b.*, COALESCE(b.user_id, su.uid, vu.uid) AS uid
+            FROM base b
+            LEFT JOIN sess_user su ON su.session_id = b.session_id
+            LEFT JOIN vis_user vu ON vu.visitor_id = b.visitor_id
+        ),
+        seg AS (
+            SELECT ev.*,
+                   COALESCE('u' || ev.uid::text, 'v' || ev.visitor_id, 's' || ev.session_id) AS ident,
+                   (ev.event_type = 'session_heartbeat'
+                    AND (ev.payload->>'act') IS NULL) AS legacy_hb
+            FROM ev
+            LEFT JOIN users u ON u.id = ev.uid
+            WHERE {seg_sql}
+        ),
+        lr AS (
+            SELECT seg.*,
+                   MAX(CASE WHEN NOT legacy_hb THEN server_ts END) OVER (
+                       PARTITION BY session_id ORDER BY server_ts
+                       ROWS UNBOUNDED PRECEDING
+                   ) AS last_real
+            FROM seg
+        )
+        SELECT uid, ident, session_id, event_type, event_path, payload, server_ts, device
+        FROM lr
+        WHERE NOT legacy_hb
+           OR (last_real IS NOT NULL
+               AND server_ts - last_real <= INTERVAL '{VISIT_GAP_MIN} minutes')
+    """), params)
+    conn.execute(text(f"""
+        CREATE TEMP TABLE visits_{suffix} ON COMMIT DROP AS
+        WITH ord AS (
+            SELECT a.*, LAG(server_ts) OVER (PARTITION BY ident ORDER BY server_ts) AS prev_ts
+            FROM act_{suffix} a
+        ),
+        num AS (
+            SELECT ord.*,
+                   SUM(CASE WHEN prev_ts IS NULL
+                              OR server_ts - prev_ts > INTERVAL '{VISIT_GAP_MIN} minutes'
+                            THEN 1 ELSE 0 END) OVER (
+                       PARTITION BY ident ORDER BY server_ts ROWS UNBOUNDED PRECEDING
+                   ) AS vno
+            FROM ord
+        )
+        SELECT ident, vno,
+               MIN(server_ts) AS started,
+               EXTRACT(EPOCH FROM (MAX(server_ts) - MIN(server_ts)))::int AS dur,
+               COUNT(*) FILTER (WHERE event_type = 'pageview') AS pv,
+               (ARRAY_AGG(payload ORDER BY server_ts))[1] AS first_payload
+        FROM num
+        GROUP BY ident, vno
+    """))
+
+
+def _summary(conn, suffix: str) -> dict:
+    row = conn.execute(text(f"""
+        SELECT
+            (SELECT COUNT(DISTINCT ident) FROM act_{suffix}),
+            (SELECT COUNT(*) FROM visits_{suffix}),
+            (SELECT COUNT(*) FROM act_{suffix} WHERE event_type = 'pageview'),
+            (SELECT COALESCE(AVG(dur), 0)::int FROM visits_{suffix}),
+            (SELECT COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY dur), 0)::int
+               FROM visits_{suffix}),
+            (SELECT COUNT(*) FROM visits_{suffix} WHERE pv <= 1 AND dur < {BOUNCE_MAX_SEC}),
+            (SELECT COUNT(*) FROM (
+                SELECT ident FROM visits_{suffix}
+                GROUP BY ident
+                HAVING COUNT(DISTINCT (started AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date) >= 2
+            ) r),
+            (SELECT COUNT(DISTINCT uid) FROM act_{suffix} WHERE uid IS NOT NULL)
+    """)).fetchone()
+    visits = int(row[1] or 0)
+    visitors = int(row[0] or 0)
+    return {
+        "visitors": visitors,
+        "visits": visits,
+        "pageviews": int(row[2] or 0),
+        "avg_visit_sec": int(row[3] or 0),
+        "median_visit_sec": int(row[4] or 0),
+        "bounce_pct": round(int(row[5] or 0) / visits * 100, 1) if visits else None,
+        "returning": int(row[6] or 0),
+        "returning_pct": round(int(row[6] or 0) / visitors * 100, 1) if visitors else None,
+        "auth_visitors": int(row[7] or 0),
+    }
+
+
+# Источник визита по хосту реферера первого события визита.
+_OWN_HOSTS = ("framedata.ru", "xn--80aklbnczmv.xn--p1ai", "localhost")
+_SOURCE_RULES = [
+    (("oauth.yandex.", "id.vk.", "oauth.vk.", "accounts.google.", "oauth.telegram."), "Возврат после входа"),
+    (("yandex.", "ya.ru"), "Яндекс"),
+    (("google.",), "Google"),
+    (("t.me", "telegram"), "Telegram"),
+    (("vk.com", "vk.ru"), "VK"),
+    (("smart-lab.",), "Смартлаб"),
+    (("tbank.", "tinkoff."), "Т-Банк"),
+    (("dzen.",), "Дзен"),
+    (("bing.", "duckduckgo."), "Другие поисковики"),
+]
+
+
+def _classify_source(acq: Any) -> str:
+    if not isinstance(acq, dict):
+        return "Прямые заходы"
+    utm = (acq.get("utm_source") or "").strip()
+    if utm:
+        return f"utm: {utm[:40]}"
+    ref = (acq.get("ref") or "").lower()
+    if not ref or ref == "direct":
+        return "Прямые заходы"
+    if any(ref == h or ref.endswith("." + h) for h in _OWN_HOSTS):
+        return "Внутренние переходы"
+    for needles, label in _SOURCE_RULES:
+        if any(n in ref for n in needles):
+            return label
+    return ref
+
+
+def _asset_names(conn, secids: list[str]) -> dict[str, str]:
+    """Человеческие имена активов для топа. Ошибка — просто без имён."""
+    if not secids:
+        return {}
+    try:
+        rows = conn.execute(text("""
+            SELECT sectype, name FROM instruments WHERE sectype = ANY(:s)
+            UNION ALL
+            SELECT sec_id, name FROM instruments WHERE sec_id = ANY(:s)
+        """), {"s": secids}).fetchall()
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for key, name in rows:
+        if key and name and key not in out:
+            out[key] = name
+    return out
+
 
 @router.get("/stats")
 async def get_stats(
-    days: int = Query(7, ge=1, le=180, description="Период (дней)"),
-    segment: str = Query("all", description="all / auth / guest / admin"),
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
+    date_from: Optional[str] = Query(None, description="Начало периода, YYYY-MM-DD по Москве"),
+    date_to: Optional[str] = Query(None, description="Конец периода включительно, YYYY-MM-DD"),
+    segment: str = Query("all", description="all (без админов) / auth / guest / admin / everyone"),
     device: str = Query("all", description="all / mobile / desktop / tablet"),
     user=Depends(require_admin),
 ):
-    """Aggregated metrics для admin-stats страницы.
-
-    Ответ кэшируется в Redis на 3 мин (single-flight): страница дёргает
-    /stats на каждое переключение периода/сегмента/устройства, и без кэша
-    каждый клик = ~7 SQL-запросов. Данные аналитики не realtime-критичны.
-
-    Возвращает структуру:
-    {
-      "summary": {
-        "uniques": 42,
-        "sessions": 187,
-        "avg_session_sec": 263,
-        "events": 12453,
-        "delta_uniques": +5,              # vs предыдущий равный период
-        "delta_sessions_pct": +12,
-        "delta_avg_session_sec": +8,
-        "delta_events_pct": +18
-      },
-      "trends": [{"date": "2026-05-01", "uniques": 38, "sessions": 142}, ...],
-      "top_pages": [{"path": "/heatmap", "views": 432}, ...],
-      "top_instruments": [{"secid": "SBER", "selects": 87}, ...],
-      "top_exports": [{"indicator": "oi", "count": 23}, ...],
-      "mode_distribution": [{"mode": "yearly", "count": 156}, ...]
-    }
-    """
-    cache_key = f"admin:stats:{days}:{segment}:{device}"
-    return get_or_compute(cache_key, lambda: _compute_stats(days, segment, device), ttl=180)
+    """Сводка для /admin/stats. Кэш в Redis 3 мин (single-flight)."""
+    rng = _resolve_range(days, date_from, date_to)
+    cache_key = f"admin:stats:v2:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    return get_or_compute(cache_key, lambda: _compute_stats(rng, segment, device), ttl=180)
 
 
-def _compute_stats(days: int, segment: str, device: str) -> dict:
+def _compute_stats(rng: dict, segment: str, device: str) -> dict:
     engine = get_engine()
-    now = datetime.utcnow()
-    period_start = now - timedelta(days=days)
-    prev_period_start = now - timedelta(days=days * 2)
+    with engine.begin() as conn:
+        _materialize_visits(conn, "cur", rng["start"], rng["end"], segment, device)
+        _materialize_visits(conn, "prev", rng["pstart"], rng["pend"], segment, device)
+        cur = _summary(conn, "cur")
+        prev = _summary(conn, "prev")
 
-    # Filters
-    where_clauses = ["server_ts >= :period_start"]
-    params: dict[str, Any] = {"period_start": period_start, "now": now}
-
-    if segment == "auth":
-        where_clauses.append("user_id IS NOT NULL")
-    elif segment == "guest":
-        where_clauses.append("user_id IS NULL")
-    elif segment == "admin":
-        where_clauses.append("user_id IN (SELECT id FROM users WHERE role = 'admin')")
-
-    if device != "all":
-        where_clauses.append("device = :device")
-        params["device"] = device
-
-    where_sql = " AND ".join(where_clauses)
-
-    # Сессионная длительность считается ОДИНАКОВО для summary.sessions и avg:
-    # суммируем gap'ы между соседними событиями сессии, КАПНУВ каждый gap на
-    # SESSION_GAP_CAP_SEC (5 мин — стандарт GA). Без капа heartbeat'ы в фоновых
-    # вкладках (вкладка открыта часами) раздували (MAX-MIN) до многочасовых
-    # «сессий». Сессии с единственным событием имеют dur=0, но ВХОДЯТ в набор —
-    # один знаменатель и для «Сессий», и для «Среднего времени».
-    SESSION_GAP_CAP_SEC = 300
-
-    def _session_durations_cte(w_sql: str) -> str:
-        return f"""
-            sess AS (
-                SELECT session_id,
-                       COALESCE(SUM(
-                           LEAST(
-                               EXTRACT(EPOCH FROM (client_ts - prev_ts)),
-                               {SESSION_GAP_CAP_SEC}
-                           )
-                       ), 0)::int AS dur
-                FROM (
-                    SELECT session_id,
-                           client_ts,
-                           LAG(client_ts) OVER (
-                               PARTITION BY session_id ORDER BY client_ts
-                           ) AS prev_ts
-                    FROM analytics_events
-                    WHERE {w_sql}
-                ) ordered
-                GROUP BY session_id
+        day_rows = conn.execute(text("""
+            WITH u AS (
+                SELECT (server_ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date AS d,
+                       COUNT(DISTINCT ident) AS visitors,
+                       COUNT(*) FILTER (WHERE event_type = 'pageview') AS pageviews
+                FROM act_cur GROUP BY 1
+            ),
+            v AS (
+                SELECT (started AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date AS d,
+                       COUNT(*) AS visits
+                FROM visits_cur GROUP BY 1
             )
-        """
+            SELECT COALESCE(u.d, v.d), COALESCE(u.visitors, 0), COALESCE(v.visits, 0),
+                   COALESCE(u.pageviews, 0)
+            FROM u FULL JOIN v ON v.d = u.d
+        """)).fetchall()
 
-    with engine.connect() as conn:
-        # === Summary === (dau/events — прямой счёт; sessions — из того же
-        # набора сессий, что и avg, чтобы знаменатели совпадали)
-        summary_row = conn.execute(text(f"""
-            WITH {_session_durations_cte(where_sql)}
-            SELECT
-                (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_id))
-                   FROM analytics_events WHERE {where_sql})  AS uniques,
-                (SELECT COUNT(*) FROM sess)                   AS sessions,
-                (SELECT COUNT(*) FROM analytics_events WHERE {where_sql}) AS events,
-                (SELECT COALESCE(AVG(dur), 0)::int FROM sess) AS avg_dur
-            FROM (SELECT 1) _
-        """), params).fetchone()
-        avg_session_sec = int(summary_row[3]) if summary_row and summary_row[3] else 0
-
-        # Previous period для delta
-        prev_params = {**params, "period_start": prev_period_start, "period_end": period_start}
-        # Replace condition: server_ts BETWEEN prev_start AND period_start
-        prev_where_sql = where_sql.replace(
-            "server_ts >= :period_start",
-            "server_ts >= :period_start AND server_ts < :period_end",
-        )
-        prev_summary = conn.execute(text(f"""
-            WITH {_session_durations_cte(prev_where_sql)}
-            SELECT
-                (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_id))
-                   FROM analytics_events WHERE {prev_where_sql})  AS uniques,
-                (SELECT COUNT(*) FROM sess)                        AS sessions,
-                (SELECT COUNT(*) FROM analytics_events WHERE {prev_where_sql}) AS events,
-                (SELECT COALESCE(AVG(dur), 0)::int FROM sess)      AS avg_dur
-            FROM (SELECT 1) _
-        """), prev_params).fetchone()
-        prev_avg_sec = int(prev_summary[3]) if prev_summary and prev_summary[3] else 0
-
-        # === Trends (per-day series) ===
-        trends_rows = conn.execute(text(f"""
-            SELECT server_ts::date AS day,
-                   COUNT(DISTINCT COALESCE(user_id::text, session_id)) AS dau,
-                   COUNT(DISTINCT session_id) AS sessions
-            FROM analytics_events
-            WHERE {where_sql}
-            GROUP BY server_ts::date
-            ORDER BY day
-        """), params).fetchall()
-
-        # === Top pages ===
-        top_pages = conn.execute(text(f"""
-            SELECT event_path AS path, COUNT(*) AS views
-            FROM analytics_events
-            WHERE {where_sql}
-              AND event_type = 'pageview'
-              AND event_path IS NOT NULL
+        top_pages = conn.execute(text("""
+            SELECT event_path, COUNT(DISTINCT ident) AS visitors, COUNT(*) AS views
+            FROM act_cur
+            WHERE event_type = 'pageview' AND event_path IS NOT NULL
             GROUP BY event_path
-            ORDER BY views DESC
-            LIMIT 10
-        """), params).fetchall()
+            ORDER BY visitors DESC, views DESC
+            LIMIT 12
+        """)).fetchall()
 
-        # === Top instruments (instrument_select events) ===
-        top_instruments = conn.execute(text(f"""
-            SELECT payload->>'secid' AS secid, COUNT(*) AS selects
-            FROM analytics_events
-            WHERE {where_sql}
-              AND event_type = 'instrument_select'
-              AND payload->>'secid' IS NOT NULL
-            GROUP BY payload->>'secid'
-            ORDER BY selects DESC
-            LIMIT 10
-        """), params).fetchall()
+        top_assets = conn.execute(text("""
+            SELECT payload->>'secid' AS secid,
+                   COUNT(DISTINCT ident) AS visitors,
+                   COUNT(*) AS views,
+                   STRING_AGG(DISTINCT payload->>'indicator', ',') AS indicators
+            FROM act_cur
+            WHERE event_type = 'asset_view' AND payload->>'secid' IS NOT NULL
+            GROUP BY 1
+            ORDER BY visitors DESC, views DESC
+            LIMIT 15
+        """)).fetchall()
 
-        # === Top exports ===
-        # Нормализуем алиасы indicator в SQL (CASE), чтобы один индикатор не
-        # двоился из-за исторического дрейфа ключей в filename экспорта:
-        #   open_interest → oi,  fund / funds_money → funds.
-        # См. EXPORT_INDICATOR_ALIASES. Группируем уже по канону → чинит и историю.
+        top_search = conn.execute(text("""
+            SELECT payload->>'secid' AS secid,
+                   COUNT(DISTINCT ident) AS visitors,
+                   COUNT(*) AS picks
+            FROM act_cur
+            WHERE event_type = 'instrument_select' AND payload->>'secid' IS NOT NULL
+            GROUP BY 1
+            ORDER BY picks DESC, visitors DESC
+            LIMIT 15
+        """)).fetchall()
+
         top_exports = conn.execute(text(f"""
             WITH normalized AS (
-                SELECT {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
-                FROM analytics_events
-                WHERE {where_sql}
-                  AND event_type = 'chart_export'
-                  AND payload->>'indicator' IS NOT NULL
+                SELECT ident, {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
+                FROM act_cur
+                WHERE event_type = 'chart_export' AND payload->>'indicator' IS NOT NULL
             )
-            SELECT indicator, COUNT(*) AS count
+            SELECT indicator, COUNT(*) AS cnt, COUNT(DISTINCT ident) AS visitors
             FROM normalized
             GROUP BY indicator
-            ORDER BY count DESC
+            ORDER BY cnt DESC
             LIMIT 10
-        """), params).fetchall()
+        """)).fetchall()
 
-        # === Mode distribution (seasonality_mode events) ===
-        mode_dist = conn.execute(text(f"""
-            SELECT payload->>'mode' AS mode, COUNT(*) AS count
-            FROM analytics_events
-            WHERE {where_sql}
-              AND event_type = 'seasonality_mode'
-              AND payload->>'mode' IS NOT NULL
-            GROUP BY payload->>'mode'
-            ORDER BY count DESC
-        """), params).fetchall()
+        mode_dist = conn.execute(text("""
+            SELECT payload->>'mode' AS mode, COUNT(*) AS cnt, COUNT(DISTINCT ident) AS visitors
+            FROM act_cur
+            WHERE event_type = 'seasonality_mode' AND payload->>'mode' IS NOT NULL
+            GROUP BY 1
+            ORDER BY cnt DESC
+        """)).fetchall()
 
-    def pct_delta(curr: float, prev: float) -> Optional[int]:
-        if prev <= 0:
+        source_rows = conn.execute(text("""
+            SELECT first_payload->'acq' AS acq, COUNT(*) AS visits
+            FROM visits_cur
+            GROUP BY 1
+        """)).fetchall()
+
+        devices = conn.execute(text("""
+            SELECT COALESCE(device, 'unknown'), COUNT(DISTINCT ident)
+            FROM act_cur GROUP BY 1
+        """)).fetchall()
+
+        names = _asset_names(conn, [r[0] for r in top_assets] + [r[0] for r in top_search])
+
+    def pct_delta(curr: Optional[float], prv: Optional[float]) -> Optional[int]:
+        if curr is None or not prv:
             return None
-        return int(round((curr - prev) / prev * 100))
+        return int(round((curr - prv) / prv * 100))
 
-    # Дни без событий добиваем нулями: GROUP BY отдаёт только дни, где события
-    # были, и линия графика «перепрыгивала» пустые дни — динамика выглядела
-    # лучше, чем есть (особенно на узких сегментах: guest+tablet и т.п.).
-    trend_map = {r[0]: (int(r[1]), int(r[2])) for r in trends_rows}
+    def pp_delta(curr: Optional[float], prv: Optional[float]) -> Optional[float]:
+        if curr is None or prv is None:
+            return None
+        return round(curr - prv, 1)
+
+    # Дни без событий — нулями, иначе линия перепрыгивает провалы.
+    day_map = {r[0]: (int(r[1]), int(r[2]), int(r[3])) for r in day_rows if r[0]}
     trends: list[dict] = []
-    day = period_start.date()
-    last_day = now.date()
-    while day <= last_day:
-        u, s = trend_map.get(day, (0, 0))
-        trends.append({"date": day.isoformat(), "uniques": u, "sessions": s})
-        day += timedelta(days=1)
+    d = rng["d0"]
+    while d <= rng["d1"]:
+        v, s, p = day_map.get(d, (0, 0, 0))
+        trends.append({"date": d.isoformat(), "visitors": v, "visits": s, "pageviews": p})
+        d += timedelta(days=1)
+
+    sources: dict[str, int] = {}
+    for acq, cnt in source_rows:
+        label = _classify_source(acq)
+        sources[label] = sources.get(label, 0) + int(cnt)
 
     return {
-        "period_days": days,
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "period_days": rng["n"],
+        "prev_date_from": (rng["d0"] - timedelta(days=rng["n"])).isoformat(),
+        "prev_date_to": (rng["d0"] - timedelta(days=1)).isoformat(),
         "segment": segment,
         "device": device,
         "summary": {
-            # «uniques» — уникальные посетители ЗА ВЕСЬ период (НЕ дневной DAU).
-            # Это COUNT(DISTINCT user_id|session_id) по всему окну. Гость = одна
-            # вкладка (session_id умирает при закрытии), поэтому это ближе к
-            # «визитам-уникам», чем к людям — фронт подписывает честно.
-            "uniques": int(summary_row[0]) if summary_row else 0,
-            "sessions": int(summary_row[1]) if summary_row else 0,
-            "events": int(summary_row[2]) if summary_row else 0,
-            "avg_session_sec": avg_session_sec,
-            "delta_uniques": (int(summary_row[0]) if summary_row else 0) - (int(prev_summary[0]) if prev_summary else 0),
-            "delta_sessions_pct": pct_delta(
-                int(summary_row[1]) if summary_row else 0,
-                int(prev_summary[1]) if prev_summary else 0,
-            ),
-            "delta_events_pct": pct_delta(
-                int(summary_row[2]) if summary_row else 0,
-                int(prev_summary[2]) if prev_summary else 0,
-            ),
-            "delta_avg_session_sec": avg_session_sec - prev_avg_sec,
+            **cur,
+            "delta_visitors_pct": pct_delta(cur["visitors"], prev["visitors"]),
+            "delta_visits_pct": pct_delta(cur["visits"], prev["visits"]),
+            "delta_pageviews_pct": pct_delta(cur["pageviews"], prev["pageviews"]),
+            "delta_avg_visit_sec": cur["avg_visit_sec"] - prev["avg_visit_sec"] if prev["visits"] else None,
+            "delta_bounce_pp": pp_delta(cur["bounce_pct"], prev["bounce_pct"]),
+            "delta_returning_pct": pct_delta(cur["returning"], prev["returning"]),
         },
-        # Per-day: «uniques» здесь это настоящий дневной distinct-count
-        # (GROUP BY server_ts::date) — честный daily-unique по дням.
+        "prev_summary": prev,
         "trends": trends,
-        "top_pages": [{"path": r[0], "views": int(r[1])} for r in top_pages],
-        "top_instruments": [{"secid": r[0], "selects": int(r[1])} for r in top_instruments],
-        "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
-        "mode_distribution": [{"mode": r[0], "count": int(r[1])} for r in mode_dist],
+        "top_pages": [{"path": r[0], "visitors": int(r[1]), "views": int(r[2])} for r in top_pages],
+        "top_assets": [
+            {"secid": r[0], "name": names.get(r[0]), "visitors": int(r[1]), "views": int(r[2]),
+             "indicators": (r[3] or "").split(",") if r[3] else []}
+            for r in top_assets
+        ],
+        "top_search": [
+            {"secid": r[0], "name": names.get(r[0]), "visitors": int(r[1]), "picks": int(r[2])}
+            for r in top_search
+        ],
+        "top_exports": [{"indicator": r[0], "count": int(r[1]), "visitors": int(r[2])} for r in top_exports],
+        "mode_distribution": [{"mode": r[0], "count": int(r[1]), "visitors": int(r[2])} for r in mode_dist],
+        "sources": sorted(
+            [{"source": k, "visits": v} for k, v in sources.items()],
+            key=lambda x: -x["visits"],
+        )[:15],
+        "devices": sorted(
+            [{"device": r[0], "visitors": int(r[1])} for r in devices],
+            key=lambda x: -x["visitors"],
+        ),
     }
 
 
@@ -520,7 +716,9 @@ def _compute_stats(days: int, segment: str, device: str) -> dict:
 
 @router.get("/alerts-stats")
 async def get_alerts_stats(
-    days: int = Query(7, ge=1, le=180, description="Период (дней) для created/deleted/paused/resumed"),
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     user=Depends(require_admin),
 ):
     """Трекинг алертов для admin-stats: что люди ставят/убирают + конверсия.
@@ -534,7 +732,7 @@ async def get_alerts_stats(
       top_assets   — топ активов по числу активных алертов
     """
     engine = get_engine()
-    period_start = datetime.utcnow() - timedelta(days=days)
+    rng = _resolve_range(days, date_from, date_to)
 
     with engine.connect() as conn:
         # === События за период (один проход по alert_events) ===
@@ -546,8 +744,8 @@ async def get_alerts_stats(
                 COUNT(*) FILTER (WHERE event = 'paused')   AS paused,
                 COUNT(*) FILTER (WHERE event = 'resumed')  AS resumed
             FROM alert_events
-            WHERE created_at >= :period_start
-        """), {"period_start": period_start}).fetchone()
+            WHERE created_at >= :start AND created_at < :end
+        """), {"start": rng["start"], "end": rng["end"]}).fetchone()
 
         # === Текущее состояние (НЕ за период — снимок «сейчас») ===
         active_now = conn.execute(text("""
@@ -581,7 +779,7 @@ async def get_alerts_stats(
         """)).fetchall()
 
     return {
-        "period_days": days,
+        "period_days": rng["n"],
         "created": int(ev_row[0]) if ev_row else 0,
         "deleted": int(ev_row[1]) if ev_row else 0,
         "paused": int(ev_row[2]) if ev_row else 0,
@@ -604,66 +802,134 @@ async def get_alerts_stats(
 
 @router.get("/users")
 async def list_users(
-    days: int = Query(30, ge=1, le=365, description="За сколько дней считать stats"),
-    sort: str = Query("last_active", description="last_active / events / sessions / created / plan"),
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS, description="Последние N дней, если нет дат"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    sort: str = Query("last_active", description="last_active / tier / plan / expires / visits / time / created"),
     search: str = Query("", description="Поиск по email или display_name"),
-    flt: str = Query("all", alias="filter", description="all / paid / invite / free / admin"),
+    flt: str = Query("all", alias="filter",
+                     description="all / paid / paid_basic / paid_pro / invite / free / churned / pending / admin"),
     user=Depends(require_admin),
 ):
-    """List всех users с aggregated stats за последние N дней.
+    """Список пользователей со статистикой за период.
 
-    filter: paid — подписка, купленная за деньги; invite — подписка выдана по
-    пригласительной ссылке (subscriptions.period='invite', см. billing/invites.py);
-    free — нет активной подписки (админы исключены — они не клиенты);
-    admin — role=admin.
+    Фильтры по подписке (текущее состояние, от периода не зависят):
+      paid        — активная подписка, купленная за деньги (любой тариф);
+      paid_basic  — купленный Basic;  paid_pro — купленный Pro (legacy premium = pro);
+      invite      — единственный доступ сейчас — подарок по пригласительной ссылке;
+      free        — нет активной подписки (админы исключены);
+      churned     — сейчас без подписки, но раньше платил (истекла или отменена);
+      pending     — начинал оплату (pending/failed), но ни разу не заплатил;
+      admin       — role=admin.
 
-    Возвращает users[] (id, email, display_name, role, created_at, last_login_at,
-    is_active, oauth_provider, plan/plan_expires_at/is_paid/is_invite — активная
-    подписка, sessions_count, events_count, last_active_ts) + total_count/
-    paid_count/invite_count — счётчики по ВСЕЙ базе (без учёта filter/search)
-    для шапки блока. paid_count — БЕЗ инвайтов: деньги и подарки в одной цифре
-    смешивать нельзя, иначе выручка выглядит больше, чем она есть.
-
-    Инвайтом человек считается, только пока подарок — его единственный доступ.
-    Оплатил сам (в том числе продлив себя после того, как инвайт истёк) — он
-    платящий: и в счётчике, и в фильтрах, и по бейджу в таблице. Истёкший
-    инвайт вообще не в счёт, expire_overdue (billing/service.py, hourly в
-    оркестраторе) переводит просроченные подписки в status='expired'.
+    Визиты и время считаются так же, как «Визиты» и «Время визита» в сводке:
+    разрыв больше 30 минут = новый визит; только события под аккаунтом.
+    Оплаченная подписка бьёт инвайт, даже если инвайт применён позже.
     """
     engine = get_engine()
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    rng = _resolve_range(days, date_from, date_to)
     search_clean = (search or "").strip()
 
-    # Order by mapping
+    tier_rank = (
+        "CASE WHEN sub.tier IS NULL THEN 3 WHEN sub.period = 'invite' THEN 2 "
+        "WHEN sub.tier IN ('pro', 'premium') THEN 0 ELSE 1 END"
+    )
     order_clauses = {
         "last_active": "last_active_ts DESC NULLS LAST",
-        "events": "events_count DESC",
-        "sessions": "sessions_count DESC",
+        "visits": "COALESCE(uv.visits, 0) DESC, last_active_ts DESC NULLS LAST",
+        "time": "COALESCE(uv.time_sec, 0) DESC, last_active_ts DESC NULLS LAST",
+        # Совместимость со старыми значениями сортировки из localStorage.
+        "sessions": "COALESCE(uv.visits, 0) DESC, last_active_ts DESC NULLS LAST",
+        "events": "COALESCE(uv.events, 0) DESC, last_active_ts DESC NULLS LAST",
         "created": "u.created_at DESC",
-        # «Сначала платные»: активная подписка → раньше истекающие сверху
-        # (за ними надо следить), внутри групп — по свежести активности.
-        "plan": "(sub.tier IS NOT NULL) DESC, sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
+        # Сначала платные (купленные), потом инвайты, внутри — раньше истекающие.
+        "plan": f"({tier_rank} < 2) DESC, ({tier_rank} = 2) DESC, sub.expires_at ASC NULLS LAST, "
+                "last_active_ts DESC NULLS LAST",
+        # По тарифу: Pro → Basic → инвайт → без подписки.
+        "tier": f"{tier_rank} ASC, sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
+        # Скоро заканчивается — сверху те, у кого подписка истекает раньше.
+        "expires": "sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
     }
     order_by = order_clauses.get(sort, order_clauses["last_active"])
 
+    params: dict[str, Any] = {"start": rng["start"], "end": rng["end"]}
     where_search = ""
-    params: dict[str, Any] = {"cutoff": cutoff}
     if search_clean:
         where_search = " AND (u.email ILIKE :q OR u.display_name ILIKE :q OR u.username ILIKE :q)"
         params["q"] = f"%{search_clean}%"
 
-    where_filter = {
-        "paid": " AND sub.tier IS NOT NULL AND sub.period <> 'invite'",
-        "invite": " AND sub.tier IS NOT NULL AND sub.period = 'invite'",
-        "free": " AND sub.tier IS NULL AND u.role <> 'admin'",
-        "admin": " AND u.role = 'admin'",
-    }.get(flt, "")
+    ever_paid = (
+        "EXISTS (SELECT 1 FROM subscriptions p WHERE p.user_id = u.id AND p.period <> 'invite' "
+        "AND p.status IN ('active', 'expired', 'cancelled'))"
+    )
+    ever_tried = (
+        "EXISTS (SELECT 1 FROM subscriptions p WHERE p.user_id = u.id AND p.period <> 'invite' "
+        "AND p.status IN ('pending', 'failed'))"
+    )
+    filters = {
+        "paid": "sub.tier IS NOT NULL AND sub.period <> 'invite'",
+        "paid_basic": "sub.tier = 'basic' AND sub.period <> 'invite'",
+        "paid_pro": "sub.tier IN ('pro', 'premium') AND sub.period <> 'invite'",
+        "invite": "sub.tier IS NOT NULL AND sub.period = 'invite'",
+        "free": "sub.tier IS NULL AND u.role <> 'admin'",
+        # Админы — тестовые оплаты, в «бывших платных» и «не дошли» им не место.
+        "churned": f"sub.tier IS NULL AND u.role <> 'admin' AND {ever_paid}",
+        "pending": f"sub.tier IS NULL AND u.role <> 'admin' AND {ever_tried} AND NOT {ever_paid}",
+        "admin": "u.role = 'admin'",
+    }
+    where_filter = f" AND {filters[flt]}" if flt in filters else ""
+
+    sub_lateral = """
+        LEFT JOIN LATERAL (
+            SELECT s.id, s.tier, s.expires_at, s.period
+            FROM subscriptions s
+            WHERE s.user_id = u.id AND s.status = 'active'
+            ORDER BY (s.period <> 'invite') DESC, s.created_at DESC
+            LIMIT 1
+        ) sub ON TRUE
+    """
 
     with engine.connect() as conn:
-        # LATERAL вместо трёх коррелированных подзапросов на подписку: одна
-        # строка «текущая активная подписка» на пользователя, и по ней же
-        # работают WHERE-фильтр paid/free и сортировка plan.
         rows = conn.execute(text(f"""
+            WITH ue AS (
+                SELECT user_id, session_id, event_type, payload, server_ts,
+                       (event_type = 'session_heartbeat' AND (payload->>'act') IS NULL) AS legacy_hb
+                FROM analytics_events
+                WHERE user_id IS NOT NULL AND server_ts >= :start AND server_ts < :end
+            ),
+            lr AS (
+                SELECT ue.*,
+                       MAX(CASE WHEN NOT legacy_hb THEN server_ts END) OVER (
+                           PARTITION BY session_id ORDER BY server_ts ROWS UNBOUNDED PRECEDING
+                       ) AS last_real
+                FROM ue
+            ),
+            act AS (
+                SELECT user_id, event_type, server_ts FROM lr
+                WHERE NOT legacy_hb
+                   OR (last_real IS NOT NULL
+                       AND server_ts - last_real <= INTERVAL '{VISIT_GAP_MIN} minutes')
+            ),
+            num AS (
+                SELECT a.*,
+                       SUM(CASE WHEN prev_ts IS NULL
+                                  OR server_ts - prev_ts > INTERVAL '{VISIT_GAP_MIN} minutes'
+                                THEN 1 ELSE 0 END) OVER (
+                           PARTITION BY user_id ORDER BY server_ts ROWS UNBOUNDED PRECEDING
+                       ) AS vno
+                FROM (SELECT act.*, LAG(server_ts) OVER (PARTITION BY user_id ORDER BY server_ts) AS prev_ts
+                      FROM act) a
+            ),
+            v AS (
+                SELECT user_id, vno,
+                       EXTRACT(EPOCH FROM (MAX(server_ts) - MIN(server_ts)))::int AS dur,
+                       COUNT(*) FILTER (WHERE event_type <> 'session_heartbeat') AS ev
+                FROM num GROUP BY user_id, vno
+            ),
+            uv AS (
+                SELECT user_id, COUNT(*) AS visits, SUM(dur) AS time_sec, SUM(ev) AS events
+                FROM v GROUP BY user_id
+            )
             SELECT
                 u.id, u.email, u.display_name, u.username, u.role,
                 u.is_active, u.is_verified, u.created_at, u.last_login_at,
@@ -671,68 +937,65 @@ async def list_users(
                 sub.tier AS plan,
                 sub.expires_at AS plan_expires_at,
                 sub.period AS plan_period,
-                -- Заметка админа с инвайта (кому и зачем выдан): в таблице по
-                -- одному email непонятно, кто это, а в note вписано имя.
                 (SELECT si.note
                    FROM subscription_invite_redemptions ir
                    JOIN subscription_invites si ON si.token = ir.token
                   WHERE ir.subscription_id = sub.id
                   LIMIT 1) AS invite_note,
-                (SELECT COUNT(DISTINCT ae.session_id) FROM analytics_events ae
-                  WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
-                (SELECT COUNT(*) FROM analytics_events ae
-                  WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS events_count,
-                -- Не только события: у отказавших в cookie-consent (и адблоков)
-                -- analytics_events пуст навсегда, но входы и ротация
-                -- refresh-токенов (каждые ~15 мин активной вкладки) видны.
-                -- server_ts naive-UTC → приводим к timestamptz, чтобы фронт
-                -- получил ISO с таймзоной. GREATEST в PG игнорирует NULL.
+                COALESCE(uv.visits, 0) AS visits,
+                COALESCE(uv.events, 0) AS events,
+                -- Не только события: у отказавшихся от статистики и у адблоков
+                -- analytics_events пуст, но входы и ротация refresh-токенов видны.
                 GREATEST(
                     (SELECT MAX(ae.server_ts) AT TIME ZONE 'UTC' FROM analytics_events ae
                       WHERE ae.user_id = u.id),
                     (SELECT MAX(rt.created_at) FROM refresh_tokens rt
                       WHERE rt.user_id = u.id),
                     u.last_login_at
-                ) AS last_active_ts
+                ) AS last_active_ts,
+                COALESCE(uv.time_sec, 0) AS time_sec,
+                -- Последняя неактивная подписка за деньги — для «бывших платных».
+                (SELECT p.tier || ':' || p.status || ':' || COALESCE(TO_CHAR(p.expires_at, 'YYYY-MM-DD'), '')
+                   FROM subscriptions p
+                  WHERE p.user_id = u.id AND p.period <> 'invite' AND p.status <> 'active'
+                  -- Сначала реально оплаченные (истекла/отменена), потом попытки.
+                  ORDER BY (p.status IN ('expired', 'cancelled')) DESC, p.created_at DESC
+                  LIMIT 1) AS last_paid_sub
             FROM users u
-            LEFT JOIN LATERAL (
-                SELECT s.id, s.tier, s.expires_at, s.period
-                FROM subscriptions s
-                WHERE s.user_id = u.id AND s.status = 'active'
-                -- Оплаченная подписка бьёт инвайт, даже если инвайт применён
-                -- позже: человек, который платит, — платящий, а не подарочный.
-                -- Инвайт всплывает только когда платной активной строки нет.
-                ORDER BY (s.period <> 'invite') DESC, s.created_at DESC
-                LIMIT 1
-            ) sub ON TRUE
+            {sub_lateral}
+            LEFT JOIN uv ON uv.user_id = u.id
             WHERE 1=1 {where_search}{where_filter}
             ORDER BY {order_by}
-            LIMIT 200
+            LIMIT 300
         """), params).fetchall()
 
-        totals = conn.execute(text("""
-            SELECT
-                (SELECT COUNT(*) FROM users) AS total,
-                (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
-                  WHERE s.status = 'active' AND s.period <> 'invite') AS paid,
-                -- Инвайтом считаем только тех, кто СЕЙЧАС пользуется сервисом
-                -- благодаря подарку. Купил сам (в том числе после того, как
-                -- инвайт истёк) — он уходит в paid и из этой цифры пропадает,
-                -- иначе один человек попадал бы в оба счётчика сразу.
-                (SELECT COUNT(DISTINCT s.user_id) FROM subscriptions s
-                  WHERE s.status = 'active' AND s.period = 'invite'
-                    AND NOT EXISTS (
-                      SELECT 1 FROM subscriptions p
-                      WHERE p.user_id = s.user_id
-                        AND p.status = 'active' AND p.period <> 'invite'
-                    )) AS invited
-        """)).fetchone()
+        # Счётчики по каждому фильтру — по всей базе, без поиска.
+        count_sql = ",\n".join(
+            f"COUNT(*) FILTER (WHERE {cond}) AS {key}" for key, cond in filters.items()
+        )
+        counts_row = conn.execute(text(f"""
+            SELECT COUNT(*) AS all_users, {count_sql}
+            FROM users u
+            {sub_lateral}
+        """)).mappings().fetchone()
+
+    counts = {k: int(v or 0) for k, v in dict(counts_row or {}).items()}
+    counts["all"] = counts.pop("all_users", 0)
+
+    def last_paid(val: Optional[str]) -> Optional[dict]:
+        if not val:
+            return None
+        tier, status, exp = (val.split(":") + ["", "", ""])[:3]
+        return {"tier": tier, "status": status, "expires_at": exp or None}
 
     return {
-        "period_days": days,
-        "total_count": int(totals[0]) if totals else 0,
-        "paid_count": int(totals[1]) if totals else 0,
-        "invite_count": int(totals[2]) if totals else 0,
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "period_days": rng["n"],
+        "total_count": counts.get("all", 0),
+        "paid_count": counts.get("paid", 0),
+        "invite_count": counts.get("invite", 0),
+        "counts": counts,
         "users": [
             {
                 "id": int(r[0]),
@@ -748,16 +1011,17 @@ async def list_users(
                 "avatar_url": r[10],
                 "plan": r[11],
                 "plan_expires_at": r[12].isoformat() if r[12] else None,
-                # period='invite' ставит только redeem_invite (billing/invites.py);
-                # платные подписки приходят с monthly/yearly.
                 "plan_period": r[13],
                 "is_invite": r[13] == "invite",
                 "is_paid": r[11] is not None and r[13] != "invite",
-                # Заметка видна только на инвайтной подписке — на купленной её нет.
                 "invite_note": r[14] if r[13] == "invite" else None,
-                "sessions_count": int(r[15]) if r[15] else 0,
-                "events_count": int(r[16]) if r[16] else 0,
+                # sessions_count = визиты (разрыв 30 мин), имя поля оставлено
+                # ради совместимости со страницей пользователя.
+                "sessions_count": int(r[15] or 0),
+                "events_count": int(r[16] or 0),
                 "last_active_ts": r[17].isoformat() if r[17] else None,
+                "time_sec": int(r[18] or 0),
+                "last_paid_sub": last_paid(r[19]) if r[11] is None else None,
             }
             for r in rows
         ],

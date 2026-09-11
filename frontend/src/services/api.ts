@@ -1092,37 +1092,75 @@ export async function getSeasonalityYearly(
 // Analytics — admin-only stats endpoint
 // ═══════════════════════════════════════════════════════════════════
 
-export interface AnalyticsStatsSummary {
-  // uniques — уникальные посетители ЗА ВЕСЬ период (НЕ дневной DAU).
-  uniques: number;
-  sessions: number;
-  events: number;
-  avg_session_sec: number;
-  delta_uniques: number | null;
-  delta_sessions_pct: number | null;
-  delta_events_pct: number | null;
-  delta_avg_session_sec: number | null;
+/** Период для admin-статистики: либо последние N дней, либо явные даты
+ *  (YYYY-MM-DD по Москве, конец включительно). Даты приоритетнее. */
+export interface AdminRange {
+  days?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+function rangeParams(params: URLSearchParams, r: AdminRange) {
+  if (r.dateFrom && r.dateTo) {
+    params.set('date_from', r.dateFrom);
+    params.set('date_to', r.dateTo);
+  } else if (r.days !== undefined) {
+    params.set('days', String(r.days));
+  }
+}
+
+export interface AnalyticsSummaryCore {
+  /** Люди: аккаунт, иначе постоянный ID браузера, иначе вкладка (старые данные). */
+  visitors: number;
+  /** Визиты: разрыв активности больше 30 минут начинает новый (как в Метрике). */
+  visits: number;
+  pageviews: number;
+  avg_visit_sec: number;
+  median_visit_sec: number;
+  /** Доля визитов с одним просмотром короче 15 сек, %. */
+  bounce_pct: number | null;
+  /** Посетители, у которых визиты были в 2+ разных дня периода. */
+  returning: number;
+  returning_pct: number | null;
+  auth_visitors: number;
+}
+
+export interface AnalyticsStatsSummary extends AnalyticsSummaryCore {
+  delta_visitors_pct: number | null;
+  delta_visits_pct: number | null;
+  delta_pageviews_pct: number | null;
+  delta_avg_visit_sec: number | null;
+  /** Изменение доли отказов в процентных пунктах. */
+  delta_bounce_pp: number | null;
+  delta_returning_pct: number | null;
 }
 
 export interface AnalyticsStats {
+  date_from: string;
+  date_to: string;
   period_days: number;
+  prev_date_from: string;
+  prev_date_to: string;
   segment: string;
   device: string;
   summary: AnalyticsStatsSummary;
-  trends: { date: string; uniques: number; sessions: number }[];
-  top_pages: { path: string; views: number }[];
-  top_instruments: { secid: string; selects: number }[];
-  top_exports: { indicator: string; count: number }[];
-  mode_distribution: { mode: string; count: number }[];
+  prev_summary: AnalyticsSummaryCore;
+  trends: { date: string; visitors: number; visits: number; pageviews: number }[];
+  top_pages: { path: string; visitors: number; views: number }[];
+  top_assets: { secid: string; name: string | null; visitors: number; views: number; indicators: string[] }[];
+  top_search: { secid: string; name: string | null; visitors: number; picks: number }[];
+  top_exports: { indicator: string; count: number; visitors: number }[];
+  mode_distribution: { mode: string; count: number; visitors: number }[];
+  sources: { source: string; visits: number }[];
+  devices: { device: string; visitors: number }[];
 }
 
-export async function getAnalyticsStats(opts: {
-  days?: number;
+export async function getAnalyticsStats(opts: AdminRange & {
   segment?: string;
   device?: string;
 }): Promise<AnalyticsStats> {
   const params = new URLSearchParams();
-  if (opts.days !== undefined) params.set('days', String(opts.days));
+  rangeParams(params, opts);
   if (opts.segment) params.set('segment', opts.segment);
   if (opts.device) params.set('device', opts.device);
   const response = await apiFetch(`${API_BASE}/api/analytics/stats?${params}`);
@@ -1163,16 +1201,20 @@ export interface AdminUser {
   invite_note?: string | null;
   /** Подписка куплена за деньги (инвайты сюда НЕ входят) */
   is_paid?: boolean;
+  /** В списке — визиты за период (разрыв 30 мин); на странице юзера — вкладки. */
   sessions_count: number;
   events_count: number;
   last_active_ts: string | null;
+  /** Суммарное время визитов за период, сек (только в списке). */
+  time_sec?: number;
+  /** Последняя неактивная подписка за деньги — у тех, кто сейчас без подписки. */
+  last_paid_sub?: { tier: string; status: string; expires_at: string | null } | null;
 }
 
-export async function listAdminUsers(opts: {
-  days?: number;
+export async function listAdminUsers(opts: AdminRange & {
   sort?: string;
   search?: string;
-  /** all / paid / invite / free / admin */
+  /** all / paid / paid_basic / paid_pro / invite / free / churned / pending / admin */
   filter?: string;
 }): Promise<{
   period_days: number;
@@ -1181,10 +1223,12 @@ export async function listAdminUsers(opts: {
   paid_count: number;
   /** Получившие подписку по пригласительной ссылке */
   invite_count: number;
+  /** Сколько людей в каждом фильтре — по всей базе, без поиска. */
+  counts?: Record<string, number>;
   users: AdminUser[];
 }> {
   const params = new URLSearchParams();
-  if (opts.days !== undefined) params.set('days', String(opts.days));
+  rangeParams(params, opts);
   if (opts.sort) params.set('sort', opts.sort);
   if (opts.search) params.set('search', opts.search);
   if (opts.filter && opts.filter !== 'all') params.set('filter', opts.filter);
@@ -2123,8 +2167,10 @@ export async function getAlertFires(
 }
 // Admin-статистика алертов за период (created/deleted/paused/resumed) + снимок
 // «сейчас» (active_now/with_fires/by_source/top_assets). GET /api/analytics/alerts-stats?days=
-export async function getAlertsStats(days?: number): Promise<AlertsStats> {
-    const qs = days != null ? `?days=${days}` : '';
+export async function getAlertsStats(range: AdminRange = {}): Promise<AlertsStats> {
+    const params = new URLSearchParams();
+    rangeParams(params, range);
+    const qs = params.toString() ? `?${params}` : '';
     const resp = await apiFetch(`${API_BASE}/api/analytics/alerts-stats${qs}`);
     if (!resp.ok) throw new Error(t('Не удалось загрузить статистику уведомлений'));
     return resp.json();

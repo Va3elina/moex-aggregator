@@ -33,6 +33,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useAssetViewTracking } from '../hooks/useAssetViewTracking';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -215,6 +216,7 @@ export default function OpenInterestPage() {
     if (fromUrl) return fromUrl;
     try { return localStorage.getItem('frame:oi:instrument') || 'SR'; } catch { return 'SR'; }
   });
+  useAssetViewTracking('oi', selectedInstrument);
   const [instrumentName, setInstrumentName] = useState(() => {
     // Имя пусто (→ резолвится эффектом ниже) если инструмент восстановлен из URL
     // или localStorage; иначе дефолт «Сбербанк».
