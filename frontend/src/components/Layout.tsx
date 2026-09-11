@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +7,7 @@ import { isViewAsUser, setViewAsUser } from '../services/viewMode';
 import { useYandexMetrica, useYandexMetricaUser } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useIsPhone } from '../hooks/useIsPhone';
-import { Menu, X, LogIn, BarChart3, User } from 'lucide-react';
+import { Menu, X, LogIn, BarChart3, User, Plus } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
@@ -90,6 +90,27 @@ export default function Layout() {
   // adminOnly-вкладки видны только роли admin (оба места рендера: desktop и
   // мобильное меню используют этот список, не NAV_ITEMS напрямую).
   const navItems = NAV_ITEMS.filter((i) => !i.adminOnly || user?.role === 'admin');
+  // На десктопе тестовые (adminOnly) индикаторы не стоят в общем ряду, а
+  // собраны под кнопкой «+» с выпадающим списком: ряд остаётся тем, что видят
+  // пользователи, а тесты не теснят пункты навигации.
+  const testItems = navItems.filter((i) => i.adminOnly);
+  const [testMenuOpen, setTestMenuOpen] = useState(false);
+  const testMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!testMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!testMenuRef.current?.contains(e.target as Node)) setTestMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTestMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [testMenuOpen]);
+  useEffect(() => { setTestMenuOpen(false); }, [location.pathname]);
+  const testActive = testItems.some((i) => location.pathname.startsWith(i.path));
 
   // Анонс «Новое: Терминал» (разовый, на весь сайт — см. JSX ниже).
   // ВАЖНО: хук здесь, ДО мобильного conditional return — правило хуков.
@@ -171,7 +192,7 @@ export default function Layout() {
                 пункта приходился впритык к кнопке «Терминал» и выглядел как
                 наложение кнопки на список индикаторов. */}
             <div className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0.5 xl:gap-1 overflow-hidden pr-2">
-              {navItems.map((item) => (
+              {navItems.filter((item) => !item.adminOnly).map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.disabled ? '#' : item.path}
@@ -255,6 +276,106 @@ export default function Layout() {
               ))}
             </div>
 
+            {/* Тестовые индикаторы (только admin) — «+» с выпадающим списком.
+                Вне overflow-hidden ряда навигации, иначе список обрезался бы. */}
+            {testItems.length > 0 && (
+              <div ref={testMenuRef} className="hidden lg:block relative flex-shrink-0" style={{ marginRight: 8 }}>
+                <button
+                  onClick={() => setTestMenuOpen((o) => !o)}
+                  className="editorial-press grid place-items-center rounded-full"
+                  style={{
+                    color: 'var(--accent)',
+                    border: '1.5px solid var(--text-primary)',
+                    backgroundColor: testActive || testMenuOpen
+                      ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                      : 'transparent',
+                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                  }}
+                  title={t('Тестовые индикаторы')}
+                  aria-label={t('Тестовые индикаторы')}
+                  aria-haspopup="menu"
+                  aria-expanded={testMenuOpen}
+                >
+                  <Plus
+                    style={{
+                      width: 'clamp(13px, 1vw + 0.3rem, 17px)',
+                      height: 'clamp(13px, 1vw + 0.3rem, 17px)',
+                      transform: testMenuOpen ? 'rotate(45deg)' : undefined,
+                      transition: 'transform 0.15s',
+                    }}
+                    strokeWidth={2.2}
+                  />
+                </button>
+                {testMenuOpen && (
+                  <div
+                    role="menu"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 60,
+                      minWidth: 220,
+                      padding: 6,
+                      background: 'var(--bg-primary)',
+                      border: '1.5px solid var(--text-primary)',
+                      borderRadius: 12,
+                      boxShadow: '3px 3px 0 0 var(--text-primary)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: '4px 10px 6px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      {t('Тестовые индикаторы')}
+                    </div>
+                    {testItems.map((item) => (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        role="menuitem"
+                        onClick={() => setTestMenuOpen(false)}
+                        className="flex items-center justify-between whitespace-nowrap transition-opacity hover:opacity-80"
+                        style={({ isActive }) => ({
+                          gap: 12,
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          fontSize: 14,
+                          fontWeight: isActive ? 700 : 500,
+                          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          backgroundColor: isActive ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined,
+                        })}
+                      >
+                        {t(item.label)}
+                        {item.badge && (
+                          <span
+                            className="uppercase font-bold"
+                            style={{
+                              fontSize: 10,
+                              letterSpacing: '0.06em',
+                              color: 'var(--accent)',
+                              border: '1px solid var(--accent)',
+                              borderRadius: 3,
+                              padding: '1px 5px',
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            {t(item.badge)}
+                          </span>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Right side — flex-shrink-0 чтобы никогда не сжималось
                 под nav overflow. Gap stable 8-12px fluid clamp. */}
             <div
@@ -306,22 +427,27 @@ export default function Layout() {
                   19:00). Флаг в localStorage (services/viewMode), apiFetch
                   шлёт X-Frame-View. Перезагрузка — чтобы все панели, SSE-
                   подписки и клиентские кеши разом перечитали данные. */}
+              {/* Эмодзи вместо текста: 👑 — версия админа, 👤 — вид пользователя. */}
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => { setViewAsUser(!isViewAsUser()); window.location.reload(); }}
-                  className="editorial-press whitespace-nowrap rounded-full font-bold"
+                  className="editorial-press grid place-items-center rounded-full"
                   style={{
-                    fontSize: 'clamp(9px, 0.45vw + 0.3rem, 12px)',
-                    padding: '3px 10px',
                     border: '1.5px solid var(--text-primary)',
-                    color: isViewAsUser() ? '#fff' : 'var(--text-primary)',
-                    backgroundColor: isViewAsUser() ? 'var(--accent)' : 'transparent',
+                    backgroundColor: isViewAsUser()
+                      ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                      : 'transparent',
+                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    fontSize: 'clamp(12px, 0.9vw + 0.2rem, 16px)',
+                    lineHeight: 1,
                   }}
                   title={isViewAsUser()
                     ? t('Сайт показан как пользователю: цены только на закрытие 19:00. Нажмите, чтобы вернуть версию админа')
                     : t('Посмотреть сайт как пользователь: цены только на закрытие 19:00')}
+                  aria-label={isViewAsUser() ? t('Вид: пользователь') : t('Вид: админ')}
                 >
-                  {isViewAsUser() ? t('Вид: пользователь') : t('Вид: админ')}
+                  <span aria-hidden>{isViewAsUser() ? '👤' : '👑'}</span>
                 </button>
               )}
 
