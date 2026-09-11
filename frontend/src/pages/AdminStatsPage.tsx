@@ -397,7 +397,12 @@ export default function AdminStatsPage() {
         )}
 
         {ownTrafficVisible && (
-          <Section title={metricaOn ? 'Трафик · наш трекер' : 'Трафик · наш трекер (Метрика не подключена)'} hint={METRIC_HINTS.own_section}>
+          <Section
+            title={metricaOn ? 'Трафик · наш трекер'
+              : metrica?.token_error ? 'Трафик · наш трекер (токен Метрики не действует)'
+              : 'Трафик · наш трекер (Метрика не подключена)'}
+            hint={METRIC_HINTS.own_section}
+          >
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
           {s && p ? (
@@ -607,7 +612,11 @@ export default function AdminStatsPage() {
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Трафик из Яндекс Метрики. Не подключена — инструкция, как дать токен. */
+/** Приложение Яндекс OAuth, на котором выпущен токен Метрики (то же, что у
+ *  scripts/seo). Client ID не секрет: он всегда виден в ссылке авторизации. */
+const METRIKA_TOKEN_URL = 'https://oauth.yandex.ru/authorize?response_type=token&client_id=13ef24cf955147729f6ccbe3021b8f3e';
+
+/** Трафик из Яндекс Метрики. Токена нет или он не действует — инструкция, как выдать новый. */
 function MetricaBlock({ report, loading }: { report: MetricaReport | null; loading: boolean }) {
   if (loading && !report) {
     return (
@@ -626,19 +635,28 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
   if (!report.connected) {
     return (
       <Card padding="md" className="md:p-5">
-        <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-          Метрика не подключена: на сервере нет токена доступа к API.
-        </p>
+        {report.token_error ? (
+          <>
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--danger)' }}>
+              Токен Метрики больше не действует.
+            </p>
+            <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+              {report.token_error}. Обычно это истёкший срок: токен живёт около полугода.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+            Метрика не подключена: на сервере нет токена доступа к API.
+          </p>
+        )}
         <ol className="text-sm list-decimal pl-5 space-y-1" style={{ color: 'var(--text-secondary)' }}>
           <li>
-            Под аккаунтом Яндекса, у которого есть доступ к счётчику {report.counter}, создать приложение на{' '}
-            <a href="https://oauth.yandex.ru/client/new" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>oauth.yandex.ru</a>
-            {' '}с доступом «Получение статистики, чтение параметров своих и доверенных счётчиков».
+            Под аккаунтом Яндекса с доступом к счётчику {report.counter} открыть{' '}
+            <a href={METRIKA_TOKEN_URL} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>страницу выдачи токена</a>,
+            нажать «Разрешить» и скопировать токен.
           </li>
-          <li>
-            Открыть ссылку https://oauth.yandex.ru/authorize?response_type=token&amp;client_id=ID_приложения и скопировать токен.
-          </li>
-          <li>Добавить в /opt/frame/.env строку YANDEX_METRIKA_TOKEN=токен и пересоздать контейнер api.</li>
+          <li>Записать его в /opt/frame/.env строкой YANDEX_METRIKA_TOKEN=токен и пересоздать контейнер api.</li>
+          <li>Тем же токеном обновить scripts/seo/.env: им пользуется SEO-скрипт.</li>
         </ol>
         <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
           Пока ниже показан трафик по нашему трекеру.

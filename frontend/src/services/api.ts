@@ -1184,9 +1184,11 @@ export interface MetricaSummary {
 export interface MetricaRow { label: string; value: number; value2: number | null }
 
 /** Трафик из Яндекс Метрики (GET /api/analytics/metrica). connected=false —
- *  токена на сервере нет. Любой отчёт может прийти null — тогда причина в errors. */
+ *  токена на сервере нет, либо Метрика его не принимает (тогда есть token_error).
+ *  Любой отчёт может прийти null — тогда причина в errors. */
 export interface MetricaReport {
   connected: boolean;
+  token_error?: string;
   counter: string;
   date_from: string;
   date_to: string;
