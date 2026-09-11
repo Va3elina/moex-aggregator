@@ -32,6 +32,7 @@ import { FUND_PALETTE } from '../config/chartTheme';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { displayTicker } from '../utils/displayTicker';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useLivePricesState } from '../hooks/useLivePrices';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError as handleTierErrorUtil } from '../utils/tierError';
 
@@ -81,6 +82,10 @@ export default function SeasonalityPage() {
 
   // Mode & params (персистятся в localStorage — не сбрасываются на новой сессии)
   const [mode, setMode] = usePersistedState<SeasonalityMode>('frame:seasonality:mode', 'weekday');
+  // «Внутри дня» строится по внутридневным ценам — режим только в
+  // незамедленной версии (админ). У остальных цена на сайте только на
+  // закрытие 19:00, и бэкенд на такой запрос отвечает отказом.
+  const { live: livePrices, ready: liveReady } = useLivePricesState();
 
   // Активы без физических часовых данных (MCFTR, RUSFAR3M, commodities и т.д. —
   // см. api/routers/seasonality.py INDICES_WITH_INTRADAY) — грузим один раз,
@@ -106,10 +111,10 @@ export default function SeasonalityPage() {
   // того как пользователь уже стоял на 'intraday' — напр. вернулся на страницу
   // или сменил тикер) — тихо переключаем на дефолт вместо показа ошибки.
   useEffect(() => {
-    if (mode === 'intraday' && intradayUnsupported.includes(selectedStock)) {
+    if (mode === 'intraday' && (intradayUnsupported.includes(selectedStock) || (liveReady && !livePrices))) {
       setMode('weekday');
     }
-  }, [mode, selectedStock, intradayUnsupported, setMode]);
+  }, [mode, selectedStock, intradayUnsupported, setMode, liveReady, livePrices]);
 
   // Analytics
   const { track } = useAnalytics();
@@ -372,7 +377,7 @@ export default function SeasonalityPage() {
       setTestChartFetchIds(prev => ({ ...prev, yearly: prev.yearly + 1 }));
 
       // 2) HISTOGRAMS — по очереди, каждый mode сам по себе (3 req макс за раз)
-      for (const m of TEST_MODES) {
+      for (const m of TEST_MODES.filter((x) => x !== 'intraday' || livePrices)) {
         const modePromises = buildModePromises(m);
         const res = await Promise.all(modePromises);
         if (reqId !== testReqIdRef.current) return;
@@ -386,7 +391,7 @@ export default function SeasonalityPage() {
     } finally {
       if (reqId === testReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, periods, availableYears, t]);
+  }, [selectedStock, periods, availableYears, t, livePrices]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -681,7 +686,10 @@ export default function SeasonalityPage() {
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode(m),
               // intraday для этого конкретного актива физически нет данных —
               // прячем из списка совсем (не lock: это не тариф, апгрейд не поможет).
-              hidden: m === 'intraday' && intradayUnsupported.includes(selectedStock),
+              // Не лок, а скрытие: апгрейд не поможет — либо у актива физически
+              // нет часовых данных, либо цена показывается только на закрытие
+              // 19:00 (режим остаётся лишь в незамедленной версии у админа).
+              hidden: m === 'intraday' && (intradayUnsupported.includes(selectedStock) || !livePrices),
             }))}
             value={mode}
             onChange={handleModeChange}

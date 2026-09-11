@@ -34,6 +34,7 @@ import {
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useLivePricesState } from '../../hooks/useLivePrices';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { type PeriodConfig, makePeriodId } from '../../components/seasonality/periodConfig';
 
@@ -84,6 +85,13 @@ export default function MobileSeasonalityPage() {
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
+  // «Часы» (intraday) в мобильном списке не предлагаются, но режим мог
+  // остаться в сохранённых настройках. Он строится по внутридневным ценам —
+  // только в незамедленной версии (админ), у остальных бэкенд ответит отказом.
+  const { live: livePrices, ready: liveReady } = useLivePricesState();
+  useEffect(() => {
+    if (mode === 'intraday' && liveReady && !livePrices) setMode('monthly');
+  }, [mode, liveReady, livePrices, setMode]);
   const seasonAccess = useTierAccess('seasonality');
   const { showUpgrade } = useUpgradePrompt();
   // Сейчас всегда false: с 2026-08 сезонность бесплатна целиком (features.py:

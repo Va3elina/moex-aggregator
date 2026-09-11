@@ -8,6 +8,7 @@ import type {
   TopInstrumentsResponse
 } from '../types';
 import { t } from '../i18n';
+import { viewHeaders } from './viewMode';
 
 // Для Cloudflare Tunnel и локалки используем относительный /api через Vite proxy.
 // При необходимости можно переопределить через VITE_API_BASE.
@@ -108,7 +109,9 @@ function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = DEFAULT_T
  */
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const token = await ensureFreshToken() || localStorage.getItem('access_token');
-  const headers: Record<string, string> = {};
+  // Вид админа «как пользователь» (services/viewMode) едет с каждым запросом:
+  // бэкенд по нему отдаёт админу публичную версию цены.
+  const headers: Record<string, string> = { ...viewHeaders() };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
@@ -119,7 +122,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     localStorage.removeItem('access_token'); // форсируем refresh
     const newToken = await ensureFreshToken();
     if (newToken) {
-      const retryHeaders: Record<string, string> = { Authorization: `Bearer ${newToken}` };
+      const retryHeaders: Record<string, string> = { ...viewHeaders(), Authorization: `Bearer ${newToken}` };
       if (init?.headers) Object.assign(retryHeaders, init.headers);
       response = await fetchWithTimeout(url, { ...init, headers: retryHeaders });
     }
@@ -317,7 +320,9 @@ export async function getInstruments(
     url += `?${params.toString()}`;
   }
 
-  const response = await fetch(url);
+  // apiFetch, а не голый fetch: «Изм. %» в пикере зависит от версии цены
+  // зрителя (админ видит незамедленную) — бэкенду нужен токен.
+  const response = await apiFetch(url);
   if (!response.ok) throw new Error('Failed to fetch instruments');
 
   const data = await response.json();
@@ -589,6 +594,15 @@ export async function getHeatmapImoex(
   return response.json();
 }
 
+/** Свежие цены карты рынка для живого обновления — только в незамедленной
+ *  версии (админ). Остальным бэкенд отдаёт пустой объект: цена одна на день,
+ *  закрытие 19:00. */
+export async function getHeatmapPrices(): Promise<Record<string, number>> {
+  const response = await apiFetch(`${API_BASE}/api/heatmap/prices`);
+  if (!response.ok) return {};
+  return response.json();
+}
+
 // ==================== ФОНДЫ ====================
 
 export interface FundDataPoint {
@@ -823,7 +837,8 @@ export async function getBreadthCurrent(
   universe: BreadthUniverse = 'all',
 ): Promise<BreadthCurrentResponse> {
   const params = new URLSearchParams({ ema_period: emaPeriod.toString(), universe });
-  const response = await fetch(`${API_BASE}/api/breadth/current?${params}`);
+  // apiFetch: цены акций в ответе — в версии цены зрителя (нужен токен).
+  const response = await apiFetch(`${API_BASE}/api/breadth/current?${params}`);
   if (!response.ok) throw new Error('Failed to fetch market breadth');
   return response.json();
 }

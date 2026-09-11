@@ -353,6 +353,18 @@ def public_openapi(request: Request):
 # ════════════════════════════════════════════════════════════════════
 # Heatmap — snapshot всех акций
 # ════════════════════════════════════════════════════════════════════
+def _public_quote(s: dict) -> dict:
+    """Строка карты рынка (api/routers/heatmap.heatmap_rows) → формат API."""
+    return {
+        "sec_id": s["secId"], "name": s["name"], "sector": s["sector"],
+        "price": s["price"], "prev_close": s["prev_close"],
+        "change_1d": s["change_1d"], "change_1w": s["change_1w"],
+        "change_1m": s["change_1m"], "change_1y": s["change_1y"],
+        "volume_1d": s["volume_1d"], "value_1d": s["value_1d"],
+        "market_cap": s["market_cap"], "price_date": s.get("price_date"),
+    }
+
+
 @router.get("/heatmap")
 def public_heatmap(
     response: Response,
@@ -364,15 +376,13 @@ def public_heatmap(
     Source: mv_heatmap_stocks (refreshed daily orchestrator'ом).
     """
     response.headers["Cache-Control"] = CACHE_REALTIME
-    rows = db.execute(text("""
-        SELECT sec_id, name, sector, price, prev_close,
-               change_1d, change_1w, change_1m, change_1y,
-               volume_1d, value_1d, market_cap
-        FROM mv_heatmap_stocks
-        ORDER BY market_cap DESC NULLS LAST
-    """)).mappings().all()
+    # Цена — только закрытие 19:00 (services/session_close): публичный API
+    # раздаёт биржевую информацию по тем же правилам, что и сайт.
+    from api.routers.heatmap import heatmap_rows
+    rows = sorted((_public_quote(s) for s in heatmap_rows(False)),
+                  key=lambda r: r["market_cap"] or 0, reverse=True)
     return {
-        "data": [dict(r) for r in rows],
+        "data": rows,
         "meta": {
             "count": len(rows),
             "source": "MOEX (via Frame)",
@@ -508,9 +518,12 @@ def public_seasonality(
         "cursor_date": cursor_date,
         "limit_plus_one": limit + 1,
     }).mappings().all()
-    if not rows:
+    # Без живой дневной свечи неопубликованного дня, последние недели — OHLC
+    # сессии до 19:00 (services/session_close).
+    from api.services.session_close import publish_daily_ohlc
+    data_list = publish_daily_ohlc(db, ticker.upper(), [dict(r) for r in rows])
+    if not data_list:
         raise HTTPException(status_code=404, detail=f"data not found for {ticker}")
-    data_list = [dict(r) for r in rows]
     page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
@@ -542,17 +555,14 @@ def public_stock_quote(
     overhead'а всей карты рынка.
     """
     response.headers["Cache-Control"] = CACHE_REALTIME
-    row = db.execute(text("""
-        SELECT sec_id, name, sector, price, prev_close,
-               change_1d, change_1w, change_1m, change_1y,
-               volume_1d, value_1d, market_cap
-        FROM mv_heatmap_stocks
-        WHERE sec_id = :ticker
-    """), {"ticker": ticker.upper()}).mappings().first()
+    # Цена — только закрытие 19:00, как у /heatmap выше.
+    from api.routers.heatmap import heatmap_rows
+    row = next((_public_quote(s) for s in heatmap_rows(False)
+                if s["secId"] == ticker.upper()), None)
     if not row:
         raise HTTPException(status_code=404, detail=f"stock {ticker} not found")
     return {
-        "data": dict(row),
+        "data": row,
         "meta": {
             "ticker": ticker.upper(),
             "source": "MOEX (via Frame)",

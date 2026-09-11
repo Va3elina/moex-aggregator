@@ -5,7 +5,7 @@ Market Breadth API — Сила рынка
 /history — читает из pre-computed таблицы breadth_history (мгновенно)
 /current — считает на лету для текущей даты (быстро, 42 тикера)
 """
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from sqlalchemy import text
 from datetime import date, timedelta
 import pandas as pd
@@ -17,6 +17,8 @@ from api.cache import get_or_set
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits, enforce_tier_limits
+from api.services.session_close import (is_live_viewer, view_tag, published_end,
+                                        published_next_day, last_published_date)
 
 log = get_logger()
 
@@ -288,8 +290,10 @@ def _compute_breadth_for_tickers(engine, tickers: list[str], ema_period: int, da
 
 @router.get("/current")
 async def get_current_breadth(
+    request: Request,
     ema_period: int = Query(200, ge=10, le=500, description="Период EMA"),
     universe: str = Query("all", description="Вселенная: all, imoex, all_usd, imoex_usd"),
+    user = Depends(get_current_user_optional),
 ):
     """
     Возвращает текущее значение Market Breadth:
@@ -301,13 +305,23 @@ async def get_current_breadth(
     universe=all/imoex → рублёвые цены и EMA.
     universe=all_usd/imoex_usd → цены конвертируются через USDRUB (спот до
     2024-06-11, фьючерс USDRUBF после), EMA считается на USD-ценах.
+
+    Цена акции — в версии зрителя (services/session_close): у всех, кроме
+    админов, последняя точка ряда — закрытие 19:00 последней опубликованной
+    сессии, а живая дневная свеча неопубликованного дня в расчёт не входит.
     """
+    return await _current_breadth(ema_period, universe, is_live_viewer(user, request))
+
+
+async def _current_breadth(ema_period: int, universe: str, live: bool) -> dict:
+    """Расчёт /current. Вынесен из роута, чтобы /history звал его со своей
+    версией цены (иначе FastAPI-параметры по умолчанию пришлось бы подделывать)."""
     if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         universe = "all"
     is_usd = universe.endswith("_usd")
     universe_base = universe[:-4] if is_usd else universe
 
-    cache_key = f"breadth:current:{ema_period}:{universe}"
+    cache_key = f"breadth:current:{ema_period}:{universe}:{view_tag(live)}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -352,6 +366,14 @@ async def get_current_breadth(
         # Рублёвые вселенные включают выходные сессии MOEX — верхний график у них
         # строится по IMOEX2, который тоже считается в доп. сессии.
         weekday_clause = "AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5" if is_usd else ""
+        # Публичная версия: без дневной свечи ещё не опубликованного дня (она
+        # живая), а последнюю точку ряда ниже заменяем ценой 19:00.
+        bulk_params = {"tickers": tickers, "limit": warmup_limit}
+        pub_clause = ""
+        if not live:
+            pub_clause = "AND begin_time < :pub_next"
+            bulk_params["pub_next"] = published_next_day()
+        close19_rows = []
         with engine.connect() as conn:
             bulk_rows = conn.execute(text(f"""
                 SELECT u.secid, c.d, c.close
@@ -362,13 +384,35 @@ async def get_current_breadth(
                     WHERE secid = u.secid AND interval = 24 AND type = 'stock'
                       AND close > 0
                       {weekday_clause}
+                      {pub_clause}
                     ORDER BY begin_time DESC
                     LIMIT :limit
                 ) c
                 ORDER BY u.secid, c.d
-            """), {"tickers": tickers, "limit": warmup_limit}).fetchall()
+            """), bulk_params).fetchall()
+            # Цена 19:00 последней опубликованной сессии — последняя 5-минутка
+            # до 19:00: дневная свеча того же дня несёт вечернюю сессию.
+            if not live:
+                close19_rows = conn.execute(text(f"""
+                    SELECT u.secid, c.d, c.close
+                    FROM unnest(CAST(:tickers AS text[])) AS u(secid)
+                    CROSS JOIN LATERAL (
+                        SELECT begin_time::date AS d, close
+                        FROM candles
+                        WHERE secid = u.secid AND interval = 5 AND type = 'stock'
+                          AND begin_time < :pub_end AND begin_time::time < time '19:00'
+                          AND close > 0 AND volume > 0
+                          {weekday_clause}
+                        ORDER BY begin_time DESC
+                        LIMIT 1
+                    ) c
+                """), {"tickers": tickers, "pub_end": published_end()}).fetchall()
         for secid, d, close in bulk_rows:
             prices_by_ticker.setdefault(secid, []).append((d, float(close)))
+        for secid, d, close in close19_rows:
+            series = prices_by_ticker.get(secid)
+            if series and series[-1][0] == d:
+                series[-1] = (d, float(close))
 
     stocks_data = []
     count_above = 0
@@ -452,6 +496,7 @@ async def get_current_breadth(
 
 @router.get("/history")
 async def get_breadth_history(
+    request: Request,
     ema_period: int = Query(200, ge=10, le=500, description="Период EMA"),
     days: int = Query(365, ge=30, le=9000, description="Количество дней истории"),
     universe: str = Query("all", description="Вселенная: all, imoex, all_usd, imoex_usd"),
@@ -468,6 +513,7 @@ async def get_breadth_history(
 
     # Tier-ограничения: universe whitelist + max_history_days
     enforce_tier_limits(user, "strength", universe=universe, days=days)
+    live = is_live_viewer(user, request)
     start_time = time.time()
     engine = get_engine()
     date_from = date.today() - timedelta(days=days)
@@ -511,14 +557,20 @@ async def get_breadth_history(
     imoex_by_date: dict[str, float] = {}
     try:
         with engine.connect() as conn:
+            # Индекс — только значения на закрытие (с 2026-09 индексы обновляются
+            # раз в день после 19:10, см. Funds/fetch_index_intraday.py). Потолок
+            # по дате отсекает и строку «сегодня», записанную внутри дня до этого
+            # правила.
             imoex_rows = conn.execute(text("""
                 SELECT secid, trade_date as date, close
                 FROM index_data
                 WHERE secid = ANY(:secids)
                   AND trade_date >= :date_from
+                  AND trade_date <= :last_pub
                   AND close IS NOT NULL
                 ORDER BY trade_date
-            """), {"secids": overlay_secids, "date_from": date_from}).fetchall()
+            """), {"secids": overlay_secids, "date_from": date_from,
+                   "last_pub": last_published_date()}).fetchall()
         by_date: dict[str, dict] = {}
         for secid, d, close in imoex_rows:
             if close is None:
@@ -537,9 +589,10 @@ async def get_breadth_history(
 
     # ── Последняя точка «сегодня»: актуальное значение, а не вчерашнее закрытие ──
     # breadth_history наполняется только в дневном прогоне (19:10 МСК), а
-    # index_data сегодня обновляется каждые ~5 мин (fetch_index_intraday). Чтобы
-    # последняя точка графика не висела на вчера, дорастим ОДНУ сегодняшнюю точку:
-    # breadth из /current (тоже кэш ≤5 мин), индекс — из свежего index_data.
+    # сегодняшняя строка index_data появляется сразу после закрытия (индексы
+    # обновляются раз в день после 19:10, fetch_index_intraday). Чтобы последняя
+    # точка графика не висела на вчера до ночного прогона, дорастим ОДНУ
+    # сегодняшнюю точку: breadth из /current, индекс — из index_data.
     # Гейт без обращения к календарю: добавляем только если у индекса есть дата
     # свежее последней в breadth_history (значит идёт сессия и в 19:10 этой точки
     # ещё не было). Timezone-safe: ISO-даты сравниваются как строки. history —
@@ -549,7 +602,7 @@ async def get_breadth_history(
     latest_index_date = max(imoex_by_date) if imoex_by_date else None
     if latest_index_date and (last_hist_date is None or latest_index_date > last_hist_date):
         try:
-            cur = await get_current_breadth(ema_period=ema_period, universe=universe)
+            cur = await _current_breadth(ema_period, universe, live)
             if cur and cur.get("count_total", 0) > 0:
                 history = history + [{
                     "date": latest_index_date,

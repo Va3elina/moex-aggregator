@@ -60,7 +60,11 @@
   "Начать бесплатно — {{days}} дней": "Start free — {{days}} days",
   "Начать бесплатно": "Start free",
 
-  "Данные в реальном времени, юрлица и число трейдеров в ОИ, скринер сигналов, выбор фондов.": "Real-time data, institutions and trader counts in OI, signal screener, fund selection.",
+  "Открытые позиции без задержки, юрлица и число трейдеров в ОИ, скринер сигналов, выбор фондов.": "Open interest without delay, institutions and trader counts in OI, signal screener, fund selection.",
+  "Вид: админ": "View: admin",
+  "Вид: пользователь": "View: user",
+  "Посмотреть сайт как пользователь: цены только на закрытие 19:00": "View the site as a user: prices only as of the 19:00 close",
+  "Сайт показан как пользователю: цены только на закрытие 19:00. Нажмите, чтобы вернуть версию админа": "The site is shown as a user sees it: prices only as of the 19:00 close. Click to return to the admin view",
   "Всё из Basic + ": "Everything in Basic + ",
   "экспорт CSV": "CSV export",
   "индикаторы Т-терминала": "T-terminal indicators",

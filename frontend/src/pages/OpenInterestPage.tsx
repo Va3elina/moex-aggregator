@@ -46,6 +46,7 @@ import AlertBellButton from '../components/alerts/AlertBellButton';
 import CreateAlertModal, { type AlertMetricOption } from '../components/alerts/CreateAlertModal';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
+import { useLivePrices } from '../hooks/useLivePrices';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -176,6 +177,9 @@ export default function OpenInterestPage() {
   // и при тапе на locked-опции в Dropdown'ах
   const { showUpgrade } = useUpgradePrompt();
   const oiAccess = useTierAccess('open_interest');
+  // Незамедленная цена (админ). У остальных цена на графике — только закрытие
+  // 19:00, и алертов по цене нет (бэкенд тоже их не примет).
+  const livePrices = useLivePrices();
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
@@ -432,9 +436,10 @@ export default function OpenInterestPage() {
       ops: crossOps(),
       hint: t('Сработает, когда «{{leg}}» ({{group}}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.', { leg: oiLegLabel, group: clgroup === 'FIZ' ? t('физлица') : t('юрлица') }),
     };
-    return [base[0], oiLevel, ...base.slice(1)];
+    // base[0] — алерт по цене: только в незамедленной версии (админ).
+    return livePrices ? [base[0], oiLevel, ...base.slice(1)] : [oiLevel, ...base.slice(1)];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clgroup, oiLeg, oiLegLabel, lang]);
+  }, [clgroup, oiLeg, oiLegLabel, lang, livePrices]);
 
   // Уровни алертов текущего актива → пунктир: price на ЛЕВОЙ оси, oi_level на ПРАВОЙ.
   const alertLevels = useMemo(() => {
@@ -443,12 +448,12 @@ export default function OpenInterestPage() {
     const lines = myAlerts
       .filter((a) => a.status === 'active' && a.asset === selectedInstrument)
       .flatMap((a): LevelLine[] => {
-        if (a.indicator === 'price') return [{ value: a.threshold, color: 'var(--accent)', axis: 'primary' }];
+        if (a.indicator === 'price') return livePrices ? [{ value: a.threshold, color: 'var(--accent)', axis: 'primary' }] : [];
         if (a.indicator === 'oi_level') return [{ value: a.threshold, color: 'var(--accent)', axis: 'secondary' }];
         return [];
       });
     return lines.length ? lines : undefined;
-  }, [myAlerts, selectedInstrument]);
+  }, [myAlerts, selectedInstrument, livePrices]);
 
   // Клик по «+» пилюле оси → открыть модалку с префиллом уровня + текущим значением.
   const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
@@ -1103,7 +1108,9 @@ export default function OpenInterestPage() {
         // (цена + длинные + короткие) — уровневый алерт двусмыслен, убираем
         // горизонтальный кросхэйр и «+» целиком.
         onCreateAlert={chartAlertsOn ? handleCreateAlertFromChart : undefined}
-        alertAxes={chartAlertsOn ? ['primary', 'secondary'] : undefined}
+        // Левая ось (цена) — только в незамедленной версии: у остальных цена
+        // на графике только на закрытие 19:00, и алертов по цене нет.
+        alertAxes={chartAlertsOn ? (livePrices ? ['primary', 'secondary'] : ['secondary']) : undefined}
         horizontalLines={alertLevels}
         showValueHeader={false}
         legendPosition="top"

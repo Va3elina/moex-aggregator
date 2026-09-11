@@ -5,6 +5,12 @@
 последние свечи/OI в закешированные ответы.
 
 Вызывается из notify_listener при source="5min".
+
+Последний сегмент ключа — версия цены (см. chart.get_chart_data): ':pub' —
+публичная, цена только на закрытие 19:00 (services/session_close), ':live' —
+админская, прежняя. Новые бары дописываются по правилам своей версии. Ключи
+старого формата (без сегмента) собраны до этого правила — их не трогаем и не
+продлеваем, пусть истекают по TTL.
 """
 import asyncio
 import logging
@@ -19,15 +25,16 @@ from api.database import SessionLocal
 from api.services.chart_live import (append_live_points, append_stretched_price,
                                      strip_live_points, strip_stretched_points)
 from api.services.market_delay import cutoff_for_interval
+from api.services.session_close import publish_rows
 from datetime import date, datetime, time as dt_time, timedelta
 
 log = logging.getLogger(__name__)
 
 
 def _parse_cache_key(key: str) -> dict | None:
-    """Парсит ключ chart:SR:SR:futures:24:FIZ:True:all:None:None → dict."""
+    """Парсит ключ chart:SR:SR:futures:24:FIZ:True:all:None:None:pub → dict."""
     parts = key.split(":")
-    if len(parts) < 10 or parts[0] != "chart":
+    if len(parts) != 11 or parts[0] != "chart" or parts[10] not in ("pub", "live"):
         return None
     return {
         "sec_id": parts[1],
@@ -39,19 +46,26 @@ def _parse_cache_key(key: str) -> dict | None:
         "period": parts[7],
         "date_from": parts[8],
         "date_to": parts[9],
+        "live": parts[10] == "live",
     }
 
 
-def _update_single_entry(db, key: str, cached_response) -> bool:
-    """Обновляет одну запись кеша. Возвращает True если обновлено."""
+def _update_single_entry(db, key: str, cached_response, memo: dict | None = None) -> bool:
+    """Обновляет одну запись кеша. Возвращает True если обновлено.
+
+    memo — общий на проход словарь для session_close.session_bars: у графиков
+    одного актива (разные периоды/срезы) одно и то же окно цен закрытия.
+    """
     params = _parse_cache_key(key)
     if not params:
         return False
 
     sectype = params["sectype"]
+    inst_type = params["inst_type"]
     interval = params["interval"]
     clgroup = params["clgroup"]
     show_oi = params["show_oi"]
+    live = params["live"]
 
     # ── Потолок свежести записи ──────────────────────────────────────────────
     # date_from задан → ручной диапазон (шаринг-ссылка): контент зафиксирован с
@@ -127,7 +141,7 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                 _params["cutoff"] = _cut
 
             new_candles_raw = db.execute(text(f"""
-                SELECT begin_time, open, high, low, close, volume, sec_id
+                SELECT begin_time, open, high, low, close, volume, sec_id, secid
                 FROM candles
                 WHERE sec_id = ANY(:sec_ids) AND interval = :interval
                   AND begin_time > :last_time
@@ -165,6 +179,14 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                     best = best_by_day.get(day, sid)
                     if sid == best:
                         filtered.append(c)
+
+                # Публичная версия: цена только на закрытие 19:00 — тем же
+                # кодом, что в роутере (chart._compute_chart_data). Бары вечера
+                # ещё не опубликованной сессии выпадают и доедут следующим
+                # проходом, когда цена дня станет публичной.
+                if not live:
+                    filtered = publish_rows(db, filtered, sec_ids, inst_type, interval,
+                                            best_by_day, memo=memo)
 
                 # Дописываем свечи (dict, как в chart.py)
                 for c in filtered:
@@ -240,12 +262,14 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
         # Пересобираем свежую live-точку (текущее значение). Делаем это КАЖДЫЙ цикл,
         # даже когда новых закрытых свечей не было — live-точку нужно обновлять
         # каждые 5 минут. ⚠️ Только для записей БЕЗ потолка: у Free-записи (cap)
-        # live-точка = сегодняшний реалтайм мимо tier-гейта.
-        live_added = append_live_points(db, cached_response) if cap is None else False
+        # live-точка = сегодняшний реалтайм мимо tier-гейта. У публичной версии
+        # live-точка только у ОИ — цены под ней нет, её ставит растяжка ниже.
+        live_added = append_live_points(db, cached_response, price=live) if cap is None else False
 
         # Заново продлеваем цену до конца ряда ОИ: часть прежнего хвоста могла
         # стать настоящими свечами, а ОИ тем временем ушёл ещё дальше.
-        stretched_added = append_stretched_price(cached_response) if cap is None else False
+        stretched_added = (append_stretched_price(cached_response, include_live_oi=not live)
+                           if cap is None else False)
 
         # Перезаписываем кеш только если что-то изменилось (новые свечи/OI, добавлена
         # или убрана live-точка) — иначе лишние записи в Redis на каждый NOTIFY.
@@ -286,9 +310,10 @@ def update_chart_caches(source: str = "5min"):
 
     db = SessionLocal()
     updated = 0
+    memo: dict = {}
     try:
         for key, cached_response in entries.items():
-            if _update_single_entry(db, key, cached_response):
+            if _update_single_entry(db, key, cached_response, memo):
                 updated += 1
     finally:
         db.close()

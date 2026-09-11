@@ -2,7 +2,7 @@
 API endpoints для свечей
 С валидацией входных данных
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 
@@ -13,6 +13,7 @@ from api.schemas.validators import validate_safe_id
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits
 from api.services.market_delay import cutoff_for_interval
+from api.services.session_close import is_live_viewer
 
 router = APIRouter(prefix="/api/candles", tags=["candles"])
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api/candles", tags=["candles"])
 @router.get("/{sec_id}", response_model=CandleListResponse)
 def get_candles(
         sec_id: str,
+        request: Request,
         interval: int = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
@@ -28,6 +30,13 @@ def get_candles(
         user = Depends(get_current_user_optional)
 ):
     """Получить свечи по sec_id"""
+
+    # Сырые свечи — только в незамедленной версии (админ). Остальным цена на
+    # сайте одна — закрытие 19:00 (services/session_close). Фронт этой ручкой
+    # не пользуется, а публичной она оставалась прямым путём к живым часовым и
+    # дневным свечам.
+    if not is_live_viewer(user, request):
+        raise HTTPException(status_code=403, detail="Свечи доступны только администраторам")
 
     # Валидация interval
     if interval not in {5, 60, 24}:

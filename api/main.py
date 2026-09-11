@@ -434,14 +434,16 @@ def _warm_chart_cache():
             force = take_chart_refresh_slot()
             for interval, period in _WARM_CHART_COMBOS:
                 for date_to in (None, yesterday):
+                    # Греем только публичную версию цены (':pub', см. chart.py):
+                    # админов единицы, им холодный пересчёт не страшен.
                     key = (f"chart:{sectype}:{sectype}:futures:{interval}:FIZ:True:"
-                           f"{period}:None:{date_to}")
+                           f"{period}:None:{date_to}:pub")
                     if not force and get_gzip(key) is not None:
                         continue
                     try:
                         data = _compute_chart_data(
                             db, sectype, sectype, "futures", interval,
-                            "FIZ", True, period, None, date_to,
+                            "FIZ", True, period, None, date_to, live=False,
                         )
                         set_gzip(key, json.dumps(data, default=str), ttl=DEFAULT_TTL)
                         warmed += 1

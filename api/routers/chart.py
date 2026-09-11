@@ -35,6 +35,7 @@ from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points, append_stretched_price
 from api.services.market_delay import cutoff_for_interval
+from api.services.session_close import is_live_viewer, view_tag, publish_rows, price_at
 from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids, stable_runs
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
@@ -181,8 +182,15 @@ def get_chart_data(
     # порядок задаёт трафик, а не константа в коде.
     record_demand(sectype)
 
+    # Версия цены: админ видит прежний незамедленный график, остальные — цену
+    # только на закрытие 19:00 (services/session_close). Версии живут под
+    # разными ключами (последний сегмент), иначе админский ответ ушёл бы из
+    # кеша всем. cache_updater дописывает каждую по правилам её версии.
+    live = is_live_viewer(user, request)
+
     # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
-    cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"
+    cache_key = (f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:"
+                 f"{period}:{date_from}:{date_to}:{view_tag(live)}")
     # Ответ лежит в кеше УЖЕ СЖАТЫМ и уходит клиенту как есть — ни json.loads →
     # dumps, ни gzip на nginx. На 5м/6м это ~370 мс CPU на каждом хите против
     # ~3 мс (замер 2026-08-10, см. api/cache.py). При 4 ядрах именно эти
@@ -196,7 +204,7 @@ def get_chart_data(
         cache_key,
         lambda: _compute_chart_data(
             db, sec_id, sectype, inst_type, interval,
-            clgroup, show_oi, period, date_from, date_to,
+            clgroup, show_oi, period, date_from, date_to, live=live,
         ),
         ttl=DEFAULT_TTL,
     )
@@ -220,6 +228,7 @@ _DELTA_MAX_AGE_DAYS = 3
 @router.get("/{sec_id}/delta")
 def get_chart_delta(
         sec_id: str,
+        request: Request,
         sectype: str = Query(...),
         inst_type: InstTypeType = Query("futures"),
         interval: int = Query(24),
@@ -263,6 +272,8 @@ def get_chart_delta(
         asset=sectype, interval=interval, clgroup=clgroup,
     )
     effective_end = get_effective_end_date(user, "open_interest")  # None = без задержки
+    # Версия цены — как у полного графика (см. get_chart_data).
+    live = is_live_viewer(user, request)
 
     # Клиент слишком отстал → дельта выродится в пол-истории. Пусть грузит полный
     # ряд (тот как раз лежит в тёплом chart:-кеше).
@@ -291,7 +302,7 @@ def get_chart_delta(
         _p["cutoff"] = _cut
 
     new_candles_raw = db.execute(text(f"""
-        SELECT begin_time, open, high, low, close, volume, sec_id
+        SELECT begin_time, open, high, low, close, volume, sec_id, secid
         FROM candles
         WHERE sec_id = ANY(:sec_ids) AND interval = :interval
           AND begin_time > :since
@@ -312,12 +323,18 @@ def get_chart_delta(
     best_by_day = {day: max(contracts, key=contracts.get)
                    for day, contracts in daily_volume.items() if contracts}
 
+    chosen = [c for c in new_candles_raw if c[6] == best_by_day.get(c[0].date(), c[6])]
+    # Публичная версия: цена только на закрытие 19:00 (ступенька на интрадей,
+    # бар сессии до 19:00 на дневке) — тем же кодом, что полный ответ и кеш.
+    if not live:
+        chosen = publish_rows(db, chosen, sec_ids, inst_type, interval, best_by_day)
+
     candles = [{
         "time": c[0].isoformat(),
         "open": float(c[1] or 0), "high": float(c[2] or 0),
         "low": float(c[3] or 0), "close": float(c[4] or 0),
         "volume": float(c[5] or 0),
-    } for c in new_candles_raw if c[6] == best_by_day.get(c[0].date(), c[6])]
+    } for c in chosen]
 
     # ── Новые закрытые точки OI ──────────────────────────────────────────────
     open_interest = []
@@ -369,7 +386,7 @@ def get_chart_delta(
             "candles": [anchor_c] + candles,
             "open_interest": ([anchor_o] + open_interest) if (show_oi and since_oi is not None) else [],
         }
-        append_live_points(db, mini)
+        append_live_points(db, mini, price=live)
         candles = mini["candles"][1:]
         if mini["open_interest"]:
             open_interest = mini["open_interest"][1:]
@@ -389,6 +406,12 @@ def get_chart_delta(
         anchor = None
         if candles and not candles[-1].get("live"):
             anchor = candles[-1]
+        elif not live:
+            # Публичная версия: якорь — не последняя свеча из БД (это живая
+            # цена), а цена закрытия, действующая в момент since_candle.
+            px = price_at(db, sec_ids, inst_type, interval, since_candle)
+            if px:
+                anchor = {"time": since_candle.isoformat(), "close": px}
         else:
             _ap = {"sec_ids": sec_ids, "interval": interval}
             _acut = ""
@@ -408,10 +431,11 @@ def get_chart_delta(
             live_tail = [c for c in candles if c.get("live")]
             closed = [c for c in candles if not c.get("live")]
             mini = {
+                "interval": interval,
                 "candles": ([anchor] if anchor not in closed else []) + closed,
                 "open_interest": open_interest,
             }
-            if append_stretched_price(mini):
+            if append_stretched_price(mini, include_live_oi=not live):
                 stretched = [c for c in mini["candles"] if c.get("stretched")]
                 candles = closed + stretched + live_tail
 
@@ -419,8 +443,12 @@ def get_chart_delta(
 
 
 def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
-                        clgroup, show_oi, period, date_from, date_to):
-    """Тяжёлый расчёт данных графика (вызывается через single-flight выше)."""
+                        clgroup, show_oi, period, date_from, date_to, live=True):
+    """Тяжёлый расчёт данных графика (вызывается через single-flight выше).
+
+    live=False — публичная версия цены: только закрытие 19:00
+    (services/session_close). live=True — прежняя, для админов.
+    """
     log.info(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
     total_start = time.time()
 
@@ -649,6 +677,16 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     sorted_candles = sorted(best_by_time.values(), key=lambda x: x[0])
     log.info(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 
+    # 6e. Публичная версия цены (все, кроме админов): бар сессии до 19:00
+    # вместо дневной свечи, цена-ступенька вместо интрадей-баров
+    # (services/session_close). До back-adjust (7.5/7.6): множители считаются
+    # по тем ценам, которые увидит пользователь.
+    if not live and sorted_candles:
+        t0 = time.time()
+        sorted_candles = publish_rows(db, sorted_candles, sec_ids, inst_type, interval,
+                                      best_contract_by_day)
+        log.info(f"[6e] public price: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
+
     # 7. Запрос OI
     oi_raw = []
     if show_oi and has_oi_data and sorted_candles:
@@ -807,13 +845,20 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     # OI с задержкой 24ч (date_to подменён на effective_end выше) — для него
     # live-точку НЕ добавляем, иначе реалтайм утечёт мимо tier-гейта. Исторические
     # запросы (date_from/date_to заданы явно) тоже без live-точки.
+    # Публичная версия: live-точка только у ОИ (price=False) — цены «сейчас»
+    # наружу нет, её место займёт растяжка ниже.
     if date_from is None and date_to is None:
-        append_live_points(db, response)
+        append_live_points(db, response, price=live)
 
-    # Цена придержана на 15 минут, ОИ актуален → правее последней свечи висят
-    # точки ОИ без цены под ними. Продлеваем последнюю известную цену на этот
-    # отрезок (флаг stretched), иначе график выглядит оборванным. Когда свеча
-    # доедет, растянутая точка на том же времени заменится фактической.
-    append_stretched_price(response)
+    # Цена придержана (у админа на 15 минут, у остальных — до закрытия 19:00),
+    # ОИ актуален → правее последней свечи висят точки ОИ без цены под ними.
+    # Продлеваем последнюю известную цену на этот отрезок (флаг stretched),
+    # иначе график выглядит оборванным. Когда свеча доедет, растянутая точка на
+    # том же времени заменится фактической.
+    append_stretched_price(response, include_live_oi=not live)
 
+    # Какую цену несёт ответ: 'live' — прежнюю (админ), 'pub' — только закрытие
+    # 19:00. Фронт по нему решает, рисовать ли интрадей-цену свечами (ступенька
+    # в свечах не читается).
+    response["price_view"] = view_tag(live)
     return response

@@ -2,11 +2,13 @@
 API endpoints для инструментов
 С валидацией входных данных
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from api.database import get_db
 from api.models import Instrument
+from api.routers.auth import get_current_user_optional
+from api.services.session_close import is_live_viewer, view_tag, published_end
 from api.schemas import InstrumentResponse, InstrumentListResponse
 from api.schemas.validators import (
     InstrumentsFilterParams,
@@ -19,21 +21,91 @@ from api.schemas.validators import (
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
 
 
+# «Изм. %» пикера в админской версии: последняя дневная свеча к предыдущей
+# ЭТОГО ЖЕ контракта (дневная свеча сегодняшнего дня живая).
+_CHANGE_JOIN_LIVE = """
+        LEFT JOIN (
+            -- Изменение цены за последний ТОРГОВЫЙ (будний) день — ВНУТРИ одного
+            -- контракта (= закрытие предыдущего дня ЭТОГО ЖЕ фьючерса).
+            -- ⚠️ Для фьючерсов prev_close НЕЛЬЗЯ брать LAG по sec_id (перпетуал-
+            -- серия): в окне ролловера под одним sec_id два dated-контракта
+            -- (candles.secid), и LAG прыгает между ними → ложные −15…−20% (доказано
+            -- на ролловере июн-2025: CRM old −15.67% vs within-contract −0.86%).
+            -- Поэтому LAG/ROW_NUMBER партиционируем по secid, затем per sec_id
+            -- берём АКТИВНЫЙ контракт (свежайшая дата, тай-брейк по объёму).
+            -- Для акций secid == sec_id → поведение прежнее. DOW 1-5 держит
+            -- ИЗМ.% и ОБЪЁМ на одном «последнем торговом дне».
+            SELECT DISTINCT ON (sec_id) sec_id,
+                   (close - prev_close) / NULLIF(prev_close, 0) * 100.0 AS change_pct
+            FROM (
+                SELECT sec_id, secid, close, begin_time, volume,
+                       LAG(close)   OVER (PARTITION BY secid ORDER BY begin_time) AS prev_close,
+                       ROW_NUMBER() OVER (PARTITION BY secid ORDER BY begin_time DESC) AS rn
+                FROM candles
+                WHERE interval = 24
+                  AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
+                  AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
+                  AND close > 0
+            ) c
+            WHERE rn = 1
+            ORDER BY sec_id, begin_time DESC, volume DESC NULLS LAST
+        ) d ON d.sec_id = i.sec_id
+"""
+
+# Публичная версия «Изм. %»: закрытие 19:00 последней опубликованной будней
+# сессии к закрытию 19:00 предыдущей будней сессии того же контракта (secid).
+# Цена 19:00 — последняя 5-минутка до 19:00 (services/session_close). Два спуска
+# по индексу (sec_id, interval, begin_time) на инструмент вместо оконных
+# функций по всей таблице. В тексте SQL нет комментариев с двоеточием: у
+# text() они превращаются в бинд-параметры.
+_CHANGE_JOIN_PUB = """
+        LEFT JOIN LATERAL (
+            SELECT (c1.close - c0.close) / NULLIF(c0.close, 0) * 100.0 AS change_pct
+            FROM (
+                SELECT begin_time, close, secid FROM candles
+                WHERE sec_id = i.sec_id AND interval = 5
+                  AND begin_time >= :win_start AND begin_time < :pub_end
+                  AND begin_time::time < time '19:00'
+                  AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
+                  AND close > 0 AND volume > 0
+                ORDER BY begin_time DESC
+                LIMIT 1
+            ) c1
+            CROSS JOIN LATERAL (
+                SELECT close FROM candles
+                WHERE sec_id = i.sec_id AND secid = c1.secid AND interval = 5
+                  AND begin_time >= :win_start AND begin_time < c1.begin_time::date
+                  AND begin_time::time < time '19:00'
+                  AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
+                  AND close > 0 AND volume > 0
+                ORDER BY begin_time DESC
+                LIMIT 1
+            ) c0
+        ) d ON true
+"""
+
+
 @router.get("", response_model=InstrumentListResponse)
 def get_instruments(
+        request: Request,
         type: InstTypeType | None = Query(None, description="Фильтр по типу: futures или stock"),
         group: str | None = Query(None, max_length=100, description="Фильтр по группе: Валюта, Акции и т.д."),
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        user = Depends(get_current_user_optional),
 ):
     """Получить список всех инструментов, отсортированных по объёму торгов"""
+    from datetime import timedelta
     from sqlalchemy import text
     from api.cache import get_or_set
+
+    # Версия цены для «Изм. %»: админ — прежняя, остальные — закрытие 19:00.
+    live = is_live_viewer(user, request)
 
     # Кэш: запрос делает два оконных подзапроса по candles (DISTINCT ON + LAG/
     # ROW_NUMBER за 14 дней) → 2.3с на холодных страницах, а пикер дёргается
     # почти на каждом заходе. Данные меняются раз в день на EOD, поэтому TTL
-    # 5 минут полностью безопасен. Ключ учитывает оба фильтра.
-    cache_key = f"instruments:{type or 'all'}:{(group or 'all')[:100]}"
+    # 5 минут полностью безопасен. Ключ учитывает оба фильтра и версию цены.
+    cache_key = f"instruments:{view_tag(live)}:{type or 'all'}:{(group or 'all')[:100]}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -50,6 +122,14 @@ def get_instruments(
         params["group"] = group.strip()[:100]
 
     where_clause = "WHERE " + " AND ".join(filters)
+
+    if live:
+        change_join = _CHANGE_JOIN_LIVE
+    else:
+        change_join = _CHANGE_JOIN_PUB
+        pub_end = published_end()
+        params["pub_end"] = pub_end
+        params["win_start"] = pub_end - timedelta(days=14)
 
     rows = db.execute(text(f"""
         SELECT i.sec_id, i.sectype, i.name, i.type, i."group", i.iss_code,
@@ -77,32 +157,7 @@ def get_instruments(
               AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY sec_id, begin_time DESC, volume DESC NULLS LAST
         ) v ON v.sec_id = i.sec_id
-        LEFT JOIN (
-            -- Изменение цены за последний ТОРГОВЫЙ (будний) день — ВНУТРИ одного
-            -- контракта (= закрытие предыдущего дня ЭТОГО ЖЕ фьючерса).
-            -- ⚠️ Для фьючерсов prev_close НЕЛЬЗЯ брать LAG по sec_id (перпетуал-
-            -- серия): в окне ролловера под одним sec_id два dated-контракта
-            -- (candles.secid), и LAG прыгает между ними → ложные −15…−20% (доказано
-            -- на ролловере июн-2025: CRM old −15.67% vs within-contract −0.86%).
-            -- Поэтому LAG/ROW_NUMBER партиционируем по secid, затем per sec_id
-            -- берём АКТИВНЫЙ контракт (свежайшая дата, тай-брейк по объёму).
-            -- Для акций secid == sec_id → поведение прежнее. DOW 1-5 держит
-            -- ИЗМ.% и ОБЪЁМ на одном «последнем торговом дне».
-            SELECT DISTINCT ON (sec_id) sec_id,
-                   (close - prev_close) / NULLIF(prev_close, 0) * 100.0 AS change_pct
-            FROM (
-                SELECT sec_id, secid, close, begin_time, volume,
-                       LAG(close)   OVER (PARTITION BY secid ORDER BY begin_time) AS prev_close,
-                       ROW_NUMBER() OVER (PARTITION BY secid ORDER BY begin_time DESC) AS rn
-                FROM candles
-                WHERE interval = 24
-                  AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
-                  AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
-                  AND close > 0
-            ) c
-            WHERE rn = 1
-            ORDER BY sec_id, begin_time DESC, volume DESC NULLS LAST
-        ) d ON d.sec_id = i.sec_id
+        {change_join}
         {where_clause}
         ORDER BY daily_volume DESC
     """), params).fetchall()
