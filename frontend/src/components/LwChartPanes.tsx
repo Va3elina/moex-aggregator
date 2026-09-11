@@ -31,7 +31,7 @@ import ChartWatermark from './ChartWatermark';
 import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
 import { VolumeProfilePrimitive, type VolumeProfileOptions } from './chart/volumeProfilePrimitive';
 import { BandsPrimitive } from './chart/bandsPrimitive';
-import { createPriceLineBadge, RenderTickPrimitive, type PriceLineBadge } from './chart/priceLineBadge';
+import { alertTone, createPriceLineBadge, RenderTickPrimitive, type PriceLineBadge } from './chart/priceLineBadge';
 import {
   ChartPrefsCtx, hideTvLogo, ruTickMark, type LwSeries,
   type LwDrawing, type LwDrawTool, type LwDrawPoint, type LwDash,
@@ -156,10 +156,9 @@ function themeColors(dark: boolean) {
     grid: dark ? 'rgba(245,241,232,0.07)' : 'rgba(10,10,10,0.06)',
     cross: dark ? 'rgba(245,241,232,0.42)' : 'rgba(10,10,10,0.42)',
     lab: dark ? '#26262B' : '#E7E2D6',
-    // Подпись уровня уведомления на оси: СЕРАЯ, чтобы не путалась с пилсом
-    // текущего значения (тот в цвете серии).
-    alertLab: dark ? '#4A4A52' : '#BDB8AD',
-    alertLabText: dark ? '#E7E2D6' : '#26262B',
+    // Уведомление: пунктир, подпись на оси и бейдж одного серого (alertTone).
+    alertLab: alertTone(dark).bg,
+    alertLabText: alertTone(dark).fg,
   };
 }
 
@@ -2502,7 +2501,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
           // Подпись «уведомление» на поле не рисуем: её роль играет бейдж с
           // колокольчиком у шкалы. На оси остаётся только значение, серым.
           const al = api.createPriceLine({
-            price: pl.price, color: resolveColor(bx, pl.color ?? 'var(--accent)'),
+            price: pl.price, color: tc.alertLab,
             lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: pl.title ?? '',
             axisLabelColor: tc.alertLab, axisLabelTextColor: tc.alertLabText,
           });
@@ -2714,7 +2713,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       const tc = themeColors(dark);
       for (const reg of lineRegRef.current) {
         const box = boxes[reg.pane];
-        const c = box && probeColor(box, reg.token);
+        const c = reg.alert ? tc.alertLab : (box && probeColor(box, reg.token));
         const extra = reg.alert ? { axisLabelColor: tc.alertLab, axisLabelTextColor: tc.alertLabText } : {};
         if (c) { try { reg.line.applyOptions({ color: c, ...extra }); } catch { /* линия снята с серией */ } }
       }

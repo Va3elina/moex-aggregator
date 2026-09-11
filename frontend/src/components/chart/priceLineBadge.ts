@@ -17,6 +17,15 @@ import type {
 /** Зазор между бейджем и кромкой шкалы. Фиксированный по ТЗ. */
 const AXIS_GAP = 6;
 
+/** Единый серый уведомления: фон бейджа, пунктир уровня и подпись на оси.
+ *  Серый, чтобы не путать с пилсом текущего значения (тот в цвете серии). */
+export function alertTone(dark: boolean) {
+  return {
+    bg: dark ? '#4A4A52' : '#BDB8AD',
+    fg: dark ? '#E7E2D6' : '#26262B',
+  };
+}
+
 const BELL_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
   + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
@@ -68,14 +77,13 @@ export function createPriceLineBadge(o: PriceLineBadgeOptions): PriceLineBadge {
 
   let dark = true;
   const paint = (hover: boolean) => {
-    const bg = dark ? '#26262B' : '#E7E2D6';
-    const fg = dark ? '#9A958C' : '#6B6760';
+    const { bg, fg } = alertTone(dark);
     el.style.background = bg;
     bell.style.color = fg;
-    // Разделитель ячеек — тонкая линия того же тона, что и текст оси.
-    x.style.borderLeft = `1px solid ${dark ? 'rgba(245,241,232,0.10)' : 'rgba(10,10,10,0.10)'}`;
+    // Разделитель ячеек — тонкая линия цвета иконок.
+    x.style.borderLeft = `1px solid ${dark ? 'rgba(231,226,214,0.18)' : 'rgba(38,38,43,0.18)'}`;
     x.style.color = hover ? 'var(--accent, #FF5C2B)' : fg;
-    x.style.background = hover ? (dark ? 'rgba(245,241,232,0.06)' : 'rgba(10,10,10,0.05)') : 'transparent';
+    x.style.background = hover ? (dark ? 'rgba(231,226,214,0.10)' : 'rgba(38,38,43,0.08)') : 'transparent';
   };
   x.addEventListener('mouseenter', () => paint(true));
   x.addEventListener('mouseleave', () => paint(false));
