@@ -9,7 +9,9 @@
 
 Токен: YANDEX_METRIKA_TOKEN — OAuth-токен со scope metrika:read от аккаунта,
 у которого есть доступ к счётчику. Без токена модуль спит (connected=False),
-страница показывает инструкцию и наш трекер как запасной вариант.
+страница показывает инструкцию и наш трекер как запасной вариант. Токен есть,
+но Метрика его не принимает (живёт около полугода) — тоже connected=False,
+плюс token_error с её ответом; такой ответ не кэшируется.
 
 «Реальное время»: Метрика обновляет отчёты за сегодня с задержкой в несколько
 минут, поэтому кэшируем на 5 минут — чаще спрашивать бессмысленно, а лимит
@@ -49,6 +51,10 @@ def is_connected() -> bool:
     return _token() is not None
 
 
+class MetricaAuthError(RuntimeError):
+    """Метрика не принимает токен: истёк, отозван или нет доступа к счётчику."""
+
+
 def _get(url: str, params: dict) -> dict:
     token = _token()
     base = {
@@ -68,7 +74,10 @@ def _get(url: str, params: dict) -> dict:
             msg = r.json().get("message", "")
         except Exception:
             msg = r.text[:200]
-        raise RuntimeError(f"Метрика ответила {r.status_code}: {msg}")
+        # 403 invalid_token — токен истёк или отозван, 403 access_denied — у
+        # аккаунта нет доступа к счётчику. Оба лечатся только новым токеном.
+        err = MetricaAuthError if r.status_code in (401, 403) else RuntimeError
+        raise err(f"Метрика ответила {r.status_code}: {msg}")
     return r.json()
 
 
@@ -164,6 +173,7 @@ def _compute(d0: date, d1: date, pd0: date, pd1: date) -> dict:
         jobs[key] = (lambda dim=dim, mets=mets: _table(d0, d1, dim, mets))
 
     result: dict[str, Any] = {"connected": True, "errors": {}}
+    auth_error: Optional[MetricaAuthError] = None
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {k: pool.submit(fn) for k, fn in jobs.items()}
         for k, f in futures.items():
@@ -173,6 +183,12 @@ def _compute(d0: date, d1: date, pd0: date, pd1: date) -> dict:
                 log.warning(f"metrica {k} failed: {e}")
                 result[k] = None
                 result["errors"][k] = str(e)[:300]
+                if isinstance(e, MetricaAuthError):
+                    auth_error = e
+    # Токен не принят — исключением, чтобы get_or_compute это не закэшировал:
+    # после замены токена блок оживает сразу, а не через 5 минут.
+    if auth_error is not None:
+        raise auth_error
     return result
 
 
@@ -181,5 +197,8 @@ def get_report(d0: date, d1: date, pd0: date, pd1: date) -> dict:
     if not is_connected():
         return {"connected": False, "counter": _counter()}
     key = f"metrica:v1:{_counter()}:{d0}:{d1}"
-    data = get_or_compute(key, lambda: _compute(d0, d1, pd0, pd1), ttl=CACHE_TTL)
+    try:
+        data = get_or_compute(key, lambda: _compute(d0, d1, pd0, pd1), ttl=CACHE_TTL)
+    except MetricaAuthError as e:
+        return {"connected": False, "token_error": str(e), "counter": _counter()}
     return {**data, "counter": _counter()}
