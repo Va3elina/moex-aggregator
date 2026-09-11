@@ -34,6 +34,7 @@ import {
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useAssetViewTracking } from '../../hooks/useAssetViewTracking';
 import { useLivePricesState } from '../../hooks/useLivePrices';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { type PeriodConfig, makePeriodId } from '../../components/seasonality/periodConfig';
@@ -83,6 +84,7 @@ export default function MobileSeasonalityPage() {
   // держит mode+chartType раздельно). Настройки серий (медиана / без дивгэпов)
   // живут per-period (PeriodConfig), как и на десктопе.
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
+  useAssetViewTracking('seasonality', selectedStock);
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
   // «Часы» (intraday) в мобильном списке не предлагаются, но режим мог

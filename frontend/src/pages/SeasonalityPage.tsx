@@ -26,6 +26,7 @@ import LayersButton from '../components/LayersButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useAssetViewTracking } from '../hooks/useAssetViewTracking';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { getSeasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
@@ -77,6 +78,7 @@ export default function SeasonalityPage() {
   // Stock selector — выбранная бумага персистится (вернувшись, видим последнюю,
   // а не дефолтный Сбер). selectedStock + selectedName ставятся вместе.
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
+  useAssetViewTracking('seasonality', selectedStock);
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [isModalOpen, setIsModalOpen] = useState(false);
 

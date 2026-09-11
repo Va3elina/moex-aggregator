@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS analytics_events (
     event_id    BIGSERIAL PRIMARY KEY,
     user_id     INT REFERENCES users(id) ON DELETE SET NULL,  -- NULL для гостей
     session_id  VARCHAR(36) NOT NULL,                          -- UUID на client (sessionStorage)
+    visitor_id  VARCHAR(36),                                   -- постоянный ID браузера (localStorage+cookie), см. migrations/096
     event_type  VARCHAR(50) NOT NULL,                          -- pageview / indicator_view / chart_export / ...
     event_path  VARCHAR(255),                                  -- e.g. /seasonality, /heatmap (NULL если не applicable)
     payload     JSONB,                                          -- {secid, mode, period, ...}

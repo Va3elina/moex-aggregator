@@ -38,6 +38,7 @@ import { getDefaultPeriod } from '../../config/accessControl';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useAssetViewTracking } from '../../hooks/useAssetViewTracking';
 import { parseOiDeepLink } from '../../utils/oiDeepLink';
 
 type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
@@ -104,6 +105,7 @@ export default function MobileOpenInterestPage() {
   const [searchParams] = useSearchParams();
   const [selectedInstrument, setSelectedInstrument] = useState(
     () => searchParams.get('instrument') || 'SR');
+  useAssetViewTracking('oi', selectedInstrument);
   const [instrumentName, setInstrumentName] = useState(
     () => (searchParams.get('instrument') ? '' : 'Сбербанк'));
   // Актуальный фронт-контракт ('BRN6') — показываем как тикер вместо обрезанного

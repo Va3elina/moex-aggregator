@@ -2,30 +2,28 @@
  * AdminStatsPage — admin-only страница со статистикой использования сайта.
  *
  * Source endpoints (все role=admin):
- *   GET /api/analytics/stats        — summary + trends (line chart) + top lists
- *   GET /api/analytics/alerts-stats — трекинг алертов
- *   GET /api/analytics/users        — таблица пользователей (+фильтр платных)
+ *   GET /api/analytics/stats        — сводка + динамика + топы
+ *   GET /api/analytics/alerts-stats — трекинг уведомлений
+ *   GET /api/analytics/users        — таблица пользователей
  *
- * Структура (вертикально):
- *  1. 4 summary cards (Уникальные / Сессии / AvgTime / Events) + trends chart
- *  2. Top lists (pages/instruments/exports/modes)
- *  3. Alerts — жизненный цикл + текущее состояние
- *  4. Users — фильтр платные/бесплатные/админы, drill-down в /admin/users/:id
+ * Определения метрик переписаны 2026-09-11 после сверки с Яндекс Метрикой
+ * (см. шапку /stats в api/routers/analytics.py): посетитель = аккаунт или
+ * постоянный ID браузера, визит = разрыв 30 минут, время = только пока человек
+ * активен, дни по Москве, админы по умолчанию исключены.
  *
- * У каждой метрики — HelpTooltip (icon="info") с честным описанием того,
- * как она считается. Тексты — в METRIC_HINTS, менять там же.
+ * У каждой метрики — HelpTooltip «?» с описанием, как она считается. Тексты
+ * в METRIC_HINTS, менять там же.
  *
- * При переключении периода/сегмента старые данные НЕ сбрасываются в скелетоны:
- * контент приглушается (opacity) до прихода свежих — stale-while-revalidate.
- * Бэкенд дополнительно кэширует /stats в Redis (TTL 3 мин).
+ * Все фильтры (период, сегмент, устройство, фильтры таблицы пользователей)
+ * сохраняются в localStorage: после перехода в карточку пользователя и назад
+ * ничего не сбрасывается.
  *
- * Раньше были блоки Realtime/Retention/A/B (удалены 2026-05-13) и Воронка
- * конверсии (удалена 2026-07-16 вместе с эндпоинтом — пользы не давала,
- * а стоила до 5 тяжёлых SQL-запросов на каждое переключение периода).
+ * При переключении периода старые данные не сбрасываются в скелетоны:
+ * контент приглушается до прихода свежих. Бэкенд кэширует /stats на 3 минуты.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -33,6 +31,7 @@ import SimpleChart from '../components/SimpleChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { useAuth } from '../contexts/AuthContext';
+import { usePersistedState } from '../hooks/usePersistedState';
 import {
   getAnalyticsStats,
   listAdminUsers,
@@ -42,52 +41,179 @@ import type {
   AnalyticsStats,
   AdminUser,
   AlertsStats,
+  AdminRange,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
-// ПОДСКАЗКИ МЕТРИК — короткие честные описания «как это посчитано».
-// Показываются по hover (desktop) / tap (mobile) на иконке «i» у метрики.
+// ПОДСКАЗКИ МЕТРИК — как именно посчитана каждая цифра.
 // ════════════════════════════════════════════════════════════════════════════
 
 const METRIC_HINTS = {
-  uniques:
-    'Уникальные посетители за период. Авторизованный считается по аккаунту (одинаково на всех устройствах), гость — по вкладке браузера: ID живёт, пока открыта вкладка. Один человек может задвоиться: гостевая сессия до входа + аккаунт после. Дельта — сравнение с предыдущим таким же периодом.',
-  sessions:
-    'Сессия — открытая вкладка сайта: ID создаётся при заходе и умирает при закрытии вкладки (обновление страницы — та же сессия, новая вкладка — новая). Считаются сессии, у которых за период было хотя бы одно событие.',
+  metrica:
+    'Цифры здесь и в Яндекс Метрике считаются по-разному, полного совпадения не будет. '
+    + '1) До 11.09.2026 наш трекер писал только тех, кто нажал «Окей» в баннере cookies, а Метрика видит всех. Поэтому за старые периоды у нас меньше людей. '
+    + '2) Метрика узнаёт браузер по своей cookie, у нас с 11.09.2026 так же. Раньше гость у нас считался по вкладке. '
+    + '3) Визит в обеих системах заканчивается после 30 минут бездействия. '
+    + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
+    + '5) Метрика не отделяет админов, а мы по умолчанию их исключаем. '
+    + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
+  period:
+    'Дни по московскому времени. Дельты на карточках сравнивают с таким же числом дней сразу перед выбранным периодом. Сырые события хранятся 180 дней, более ранние периоды будут пустыми.',
+  segment:
+    '«Все без админов» — вариант по умолчанию: вкладки админов открыты часами и раньше давали пятую часть всего времени на сайте. Авторизованные и гости определяются по посетителю: гость, который потом вошёл, считается авторизованным.',
+  visitors:
+    'Сколько разных людей было на сайте. Вошедший в аккаунт считается по аккаунту на всех устройствах. Гость — по постоянному ID браузера, он живёт год, как cookie Метрики. События гостя до входа приклеиваются к его аккаунту, поэтому человек не двоится. До 11.09.2026 ID браузера не было, гость считался по вкладке: старые периоды немного завышены.',
+  visits:
+    'Визит — серия действий одного посетителя. Пауза дольше 30 минут начинает новый визит, как в Метрике. Несколько вкладок одного человека одновременно дают один визит.',
+  pageviews:
+    'Переходы между страницами сайта. Смена актива или вкладки внутри страницы сюда не входит.',
   avg_time:
-    'Средняя длительность сессии: сумма пауз между её событиями, пауза длиннее 5 минут учитывается как 5 минут (стандарт веб-аналитики). Пока вкладка на экране, раз в 60 сек уходит heartbeat. Сессии с одним событием считаются как 0 сек и тоже входят в среднее.',
-  events:
-    'Все зафиксированные события за период: просмотры страниц, выборы тикера, экспорты графиков, переключения темы, heartbeat-пульс и события оплаты.',
+    'Среднее время визита: от первого до последнего действия. Пока вкладка на экране и человек двигает мышью, листает или нажимает клавиши, раз в минуту уходит сигнал присутствия. Через 5 минут без действий сигнал останавливается. Строка ниже — медиана: половина визитов короче неё. Среднее тянут вверх редкие длинные визиты.',
+  bounce:
+    'Доля визитов, где был один просмотр страницы и меньше 15 секунд. Так же считает Метрика. Здесь рост — плохо, поэтому цвета дельты перевёрнуты.',
+  returning:
+    'Посетители, которые приходили хотя бы в 2 разных дня выбранного периода. Процент — от всех посетителей. На периоде в 1 день всегда 0. До 11.09.2026 гостей узнавали только по вкладке, поэтому их возвраты за старые периоды почти не видны.',
   trends:
-    'Уникальные посетители и сессии по дням. Сумма дневных уникальных больше цифры «за период» — это нормально: один посетитель активен в несколько дней. Дни без событий показаны нулями.',
+    'Посетители и визиты по дням, по московскому времени. Сумма дневных посетителей больше цифры за период: один человек приходит в разные дни. Дни без данных показаны нулями.',
   top_pages:
-    'Число просмотров (pageview) за период — каждый переход по страницам сайта, не уникальные посетители.',
-  top_instruments:
-    'Сколько раз тикер выбирали в поиске инструмента за период.',
+    'Главная цифра — сколько разных посетителей открыли страницу. Серая — сколько всего было просмотров.',
+  top_assets:
+    'Какие активы реально смотрят. Считается любой показ актива на графике ОИ, Сезонности и Репо: из поиска, по ссылке или сохранённый с прошлого раза. Главная цифра — разные посетители, серая — показы. Собирается с 11.09.2026, за более ранние даты список пуст.',
+  top_search:
+    'Что выбирают в окне поиска инструмента. Это интерес к поиску, а не все просмотры: актив по умолчанию и открытия по ссылке сюда не попадают. Главная цифра — выборы, серая — разные посетители.',
+  sources:
+    'Откуда начался визит, по сайту-источнику первой страницы. Прямые — источник не передан: закладка, ввод адреса, часть приложений вроде Telegram. Внутренние — визит начался с перехода внутри сайта, например после паузы больше 30 минут в той же вкладке. Метки utm показаны отдельно.',
+  devices:
+    'Посетители по типу устройства, определяется по браузеру. Один человек с телефона и компьютера попадёт в обе строки.',
   top_exports:
-    'Скачивания графиков в PNG за период, по индикаторам.',
+    'Скачивания графиков в PNG по индикаторам. Главная цифра — скачивания, серая — разные посетители.',
   modes:
-    'Переключения режима отображения на странице «Сезонность» за период.',
+    'Переключения режима на странице Сезонность. Главная цифра — переключения, серая — разные посетители.',
   alerts_section:
-    '«Поставили / Убрали / Пауза / Возобновили» — события за выбранный период. «Активных сейчас» и «Хоть раз сработали» — текущее состояние, от периода не зависят.',
+    'Первые четыре карточки — события за выбранный период. «Активных сейчас», «Хоть раз сработали», «По источнику» и топ активов — снимок на текущий момент, от периода не зависят.',
+  alerts_created: 'Сколько уведомлений пользователи создали за период.',
+  alerts_deleted: 'Сколько уведомлений удалили за период.',
+  alerts_paused: 'Сколько раз уведомления ставили на паузу за период.',
+  alerts_resumed: 'Сколько раз уведомления снимали с паузы за период.',
   alerts_active:
-    'Число уведомлений со статусом «активен» прямо сейчас — снимок текущего состояния, не за период.',
+    'Число уведомлений со статусом «активен» прямо сейчас. Снимок текущего состояния, не за период.',
   alerts_fired:
-    'Сколько из существующих уведомлений хоть раз срабатывали за всю историю. Процент — доля от активных сейчас (может быть >100%, если сработавшие уведомления стоят на паузе).',
+    'Сколько из существующих уведомлений хоть раз срабатывали за всю историю. Процент — доля от активных сейчас. Может быть больше 100%, если сработавшие уведомления стоят на паузе.',
+  alerts_source: 'Активные уведомления прямо сейчас по разделу сайта: ОИ или фонды.',
+  alerts_top:
+    'Активы, на которые прямо сейчас стоит больше всего активных уведомлений. Цифра — число уведомлений. От периода не зависит.',
   users_section:
-    'Только зарегистрированные аккаунты. Сессии и события — за выбранный период и только у согласившихся на cookie: у отказавших там нули при реальных визитах. «Последняя активность» — за всё время и видна у всех: события + входы + обновление сессии. «Платные» — активная подписка прямо сейчас.',
+    'Только зарегистрированные аккаунты. Подписка и фильтры по ней — текущее состояние, от периода не зависят. Визиты и время — за выбранный период, по действиям под аккаунтом, считаются так же, как в сводке. Последняя активность — за всё время и видна даже у тех, кто отказался от статистики: учитываются входы и обновление сессии.',
+  users_filter:
+    'Платные — подписка куплена и активна. Инвайт — доступ только по подарочной ссылке. Бывшие платные — сейчас без подписки, но раньше платили. Не дошли до оплаты — начинали оплату, но ни разу не заплатили. Цифра в скобках — сколько людей в фильтре по всей базе.',
 } as const;
+
+// ════════════════════════════════════════════════════════════════════════════
+// ПЕРИОДЫ — пресеты и произвольный диапазон, всё в московских датах
+// ════════════════════════════════════════════════════════════════════════════
+
+type Preset = 'today' | 'yesterday' | '7d' | '30d' | 'this_month' | 'last_month' | '90d' | '180d' | '365d' | 'custom';
+
+const PRESET_OPTIONS: { key: Preset; label: string }[] = [
+  { key: 'today', label: 'Сегодня' },
+  { key: 'yesterday', label: 'Вчера' },
+  { key: '7d', label: '7 дней' },
+  { key: '30d', label: '30 дней' },
+  { key: 'this_month', label: 'Этот месяц' },
+  { key: 'last_month', label: 'Прошлый месяц' },
+  { key: '90d', label: '90 дней' },
+  { key: '180d', label: '180 дней' },
+  { key: '365d', label: 'Год' },
+  { key: 'custom', label: 'Свой период' },
+];
+
+function mskToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(new Date());
+}
+
+function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function presetRange(preset: Preset, from: string, to: string): Required<Pick<AdminRange, 'dateFrom' | 'dateTo'>> {
+  const today = mskToday();
+  const monthStart = `${today.slice(0, 8)}01`;
+  switch (preset) {
+    case 'today': return { dateFrom: today, dateTo: today };
+    case 'yesterday': { const y = addDays(today, -1); return { dateFrom: y, dateTo: y }; }
+    case '30d': return { dateFrom: addDays(today, -29), dateTo: today };
+    case 'this_month': return { dateFrom: monthStart, dateTo: today };
+    case 'last_month': {
+      const lastDay = addDays(monthStart, -1);
+      return { dateFrom: `${lastDay.slice(0, 8)}01`, dateTo: lastDay };
+    }
+    case '90d': return { dateFrom: addDays(today, -89), dateTo: today };
+    case '180d': return { dateFrom: addDays(today, -179), dateTo: today };
+    case '365d': return { dateFrom: addDays(today, -364), dateTo: today };
+    case 'custom': {
+      const a = from || addDays(today, -6);
+      const b = to || today;
+      return a <= b ? { dateFrom: a, dateTo: b } : { dateFrom: b, dateTo: a };
+    }
+    case '7d':
+    default: return { dateFrom: addDays(today, -6), dateTo: today };
+  }
+}
+
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function fmtRange(a: string, b: string): string {
+  return a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`;
+}
+
+// Человеческие имена разделов для топа страниц. Неизвестный путь показывается как есть.
+const PAGE_NAMES: Record<string, string> = {
+  '/': 'Главная',
+  '/oi': 'Открытый интерес',
+  '/heatmap': 'Карта рынка',
+  '/strength': 'Сила рынка',
+  '/funds-money': 'Деньги в фондах',
+  '/fund-trades': 'Покупки фондов',
+  '/seasonality': 'Сезонность',
+  '/repo': 'Репо в акциях',
+  '/pricing': 'Тарифы',
+  '/profile': 'Профиль',
+  '/login': 'Вход',
+};
+
+const INDICATOR_NAMES: Record<string, string> = {
+  oi: 'ОИ',
+  seasonality: 'Сезонность',
+  repo: 'Репо',
+  funds: 'Фонды',
+};
+
+const DEVICE_NAMES: Record<string, string> = {
+  desktop: 'Компьютер',
+  mobile: 'Телефон',
+  tablet: 'Планшет',
+  unknown: 'Не определено',
+};
 
 export default function AdminStatsPage() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [days, setDays] = useState<number>(7);
-  const [segment, setSegment] = useState<string>('all');
-  const [device, setDevice] = useState<string>('all');
+  const [preset, setPreset] = usePersistedState<Preset>('frame:admin:stats:preset', '7d');
+  const [customFrom, setCustomFrom] = usePersistedState<string>('frame:admin:stats:from', '');
+  const [customTo, setCustomTo] = usePersistedState<string>('frame:admin:stats:to', '');
+  const [segment, setSegment] = usePersistedState<string>('frame:admin:stats:segment', 'all');
+  const [device, setDevice] = usePersistedState<string>('frame:admin:stats:device', 'all');
   const [data, setData] = useState<AnalyticsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const range = useMemo(() => presetRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   // Guard: только admin
   useEffect(() => {
@@ -97,23 +223,23 @@ export default function AdminStatsPage() {
     }
   }, [authLoading, user, navigate]);
 
-  // Fetch summary stats. Старые данные НЕ сбрасываем (stale-while-revalidate):
-  // при переключении периода контент приглушается, а не мигает скелетонами.
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     setLoading(true);
     setError(null);
-    getAnalyticsStats({ days, segment, device })
+    getAnalyticsStats({ ...range, segment, device })
       .then(setData)
       .catch((e: Error) => setError(e.message || 'Не удалось загрузить статистику'))
       .finally(() => setLoading(false));
-  }, [user, days, segment, device]);
+  }, [user, range, segment, device]);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
   const refreshing = loading && data !== null;
+  const s = data?.summary;
+  const p = data?.prev_summary;
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
@@ -137,11 +263,11 @@ export default function AdminStatsPage() {
           >
             Статистика сайта
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Custom analytics · только для администратора
+          <p className="text-sm mt-1 inline-flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+            Собственный трекер · почему не совпадает с Метрикой
+            <HelpTooltip icon="help" title="Сравнение с Яндекс Метрикой" content={METRIC_HINTS.metrica} size={14} />
           </p>
         </div>
-        {/* Вход в карту состояния проекта — отдельной кнопкой, видной только админу. */}
         <Link
           to="/admin/dashboard"
           className="editorial-press rounded-full flex items-center ml-auto shrink-0"
@@ -152,45 +278,60 @@ export default function AdminStatsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center mb-6 md:mb-8" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<string>
-          options={[
-            { key: '1', label: '24 часа' },
-            { key: '7', label: '7 дней' },
-            { key: '30', label: '30 дней' },
-            { key: '90', label: '90 дней' },
-            { key: '180', label: '180 дней' },
-          ]}
-          value={String(days)}
-          onChange={(v) => setDays(Number(v))}
+      <div className="flex flex-wrap items-end mb-2" style={{ gap: 'var(--sp-2)' }}>
+        <Dropdown<Preset>
+          options={PRESET_OPTIONS}
+          value={preset}
+          onChange={(v) => {
+            // При переходе на «Свой период» подставляем текущий диапазон,
+            // чтобы поля дат не открывались пустыми.
+            if (v === 'custom' && preset !== 'custom') {
+              setCustomFrom(range.dateFrom);
+              setCustomTo(range.dateTo);
+            }
+            setPreset(v);
+          }}
+          trailing={<HelpTooltip icon="help" title="Период" content={METRIC_HINTS.period} size={13} />}
         />
+        {preset === 'custom' && (
+          <>
+            <DateField label="С" value={range.dateFrom} max={mskToday()} onChange={setCustomFrom} />
+            <DateField label="По" value={range.dateTo} max={mskToday()} onChange={setCustomTo} />
+          </>
+        )}
         <Dropdown<string>
           options={[
-            { key: 'all', label: 'Все' },
+            { key: 'all', label: 'Все без админов' },
             { key: 'auth', label: 'Авторизованные' },
             { key: 'guest', label: 'Гости' },
-            { key: 'admin', label: 'Только admin' },
+            { key: 'admin', label: 'Только админы' },
+            { key: 'everyone', label: 'Все вместе с админами' },
           ]}
           value={segment}
           onChange={setSegment}
+          trailing={<HelpTooltip icon="help" title="Кого считаем" content={METRIC_HINTS.segment} size={13} />}
         />
         <Dropdown<string>
           options={[
             { key: 'all', label: 'Все устройства' },
-            { key: 'desktop', label: 'Desktop' },
-            { key: 'mobile', label: 'Mobile' },
-            { key: 'tablet', label: 'Tablet' },
+            { key: 'desktop', label: 'Компьютер' },
+            { key: 'mobile', label: 'Телефон' },
+            { key: 'tablet', label: 'Планшет' },
           ]}
           value={device}
           onChange={setDevice}
         />
         {refreshing && (
-          <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <span className="inline-flex items-center gap-1.5 text-xs self-center" style={{ color: 'var(--text-muted)' }}>
             <Loader2 size={13} className="animate-spin" />
             обновление…
           </span>
         )}
       </div>
+      <p className="text-xs mb-6 md:mb-8" style={{ color: 'var(--text-muted)' }}>
+        {fmtRange(range.dateFrom, range.dateTo)}
+        {data && ` · сравнение с ${fmtRange(data.prev_date_from, data.prev_date_to)}`}
+      </p>
 
       {error && (
         <Card padding="md" className="mb-6">
@@ -198,68 +339,89 @@ export default function AdminStatsPage() {
         </Card>
       )}
 
-      {/* Основной контент по /stats — приглушается на время refetch'а */}
       <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
         {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-          {data ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
+          {s && p ? (
             <>
               <SummaryCard
                 icon={<Users size={16} />}
-                label="Уникальные за период"
-                hint={METRIC_HINTS.uniques}
-                value={data.summary.uniques}
-                delta={data.summary.delta_uniques}
-                deltaSuffix=" vs пред."
+                label="Посетители"
+                hint={METRIC_HINTS.visitors}
+                value={s.visitors.toLocaleString('ru-RU')}
+                sub={s.auth_visitors > 0 ? `из них с аккаунтом ${s.auth_visitors}` : undefined}
+                delta={pctDelta(s.delta_visitors_pct)}
+                prev={p.visitors.toLocaleString('ru-RU')}
               />
               <SummaryCard
                 icon={<Activity size={16} />}
-                label="Сессий"
-                hint={METRIC_HINTS.sessions}
+                label="Визиты"
+                hint={METRIC_HINTS.visits}
+                value={s.visits.toLocaleString('ru-RU')}
+                delta={pctDelta(s.delta_visits_pct)}
+                prev={p.visits.toLocaleString('ru-RU')}
+              />
+              <SummaryCard
+                icon={<Eye size={16} />}
+                label="Просмотры"
+                hint={METRIC_HINTS.pageviews}
                 hintAlign="right"
-                value={data.summary.sessions}
-                deltaPct={data.summary.delta_sessions_pct}
+                value={s.pageviews.toLocaleString('ru-RU')}
+                sub={s.visits > 0 ? `${(s.pageviews / s.visits).toFixed(1).replace('.', ',')} на визит` : undefined}
+                delta={pctDelta(s.delta_pageviews_pct)}
+                prev={p.pageviews.toLocaleString('ru-RU')}
               />
               <SummaryCard
                 icon={<Clock size={16} />}
-                label="Среднее время"
+                label="Время визита"
                 hint={METRIC_HINTS.avg_time}
-                value={data.summary.avg_session_sec}
-                format={(v) => formatDuration(v)}
-                delta={data.summary.delta_avg_session_sec}
-                deltaSuffix=" сек"
+                value={formatDuration(s.avg_visit_sec)}
+                sub={`медиана ${formatDuration(s.median_visit_sec)}`}
+                delta={s.delta_avg_visit_sec === null ? null : {
+                  text: `${s.delta_avg_visit_sec >= 0 ? '+' : '−'}${formatDuration(Math.abs(s.delta_avg_visit_sec))}`,
+                  good: s.delta_avg_visit_sec >= 0,
+                }}
+                prev={formatDuration(p.avg_visit_sec)}
               />
               <SummaryCard
-                icon={<MousePointerClick size={16} />}
-                label="Events"
-                hint={METRIC_HINTS.events}
+                icon={<LogOut size={16} />}
+                label="Отказы"
+                hint={METRIC_HINTS.bounce}
+                value={s.bounce_pct === null ? '—' : `${fmtNum(s.bounce_pct)}%`}
+                delta={s.delta_bounce_pp === null ? null : {
+                  text: `${s.delta_bounce_pp >= 0 ? '+' : '−'}${fmtNum(Math.abs(s.delta_bounce_pp))} п.п.`,
+                  good: s.delta_bounce_pp <= 0,
+                }}
+                prev={p.bounce_pct === null ? '—' : `${fmtNum(p.bounce_pct)}%`}
+              />
+              <SummaryCard
+                icon={<Repeat size={16} />}
+                label="Вернулись"
+                hint={METRIC_HINTS.returning}
                 hintAlign="right"
-                value={data.summary.events}
-                deltaPct={data.summary.delta_events_pct}
+                value={s.returning.toLocaleString('ru-RU')}
+                sub={s.returning_pct === null ? undefined : `${fmtNum(s.returning_pct)}% посетителей`}
+                delta={pctDelta(s.delta_returning_pct)}
+                prev={p.returning.toLocaleString('ru-RU')}
               />
             </>
           ) : loading ? (
-            <>
-              <Skeleton height={108} rounded="lg" />
-              <Skeleton height={108} rounded="lg" />
-              <Skeleton height={108} rounded="lg" />
-              <Skeleton height={108} rounded="lg" />
-            </>
+            Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={128} rounded="lg" />)
           ) : null}
         </div>
 
-        {/* Trends — SimpleChart с двумя линиями: уникальные (accent) + сессии */}
-        <Section title="Динамика" hint={METRIC_HINTS.trends}>
-          {data && data.trends.length > 0 ? (
+        {/* Trends */}
+        <Section title="Динамика по дням" hint={METRIC_HINTS.trends}>
+          {data && data.trends.length > 1 ? (
             <Card padding="md" className="md:p-5">
               <SimpleChart
-                data={data.trends.map(t => ({ time: t.date, value: t.uniques }))}
-                secondaryData={data.trends.map(t => ({ time: t.date, value: t.sessions }))}
+                data={data.trends.map(t => ({ time: t.date, value: t.visitors }))}
+                secondaryData={data.trends.map(t => ({ time: t.date, value: t.visits }))}
                 showSecondary={true}
                 primaryColor="var(--accent)"
                 secondaryColor="var(--accent-secondary)"
-                primaryLabel="Уникальные/день"
-                secondaryLabel="Сессии"
+                primaryLabel="Посетители"
+                secondaryLabel="Визиты"
                 formatValue={(v) => Math.round(v).toString()}
                 formatSecondaryAxis={(v) => Math.round(v).toString()}
                 showValueHeader={false}
@@ -271,63 +433,110 @@ export default function AdminStatsPage() {
                 chartPadding={{ right: 100 }}
               />
             </Card>
-          ) : loading ? (
+          ) : loading && !data ? (
             <Skeleton height={320} rounded="lg" />
           ) : (
             <Card padding="md">
               <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Недостаточно данных для построения графика
+                {data && data.trends.length === 1
+                  ? 'За один день графика нет, смотрите карточки выше'
+                  : 'Недостаточно данных для построения графика'}
               </p>
             </Card>
           )}
         </Section>
 
-        {/* Top lists row */}
+        {/* Top lists */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8">
           <TopList
             title="Топ страниц"
             hint={METRIC_HINTS.top_pages}
-            items={data?.top_pages.map((p) => ({ label: p.path, value: p.views })) || null}
+            columns={['посетители', 'просмотры']}
+            items={data?.top_pages.map((r) => ({
+              label: PAGE_NAMES[r.path] || r.path,
+              note: PAGE_NAMES[r.path] ? r.path : undefined,
+              value: r.visitors,
+              value2: r.views,
+            })) || null}
             loading={loading}
-            emptyText="Нет pageview-событий"
+            emptyText="Нет просмотров страниц"
           />
           <TopList
-            title="Топ тикеров"
-            hint={METRIC_HINTS.top_instruments}
-            items={data?.top_instruments.map((p) => ({ label: p.secid, value: p.selects })) || null}
+            title="Топ активов"
+            hint={METRIC_HINTS.top_assets}
+            hintAlign="right"
+            columns={['посетители', 'показы']}
+            items={data?.top_assets.map((r) => ({
+              label: r.name || r.secid,
+              note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
+              value: r.visitors,
+              value2: r.views,
+            })) || null}
             loading={loading}
-            emptyText="Нет выборов тикера"
+            emptyText="Данные собираются с 11.09.2026"
           />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8">
+          <TopList
+            title="Выбор в поиске"
+            hint={METRIC_HINTS.top_search}
+            columns={['выборы', 'посетители']}
+            items={data?.top_search.map((r) => ({
+              label: r.name || r.secid,
+              note: r.name ? r.secid : undefined,
+              value: r.picks,
+              value2: r.visitors,
+            })) || null}
+            loading={loading}
+            emptyText="Нет выборов в поиске"
+          />
+          <TopList
+            title="Источники визитов"
+            hint={METRIC_HINTS.sources}
+            hintAlign="right"
+            columns={['визиты']}
+            items={data?.sources.map((r) => ({ label: r.source, value: r.visits })) || null}
+            loading={loading}
+            emptyText="Нет визитов"
+          />
           <TopList
             title="Экспорты PNG"
             hint={METRIC_HINTS.top_exports}
-            items={data?.top_exports.map((p) => ({ label: p.indicator, value: p.count })) || null}
+            columns={['скачивания', 'посетители']}
+            items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
             loading={loading}
             emptyText="Никто не экспортировал"
           />
-          <TopList
-            title="Сезонность: режимы"
-            hint={METRIC_HINTS.modes}
-            items={data?.mode_distribution.map((p) => ({ label: p.mode, value: p.count })) || null}
-            loading={loading}
-            emptyText="Нет переключений режима"
-          />
+          <div className="grid grid-cols-1 gap-3 md:gap-4">
+            <TopList
+              title="Сезонность: режимы"
+              hint={METRIC_HINTS.modes}
+              hintAlign="right"
+              columns={['переключения', 'посетители']}
+              items={data?.mode_distribution.map((r) => ({ label: r.mode, value: r.count, value2: r.visitors })) || null}
+              loading={loading}
+              emptyText="Нет переключений режима"
+            />
+            {device === 'all' && (
+              <TopList
+                title="Устройства"
+                hint={METRIC_HINTS.devices}
+                hintAlign="right"
+                columns={['посетители']}
+                items={data?.devices.map((r) => ({ label: DEVICE_NAMES[r.device] || r.device, value: r.visitors })) || null}
+                loading={loading}
+                emptyText="Нет данных"
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Алерты — трекинг что люди ставят/убирают + конверсия (сколько хоть раз сработало) */}
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
-        <AlertsBlock days={days} />
+        <AlertsBlock range={range} />
       </Section>
 
-      {/* Users — фильтр платных + кликабельная таблица для drill-down на /admin/users/:id */}
       <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock days={days} />
+        <UsersBlock range={range} />
       </Section>
-
     </div>
   );
 }
@@ -335,6 +544,31 @@ export default function AdminStatsPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
+
+function DateField({ label, value, max, onChange }: {
+  label: string; value: string; max: string; onChange: (v: string) => void;
+}) {
+  return (
+    <label className="inline-flex flex-col" style={{ gap: 2 }}>
+      <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{label}</span>
+      <input
+        type="date"
+        value={value}
+        max={max}
+        onChange={(e) => { if (e.target.value) onChange(e.target.value); }}
+        style={{
+          padding: '6px 10px',
+          background: 'var(--bg-secondary)',
+          border: '1.5px solid var(--text-primary)',
+          borderRadius: 9999,
+          color: 'var(--text-primary)',
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 600,
+        }}
+      />
+    </label>
+  );
+}
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -346,7 +580,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
         >
           {title}
         </p>
-        {hint && <HelpTooltip icon="info" title={title} content={hint} size={13} />}
+        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} />}
         <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
       </div>
       {children}
@@ -354,28 +588,31 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
+type Delta = { text: string; good: boolean } | null;
+
+function pctDelta(v: number | null | undefined): Delta {
+  if (v === null || v === undefined) return null;
+  return { text: `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`, good: v >= 0 };
+}
+
+function fmtNum(v: number): string {
+  return v.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+}
+
 interface SummaryCardProps {
   icon: React.ReactNode;
   label: string;
-  value: number;
-  delta?: number | null;
-  deltaPct?: number | null;
-  deltaSuffix?: string;
-  format?: (v: number) => string;
-  /** Текст подсказки «как считается» — рендерит иконку «i» после label. */
+  value: string | number;
+  /** Строка под значением (медиана, доля и т.п.). */
+  sub?: string;
+  delta?: Delta;
+  /** Значение за предыдущий период — показывается рядом с дельтой. */
+  prev?: string;
   hint?: string;
-  /** Куда раскрывать поповер подсказки (right — для карточек у правого края). */
   hintAlign?: 'left' | 'right';
 }
-function SummaryCard({ icon, label, value, delta, deltaPct, deltaSuffix = '', format, hint, hintAlign = 'left' }: SummaryCardProps) {
-  const display = format ? format(value) : value.toLocaleString('ru-RU');
-  const deltaValue = deltaPct !== undefined && deltaPct !== null
-    ? `${deltaPct >= 0 ? '+' : ''}${deltaPct}%`
-    : delta !== undefined && delta !== null
-      ? `${delta >= 0 ? '+' : ''}${delta}${deltaSuffix}`
-      : null;
-  const deltaPositive = (deltaPct ?? delta ?? 0) >= 0;
-
+function SummaryCard({ icon, label, value, sub, delta, prev, hint, hintAlign = 'left' }: SummaryCardProps) {
+  const display = typeof value === 'number' ? value.toLocaleString('ru-RU') : value;
   return (
     <Card padding="md" className="md:p-5">
       <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -383,13 +620,13 @@ function SummaryCard({ icon, label, value, delta, deltaPct, deltaSuffix = '', fo
         <span className="text-xs uppercase min-w-0 truncate" style={{ letterSpacing: '0.1em', fontWeight: 600 }}>
           {label}
         </span>
-        {hint && <HelpTooltip icon="info" title={label} content={hint} size={13} align={hintAlign} />}
+        {hint && <HelpTooltip icon="help" title={label} content={hint} size={13} align={hintAlign} />}
       </div>
       <div
-        className="font-bold mb-1"
+        className="font-bold"
         style={{
           color: 'var(--text-primary)',
-          fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
+          fontSize: 'clamp(1.5rem, 2.4vw, 2rem)',
           letterSpacing: '-0.02em',
           fontFamily: "'IBM Plex Mono', monospace",
           fontVariantNumeric: 'tabular-nums',
@@ -397,38 +634,53 @@ function SummaryCard({ icon, label, value, delta, deltaPct, deltaSuffix = '', fo
       >
         {display}
       </div>
-      {deltaValue !== null && (
-        <div className="flex items-center gap-1">
-          {deltaPositive ? (
-            <TrendingUp size={12} style={{ color: 'var(--success)' }} />
-          ) : (
-            <TrendingDown size={12} style={{ color: 'var(--danger)' }} />
+      {sub && (
+        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</div>
+      )}
+      {(delta || prev) && (
+        <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 mt-1">
+          {delta && (
+            <>
+              {delta.good ? (
+                <TrendingUp size={12} style={{ color: 'var(--success)' }} />
+              ) : (
+                <TrendingDown size={12} style={{ color: 'var(--danger)' }} />
+              )}
+              <span
+                className="text-xs"
+                style={{
+                  color: delta.good ? 'var(--success)' : 'var(--danger)',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}
+              >
+                {delta.text}
+              </span>
+            </>
           )}
-          <span
-            className="text-xs"
-            style={{
-              color: deltaPositive ? 'var(--success)' : 'var(--danger)',
-              fontFamily: "'IBM Plex Mono', monospace",
-            }}
-          >
-            {deltaValue}
-          </span>
+          {prev && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>было {prev}</span>
+          )}
         </div>
       )}
     </Card>
   );
 }
 
+interface TopItem { label: string; note?: string; value: number; value2?: number }
+
 interface TopListProps {
   title: string;
-  items: { label: string; value: number }[] | null;
+  items: TopItem[] | null;
   loading: boolean;
   emptyText: string;
   hint?: string;
+  hintAlign?: 'left' | 'right';
+  /** Подписи колонок: главная цифра и (опц.) серая вторая. */
+  columns?: [string] | [string, string];
 }
-function TopList({ title, items, loading, emptyText, hint }: TopListProps) {
+function TopList({ title, items, loading, emptyText, hint, hintAlign = 'left', columns }: TopListProps) {
   if (loading && !items) return <Skeleton height={240} rounded="lg" />;
-  const max = items && items.length > 0 ? items[0].value : 1;
+  const max = items && items.length > 0 ? Math.max(...items.map(i => i.value)) || 1 : 1;
   return (
     <Card padding="md" className="md:p-5">
       <div className="flex items-center gap-2 mb-3">
@@ -438,7 +690,12 @@ function TopList({ title, items, loading, emptyText, hint }: TopListProps) {
         >
           {title}
         </span>
-        {hint && <HelpTooltip icon="info" title={title} content={hint} size={13} />}
+        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} align={hintAlign} />}
+        {columns && items && items.length > 0 && (
+          <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
+            {columns[0]}{columns[1] ? ` · ${columns[1]}` : ''}
+          </span>
+        )}
       </div>
       {!items || items.length === 0 ? (
         <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -455,23 +712,25 @@ function TopList({ title, items, loading, emptyText, hint }: TopListProps) {
                   backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)',
                 }}
               />
-              <div className="relative flex items-center justify-between py-1.5 px-2">
-                <span
-                  className="text-sm truncate"
-                  style={{ color: 'var(--text-primary)' }}
-                  title={it.label}
-                >
+              <div className="relative flex items-center justify-between py-1.5 px-2 gap-2">
+                <span className="text-sm truncate min-w-0" style={{ color: 'var(--text-primary)' }} title={it.note ? `${it.label} · ${it.note}` : it.label}>
                   {it.label || '—'}
+                  {it.note && (
+                    <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>{it.note}</span>
+                  )}
                 </span>
                 <span
-                  className="text-sm font-semibold flex-shrink-0 ml-2"
-                  style={{
-                    color: 'var(--text-primary)',
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
+                  className="text-sm flex-shrink-0 whitespace-nowrap"
+                  style={{ fontFamily: "'IBM Plex Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
                 >
-                  {it.value.toLocaleString('ru-RU')}
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {it.value.toLocaleString('ru-RU')}
+                  </span>
+                  {it.value2 !== undefined && (
+                    <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>
+                      · {it.value2.toLocaleString('ru-RU')}
+                    </span>
+                  )}
                 </span>
               </div>
             </div>
@@ -490,14 +749,14 @@ function formatDuration(seconds: number): string {
   if (!seconds || seconds < 0) return '0с';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const sec = seconds % 60;
   if (h > 0) return `${h}ч ${m}м`;
-  if (m > 0) return `${m}м ${s}с`;
-  return `${s}с`;
+  if (m > 0) return `${m}м ${sec}с`;
+  return `${sec}с`;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// USERS BLOCK — фильтр платных + drill-down таблица пользователей
+// USERS BLOCK — фильтры по подписке + drill-down таблица пользователей
 // ════════════════════════════════════════════════════════════════════════════
 
 const PLAN_COLORS: Record<string, string> = {
@@ -506,14 +765,38 @@ const PLAN_COLORS: Record<string, string> = {
   premium: 'var(--success)',
 };
 
+const STATUS_NAMES: Record<string, string> = {
+  expired: 'истекла',
+  cancelled: 'отменена',
+  pending: 'не оплачена',
+  failed: 'оплата не прошла',
+};
+
 /**
- * Бейдж подписки: тир цветом + дата окончания. Free — приглушённый текст.
- * Подписка по пригласительной ссылке помечается отдельно — иначе в таблице она
- * неотличима от купленной, и «платных» читается больше, чем есть на самом деле.
+ * Бейдж подписки: тир цветом + дата окончания. Подписка по пригласительной
+ * ссылке помечается подарком, иначе в таблице она неотличима от купленной.
+ * У тех, кто сейчас без подписки, показываем последнюю платную попытку:
+ * «была basic, истекла 03.09» — так видно бывших платных.
  */
-function PlanBadge({ plan, expiresAt, isInvite, inviteNote }: { plan: string | null; expiresAt?: string | null; isInvite?: boolean; inviteNote?: string | null }) {
+function PlanBadge({ plan, expiresAt, isInvite, inviteNote, lastPaid }: {
+  plan: string | null;
+  expiresAt?: string | null;
+  isInvite?: boolean;
+  inviteNote?: string | null;
+  lastPaid?: AdminUser['last_paid_sub'];
+}) {
   if (!plan) {
-    return <span className="text-xs" style={{ color: 'var(--text-muted)' }}>free</span>;
+    return (
+      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        free
+        {lastPaid && (
+          <span title="Последняя подписка за деньги">
+            {' · '}{lastPaid.tier} {STATUS_NAMES[lastPaid.status] || lastPaid.status}
+            {lastPaid.expires_at && ` ${fmtShortDate(lastPaid.expires_at)}`}
+          </span>
+        )}
+      </span>
+    );
   }
   const color = PLAN_COLORS[plan] || 'var(--accent)';
   return (
@@ -536,52 +819,83 @@ function PlanBadge({ plan, expiresAt, isInvite, inviteNote }: { plan: string | n
           }}
           title={inviteNote ? `Инвайт: ${inviteNote}` : 'Подписка выдана по пригласительной ссылке, не оплачена'}
         >
-          {/* Слово «инвайт» рядом с подарком ничего не добавляет — иконки
-              достаточно, а место лучше отдать заметке с именем человека. */}
           <Gift size={11} />
           {inviteNote}
         </span>
       )}
       {expiresAt && (
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          до {new Date(expiresAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+          до {fmtShortDate(expiresAt)}
         </span>
       )}
     </span>
   );
 }
 
-function UsersBlock({ days }: { days: number }) {
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [paidCount, setPaidCount] = useState<number | null>(null);
-  const [inviteCount, setInviteCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('last_active');
-  const [filter, setFilter] = useState('all');
+function fmtShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
 
-  // Debounced search — fetch'аем не на каждое нажатие
+const USER_FILTERS: { key: string; label: string }[] = [
+  { key: 'all', label: 'Все' },
+  { key: 'paid', label: 'Платные' },
+  { key: 'paid_pro', label: 'Платные Pro' },
+  { key: 'paid_basic', label: 'Платные Basic' },
+  { key: 'invite', label: 'По инвайту' },
+  { key: 'churned', label: 'Бывшие платные' },
+  { key: 'pending', label: 'Не дошли до оплаты' },
+  { key: 'free', label: 'Бесплатные' },
+  { key: 'admin', label: 'Админы' },
+];
+
+const USER_SORTS: { key: string; label: string }[] = [
+  { key: 'last_active', label: 'По активности' },
+  { key: 'tier', label: 'По тарифу: Pro, Basic, инвайт' },
+  { key: 'plan', label: 'Сначала купившие' },
+  { key: 'expires', label: 'Скоро закончится подписка' },
+  { key: 'visits', label: 'По визитам' },
+  { key: 'time', label: 'По времени на сайте' },
+  { key: 'created', label: 'По регистрации' },
+];
+
+function UsersBlock({ range }: { range: AdminRange }) {
+  const navigate = useNavigate();
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [loading, setLoading] = useState(true);
+  // Всё сохраняется: после перехода в карточку пользователя и назад
+  // фильтр, сортировка и поиск остаются как были.
+  const [search, setSearch] = usePersistedState<string>('frame:admin:users:search', '');
+  const [sort, setSort] = usePersistedState<string>('frame:admin:users:sort', 'last_active');
+  const [filter, setFilter] = usePersistedState<string>('frame:admin:users:filter', 'all');
+
+  const safeFilter = USER_FILTERS.some(f => f.key === filter) ? filter : 'all';
+  const safeSort = USER_SORTS.some(o => o.key === sort) ? sort : 'last_active';
+
   useEffect(() => {
     const t = window.setTimeout(() => {
       setLoading(true);
-      listAdminUsers({ days, sort, search: search.trim(), filter })
+      listAdminUsers({ ...range, sort: safeSort, search: search.trim(), filter: safeFilter })
         .then(r => {
           setUsers(r.users);
-          setTotalCount(r.total_count ?? null);
-          setPaidCount(r.paid_count ?? null);
-          setInviteCount(r.invite_count ?? null);
+          setCounts(r.counts ?? {
+            all: r.total_count, paid: r.paid_count, invite: r.invite_count,
+          });
         })
         .catch(() => setUsers([]))
         .finally(() => setLoading(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [days, sort, search, filter]);
+  }, [range, safeSort, search, safeFilter]);
+
+  const filterOptions = USER_FILTERS.map(f => ({
+    key: f.key,
+    label: counts && counts[f.key] !== undefined ? `${f.label} (${counts[f.key]})` : f.label,
+  }));
 
   return (
     <Card padding="md" className="md:p-5">
       <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
-        {/* Search */}
         <div
           className="flex items-center flex-1 min-w-[200px]"
           style={{
@@ -610,55 +924,45 @@ function UsersBlock({ days }: { days: number }) {
           />
         </div>
         <Dropdown<string>
-          options={[
-            { key: 'all', label: 'Все' },
-            { key: 'paid', label: 'Платные' },
-            { key: 'invite', label: 'По инвайту' },
-            { key: 'free', label: 'Бесплатные' },
-            { key: 'admin', label: 'Админы' },
-          ]}
-          value={filter}
+          options={filterOptions}
+          value={safeFilter}
           onChange={setFilter}
+          menuMaxWidth={320}
+          trailing={<HelpTooltip icon="help" title="Фильтр по подписке" content={METRIC_HINTS.users_filter} size={13} align="right" />}
         />
         <Dropdown<string>
-          options={[
-            { key: 'last_active', label: 'По активности' },
-            { key: 'plan', label: 'Сначала платные' },
-            { key: 'events', label: 'По событиям' },
-            { key: 'sessions', label: 'По сессиям' },
-            { key: 'created', label: 'По регистрации' },
-          ]}
-          value={sort}
+          options={USER_SORTS}
+          value={safeSort}
           onChange={setSort}
+          menuMaxWidth={320}
         />
         <span className="text-xs ml-auto whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
           показано {users.length}
-          {totalCount !== null && ` из ${totalCount}`}
-          {paidCount !== null && (
+          {counts?.all !== undefined && ` из ${counts.all}`}
+          {counts?.paid !== undefined && (
             <>
               {' · '}
-              <span style={{ color: 'var(--success)', fontWeight: 600 }}>платных: {paidCount}</span>
+              <span style={{ color: 'var(--success)', fontWeight: 600 }}>платных: {counts.paid}</span>
             </>
           )}
-          {inviteCount !== null && inviteCount > 0 && (
+          {counts?.invite !== undefined && counts.invite > 0 && (
             <>
               {' · '}
-              <span style={{ fontWeight: 600 }}>по инвайту: {inviteCount}</span>
+              <span style={{ fontWeight: 600 }}>по инвайту: {counts.invite}</span>
             </>
           )}
         </span>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto -mx-2" style={{ opacity: loading && users.length > 0 ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
-        <table className="w-full" style={{ minWidth: 760 }}>
+        <table className="w-full" style={{ minWidth: 820 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
               <UCol>Пользователь</UCol>
               <UCol align="left">Подписка</UCol>
               <UCol align="left" hide="md">Роль</UCol>
-              <UCol align="right">Сессий</UCol>
-              <UCol align="right" hide="md">Events</UCol>
+              <UCol align="right">Визитов</UCol>
+              <UCol align="right" hide="md">Время</UCol>
               <UCol align="right" hide="lg">Послед. активность</UCol>
               <UCol align="left" hide="lg">Создан</UCol>
               <th></th>
@@ -684,9 +988,8 @@ function UsersBlock({ days }: { days: number }) {
                 key={u.id}
                 className="hover:bg-white/[0.03] transition-colors cursor-pointer"
                 style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                onClick={() => { window.location.href = `/admin/users/${u.id}`; }}
+                onClick={() => navigate(`/admin/users/${u.id}`)}
               >
-                {/* User cell — avatar + email */}
                 <td className="px-2 py-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div
@@ -720,7 +1023,13 @@ function UsersBlock({ days }: { days: number }) {
                 </td>
 
                 <td className="px-2 py-2">
-                  <PlanBadge plan={u.plan} expiresAt={u.plan_expires_at} isInvite={u.is_invite} inviteNote={u.invite_note} />
+                  <PlanBadge
+                    plan={u.plan}
+                    expiresAt={u.plan_expires_at}
+                    isInvite={u.is_invite}
+                    inviteNote={u.invite_note}
+                    lastPaid={u.last_paid_sub}
+                  />
                 </td>
 
                 <td className="px-2 py-2 hidden md:table-cell">
@@ -758,7 +1067,7 @@ function UsersBlock({ days }: { days: number }) {
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {u.events_count}
+                  {u.time_sec ? formatDuration(u.time_sec) : '—'}
                 </td>
                 <td
                   className="text-right px-2 py-2 text-xs hidden lg:table-cell"
@@ -806,32 +1115,25 @@ function UCol({ children, align = 'left', hide }: {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ALERTS BLOCK — трекинг алертов (поставили/убрали/пауза/возобновили + конверсия)
+// ALERTS BLOCK — трекинг уведомлений (поставили/убрали/пауза/возобновили + снимок)
 // ════════════════════════════════════════════════════════════════════════════
-//
-// days приходит из общего селектора периода страницы. Бэкенд: created/deleted/
-// paused/resumed считаются ЗА период; active_now / with_fires / by_source —
-// снимок «сейчас» (текущее состояние таблицы alerts/alert_fires).
 
-function AlertsBlock({ days }: { days: number }) {
+function AlertsBlock({ range }: { range: AdminRange }) {
   const [stats, setStats] = useState<AlertsStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    getAlertsStats(days)
+    getAlertsStats(range)
       .then(setStats)
       .catch(() => setStats(null))
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [range]);
 
   if (loading && !stats) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <Skeleton height={108} rounded="lg" />
-        <Skeleton height={108} rounded="lg" />
-        <Skeleton height={108} rounded="lg" />
-        <Skeleton height={108} rounded="lg" />
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={108} rounded="lg" />)}
       </div>
     );
   }
@@ -846,22 +1148,19 @@ function AlertsBlock({ days }: { days: number }) {
     );
   }
 
-  // Конверсия: какая доля активных алертов хоть раз сработала.
   const conversionPct = stats.active_now > 0
     ? Math.round((stats.with_fires / stats.active_now) * 100)
     : null;
 
   return (
     <div className="space-y-3 md:space-y-4" style={{ opacity: loading ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
-      {/* Lifecycle-события за период */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard icon={<AlarmClock size={16} />} label="Поставили" value={stats.created} />
-        <SummaryCard icon={<AlarmClockOff size={16} />} label="Убрали" value={stats.deleted} />
-        <SummaryCard icon={<Pause size={16} />} label="На паузу" value={stats.paused} />
-        <SummaryCard icon={<Play size={16} />} label="Возобновили" value={stats.resumed} />
+        <SummaryCard icon={<AlarmClock size={16} />} label="Поставили" hint={METRIC_HINTS.alerts_created} value={stats.created} />
+        <SummaryCard icon={<AlarmClockOff size={16} />} label="Убрали" hint={METRIC_HINTS.alerts_deleted} value={stats.deleted} />
+        <SummaryCard icon={<Pause size={16} />} label="На паузу" hint={METRIC_HINTS.alerts_paused} value={stats.paused} />
+        <SummaryCard icon={<Play size={16} />} label="Возобновили" hint={METRIC_HINTS.alerts_resumed} hintAlign="right" value={stats.resumed} />
       </div>
 
-      {/* Текущее состояние + конверсия (снимок «сейчас») */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <SummaryCard
           icon={<Activity size={16} />}
@@ -874,8 +1173,7 @@ function AlertsBlock({ days }: { days: number }) {
           label="Хоть раз сработали"
           hint={METRIC_HINTS.alerts_fired}
           value={stats.with_fires}
-          delta={conversionPct}
-          deltaSuffix="% от активных"
+          sub={conversionPct === null ? undefined : `${conversionPct}% от активных`}
         />
         <Card padding="md" className="md:p-5">
           <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--text-muted)' }}>
@@ -883,15 +1181,16 @@ function AlertsBlock({ days }: { days: number }) {
             <span className="text-xs uppercase" style={{ letterSpacing: '0.1em', fontWeight: 600 }}>
               По источнику
             </span>
+            <HelpTooltip icon="help" title="По источнику" content={METRIC_HINTS.alerts_source} size={13} align="right" />
           </div>
           {stats.by_source.length === 0 ? (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>—</p>
           ) : (
             <div className="space-y-1.5">
-              {stats.by_source.map((s) => (
-                <div key={s.source} className="flex items-center justify-between">
+              {stats.by_source.map((src) => (
+                <div key={src.source} className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {s.source}
+                    {src.source === 'oi' ? 'ОИ' : src.source === 'funds' ? 'Фонды' : src.source}
                   </span>
                   <span
                     className="text-sm font-semibold"
@@ -901,7 +1200,7 @@ function AlertsBlock({ days }: { days: number }) {
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {s.active.toLocaleString('ru-RU')}
+                    {src.active.toLocaleString('ru-RU')}
                   </span>
                 </div>
               ))}
@@ -910,10 +1209,11 @@ function AlertsBlock({ days }: { days: number }) {
         </Card>
       </div>
 
-      {/* Топ активов по числу активных алертов */}
       {stats.top_assets && stats.top_assets.length > 0 && (
         <TopList
-          title="Топ активов (активные уведомления)"
+          title="Топ активов в уведомлениях"
+          hint={METRIC_HINTS.alerts_top}
+          columns={['уведомлений']}
           items={stats.top_assets.map((a) => ({ label: a.asset, value: a.count }))}
           loading={false}
           emptyText="Нет активных уведомлений"
