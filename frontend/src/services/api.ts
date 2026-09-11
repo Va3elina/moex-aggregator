@@ -1209,6 +1209,9 @@ export interface MetricaReport {
   token_error?: string;
   /** Сегмент к поисковым фразам не применён: Метрика прячет их при фильтре по аккаунту. */
   phrases_unsegmented?: boolean;
+  /** Когда Метрика посчитала этот отчёт (ISO, UTC). Может быть старше 5 минут:
+   *  тогда свежий уже считается в фоне и придёт при следующем запросе. */
+  updated_at?: string | null;
   counter: string;
   date_from: string;
   date_to: string;

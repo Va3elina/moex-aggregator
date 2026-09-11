@@ -13,21 +13,29 @@
 но Метрика его не принимает (живёт около полугода) — тоже connected=False,
 плюс token_error с её ответом; такой ответ не кэшируется.
 
-«Реальное время»: Метрика обновляет отчёты за сегодня с задержкой в несколько
-минут, поэтому кэшируем на 5 минут — чаще спрашивать бессмысленно, а лимит
-API (≈ 30 запросов в секунду, 5000 в сутки на токен) так не выбирается.
+Скорость. Метрика режет параллельные запросы одного пользователя (429
+«Превышена квота на количество параллельных запросов»; замер 11.09: 4 потока
+без ошибок, 8 — уже 429), поэтому холодный отчёт из 12 запросов считается 2–3
+секунды, и быстрее его не сделать. Отсюда stale-while-revalidate: отчёт лежит
+в Redis до 6 часов; моложе 5 минут отдаём как есть, старше — тоже сразу, а
+свежий считаем в фоне. Метрика сама отстаёт на несколько минут, так что чаще
+спрашивать незачем, и лимиты API (≈ 30 запросов в секунду, 5000 в сутки) так
+не выбираются.
 """
 from __future__ import annotations
 
 import hashlib
 import os
+import random
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
-from typing import Any, Optional
+from datetime import date, datetime, timezone
+from typing import Any, Callable, Optional
 
 import requests
 
-from api.cache import get_or_compute
+from api.cache import get_or_compute, invalidate, set_cache, try_lock
 from api.logger import get_logger
 
 log = get_logger()
@@ -35,8 +43,13 @@ log = get_logger()
 STAT_URL = "https://api-metrika.yandex.net/stat/v1/data"
 BYTIME_URL = "https://api-metrika.yandex.net/stat/v1/data/bytime"
 DEFAULT_COUNTER = "109137033"
-CACHE_TTL = 300
+FRESH_SEC = 300          # моложе — отдаём как есть
+KEEP_SEC = 6 * 3600      # столько отчёт лежит в Redis: старше FRESH_SEC отдаём и пересчитываем в фоне
 TIMEOUT = 20
+PARALLEL = 4             # больше параллельных запросов Метрика не даёт (429)
+# Семафор на процесс. Между gunicorn-воркерами он не спасает — там помогает
+# повтор запроса на 429 в _get.
+_SLOTS = threading.BoundedSemaphore(PARALLEL)
 
 
 def _token() -> Optional[str]:
@@ -63,12 +76,19 @@ def _get(url: str, params: dict) -> dict:
         "accuracy": "full",   # без сэмплирования: трафик у нас небольшой
         "lang": "ru",
     }
-    r = requests.get(
-        url,
-        params={**base, **params},
-        headers={"Authorization": f"OAuth {token}"},
-        timeout=TIMEOUT,
-    )
+    for attempt in range(4):
+        with _SLOTS:
+            r = requests.get(
+                url,
+                params={**base, **params},
+                headers={"Authorization": f"OAuth {token}"},
+                timeout=TIMEOUT,
+            )
+        # Лимит параллельных запросов: обычно фоновый пересчёт совпал с запросом
+        # страницы в другом воркере. Ждём и повторяем, а не отдаём дыру в отчёте.
+        if r.status_code != 429 or attempt == 3:
+            break
+        time.sleep(0.4 * 2 ** attempt + random.random() * 0.3)
     if r.status_code != 200:
         msg = ""
         try:
@@ -123,7 +143,8 @@ def _by_source(d0: date, d1: date, flt: Optional[str] = None) -> dict:
     дням (на длинных периодах по неделям) для каждого источника и в сумме.
 
     Итог за период по источнику — отдельным запросом, а не суммой дней:
-    посетителей и средние по дням не сложить.
+    посетителей и средние по дням не сложить. Его же итоговая строка — сводка
+    за период (period_total), отдельный запрос сводки не нужен.
     """
     keys = [k for k, _ in SUMMARY_METRICS]
     group = "week" if (d1 - d0).days + 1 >= WEEKLY_FROM_DAYS else "day"
@@ -159,6 +180,7 @@ def _by_source(d0: date, d1: date, flt: Optional[str] = None) -> dict:
         "ends": [iv[1] for iv in intervals],
         "total": pack(by_time.get("totals") or []),
         "series": series,
+        "period_total": {k: _num(k, v) for k, v in zip(keys, by_period.get("totals") or [0] * len(keys))},
     }
 
 
@@ -188,9 +210,9 @@ def _table(d0: date, d1: date, dimension: str, metrics: str, limit: int = 12,
 
 # Отчёты-таблицы: ключ → (измерение, метрики). Каждый считается отдельно и
 # падает отдельно: сломанный отчёт не валит всю страницу. Всё про источники —
-# по последнему значимому переходу, как график (см. SOURCE_DIM).
+# по последнему значимому переходу, как график (см. SOURCE_DIM). Таблицу типов
+# источников отдаёт _by_source, отдельного запроса у неё нет.
 TABLES = {
-    "sources": (SOURCE_DIM, "ym:s:visits,ym:s:users"),
     "search_engines": ("ym:s:lastsignSearchEngineRoot", "ym:s:visits,ym:s:users"),
     "search_phrases": ("ym:s:lastsignSearchPhrase", "ym:s:visits,ym:s:users"),
     "referrers": ("ym:s:lastsignReferalSource", "ym:s:visits,ym:s:users"),
@@ -210,9 +232,9 @@ SEGMENT_BLIND = {"search_phrases"}
 def _compute(d0: date, d1: date, pd0: date, pd1: date, flt: Optional[str] = None,
              flt_phrases: Optional[str] = None) -> dict:
     jobs: dict[str, Any] = {
-        "summary": lambda: _summary(d0, d1, flt),
-        "prev_summary": lambda: _summary(pd0, pd1, flt),
+        # Первым — самый длинный: два запроса подряд.
         "by_source": lambda: _by_source(d0, d1, flt),
+        "prev_summary": lambda: _summary(pd0, pd1, flt),
     }
     for key, (dim, mets) in TABLES.items():
         f = flt_phrases if key in SEGMENT_BLIND else flt
@@ -220,7 +242,7 @@ def _compute(d0: date, d1: date, pd0: date, pd1: date, flt: Optional[str] = None
 
     result: dict[str, Any] = {"connected": True, "errors": {}}
     auth_error: Optional[MetricaAuthError] = None
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
         futures = {k: pool.submit(fn) for k, fn in jobs.items()}
         for k, f in futures.items():
             try:
@@ -231,10 +253,21 @@ def _compute(d0: date, d1: date, pd0: date, pd1: date, flt: Optional[str] = None
                 result["errors"][k] = str(e)[:300]
                 if isinstance(e, MetricaAuthError):
                     auth_error = e
-    # Токен не принят — исключением, чтобы get_or_compute это не закэшировал:
-    # после замены токена блок оживает сразу, а не через 5 минут.
+    # Токен не принят — исключением, чтобы это не легло в кэш: после замены
+    # токена блок оживает сразу.
     if auth_error is not None:
         raise auth_error
+
+    bs = result["by_source"]
+    if bs:
+        result["summary"] = bs.pop("period_total")
+        result["sources"] = [
+            {"label": s["name"], "value": s["period"]["visits"], "value2": s["period"]["users"]}
+            for s in bs["series"]
+        ]
+    else:
+        result["summary"] = result["sources"] = None
+        result["errors"]["summary"] = result["errors"]["sources"] = result["errors"]["by_source"]
     return result
 
 
@@ -267,6 +300,40 @@ def build_filter(segment: str, device: str, admin_ids: list[int]) -> Optional[st
     return " AND ".join(f"({p})" for p in parts) or None
 
 
+class _Partial(Exception):
+    """Отчёт с дырками (429, таймаут): отдаём как есть, но в кэш не кладём —
+    иначе дыра висела бы на странице до следующего пересчёта."""
+
+    def __init__(self, data: dict):
+        super().__init__("partial report")
+        self.data = data
+
+
+def _stamped(compute: Callable[[], dict]) -> dict:
+    data = {**compute(), "_ts": time.time()}
+    if data.get("errors"):
+        raise _Partial(data)
+    return data
+
+
+def _refresh_later(key: str, compute: Callable[[], dict]) -> None:
+    """Пересчёт устаревшего отчёта в фоне — один на ключ на все воркеры."""
+    if not try_lock(f"metrica-refresh:{key}", 60):
+        return
+
+    def run() -> None:
+        try:
+            set_cache(key, _stamped(compute), KEEP_SEC)
+        except _Partial:
+            pass                    # старый целый отчёт лучше нового с дырками
+        except MetricaAuthError:
+            invalidate(key)         # следующий запрос посчитает сам и покажет баннер
+        except Exception as e:
+            log.warning(f"metrica refresh failed: {e}")
+
+    threading.Thread(target=run, name="metrica-refresh", daemon=True).start()
+
+
 def get_report(d0: date, d1: date, pd0: date, pd1: date, segment: str = "everyone",
                device: str = "all", admin_ids: Optional[list[int]] = None) -> dict:
     """Все отчёты Метрики за период + сводка за предыдущий период (для дельт),
@@ -276,9 +343,24 @@ def get_report(d0: date, d1: date, pd0: date, pd1: date, segment: str = "everyon
     flt = build_filter(segment, device, admin_ids or [])
     flt_phrases = device_filter(device)
     tag = hashlib.md5(flt.encode()).hexdigest()[:10] if flt else "all"
-    key = f"metrica:v2:{_counter()}:{d0}:{d1}:{tag}"
+    key = f"metrica:v3:{_counter()}:{d0}:{d1}:{tag}"
+
+    def compute() -> dict:
+        return _compute(d0, d1, pd0, pd1, flt, flt_phrases)
+
     try:
-        data = get_or_compute(key, lambda: _compute(d0, d1, pd0, pd1, flt, flt_phrases), ttl=CACHE_TTL)
+        # Холодный промах — считает один воркер, остальные ждут его результат.
+        data = get_or_compute(key, lambda: _stamped(compute), ttl=KEEP_SEC, wait_timeout=15)
+        if time.time() - float(data.get("_ts") or 0) > FRESH_SEC:
+            _refresh_later(key, compute)
+    except _Partial as p:
+        data = p.data
     except MetricaAuthError as e:
         return {"connected": False, "token_error": str(e), "counter": _counter()}
-    return {**data, "counter": _counter(), "phrases_unsegmented": flt != flt_phrases}
+    ts = data.pop("_ts", None)
+    return {
+        **data,
+        "counter": _counter(),
+        "phrases_unsegmented": flt != flt_phrases,
+        "updated_at": datetime.fromtimestamp(float(ts), timezone.utc).isoformat() if ts else None,
+    }

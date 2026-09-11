@@ -8,10 +8,16 @@
  * выключенная линия не перекрашивает остальные. Палитра --viz-1…8 задана в
  * index.css для обеих editorial-тем и проверена на различимость при
  * дальтонизме на фоне карточки.
+ *
+ * Переходы анимированы: при смене показателя, фильтра или линий в легенде
+ * линии и шкала перетекают из того, что было на экране, в новое; новая линия
+ * и линия другой длины (другой период) растут от нуля. Без анимации, если
+ * система просит reduced motion.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import HelpTooltip from '../HelpTooltip';
 import { useElementWidth } from '../../hooks/useElementWidth';
+import { easeOut, prefersReducedMotion } from '../../hooks/useTweened';
 import type { MetricaBySource, MetricaMetric } from '../../services/api';
 
 // Порядок слотов — часть проверки палитры на дальтонизм, не переставлять.
@@ -33,6 +39,7 @@ const AXIS_H = 26;
 const PAD_TOP = 10;
 const PAD_LEFT = 52;
 const PAD_RIGHT = 12;
+const TWEEN_MS = 380;
 
 function sourceColor(id: string): string {
   const slot = SOURCE_SLOT[id];
@@ -79,9 +86,13 @@ interface Props {
 
 interface Line { id: string; name: string; full: string; color: string; values: number[]; period: number }
 
+/** Что сейчас нарисовано: отсюда стартует следующий переход. */
+interface Drawn { lines: Map<string, number[]>; top: number }
+
 export default function MetricaSourcesChart({ data, metric, label, hint, totalValue, format, formatAxis = format }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(rootRef);
+  const clipId = `mx-plot-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [hover, setHover] = useState<number | null>(null);
   const [asTable, setAsTable] = useState(false);
@@ -105,10 +116,52 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
   const ticks = axisTicks(shown.reduce((m, l) => Math.max(m, ...l.values), 0), kind);
   const top = ticks[ticks.length - 1] || 1;
 
+  // Переход: p идёт от 0 к 1, пока линии и шкала перетекают из прошлого кадра.
+  const [p, setP] = useState(1);
+  const fromRef = useRef<Drawn | null>(null);
+  const drawnRef = useRef<Drawn | null>(null);
+  useLayoutEffect(() => {
+    if (prefersReducedMotion()) {
+      setP(1);
+      return;
+    }
+    // Первый показ — шкала на месте, линии растут от нуля.
+    fromRef.current = drawnRef.current ?? { lines: new Map(), top };
+    setP(0);
+    const t0 = performance.now();
+    let raf = 0;
+    const frame = (now: number) => {
+      const k = Math.min(1, (now - t0) / TWEEN_MS);
+      setP(k);
+      if (k < 1) raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [data, metric, hidden, top]);
+
+  const e = easeOut(p);
+  const from = p < 1 ? fromRef.current : null;
+  const drawTop = from ? from.top + (top - from.top) * e : top;
+  const drawn = new Map<string, number[]>();
+  for (const l of shown) {
+    const f = from?.lines.get(l.id);
+    const base = f && f.length === l.values.length ? f : null;
+    drawn.set(l.id, from ? l.values.map((v, i) => {
+      const a = base ? base[i] : 0;
+      return a + (v - a) * e;
+    }) : l.values);
+  }
+  const frameDrawn: Drawn = { lines: drawn, top: drawTop };
+  // Запоминаем кадр ПОСЛЕ эффекта перехода выше: тот должен стартовать с
+  // того, что было на экране до смены данных, а не с нового кадра.
+  useLayoutEffect(() => {
+    drawnRef.current = frameDrawn;
+  });
+
   const plotW = Math.max(0, width - PAD_LEFT - PAD_RIGHT);
   const step = n > 1 ? plotW / (n - 1) : plotW;
   const x = (i: number) => PAD_LEFT + (n > 1 ? i * step : plotW / 2);
-  const y = (v: number) => PAD_TOP + PLOT_H - (v / top) * PLOT_H;
+  const y = (v: number) => PAD_TOP + PLOT_H - (v / drawTop) * PLOT_H;
   const h = hover !== null && hover < n ? hover : null;
 
   const weekends = week ? [] : data.dates.flatMap((d, i) => {
@@ -127,10 +180,10 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
     const i = n > 1 ? Math.round((clientX - el.getBoundingClientRect().left - PAD_LEFT) / step) : 0;
     setHover(Math.min(n - 1, Math.max(0, i)));
   };
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    setHover(Math.min(n - 1, Math.max(0, (h ?? n - 1) + (e.key === 'ArrowRight' ? 1 : -1))));
+  const onKey = (ev: React.KeyboardEvent) => {
+    if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+    ev.preventDefault();
+    setHover(Math.min(n - 1, Math.max(0, (h ?? n - 1) + (ev.key === 'ArrowRight' ? 1 : -1))));
   };
   const toggle = (id: string) => setHidden((prev) => {
     const next = new Set(prev);
@@ -161,7 +214,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
       </div>
 
       {asTable ? (
-        <div style={{ maxHeight: PAD_TOP + PLOT_H + AXIS_H, overflow: 'auto', scrollbarGutter: 'stable', paddingRight: 6 }}>
+        <div style={{ maxHeight: PAD_TOP + PLOT_H + AXIS_H, overflow: 'auto', scrollbarGutter: 'stable', paddingRight: 6, animation: 'fadeIn 0.25s ease-out' }}>
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>
@@ -191,6 +244,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
           onFocus={() => setHover((v) => v ?? n - 1)}
           onBlur={() => setHover(null)}
           aria-label={`${label} по ${week ? 'неделям' : 'дням'}. Стрелки влево и вправо показывают значения по датам.`}
+          style={{ animation: 'fadeIn 0.25s ease-out' }}
         >
           {width > 0 && (
             <svg
@@ -200,12 +254,18 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
               aria-label={`${label} за период: ${shown.map((l) => `${l.name} ${format(l.period)}`).join(', ')}`}
               style={{ display: 'block', fontVariantNumeric: 'tabular-nums' }}
             >
+              <defs>
+                <clipPath id={clipId}>
+                  <rect x={PAD_LEFT - 4} y={PAD_TOP - 4} width={plotW + 8} height={PLOT_H + 8} />
+                </clipPath>
+              </defs>
               {weekends.map((i) => {
                 const x0 = Math.max(PAD_LEFT, x(i) - step / 2);
                 const x1 = Math.min(PAD_LEFT + plotW, x(i) + step / 2);
                 return <rect key={i} x={x0} y={PAD_TOP} width={Math.max(0, x1 - x0)} height={PLOT_H} fill="var(--chart-area)" />;
               })}
-              {ticks.map((t) => (
+              {/* Пока шкала растёт, верхние деления ещё за краем — их не рисуем. */}
+              {ticks.filter((t) => y(t) >= PAD_TOP - 0.5).map((t) => (
                 <g key={t}>
                   <line x1={PAD_LEFT} x2={PAD_LEFT + plotW} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" strokeWidth={1} shapeRendering="crispEdges" />
                   <text x={PAD_LEFT - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--text-muted)">{formatAxis(t)}</text>
@@ -216,11 +276,16 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
                   {week ? fmtDayYear(d) : fmtDay(d)}
                 </text>
               ) : null))}
-              {shown.map((l) => (n > 1 ? (
-                <path key={l.id} d={path(l.values)} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-              ) : (
-                <circle key={l.id} cx={x(0)} cy={y(l.values[0] ?? 0)} r={4} fill={l.color} />
-              )))}
+              <g clipPath={`url(#${clipId})`}>
+                {shown.map((l) => {
+                  const vals = drawn.get(l.id) ?? l.values;
+                  return n > 1 ? (
+                    <path key={l.id} d={path(vals)} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                  ) : (
+                    <circle key={l.id} cx={x(0)} cy={y(vals[0] ?? 0)} r={4} fill={l.color} />
+                  );
+                })}
+              </g>
               {h !== null && (
                 <g pointerEvents="none">
                   <line x1={x(h)} x2={x(h)} y1={PAD_TOP} y2={PAD_TOP + PLOT_H} stroke="var(--chart-crosshair)" strokeWidth={1} />
@@ -231,7 +296,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
               )}
               <rect
                 x={PAD_LEFT} y={PAD_TOP} width={plotW} height={PLOT_H} fill="transparent"
-                onPointerMove={(e) => pick(e.clientX, e.currentTarget.ownerSVGElement ?? e.currentTarget)}
+                onPointerMove={(ev) => pick(ev.clientX, ev.currentTarget.ownerSVGElement ?? ev.currentTarget)}
                 onPointerLeave={() => setHover(null)}
               />
             </svg>
@@ -277,7 +342,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
               title={`${l.full}. Нажмите, чтобы ${off ? 'показать' : 'скрыть'} линию`}
               onClick={() => toggle(l.id)}
               className="editorial-press rounded-full inline-flex items-center text-xs"
-              style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 8, opacity: off ? 0.5 : 1 }}
+              style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 8, opacity: off ? 0.5 : 1, transition: 'opacity 0.2s ease' }}
             >
               <span
                 aria-hidden

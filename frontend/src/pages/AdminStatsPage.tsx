@@ -21,7 +21,7 @@
  * При переключении периода старые данные не сбрасываются в скелетоны:
  * контент приглушается до прихода свежих. Бэкенд кэширует /stats на 3 минуты.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
@@ -33,6 +33,8 @@ import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useDelayedFlag } from '../hooks/useDelayedFlag';
+import { useTweened } from '../hooks/useTweened';
 import {
   getAnalyticsStats,
   listAdminUsers,
@@ -268,30 +270,65 @@ export default function AdminStatsPage() {
     }
   }, [authLoading, user, navigate]);
 
+  // Ответы по набору фильтров, пока открыта страница: переключение туда и
+  // обратно мгновенное, свежие данные догружаются тихо, без затемнения.
+  const statsCache = useRef(new Map<string, AnalyticsStats>());
+  const metricaCache = useRef(new Map<string, MetricaReport>());
+
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
-    setLoading(true);
+    const key = `${JSON.stringify(range)}|${segment}|${device}`;
+    const hit = statsCache.current.get(key);
+    // Ответ на прошлый фильтр, пришедший позже нового, не должен его затереть.
+    let alive = true;
+    if (hit) setData(hit);
+    setLoading(!hit);
     setError(null);
     getAnalyticsStats({ ...range, segment, device })
-      .then(setData)
-      .catch((e: Error) => setError(e.message || 'Не удалось загрузить статистику'))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        statsCache.current.set(key, d);
+        if (alive) setData(d);
+      })
+      .catch((e: Error) => {
+        if (alive && !hit) setError(e.message || 'Не удалось загрузить статистику');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => { alive = false; };
   }, [user, range, segment, device, tick]);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
-    setMetricaLoading(true);
+    const key = `${JSON.stringify(range)}|${segment}|${device}`;
+    const hit = metricaCache.current.get(key);
+    let alive = true;
+    if (hit) setMetrica(hit);
+    setMetricaLoading(!hit);
     getMetrica(range, segment, device)
-      .then(setMetrica)
-      .catch(() => setMetrica(null))
-      .finally(() => setMetricaLoading(false));
+      .then((r) => {
+        metricaCache.current.set(key, r);
+        if (alive) setMetrica(r);
+      })
+      .catch(() => {
+        if (alive && !hit) setMetrica(null);
+      })
+      .finally(() => {
+        if (alive) setMetricaLoading(false);
+      });
+    return () => { alive = false; };
   }, [user, range, segment, device, tick]);
+
+  // Затемняем только блок, который реально ждёт, и только если он ждёт
+  // дольше 250 мс: ответ из кэша или быстрый ответ проходит без вспышки.
+  const ownDim = useDelayedFlag(loading && data !== null);
+  const metricaDim = useDelayedFlag(metricaLoading && metrica !== null);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
-  const refreshing = (loading && data !== null) || (metricaLoading && metrica !== null);
+  const refreshing = ownDim || metricaDim;
   const metricaOn = !!metrica?.connected;
   // Свой трафик показываем, если Метрика не подключена или админ сам попросил сверку.
   const ownTrafficVisible = !metricaOn || showOwn;
@@ -396,10 +433,12 @@ export default function AdminStatsPage() {
         </Card>
       )}
 
-      <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
+      <div>
         {/* ═══ Трафик из Яндекс Метрики ═══ */}
         <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
-          <MetricaBlock report={metrica} loading={metricaLoading} />
+          <div style={dimStyle(metricaDim)}>
+            <MetricaBlock report={metrica} loading={metricaLoading} />
+          </div>
         </Section>
 
         {metricaOn && (
@@ -414,6 +453,7 @@ export default function AdminStatsPage() {
         )}
 
         {ownTrafficVisible && (
+          <div style={dimStyle(ownDim)}>
           <Section
             title={metricaOn ? 'Трафик · наш трекер'
               : metrica?.token_error ? 'Трафик · наш трекер (токен Метрики не действует)'
@@ -561,9 +601,11 @@ export default function AdminStatsPage() {
               )}
             </div>
           </Section>
+          </div>
         )}
 
         {/* ═══ Чего нет в Метрике ═══ */}
+        <div style={dimStyle(ownDim)}>
         <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
             <TopList
@@ -612,6 +654,7 @@ export default function AdminStatsPage() {
             />
           </div>
         </Section>
+        </div>
       </div>
 
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
@@ -628,6 +671,19 @@ export default function AdminStatsPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Блок ждёт данных дольше 250 мс — чуть гасим, но оставляем читаемым. */
+function dimStyle(on: boolean): React.CSSProperties {
+  return { opacity: on ? 0.6 : 1, transition: 'opacity 0.25s ease' };
+}
+
+const fmtClock = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+/** Значение показателя: при смене досчитывается до нового, а не прыгает. */
+function TweenedValue({ value, format, decimals }: { value: number; format: (v: number) => string; decimals?: boolean }) {
+  const v = useTweened(value);
+  return <>{format(decimals ? Math.round(v * 10) / 10 : Math.round(v))}</>;
+}
 
 /** Приложение Яндекс OAuth, на котором выпущен токен Метрики (то же, что у
  *  scripts/seo). Client ID не секрет: он всегда виден в ссылке авторизации. */
@@ -706,6 +762,7 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
                 padding: 'var(--sp-2) var(--sp-3)',
                 background: on ? 'var(--bg-tertiary)' : 'transparent',
                 boxShadow: on ? 'inset 0 -2px 0 var(--accent)' : 'none',
+                transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
               }}
             >
               <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--text-muted)' }}>
@@ -734,7 +791,7 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {m.format(cur[m.key])}
+                <TweenedValue value={cur[m.key]} format={m.format} decimals={m.key === 'page_depth' || m.key === 'bounce_pct'} />
               </div>
               {d && (
                 <div
@@ -826,7 +883,7 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
   const counter = report.counter;
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
       <div className="flex flex-wrap gap-2">
         <a
           href={`https://metrika.yandex.ru/dashboard?id=${counter}`}
@@ -882,7 +939,10 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
           items={rows(report.browsers)} loading={false} emptyText={empty('browsers')} />
       </div>
       <p className="text-xs inline-flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-        <Globe size={12} /> Обновляется раз в 5 минут. Метрика, счётчик {counter}.
+        <Globe size={12} />
+        {`${report.updated_at
+          ? `Данные Метрики на ${fmtClock(report.updated_at)}, обновляются раз в 5 минут`
+          : 'Обновляется раз в 5 минут'}. Метрика, счётчик ${counter}.`}
       </p>
     </div>
   );
@@ -1045,7 +1105,7 @@ function TopList({ title, items, loading, emptyText, hint, hintAlign = 'left', c
           {emptyText}
         </p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" style={{ animation: 'fadeIn 0.3s ease-out' }}>
           {items.map((it, i) => (
             <div key={`${it.label}-${i}`} className="relative">
               <div
@@ -1053,6 +1113,7 @@ function TopList({ title, items, loading, emptyText, hint, hintAlign = 'left', c
                 style={{
                   width: `${(it.value / max) * 100}%`,
                   backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                  transition: 'width 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
                 }}
               />
               <div className="relative flex items-center justify-between py-1.5 px-2 gap-2">
@@ -1206,6 +1267,7 @@ function UsersBlock({ range }: { range: AdminRange }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
+  const dim = useDelayedFlag(loading && users.length > 0);
   // Всё сохраняется: после перехода в карточку пользователя и назад
   // фильтр, сортировка и поиск остаются как были.
   const [search, setSearch] = usePersistedState<string>('frame:admin:users:search', '');
@@ -1297,7 +1359,7 @@ function UsersBlock({ range }: { range: AdminRange }) {
         </span>
       </div>
 
-      <div className="overflow-x-auto -mx-2" style={{ opacity: loading && users.length > 0 ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
+      <div className="overflow-x-auto -mx-2" style={dimStyle(dim)}>
         <table className="w-full" style={{ minWidth: 820 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -1464,6 +1526,7 @@ function UCol({ children, align = 'left', hide }: {
 function AlertsBlock({ range }: { range: AdminRange }) {
   const [stats, setStats] = useState<AlertsStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const dim = useDelayedFlag(loading && stats !== null);
 
   useEffect(() => {
     setLoading(true);
@@ -1496,7 +1559,7 @@ function AlertsBlock({ range }: { range: AdminRange }) {
     : null;
 
   return (
-    <div className="space-y-3 md:space-y-4" style={{ opacity: loading ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
+    <div className="space-y-3 md:space-y-4" style={{ ...dimStyle(dim), animation: 'fadeIn 0.35s ease-out' }}>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <SummaryCard icon={<AlarmClock size={16} />} label="Поставили" hint={METRIC_HINTS.alerts_created} value={stats.created} />
         <SummaryCard icon={<AlarmClockOff size={16} />} label="Убрали" hint={METRIC_HINTS.alerts_deleted} value={stats.deleted} />
