@@ -21,6 +21,7 @@ import {
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import AvatarImg from '../components/AvatarImg';
+import HelpTooltip from '../components/HelpTooltip';
 import Dropdown from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { getAdminUserDetail } from '../services/api';
@@ -185,11 +186,24 @@ export default function AdminUserDetailPage() {
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-            <SmallStat label="Сессий" value={data.summary.sessions} />
-            <SmallStat label="Events" value={data.summary.events} />
-            <SmallStat label="Среднее время" value={data.summary.avg_session_sec} formatter={fmtDuration} />
-            <SmallStat label="Всего времени" value={data.summary.total_time_sec} formatter={fmtDuration} />
+            <SmallStat label="Визитов" hint={DETAIL_HINTS.visits} value={data.summary.sessions} />
+            <SmallStat label="Действий" hint={DETAIL_HINTS.actions} value={data.summary.events} />
+            <SmallStat label="Среднее время" hint={DETAIL_HINTS.avg} value={data.summary.avg_session_sec} formatter={fmtDuration} />
+            <SmallStat label="Всего времени" hint={DETAIL_HINTS.total} value={data.summary.total_time_sec} formatter={fmtDuration} />
           </div>
+
+          {/* Человек заходил, но действий нет — объясняем почему, а не показываем пустоту. */}
+          {data.summary.events === 0 && data.user.last_seen_at && (
+            <Card padding="md" className="mb-6">
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Входы и обновление сессии есть, а действий на сайте нет. До 11.09.2026 действия
+                записывались только после нажатия «Окей» в баннере cookies, этот человек его не нажимал.
+                С 11.09.2026 записываются все, кроме отключивших статистику в профиле. Его визиты до
+                этой даты не восстановить. Новые визиты также видны в Вебвизоре Яндекс Метрики:
+                фильтр по параметру посетителя UserID = {data.user.id}.
+              </p>
+            </Card>
+          )}
 
           {/* Subscriptions */}
           {data.subscriptions.length > 0 && (
@@ -321,16 +335,24 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   );
 }
 
+const DETAIL_HINTS = {
+  visits: 'Визит — серия действий. Пауза дольше 30 минут начинает новый визит, как в Яндекс Метрике. Считаются только действия под аккаунтом.',
+  actions: 'Просмотры страниц, показы активов, выборы в поиске, экспорты и другие действия. Служебный сигнал присутствия не считается.',
+  avg: 'Среднее время визита: от первого до последнего действия. Пока человек активен на вкладке, раз в минуту уходит сигнал присутствия. Через 5 минут без действий он останавливается.',
+  total: 'Сумма времени всех визитов за период.',
+} as const;
+
 function SmallStat({
-  label, value, formatter = (v) => v.toLocaleString('ru-RU'),
+  label, value, hint, formatter = (v) => v.toLocaleString('ru-RU'),
 }: {
-  label: string; value: number; formatter?: (v: number) => string;
+  label: string; value: number; hint?: string; formatter?: (v: number) => string;
 }) {
   return (
     <Card padding="md">
       <div className="flex items-center gap-2 mb-1" style={{ color: 'var(--text-muted)' }}>
         <Activity size={12} />
         <span className="text-xs uppercase" style={{ letterSpacing: '0.1em', fontWeight: 600 }}>{label}</span>
+        {hint && <HelpTooltip icon="help" title={label} content={hint} size={12} />}
       </div>
       <div className="font-bold" style={{
         color: 'var(--text-primary)',

@@ -202,6 +202,10 @@ services:
       - YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID:-}
       - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
       - YANDEX_REDIRECT_URI=https://framedata.ru/auth/callback/yandex
+      # Яндекс Метрика Reporting API для /admin/stats (scope metrika:read).
+      # Без токена блок трафика показывает инструкцию, см. api/services/metrica.py.
+      - YANDEX_METRIKA_TOKEN=${YANDEX_METRIKA_TOKEN:-}
+      - YANDEX_METRIKA_COUNTER=${YANDEX_METRIKA_COUNTER:-109137033}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Cbonds (ПИФ-данные: СЧА/пай/состав через fetch_funds_realtime.py).
       # Без этих vars демон шлёт пустые креды → Cbonds «limited rights» → данные встают.
