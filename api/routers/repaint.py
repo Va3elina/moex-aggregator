@@ -2,10 +2,9 @@
 «Перекраска» — экспериментальный admin-only индикатор (идея Вадима, 2026-08-30).
 
 Сколько % от free float бумаги сменило руки за последний месяц: дельта-объём
-(CDV) считается аппроксимацией по часовым свечам, сложенным в бакеты выбранного
-ТФ 1ч/4ч/1д/1н (как CDV в TradingView — из OHLCV, биржевого разреза buy/sell
-в БД нет), его изменение за месяц соотносится с количеством акций в свободном
-обращении.
+(CDV) считается аппроксимацией по свечам выбранного ТФ 1ч/4ч/1д/1н (как CDV
+в TradingView — из OHLCV, биржевого разреза buy/sell в БД нет), его изменение
+за месяц соотносится с количеством акций в свободном обращении.
 
 Вторая метрика — отклонение текущего CDV от его среднего за месяц, тоже в %
 от free float: насколько напокупали/напродавали относительно накопленной базы
@@ -17,6 +16,13 @@
     body = |close - open|
     delta = sign(close - open) * body / (tw + bw + body) * volume
 Формула инвариантна к масштабу цены, поэтому сплиты влияют только на volume.
+
+Как в TradingView, дельта считается по самой свече ТФ, а не суммой дельт
+мелких свечей: CDV меняется вместе с ТФ, на крупном ТФ оценка грубее.
+Свечи ТФ: 1ч/4ч собираются из часовиков, 1д/1н — из дневных свечей.
+Часовики и 5-минутки акций в candles с весны 2026 недописаны (объём часовиков
+за сентябрь 2026 — ~5% дневного, замер 2026-09-12), дневные свечи полные:
+на 1ч/4ч свежий CDV занижен, пока не починен фетчер.
 
 Free float в акциях = ffcap (freefloat_cap, помесячно) / дневной close на
 дату среза as_of. Объём свечей MOEX — в штуках (проверено против ISS value/close
@@ -45,11 +51,20 @@ router = APIRouter(prefix="/api/admin/repaint", tags=["repaint"])
 
 WINDOW_DAYS = 30   # «месяц» обеих метрик
 WARMUP_DAYS = 40   # запас истории слева, чтобы окно было полным с первой точки
-MAX_DAYS = 9000    # «Всё»: часовые свечи акций лежат с 2011 года
+MAX_DAYS = 9000    # «Всё»: дневные свечи акций лежат с 2007 года
+# Скринеру нужна только последняя точка: окно + запас на недельную свечу и
+# выходные. Прогрев как у ряда тянул бы вдвое больше сырых часовиков.
+SCREENER_LOOKBACK_DAYS = WINDOW_DAYS + 14
 
-# Таймфрейм ряда = ключ бакета по begin_time часовой свечи. Внутридневные ТФ
-# отдают время бакета, дневной и недельный — только дату: время первой свечи
-# бакета в тултипе дневной точки читалось бы как «на этот час».
+_TF_PATTERN = "^(1h|4h|1d|1w)$"
+
+# Источник свечей ТФ (interval в candles): внутридневные ТФ — из часовиков,
+# дневной и недельный — из дневных свечей, как у биржи и в TradingView.
+_TF_SOURCE = {"1h": 60, "4h": 60, "1d": 24, "1w": 24}
+
+# Ключ свечи ТФ по begin_time свечи источника. Внутридневные ТФ отдают время
+# свечи, дневной и недельный — только дату: время в тултипе дневной точки
+# читалось бы как «на этот час».
 _TF_BUCKET = {
     "1h": lambda bt: (bt.date(), bt.hour),
     "4h": lambda bt: (bt.date(), bt.hour // 4),
@@ -57,20 +72,6 @@ _TF_BUCKET = {
     "1w": lambda bt: tuple(bt.date().isocalendar())[:2],
 }
 _TF_INTRADAY = ("1h", "4h")
-
-# SQL-выражение дельты свечи — то же, что _candle_delta, для агрегатов.
-_DELTA_SQL = """
-    CASE WHEN volume > 0
-              AND (high - GREATEST(open, close))
-                + (LEAST(open, close) - low)
-                + ABS(close - open) > 0
-         THEN SIGN(close - open) * ABS(close - open)
-              / ((high - GREATEST(open, close))
-                 + (LEAST(open, close) - low)
-                 + ABS(close - open))
-              * volume
-         ELSE 0 END
-"""
 
 
 def _candle_delta(o: float, h: float, l: float, c: float, v: float) -> float:
@@ -91,13 +92,48 @@ def _split_volume_ratio(sec_id: str, day: date) -> float:
     return 1.0
 
 
+def _tf_bars(sec_id: str, rows, tf: str) -> list[dict]:
+    """Свечи источника (по возрастанию времени) → свечи ТФ с дельтой и CDV.
+
+    Цены до даты сплита делятся на ratio, объём умножается — свеча ТФ,
+    накрывающая сплит, остаётся в одном масштабе."""
+    bucket_of = _TF_BUCKET[tf]
+    buckets: dict[tuple, dict] = {}
+    for bt, o, h, l, c, v in rows:
+        o, h, l, c, v = (float(o or 0), float(h or 0), float(l or 0),
+                         float(c or 0), float(v or 0))
+        if h <= 0 or v < 0:
+            continue
+        ratio = _split_volume_ratio(sec_id, bt.date())
+        o, h, l, c, v = o / ratio, h / ratio, l / ratio, c / ratio, v * ratio
+        key = bucket_of(bt)
+        b = buckets.get(key)
+        if b is None:
+            buckets[key] = {"time": bt, "open": o, "high": h, "low": l,
+                            "close": c, "volume": v}
+        else:
+            b["high"] = max(b["high"], h)
+            b["low"] = min(b["low"], l)
+            b["close"] = c
+            b["volume"] += v
+
+    bars = [buckets[k] for k in sorted(buckets)]
+    acc = 0.0
+    for b in bars:
+        b["delta"] = _candle_delta(b["open"], b["high"], b["low"], b["close"], b["volume"])
+        acc += b["delta"]
+        b["cdv"] = acc
+    return bars
+
+
 def _ff_shares_by_month(db: Session, sec_ids: list[str]) -> dict[str, list[tuple[date, float]]]:
     """{sec_id: [(month, ff_акций), ...]} по возрастанию месяца."""
     rows = db.execute(text("""
         SELECT f.sec_id, f.month, f.ffcap, c.close
         FROM freefloat_cap f
-        JOIN candles c ON c.sec_id = f.sec_id AND c.type = 'stock'
-                      AND c.interval = 24 AND c.begin_time::date = f.as_of
+        JOIN candles c ON c.sec_id = f.sec_id AND c.type = 'stock' AND c.interval = 24
+                      -- диапазон, а не begin_time::date = as_of: так идёт по индексу
+                      AND c.begin_time >= f.as_of AND c.begin_time < f.as_of + 1
         WHERE f.sec_id = ANY(:ids) AND f.ffcap > 0 AND c.close > 0
         ORDER BY f.sec_id, f.month
     """), {"ids": sec_ids}).fetchall()
@@ -147,26 +183,23 @@ def _rolling_metrics(times: list[date], cdv: list[float],
 
 @router.get("/screener")
 def repaint_screener(
+    tf: str = Query("4h", pattern=_TF_PATTERN),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """Текущие метрики перекраски по всем акциям с часовыми свечами и free float."""
-    since = date.today() - timedelta(days=WINDOW_DAYS + WARMUP_DAYS)
-    # Дневная дельта из часовых свечей — на порядок точнее дневной свечи и
-    # на два порядка меньше строк, чем сырые часовики.
-    rows = db.execute(text(f"""
-        SELECT sec_id, begin_time::date AS d,
-               SUM({_DELTA_SQL}) AS delta,
-               (ARRAY_AGG(close ORDER BY begin_time DESC))[1] AS px
+    """Текущие метрики перекраски по всем акциям со свечами и free float — на свечах ТФ."""
+    since = date.today() - timedelta(days=SCREENER_LOOKBACK_DAYS)
+    rows = db.execute(text("""
+        SELECT sec_id, begin_time, open, high, low, close, volume
         FROM candles
-        WHERE type = 'stock' AND interval = 60 AND begin_time >= :since
-        GROUP BY sec_id, begin_time::date
-        ORDER BY sec_id, d
-    """), {"since": since}).fetchall()
+        WHERE type = 'stock' AND interval = :iv AND begin_time >= :since
+          AND sec_id IN (SELECT DISTINCT sec_id FROM freefloat_cap)
+        ORDER BY sec_id, begin_time
+    """), {"iv": _TF_SOURCE[tf], "since": since}).fetchall()
 
-    by_sec: dict[str, list[tuple[date, float, float]]] = defaultdict(list)
-    for sec_id, d, delta, px in rows:
-        by_sec[sec_id].append((d, float(delta or 0), float(px or 0)))
+    by_sec: dict[str, list] = defaultdict(list)
+    for sec_id, *candle in rows:
+        by_sec[sec_id].append(candle)
 
     names = dict(db.execute(text(
         "SELECT sec_id, name FROM instruments WHERE type = 'stock'"
@@ -174,16 +207,15 @@ def repaint_screener(
     ff_map = _ff_shares_by_month(db, list(by_sec.keys()))
 
     out = []
-    for sec_id, days_rows in by_sec.items():
+    for sec_id, candles in by_sec.items():
         ff_list = ff_map.get(sec_id)
-        if not ff_list or len(days_rows) < 5:
+        if not ff_list:
             continue
-        times = [d for d, _, _ in days_rows]
-        cdv, acc = [], 0.0
-        for d, delta, _ in days_rows:
-            acc += delta * _split_volume_ratio(sec_id, d)
-            cdv.append(acc)
-        repaint, dev = _rolling_metrics(times, cdv, ff_list)
+        bars = _tf_bars(sec_id, candles, tf)
+        if len(bars) < 5:
+            continue
+        times = [b["time"].date() for b in bars]
+        repaint, dev = _rolling_metrics(times, [b["cdv"] for b in bars], ff_list)
         if repaint[-1] is None:
             continue
         out.append({
@@ -191,18 +223,18 @@ def repaint_screener(
             "name": names.get(sec_id, sec_id),
             "repaint_pct": round(repaint[-1], 2),
             "dev_pct": round(dev[-1], 2),
-            "close": days_rows[-1][2],
+            "close": bars[-1]["close"],
             "ff_shares": ff_list[-1][1],
         })
     out.sort(key=lambda r: abs(r["repaint_pct"]), reverse=True)
-    return {"window_days": WINDOW_DAYS, "rows": out}
+    return {"window_days": WINDOW_DAYS, "tf": tf, "rows": out}
 
 
 @router.get("/series/{sec_id}")
 def repaint_series(
     sec_id: str,
     days: int = Query(365, ge=7, le=MAX_DAYS),
-    tf: str = Query("4h", pattern="^(1h|4h|1d|1w)$"),
+    tf: str = Query("4h", pattern=_TF_PATTERN),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
@@ -212,47 +244,18 @@ def repaint_series(
     rows = db.execute(text("""
         SELECT begin_time, open, high, low, close, volume
         FROM candles
-        WHERE sec_id = :s AND type = 'stock' AND interval = 60
+        WHERE sec_id = :s AND type = 'stock' AND interval = :iv
           AND begin_time >= :since
         ORDER BY begin_time
-    """), {"s": sec_id, "since": since}).fetchall()
+    """), {"s": sec_id, "iv": _TF_SOURCE[tf], "since": since}).fetchall()
     if not rows:
-        raise HTTPException(404, f"Нет часовых свечей по {sec_id}")
+        raise HTTPException(404, f"Нет свечей по {sec_id}")
 
     ff_list = _ff_shares_by_month(db, [sec_id]).get(sec_id)
     if not ff_list:
         raise HTTPException(404, f"Нет данных free float по {sec_id}")
 
-    # Часовые дельты → бакеты выбранного ТФ.
-    bucket_of = _TF_BUCKET[tf]
-    buckets: dict[tuple, dict] = {}
-    for bt, o, h, l, c, v in rows:
-        o, h, l, c, v = (float(o or 0), float(h or 0), float(l or 0),
-                         float(c or 0), float(v or 0))
-        if h <= 0 or v < 0:
-            continue
-        ratio = _split_volume_ratio(sec_id, bt.date())
-        # Дельта инвариантна к масштабу цены — сплит корректирует только объём.
-        delta = _candle_delta(o, h, l, c, v) * ratio
-        o, h, l, c = o / ratio, h / ratio, l / ratio, c / ratio
-        key = bucket_of(bt)
-        b = buckets.get(key)
-        if b is None:
-            buckets[key] = {"time": bt, "open": o, "high": h, "low": l,
-                            "close": c, "volume": v * ratio, "delta": delta}
-        else:
-            b["high"] = max(b["high"], h)
-            b["low"] = min(b["low"], l)
-            b["close"] = c
-            b["volume"] += v * ratio
-            b["delta"] += delta
-
-    pts = [buckets[k] for k in sorted(buckets)]
-    acc = 0.0
-    for p in pts:
-        acc += p["delta"]
-        p["cdv"] = acc
-
+    pts = _tf_bars(sec_id, rows, tf)
     times = [p["time"].date() for p in pts]
     cdv = [p["cdv"] for p in pts]
     repaint, dev = _rolling_metrics(times, cdv, ff_list)
@@ -265,7 +268,7 @@ def repaint_series(
     # уровень читается как «накоплено с начала периода». Метрики считаются по
     # разностям CDV — сдвиг на константу их не меняет.
     base = cdv[first - 1] if first > 0 else 0.0
-    # CDV в % от free float: дельта каждого бакета делится на FF на его дату,
+    # CDV в % от free float: дельта каждой свечи делится на FF на её дату,
     # а не итог на текущий FF — помесячные ступеньки FF не ломают историю.
     cdv_ff = 0.0
     points = []
