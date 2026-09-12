@@ -85,8 +85,13 @@ function fmtPct(v: number | null | undefined): string {
   return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
 }
 
-/** Подпись оси в %: без хвостовых нулей (0.05% / 1.5% / 12%). */
-const fmtAxisPct = (v: number) => `${Number(v.toFixed(2))}%`;
+// Проценты на графиках: у малых значений (CDV в % FF за месяц — сотые доли
+// процента) третий знак, иначе подписи оси и бейдж слипаются в «0.01%».
+const pctDigits = (v: number) => (Math.abs(v) < 0.1 ? 3 : 2);
+/** Подпись оси в %: без хвостовых нулей (0.005% / 0.05% / 1.5%). */
+const fmtAxisPct = (v: number) => `${Number(v.toFixed(pctDigits(v)))}%`;
+/** Значение в тултипе и бейдже: со знаком, точность по величине. */
+const fmtChartPct = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(pctDigits(v))}%`;
 const fmtRub = (v: number) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 const fmtSignedShares = (v: number) => `${v >= 0 ? '+' : ''}${fmtShares(v)} шт`;
 
@@ -280,8 +285,10 @@ export default function RepaintPage() {
                   primaryLabel="Цена"
                   secondaryLabel={cdvInFf ? 'CDV, % от free float' : 'CDV, шт'}
                   formatValue={fmtRub}
-                  formatSecondaryValue={cdvInFf ? fmtPct : fmtSignedShares}
+                  formatSecondaryValue={cdvInFf ? fmtChartPct : fmtSignedShares}
                   formatSecondaryAxis={cdvInFf ? fmtAxisPct : fmtShares}
+                  niceTicks={true}
+                  niceTicksSecondary={true}
                   loading={loading}
                   showValueHeader={false}
                   legendPosition="top"
@@ -307,10 +314,12 @@ export default function RepaintPage() {
                 secondaryColor="var(--accent-secondary)"
                 primaryLabel="Перекраска за 30д"
                 secondaryLabel="Отклонение от среднего 30д"
-                formatValue={fmtPct}
+                formatValue={fmtChartPct}
                 formatPrimaryAxis={fmtAxisPct}
-                formatSecondaryValue={fmtPct}
+                formatSecondaryValue={fmtChartPct}
                 formatSecondaryAxis={fmtAxisPct}
+                niceTicks={true}
+                niceTicksSecondary={true}
                 loading={loading}
                 showValueHeader={false}
                 legendPosition="top"
