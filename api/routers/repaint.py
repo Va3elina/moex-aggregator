@@ -2,9 +2,10 @@
 «Перекраска» — экспериментальный admin-only индикатор (идея Вадима, 2026-08-30).
 
 Сколько % от free float бумаги сменило руки за последний месяц: дельта-объём
-(CDV) считается аппроксимацией по 4Ч-свечам (как CDV в TradingView — из OHLCV,
-биржевого разреза buy/sell в БД нет), его изменение за месяц соотносится с
-количеством акций в свободном обращении.
+(CDV) считается аппроксимацией по часовым свечам, сложенным в бакеты выбранного
+ТФ 1ч/4ч/1д/1н (как CDV в TradingView — из OHLCV, биржевого разреза buy/sell
+в БД нет), его изменение за месяц соотносится с количеством акций в свободном
+обращении.
 
 Вторая метрика — отклонение текущего CDV от его среднего за месяц, тоже в %
 от free float: насколько напокупали/напродавали относительно накопленной базы
@@ -44,7 +45,18 @@ router = APIRouter(prefix="/api/admin/repaint", tags=["repaint"])
 
 WINDOW_DAYS = 30   # «месяц» обеих метрик
 WARMUP_DAYS = 40   # запас истории слева, чтобы окно было полным с первой точки
-MAX_DAYS = 1830
+MAX_DAYS = 9000    # «Всё»: часовые свечи акций лежат с 2011 года
+
+# Таймфрейм ряда = ключ бакета по begin_time часовой свечи. Внутридневные ТФ
+# отдают время бакета, дневной и недельный — только дату: время первой свечи
+# бакета в тултипе дневной точки читалось бы как «на этот час».
+_TF_BUCKET = {
+    "1h": lambda bt: (bt.date(), bt.hour),
+    "4h": lambda bt: (bt.date(), bt.hour // 4),
+    "1d": lambda bt: (bt.date(),),
+    "1w": lambda bt: tuple(bt.date().isocalendar())[:2],
+}
+_TF_INTRADAY = ("1h", "4h")
 
 # SQL-выражение дельты свечи — то же, что _candle_delta, для агрегатов.
 _DELTA_SQL = """
@@ -189,11 +201,12 @@ def repaint_screener(
 @router.get("/series/{sec_id}")
 def repaint_series(
     sec_id: str,
-    days: int = Query(365, ge=60, le=MAX_DAYS),
+    days: int = Query(365, ge=7, le=MAX_DAYS),
+    tf: str = Query("4h", pattern="^(1h|4h|1d|1w)$"),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """4Ч-ряд: цена + CDV + обе метрики перекраски по одной акции."""
+    """Ряд выбранного ТФ: цена + CDV + обе метрики перекраски по одной акции."""
     sec_id = sec_id.upper()
     since = date.today() - timedelta(days=days + WARMUP_DAYS)
     rows = db.execute(text("""
@@ -210,8 +223,9 @@ def repaint_series(
     if not ff_list:
         raise HTTPException(404, f"Нет данных free float по {sec_id}")
 
-    # Часовые дельты → 4Ч-бакеты (ключ: день + номер четырёхчасовки).
-    buckets: dict[tuple[date, int], dict] = {}
+    # Часовые дельты → бакеты выбранного ТФ.
+    bucket_of = _TF_BUCKET[tf]
+    buckets: dict[tuple, dict] = {}
     for bt, o, h, l, c, v in rows:
         o, h, l, c, v = (float(o or 0), float(h or 0), float(l or 0),
                          float(c or 0), float(v or 0))
@@ -221,7 +235,7 @@ def repaint_series(
         # Дельта инвариантна к масштабу цены — сплит корректирует только объём.
         delta = _candle_delta(o, h, l, c, v) * ratio
         o, h, l, c = o / ratio, h / ratio, l / ratio, c / ratio
-        key = (bt.date(), bt.hour // 4)
+        key = bucket_of(bt)
         b = buckets.get(key)
         if b is None:
             buckets[key] = {"time": bt, "open": o, "high": h, "low": l,
@@ -244,18 +258,31 @@ def repaint_series(
     repaint, dev = _rolling_metrics(times, cdv, ff_list)
 
     cut = date.today() - timedelta(days=days)
-    points = [{
-        "time": p["time"].isoformat(),
-        "open": round(p["open"], 6), "high": round(p["high"], 6),
-        "low": round(p["low"], 6), "close": round(p["close"], 6),
-        "volume": p["volume"],
-        "delta": round(p["delta"], 2),
-        "cdv": round(p["cdv"], 2),
-        "repaint_pct": None if r is None else round(r, 3),
-        "dev_pct": None if dv is None else round(dv, 3),
-    } for p, r, dv in zip(pts, repaint, dev) if p["time"].date() >= cut]
-    if not points:
+    first = next((i for i, d in enumerate(times) if d >= cut), None)
+    if first is None:
         raise HTTPException(404, f"Нет данных за период по {sec_id}")
+    # CDV отсчитываем от начала выбранного периода: база всё равно условна, а так
+    # уровень читается как «накоплено с начала периода». Метрики считаются по
+    # разностям CDV — сдвиг на константу их не меняет.
+    base = cdv[first - 1] if first > 0 else 0.0
+    # CDV в % от free float: дельта каждого бакета делится на FF на его дату,
+    # а не итог на текущий FF — помесячные ступеньки FF не ломают историю.
+    cdv_ff = 0.0
+    points = []
+    for p, r, dv in zip(pts[first:], repaint[first:], dev[first:]):
+        cdv_ff += p["delta"] / _ff_at(ff_list, p["time"].date())[1] * 100.0
+        points.append({
+            "time": (p["time"].isoformat() if tf in _TF_INTRADAY
+                     else p["time"].date().isoformat()),
+            "open": round(p["open"], 6), "high": round(p["high"], 6),
+            "low": round(p["low"], 6), "close": round(p["close"], 6),
+            "volume": p["volume"],
+            "delta": round(p["delta"], 2),
+            "cdv": round(p["cdv"] - base, 2),
+            "cdv_ff_pct": round(cdv_ff, 4),
+            "repaint_pct": None if r is None else round(r, 3),
+            "dev_pct": None if dv is None else round(dv, 3),
+        })
 
     name = db.execute(text(
         "SELECT name FROM instruments WHERE sec_id = :s AND type = 'stock' LIMIT 1"
@@ -265,6 +292,7 @@ def repaint_series(
     return {
         "sec_id": sec_id,
         "name": name or sec_id,
+        "tf": tf,
         "window_days": WINDOW_DAYS,
         "ff_shares": ff_shares,
         "ff_month": ff_month.isoformat(),

@@ -3,40 +3,73 @@
  *
  * Идея (Вадим, 2026-08-30): сколько % от free float бумаги сменило руки за
  * последний месяц. CDV (кумулятивный дельта-объём) аппроксимируется по свечам
- * (в БД нет биржевого разреза buy/sell), 4Ч-бакеты из часовиков; изменение CDV
- * за месяц делится на количество акций в свободном обращении. Вторая метрика —
- * отклонение CDV от его среднего за месяц (насколько напокупали/напродавали
- * относительно накопленной базы, спекулятивный спрос).
+ * (в БД нет биржевого разреза buy/sell): дельты часовиков складываются в бакеты
+ * выбранного ТФ, изменение CDV за месяц делится на количество акций в свободном
+ * обращении. Вторая метрика — отклонение CDV от его среднего за месяц
+ * (насколько напокупали/напродавали относительно накопленной базы,
+ * спекулятивный спрос).
  *
  * Source endpoints (оба role=admin, api/routers/repaint.py):
- *   GET /api/admin/repaint/screener       — метрики по всем акциям (таблица)
- *   GET /api/admin/repaint/series/{secid} — 4Ч-ряд: цена + CDV + метрики
+ *   GET /api/admin/repaint/screener                — метрики по всем акциям (таблица)
+ *   GET /api/admin/repaint/series/{secid}?days&tf  — ряд ТФ: цена + CDV + метрики
+ *
+ * Каркас как у остальных индикаторов: PageHeader + editorial-frame, в нём ряд
+ * контролов (актив / таймфрейм / период / CDV в % от free float) и графики.
  *
  * Пока индикатор экспериментальный: ссылка на него — только в admin-вкладке
  * навигации, обычным пользователям не показывается.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, Repeat2, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
+import { ChevronDown, Repeat2, Search } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
-import Dropdown from '../components/Dropdown';
+import PageHeader from '../components/PageHeader';
 import SimpleChart from '../components/SimpleChart';
+import SegmentedControl from '../components/SegmentedControl';
+import InstrumentSearchModal from '../components/InstrumentSearchModal';
+import InstrumentIcon from '../components/InstrumentIcon';
 import HelpTooltip from '../components/HelpTooltip';
 import { useAuth } from '../contexts/AuthContext';
+import { usePersistedState } from '../hooks/usePersistedState';
+import { useIndicatorData } from '../hooks/useIndicatorData';
+import { PERIOD_LABELS } from '../config/chartConfig';
 import { getRepaintScreener, getRepaintSeries } from '../services/api';
-import type { RepaintScreenerRow, RepaintSeries } from '../services/api';
+import type { RepaintSeries, RepaintTf } from '../services/api';
 
 const HINTS = {
   repaint:
-    'Изменение CDV за последние 30 дней, делённое на количество акций в свободном обращении (free float). Показывает, какая доля free float нетто сменила руки за месяц: кто-то продал — кто-то новый купил. Знак — в какую сторону: + напокупали, − напродавали. CDV — аппроксимация по свечам (формула из OHLCV, как CDV в TradingView), биржевого разреза покупок/продаж в данных нет.',
-  dev:
-    'Отклонение текущего CDV от его среднего за 30 дней, в % от free float. Показывает, насколько напокупали или напродавали относительно накопленной базы — оценка величины спекулятивного спроса.',
+    'Изменение CDV за последние 30 дней, делённое на количество акций в свободном обращении (free float). Показывает, какая доля free float нетто сменила руки за месяц: кто-то продал — кто-то новый купил. Знак — в какую сторону: + напокупали, − напродавали. Вторая линия — отклонение текущего CDV от его среднего за 30 дней, тоже в % от free float: насколько напокупали или напродавали относительно накопленной базы (спекулятивный спрос). Окно — 30 календарных дней на любом таймфрейме. CDV — аппроксимация по свечам (формула из OHLCV, как CDV в TradingView), биржевого разреза покупок/продаж в данных нет.',
   cdv:
-    'Кумулятивный дельта-объём в штуках акций: сумма дельт всех свечей с начала загруженного периода (базовая точка условна — смысл несут изменения, не уровень). Дельта свечи = sign(close−open) × тело/(тело+тени) × объём.',
-  ff:
-    'Количество акций в свободном обращении: официальная FF-капитализация МосБиржи (cap_total × ff_factor из корзины MOEXBMI, помесячно) / цена закрытия на дату среза.',
+    'Кумулятивный дельта-объём в штуках акций: сумма дельт свечей с начала выбранного периода (смысл несут изменения, не уровень). Дельта свечи = sign(close−open) × тело/(тело+тени) × объём; считается по часовым свечам и складывается в бакеты таймфрейма.',
+  cdvFf:
+    'CDV в процентах от количества акций в свободном обращении: какая доля free float нетто сменила руки с начала выбранного периода. Дельта каждой свечи делится на free float на её дату — официальная FF-капитализация МосБиржи (cap_total × ff_factor из корзины MOEXBMI, помесячно) / цена закрытия на дату среза.',
 } as const;
+
+const DEFAULT_TICKER = 'SBER';
+const DEFAULT_NAME = 'Сбербанк';
+
+// Период — от сегодня назад. «Всё» упирается в начало часовой истории (SBER с 2011).
+type Period = '1m' | '6m' | '1y' | '3y' | '5y' | 'all';
+const PERIODS: Period[] = ['1m', '6m', '1y', '3y', '5y', 'all'];
+const PERIOD_DAYS: Record<Period, number> = {
+  '1m': 30, '6m': 182, '1y': 365, '3y': 1095, '5y': 1825, 'all': 9000,
+};
+
+// ТФ — бакеты из часовых свечей (складывает бэкенд). Как на ОИ, у мелкого ТФ
+// есть потолок периода (1ч за 5 лет — десятки тысяч точек), у недельного — пол
+// (месяц в неделях — 4 точки). Период вне диапазона сам переключает ТФ.
+const TF_OPTIONS: { key: RepaintTf; label: string; periods: Period[] }[] = [
+  { key: '1h', label: '1ч', periods: ['1m', '6m', '1y'] },
+  { key: '4h', label: '4ч', periods: ['1m', '6m', '1y', '3y', '5y'] },
+  { key: '1d', label: '1д', periods: PERIODS },
+  { key: '1w', label: '1н', periods: ['6m', '1y', '3y', '5y', 'all'] },
+];
+const tfPeriods = (tf: RepaintTf) => TF_OPTIONS.find((o) => o.key === tf)?.periods ?? PERIODS;
+
+const CHART_HEIGHT = 380;
+const METRIC_CHART_HEIGHT = 300;
 
 /** Штуки акций → компактно: 1.23 млрд / 45.6 млн / 789 тыс. */
 function fmtShares(v: number): string {
@@ -52,6 +85,11 @@ function fmtPct(v: number | null | undefined): string {
   return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
 }
 
+/** Подпись оси в %: без хвостовых нулей (0.05% / 1.5% / 12%). */
+const fmtAxisPct = (v: number) => `${Number(v.toFixed(2))}%`;
+const fmtRub = (v: number) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+const fmtSignedShares = (v: number) => `${v >= 0 ? '+' : ''}${fmtShares(v)} шт`;
+
 function pctColor(v: number | null | undefined): string {
   if (v == null) return 'var(--text-muted)';
   return v >= 0 ? 'var(--success)' : 'var(--danger)';
@@ -59,42 +97,35 @@ function pctColor(v: number | null | undefined): string {
 
 export default function RepaintPage() {
   const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const isAdmin = user?.role === 'admin';
 
-  const [rows, setRows] = useState<RepaintScreenerRow[]>([]);
-  const [rowsError, setRowsError] = useState<string | null>(null);
-  const [secId, setSecId] = useState<string>('SBER');
-  const [days, setDays] = useState<number>(365);
-  const [series, setSeries] = useState<RepaintSeries | null>(null);
-  const [seriesLoading, setSeriesLoading] = useState(true);
-  const [seriesError, setSeriesError] = useState<string | null>(null);
+  const [ticker, setTicker] = usePersistedState<string>('frame:repaint:ticker', DEFAULT_TICKER);
+  // Имя держим отдельно, чтобы кнопка актива была подписана до ответа API.
+  const [tickerName, setTickerName] = usePersistedState<string>('frame:repaint:name', DEFAULT_NAME);
+  const [tf, setTf] = usePersistedState<RepaintTf>('frame:repaint:tf', '4h');
+  const [period, setPeriod] = usePersistedState<Period>('frame:repaint:period', '1y');
+  const [cdvInFf, setCdvInFf] = usePersistedState<boolean>('frame:repaint:cdv-ff', false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  // Guard: только admin
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user || user.role !== 'admin') {
-      navigate('/', { replace: true });
-    }
-  }, [authLoading, user, navigate]);
+  // Прежний ряд не сбрасываем на время загрузки — SimpleChart приглушает его сам.
+  const { data: series, loading, error } = useIndicatorData<RepaintSeries>({
+    fetcher: () => getRepaintSeries(ticker, PERIOD_DAYS[period], tf),
+    deps: [ticker, period, tf, isAdmin],
+    enabled: isAdmin,
+    errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить данные',
+  });
+  const { data: screener, error: rowsError } = useIndicatorData({
+    fetcher: getRepaintScreener,
+    deps: [isAdmin],
+    enabled: isAdmin,
+    errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить скринер',
+  });
 
-  useEffect(() => {
-    if (!user || user.role !== 'admin') return;
-    getRepaintScreener()
-      .then(r => setRows(r.rows))
-      .catch((e: Error) => setRowsError(e.message));
-  }, [user]);
-
-  // Ряд по выбранному активу. Старые данные не сбрасываем — приглушаем.
-  useEffect(() => {
-    if (!user || user.role !== 'admin') return;
-    setSeriesLoading(true);
-    setSeriesError(null);
-    getRepaintSeries(secId, days)
-      .then(setSeries)
-      .catch((e: Error) => setSeriesError(e.message))
-      .finally(() => setSeriesLoading(false));
-  }, [user, secId, days]);
+  const rows = useMemo(() => screener?.rows ?? [], [screener]);
+  // В пикере — только бумаги из скринера (есть часовые свечи и free float),
+  // иначе выбор упирается в «нет данных». Пока скринер не пришёл — все акции.
+  const pickerIds = useMemo(() => (rows.length > 0 ? rows.map((r) => r.sec_id) : undefined), [rows]);
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -104,177 +135,201 @@ export default function RepaintPage() {
     );
   }, [rows, query]);
 
-  // Точки с готовыми метриками (первый месяц — прогрев окна, метрик нет).
-  const metricPoints = useMemo(
-    () => (series?.points ?? []).filter(p => p.repaint_pct != null),
+  const priceData = useMemo(
+    () => (series?.points ?? []).map((p) => ({
+      time: p.time, value: p.close, open: p.open, high: p.high, low: p.low,
+    })),
     [series],
   );
+  const cdvData = useMemo(
+    () => (series?.points ?? []).map((p) => ({ time: p.time, value: cdvInFf ? p.cdv_ff_pct : p.cdv })),
+    [series, cdvInFf],
+  );
 
-  if (authLoading || !user || user.role !== 'admin') {
-    return null;
-  }
+  // Точки с готовыми метриками (первый месяц истории — прогрев окна, метрик нет).
+  const metricPoints = useMemo(
+    () => (series?.points ?? []).filter((p) => p.repaint_pct != null),
+    [series],
+  );
+  const repaintData = useMemo(
+    () => metricPoints.map((p) => ({ time: p.time, value: p.repaint_pct as number })),
+    [metricPoints],
+  );
+  const devData = useMemo(
+    () => metricPoints.map((p) => ({ time: p.time, value: p.dev_pct as number })),
+    [metricPoints],
+  );
 
-  const refreshing = seriesLoading && series !== null;
+  // Период вне диапазона текущего ТФ → самый детальный ТФ, который его держит (как на ОИ).
+  const changePeriod = (p: Period) => {
+    if (!tfPeriods(tf).includes(p)) {
+      setTf(TF_OPTIONS.find((o) => o.periods.includes(p))?.key ?? '1d');
+    }
+    setPeriod(p);
+  };
+  // ТФ, которому текущий период не по размеру → ближайший допустимый период.
+  const changeTf = (next: RepaintTf) => {
+    const allowed = tfPeriods(next);
+    if (!allowed.includes(period)) {
+      const idx = PERIODS.indexOf(period);
+      const dist = (p: Period) => Math.abs(PERIODS.indexOf(p) - idx);
+      setPeriod(allowed.reduce((best, p) => (dist(p) < dist(best) ? p : best)));
+    }
+    setTf(next);
+  };
+
+  const selectTicker = (secId: string, name: string) => {
+    setTicker(secId);
+    setTickerName(name);
+  };
+
+  // Admin-only: гость/не-админ — на главную. Проверка ПОСЛЕ всех хуков
+  // (React hooks rule). Пока auth грузится — ничего не рендерим.
+  if (authLoading) return null;
+  if (!isAdmin) return <Navigate to="/" replace />;
+
+  // Пока грузится новый актив, series ещё от прежнего — подпись берём из state.
+  const assetName = series && series.sec_id === ticker ? series.name : tickerName;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-6 md:mb-8">
-        <div
-          className="flex items-center justify-center flex-shrink-0"
-          style={{
-            width: 44, height: 44,
-            borderRadius: 'var(--radius-md, 8px)',
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            color: 'var(--accent)',
-          }}
-        >
-          <Repeat2 size={22} strokeWidth={1.8} />
-        </div>
-        <div>
-          <h1
-            className="text-2xl md:text-3xl font-semibold"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+    <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
+      <PageHeader
+        icon={Repeat2}
+        title="Перекраска"
+        subtitle="Сколько % free float сменило руки за месяц · эксперимент, только для администратора"
+      />
+
+      <div className="editorial-frame">
+        {/* Контролы как на остальных индикаторах: актив + таймфрейм + период,
+            последним — тумблер «CDV в % от free float» для верхнего графика. */}
+        <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+          {/* Пикер бумаги — общий InstrumentSearchModal (как на ОИ и Сезонности). */}
+          <button
+            onClick={() => setPickerOpen(true)}
+            title={assetName}
+            className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-2) var(--sp-4)',
+              gap: 'var(--sp-3)',
+              minWidth: 'clamp(140px, 22vw, 170px)',
+              maxWidth: 220,
+            }}
           >
-            Перекраска
-          </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Сколько % free float сменило руки за месяц · эксперимент, только для администратора
-          </p>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-wrap items-center mb-6 md:mb-8" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<string>
-          options={rows.map(r => ({ key: r.sec_id, label: `${r.name} (${r.sec_id})` }))}
-          value={secId}
-          onChange={setSecId}
-        />
-        <Dropdown<string>
-          options={[
-            { key: '180', label: '180 дней' },
-            { key: '365', label: '1 год' },
-            { key: '1095', label: '3 года' },
-            { key: '1825', label: '5 лет' },
-          ]}
-          value={String(days)}
-          onChange={(v) => setDays(Number(v))}
-        />
-        {refreshing && (
-          <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 size={13} className="animate-spin" />
-            обновление…
-          </span>
-        )}
-      </div>
-
-      {seriesError && (
-        <Card padding="md" className="mb-6">
-          <p style={{ color: 'var(--danger)' }}>Ошибка: {seriesError}</p>
-        </Card>
-      )}
-
-      <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 0.2s ease' }}>
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-          {series ? (
-            <>
-              <MetricCard
-                label="Перекраска за 30 дней"
-                hint={HINTS.repaint}
-                value={fmtPct(series.summary.repaint_pct)}
-                sub="от free float"
-                color={pctColor(series.summary.repaint_pct)}
-              />
-              <MetricCard
-                label="Отклонение от среднего"
-                hint={HINTS.dev}
-                value={fmtPct(series.summary.dev_pct)}
-                sub="CDV vs среднее за 30 дней"
-                color={pctColor(series.summary.dev_pct)}
-              />
-              <MetricCard
-                label="CDV сейчас"
-                hint={HINTS.cdv}
-                value={`${series.summary.cdv >= 0 ? '+' : ''}${fmtShares(series.summary.cdv)}`}
-                sub="штук акций, с начала периода"
-              />
-              <MetricCard
-                label="Free float"
-                hint={HINTS.ff}
-                value={`${fmtShares(series.ff_shares)} шт`}
-                sub={`срез ${series.ff_month.slice(0, 7)}`}
-              />
-            </>
-          ) : (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={96} rounded="lg" />)
-          )}
+            <InstrumentIcon sectype={ticker} size={24} rounded="full" eager />
+            <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+              <div
+                className="font-medium"
+                style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {assetName}
+              </div>
+              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
+                {ticker}
+              </div>
+            </div>
+            <ChevronDown size={14} className="text-theme-secondary flex-shrink-0" />
+          </button>
+          <SegmentedControl<RepaintTf>
+            options={TF_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+            value={tf}
+            onChange={changeTf}
+          />
+          <SegmentedControl<Period>
+            options={PERIODS.map((p) => ({ key: p, label: PERIOD_LABELS[p] }))}
+            value={period}
+            onChange={changePeriod}
+          />
+          <TogglePill active={cdvInFf} onClick={() => setCdvInFf(!cdvInFf)} title={HINTS.cdvFf}>
+            CDV в % от free float
+          </TogglePill>
         </div>
 
-        {/* Цена + CDV */}
-        <SectionTitle title={`${series?.name ?? secId} — цена и CDV (4Ч)`} hint={HINTS.cdv} />
-        <Card padding="md" className="md:p-5 mb-6 md:mb-8">
-          {series ? (
-            <SimpleChart
-              data={series.points.map(p => ({
-                time: p.time, value: p.close, open: p.open, high: p.high, low: p.low,
-              }))}
-              secondaryData={series.points.map(p => ({ time: p.time, value: p.cdv }))}
-              showSecondary={true}
-              primaryColor="var(--accent)"
-              secondaryColor="var(--accent-secondary)"
-              primaryLabel="Цена"
-              secondaryLabel="CDV"
-              formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
-              formatSecondaryValue={(v) => `${v >= 0 ? '+' : ''}${fmtShares(v)} шт`}
-              formatSecondaryAxis={(v) => fmtShares(v)}
-              showValueHeader={false}
-              legendPosition="top"
-              showDownloadButton={false}
-              showNavigator={false}
-              height={360}
+        {error ? (
+          <div
+            className="flex items-center justify-center"
+            style={{
+              height: CHART_HEIGHT,
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-4)',
+              textAlign: 'center',
+            }}
+          >
+            <div>
+              <div className="font-bold mb-2">Не удалось загрузить данные</div>
+              <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.8 }}>{error}</div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Цена + CDV (в штуках или в % от free float) */}
+            <SectionTitle
+              title={cdvInFf ? 'Цена и CDV, % от free float' : 'Цена и CDV'}
+              hint={cdvInFf ? HINTS.cdvFf : HINTS.cdv}
             />
-          ) : (
-            <Skeleton height={360} rounded="lg" />
-          )}
-        </Card>
+            <div className="mb-6 md:mb-8">
+              {series ? (
+                <SimpleChart
+                  data={priceData}
+                  secondaryData={cdvData}
+                  showSecondary={true}
+                  primaryColor="var(--accent)"
+                  secondaryColor="var(--accent-secondary)"
+                  primaryLabel="Цена"
+                  secondaryLabel={cdvInFf ? 'CDV, % от free float' : 'CDV, шт'}
+                  formatValue={fmtRub}
+                  formatSecondaryValue={cdvInFf ? fmtPct : fmtSignedShares}
+                  formatSecondaryAxis={cdvInFf ? fmtAxisPct : fmtShares}
+                  loading={loading}
+                  showValueHeader={false}
+                  legendPosition="top"
+                  showDownloadButton={false}
+                  showNavigator={false}
+                  height={CHART_HEIGHT}
+                />
+              ) : (
+                <Skeleton height={CHART_HEIGHT} rounded="lg" />
+              )}
+            </div>
 
-        {/* Метрики перекраски */}
-        <SectionTitle title="Перекраска и отклонение от среднего, % от free float" hint={HINTS.repaint} />
-        <Card padding="md" className="md:p-5 mb-6 md:mb-8">
-          {series ? (
-            metricPoints.length > 0 ? (
+            {/* Метрики перекраски */}
+            <SectionTitle title="Перекраска и отклонение от среднего, % от free float" hint={HINTS.repaint} />
+            {!series ? (
+              <Skeleton height={METRIC_CHART_HEIGHT} rounded="lg" />
+            ) : metricPoints.length > 0 ? (
               <SimpleChart
-                data={metricPoints.map(p => ({ time: p.time, value: p.repaint_pct as number }))}
-                secondaryData={metricPoints.map(p => ({ time: p.time, value: p.dev_pct as number }))}
+                data={repaintData}
+                secondaryData={devData}
                 showSecondary={true}
                 primaryColor="var(--accent)"
                 secondaryColor="var(--accent-secondary)"
                 primaryLabel="Перекраска за 30д"
                 secondaryLabel="Отклонение от среднего 30д"
-                formatValue={(v) => fmtPct(v)}
-                formatPrimaryAxis={(v) => `${v.toFixed(1)}%`}
-                formatSecondaryValue={(v) => fmtPct(v)}
-                formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
+                formatValue={fmtPct}
+                formatPrimaryAxis={fmtAxisPct}
+                formatSecondaryValue={fmtPct}
+                formatSecondaryAxis={fmtAxisPct}
+                loading={loading}
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}
                 showNavigator={false}
-                height={300}
+                height={METRIC_CHART_HEIGHT}
               />
             ) : (
               <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>
                 Недостаточно истории для месячного окна — метрики появятся, когда часовых свечей
                 будет больше 30 дней.
               </p>
-            )
-          ) : (
-            <Skeleton height={300} rounded="lg" />
-          )}
-        </Card>
+            )}
+          </>
+        )}
+      </div>{/* /editorial-frame */}
 
-        {/* Скринер по всем акциям */}
+      {/* Скринер по всем акциям */}
+      <div className="mt-6 md:mt-8">
         <SectionTitle title="Все акции — текущая перекраска" hint={HINTS.repaint} />
         {rowsError && (
           <Card padding="md" className="mb-6">
@@ -302,7 +357,7 @@ export default function RepaintPage() {
               }}
             />
           </div>
-          {rows.length === 0 && !rowsError ? (
+          {!screener && !rowsError ? (
             <Skeleton height={300} rounded="lg" />
           ) : (
             <div className="overflow-x-auto">
@@ -323,11 +378,11 @@ export default function RepaintPage() {
                   {filteredRows.map(r => (
                     <tr
                       key={r.sec_id}
-                      onClick={() => { setSecId(r.sec_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                      onClick={() => { selectTicker(r.sec_id, r.name); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                       className="cursor-pointer transition-colors"
                       style={{
                         borderTop: '1px solid var(--border-color)',
-                        backgroundColor: r.sec_id === secId
+                        backgroundColor: r.sec_id === ticker
                           ? 'color-mix(in srgb, var(--accent) 8%, transparent)'
                           : undefined,
                       }}
@@ -361,6 +416,19 @@ export default function RepaintPage() {
           )}
         </Card>
       </div>
+
+      {pickerOpen && (
+        <InstrumentSearchModal
+          filterType="stock"
+          showIntradayBadge={false}
+          onlySectypes={pickerIds}
+          onSelect={(sectype, name) => {
+            selectTicker(sectype, name);
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -380,26 +448,47 @@ function SectionTitle({ title, hint }: { title: string; hint: string }) {
   );
 }
 
-function MetricCard({ label, hint, value, sub, color }: {
-  label: string;
-  hint: string;
-  value: string;
-  sub: string;
-  color?: string;
+/** Тумблер в той же пилюле, что SegmentedControl: включён — accent-заливка. */
+function TogglePill({ active, onClick, title, children }: {
+  active: boolean;
+  onClick: () => void;
+  title?: string;
+  children: ReactNode;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <Card padding="md">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p>
-        <HelpTooltip content={hint} icon="info" />
-      </div>
-      <p
-        className="text-xl md:text-2xl font-semibold"
-        style={{ color: color ?? 'var(--text-primary)', letterSpacing: '-0.01em' }}
+    <div
+      className="frame-segmented rounded-full overflow-hidden"
+      style={{
+        display: 'inline-grid',
+        backgroundColor: 'var(--bg-secondary)',
+        border: '2px solid var(--text-primary)',
+      }}
+    >
+      <button
+        type="button"
+        aria-pressed={active}
+        title={title}
+        onClick={onClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="frame-segmented-item font-semibold inline-flex items-center justify-center"
+        style={{
+          fontSize: 'var(--fs-sm)',
+          padding: 'var(--sp-2) var(--sp-3)',
+          backgroundColor: active
+            ? 'var(--accent)'
+            : hovered
+              ? 'color-mix(in srgb, var(--accent) 18%, transparent)'
+              : 'transparent',
+          color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          transition: 'background-color 0.12s ease, color 0.12s ease',
+        }}
       >
-        {value}
-      </p>
-      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</p>
-    </Card>
+        {children}
+      </button>
+    </div>
   );
 }
