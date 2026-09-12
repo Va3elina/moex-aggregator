@@ -2596,8 +2596,8 @@ export interface RepaintSeries {
   points: RepaintPoint[];
 }
 
-export async function getRepaintScreener(): Promise<{ window_days: number; rows: RepaintScreenerRow[] }> {
-  const response = await apiFetch(`${API_BASE}/api/admin/repaint/screener`);
+export async function getRepaintScreener(tf: RepaintTf = '4h'): Promise<{ window_days: number; tf: RepaintTf; rows: RepaintScreenerRow[] }> {
+  const response = await apiFetch(`${API_BASE}/api/admin/repaint/screener?tf=${tf}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error(t('Не удалось загрузить скринер перекраски'));
