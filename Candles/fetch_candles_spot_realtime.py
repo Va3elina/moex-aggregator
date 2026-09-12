@@ -106,6 +106,25 @@ BUFFER_SECONDS = 10
 # Проверка пропусков (секунды)
 GAP_CHECK_INTERVAL = 3600
 
+# Сколько последних баров пересохранять на каждом прогоне (5м, 60м, 7д).
+# Последний бар в БД почти всегда записан, пока ещё формировался: оркестратор
+# зовёт скрипт каждые 5 минут. Дописать его можно, только если он снова попадёт
+# в выборку. Раньше фильтр `begin_time > last_time` выкидывал его навсегда:
+# часовик оставался снимком первых минут часа (бар 18:00 SBER закрыт в
+# 18:03:28), 5-минутка — снимком случайной своей доли. К сентябрю 2026 сумма
+# часовиков за день давала ~5% дневного объёма, 5-минуток — ~40%.
+# Второй бар — запас на сделки последних секунд, которые источник отдаёт уже
+# после закрытия бара. Повтор безопасен: volume-guard в save_candles обновляет
+# бар, только если объём вырос. Тот же фикс у фьючерсов — fetch_candles_futures.
+RESAVE_BARS = 2
+
+
+def resave_since(last_time: Optional[datetime], step: timedelta) -> Optional[datetime]:
+    """Начало окна пересохранения: последние RESAVE_BARS баров до last_time включительно."""
+    if last_time is None:
+        return None
+    return last_time - step * (RESAVE_BARS - 1)
+
 # Директория логов
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -589,10 +608,10 @@ class StocksCandlesUpdater:
 
         async def process(ticker, name):
             async with semaphore:
-                last_time = self.get_last_candle_time(ticker, 5)
+                since = resave_since(self.get_last_candle_time(ticker, 5), timedelta(minutes=5))
 
-                if last_time:
-                    from_date = last_time.strftime('%Y-%m-%d')
+                if since:
+                    from_date = since.strftime('%Y-%m-%d')
                 else:
                     from_date = (now - timedelta(days=7)).strftime('%Y-%m-%d')
 
@@ -605,8 +624,9 @@ class StocksCandlesUpdater:
 
                 df_5min = aggregate_to_5min(df_1min)
 
-                if not df_5min.empty and last_time:
-                    df_5min = df_5min[df_5min['begin_time'] > last_time]
+                # >= : последние бары пересохраняем — см. RESAVE_BARS
+                if not df_5min.empty and since:
+                    df_5min = df_5min[df_5min['begin_time'] >= since]
 
                 if df_5min.empty:
                     return 0, 0
@@ -640,10 +660,10 @@ class StocksCandlesUpdater:
 
         async def process(ticker, name):
             async with semaphore:
-                last_time = self.get_last_candle_time(ticker, 60)
+                since = resave_since(self.get_last_candle_time(ticker, 60), timedelta(hours=1))
 
-                if last_time:
-                    from_date = last_time.strftime('%Y-%m-%d')
+                if since:
+                    from_date = since.strftime('%Y-%m-%d')
                 else:
                     from_date = (now - timedelta(days=30)).strftime('%Y-%m-%d')
 
@@ -654,8 +674,9 @@ class StocksCandlesUpdater:
                 if df is None or df.empty:
                     return 0, 0
 
-                if last_time:
-                    df = df[df['begin_time'] > last_time]
+                # >= : часовик растёт весь час — пересохраняем, см. RESAVE_BARS
+                if since:
+                    df = df[df['begin_time'] >= since]
 
                 if df.empty:
                     return 0, 0
@@ -739,10 +760,10 @@ class StocksCandlesUpdater:
 
         async def process(ticker, name):
             async with semaphore:
-                last_time = self.get_last_candle_time(ticker, 7)
+                since = resave_since(self.get_last_candle_time(ticker, 7), timedelta(weeks=1))
 
-                if last_time:
-                    from_date = last_time.strftime('%Y-%m-%d')
+                if since:
+                    from_date = since.strftime('%Y-%m-%d')
                 else:
                     from_date = (now - timedelta(days=365)).strftime('%Y-%m-%d')
 
@@ -753,8 +774,9 @@ class StocksCandlesUpdater:
                 if df is None or df.empty:
                     return 0, 0
 
-                if last_time:
-                    df = df[df['begin_time'] > last_time]
+                # >= : недельная свеча растёт всю неделю — см. RESAVE_BARS
+                if since:
+                    df = df[df['begin_time'] >= since]
 
                 if df.empty:
                     return 0, 0
