@@ -2561,6 +2561,9 @@ export interface RepaintScreenerRow {
   ff_shares: number;
 }
 
+/** Таймфрейм ряда «Перекраски»: бакеты из часовых свечей (1ч / 4ч / 1д / 1н). */
+export type RepaintTf = '1h' | '4h' | '1d' | '1w';
+
 export interface RepaintPoint {
   time: string;
   open: number;
@@ -2569,7 +2572,10 @@ export interface RepaintPoint {
   close: number;
   volume: number;
   delta: number;
+  /** CDV в штуках, накопленный с начала выбранного периода. */
   cdv: number;
+  /** То же в % от free float: дельта каждой свечи делится на FF на её дату. */
+  cdv_ff_pct: number;
   repaint_pct: number | null;
   dev_pct: number | null;
 }
@@ -2577,6 +2583,7 @@ export interface RepaintPoint {
 export interface RepaintSeries {
   sec_id: string;
   name: string;
+  tf: RepaintTf;
   window_days: number;
   ff_shares: number;
   ff_month: string;
@@ -2598,9 +2605,9 @@ export async function getRepaintScreener(): Promise<{ window_days: number; rows:
   return response.json();
 }
 
-export async function getRepaintSeries(secId: string, days = 365): Promise<RepaintSeries> {
+export async function getRepaintSeries(secId: string, days = 365, tf: RepaintTf = '4h'): Promise<RepaintSeries> {
   const response = await apiFetch(
-    `${API_BASE}/api/admin/repaint/series/${encodeURIComponent(secId)}?days=${days}`,
+    `${API_BASE}/api/admin/repaint/series/${encodeURIComponent(secId)}?days=${days}&tf=${tf}`,
   );
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));

@@ -68,13 +68,16 @@ interface InstrumentSearchModalProps {
   /** Прятать малоактивные активы (мало физлиц-трейдеров) из дефолтного списка —
    *  только для ОИ. Раскрываются поиском / избранным / выбором. По умолч. выкл. */
   hideLowActivity?: boolean;
+  /** Белый список sectype: показывать только эти инструменты (напр. бумаги,
+   *  по которым у индикатора есть данные). undefined → без ограничения. */
+  onlySectypes?: string[];
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true, hideLowActivity = false }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, onlySectypes, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true, hideLowActivity = false }: InstrumentSearchModalProps) {
   const { t } = useTranslation();
   // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
   // Мемоизируем: используется и в renderItem, и как keepVisibleSectypes хука
@@ -188,15 +191,18 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // useInstrumentFilter (тот же, что в MobileAssetSearch). Поведенческие
   // особенности desktop вынесены в options ниже (мемоизированы для стабильных
   // ссылок, иначе хук пересчитывался бы каждый рендер):
-  //   - extraFilter — onlyGroups (десктоп ограничивает группы инструментов)
+  //   - extraFilter — onlyGroups / onlySectypes (десктоп ограничивает группы / список инструментов)
   //   - dedup — тай-брейк дубликатов контрактов серии по change/объёму
   //   - sort — по выбранной колонке (Изм./Объём) и направлению
 
-  // extraFilter: onlyGroups (если задан — оставляем только эти группы).
-  const extraFilter = useMemo(
-    () => (onlyGroups ? (inst: Instrument) => onlyGroups.includes(inst.group || '') : undefined),
-    [onlyGroups],
-  );
+  // extraFilter: onlyGroups / onlySectypes (если заданы — оставляем только их).
+  const extraFilter = useMemo(() => {
+    if (!onlyGroups && !onlySectypes) return undefined;
+    const allowed = onlySectypes ? new Set(onlySectypes) : null;
+    return (inst: Instrument) =>
+      (!onlyGroups || onlyGroups.includes(inst.group || ''))
+      && (!allowed || allowed.has(inst.sectype) || allowed.has(inst.sec_id));
+  }, [onlyGroups, onlySectypes]);
 
   // dedup: выбираем «актуальный» контракт серии (для фьючерсов H/M/U/Z на один
   // sectype). Раньше тай-брейк был ТОЛЬКО по daily_volume — но в выходной объём
