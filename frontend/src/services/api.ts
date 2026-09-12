@@ -1244,6 +1244,72 @@ export async function getMetrica(range: AdminRange, segment = 'all', device = 'a
   return response.json();
 }
 
+export interface GrowthSourceGroup {
+  /** Сколько человек из группы Метрика уже узнала по аккаунту. */
+  seen: number;
+  types: { label: string; value: number }[];
+  sites: { label: string; value: number }[];
+}
+
+/** Воронка, удержание, постоянные гости и первые источники (GET /api/analytics/growth).
+ *  Всегда без админов и по всем устройствам — про продукт целиком, а не про срез из шапки. */
+export interface GrowthReport {
+  date_from: string;
+  date_to: string;
+  totals: { registered: number };
+  funnel: {
+    /** Посетители за период по Метрике; null — Метрика не подключена. */
+    visitors: number | null;
+    registered: number;
+    /** Из зарегистрированных за период — у кого после регистрации уже прошли сутки. */
+    can_return: number;
+    returned: number;
+    paid: number;
+    invite: number;
+  };
+  cohorts: {
+    month: string;
+    registered: number;
+    can_return: number;
+    returned: number;
+    active_30: number;
+    active_7: number;
+    paid: number;
+  }[];
+  guests: {
+    since: string;
+    total: number;
+    days2: number;
+    days3: number;
+    days7: number;
+    top: {
+      days: number;
+      sessions: number;
+      pageviews: number;
+      first_seen: string;
+      last_seen: string;
+      device: string;
+      assets: string[];
+      pages: string[];
+    }[];
+  };
+  sources: {
+    since: string;
+    registered_total: number;
+    paying_total: number;
+    registered: GrowthSourceGroup;
+    paying?: GrowthSourceGroup;
+  } | null;
+}
+
+export async function getGrowth(range: AdminRange): Promise<GrowthReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, range);
+  const response = await apiFetch(`${API_BASE}/api/analytics/growth?${params}`);
+  if (!response.ok) throw new Error('Не удалось посчитать воронку');
+  return response.json();
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Admin: Users panel
 // (Funnel удалён 2026-07-16 вместе с бэкенд-эндпоинтом /api/analytics/funnel —

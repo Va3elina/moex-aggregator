@@ -40,8 +40,10 @@ import {
   listAdminUsers,
   getAlertsStats,
   getMetrica,
+  getGrowth,
 } from '../services/api';
 import type {
+  GrowthReport,
   AnalyticsStats,
   AdminUser,
   AlertsStats,
@@ -67,7 +69,21 @@ const METRIC_HINTS = {
     + '5) Вошедших и админов Метрика узнаёт по номеру аккаунта, который получает с 11.09.2026, и только в браузерах, где после этого входили в аккаунт. Наш трекер знает всех вошедших. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
   metrica_section:
-    'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками.',
+    'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками. День 20.06.2026 исключён целиком: в тот день была купленная накрутка.',
+  funnel:
+    'От посетителя до оплаты за выбранный период. Всегда без админов и по всем устройствам. '
+    + 'Посетители — разные люди по Яндекс Метрике. Зарегистрировались — новые аккаунты за период. '
+    + 'Вернулись — были на сайте позже первых суток после регистрации; процент считаем только от тех, у кого сутки уже прошли. '
+    + 'Оплатили — из зарегистрированных за период хоть раз оплатили подписку; подарочный Pro и триал не в счёт.',
+  cohorts:
+    'Все, кто зарегистрировался в этом месяце, и что с ними сейчас. Вернулись — были на сайте позже первых суток после регистрации. '
+    + 'Заходили — последний раз были на сайте за последние 30 или 7 дней. Оплатили — хоть раз, без подарочного Pro и триала. Без админов.',
+  guests:
+    'Браузеры, где ни разу не входили в аккаунт, но за период заходили хотя бы в 2 разных дня: уже пользуются Фреймом, и их проще всего превратить в пользователей. '
+    + 'ID браузера пишем с 11.09.2026, раньше гостей по отдельности не различали.',
+  first_sources:
+    'Откуда человек пришёл на сайт в самый первый раз. Считает Яндекс Метрика по номеру аккаунта: он привязывается к браузеру вместе со всей историей, как только человек входит в аккаунт после 11.09.2026. '
+    + 'Поэтому источник пока известен не у всех, и число растёт само. Наш трекер тут не помогает: у вошедших первый записанный источник — почти всегда возврат после входа.',
   metrica_pageviews: 'Сколько раз открывали страницы сайта. Каждый переход на другую страницу и каждое обновление страницы — отдельный просмотр.',
   metrica_visits: 'Заходы на сайт. Визит — серия действий одного посетителя. Если он ничего не делает 30 минут, следующее действие начинает новый визит.',
   metrica_users: 'Разные люди, точнее браузеры: Метрика узнаёт их по своей cookie. Один человек с телефона и с ноутбука — два посетителя. За период каждый считается один раз, поэтому посетителей за месяц меньше, чем сумма по дням.',
@@ -319,16 +335,43 @@ export default function AdminStatsPage() {
     return () => { alive = false; };
   }, [user, range, segment, device, tick]);
 
+  // Воронка, удержание, гости, первые источники — от фильтров сегмента и
+  // устройства не зависят, только от периода.
+  const [growth, setGrowth] = useState<GrowthReport | null>(null);
+  const [growthLoading, setGrowthLoading] = useState(true);
+  const growthCache = useRef(new Map<string, GrowthReport>());
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    const key = JSON.stringify(range);
+    const hit = growthCache.current.get(key);
+    let alive = true;
+    if (hit) setGrowth(hit);
+    setGrowthLoading(!hit);
+    getGrowth(range)
+      .then((g) => {
+        growthCache.current.set(key, g);
+        if (alive) setGrowth(g);
+      })
+      .catch(() => {
+        if (alive && !hit) setGrowth(null);
+      })
+      .finally(() => {
+        if (alive) setGrowthLoading(false);
+      });
+    return () => { alive = false; };
+  }, [user, range, tick]);
+
   // Затемняем только блок, который реально ждёт, и только если он ждёт
   // дольше 250 мс: ответ из кэша или быстрый ответ проходит без вспышки.
   const ownDim = useDelayedFlag(loading && data !== null);
   const metricaDim = useDelayedFlag(metricaLoading && metrica !== null);
+  const growthDim = useDelayedFlag(growthLoading && growth !== null);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
-  const refreshing = ownDim || metricaDim;
+  const refreshing = ownDim || metricaDim || growthDim;
   const metricaOn = !!metrica?.connected;
   // Свой трафик показываем, если Метрика не подключена или админ сам попросил сверку.
   const ownTrafficVisible = !metricaOn || showOwn;
@@ -434,6 +477,13 @@ export default function AdminStatsPage() {
       )}
 
       <div>
+        {/* ═══ Воронка ═══ */}
+        <Section title="Воронка" hint={METRIC_HINTS.funnel}>
+          <div style={dimStyle(growthDim)}>
+            <FunnelBlock growth={growth} loading={growthLoading} />
+          </div>
+        </Section>
+
         {/* ═══ Трафик из Яндекс Метрики ═══ */}
         <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
           <div style={dimStyle(metricaDim)}>
@@ -657,6 +707,19 @@ export default function AdminStatsPage() {
         </div>
       </div>
 
+      {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
+      <div style={dimStyle(growthDim)}>
+        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
+          <CohortsBlock growth={growth} loading={growthLoading} />
+        </Section>
+        <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
+          <LoyalGuestsBlock growth={growth} loading={growthLoading} />
+        </Section>
+        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
+          <FirstSourcesBlock growth={growth} loading={growthLoading} />
+        </Section>
+      </div>
+
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
         <AlertsBlock range={range} />
       </Section>
@@ -671,6 +734,230 @@ export default function AdminStatsPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Доля part от whole: «6%», для малых — с одним знаком («0,4%»). */
+function shareText(part: number, whole: number | null | undefined): string | null {
+  if (!whole) return null;
+  const v = (part / whole) * 100;
+  return `${v > 0 && v < 10 ? v.toFixed(1).replace('.', ',') : Math.round(v)}%`;
+}
+
+const MONTH_NAMES_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const fmtMonth = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
+};
+const fmtShortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+const NUM_FONT = "'IBM Plex Mono', monospace";
+
+/** Воронка: от посетителя до оплаты, у каждого шага — доля от предыдущего. */
+function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={116} rounded="lg" />)}
+      </div>
+    );
+  }
+  if (!growth) {
+    return <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>Не удалось посчитать воронку.</p></Card>;
+  }
+  const f = growth.funnel;
+  const steps: { label: string; value: number | null; share: string | null; note: string }[] = [
+    { label: 'Посетители', value: f.visitors, share: null, note: f.visitors === null ? 'Метрика не подключена' : 'разные люди за период' },
+    { label: 'Зарегистрировались', value: f.registered, share: shareText(f.registered, f.visitors), note: 'от посетителей' },
+    {
+      label: 'Вернулись', value: f.returned, share: shareText(f.returned, f.can_return),
+      note: f.can_return === 0 ? 'сутки ещё не прошли'
+        : f.can_return < f.registered ? `из ${f.can_return}, у кого прошли сутки` : 'от зарегистрированных',
+    },
+    { label: 'Оплатили', value: f.paid, share: shareText(f.paid, f.registered), note: 'от зарегистрированных' },
+  ];
+  return (
+    <div className="space-y-2" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {steps.map((s) => (
+          <Card key={s.label} padding="md" className="md:p-5">
+            <div className="text-xs uppercase mb-2" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+              {s.label}
+            </div>
+            <div
+              className="font-bold"
+              style={{
+                color: 'var(--text-primary)', fontSize: 'clamp(1.5rem, 2.4vw, 2rem)', letterSpacing: '-0.02em',
+                fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {s.value === null ? '—' : <TweenedValue value={s.value} format={fmtInt} />}
+            </div>
+            <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              {s.share && <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: NUM_FONT }}>{s.share} </span>}
+              {s.note}
+            </div>
+          </Card>
+        ))}
+      </div>
+      {f.invite > 0 && (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Ещё {f.invite} из зарегистрированных за период получили Pro по инвайту — в «Оплатили» они не входят.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Когорты: все, кто зарегистрировался в месяце, и что с ними сейчас. */
+function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
+  if (!growth || growth.cohorts.length === 0) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
+      </Card>
+    );
+  }
+  const td: React.CSSProperties = { padding: '9px 8px', textAlign: 'right', fontFamily: NUM_FONT, whiteSpace: 'nowrap' };
+  const cell = (n: number, of: number) => (
+    <>
+      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{n}</span>
+      {of > 0 && <span className="text-xs" style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{shareText(n, of)}</span>}
+    </>
+  );
+  const heads = ['Месяц регистрации', 'Людей', 'Вернулись после первых суток', 'Заходили за 30 дней', 'За 7 дней', 'Оплатили'];
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="overflow-x-auto" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+        <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
+          <thead>
+            <tr>
+              {heads.map((h, i) => (
+                <th
+                  key={h}
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em',
+                    textAlign: i ? 'right' : 'left', padding: '0 8px 8px', verticalAlign: 'bottom',
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...growth.cohorts].reverse().map((c) => (
+              <tr key={c.month} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+                <td style={{ padding: '9px 8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{fmtMonth(c.month)}</td>
+                <td style={{ ...td, color: 'var(--text-primary)', fontWeight: 600 }}>{c.registered}</td>
+                <td style={td}>{cell(c.returned, c.can_return)}</td>
+                <td style={td}>{cell(c.active_30, c.registered)}</td>
+                <td style={td}>{cell(c.active_7, c.registered)}</td>
+                <td style={td}>{cell(c.paid, c.registered)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/** Постоянные гости: заходят в разные дни, но ни разу не входили в аккаунт. */
+function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
+  if (!growth) return null;
+  const g = growth.guests;
+  const td: React.CSSProperties = { padding: '9px 8px', verticalAlign: 'top' };
+  return (
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <SummaryCard icon={<Users size={16} />} label="Гостей за период" value={g.total} sub={`считаем с ${fmtShortDay(g.since)}`} />
+        <SummaryCard icon={<Repeat size={16} />} label="Заходили 2+ дня" value={g.days2} sub={shareText(g.days2, g.total) ? `${shareText(g.days2, g.total)} гостей` : undefined} />
+        <SummaryCard icon={<Repeat size={16} />} label="3+ дня" value={g.days3} />
+        <SummaryCard icon={<Repeat size={16} />} label="7+ дней" value={g.days7} />
+      </div>
+      <Card padding="md" className="md:p-5">
+        {g.top.length === 0 ? (
+          <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+            За период никто из гостей не заходил в разные дни. ID браузера пишем с {fmtShortDay(g.since)}, данные копятся.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
+              <thead>
+                <tr>
+                  {['Дней', 'Просмотров', 'Устройство', 'Что смотрит', 'Заходил'].map((h, i) => (
+                    <th
+                      key={h}
+                      className="text-xs uppercase"
+                      style={{ color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em', textAlign: i < 2 ? 'right' : 'left', padding: '0 8px 8px' }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {g.top.map((r, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT, fontWeight: 600, color: 'var(--text-primary)' }}>{r.days}</td>
+                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT }}>{r.pageviews}</td>
+                    <td style={td}>{DEVICE_NAMES[r.device] || r.device}</td>
+                    <td style={{ ...td, color: 'var(--text-primary)' }}>
+                      {[...r.assets, ...r.pages.map((p) => PAGE_NAMES[p] || p)].slice(0, 5).join(', ') || '—'}
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                      {r.first_seen === r.last_seen ? fmtShortDay(r.first_seen) : `${fmtShortDay(r.first_seen)} – ${fmtShortDay(r.last_seen)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/** Откуда впервые пришли зарегистрированные и платящие — по Метрике. */
+function FirstSourcesBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={200} rounded="lg" />;
+  const src = growth?.sources;
+  if (!src) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Нужна Яндекс Метрика: сейчас она не подключена.</p>
+      </Card>
+    );
+  }
+  const items = (rows: { label: string; value: number }[]) => rows.map((r) => ({ label: r.label, value: r.value }));
+  return (
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+        Первый заход известен у {src.registered.seen} из {src.registered_total} зарегистрированных
+        {src.paying ? ` и у ${src.paying.seen} из ${src.paying_total} платящих` : ''}.
+        Число растёт само: человек попадает сюда, как только входит в аккаунт.
+      </p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+        <TopList
+          title="Зарегистрированные · первый источник" columns={['людей']}
+          items={items(src.registered.types)} loading={false} emptyText="Пока никого не видно"
+        />
+        <TopList
+          title="Платящие · первый источник" columns={['людей']} hintAlign="right"
+          items={src.paying ? items(src.paying.types) : []} loading={false} emptyText="Пока никого не видно"
+        />
+        {src.registered.sites.length > 0 && (
+          <TopList
+            title="Сайты, с которых пришли впервые" columns={['людей']}
+            items={items(src.registered.sites)} loading={false} emptyText="—"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Блок ждёт данных дольше 250 мс — чуть гасим, но оставляем читаемым. */
 function dimStyle(on: boolean): React.CSSProperties {

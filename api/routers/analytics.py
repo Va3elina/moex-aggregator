@@ -557,6 +557,145 @@ def get_metrica(
     }
 
 
+@router.get("/growth")
+def get_growth(
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    user=Depends(require_admin),
+):
+    """Воронка, удержание, постоянные гости и первые источники для /admin/stats.
+
+    Всегда без админов и по всем устройствам: это про продукт целиком, а не про
+    срез из шапки. Посетители для воронки — из того же кэшированного отчёта
+    Метрики, что и блок трафика с фильтрами по умолчанию, поэтому цифры сходятся.
+    """
+    from api.services import metrica
+
+    rng = _resolve_range(days, date_from, date_to)
+    db = dict(get_or_compute(f"admin:growth:v1:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
+    admin_ids = db.pop("admin_ids")
+    payer_ids = db.pop("payer_ids")
+    visitors = None
+    sources = None
+    if metrica.is_connected():
+        pd0 = rng["d0"] - timedelta(days=rng["n"])
+        pd1 = rng["d0"] - timedelta(days=1)
+        report = metrica.get_report(rng["d0"], rng["d1"], pd0, pd1, "all", "all", admin_ids)
+        visitors = (report.get("summary") or {}).get("users")
+        sources = metrica.first_sources(admin_ids, payer_ids)
+    db["funnel"]["visitors"] = visitors
+    if sources:
+        sources = {**sources, "registered_total": db["totals"]["registered"], "paying_total": len(payer_ids)}
+    return {**db, "sources": sources, "date_from": rng["d0"].isoformat(), "date_to": rng["d1"].isoformat()}
+
+
+# Зарегистрированные без админов: когда в последний раз были на сайте (события,
+# продление входа, вход), платили ли хоть раз (без подарочного Pro и триала) и
+# получали ли подарочный Pro. Вернулся — был на сайте позже первых суток.
+_ACCOUNTS_SQL = """
+    WITH base AS (
+        SELECT u.id, u.created_at,
+            GREATEST(
+                (SELECT MAX(ae.server_ts) AT TIME ZONE 'UTC' FROM analytics_events ae WHERE ae.user_id = u.id),
+                (SELECT MAX(rt.created_at) FROM refresh_tokens rt WHERE rt.user_id = u.id),
+                u.last_login_at) AS last_active,
+            EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.period <> 'invite'
+                    AND NOT COALESCE(s.is_trial, false) AND s.status IN ('active', 'expired', 'cancelled')) AS paid,
+            EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.period = 'invite') AS invite
+        FROM users u WHERE u.role IS DISTINCT FROM 'admin'
+    ),
+    acc AS (
+        SELECT *, COALESCE(last_active > created_at + interval '1 day', false) AS returned FROM base
+    )
+"""
+
+# Постоянный гость — браузер, где ни разу не входили в аккаунт, но за период
+# заходили хотя бы в 2 разных дня. ID браузера пишем с этой даты.
+GUESTS_SINCE = "2026-09-11"
+
+
+def _compute_growth(rng: dict) -> dict:
+    window = {"start": rng["start"], "end": rng["end"]}
+    with get_engine().connect() as conn:
+        admin_ids = [r[0] for r in conn.execute(text("SELECT id FROM users WHERE role = 'admin'"))]
+        payer_ids = [r[0] for r in conn.execute(text(_ACCOUNTS_SQL + "SELECT id FROM acc WHERE paid"))]
+        total = conn.execute(text(_ACCOUNTS_SQL + "SELECT COUNT(*) FROM acc")).scalar()
+        f = conn.execute(text(_ACCOUNTS_SQL + """
+            SELECT COUNT(*),
+                   COUNT(*) FILTER (WHERE created_at < now() - interval '1 day'),
+                   COUNT(*) FILTER (WHERE returned),
+                   COUNT(*) FILTER (WHERE paid),
+                   COUNT(*) FILTER (WHERE invite)
+            FROM acc
+            WHERE created_at >= (CAST(:start AS timestamp) AT TIME ZONE 'UTC')
+              AND created_at < (CAST(:end AS timestamp) AT TIME ZONE 'UTC')
+        """), window).fetchone()
+        cohorts = conn.execute(text(_ACCOUNTS_SQL + """
+            SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'Europe/Moscow'), 'YYYY-MM'),
+                   COUNT(*),
+                   COUNT(*) FILTER (WHERE created_at < now() - interval '1 day'),
+                   COUNT(*) FILTER (WHERE returned),
+                   COUNT(*) FILTER (WHERE last_active >= now() - interval '30 days'),
+                   COUNT(*) FILTER (WHERE last_active >= now() - interval '7 days'),
+                   COUNT(*) FILTER (WHERE paid)
+            FROM acc GROUP BY 1 ORDER BY 1
+        """)).fetchall()
+        guests = _loyal_guests(conn, window)
+    return {
+        "admin_ids": admin_ids,
+        "payer_ids": payer_ids,
+        "totals": {"registered": int(total or 0)},
+        "funnel": {"registered": f[0], "can_return": f[1], "returned": f[2], "paid": f[3], "invite": f[4]},
+        "cohorts": [{
+            "month": r[0], "registered": r[1], "can_return": r[2], "returned": r[3],
+            "active_30": r[4], "active_7": r[5], "paid": r[6],
+        } for r in cohorts],
+        "guests": guests,
+    }
+
+
+def _loyal_guests(conn, window: dict) -> dict:
+    rows = conn.execute(text("""
+        WITH logged AS (
+            SELECT DISTINCT visitor_id FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+        ),
+        ev AS (
+            SELECT visitor_id, session_id, event_type, event_path, payload, device,
+                   ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+            FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NULL
+              AND server_ts >= :start AND server_ts < :end
+              AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+        )
+        SELECT COUNT(DISTINCT day), COUNT(DISTINCT session_id),
+               COUNT(*) FILTER (WHERE event_type = 'pageview'),
+               MIN(day), MAX(day),
+               MODE() WITHIN GROUP (ORDER BY device),
+               ARRAY_AGG(DISTINCT payload->>'secid') FILTER (WHERE event_type = 'asset_view' AND payload->>'secid' IS NOT NULL),
+               ARRAY_AGG(DISTINCT event_path) FILTER (WHERE event_type = 'pageview' AND event_path IS NOT NULL)
+        FROM ev GROUP BY visitor_id
+        ORDER BY 1 DESC, 3 DESC
+    """), window).fetchall()
+    loyal = [r for r in rows if r[0] >= 2]
+    names = _asset_names(conn, sorted({s for r in loyal[:15] for s in (r[6] or [])}))
+    return {
+        "since": GUESTS_SINCE,
+        "total": len(rows),
+        "days2": len(loyal),
+        "days3": sum(1 for r in rows if r[0] >= 3),
+        "days7": sum(1 for r in rows if r[0] >= 7),
+        "top": [{
+            "days": r[0], "sessions": r[1], "pageviews": r[2],
+            "first_seen": r[3].isoformat(), "last_seen": r[4].isoformat(),
+            "device": r[5] or "unknown",
+            "assets": [names.get(s, s) for s in (r[6] or [])][:4],
+            "pages": list(r[7] or [])[:6],
+        } for r in loyal[:15]],
+    }
+
+
 def _compute_stats(rng: dict, segment: str, device: str) -> dict:
     engine = get_engine()
     with engine.begin() as conn:

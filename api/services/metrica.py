@@ -278,15 +278,29 @@ def _compute(d0: date, d1: date, pd0: date, pd1: date, flt: Optional[str] = None
 # вошёл, считается авторизованным.
 HAS_ACCOUNT = "ym:up:paramsLevel1=='UserID'"
 
+# Купленная накрутка: 20.06.2026 — 1 961 «посетитель» за час, прокси со всей
+# РФ, ни одной регистрации. День выкидываем из всех отчётов целиком, иначе
+# любой период с ним показывает аудиторию в разы больше настоящей.
+BOUGHT_TRAFFIC_DAYS = ("2026-06-20",)
+COUNTER_SINCE = date(2026, 5, 10)   # с этого дня счётчик собирает данные
 
-def device_filter(device: str) -> Optional[str]:
-    return f"ym:s:deviceCategory=='{device}'" if device in ("desktop", "mobile", "tablet") else None
+
+def device_filter(device: str) -> str:
+    """Общая часть всех фильтров: без купленной накрутки и с устройством из шапки."""
+    parts = [f"ym:s:date!='{d}'" for d in BOUGHT_TRAFFIC_DAYS]
+    if device in ("desktop", "mobile", "tablet"):
+        parts.append(f"ym:s:deviceCategory=='{device}'")
+    return " AND ".join(parts)
 
 
-def build_filter(segment: str, device: str, admin_ids: list[int]) -> Optional[str]:
+def _in_list(ids: list[int]) -> str:
+    return ",".join(f"'{int(i)}'" for i in ids)
+
+
+def build_filter(segment: str, device: str, admin_ids: list[int]) -> str:
     """Фильтр Метрики под сегмент и устройство из шапки /admin/stats."""
-    parts = [p for p in (device_filter(device),) if p]
-    ids = ",".join(f"'{int(i)}'" for i in admin_ids)
+    parts = [device_filter(device)]
+    ids = _in_list(admin_ids)
     # Админов нет — условие, которому не отвечает никто.
     admin = f"{HAS_ACCOUNT} AND ym:up:paramsLevel2=.({ids})" if ids else "ym:up:paramsLevel1=='-'"
     if segment == "guest":
@@ -297,7 +311,7 @@ def build_filter(segment: str, device: str, admin_ids: list[int]) -> Optional[st
         parts.append(admin)
     elif segment != "everyone":          # all — все без админов
         parts.append(f"NOT({admin})")
-    return " AND ".join(f"({p})" for p in parts) or None
+    return " AND ".join(f"({p})" for p in parts)
 
 
 class _Partial(Exception):
@@ -341,7 +355,8 @@ def get_report(d0: date, d1: date, pd0: date, pd1: date, segment: str = "everyon
     if not is_connected():
         return {"connected": False, "counter": _counter()}
     flt = build_filter(segment, device, admin_ids or [])
-    flt_phrases = device_filter(device)
+    # Тем же построителем, что и flt: при «все вместе с админами» строки совпадут.
+    flt_phrases = build_filter("everyone", device, [])
     tag = hashlib.md5(flt.encode()).hexdigest()[:10] if flt else "all"
     key = f"metrica:v3:{_counter()}:{d0}:{d1}:{tag}"
 
@@ -364,3 +379,52 @@ def get_report(d0: date, d1: date, pd0: date, pd1: date, segment: str = "everyon
         "phrases_unsegmented": flt != flt_phrases,
         "updated_at": datetime.fromtimestamp(float(ts), timezone.utc).isoformat() if ts else None,
     }
+
+
+def _users_by(dimension: str, flt: str) -> tuple[int, list[dict]]:
+    """Посетители за всё время счётчика в разрезе dimension: (всего, строки)."""
+    j = _get(STAT_URL, {
+        "dimensions": dimension, "metrics": "ym:s:users", "filters": flt,
+        "date1": COUNTER_SINCE.isoformat(), "date2": date.today().isoformat(),
+        "sort": "-ym:s:users", "limit": 10,
+    })
+    total = int(round(float((j.get("totals") or [0])[0] or 0)))
+    rows = [{
+        "label": ((r.get("dimensions") or [{}])[0].get("name") or "не определено"),
+        "value": int(round(float((r.get("metrics") or [0])[0] or 0))),
+    } for r in j.get("data", [])]
+    return total, rows
+
+
+def first_sources(admin_ids: list[int], payer_ids: list[int]) -> Optional[dict]:
+    """Откуда впервые пришли зарегистрированные и платящие.
+
+    Первый источник посетителя (ym:s:first…) — по его самому первому визиту.
+    Кто есть кто, Метрика узнаёт по UserID, а он привязан к браузеру вместе с
+    историей: как только человек войдёт в аккаунт, станет известен и его первый
+    заход месячной давности. Покрытие растёт само, по мере входов. Наши события
+    здесь не помогают: у вошедших первый записанный источник почти всегда —
+    возврат после входа (oauth.yandex.ru, id.vk.ru).
+    """
+    if not is_connected():
+        return None
+    admin = f"{HAS_ACCOUNT} AND ym:up:paramsLevel2=.({_in_list(admin_ids)})" if admin_ids else "ym:up:paramsLevel1=='-'"
+    groups = {"registered": f"{HAS_ACCOUNT} AND NOT({admin})"}
+    if payer_ids:
+        groups["paying"] = f"{HAS_ACCOUNT} AND ym:up:paramsLevel2=.({_in_list(payer_ids)})"
+    key = "metrica:v3:first-sources:" + hashlib.md5(repr(sorted(groups.items())).encode()).hexdigest()[:10]
+
+    def compute() -> dict:
+        out: dict[str, Any] = {"since": COUNTER_SINCE.isoformat()}
+        for name, seg in groups.items():
+            flt = f"({device_filter('all')}) AND ({seg})"
+            seen, types = _users_by("ym:s:firstTrafficSource", flt)
+            _, sites = _users_by("ym:s:firstReferalSource", flt)
+            out[name] = {"seen": seen, "types": types, "sites": sites}
+        return out
+
+    try:
+        return get_or_compute(key, compute, ttl=1800)
+    except Exception as e:   # и истёкший токен: блок просто не покажется
+        log.warning(f"metrica first sources failed: {e}")
+        return None
