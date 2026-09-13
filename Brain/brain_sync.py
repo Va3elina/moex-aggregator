@@ -1009,13 +1009,20 @@ def держатели_резолв(conn) -> dict:
     """))
     conn.execute(text("DELETE FROM brain_edges WHERE kind = 'владеет' AND method = 'акционеры'"))
     conn.execute(text("DELETE FROM brain_edges WHERE kind = 'владеет_долей'"))
+    # ⚠️ Рёбра — только из САМОГО СВЕЖЕГО снимка эмитента. Источников два (smartlab,
+    # financemarker), держатели у них названы по-разному, и DISTINCT ON по держателю
+    # пропускал оба снимка: у Сбера рядом стояли «Американские инвесторы 33%» (2020)
+    # и «Минфин 50%» (2022). 13.09.2026 так было 317 из 708 рёбер. Свежий, но грубый
+    # снимок лучше подробного устаревшего: агент называет долю текущей.
     r4 = conn.execute(text("""
         INSERT INTO brain_edges (src, dst, kind, ts, weight, source, level, method, snapshot_date)
         SELECT DISTINCT ON (h.company_id, i.smartlab_ticker) h.company_id, 'company:' || i.smartlab_ticker, 'владеет',
                s.structure_as_of, s.share_pct, s.source, 'B', 'акционеры', s.structure_as_of
           FROM company_shareholders s JOIN issuers i USING (issuer_id)
+          JOIN (SELECT issuer_id, MAX(structure_as_of) AS d FROM company_shareholders GROUP BY issuer_id) l USING (issuer_id)
           JOIN brain_holder_map h ON h.holder_norm = brain_norm(s.holder)
-         WHERE i.smartlab_ticker IS NOT NULL AND h.status IN ('авто', 'подтверждено') AND h.company_id IS NOT NULL
+         WHERE s.structure_as_of IS NOT DISTINCT FROM l.d
+           AND i.smartlab_ticker IS NOT NULL AND h.status IN ('авто', 'подтверждено') AND h.company_id IS NOT NULL
            AND h.company_id <> 'company:' || i.smartlab_ticker
          ORDER BY h.company_id, i.smartlab_ticker, s.structure_as_of DESC NULLS LAST
         ON CONFLICT DO NOTHING
@@ -1026,8 +1033,10 @@ def держатели_резолв(conn) -> dict:
                'holder:' || md5(lower(trim(s.holder))), 'company:' || i.smartlab_ticker, 'владеет_долей',
                s.structure_as_of, s.share_pct, s.source, 'B', 'акционеры', s.structure_as_of
           FROM company_shareholders s JOIN issuers i USING (issuer_id)
+          JOIN (SELECT issuer_id, MAX(structure_as_of) AS d FROM company_shareholders GROUP BY issuer_id) l USING (issuer_id)
           LEFT JOIN brain_holder_map h ON h.holder_norm = brain_norm(s.holder)
-         WHERE i.smartlab_ticker IS NOT NULL AND s.holder IS NOT NULL
+         WHERE s.structure_as_of IS NOT DISTINCT FROM l.d
+           AND i.smartlab_ticker IS NOT NULL AND s.holder IS NOT NULL
            AND lower(trim(s.holder)) NOT IN ('прочие', 'прочее', 'free float', 'free-float', 'фри флоат', 'миноритарии')
            -- Номинальные держатели (НРД, «Депозитарии», Clearstream) — не владельцы: в раскрытии они
            -- числятся с процентом, но агент, увидев «владельцы: НРД», напишет ложь. 05.09 у Роснефти
