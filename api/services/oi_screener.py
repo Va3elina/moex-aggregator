@@ -215,11 +215,26 @@ def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS) -> Dict[st
 
 def _intraday_assets(db) -> set:
     """sectype с СВЕЖИМИ внутридневными данными позиций (interval=5 за 14 дней) —
-    те же, что бейджит пикер активов (/api/oi/intraday-assets)."""
+    те же, что бейджит пикер активов (/api/oi/intraday-assets).
+
+    ⚠️ Рекурсивный обход индекса (sectype, interval, tradedate DESC) — «прыжок» к
+    следующему sectype, а не DISTINCT по 14 дням 5-минуток: DISTINCT перебирал
+    ~300 тыс. записей ради 63 значений (290–430 мс, 13.09.2026 — 8 тыс. вызовов
+    в неделю из ленты скринера, алертов и сканера аномалий). Обход — 4 мс,
+    множество то же (сверено на проде в обе стороны)."""
     rows = db.execute(text(
         """
-        SELECT DISTINCT sectype FROM open_interest
-        WHERE interval = 5 AND tradedate >= CURRENT_DATE - INTERVAL '14 days'
+        WITH RECURSIVE s AS (
+            SELECT MIN(sectype) AS st FROM open_interest
+            UNION ALL
+            SELECT (SELECT MIN(sectype) FROM open_interest WHERE sectype > s.st)
+            FROM s WHERE s.st IS NOT NULL
+        )
+        SELECT st FROM s
+        WHERE s.st IS NOT NULL
+          AND EXISTS (SELECT 1 FROM open_interest o
+                      WHERE o.sectype = s.st AND o.interval = 5
+                        AND o.tradedate >= CURRENT_DATE - INTERVAL '14 days')
         """
     )).fetchall()
     return {r[0] for r in rows}
