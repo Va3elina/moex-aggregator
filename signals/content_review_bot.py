@@ -122,6 +122,26 @@ def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> bool:
     return True
 
 
+MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
+_SELECT_INSIGHT_MEDIA = text("SELECT source, media_filename FROM content_candidates WHERE id = :id")
+
+
+def send_photo(chat_id, path: str, caption: str = "") -> bool:
+    """График к черновику «от находки» (signals/insight_scan.py рисует его вместе с
+    карточкой) — отдельным сообщением сразу под карточкой черновика."""
+    try:
+        with open(path, "rb") as f:
+            resp = requests.post(f"{API_BASE}/sendPhoto", data={"chat_id": chat_id, "caption": caption},
+                                 files={"photo": (os.path.basename(path), f, "image/png")}, timeout=30)
+        ok = bool(resp.json().get("ok"))
+    except (requests.RequestException, ValueError, OSError) as e:
+        print(f"[content_review_bot] send_photo error: {_redact(e)}")
+        return False
+    if not ok:
+        print(f"[content_review_bot] send_photo: Telegram отклонил фото (HTTP {resp.status_code})")
+    return ok
+
+
 def edit_kb(chat_id, message_id, text_msg: str, inline_keyboard: list) -> None:
     try:
         requests.post(f"{API_BASE}/editMessageText",
@@ -409,6 +429,12 @@ def _notify_new_drafts() -> None:
             if send_kb(config.ADMIN_USER_ID, txt, kb):
                 db.execute(_MARK_NOTIFIED, {"id": cid})
                 db.commit()
+                # находка движка — к карточке её график (не блокирует отметку «отправлено»)
+                media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
+                if media and media[0] == "insight" and media[1]:
+                    path = os.path.join(MEDIA_DIR, media[1])
+                    if os.path.exists(path):
+                        send_photo(config.ADMIN_USER_ID, path, f"график к черновику #{cid}")
                 _notify_failed_at.pop(cid, None)
                 # Коллеге — та же карточка, один раз: кандидат уже помечен
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
