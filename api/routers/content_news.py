@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy import text
 from api.services import style_profile
+from api.services import insight_check
 from api.agent_trace import ВЗЯТО, НЕ_ВЗЯТО, ПУСТО, трассировать
 from sqlalchemy.orm import Session
 
@@ -733,6 +734,25 @@ def style_check(body: StyleCheckIn):
                             detail="Не удалось разобрать текст или нет эталона канала")
     return res
 
+class InsightCheckIn(BaseModel):
+    """Черновик жанра «находка» на проверку кодом — самопроверка писателя до PATCH step-c."""
+    model_config = {"populate_by_name": True}
+
+    candidate_id: int
+    draft: str = Field(validation_alias=AliasChoices("draft", "draft_text"))
+
+
+@internal_router.post("/insight-check", dependencies=[Depends(_require_internal_token)])
+def insight_check_endpoint(body: InsightCheckIn, db: Session = Depends(get_db)):
+    """Числа поста против карточки находки, прогноз цены, заготовки, форма — те же правила,
+    по которым apply_step_c ставит вердикт (api/services/insight_check.py)."""
+    row = db.execute(text("SELECT raw_text FROM content_candidates WHERE id = :id AND source = 'insight'"),
+                     {"id": body.candidate_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Кандидат-находка не найден")
+    return insight_check.check(body.draft or "", row["raw_text"] or "")
+
+
 @internal_router.get("/rejections", dependencies=[Depends(_require_internal_token)])
 def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
     """Реальные решения человека: снимок черновика + причина словами.
@@ -968,6 +988,21 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
                 # черновиков (01.09: плотность чисел уехала втрое, хотя каждый
                 # отдельный запрет был верным), поэтому нужен снимок КАЖДОГО.
                 "style": _style_snapshot(body.draft_text)})
+        # Жанр «находка» (signals/insight_scan.py): у каждого числа есть источник — карточка
+        # находки в raw_text, поэтому вердикт ставит проверка кодом, а не LLM-судья (его очередь и
+        # так берёт только кандидатов с аномалией). Вердикт сразу — бот шлёт карточку без
+        # 30 минут ожидания судьи.
+        src = db.execute(text("SELECT source, raw_text FROM content_candidates WHERE id = :id"),
+                         {"id": candidate_id}).mappings().first()
+        if src and src["source"] == "insight":
+            chk = insight_check.check(body.draft_text, src["raw_text"] or "")
+            db.execute(text("""
+                UPDATE content_candidates
+                SET judge_verdict = :v, judge_failed = CAST(:f AS text[]), judge_defects = CAST(:d AS text[]),
+                    judge_note = :n, judge_checked_at = now()
+                WHERE id = :id
+            """), {"id": candidate_id, "v": chk["verdict"], "f": chk["failed"] or None,
+                   "d": chk["defects"] or None, "n": chk["note"]})
         # ⚠️ Длина в следе — не украшение. Замер 01.09: черновик разъехался до 1 105
         # знаков против медианы жанра 661, и заметили это постфактум по одному посту.
         # В следе дрейф виден рядом на всех черновиках подряд.
@@ -981,7 +1016,10 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
     _reason = body.declined_reason or "модель не указала причину"
     db.execute(text("""
         UPDATE content_candidates
-        SET status = 'pending', synth_declined_reason = :reason, updated_at = now()
+        -- находка без черновика — в discarded: в pending её с тикером фьючерса подобрал бы
+        -- Шаг Б и отдал новостному писателю
+        SET status = CASE WHEN source = 'insight' THEN 'discarded' ELSE 'pending' END,
+            synth_declined_reason = :reason, updated_at = now()
         WHERE id = :id
     """), {"id": candidate_id, "reason": _reason})
     # ⚠️ Отказ писателя — САМАЯ ценная строка следа на этом шаге. В воронке такой

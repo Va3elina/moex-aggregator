@@ -102,6 +102,10 @@ TRIGGER_ID_HYPE_FILTER = os.environ.get("TRIGGER_ID_HYPE_FILTER", "")
 # размечает: решение остаётся за человеком. Как и у Шага Н — из env, не хардкод,
 # чтобы деплой кода не зависел от того, создан ли уже триггер.
 TRIGGER_ID_STEP_G = os.environ.get("TRIGGER_ID_STEP_G", "")
+# Шаг В для жанра «находка» (signals/insight_scan.py) — свой Routine со своим промптом
+# (research/content_pipeline_v2/prompt_insight_writer_routine.md). Пока триггер не заведён в .env,
+# очередь находок просто ждёт — остальной конвейер не задевает.
+TRIGGER_ID_STEP_C_INSIGHT = os.environ.get("TRIGGER_ID_STEP_C_INSIGHT", "")
 # Версия контракта брифа (миграция 059). Поднимать при КАЖДОМ изменении набора полей
 # брифа: судья обязан судить черновик по той версии, по которой он написан, иначе
 # получает артефактные провалы ворот фактуры. Живой случай — 19 облачных сессий, из
@@ -172,6 +176,44 @@ _SELECT_PRIOR_POST = text("""
     ORDER BY COALESCE(published_at, updated_at) DESC
     LIMIT 1
 """)
+
+# Находки движка: кандидат создаётся сразу в draft_ready (signals/insight_scan.py), без
+# аномалии — поэтому основная очередь Шага В (JOIN anomalies) их не видит, у них своя.
+_SELECT_INSIGHT_READY = text("""
+    SELECT c.id, c.headline, c.raw_text, c.event_type, c.dispatch_attempts
+    FROM content_candidates c
+    WHERE c.status = 'draft_ready' AND c.draft_text IS NULL AND c.source = 'insight'
+      AND (c.last_checked_at IS NULL OR c.last_checked_at < :cutoff)
+    ORDER BY c.id
+    LIMIT :batch_limit
+""")
+
+_GIVE_UP_INSIGHT = text("""
+    UPDATE content_candidates
+    SET status = 'discarded', synth_declined_reason = :reason, updated_at = now()
+    WHERE id = :id
+""")
+
+# примеры канала для писателя находок — последние посты той же рубрики (хэштег)
+_SELECT_RUBRIC_POSTS = text("""
+    SELECT posted_at, text FROM channel_posts
+    WHERE channel = 'FrameTool' AND text ~* :tag
+    ORDER BY posted_at DESC
+    LIMIT 3
+""")
+_INSIGHT_TAG = {"insight_positions": "#открыт", "insight_funds": "#деньгивфондах",
+                "insight_seasonality": "#сезонность"}
+
+
+def _insight_payload(db, row, internal_token: str) -> str:
+    """Карточка находки — целиком то, что писателю можно сказать (всё посчитано кодом на
+    дату находки), плюс последние посты рубрики как ориентир голоса."""
+    ex = db.execute(_SELECT_RUBRIC_POSTS, {"tag": _INSIGHT_TAG.get(row["event_type"], "#открыт")}).fetchall()
+    examples = "\n\n".join(f"--- {r[0]:%d.%m.%Y}\n{(r[1] or '').strip()}" for r in ex) or "(в рубрике пока нет постов)"
+    return (f"candidate_id: {row['id']}\ninternal_token: {internal_token}\napi_host: framedata.ru\n\n"
+            f"# КАРТОЧКА НАХОДКИ\n\n{row['raw_text']}\n\n"
+            f"# ПРИМЕРЫ ПОСТОВ КАНАЛА (последние в рубрике; их цифры и даты к находке не относятся)\n\n{examples}\n")
+
 
 _MARK_DISPATCHED = text("""
     UPDATE content_candidates
@@ -2265,6 +2307,32 @@ def run_once() -> dict:
                       f"{type(e).__name__}: {e}")
         db.commit()
         _notify_pipeline_stuck("В", step_c_gave_up)
+
+        # ── Шаг В для находок движка (signals/insight_scan.py) ──────────
+        token_ci = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_C_INSIGHT", "")
+        if token_ci and TRIGGER_ID_STEP_C_INSIGHT:
+            insight_rows = db.execute(
+                _SELECT_INSIGHT_READY, {"cutoff": cutoff, "batch_limit": BATCH_LIMIT}
+            ).mappings().all()
+            insight_gave_up = []
+            for row in insight_rows:
+                if row["dispatch_attempts"] >= MAX_DISPATCH_ATTEMPTS:
+                    reason = (f"Routine находок не ответила за {MAX_DISPATCH_ATTEMPTS} попыток — "
+                              f"находка снята (см. content_ai.py)")
+                    db.execute(_GIVE_UP_INSIGHT, {"id": row["id"], "reason": reason})
+                    insight_gave_up.append((row["id"], reason))
+                    continue
+                try:
+                    _fire(TRIGGER_ID_STEP_C_INSIGHT, token_ci, _insight_payload(db, row, internal_token))
+                    db.execute(_MARK_DISPATCHED, {"id": row["id"]})
+                    summary["insight_fired"] = summary.get("insight_fired", 0) + 1
+                    time.sleep(FIRE_STAGGER_SEC)
+                except Exception as e:
+                    summary["errors"] += 1
+                    print(f"[content_ai] insight step-c fire failed for candidate {row['id']}: "
+                          f"{type(e).__name__}: {e}")
+            db.commit()
+            _notify_pipeline_stuck("В (находки)", insight_gave_up)
 
         # Бэкстоп Шага Н — намеренно МАЛЕНЬКИЙ BATCH_LIMIT_HYPE_FILTER (не
         # BATCH_LIMIT, как у А/В) + тот же FIRE_STAGGER_SEC между вызовами:
