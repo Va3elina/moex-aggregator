@@ -1683,6 +1683,54 @@ class MainOrchestrator:
                     await self.run_brain_sync()
                     self.last_brain_quarter = quarter_slot
 
+                # ⚠️ Всё, что должно идти и в выходные, стоит ВЫШЕ ветки «Выходной»:
+                # она заканчивается `continue`, и шаг ниже неё в сб/вс не наступает
+                # никогда. Найдено 13.09.2026: карточки и детектор владения стояли
+                # после неё и молчали каждые выходные, commodity тоже, хотя в
+                # комментариях у всех троих было «включая выходные».
+
+                # === Commodity (08:00 МСК) ===
+                # US market закрывается в 23:00 EST = 07:00 МСК. К 08:00 дневные
+                # close уже окончательные на Yahoo. Запускается ежедневно (включая
+                # выходные — Yahoo не закрывается на выходные MOEX).
+                if (slot_day != self.last_commodity_update and
+                        now.hour == COMMODITY_UPDATE_HOUR and
+                        now.minute >= COMMODITY_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Commodity update...")
+                    await self.run_commodity_update()
+                    self.last_commodity_update = slot_day
+
+                # === Карточки компаний ===
+                # Полный обход — понедельник 04:00, лёгкий — ежедневно 05:00.
+                # Ночью и в выходные тоже: smart-lab не биржа, он не закрывается,
+                # а мы в это время никому не мешаем — ни торгам, ни себе по CPU.
+                if (slot_day != self.last_cards_full and
+                        now.weekday() == CARDS_FULL_WEEKDAY and
+                        now.hour == CARDS_FULL_HOUR and now.minute >= CARDS_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, полный обход...")
+                    await self.run_company_cards(light=False)
+                    self.last_cards_full = slot_day
+
+                if (slot_day != self.last_cards_light and
+                        now.hour == CARDS_LIGHT_HOUR and now.minute >= CARDS_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, лёгкий проход...")
+                    await self.run_company_cards(light=True)
+                    self.last_cards_light = slot_day
+
+                if (slot_day != self.last_detect and
+                        now.hour == DETECT_HOUR and now.minute >= DETECT_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Сигналы смены владения...")
+                    await self.run_ownership_detect()
+                    self.last_detect = slot_day
+
+                # Понедельник-праздник тоже не должен съедать недельный граф.
+                if (slot_day != self.last_ownership and
+                        now.weekday() == OWNERSHIP_WEEKDAY and
+                        now.hour == OWNERSHIP_HOUR and now.minute >= OWNERSHIP_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Граф владения...")
+                    await self.run_ownership_scan()
+                    self.last_ownership = slot_day
+
                 # === Выходной / праздник ===
                 if not is_trade_day:
                     today = now.date()
@@ -1761,47 +1809,6 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний indices update...")
                     await self.run_indices_update()
                     self.last_indices_early_update = slot_day
-
-                # === Commodity (08:00 МСК) ===
-                # US market закрывается в 23:00 EST = 07:00 МСК. К 08:00 дневные
-                # close уже окончательные на Yahoo. Запускается ежедневно (включая
-                # выходные — Yahoo не закрывается на выходные MOEX).
-                if (slot_day != self.last_commodity_update and
-                        now.hour == COMMODITY_UPDATE_HOUR and
-                        now.minute >= COMMODITY_UPDATE_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Commodity update...")
-                    await self.run_commodity_update()
-                    self.last_commodity_update = slot_day
-
-                # === Карточки компаний ===
-                # Полный обход — понедельник 04:00, лёгкий — ежедневно 05:00.
-                # ⚠️ Ночью и в выходные тоже: smart-lab не биржа, он не закрывается,
-                # а мы в это время никому не мешаем — ни торгам, ни себе по CPU.
-                if (slot_day != self.last_cards_full and
-                        now.weekday() == CARDS_FULL_WEEKDAY and
-                        now.hour == CARDS_FULL_HOUR and now.minute >= CARDS_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, полный обход...")
-                    await self.run_company_cards(light=False)
-                    self.last_cards_full = slot_day
-
-                if (slot_day != self.last_cards_light and
-                        now.hour == CARDS_LIGHT_HOUR and now.minute >= CARDS_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Карточки компаний, лёгкий проход...")
-                    await self.run_company_cards(light=True)
-                    self.last_cards_light = slot_day
-
-                if (slot_day != self.last_detect and
-                        now.hour == DETECT_HOUR and now.minute >= DETECT_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Сигналы смены владения...")
-                    await self.run_ownership_detect()
-                    self.last_detect = slot_day
-
-                if (slot_day != self.last_ownership and
-                        now.weekday() == OWNERSHIP_WEEKDAY and
-                        now.hour == OWNERSHIP_HOUR and now.minute >= OWNERSHIP_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Граф владения...")
-                    await self.run_ownership_scan()
-                    self.last_ownership = slot_day
 
                 # === Дневное обновление (в 19:10, только в торговые дни) ===
                 if (slot_day != self.last_daily_update and
