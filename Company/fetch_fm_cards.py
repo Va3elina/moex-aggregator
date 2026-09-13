@@ -27,8 +27,10 @@ e-disclosure, который нам недоступен.
 """
 
 import argparse
+import calendar
 import json
 import os
+import re
 import sys
 import time
 from datetime import date, datetime
@@ -150,6 +152,34 @@ def период_в_метку(r: dict) -> tuple:
     return "year", str(y)
 
 
+# Метка → (год, месяц конца периода). Порядок не важен: шаблоны не пересекаются.
+_КОНЕЦ_ПО_МЕТКЕ = (
+    (re.compile(r"(\d{4})"), lambda g: (g[0], 12)),
+    (re.compile(r"(\d{4})Q([1-4])"), lambda g: (g[0], 3 * g[1])),
+    (re.compile(r"(\d{4})H([12])"), lambda g: (g[0], 6 * g[1])),
+    (re.compile(r"(\d{4})-(\d{1,2})M"), lambda g: (g[0], g[1])),       # 2025-9M
+    (re.compile(r"(\d{4})H\?-м(\d{1,2})"), lambda g: (g[0], g[1])),    # аномальное полугодие
+    (re.compile(r"LTM-(\d{4})-(\d{2})"), lambda g: (g[0], g[1])),
+)
+
+
+def метка_в_конец(plabel: str):
+    """Календарный конец периода по нашей метке; None, если метка не разобрана.
+
+    ⚠️ Без этого period_end у ВСЕХ строк FM был NULL (13.09.2026: 509 тыс. строк).
+    Проверка «годовая отчётность» в health смотрит на MAX(period_end) и не видела
+    компании, у которых FM — единственный источник (EVRZ, GLTR, QIWI, T, TRNFP).
+    """
+    for шаблон, в_год_месяц in _КОНЕЦ_ПО_МЕТКЕ:
+        m = шаблон.fullmatch(plabel or "")
+        if m:
+            y, mm = в_год_месяц([int(x) for x in m.groups()])
+            if 1 <= mm <= 12:
+                return date(y, mm, calendar.monthrange(y, mm)[1])
+            return None
+    return None
+
+
 def загрузить_компанию(db, secid: str, payload: dict, today: date) -> dict:
     итог = {"метрик": 0, "новых": 0, "изменилось": 0, "акционеров": 0,
             "дивидендов": 0, "документов": 0, "столкновений": 0,
@@ -185,20 +215,25 @@ def загрузить_компанию(db, secid: str, payload: dict, today: da
                     ORDER BY first_seen DESC LIMIT 1
                 """), {"s": secid, "c": код, "st": std, "pt": ptype,
                        "pl": plabel, "src": ИСТОЧНИК}).fetchone()
+                pend = метка_в_конец(plabel)
                 if cur and cur[1] is not None and abs(float(cur[1]) - v) < 1e-9:
-                    db.execute(text("UPDATE company_metrics SET last_seen=:d WHERE id=:i"),
-                               {"d": today, "i": cur[0]})
+                    # Заодно долечиваем period_end у старых строк: эта строка и так
+                    # обновляется каждый прогон, отдельного массового UPDATE не нужно.
+                    db.execute(text("UPDATE company_metrics SET last_seen=:d, "
+                                    "period_end=COALESCE(period_end, :pe) WHERE id=:i"),
+                               {"d": today, "pe": pend, "i": cur[0]})
                     итог["метрик"] += 1
                     continue
                 db.execute(text("""
                     INSERT INTO company_metrics (secid, metric_code, standard, period_type,
-                        period_label, value, source, first_seen, last_seen)
-                    VALUES (:s,:c,:st,:pt,:pl,:v,:src,:d,:d)
+                        period_label, period_end, value, source, first_seen, last_seen)
+                    VALUES (:s,:c,:st,:pt,:pl,:pe,:v,:src,:d,:d)
                     ON CONFLICT (secid, metric_code, standard, period_type, period_label,
                                  source, first_seen)
-                    DO UPDATE SET value=EXCLUDED.value, last_seen=EXCLUDED.last_seen
+                    DO UPDATE SET value=EXCLUDED.value, last_seen=EXCLUDED.last_seen,
+                                  period_end=EXCLUDED.period_end
                 """), {"s": secid, "c": код, "st": std, "pt": ptype, "pl": plabel,
-                       "v": v, "src": ИСТОЧНИК, "d": today})
+                       "pe": pend, "v": v, "src": ИСТОЧНИК, "d": today})
                 итог["изменилось" if cur else "новых"] += 1
                 итог["метрик"] += 1
 
