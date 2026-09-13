@@ -328,13 +328,23 @@ class OI5minUpdater:
         log.info("✓ OI5minUpdater готов")
 
     def get_last_datetime(self, sectype: str) -> Optional[datetime]:
-        """Последняя дата+время OI для тикера"""
+        """Последняя дата+время OI для тикера.
+
+        ⚠️ ORDER BY … LIMIT 1, а не MAX(tradedate + tradetime): максимум по выражению
+        индекс не берёт, и запрос читал всю 5-минутную историю тикера — у Si 60 тыс.
+        записей индекса, 1,1 с против 0,06 мс. 13.09.2026 это был самый дорогой запрос
+        к open_interest: 250 мс в среднем, 12,7 ч за неделю, половина шага «OI 5м».
+        Результат тот же: обе колонки в первичном ключе и NOT NULL, а порядок пары
+        (дата, время) совпадает с порядком их суммы. Пустой набор → fetchone() = None.
+        """
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
-                    SELECT MAX(tradedate + tradetime) as last_dt
+                    SELECT tradedate + tradetime AS last_dt
                     FROM open_interest
                     WHERE sectype = :sectype AND interval = 5
+                    ORDER BY tradedate DESC, tradetime DESC
+                    LIMIT 1
                 """), {'sectype': sectype})
                 row = result.fetchone()
                 return row[0] if row and row[0] else None
