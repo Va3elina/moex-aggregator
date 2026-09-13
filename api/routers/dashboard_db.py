@@ -419,7 +419,7 @@ def _подготовить_фонды(db: Session, з: dict) -> str | None:
             Фильтр("period_type", "Тип периода", "select", "m.period_type = :period_type",
                    варианты_sql="SELECT period_type, period_type FROM company_metrics GROUP BY period_type ORDER BY period_type"),
         ),
-        порядок="m.period_end DESC, m.metric_code", дата_колонка="period_end",
+        порядок="m.period_end DESC NULLS LAST, m.metric_code", дата_колонка="period_end",
     ),
     Срез(
         код="shareholders", группа="Компании", имя="Акционеры",

@@ -305,11 +305,15 @@ def health_data(
                 "чем_грозит": "доля владения могла смениться после снимка",
             })
 
+        # ⚠️ Год берём и из МЕТКИ, не только из period_end: у строк FinanceMarker
+        # period_end до 13.09.2026 не заполнялся, и компании, у которых FM —
+        # единственный источник (EVRZ, GLTR, QIWI, T, TRNFP), проверка не видела.
         r = db.execute(text("""
             SELECT COUNT(DISTINCT secid) FILTER (WHERE последний < CURRENT_DATE - INTERVAL '15 months'),
                    COUNT(DISTINCT secid), MIN(последний)
-            FROM (SELECT secid, MAX(period_end) AS последний FROM company_metrics
-                  WHERE period_type = 'year' GROUP BY secid) t""")).first()
+            FROM (SELECT secid, MAX(COALESCE(period_end, CASE WHEN period_label ~ '^[0-9]{4}$'
+                          THEN make_date(CAST(period_label AS int), 12, 31) END)) AS последний
+                  FROM company_metrics WHERE period_type = 'year' GROUP BY secid) t""")).first()
         if r and r[1]:
             старение.append({
                 # 15 месяцев: годовой отчёт за прошлый год выходит к весне, поэтому
