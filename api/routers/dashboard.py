@@ -312,9 +312,10 @@ def _снимок(db: Session) -> dict:
     # ── ⚠️ ВТОРОЙ ВИД ПРОТУХАНИЯ: возраст САМИХ данных, а не нашей записи. Структуру
     # акционеров мы перезаписываем еженедельно исправно, а у источника она может быть
     # пятилетней. По первой оси это вечное «ok».
+    # Возраст — по самому свежему снимку эмитента из любого источника (см. health_monitor).
     старение = db.execute(text("""
-        SELECT (SELECT COUNT(DISTINCT issuer_id) FROM company_shareholders
-                 WHERE structure_as_of < CURRENT_DATE - INTERVAL '2 years') AS акционеры_старше_2лет,
+        SELECT (SELECT COUNT(*) FROM (SELECT issuer_id FROM company_shareholders GROUP BY issuer_id
+                  HAVING MAX(structure_as_of) < CURRENT_DATE - INTERVAL '2 years') t) AS акционеры_старше_2лет,
                (SELECT COUNT(DISTINCT issuer_id) FROM company_shareholders)  AS акционеры_всего,
                (SELECT COUNT(*) FROM world_facts
                  WHERE kind='связь' AND valid_from < CURRENT_DATE - INTERVAL '2 years') AS рёбра_старше_2лет

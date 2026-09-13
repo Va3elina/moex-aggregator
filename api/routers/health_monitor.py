@@ -270,15 +270,21 @@ def health_data(
     # Порог в 2 года выбран по факту: у 40 компаний из 85 структура старше — то есть
     # это норма жизни, а не авария. Поэтому блок ИНФОРМАЦИОННЫЙ и в overall не
     # входит: тревога, которая горит всегда, гасит внимание ко всем остальным.
+    #
+    # ⚠️ Считать по САМОМУ СВЕЖЕМУ снимку эмитента, а не по любой строке. У эмитента
+    # два источника (smartlab и financemarker) с разными датами снимка, и старая
+    # строка второго источника делала «старым» эмитента со свежей структурой:
+    # 13.09.2026 счётчик показывал 90 из 120, по свежему снимку — 56.
     старение = []
     try:
         r = db.execute(text("""
-            SELECT COUNT(DISTINCT issuer_id) FILTER (
-                       WHERE structure_as_of < CURRENT_DATE - INTERVAL '2 years'),
-                   COUNT(DISTINCT issuer_id) FILTER (WHERE structure_as_of IS NULL),
-                   COUNT(DISTINCT issuer_id),
-                   MIN(structure_as_of)
-            FROM company_shareholders""")).first()
+            WITH l AS (SELECT issuer_id, MAX(structure_as_of) AS d
+                         FROM company_shareholders GROUP BY issuer_id)
+            SELECT COUNT(*) FILTER (WHERE d < CURRENT_DATE - INTERVAL '2 years'),
+                   COUNT(*) FILTER (WHERE d IS NULL),
+                   COUNT(*),
+                   MIN(d)
+            FROM l""")).first()
         if r and r[2]:
             старение.append({
                 "данные": "структура акционеров",
