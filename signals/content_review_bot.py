@@ -431,7 +431,7 @@ def _notify_new_drafts() -> None:
                 db.commit()
                 # находка движка — к карточке её график (не блокирует отметку «отправлено»)
                 media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
-                if media and media[0] == "insight" and media[1]:
+                if media and media[0] in ("insight", "combo") and media[1]:
                     path = os.path.join(MEDIA_DIR, media[1])
                     if os.path.exists(path):
                         send_photo(config.ADMIN_USER_ID, path, f"график к черновику #{cid}")

@@ -179,10 +179,12 @@ _SELECT_PRIOR_POST = text("""
 
 # Находки движка: кандидат создаётся сразу в draft_ready (signals/insight_scan.py), без
 # аномалии — поэтому основная очередь Шага В (JOIN anomalies) их не видит, у них своя.
+# Связки (signals/combo_scan.py, source='combo') идут тем же путём и к тому же писателю:
+# карточка сюжета посчитана кодом так же, проверка — та же (api/services/insight_check.py).
 _SELECT_INSIGHT_READY = text("""
-    SELECT c.id, c.headline, c.raw_text, c.event_type, c.dispatch_attempts
+    SELECT c.id, c.headline, c.raw_text, c.event_type, c.dispatch_attempts, c.source
     FROM content_candidates c
-    WHERE c.status = 'draft_ready' AND c.draft_text IS NULL AND c.source = 'insight'
+    WHERE c.status = 'draft_ready' AND c.draft_text IS NULL AND c.source IN ('insight', 'combo')
       AND (c.last_checked_at IS NULL OR c.last_checked_at < :cutoff)
     ORDER BY c.id
     LIMIT :batch_limit
@@ -208,11 +210,18 @@ _INSIGHT_TAG = {"insight_positions": "#открыт", "insight_funds": "#ден�
 def _insight_payload(db, row, internal_token: str) -> str:
     """Карточка находки — целиком то, что писателю можно сказать (всё посчитано кодом на
     дату находки), плюс последние посты рубрики как ориентир голоса."""
-    ex = db.execute(_SELECT_RUBRIC_POSTS, {"tag": _INSIGHT_TAG.get(row["event_type"], "#открыт")}).fetchall()
+    combo = row.get("source") == "combo"
+    tag = _INSIGHT_TAG.get(row["event_type"])
+    if not tag:     # у связки рубрика — в карточке сюжета, строкой «ХЭШТЕГ РУБРИКИ: …»
+        m = re.search(r"ХЭШТЕГ РУБРИКИ:\s*#(\S{4,8})", row["raw_text"] or "")
+        tag = "#" + m.group(1) if m else "#открыт"
+    ex = db.execute(_SELECT_RUBRIC_POSTS, {"tag": tag}).fetchall()
     examples = "\n\n".join(f"--- {r[0]:%d.%m.%Y}\n{(r[1] or '').strip()}" for r in ex) or "(в рубрике пока нет постов)"
+    card = "КАРТОЧКА СЮЖЕТА (жанр «связка»)" if combo else "КАРТОЧКА НАХОДКИ"
     return (f"candidate_id: {row['id']}\ninternal_token: {internal_token}\napi_host: framedata.ru\n\n"
-            f"# КАРТОЧКА НАХОДКИ\n\n{row['raw_text']}\n\n"
-            f"# ПРИМЕРЫ ПОСТОВ КАНАЛА (последние в рубрике; их цифры и даты к находке не относятся)\n\n{examples}\n")
+            f"# {card}\n\n{row['raw_text']}\n\n"
+            f"# ПРИМЕРЫ ПОСТОВ КАНАЛА (последние в рубрике; их цифры и даты к {'сюжету' if combo else 'находке'} "
+            f"не относятся)\n\n{examples}\n")
 
 
 _MARK_DISPATCHED = text("""
