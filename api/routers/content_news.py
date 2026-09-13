@@ -746,7 +746,8 @@ class InsightCheckIn(BaseModel):
 def insight_check_endpoint(body: InsightCheckIn, db: Session = Depends(get_db)):
     """Числа поста против карточки находки, прогноз цены, заготовки, форма — те же правила,
     по которым apply_step_c ставит вердикт (api/services/insight_check.py)."""
-    row = db.execute(text("SELECT raw_text FROM content_candidates WHERE id = :id AND source = 'insight'"),
+    row = db.execute(text("SELECT raw_text FROM content_candidates "
+                          "WHERE id = :id AND source IN ('insight', 'combo')"),
                      {"id": body.candidate_id}).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Кандидат-находка не найден")
@@ -994,7 +995,8 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         # 30 минут ожидания судьи.
         src = db.execute(text("SELECT source, raw_text FROM content_candidates WHERE id = :id"),
                          {"id": candidate_id}).mappings().first()
-        if src and src["source"] == "insight":
+        # связка (signals/combo_scan.py) — тот же принцип: у каждого числа источник в карточке сюжета
+        if src and src["source"] in ("insight", "combo"):
             chk = insight_check.check(body.draft_text, src["raw_text"] or "")
             db.execute(text("""
                 UPDATE content_candidates
@@ -1018,7 +1020,7 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
         UPDATE content_candidates
         -- находка без черновика — в discarded: в pending её с тикером фьючерса подобрал бы
         -- Шаг Б и отдал новостному писателю
-        SET status = CASE WHEN source = 'insight' THEN 'discarded' ELSE 'pending' END,
+        SET status = CASE WHEN source IN ('insight', 'combo') THEN 'discarded' ELSE 'pending' END,
             synth_declined_reason = :reason, updated_at = now()
         WHERE id = :id
     """), {"id": candidate_id, "reason": _reason})

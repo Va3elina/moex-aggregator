@@ -59,6 +59,15 @@ QUERIES = {
     "channel_posts": """SELECT post_id, posted_at, text FROM channel_posts
                         WHERE channel = 'FrameTool' AND posted_at >= now() - interval '45 days'
                         ORDER BY posted_at DESC""",
+    # связки (signals/insights/combos.py): новости с хэштегами за 25 дней — классификатор типа
+    # события и «обычный день темы» для всплеска (медиана за 20 дней)
+    "news_recent": """
+        SELECT channel, posted_at, coalesce(views, 0) AS views,
+               coalesce(array_to_string(hashtags, ','), '') AS hashtags, left(text, 2000) AS text
+        FROM news_archive
+        WHERE posted_at >= now() - interval '25 days'""",
+    "cbr_flows": """SELECT instrument_type, period_kind, period_end_date, category, value, updated_at
+                    FROM cbr_flows""",
 }
 
 
