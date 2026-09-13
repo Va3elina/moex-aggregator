@@ -777,7 +777,24 @@ class CandlesUpdater:
         существующего prefix того же sectype.
 
         Returns: количество добавленных rows.
+
+        ⚠️ Раз в час МЕЖДУ ПРОЦЕССАМИ, через файл-отметку. Оркестратор запускает
+        фетчер с --once, то есть новым процессом каждые 5 минут, и last_prefix_sync
+        в памяти каждый раз пустой — синхронизация шла на каждом старте. Запрос
+        делал DISTINCT по всей истории фьючерсных свечей: 49 с в среднем, 19 часов
+        базы за неделю (13.09.2026), и каждый раз находил один и тот же NKZ, который
+        вставить нельзя (нет образца для sectype NK).
+        Поэтому же смотрим только дневные свечи за 14 дней: у нового контракта они
+        появляются сразу, а простой контейнера дольше двух недель тут не спасёт и
+        так — на это есть health-аудит.
         """
+        отметка = LOG_DIR / ".prefix_sync"
+        try:
+            if отметка.exists() and datetime.now().timestamp() - отметка.stat().st_mtime < 3600:
+                self.last_prefix_sync = datetime.now()
+                return 0
+        except OSError:
+            pass
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
@@ -785,6 +802,8 @@ class CandlesUpdater:
                         SELECT DISTINCT c.sec_id, LEFT(c.sec_id, 2) AS sectype_inferred
                         FROM candles c
                         WHERE c.type = 'futures'
+                          AND c.interval = 24
+                          AND c.begin_time >= CURRENT_DATE - 14
                           AND char_length(c.sec_id) = 3
                           AND RIGHT(c.sec_id, 1) IN ('F','G','H','J','K','M','N','Q','U','V','X','Z')
                           AND NOT EXISTS (SELECT 1 FROM instruments i WHERE i.sec_id = c.sec_id)
@@ -809,6 +828,10 @@ class CandlesUpdater:
                 added = result.fetchall()
                 conn.commit()
             self.last_prefix_sync = datetime.now()
+            try:
+                отметка.touch()
+            except OSError as e:
+                log.warning(f"Отметка синхронизации prefix'ов не записалась: {e}")
             return len(added)
         except Exception as e:
             log.error(f"_sync_instrument_prefixes: {e}")

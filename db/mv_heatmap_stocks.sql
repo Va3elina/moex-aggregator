@@ -32,15 +32,25 @@ WITH known_splits AS (
     -- SFIN остаётся: его свечи СЫРЫЕ (разрыв 1828→947 на 2025-12-25 виден в БД).
     SELECT 'SFIN'::varchar AS secid, '2025-12-25'::date AS split_date, 1.93::numeric AS ratio
 ),
-ranked_daily AS (
-    SELECT secid, open, close, begin_time,
-           ROW_NUMBER() OVER (PARTITION BY secid ORDER BY begin_time DESC) AS rn
-    FROM candles
-    WHERE type = 'stock' AND interval = 24
-),
+-- ⚠️ ПОСЛЕДНЯЯ СВЕЧА — через LATERAL … LIMIT 1 по индексу (type, interval, secid,
+-- begin_time DESC), по одному заходу на бумагу. Раньше ROW_NUMBER() считался по
+-- всей дневной истории (427 тыс. строк, 7 с), а intraday_close ниже с фильтром
+-- begin_time::date = CURRENT_DATE проходил индекс 5-минуток акций целиком: 190 с
+-- из 199 при пустом результате. 13.09.2026 обновление карты было самым дорогим
+-- запросом базы — 40 часов за неделю — и не влезало в 5-минутный цикл.
+-- Опорный список — instruments: итоговый SELECT всё равно внутренне соединяется
+-- с ним по type = 'stock', так что строк на выходе ровно столько же.
 latest_daily AS (
-    SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
-    FROM ranked_daily WHERE rn = 1
+    SELECT i.sec_id AS secid, x.open AS daily_open, x.close AS price, x.begin_time AS last_update
+    FROM instruments i
+    CROSS JOIN LATERAL (
+        SELECT c.open, c.close, c.begin_time
+        FROM candles c
+        WHERE c.type = 'stock' AND c.interval = 24 AND c.secid = i.sec_id
+        ORDER BY c.begin_time DESC
+        LIMIT 1
+    ) x
+    WHERE i.type = 'stock'
 ),
 -- Последняя 5мин свеча сегодня — С ПОТОЛКОМ ЛИЦЕНЗИИ MOEX.
 --
@@ -55,17 +65,25 @@ latest_daily AS (
 -- (контейнер без TZ). Поэтому потолок считаем через AT TIME ZONE, иначе
 -- сравнение уехало бы на три часа и отрезало всю сессию.
 intraday_close AS (
-    SELECT DISTINCT ON (secid) secid, close
-    FROM candles
-    WHERE type = 'stock' AND interval = 5
-      AND begin_time::date = CURRENT_DATE
-      -- 20 = 15 минут лицензии + 5 минут длины бара. Бар помечен НАЧАЛОМ, а
-      -- покрывает [begin, begin+5): при потолке '15 minutes' бар 14:20
-      -- выпускался в 14:35 вместе со сделкой 14:25 — то есть через десять
-      -- минут вместо пятнадцати. Держать в согласии с
-      -- api/services/market_delay.cutoff_for_interval.
-      AND begin_time <= (now() AT TIME ZONE 'Europe/Moscow') - interval '20 minutes'
-    ORDER BY secid, begin_time DESC
+    SELECT ld.secid, x.close
+    FROM latest_daily ld
+    CROSS JOIN LATERAL (
+        SELECT c.close
+        FROM candles c
+        WHERE c.type = 'stock' AND c.interval = 5 AND c.secid = ld.secid
+          -- Диапазон, а не begin_time::date = CURRENT_DATE: приведение к дате
+          -- выключает индекс по времени (begin_time — timestamp без зоны, так что
+          -- диапазон отбирает ровно те же строки).
+          AND c.begin_time >= CURRENT_DATE AND c.begin_time < CURRENT_DATE + 1
+          -- 20 = 15 минут лицензии + 5 минут длины бара. Бар помечен НАЧАЛОМ, а
+          -- покрывает [begin, begin+5): при потолке '15 minutes' бар 14:20
+          -- выпускался в 14:35 вместе со сделкой 14:25 — то есть через десять
+          -- минут вместо пятнадцати. Держать в согласии с
+          -- api/services/market_delay.cutoff_for_interval.
+          AND c.begin_time <= (now() AT TIME ZONE 'Europe/Moscow') - interval '20 minutes'
+        ORDER BY c.begin_time DESC
+        LIMIT 1
+    ) x
 ),
 -- Дата «снимка» карты per-секция: если сегодня уже были сделки (есть 5-мин
 -- свеча) — снимок за сегодня; иначе (праздник/до открытия) — снимок за дату
