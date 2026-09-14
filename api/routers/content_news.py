@@ -452,10 +452,13 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     # Лимит Telegram (caption 1024, text 4096) считается по видимому тексту —
     # режем исходник ДО конвертации, чтобы не разрезать тег пополам.
     body = (raw_text or headline or "")[:1000 if has_photo else 3900]
-    header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
+    # В канале — без строки-источника, пост начинается сразу с новости
+    # (Вадим 14.09.2026). В личке шапка с источником остаётся.
+    header_html = "" if channel_id else _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>") + "\n\n"
+    header_plain = "" if channel_id else f"{source or '?'}\n\n"
     variants = (
-        (f"{header}\n\n{_telethon_md_to_html(body)}", "HTML"),
-        (f"{source or '?'}\n\n{_strip_telethon_md(body)}", None),
+        (header_html + _telethon_md_to_html(body), "HTML"),
+        (header_plain + _strip_telethon_md(body), None),
     )
 
     def _send(chat_id: str, text_msg: str, parse_mode: Optional[str]):
