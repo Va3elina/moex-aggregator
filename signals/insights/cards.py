@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+from api.services.fund_reorg import correct_flows  # noqa: E402  поправки на реорганизации фондов — те же, что у сайта
 from signals.insights import data as dbdata, detect as det  # noqa: E402  ряды и сезонная кривая — те же, что у детекторов
 
 GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
@@ -161,10 +162,11 @@ def data():
 def funds_data():
     f = dbdata.read("funds")
     fd = dbdata.read("fund_data", parse_dates=["trade_date"])
-    fd = fd.merge(f[["fund_id", "category"]], on="fund_id").sort_values(["fund_id", "trade_date"])
+    fd = fd.merge(f[["fund_id", "category", "ticker"]], on="fund_id").sort_values(["fund_id", "trade_date"])
     g = fd.groupby("fund_id")
     pn, pp = g.nav.shift(1), g.pay.shift(1)
     fd["flow"] = (fd.nav - pn) - pn * (fd.pay - pp) / pp
+    fd = correct_flows(fd)      # слияния и ликвидации фондов — как на графике сайта
     daily = fd.dropna(subset=["flow"]).pivot_table(index="trade_date", columns="category", values="flow",
                                                    aggfunc="sum").fillna(0)
     daily["all"] = daily.sum(axis=1)

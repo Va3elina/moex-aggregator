@@ -45,6 +45,7 @@ from collections import Counter, defaultdict
 import numpy as np
 import pandas as pd
 
+from api.services.fund_reorg import correct_flows  # поправки на реорганизации фондов — те же, что у сайта
 from signals.insights import data
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -391,10 +392,11 @@ def detect_positions(out, P, names, groups, to_stock, idx, stk, perp):
 def detect_funds(out):
     f = data.read("funds")
     fd = data.read("fund_data", parse_dates=["trade_date"])
-    fd = fd.merge(f[["fund_id", "category"]], on="fund_id").sort_values(["fund_id", "trade_date"])
+    fd = fd.merge(f[["fund_id", "category", "ticker"]], on="fund_id").sort_values(["fund_id", "trade_date"])
     g = fd.groupby("fund_id")
     prev_nav, prev_pay = g.nav.shift(1), g.pay.shift(1)
     fd["flow"] = (fd.nav - prev_nav) - prev_nav * (fd.pay - prev_pay) / prev_pay
+    fd = correct_flows(fd)      # слияния и ликвидации фондов — как на графике сайта
     daily = fd.dropna(subset=["flow"]).pivot_table(index="trade_date", columns="category", values="flow",
                                                    aggfunc="sum").fillna(0)
     daily["all"] = daily.sum(axis=1)
@@ -453,7 +455,7 @@ def detect_funds(out):
             if m is not None and len(past) >= 12:
                 if (m < 0 and m <= past.min()) or (m > 0 and m >= past.max()):
                     out.add(t, "фонды", f"funds:{c}", "рекорд_или_экстремум", 7.5,
-                            f"{label[c].capitalize()}: {'отток' if m < 0 else 'приток'} с начала месяца {abs(m) / 1e9:.0f} млрд ₽ — рекорд за всё время наших данных",
+                            f"{label[c].capitalize()}: {'отток' if m < 0 else 'приток'} с начала месяца {bn(m)} — рекорд за всё время наших данных",
                             leg="mtd", value=float(m), hi=bool(m > 0))
                 signs = np.sign(past.values)
                 n = 0
