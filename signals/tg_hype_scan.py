@@ -228,6 +228,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             baseline = statistics.median(baseline_vals)
             if baseline <= 0 or fwd < baseline * config.MTP_HYPE_RATIO_MIN:
                 continue
+            if fwd < config.MTP_HYPE_MIN_FWD.get(channel, 0):
+                continue  # см. MTP_HYPE_MIN_FWD: ×3 к медиане 1 = 3 репоста
 
             headline = _headline_from_text(row["msg_text"])
             if db.execute(_EXISTS_CANDIDATE, {"channel": channel, "headline": headline}).fetchone():
