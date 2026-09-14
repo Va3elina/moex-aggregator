@@ -207,8 +207,8 @@ def era_status(u, years, dates, higher, ref) -> str | None:
         return status_ru(u, years, dates, higher, ref)
     w = "максимум" if higher else "минимум"
     if u is None:
-        return f"{w} за всё время наших данных (они начинаются в {dates[0].year} году) - и после 2022 года тоже"
-    return f"{w} за всё время после 2022 года"
+        return f"исторический {w} - за всё время наших данных, с {dates[0].year} года"
+    return f"исторический {w}: такого не было за всё время после 2022 года"
 
 
 def older_peak(arr, dates, i, unit, ref) -> str:
@@ -217,7 +217,8 @@ def older_peak(arr, dates, i, unit, ref) -> str:
     if not old.any() or arr[:i][old].max() <= arr[i]:
         return ""
     j = int(np.flatnonzero(old)[np.argmax(arr[:i][old])])
-    return f"до 2022 года, в другом рынке с нерезидентами, бывало и больше - {q_ru(arr[j], unit)} {d_ru(dates[j], ref)}"
+    return (f"для понимания, в пост не выносить: до 2022 года, в другом рынке с нерезидентами, бывало и "
+            f"больше - {q_ru(arr[j], unit)} {d_ru(dates[j], ref)}")
 
 
 def human_name(sec) -> tuple:
@@ -304,7 +305,7 @@ def positions_card(sec, leg, as_of) -> dict:
         if prev > 0 and v > prev:
             r = v / prev
             facts.append(f"прежний пик - {q_ru(prev, unit)} {d_ru(pdate, t)}; сейчас выше "
-                         + (x_ru(r) if r >= 1.5 else f"на {p_ru(r - 1, False)}"))
+                         + (x_ru(r) if r >= 1.5 else f"на {p_ru(r - 1, False)} - на {q_ru(v - prev, unit)}"))
     ch = []
     for k, w in ((1, "за день"), (5, "за неделю"), (20, "за месяц")):
         if i >= k and arr[i - k] > 0 and leg != "net":
@@ -313,6 +314,22 @@ def positions_card(sec, leg, as_of) -> dict:
             ch.append(f"{w} {'+' if v - arr[i - k] >= 0 else '-'}{q_ru(abs(v - arr[i - k]), unit)}")
     if ch:
         facts.append("изменение: " + ", ".join(ch))
+    # итог толпы: цена в дни прироста позиции против нынешней. В посте коллеги к #2104 (Лукойл, 14.09)
+    # «шортисты сидят в незафиксированном убытке» — самая сильная строка, и она считается по рядам
+    if leg in ("long", "short") and pser is not None and i >= 21:
+        pw = pser.reindex(dates[i - 20:i + 1]).ffill().values
+        add = np.clip(np.diff(arr[i - 21:i + 1]), 0, None)
+        ok = ~np.isnan(pw) & (add > 0)
+        if ok.sum() >= 3 and add[ok].sum() >= 0.2 * v:
+            vw, now = float((add[ok] * pw[ok]).sum() / add[ok].sum()), float(pser.iloc[-1])
+            res = (now / vw - 1) * (-1 if leg == "short" else 1)
+            if abs(res) >= 0.03:
+                bet = "ставка на падение" if leg == "short" else "ставка на рост"
+                cost = "стоили" if were == "были" else "стоил"
+                facts.append(f"итог толпы: за месяц позицию наращивали, когда {plabel} {cost} в среднем "
+                             f"{px_ru(vw, plabel)}, на {d_ru(pser.index[-1], t)} - {px_ru(now, plabel)}; {bet} "
+                             f"{'в плюсе' if res > 0 else 'в минусе'} примерно на {p_ru(abs(res), False)} - "
+                             f"оценка по средней цене в дни прироста позиции")
     if cur and i - cur["start"] >= 5:
         facts.append(f"на максимумах за год и больше с {d_ru(dates[cur['start']], t)}; с тех пор "
                      f"{p_ru(v / arr[cur['start']] - 1)}" if arr[cur['start']] > 0 else "")
@@ -339,8 +356,7 @@ def positions_card(sec, leg, as_of) -> dict:
     if len(r20s) >= 2:
         k = sum(r > 0 for r in r20s)
         after.append(f"итого после {len(r20s)} прошлых пиков {plabel} через месяц {were} выше в {k} "
-                     f"{plural(k, ('случае', 'случаях', 'случаях'))} из {len(r20s)}, медиана "
-                     f"{p_ru(float(np.median(r20s)))}")
+                     f"{plural(k, ('случае', 'случаях', 'случаях'))} из {len(r20s)}")
     analogy = []
     if rows:
         best = min(rows, key=lambda r: abs(np.log(max(r["value"], 1) / max(v, 1))))
@@ -388,8 +404,8 @@ def positions_card(sec, leg, as_of) -> dict:
               f"данные по {dat} начинаются в {dates[0].year} году",
               NO_FORECAST]
     if dates[0] < ERA_START:
-        limits.append("до 2022 года был другой рынок, с нерезидентами: пики до 2022 года - не аналогия; "
-                      "«исторический» для нас - после 2022 года")
+        limits.append("до 2022 года был другой рынок, с нерезидентами: пики до 2022 года - не аналогия и в "
+                      "пост не нужны; рекорд после 2022-го называй «исторический максимум» без оговорок")
     if len(r20s) < 4:
         limits.append(f"прошлых пиков с известным продолжением всего {len(r20s)} - это история, "
                       f"а не закономерность: не обобщай")
