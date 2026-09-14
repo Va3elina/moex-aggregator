@@ -426,6 +426,32 @@ def positions_card(sec, leg, as_of) -> dict:
 
 
 # ── карточка: потоки в фонды ─────────────────────────────────────────────────────
+def stall_episodes(past, me, t) -> list:
+    """Месяцы, когда приток остановился: поток меньше четверти среднего за прошлые 12 месяцев при
+    притоке в среднем. Пост Вадима про золото (14.09): «небольшие оттоки или замедление притоков» —
+    оба раза золото в тот момент стояло у минимумов, после которых начинался рост. Соседние месяцы
+    (через один) — один эпизод; только после 2022 года."""
+    avg = past.shift(1).rolling(12, min_periods=6).mean()
+    m = past[(past.index >= ERA_START) & (avg > 0) & (past < 0.25 * avg)]
+    eps = []
+    for d in m.index:
+        if eps and (d.to_period("M") - eps[-1][-1].to_period("M")).n <= 2:
+            eps[-1].append(d)
+        else:
+            eps.append([d])
+    out = []
+    for e in eps:
+        if (t.to_period("M") - e[-1].to_period("M")).n <= 2:
+            continue        # примыкает к текущему месяцу — это нынешний эпизод, не прошлый
+        j0, j1 = me.index.searchsorted(e[0]), me.index.searchsorted(e[-1])
+        if j0 < 1 or j1 >= len(me):
+            continue
+        r3 = me.iloc[j1 + 3] / me.iloc[j1] - 1 if j1 + 3 < len(me) and me.index[j1 + 3] <= t else None
+        out.append({"months": e, "flow": float(past[e].sum()), "r_in": float(me.iloc[j1] / me.iloc[j0 - 1] - 1),
+                    "r3": None if r3 is None else float(r3)})
+    return out
+
+
 def funds_card(cat, as_of) -> dict:
     P, names, groups, to_stock, idx, stk, perp, usd = data()
     daily, nav = funds_data()
@@ -436,6 +462,7 @@ def funds_card(cat, as_of) -> dict:
     mtd = float(d[d.index.to_period("M") == t.to_period("M")].sum())
     mo = d.resample("ME").sum()
     past = mo[mo.index < t.to_period("M").start_time]
+    era = past[past.index >= ERA_START]     # рекорды и аналогии — в рынке после 2022 года
     dv = d.values
     facts = [f"{d_ru(t, t)} {nom}: {word(dv[-1])} {n_ru(abs(dv[-1]))} ₽ за день"]
     # разворот: «бегство из облигаций» автор увидел по первым дням оттока после притока —
@@ -464,10 +491,9 @@ def funds_card(cat, as_of) -> dict:
             rec = line_n
     mname = GEN[t.month - 1]
     line = f"{word(mtd)} с начала {mname} - {n_ru(abs(mtd))} ₽"
-    mtd_rec = len(past) >= 12 and ((mtd < 0 and mtd <= past.min()) or (mtd > 0 and mtd >= past.max()))
+    mtd_rec = len(era) >= 12 and ((mtd < 0 and mtd <= era.min()) or (mtd > 0 and mtd >= era.max()))
     if mtd_rec:
-        first = past.index[0]
-        line += f"; это уже больше, чем в любой полный месяц наших данных (с {GEN[first.month - 1]} {first.year} года)"
+        line += "; это уже больше, чем в любой полный месяц за всю историю наблюдений - с 2022 года"
     facts.append(line)
     head = f"{nom.capitalize()}: " + (line if mtd_rec else (reversal or rec or line))
     signs = np.sign(past.values)
@@ -491,24 +517,41 @@ def funds_card(cat, as_of) -> dict:
     last6 = past.iloc[-6:]
     history = ["помесячно, последние полные месяцы: "
                + "; ".join(f"{mn_ru(m, t)} {'+' if x > 0 else '-'}{n_ru(abs(x))} ₽" for m, x in last6.items())]
-    if len(past):
-        mx, mn = past.idxmax(), past.idxmin()
-        history.append(f"самый большой приток за месяц в наших данных - {m_ru(mx, t)} ({n_ru(past.max())} ₽), "
-                       f"самый большой отток - {m_ru(mn, t)} ({n_ru(abs(past.min()))} ₽)")
+    if len(era):
+        mx, mn = era.idxmax(), era.idxmin()
+        history.append(f"самый большой приток за месяц после 2022 года - {m_ru(mx, t)} ({n_ru(era.max())} ₽), "
+                       f"самый большой отток - {m_ru(mn, t)} ({n_ru(abs(era.min()))} ₽)")
+    # спот, как на графике сайта: у вечного фьючерса на золото цена только с июля 2023 — с ним
+    # «что было после» прошлых оттоков выходило пустым
+    spot = lambda code, alt: idx[code].dropna() if code in idx else perp.get(alt)  # noqa: E731
     rel = {"bonds": ("индекс гособлигаций", idx.get("RGBI")), "stocks": ("индекс Мосбиржи", idx.get("IMOEX")),
-           "gold": ("золото", perp.get("GLDRUBF")), "yuan": ("юань", perp.get("CNYRUBF"))}.get(cat)
-    price, after, analogy, weak = [], [], [], None
+           "gold": ("золото", spot("GLDRUB_TOM", "GLDRUBF")), "yuan": ("юань", spot("CNYRUB_TOM", "CNYRUBF"))}.get(cat)
+    price, after, analogy, weak, stalls = [], [], [], None, []
     if rel and rel[1] is not None:
         rl, rs = rel[0], upto(rel[1], t)
         ra = rs.values
         price.append(f"{rl} - {px_ru(ra[-1], rl)}; за неделю {p_ru(ra[-1] / ra[-6] - 1)}, за месяц "
                      f"{p_ru(ra[-1] / ra[-21] - 1)}; от максимума за год {p_ru(ra[-1] / ra[-250:].max() - 1)}")
         me = rs.resample("ME").last()
-        same = past[np.sign(past) == np.sign(mtd)] if mtd != 0 else past.iloc[0:0]
-        big = same.reindex(same.abs().sort_values(ascending=False).index)[:3]
+        avg12 = float(past.iloc[-12:].mean()) if len(past) >= 6 else 0.0
+        pace = mtd * t.days_in_month / t.day      # месяц не закончился: темп, а не сумма
+        stalls = stall_episodes(past, me, t) if avg12 > 0 and pace < 0.25 * avg12 else []
+        for e in stalls[-3:]:
+            m0, m1 = e["months"][0], e["months"][-1]
+            span = mn_ru(m1, t) if m0 == m1 else (f"{det.MONTHS[m0.month - 1]} - {mn_ru(m1, t)}" if m0.year == m1.year
+                                                  else f"{mn_ru(m0, t)} - {mn_ru(m1, t)}")
+            after.append(f"похожий эпизод - приток остановился, {span}: за это время {'+' if e['flow'] > 0 else '-'}"
+                         f"{n_ru(abs(e['flow']))} ₽, {rl} {p_ru(e['r_in'])}"
+                         + (f"; за три месяца после {p_ru(e['r3'])}" if e["r3"] is not None else ""))
+        if stalls:
+            analogy.append(f"сейчас приток тоже {'остановился' if mtd <= 0 else 'почти остановился'}: средний приток за прошлый год - {n_ru(avg12)} ₽ в месяц, "
+                           f"с начала {mname} - {word(mtd)} {n_ru(abs(mtd))} ₽; похожих эпизодов после 2022 года - {len(stalls)}")
+        same = era[np.sign(era) == np.sign(mtd)] if mtd != 0 else era.iloc[0:0]
+        big = same.reindex(same.abs().sort_values(ascending=False).index)[:3 - min(len(stalls), 2)]
         if len(big) and big.abs().max() < 0.3 * abs(mtd):
             weak = (f"прошлые месяцы с {word(mtd)}ом были намного меньше нынешнего (крупнейший - "
-                    f"{n_ru(big.abs().max())} ₽): это не аналогия по масштабу, вывод на них не строить")
+                    f"{n_ru(big.abs().max())} ₽): по масштабу это не аналогия"
+                    + (", но режим «приток остановился» сравнивать можно" if stalls else ", вывод на них не строить"))
         for m, x in big.sort_index().items():
             j = me.index.searchsorted(m)
             if 1 <= j < len(me):
@@ -521,6 +564,9 @@ def funds_card(cat, as_of) -> dict:
               "поток = изменение активов минус изменение цены пая; дневные данные по дате отчёта фондов"]
     if weak:
         limits.append(weak)
+    if 0 < len(stalls) < 4:
+        limits.append(f"похожих эпизодов всего {len(stalls)}: можно сказать, что было в тех случаях, но прямо "
+                      f"назови, что их {len(stalls)} - это сопутствующий сигнал, а не закономерность")
     months = mo[mo.index >= t - pd.Timedelta(days=30 * 30)]
     chart = {"type": "bars", "title": f"{nom.capitalize()}: приток и отток по месяцам, млрд ₽",
              "x": months.index, "y": months.values / 1e9, "current": True}

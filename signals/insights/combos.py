@@ -257,7 +257,10 @@ class Engine:
             hot = news.text.str.contains("🔥", regex=False).any()
             if news.empty or not (hot or len(news) >= max(2, SPIKE * (base if base == base else 1))):
                 return None
-        top1 = lead.sort_values("score", ascending=False).iloc[0]
+        # рекорд — главная тема: в #2084 рекордный отток из фондов золота стал подпоркой к сдвигу шорта
+        # по доллару, а Вадим написал пост именно про него
+        top1 = (lead.assign(rec=lead["type"].eq("рекорд_или_экстремум"))
+                .sort_values(["rec", "score"], ascending=False).iloc[0])
         sup = legs[(legs.score >= SUPPORT) & (legs.family != top1.family)]
         sup = sup.sort_values("score", ascending=False).drop_duplicates("family")
         fams = {top1.family} | set(sup.family) | ({"новость"} if is_news else set())
