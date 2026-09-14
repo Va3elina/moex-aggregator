@@ -373,6 +373,42 @@ def _apply_hype_emoji(html_text: str) -> str:
 # читает через volume-маунт (docker-compose.yml), см. media_filename.
 _MEDIA_DIR = "/data/content_media"
 
+# Telethon (tg_hype_scan.py) отдаёт текст поста в своём markdown: **жирный**,
+# __курсив__, ~~зачёркнутый~~, `код`, [текст](url). 14.09.2026 это уходило в
+# канал буквально, со звёздочками и сырыми ссылками, — переводим в HTML Telegram.
+_MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+_MD_INLINE_RES = (
+    (re.compile(r"\*\*(.+?)\*\*", re.S), "b"),
+    (re.compile(r"__(.+?)__", re.S), "i"),
+    (re.compile(r"~~(.+?)~~", re.S), "s"),
+    (re.compile(r"`([^`\n]+)`"), "code"),
+)
+
+
+def _md_inline_to_html(text_val: str) -> str:
+    out = html.escape(text_val)
+    for rx, tag in _MD_INLINE_RES:
+        out = rx.sub(lambda m, t=tag: f"<{t}>{m.group(1)}</{t}>", out)
+    return out
+
+
+def _telethon_md_to_html(text_val: str) -> str:
+    """Ссылки уходят в плейсхолдеры ДО жирного/курсива, чтобы `__` внутри URL
+    не превратился в курсив."""
+    links = []
+
+    def _stash(m):
+        links.append(f'<a href="{html.escape(m.group(2))}">{_md_inline_to_html(m.group(1))}</a>')
+        return f"\x00{len(links) - 1}\x00"
+
+    out = _md_inline_to_html(_MD_LINK_RE.sub(_stash, text_val))
+    return re.sub(r"\x00(\d+)\x00", lambda m: links[int(m.group(1))], out)
+
+
+def _strip_telethon_md(text_val: str) -> str:
+    """Запасной текст без разметки — если Telegram не принял HTML (400)."""
+    return re.sub(r"\*\*|__|~~|`", "", _MD_LINK_RE.sub(r"\1", text_val))
+
 
 def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optional[str],
                             source_url: Optional[str], media_filename: Optional[str] = None) -> None:
@@ -384,7 +420,7 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     реально важные, но нетикерные новости — макро/геополитика — molчa резались
     ДО уведомления; коллеге нужен независимый критерий).
     Минимум наших правок (запрос Вадима 2026-07-15) — сам пост идёт ВЕРБАТИМ, как
-    в источнике: только html.escape, БЕЗ подстановки кастом-эмодзи Frame (та
+    в источнике: markdown Telethon → HTML (_telethon_md_to_html), БЕЗ подстановки кастом-эмодзи Frame (та
     портила бы визуал оригинала, если в посте уже есть похожий эмодзи) и без
     декоративного обвеса/подписи. Однострочная шапка (источник) — это метаданные
     ОТ НАС, не часть поста. Best-effort: сбой отправки НЕ должен ронять приёмку."""
@@ -398,14 +434,13 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
         c.strip() for c in os.environ.get("HYPE_NOTIFY_CHAT_ID", "").split(",") if c.strip()]
     if not token or not chat_ids:
         return
-    body = raw_text or headline or ""
-    header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
-    text_msg = f"{header}\n\n{html.escape(body)}"
-    # Kanban — админская ссылка, читателям публичного канала она ни к чему.
-    buttons = [] if channel_id else [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
-    if source_url:
-        buttons.insert(0, {"text": "Открыть пост", "url": source_url})
-    reply_markup = {"inline_keyboard": [buttons] if buttons else []}
+    # В канале — без кнопок, как в оригинале (Kanban админский, «Открыть пост»
+    # убран по просьбе Вадима 14.09.2026). В личке — как было.
+    buttons = []
+    if not channel_id:
+        if source_url:
+            buttons.append({"text": "Открыть пост", "url": source_url})
+        buttons.append({"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL})
     # api.telegram.org НЕ доступен напрямую с прод-сервера (РФ, РКН) — та же
     # проблема, что и у остальных ботов (см. signals/publish/telegram.py),
     # обходится тем же Cloudflare-релеем через TELEGRAM_API_ROOT. Живой
@@ -413,6 +448,34 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     # с ConnectionError "Network is unreachable" при прямом обращении.
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     media_path = os.path.join(_MEDIA_DIR, media_filename) if media_filename else None
+    has_photo = bool(media_path and os.path.isfile(media_path))
+    # Лимит Telegram (caption 1024, text 4096) считается по видимому тексту —
+    # режем исходник ДО конвертации, чтобы не разрезать тег пополам.
+    body = (raw_text or headline or "")[:1000 if has_photo else 3900]
+    header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
+    variants = (
+        (f"{header}\n\n{_telethon_md_to_html(body)}", "HTML"),
+        (f"{source or '?'}\n\n{_strip_telethon_md(body)}", None),
+    )
+
+    def _send(chat_id: str, text_msg: str, parse_mode: Optional[str]):
+        payload = {"chat_id": chat_id}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if buttons:
+            payload["reply_markup"] = {"inline_keyboard": [buttons]}
+        if has_photo:
+            payload["caption"] = text_msg
+            if buttons:
+                payload["reply_markup"] = json.dumps(payload["reply_markup"])
+            with open(media_path, "rb") as photo_file:
+                return requests.post(f"{api_root}/bot{token}/sendPhoto", data=payload,
+                                     files={"photo": photo_file}, timeout=20)
+        payload["text"] = text_msg
+        # Без карточки-превью ссылки — в оригинале её нет, ссылка вшита в текст.
+        payload["link_preview_options"] = {"is_disabled": True}
+        return requests.post(f"{api_root}/bot{token}/sendMessage", json=payload, timeout=10)
+
     # ⚠️ Найдено 2026-07-17 (Вадим: несколько новостей с hype_filter_result='t'
     # не дошли, хотя Шаг Н отработал успешно) — ни один из этих requests.post()
     # не проверял response.status_code: Telegram/релей мог вернуть 400/403
@@ -422,27 +485,12 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     # уже ловится и логируется ниже.
     for chat_id in chat_ids:
         try:
-            if media_path and os.path.isfile(media_path):
-                # caption лимит Telegram — 1024 символа (не 4096, как у text у sendMessage).
-                with open(media_path, "rb") as photo_file:
-                    resp = requests.post(
-                        f"{api_root}/bot{token}/sendPhoto",
-                        data={
-                            "chat_id": chat_id, "caption": text_msg[:1024], "parse_mode": "HTML",
-                            "reply_markup": json.dumps(reply_markup),
-                        },
-                        files={"photo": photo_file},
-                        timeout=20,
-                    )
-            else:
-                resp = requests.post(
-                    f"{api_root}/bot{token}/sendMessage",
-                    json={
-                        "chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML",
-                        "reply_markup": reply_markup,
-                    },
-                    timeout=10,
-                )
+            resp = _send(chat_id, *variants[0])
+            if resp.status_code == 400:
+                # HTML не распарсился (например, пересекающиеся теги) — лучше
+                # новость без разметки, чем никакой.
+                print(f"[content_news] hype-notify HTML rejected, plain fallback: {resp.text[:300]}")
+                resp = _send(chat_id, *variants[1])
             resp.raise_for_status()
         except Exception as e:
             body = getattr(e, "response", None)
