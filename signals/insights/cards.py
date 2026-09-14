@@ -57,6 +57,10 @@ FUND = {"bonds": ("фонды облигаций", "фондах облигац�
 HASHTAG = {"positions": "#открытыепозиции", "funds": "#деньгивфондах", "seasonality": "#сезонность"}
 # forecast_backtest.py, 13.09: 2646 эпизодов в 72 фьючерсах — с 2023 года рекорды позиций угадывают
 # направление цены в 51% случаев, сезонность индекса хуже «всегда вверх». Вадим: прогнозы цены не делать.
+# «Исторический» у нас — после 2022 года (Вадим, 14.09): до этого другой рынок, с нерезидентами.
+# Пик шорта 2013 года — не аналогия для нынешней толпы; «максимум с 2014 года» читатель канала
+# понимает как «такого не было после 2022-го». Цены не трогаем: «минимум с 2009 года» — приём канала.
+ERA_START = pd.Timestamp("2022-03-01")
 NO_FORECAST = ("прогноз цены не давать: на истории такие сигналы с 2023 года угадывают направление в половине "
                "случаев; «что было после» - это история, а не обещание")
 
@@ -196,6 +200,26 @@ def status_ru(u, years, dates, higher, ref, word=None) -> str | None:
     return None
 
 
+def era_status(u, years, dates, higher, ref) -> str | None:
+    """Рекорд позиции в рамках нынешнего рынка: если значение держится с дат до 2022 года, это
+    «максимум за всё время после 2022 года», а не «с 2014 года»."""
+    if dates[0] >= ERA_START or (u is not None and u >= ERA_START):
+        return status_ru(u, years, dates, higher, ref)
+    w = "максимум" if higher else "минимум"
+    if u is None:
+        return f"{w} за всё время наших данных (они начинаются в {dates[0].year} году) - и после 2022 года тоже"
+    return f"{w} за всё время после 2022 года"
+
+
+def older_peak(arr, dates, i, unit, ref) -> str:
+    """Старый пик другого рынка — одной оговоркой, не аналогией."""
+    old = dates[:i] < ERA_START
+    if not old.any() or arr[:i][old].max() <= arr[i]:
+        return ""
+    j = int(np.flatnonzero(old)[np.argmax(arr[:i][old])])
+    return f"до 2022 года, в другом рынке с нерезидентами, бывало и больше - {q_ru(arr[j], unit)} {d_ru(dates[j], ref)}"
+
+
 def human_name(sec) -> tuple:
     if sec in HUMAN:
         return HUMAN[sec]
@@ -262,16 +286,20 @@ def positions_card(sec, leg, as_of) -> dict:
     pser = upto(pfull, t) if pfull is not None else None
     were = "были" if (plabel or "").startswith("акции") else "был"
     u, years = since(arr, dates, i, True)
-    st = status_ru(u, years, dates, True, t)
+    st = era_status(u, years, dates, True, t)
 
     facts = [f"{lab} по {dat} - {q_ru(v, unit)} на закрытие {d_ru(t, t)}"]
     if st:
         facts.append(f"это {st}")
+        op = older_peak(arr, dates, i, unit, t)
+        if op:
+            facts.append(op)
     eps = episodes(arr, i)
     cur = eps[-1] if eps and i - eps[-1]["end"] <= 40 else None
     start = cur["start"] if cur else i
-    if start > 0:
-        j = int(np.argmax(arr[:start]))
+    era = dates[:start] >= ERA_START
+    if start > 0 and era.any():
+        j = int(np.flatnonzero(era)[np.argmax(arr[:start][era])])
         prev, pdate = float(arr[j]), dates[j]
         if prev > 0 and v > prev:
             r = v / prev
@@ -290,7 +318,7 @@ def positions_card(sec, leg, as_of) -> dict:
                      f"{p_ru(v / arr[cur['start']] - 1)}" if arr[cur['start']] > 0 else "")
 
     # что было после прошлых пиков
-    past = [e for e in eps if e is not cur and e["end"] < start]
+    past = [e for e in eps if e is not cur and e["end"] < start and dates[e["top"]] >= ERA_START]
     rows, r20s, r60s = [], [], []
     for e in past[-6:]:
         td, tv = dates[e["top"]], float(arr[e["top"]])
@@ -349,7 +377,7 @@ def positions_card(sec, leg, as_of) -> dict:
         for hi in (True, False):
             uu, yy = since(a2, d2, len(a2) - 1, hi)
             if yy >= 0.5:
-                best_s = status_ru(uu, yy, d2, hi, t)
+                best_s = era_status(uu, yy, d2, hi, t)
                 break
         if best_s:
             context.append(f"{l2} - {q_ru(a2[-1], u2)}, {best_s}")
@@ -359,6 +387,9 @@ def positions_card(sec, leg, as_of) -> dict:
     limits = [f"данные дневные, на закрытие торгов {d_ru(t, t)}; что было внутри дня, не видно",
               f"данные по {dat} начинаются в {dates[0].year} году",
               NO_FORECAST]
+    if dates[0] < ERA_START:
+        limits.append("до 2022 года был другой рынок, с нерезидентами: пики до 2022 года - не аналогия; "
+                      "«исторический» для нас - после 2022 года")
     if len(r20s) < 4:
         limits.append(f"прошлых пиков с известным продолжением всего {len(r20s)} - это история, "
                       f"а не закономерность: не обобщай")
