@@ -361,8 +361,10 @@ def _notify_pipeline_stuck(step: str, gave_up: list) -> None:
     if not gave_up:
         return
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
-    chat_id = os.environ.get("HYPE_NOTIFY_CHAT_ID", "")
-    if not token or not chat_id:
+    # Список через запятую, как в content_news.py. До 14.09.2026 строка
+    # «id1,id2» уходила одним chat_id, Telegram отвечал 400 и алерт молча терялся.
+    chat_ids = [c.strip() for c in os.environ.get("HYPE_NOTIFY_CHAT_ID", "").split(",") if c.strip()]
+    if not token or not chat_ids:
         return
     n = len(gave_up)
     ids_line = ", ".join(f"#{cid}" for cid, _ in gave_up)
@@ -375,14 +377,15 @@ def _notify_pipeline_stuck(step: str, gave_up: list) -> None:
         f"environment_id/allowed_tools, лимиты аккаунта)."
     )
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
-    try:
-        requests.post(
-            f"{api_root}/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text_msg},
-            timeout=10,
-        )
-    except Exception as e:
-        print(f"[content_ai] pipeline-stuck notify failed: {type(e).__name__}: {e}")
+    for chat_id in chat_ids:
+        try:
+            requests.post(
+                f"{api_root}/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text_msg},
+                timeout=10,
+            )
+        except Exception as e:
+            print(f"[content_ai] pipeline-stuck notify failed: {type(e).__name__}: {e}")
 
 
 def _fire(trigger_id: str, bearer_token: str, text_payload: str) -> None:

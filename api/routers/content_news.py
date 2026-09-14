@@ -391,16 +391,21 @@ def _notify_hype_colleague(source: Optional[str], headline: str, raw_text: Optio
     token = os.environ.get("HYPE_NOTIFY_BOT_TOKEN", "")
     # Несколько получателей — через запятую (2026-07-16, добавление коллеги
     # №2 к рассылке @hypeframebot).
-    chat_ids = [c.strip() for c in os.environ.get("HYPE_NOTIFY_CHAT_ID", "").split(",") if c.strip()]
+    # 14.09.2026: новости идут в канал @news_framedata (бот там админ), а не в
+    # личку. HYPE_NOTIFY_CHAT_ID остаётся только за техалертами content_ai.py.
+    channel_id = os.environ.get("HYPE_NEWS_CHANNEL_ID", "").strip()
+    chat_ids = [channel_id] if channel_id else [
+        c.strip() for c in os.environ.get("HYPE_NOTIFY_CHAT_ID", "").split(",") if c.strip()]
     if not token or not chat_ids:
         return
     body = raw_text or headline or ""
     header = _apply_hype_emoji(f"<b>{html.escape(source or '?')}</b>")
     text_msg = f"{header}\n\n{html.escape(body)}"
-    buttons = [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
+    # Kanban — админская ссылка, читателям публичного канала она ни к чему.
+    buttons = [] if channel_id else [{"text": "Открыть в Kanban", "url": _HYPE_KANBAN_URL}]
     if source_url:
         buttons.insert(0, {"text": "Открыть пост", "url": source_url})
-    reply_markup = {"inline_keyboard": [buttons]}
+    reply_markup = {"inline_keyboard": [buttons] if buttons else []}
     # api.telegram.org НЕ доступен напрямую с прод-сервера (РФ, РКН) — та же
     # проблема, что и у остальных ботов (см. signals/publish/telegram.py),
     # обходится тем же Cloudflare-релеем через TELEGRAM_API_ROOT. Живой
