@@ -40,7 +40,7 @@ MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 CACHE_DIR = os.environ.get("COMBO_CACHE_DIR", "/opt/frame/data/combo_cache")
 
 _RECENT = text("""
-    SELECT thread_key, reasoning, created_at FROM content_candidates
+    SELECT thread_key, reasoning, created_at, raw_text FROM content_candidates
     WHERE source = 'combo' AND created_at > now() - interval '3 days'
 """)
 _INSERT = text("""
@@ -97,6 +97,10 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
             # одна находка — один сюжет: шорт по доллару держал и «рубль», и «мировые активы»
             if lead["title"] in leads:
                 print(f"[combo_scan] пропуск, та же главная нога уже в сюжете: {lead['title'][:70]}")
+                continue
+            # между прогонами тоже: шорт по доллару ушёл в #2084 под «отчёт ЦБ» и вернулся бы утром как «рубль»
+            if any(f"- находка: {combos.legible(lead['title'])}" in (r[3] or "") for r in recent):
+                print(f"[combo_scan] пропуск, эта находка уже была главной за {REPEAT_DAYS} дня: {lead['title'][:70]}")
                 continue
             if s["theme"] in themes:
                 print(f"[combo_scan] пропуск, тема «{s['theme']}» у завода была за {REPEAT_DAYS} дня: {lead['title'][:70]}")
