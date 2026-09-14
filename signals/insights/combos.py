@@ -58,8 +58,8 @@ RULES = {
     "санкции": ({"#санкции"}, r"санкци|потолок цен|теневой флот|вторичн\w* пошлин", None),
     "нефть_газ": ({"#нефть", "#газ", "#спг", "#опек", "#ормуз"}, r"нефт|Brent|Urals|ОПЕК|\bСПГ\b|газопровод|Ормуз",
                   None),
-    "отчёт_цб_потоки": ({"#cot", "#обзор", "#физики"}, r"(ЦБ|Банк\w* России|регулятор|отч[её]т).{0,300}(физ\w* лиц|"
-                        r"физик|розничн\w* инвестор|НФО|СЗКО|нетто-(покупат|продав))|(физ\w* лиц|розничн\w* инвестор|"
+    "отчёт_цб_потоки": ({"#cot", "#обзор", "#физики"}, r"(ЦБ|Банк\w* России|регулятор|отч[её]т).{0,300}(физлиц|физ\w* лиц|"
+                        r"физик|розничн\w* инвестор|НФО|СЗКО|нетто-(покупат|продав))|(физлиц|физ\w* лиц|розничн\w* инвестор|"
                         r"физик).{0,300}(ЦБ|Банк\w* России|отч[её]т)|физик\w* .{0,40}(нарастил|купил|продал)\w* "
                         r".{0,30}(акци|валют|облигац)", None),
     "мировые_активы": ({"#золото", "#серебро", "#usd", "#commodities", "#сша"}, r"золот|серебр|\bDXY\b|индекс доллара|"
@@ -73,11 +73,11 @@ OIL = {"LKOH", "ROSN", "GAZP", "NVTK", "TATN", "TATNP", "SNGS", "SNGSP", "SIBN",
 THEMES = {
     "ставка": {"позиции": {"MIX", "RI", "RGBI", "Si"}, "фонды": {"funds:bonds", "funds:money_market", "funds:all"},
                "цена": {"MIX", "RI"}, "цб_потоки": {"ofz"}},
-    "минфин_валюта": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan"}, "цена": {"Si"},
+    "минфин_валюта": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan", "funds:gold"}, "цена": {"Si"},
                       "сезонность": {"Si"}},
     "офз": {"позиции": {"RGBI"}, "фонды": {"funds:bonds", "funds:money_market"}, "цб_потоки": {"ofz"}},
     "бюджет_налоги": {"позиции": {"MIX", "RI", "RGBI", "STOCKS_ALL"}, "цена": {"MIX", "RI", "STOCKS_ALL"}},
-    "рубль": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan"}, "цена": {"Si"},
+    "рубль": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan", "funds:gold"}, "цена": {"Si"},
               "сезонность": {"Si"}, "цб_потоки": {"fx"}},
     "геополитика": {"позиции": {"MIX", "RI", "STOCKS_ALL", "RGBI", "Si"}, "цена": {"MIX", "RI", "STOCKS_ALL"},
                     "широта": {"STOCKS_ALL"}},
@@ -93,7 +93,7 @@ THEMES = {
 }
 # связки без новости — сюжет чисто из данных
 DATA_THEMES = {
-    "валюта": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan"}, "цена": {"Si"},
+    "валюта": {"позиции": {"Si", "CNY", "Eu", "FX_ALL"}, "фонды": {"funds:yuan", "funds:gold"}, "цена": {"Si"},
                "сезонность": {"Si"}, "цб_потоки": {"fx"}},
     "рынок_акций": {"позиции": {"MIX", "RI", "STOCKS_ALL"}, "фонды": {"funds:stocks"},
                     "цена": {"MIX", "RI", "STOCKS_ALL"}, "широта": {"STOCKS_ALL"}, "баффетт": {"STOCKS_ALL"},
@@ -129,6 +129,10 @@ NEWS_HOURS = 30     # новости за последние N часов до �
 SPIKE = 2.0         # новостей темы ≥ SPIKE × обычного дня темы (медиана за 20 дней)
 
 
+# отчёт ЦБ о потоках — это цифры покупок и продаж по группам участников
+FLOW_RX = r"купил|продал|нетто|вложени|вложил|покупк|продаж|нарастил|сократил|приток|отток|млрд"
+
+
 def tags(s) -> set:
     if isinstance(s, (list, tuple)):
         return {str(t).lower() for t in s}
@@ -144,7 +148,7 @@ def classify(text: str, hashtags) -> list:
     tg = hashtags if isinstance(hashtags, set) else tags(hashtags)
     out = []
     # отчёт ЦБ о потоках MarketTwits подаёт под #обзор/#cot, часто без слова «ЦБ»
-    if tg & {"#cot", "#обзор"} and re.search(r"розничн\w* инвестор|населени|физ\w* лиц|физик", t, re.I):
+    if tg & {"#cot", "#обзор"} and re.search(r"розничн\w* инвестор|населени|физлиц|физ\w* лиц|физик", t, re.I):
         out.append("отчёт_цб_потоки")
     for kind, (htags, rx, stop) in RULES.items():
         if stop and re.search(stop, t + " " + " ".join(tg), re.I):
@@ -154,6 +158,10 @@ def classify(text: str, hashtags) -> list:
             continue
         if kind not in out and re.search(rx, t, re.I) and (tg & htags or not htags or not tg or len(t) < 400):
             out.append(kind)
+    # «ЦБ будет мониторить блогеров», «ЦБ обсуждает защиту розничных инвесторов» — не отчёт о
+    # потоках: связка #2084 (14.09) вышла под вывеской «отчёт ЦБ» без единой цифры отчёта
+    if "отчёт_цб_потоки" in out and not re.search(FLOW_RX, t, re.I):
+        out.remove("отчёт_цб_потоки")
     return out
 
 
@@ -255,6 +263,8 @@ class Engine:
         fams = {top1.family} | set(sup.family) | ({"новость"} if is_news else set())
         if len(fams) < 2:
             return None
+        if theme == "отчёт_цб_потоки" and "цб_потоки" not in fams:
+            return None     # «отчёт ЦБ» без самого отчёта — пустая вывеска (#2084)
         top = pd.concat([top1.to_frame().T, sup.head(3)])
         score = float(top1.score) + 0.5 * float(sup.score.head(3).sum()) + (2.0 if is_news else 0)
         # главные новости окна: с 🔥 и самые просматриваемые, в порядке времени
@@ -264,7 +274,7 @@ class Engine:
                 "theme": theme, "is_news": is_news, "buckets": sorted(BUCKET[theme]), "score": round(score, 2),
                 "families": sorted(fams),
                 "legs": [{"date": str(pd.Timestamp(r.date).date()), "family": r.family, "instrument": r.instrument,
-                          "score": float(r.score), "title": r.title,
+                          "score": float(r.score), "title": r.title, "type": r.type,
                           "facts": r.facts if isinstance(r.facts, dict) else {}} for r in top.itertuples()],
                 "news": [{"t": str(r.t), "text": str(r.text)[:300]} for r in best.itertuples()]}
 
@@ -342,7 +352,14 @@ GLOSS = [
      lambda m: f"{m.group(4)} - изменение от {m.group(2)} {m.group(3)} до сейчас, а не за неделю"),
     (r"покупают на падении|продают на росте", lambda m: "цена и позиция - обе за последнюю неделю"),
     (r"Индикатор Баффетта", lambda m: "капитализация российского рынка акций к ВВП страны"),
+    # у нас фонды золота — валютные фонды (правка Вадима к #2084, 14.09)
+    (r"^Фонды золота", lambda m: "фонды золота у нас - валютная защита сбережений от рубля, как юаневые; "
+                                 "с 2022 года золото и доллар не обязаны двигаться вместе"),
 ]
+SHIFT_TYPES = {"резкое_изменение", "разворот", "расхождение_цены_и_позиций"}
+# квартальный ↔ вечный фьючерс одного актива
+PAIR = {"USDRUBF": "Si", "Si": "USDRUBF", "CNYRUBF": "CR", "CR": "CNYRUBF", "IMOEXF": "MX", "MX": "IMOEXF",
+        "GLDRUBF": "GD", "GD": "GLDRUBF", "EURRUBF": "Eu", "Eu": "EURRUBF"}
 
 
 def legible(title: str) -> str:
@@ -356,13 +373,94 @@ def legible(title: str) -> str:
     return title
 
 
+def direction(title: str) -> str:
+    """Смысл сдвига позиции: «шорт по доллару сократился» — ставок на крепкий рубль стало
+    меньше. В #2084 писатель склеил это с оттоком из фондов золота в «защита слабеет везде»,
+    хотя ноги тянули в разные стороны."""
+    if "физлиц" not in title:
+        return ""
+    t = title.lower()
+    if re.search(r"доллар|юан|евро", t):
+        up, short_bet = "рост валюты", "ставка на крепкий рубль"
+    elif "индекс" in t:
+        up, short_bet = "рост рынка", "ставка на падение рынка"
+    else:
+        up, short_bet = "рост цены", "ставка на падение цены"
+    if "чистый шорт" in t:
+        bet = short_bet
+    elif "чистый лонг" in t or "чистая позиция" in t:
+        bet = f"ставка на {up}"
+    elif "шорт" in t:
+        bet = short_bet
+    else:
+        bet = f"ставка на {up}"
+    if re.search(r"сократил|снизил|минимум", t):
+        return f"направление: это {bet}, и таких ставок стало меньше"
+    if re.search(r"вырос|выросл|нарастил|максимум", t):
+        return f"направление: это {bet}, и таких ставок стало больше"
+    return f"направление: это {bet}"
+
+
 def gloss(title: str) -> str:
     out = []
     for rx, f in GLOSS:
         m = re.search(rx, title)
         if m:
             out.append(f(m))
+    d = direction(title)
+    if d:
+        out.append(d)
     return "; ".join(dict.fromkeys(out))
+
+
+def usual_move(leg: dict, t) -> str | None:
+    """Обычный ход цены за месяц. «Через месяц доллар +2%» при обычных ±3% — шум, а не отклик
+    на сигнал (Вадим к #2084: «пара процентов — большая наглость утверждать связь»)."""
+    sec = (leg.get("facts") or {}).get("sec")
+    if not sec:
+        return None
+    label, p = cards.price_for(sec)
+    if p is None or len(p) < 300:
+        return None
+    p = cards.upto(p, t).iloc[-500:]
+    m = float(p.pct_change(21).abs().median())
+    return (f"обычный ход: {label} за месяц меняется в среднем на {cards.p_ru(m, False)} в ту или другую сторону; "
+            "отклик цены в пределах этого - обычное колебание, связь с сигналом не утверждать")
+
+
+def pair_lines(story: dict, t) -> list:
+    """Тот же сигнал на квартальном и вечном фьючерсе одного актива — сильное подтверждение
+    (Вадим к #2084); разный знак — контракты расходятся, это тоже факт."""
+    for leg in story["legs"]:
+        f = leg.get("facts") or {}
+        sec, side = f.get("sec"), re.sub(r"_low$", "", f.get("leg") or "")
+        if leg["family"] != "позиции" or sec not in PAIR or side not in ("long", "short", "nl", "ns"):
+            continue
+        P = cards.data()[0]
+        other = PAIR[sec]
+        if other not in P[side].columns:
+            return []
+
+        def ch(s):
+            s = cards.upto(s.dropna(), t)
+            if len(s) < 6 or not s.iloc[-2] or not s.iloc[-6]:
+                return None
+            return float(s.iloc[-1] / s.iloc[-2] - 1), float(s.iloc[-1] / s.iloc[-6] - 1)
+
+        a, b = ch(P[side][sec]), ch(P[side][other])
+        if not a or not b:
+            return []
+        lab = cards.LEG[side][0]
+        d1, d2 = cards.human_name(sec)[1], cards.human_name(other)[1]
+        # оба окна: 11.09 за день шорт сокращали на обоих контрактах, а за неделю они разошлись
+        day = "за день знак один на обоих контрактах - сдвиг подтверждён вторым фьючерсом" \
+            if (a[0] > 0) == (b[0] > 0) else "за день контракты разошлись"
+        week = "за неделю тоже один знак" if (a[1] > 0) == (b[1] > 0) else \
+            "за неделю разошлись - на одном ставки выросли, на другом сократились"
+        return [f"- другой контракт того же актива: {lab} по {d2} за день {cards.p_ru(b[0])}, за неделю "
+                f"{cards.p_ru(b[1])}; по {d1} за день {cards.p_ru(a[0])}, за неделю {cards.p_ru(a[1])}",
+                f"  как читать: {day}; {week}; разный знак - тоже факт, не тяни контракты в одну сторону"]
+    return []
 
 
 def leg_spec(leg: dict) -> dict | None:
@@ -415,13 +513,17 @@ def brief(story: dict) -> tuple:
     if story["news"]:
         out += ["ПОВОД - что писали новостные каналы:"] + [f"- {news_line(n, t)}" for n in story["news"][-2:]] + [""]
 
-    def leg_lines(label, title):
-        g = gloss(legible(title))
-        return [f"- {label}: {legible(title)}"] + ([f"  как читать: {g}"] if g else [])
+    def leg_lines(label, leg):
+        # своя дата у ноги: в #2084 шорт упал на 14% 10.09, а пост написал «на закрытии 11 сентября»
+        if leg.get("date") and leg["date"] != story["data_day"]:
+            label += f", данные на {cards.d_ru(pd.Timestamp(leg['date']), t)}"
+        g = gloss(legible(leg["title"]))
+        return [f"- {label}: {legible(leg['title'])}"] + ([f"  как читать: {g}"] if g else [])
 
-    out += ["ГЛАВНОЕ - строй пост вокруг этого:"] + leg_lines("находка", lead["title"])
+    out += ["ГЛАВНОЕ - строй пост вокруг этого:"] + leg_lines("находка", lead)
     for s in support:
-        out += leg_lines(f"подтверждение из других данных ({s['family']})", s["title"])
+        out += leg_lines(f"подтверждение из других данных ({s['family']})", s)
+    out += pair_lines(story, t)
     out.append("")
     leg, card = history_for(story, t)
     limits = []
@@ -431,6 +533,12 @@ def brief(story: dict) -> tuple:
         lines = cards.focus_lines(card)[1:]
         if card.get("facts"):       # масштаб «сейчас» рядом с прошлыми пиками
             lines = [f"сейчас: {card['facts'][0]}"] + lines
+        if leg.get("type") in SHIFT_TYPES:
+            lines = ["важно: прошлые эпизоды ниже - ПИКИ этой позиции, «через месяц» считается от дня пика; "
+                     "нынешняя находка - резкий сдвиг, а не пик"] + lines
+        mv = usual_move(leg, t)
+        if mv:
+            lines.append(mv)
         lines += [f"что было после прошлых эпизодов: {x}" for x in (card.get("after") or [])[:3]
                   if not any(x in y for y in lines)]
         lines += [f"ряд: {x}" for x in (card.get("history") or [])[:2]]
