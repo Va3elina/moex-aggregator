@@ -403,6 +403,8 @@ export default function FlowsHistogram({
         setTooltipPos(null);
     };
 
+    const flowPadTop = showPricePanel ? 0 : 'var(--chart-pad-top, 14px)';
+
     // ── Геометрия оверлеев (пилюля даты + тултип) — от верхней панели. ──
     const overlayGeom = (() => {
         const wrap = wrapRef.current;
@@ -668,8 +670,11 @@ export default function FlowsHistogram({
                                 style={{ color: 'var(--text-primary)' }}
                             />
                         </div>
-                        <div className="relative" style={{ height: botH + XLABEL_H }}>
-                            <div className="absolute" style={{ top: 0, bottom: XLABEL_H, left: padArea.left, right: padArea.right }}>
+                        {/* Без панели индекса пилюля даты встаёт над гистограммой —
+                            нужен тот же зазор pad-top, что у верхней панели,
+                            иначе пилюля ложится на заголовок. */}
+                        <div className="relative" style={{ height: showPricePanel ? botH + XLABEL_H : `calc(${botH + XLABEL_H}px + var(--chart-pad-top, 14px))` }}>
+                            <div className="absolute" style={{ top: flowPadTop, bottom: XLABEL_H, left: padArea.left, right: padArea.right }}>
                                 <svg ref={flowSvgRef} width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="none">
                                     {flowTicks.map((v, i) => (
                                         <line key={`fg-${i}`} x1="0" y1={flowY(v)} x2="1000" y2={flowY(v)} stroke={v === 0 ? GRID.zero : GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -697,7 +702,7 @@ export default function FlowsHistogram({
                                 </svg>
                             </div>
                             {/* Ось Y потоков — справа. */}
-                            <div className="absolute pointer-events-none" style={{ top: 0, bottom: XLABEL_H, right: 0, width: padArea.right }}>
+                            <div className="absolute pointer-events-none" style={{ top: flowPadTop, bottom: XLABEL_H, right: 0, width: padArea.right }}>
                                 {flowTicks.map((v, i) => (
                                     <div key={`fl-${i}`} className="absolute" style={{ top: `${flowY(v) / 10}%`, left: 12, transform: 'translateY(-50%)' }}>
                                         <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
