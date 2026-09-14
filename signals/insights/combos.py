@@ -177,32 +177,73 @@ def news_frame() -> pd.DataFrame:
     return na
 
 
+# участники отчёта ЦБ: физлица — толпа; ДУ и СЗКО — крупные деньги (Вадим 14.09: рекорд продаж
+# акций ДУ в июле–августе 2026 и +259 млрд в ОФЗ завод не видел — нога была только у физлиц)
+CBR_WHO = {"Физические лица": ("fl", "физлица", "купили", "продали", "покупают", "продают"),
+           "Доверительное управление": ("du", "доверительное управление", "купило", "продало", "покупает", "продаёт"),
+           "СЗКО": ("szko", "системно значимые банки", "купили", "продали", "покупают", "продают")}
+CBR_ERA = pd.Timestamp("2022-03-01")
+
+
 def cbr_releases(na: pd.DataFrame) -> list:
-    """Отчёт ЦБ о потоках как нога данных: дата выхода — первая новость «отчёт_цб_потоки» после
-    конца месяца; сила — насколько покупки физлиц выделяются на своих 36 месяцах."""
-    cf = dbdata.read("cbr_flows", parse_dates=["period_end_date"])
-    cf = cf[(cf.period_kind == "month") & (cf.category == "Физические лица")]
-    cf = cf.sort_values("updated_at").drop_duplicates(["instrument_type", "period_end_date"], keep="last")
+    """Отчёт ЦБ о потоках как нога данных. Дата выхода — первая новость «отчёт_цб_потоки» после
+    конца месяца, а если её нет — день, когда отчёт загрузили к нам (только последний месяц: при
+    перезаливке updated_at старых месяцев тоже свежий). Сила — насколько сумма выделяется на своих
+    36 месяцах; рекорд после 2022 года — отдельный тип, он встаёт главной ногой."""
+    cf = dbdata.read("cbr_flows", parse_dates=["period_end_date", "updated_at"])
+    cf = cf[(cf.period_kind == "month") & cf.category.isin(CBR_WHO)]
+    cf = cf.sort_values("updated_at").drop_duplicates(["instrument_type", "category", "period_end_date"], keep="last")
     rel = na[na.kinds.map(lambda k: "отчёт_цб_потоки" in k)].posted_at.sort_values()
     rel = rel.dt.tz_convert("Europe/Moscow").dt.tz_localize(None)
     out = []
-    for it, g in cf.groupby("instrument_type"):
+    for (it, cat), g in cf.groupby(["instrument_type", "category"]):
+        key, who, buy, sell, buys, sells = CBR_WHO[cat]
         g = g.sort_values("period_end_date").reset_index(drop=True)
         for i, r in g.iterrows():
             if i < 12:
                 continue
             after = rel[rel > r.period_end_date + pd.Timedelta(days=5)]
-            if after.empty or after.iloc[0] > r.period_end_date + pd.Timedelta(days=45):
+            day = after.iloc[0].date() if not after.empty and after.iloc[0] <= r.period_end_date + pd.Timedelta(days=45) \
+                else None
+            if i == len(g) - 1 and pd.notna(r.updated_at):
+                # у нас отчёт с момента загрузки: август вышел новостью 08.09, а залит 14.09 — к утру
+                # 15.09 нога с датой новости уже «не свежая» и главной не встаёт
+                up = pd.Timestamp(r.updated_at)
+                up = (up.tz_convert("Europe/Moscow").tz_localize(None) if up.tzinfo else up)
+                if r.period_end_date < up <= r.period_end_date + pd.Timedelta(days=45):
+                    day = max(day, up.date()) if day else up.date()
+            if day is None:
                 continue
+            v = float(r.value)
             hist = g.value.iloc[max(0, i - 36):i]
-            pct = float((hist.abs() < abs(r.value)).mean())
-            beaten = hist[hist >= r.value] if r.value > 0 else hist[hist <= r.value]
+            pct = float((hist.abs() < abs(v)).mean())
+            era = g[(g.period_end_date >= CBR_ERA) & (g.index < i)]
+            beaten = era[era.value >= v] if v > 0 else era[era.value <= v]
             what = {"fx": "валюты", "stocks": "акций", "ofz": "ОФЗ"}.get(it, it)
-            tail = f" — больше всего за {len(hist)} мес." if beaten.empty else ""
-            out.append({"date": str(after.iloc[0].date()), "family": "цб_потоки", "instrument": it, "type": "отчёт",
-                        "score": round(2 + 6 * pct ** 2, 2), "run_days": 0, "facts": {"value": float(r.value)},
-                        "title": f"Отчёт ЦБ: физлица за {r.period_end_date:%m.%Y} "
-                                 f"{'купили' if r.value > 0 else 'продали'} {what} на {abs(r.value):.0f} млрд ₽{tail}"})
+            num = lambda x: f"{abs(x):.1f}".replace(".", ",")  # noqa: E731
+            title = f"Отчёт ЦБ: {who} за {r.period_end_date:%m.%Y} {buy if v > 0 else sell} {what} на {num(v)} млрд ₽"
+            typ = "отчёт"
+            if beaten.empty and len(era) >= 12 and abs(v) >= 5:
+                prev = era.loc[era.value.idxmax() if v > 0 else era.value.idxmin()]
+                title += (f" — рекорд за всю историю наблюдений (с 2022 года); прежний рекорд — "
+                          f"{prev.period_end_date:%m.%Y}, {num(prev.value)} млрд ₽")
+                typ, pct = "рекорд_или_экстремум", 1.0
+            elif len(era) >= 12 and abs(v) >= 5 and len(beaten) <= 2:
+                rank = ("второй", "третий")[len(beaten) - 1]
+                more = ", ".join(f"{d:%m.%Y}" for d in beaten.period_end_date)
+                title += f" — {rank} результат за всю историю наблюдений (с 2022 года); больше было только {more}"
+                pct = 1.0
+            elif hist.size and (hist[hist >= v] if v > 0 else hist[hist <= v]).empty:
+                title += f" — больше всего за {len(hist)} мес."
+            sg = np.sign(g.value.iloc[:i + 1].values)
+            run = 1
+            while run <= i and sg[i - run] == sg[i]:
+                run += 1
+            if run >= 4:
+                title += f"; {buys if v > 0 else sells} {run}-й месяц подряд"
+            out.append({"date": str(day), "family": "цб_потоки", "instrument": it, "type": typ,
+                        "score": round(2 + 6 * pct ** 2, 2), "run_days": 0,
+                        "facts": {"value": v, "leg": key}, "title": title})
     return out
 
 
@@ -263,12 +304,18 @@ class Engine:
                 .sort_values(["rec", "score"], ascending=False).iloc[0])
         sup = legs[(legs.score >= SUPPORT) & (legs.family != top1.family)]
         sup = sup.sort_values("score", ascending=False).drop_duplicates("family")
+        if top1.family == "цб_потоки":
+            # отчёт ЦБ — одна публикация с несколькими участниками: «ДУ продало акции» держат «ДУ купило
+            # ОФЗ» и «физлица купили акции»; в счёт двух семейств они не идут
+            same = legs[(legs.family == "цб_потоки") & (legs.score >= SUPPORT) & (legs.index != top1.name)
+                        & (legs.di == top1.di)]
+            sup = pd.concat([same.sort_values("score", ascending=False).head(2), sup])  # сначала сам отчёт
         fams = {top1.family} | set(sup.family) | ({"новость"} if is_news else set())
         if len(fams) < 2:
             return None
         if theme == "отчёт_цб_потоки" and "цб_потоки" not in fams:
             return None     # «отчёт ЦБ» без самого отчёта — пустая вывеска (#2084)
-        top = pd.concat([top1.to_frame().T, sup.head(3)])
+        top = pd.concat([top1.to_frame().T, sup.head(4 if top1.family == "цб_потоки" else 3)])
         score = float(top1.score) + 0.5 * float(sup.score.head(3).sum()) + (2.0 if is_news else 0)
         # главные новости окна: с 🔥 и самые просматриваемые, в порядке времени
         best = (news.assign(hot=news.text.str.contains("🔥", regex=False))
@@ -351,8 +398,13 @@ GLOSS = [
     (r"с начала месяца", lambda m: "сумма с начала месяца, месяц ещё не закончен"),
     (r"(\d+)-й месяц подряд", lambda m: f"{m.group(1)} полных месяцев подряд в одну сторону"),
     (r"месяц идёт в (отток|приток) после", lambda m: "текущий, ещё не законченный месяц; прошлые месяцы были в обратную сторону"),
-    (r"Отчёт ЦБ: физлица за (\d\d\.\d{4})", lambda m: f"данные ЦБ за месяц {m.group(1)}, вышли только что - это прошлый "
-                                                       f"месяц, не текущий"),
+    (r"Отчёт ЦБ: [^:]+? за (\d\d\.\d{4})", lambda m: f"данные ЦБ за месяц {m.group(1)}, вышли только что - это прошлый "
+                                                    f"месяц, не текущий; «купили/продали» - чистые покупки минус продажи за месяц"),
+    (r"Отчёт ЦБ: доверительное управление", lambda m: "доверительное управление - деньги клиентов в стратегиях брокеров и "
+                                                     "управляющих компаний, вся категория, а не один управляющий"),
+    (r"Отчёт ЦБ: системно значимые банки", lambda m: "системно значимые банки - крупнейшие банки страны, их собственные операции"),
+    (r"рекорд за всю историю наблюдений \(с 2022 года\)", lambda m: "в посте - «рекорд за всю историю наблюдений»; "
+                                                                    "ряд ЦБ с 2021 года, рекорд считаем после 2022-го"),
     (r"неделя (роста|снижения) от (максимума|минимума) (\S+) \(([+-]?\d+%)\)",
      lambda m: f"{m.group(4)} - изменение от {m.group(2)} {m.group(3)} до сейчас, а не за неделю"),
     (r"покупают на падении|продают на росте", lambda m: "цена и позиция - обе за последнюю неделю"),
