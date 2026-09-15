@@ -29,7 +29,7 @@ import pandas as pd  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
-from signals.insight_scan import detect_window  # noqa: E402
+from signals.insight_scan import detect_window, drop_low_activity  # noqa: E402
 from signals.insights import cards, combos, data  # noqa: E402
 
 MAX_DATA = 2            # утром — не больше двух связок
@@ -79,7 +79,7 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
     now = now.tz_localize("UTC") if now.tzinfo is None else now
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
-    eng = combos.Engine(detections(until))
+    eng = combos.Engine(drop_low_activity(detections(until)))
     stories = eng.evening() if mode == "data" else eng.at(now)
     summary = {"mode": mode, "data_until": str(until.date()), "stories": len(stories), "created": 0}
     db = SessionLocal()

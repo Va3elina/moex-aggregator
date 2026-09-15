@@ -196,6 +196,32 @@ _GIVE_UP_INSIGHT = text("""
     WHERE id = :id
 """)
 
+# Один тикер — один пост за три дня (Вадим 15.09): #2133 Самолёт повторил #2100, #2117 Лукойл — #2104.
+# Считаем только более ранних кандидатов того же вида (данные / новость) с уже написанным черновиком.
+_RECENT_SAME_TICKER = text("""
+    SELECT o.id, o.created_at FROM content_candidates o
+    JOIN content_candidates c ON c.id = :id
+    WHERE o.id <> c.id AND o.tickers && c.tickers AND o.draft_text IS NOT NULL
+      AND o.created_at > c.created_at - interval '3 days' AND o.created_at <= c.created_at
+      -- вид поста тот же: данные (находка, связка) или новость. «Самолёт −10%» (#2100) не повтор для
+      -- рекорда лонга в Самолёте (#2124), а «головокружительное пике» (#2133) — повтор #2100
+      AND (o.source IN ('insight', 'combo')) = (c.source IN ('insight', 'combo'))
+    ORDER BY o.created_at DESC LIMIT 1
+""")
+
+_DECLINE_REPEAT = text("""
+    UPDATE content_candidates
+    SET status = 'discarded', synth_declined_reason = :reason, updated_at = now()
+    WHERE id = :id
+""")
+
+
+def _repeat_of_ticker(db, candidate_id: int) -> str | None:
+    r = db.execute(_RECENT_SAME_TICKER, {"id": candidate_id}).first()
+    return (f"повтор: по тому же тикеру черновик #{r[0]} от {r[1]:%d.%m} - один тикер, один пост "
+            f"за три дня") if r else None
+
+
 # примеры канала для писателя находок — последние посты той же рубрики (хэштег)
 _SELECT_RUBRIC_POSTS = text("""
     SELECT posted_at, text FROM channel_posts
@@ -2070,6 +2096,9 @@ def _build_brief(db, row) -> dict:
     prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     if prior and not prior.startswith("(нет"):
         brief["предыдущий_пост_этого_треда"] = prior
+    from signals.insights.expiry import expiry_note
+    if expiry_note(row["signal_date"]):
+        brief["экспирация"] = expiry_note(row["signal_date"])
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
     for empty in ("связанные_компании", "связи_под_вопросом", "история_рейтинга",
@@ -2321,6 +2350,11 @@ def run_once() -> dict:
                 summary["step_c_gave_up"] += 1
                 step_c_gave_up.append((row["id"], give_up_reason))
                 continue
+            rep = _repeat_of_ticker(db, row["id"])
+            if rep:
+                db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
+                summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
+                continue
             # Пост — о том, как новость сказалась: ждём срез позиций после неё.
             if _waiting_for_reaction(db, row):
                 summary["step_c_waiting"] = summary.get("step_c_waiting", 0) + 1
@@ -2350,6 +2384,11 @@ def run_once() -> dict:
                               f"находка снята (см. content_ai.py)")
                     db.execute(_GIVE_UP_INSIGHT, {"id": row["id"], "reason": reason})
                     insight_gave_up.append((row["id"], reason))
+                    continue
+                rep = _repeat_of_ticker(db, row["id"])
+                if rep:
+                    db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
+                    summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
                     continue
                 try:
                     _fire(TRIGGER_ID_STEP_C_INSIGHT, token_ci, _insight_payload(db, row, internal_token))
