@@ -124,6 +124,22 @@ def fund_significant(cat, as_of) -> bool:
     return max(mtd, s20) >= (min(3e9, 0.03 * aum) if aum > 0 else 3e9)
 
 
+def drop_low_activity(items: list, log=print) -> list:
+    """Малоактивные контракты на сайте скрыты из открытых позиций — мало физлиц-трейдеров (правило
+    low_activity_set скринера). #2126: пост про шорт в Baidu, которого читатель на сервисе не видит."""
+    try:
+        from api.services.oi_screener import low_activity_set
+        db = SessionLocal()
+        try:
+            low = low_activity_set(db)
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 — без фильтра лучше, чем без находок
+        log(f"нет фильтра малоактивных: {type(e).__name__}: {e}")
+        return items
+    return [x for x in items if not (x.get("family") == "позиции" and (x.get("facts") or {}).get("sec") in low)]
+
+
 def pick(items: list, log=print) -> list:
     """Лучшие находки дня по типам, по разным инструментам, с фильтрами."""
     res = []
@@ -206,7 +222,7 @@ def build(job: dict, now_iso: str) -> dict:
 def run_once(dry_run: bool = False) -> dict:
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
-    items = detect_window(until)
+    items = drop_low_activity(detect_window(until))
     jobs = pick(items)
     now_iso = datetime.now(timezone.utc).isoformat()
     summary = {"data_until": str(until.date()), "found": len(items), "picked": len(jobs), "created": 0,

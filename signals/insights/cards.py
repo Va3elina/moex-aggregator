@@ -314,6 +314,10 @@ def positions_card(sec, leg, as_of) -> dict:
             ch.append(f"{w} {'+' if v - arr[i - k] >= 0 else '-'}{q_ru(abs(v - arr[i - k]), unit)}")
     if ch:
         facts.append("изменение: " + ", ".join(ch))
+    if leg != "net" and st and i >= 5 and arr[i - 5] > 0 and v > arr[i - 5]:
+        # #2124 SMLT: писатель объявил «пик пройден», а позиция ещё росла
+        facts.append("позиция всё ещё растёт: нынешний эпизод не закончен - «пик пройден» не пиши; "
+                     "прошлые эпизоды ниже - это пики, называй их с датами")
     # итог толпы: цена в дни прироста позиции против нынешней. В посте коллеги к #2104 (Лукойл, 14.09)
     # «шортисты сидят в незафиксированном убытке» — самая сильная строка, и она считается по рядам
     if leg in ("long", "short") and pser is not None and i >= 21:
@@ -403,6 +407,9 @@ def positions_card(sec, leg, as_of) -> dict:
     limits = [f"данные дневные, на закрытие торгов {d_ru(t, t)}; что было внутри дня, не видно",
               f"данные по {dat} начинаются в {dates[0].year} году",
               NO_FORECAST]
+    from signals.insights.expiry import expiry_note
+    if expiry_note(t):
+        limits.append(expiry_note(t))
     if dates[0] < ERA_START:
         limits.append("до 2022 года был другой рынок, с нерезидентами: пики до 2022 года - не аналогия и в "
                       "пост не нужны; рекорд после 2022-го называй «исторический максимум» без оговорок")
@@ -521,6 +528,15 @@ def funds_card(cat, as_of) -> dict:
         mx, mn = era.idxmax(), era.idxmin()
         history.append(f"самый большой приток за месяц после 2022 года - {m_ru(mx, t)} ({n_ru(era.max())} ₽), "
                        f"самый большой отток - {m_ru(mn, t)} ({n_ru(abs(era.min()))} ₽)")
+        if cat == "money_market" and "RUSFAR3M" in idx:
+            # #2127: рекорд 210 млрд был при ставке ~21%, сейчас ~14% и +16 млрд — несравнимые периоды
+            rf = idx["RUSFAR3M"].dropna()
+            now_r, then_r = upto(rf, t), rf[rf.index <= mx]
+            if len(now_r) and len(then_r):
+                pc = lambda x: f"{x:.1f}".replace(".", ",") + "%"  # noqa: E731
+                history.append(f"ставка RUSFAR на 3 месяца сейчас {pc(now_r.iloc[-1])}, в месяц самого большого "
+                               f"притока ({m_ru(mx, t)}) была {pc(then_r.iloc[-1])}: при другой ставке суммы "
+                               f"потоков несравнимы - сопоставляй только вместе со ставкой")
     # спот, как на графике сайта: у вечного фьючерса на золото цена только с июля 2023 — с ним
     # «что было после» прошлых оттоков выходило пустым
     spot = lambda code, alt: idx[code].dropna() if code in idx else perp.get(alt)  # noqa: E731

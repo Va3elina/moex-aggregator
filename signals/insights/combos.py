@@ -294,7 +294,9 @@ class Engine:
         legs = win[[self._match(f, s, tmap) for f, s in zip(win.family, win.instrument)]]
         if legs.empty:
             return None
-        lead = legs[(legs.score >= STRONG) & legs.novel & (legs.di >= i_last - REACT_DAYS + 1)]
+        # цена сама по себе не тема: «индекс растёт 3-ю неделю» (#2121) — ход в рамках тренда
+        lead = legs[(legs.score >= STRONG) & legs.novel & (legs.di >= i_last - REACT_DAYS + 1)
+                    & (legs.family != "цена")]
         if lead.empty:
             return None
         news = pd.DataFrame()
@@ -336,7 +338,8 @@ class Engine:
             return None
         if theme == "отчёт_цб_потоки" and "цб_потоки" not in fams:
             return None     # «отчёт ЦБ» без самого отчёта — пустая вывеска (#2084)
-        top = pd.concat([top1.to_frame().T, sup.head(4 if top1.family == "цб_потоки" else 3)])
+        # одна тема + один сопутствующий фактор: #2120 «винегрет» из геополитики, нефтегаза и сезонности
+        top = pd.concat([top1.to_frame().T, sup.head(3 if top1.family == "цб_потоки" else 1)])
         score = float(top1.score) + 0.5 * float(sup.score.head(3).sum()) + (2.0 if is_news else 0)
         # главные новости окна: с 🔥 и самые просматриваемые, в порядке времени
         best = (news.assign(hot=news.text.str.contains("🔥", regex=False))
@@ -644,6 +647,9 @@ def brief(story: dict) -> tuple:
         if pd.Timestamp(lead["date"]) < first:
             out.append(f"- находка от {cards.d_ru(pd.Timestamp(lead['date']), t)} - РАНЬШЕ новости: позицию набрали до неё; "
                        f"«на этом фоне нарастили», «после новости» - нельзя")
+    from signals.insights.expiry import expiry_note
+    if expiry_note(t) and not any(expiry_note(t) in x for x in limits):
+        out.append(f"- {expiry_note(t)}")
     out += [f"- {x}" for x in limits] + [""]
     fam = lead["family"] if lead["family"] in HASHTAG else next(
         (s["family"] for s in support if s["family"] in HASHTAG), "позиции")

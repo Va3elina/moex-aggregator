@@ -28,7 +28,7 @@ QUERIES = {
         ORDER BY sectype, clgroup, tradedate, tradetime DESC""",
     "instruments": 'SELECT name, sectype, sec_id, type, "group", iss_code, sector, hidden FROM instruments',
     "index_data": """SELECT secid, trade_date, close FROM index_data
-                     WHERE secid IN ('IMOEX', 'RTSI', 'RGBI', 'RGBITR', 'MCFTR')""",
+                     WHERE secid IN ('IMOEX', 'RTSI', 'RGBI', 'RGBITR', 'MCFTR', 'RUSFAR3M')""",
     "candles_stocks": """SELECT secid, CAST(begin_time AS date) AS d, close FROM candles
                          WHERE interval = 24 AND type = 'stock' AND begin_time >= '2021-01-01'""",
     "candles_perp": """SELECT secid, CAST(begin_time AS date) AS d, close FROM candles
