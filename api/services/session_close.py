@@ -267,7 +267,7 @@ def price_at(db, sec_ids, inst_type: str | None, interval: int, moment: datetime
 _SECID_CLOSES_SQL = text("""
     SELECT DISTINCT ON (begin_time::date) begin_time::date AS d, close
     FROM candles
-    WHERE secid = :secid AND type = :type AND interval = :interval
+    WHERE sec_id = :secid AND secid = :secid AND interval = :interval
       AND begin_time >= :start AND begin_time < :end
       AND begin_time::time < time '19:00'
       AND close > 0 AND volume > 0
@@ -282,13 +282,27 @@ def secid_closes(conn, secid: str, inst_type: str, date_from: date,
     Для рядов одной бумаги (сезонность, сделки фондов, экспорт): последние
     недели дневного ряда заменяются ценой 19:00, глубокая история остаётся
     дневной свечой.
+
+    ИНДЕКС. Фильтр идёт по sec_id (плюс secid для точности), а не по одному
+    secid, и без type: так запрос ложится на покрывающий
+    idx_candles_intraday_cover (sec_id, interval, begin_time) INCLUDE (…close,
+    volume, secid) — Index Only Scan, ~500 страниц индекса подряд. По одному
+    secid планировщик брал idx_candles_secid_interval_time без INCLUDE и за
+    каждой из ~6500 пятиминуток ходил в таблицу: строки размазаны по 11 ГБ, на
+    холодном кэше это 1-5 с на бумагу (замер 2026-09-15: /price-weekly SBER
+    5.3 с холодным, 0.2 с тёплым). Именно поэтому у пользователя линия цены
+    в «Сделках фондов» грузилась долго, а у админа (без этого запроса) — нет.
+    type в INCLUDE не входит и вернул бы поход в таблицу; он и не нужен —
+    у акций, индексов, валют и вечных фьючерсов secid == sec_id, а у датированных
+    контрактов secid ('SRU6') ≠ sec_id ('SR'), так что пара sec_id+secid
+    однозначно задаёт бумагу. См. db/migrations/047_intraday_covering_indexes.sql.
     """
     start = datetime.combine(date_from, time.min)
     end = published_end(now)
     if end <= start:
         return {}
     rows = conn.execute(_SECID_CLOSES_SQL, {
-        "secid": secid, "type": inst_type, "interval": session_interval(inst_type),
+        "secid": secid, "interval": session_interval(inst_type),
         "start": start, "end": end,
     }).fetchall()
     return {r[0]: float(r[1]) for r in rows}
