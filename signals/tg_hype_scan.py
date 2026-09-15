@@ -130,9 +130,6 @@ _RECENT_FWD_DECISION = text("""
     ORDER BY fwd_3_at DESC LIMIT :n
 """)
 
-_EXISTS_CANDIDATE = text(
-    "SELECT 1 FROM content_candidates WHERE source = :channel AND headline = :headline LIMIT 1"
-)
 _INSERT_CANDIDATE = text("""
     INSERT INTO content_candidates
         (status, source, headline, raw_text, tickers, source_url, media_filename, created_at, updated_at)
@@ -231,11 +228,11 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             if fwd < config.MTP_HYPE_MIN_FWD.get(channel, 0):
                 continue  # см. MTP_HYPE_MIN_FWD: ×3 к медиане 1 = 3 репоста
 
+            # Проверки дублей по заголовку больше нет (Вадим 15.09.2026): заголовком
+            # у markettwits выходила строка тегов («⚠️🇺🇸🇷🇺#санкции #россия»), и все
+            # посты с теми же тегами молча отбрасывались. Повторной вставки одного
+            # поста нет и без неё: решение принимается один раз (fwd_3 IS NULL).
             headline = _headline_from_text(row["msg_text"])
-            if db.execute(_EXISTS_CANDIDATE, {"channel": channel, "headline": headline}).fetchone():
-                db.execute(_MARK_PROMOTED, {"channel": channel, "id": row["message_id"]})
-                db.commit()
-                continue
 
             media_filename = None
             if getattr(fresh, "photo", None):
