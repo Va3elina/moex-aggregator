@@ -35,7 +35,9 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.models import User
 from api.routers.auth import get_current_user_optional
-from api.services.session_close import is_live_viewer, published_next_day, secid_closes
+from api.services.session_close import (is_live_viewer, last_published_date, secid_closes,
+                                        view_tag)
+from api.cache import get_or_set
 from api.billing.tiers import user_tier
 from api.billing.features import get_indicator_limits
 
@@ -3017,38 +3019,76 @@ def price_weekly(
     # — цена 19:00 (дневная свеча несёт вечернюю сессию). Глубже — история как есть.
     from datetime import date as _date, timedelta as _td
     live = is_live_viewer(user, request)
-    pub_next = None if live else published_next_day()
+    last_pub = None if live else last_published_date()
+
+    # КЭШ ОТВЕТА. Ряд меняется раз в день: публичный — после 19:10 (ключ несёт
+    # дату последней опубликованной сессии и сам сменится), живой — вместе с
+    # дневной свечой сегодняшнего дня (короткий TTL). Без кэша каждое
+    # переключение фонда на фронте заново гоняло три запроса по 11-гигабайтной
+    # candles, и у популярных бумаг это повторялось у каждого пользователя.
+    cache_key = (f"fund_trades:price_weekly:v1:{ticker}:{view_tag(live)}:"
+                 f"{last_pub or _date.today()}")
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
+    # ОДИН ПРОХОД по дневным свечам бумаги: и недельные закрытия, и дневной
+    # оборот для «Навеса» берём из одной выборки. Раньше это были два запроса
+    # по тем же ~4800 строкам, а строки дневного ТФ размазаны по всей таблице
+    # (см. db/migrations/047_intraday_covering_indexes.sql) — на холодном кэше
+    # каждый проход платил за случайные чтения заново.
+    #
+    # Фильтр sec_id + secid, без type: у акций secid == sec_id, а пара исключает
+    # датированные фьючерсы (у них secid 'SRU6' ≠ sec_id 'SR'); так запрос
+    # идёт по индексу (sec_id, interval, begin_time), как и графики.
+    def daily(secid: str) -> list[tuple]:
+        return db.execute(text("""
+            SELECT begin_time::date AS d, close, value,
+                   extract(isodow FROM begin_time)::int AS dow
+            FROM candles
+            WHERE sec_id = :t AND secid = :t AND interval = 24
+              AND (close > 0 OR value > 0)
+            ORDER BY begin_time
+        """), {"t": secid}).all()
 
     # Недельные закрытия по каждому secid отдельно: масштаб старой серии
     # приводим к текущей акции, а «кто победил» на пересечении решаем ниже.
-    def weekly(secid: str) -> list[tuple]:
-        pub_sql = "AND begin_time < :pub_next" if pub_next else ""
-        params = {"t": secid}
-        if pub_next:
-            params["pub_next"] = pub_next
-        rows = db.execute(text(f"""
-            SELECT (date_trunc('week', begin_time))::date AS week,
-                   (array_agg(close ORDER BY begin_time DESC))[1] AS close,
-                   (array_agg(begin_time::date ORDER BY begin_time DESC))[1] AS last_d
-            FROM candles
-            WHERE secid = :t AND interval = 24 AND type = 'stock' AND close > 0
-              {pub_sql}
-            GROUP BY 1
-            ORDER BY 1
-        """), params).all()
+    # Закрытие недели = close последней дневной свечи внутри недели (понедельник
+    # как ключ, как date_trunc('week')); у неопубликованных дней свечи нет.
+    # Дневной оборот (value) — как есть: оборот не цена, публикация его не
+    # касается; только будние сессии, см. комментарий к «Навесу» ниже.
+    def weekly_and_turnover(secid: str) -> tuple[list[tuple], list[tuple]]:
+        rows = daily(secid)
+        last_by_week: dict = {}
+        turnover: list[tuple] = []
+        for d, close, value, dow in rows:
+            if close and close > 0 and (last_pub is None or d <= last_pub):
+                last_by_week[d - _td(days=d.weekday())] = (close, d)
+            if value and value > 0 and dow <= 5:
+                turnover.append((d, value))
         if live:
-            return [(wk, close) for wk, close, _d in rows]
-        closes19 = secid_closes(db, secid, "stock", _date.today() - _td(days=60))
-        return [(wk, closes19.get(last_d, close)) for wk, close, last_d in rows]
+            wk_rows = [(wk, close) for wk, (close, _d) in last_by_week.items()]
+        else:
+            closes19 = secid_closes(db, secid, "stock", _date.today() - _td(days=60))
+            wk_rows = [(wk, closes19.get(last_d, close))
+                       for wk, (close, last_d) in last_by_week.items()]
+        return wk_rows, turnover
 
     by_week: dict = {}
+    by_day: dict = {}
     for old in legacy:
         k = REDOMICILE_RATIO.get(old, 1.0)
-        for wk, close in weekly(old):
+        wk_rows, turnover = weekly_and_turnover(old)
+        for wk, close in wk_rows:
             by_week[wk] = float(close) / k
+        for d, v in turnover:
+            by_day[d] = float(v)
     # Запрошенная бумага идёт последней и перетирает пересечения.
-    for wk, close in weekly(ticker):
+    wk_rows, turnover = weekly_and_turnover(ticker)
+    for wk, close in wk_rows:
         by_week[wk] = float(close)
+    for d, v in turnover:
+        by_day[d] = float(v)
 
     if not by_week:
         raise HTTPException(status_code=404, detail="Нет истории цены по этой бумаге")
@@ -3088,22 +3128,9 @@ def price_weekly(
     # Навес из-за этого завышался на 15-40% (Хэдхантер 28.7 дн вместо 24.0,
     # Позитив 5.5 вместо 3.5). Фильтр заодно отсекает редкие рабочие субботы
     # доковидных лет — фонды в них тоже не торговали.
-    def daily_value(secid: str) -> list[tuple]:
-        return db.execute(text("""
-            SELECT begin_time::date AS day, value
-            FROM candles
-            WHERE secid = :t AND interval = 24 AND type = 'stock' AND value > 0
-              AND extract(isodow FROM begin_time) <= 5
-            ORDER BY 1
-        """), {"t": secid}).all()
-
-    by_day: dict = {}
-    for old in legacy:
-        for d, v in daily_value(old):
-            by_day[d] = float(v)
-    for d, v in daily_value(ticker):
-        by_day[d] = float(v)
-
+    #
+    # Сами дневные обороты (by_day) собраны выше, в том же проходе, что и
+    # недельные закрытия.
     from collections import defaultdict
     from statistics import median
     vals_by_month: dict = defaultdict(list)
@@ -3125,7 +3152,7 @@ def price_weekly(
         med_turnover.append(round(median(pool)))
 
     weeks = sorted(by_week)
-    return {
+    out = {
         "ticker": ticker,
         "weeks": [w.isoformat() for w in weeks],
         "closes": [by_week[w] for w in weeks],
@@ -3134,3 +3161,7 @@ def price_weekly(
         "turnover_months": turnover_months,
         "med_turnover": med_turnover,
     }
+    # Публичный ряд до 19:10 не меняется (ключ сменится сам), живой — вместе
+    # с сегодняшней свечой, поэтому короче.
+    get_or_set(cache_key, out, ttl=300 if live else 4 * 3600)
+    return out
