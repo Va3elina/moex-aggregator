@@ -247,6 +247,15 @@ def cbr_releases(na: pd.DataFrame) -> list:
     return out
 
 
+NON_STOCK = {"GOLD", "RGBI", "STOCKS_ALL", "FX_ALL"}
+
+
+def single_stock(inst) -> bool:
+    """Нога про одну акцию (LKOH), а не про индекс, валюту или рынок целиком."""
+    inst = str(inst or "")
+    return inst.isalpha() and inst.isupper() and 4 <= len(inst) <= 5 and inst not in NON_STOCK
+
+
 class Engine:
     """Находки детекторов за 30 дней + отчёты ЦБ + свежие новости — один раз на запуск."""
 
@@ -302,7 +311,19 @@ class Engine:
         # по доллару, а Вадим написал пост именно про него
         top1 = (lead.assign(rec=lead["type"].eq("рекорд_или_экстремум"))
                 .sort_values(["rec", "score"], ascending=False).iloc[0])
+        if is_news and single_stock(top1.instrument):
+            # #2117: шорт в Лукойле под новости о санкциях против ВТБ — у сюжета про одну бумагу
+            # новость должна называть эту бумагу
+            who = str(top1.title).split(":")[0].strip()
+            rx = re.escape(who[:5]) if len(who) >= 5 else re.escape(who)
+            news = news[news.text.str.contains(rx, case=False, regex=True)
+                        | news.text.str.contains(str(top1.instrument), regex=False)]
+            if news.empty:
+                return None
         sup = legs[(legs.score >= SUPPORT) & (legs.family != top1.family)]
+        if single_stock(top1.instrument):
+            # цена другой бумаги — не подтверждение: «Роснефть +7%» к шорту в Лукойле (#2104, #2117)
+            sup = sup[~((sup.family == "цена") & (sup.instrument != top1.instrument))]
         sup = sup.sort_values("score", ascending=False).drop_duplicates("family")
         if top1.family == "цб_потоки":
             # отчёт ЦБ — одна публикация с несколькими участниками: «ДУ продало акции» держат «ДУ купило
@@ -618,6 +639,11 @@ def brief(story: dict) -> tuple:
     out += ["", "ОГРАНИЧЕНИЯ - чего не утверждать:", f"- {cards.NO_FORECAST}",
             "- новость и данные сошлись по времени - это одновременность, а не причина",
             "- ноги сюжета - разные ряды за разные окна: не складывай их в одну цифру"]
+    if story["news"] and lead.get("date"):
+        first = min(pd.Timestamp(n["t"]).tz_convert("Europe/Moscow").tz_localize(None).normalize() for n in story["news"])
+        if pd.Timestamp(lead["date"]) < first:
+            out.append(f"- находка от {cards.d_ru(pd.Timestamp(lead['date']), t)} - РАНЬШЕ новости: позицию набрали до неё; "
+                       f"«на этом фоне нарастили», «после новости» - нельзя")
     out += [f"- {x}" for x in limits] + [""]
     fam = lead["family"] if lead["family"] in HASHTAG else next(
         (s["family"] for s in support if s["family"] in HASHTAG), "позиции")

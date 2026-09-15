@@ -36,11 +36,12 @@ MAX_DATA = 2            # утром — не больше двух связок
 MAX_NEWS_DAY = 3        # днём — не больше трёх новостных связок за сутки
 REPEAT_DAYS = 3         # тема у завода — не чаще раза в три дня
 CHANNEL_DAYS = 2        # канал писал о том же за двое суток — пропуск
+STALE_DAYS = 4          # новостной сюжет: главная нога не старше четырёх календарных дней
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 CACHE_DIR = os.environ.get("COMBO_CACHE_DIR", "/opt/frame/data/combo_cache")
 
 _RECENT = text("""
-    SELECT thread_key, reasoning, created_at, raw_text FROM content_candidates
+    SELECT thread_key, reasoning, created_at, raw_text, tickers FROM content_candidates
     WHERE source = 'combo' AND created_at > now() - interval '3 days'
 """)
 _INSERT = text("""
@@ -101,6 +102,15 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
             # между прогонами тоже: шорт по доллару ушёл в #2084 под «отчёт ЦБ» и вернулся бы утром как «рубль»
             if any(f"- находка: {combos.legible(lead['title'])}" in (r[3] or "") for r in recent):
                 print(f"[combo_scan] пропуск, эта находка уже была главной за {REPEAT_DAYS} дня: {lead['title'][:70]}")
+                continue
+            # один инструмент — один сюжет за три дня: #2117 про шорт в Лукойле пришёл под темой «санкции»
+            # на следующий день после #2104 («нефть и газ»), сверка строки «находка» его не поймала
+            if lead["instrument"] and any(lead["instrument"] in (r[4] or []) for r in recent):
+                print(f"[combo_scan] пропуск, по {lead['instrument']} завод писал за {REPEAT_DAYS} дня: {lead['title'][:70]}")
+                continue
+            # новостной сюжет на данных недельной давности — «на этом фоне» уже неправда
+            if mode == "news" and lead.get("date") and (today - pd.Timestamp(lead["date"]).date()).days > STALE_DAYS:
+                print(f"[combo_scan] пропуск, находка от {lead['date']} старше {STALE_DAYS} дней: {lead['title'][:70]}")
                 continue
             if s["theme"] in themes:
                 print(f"[combo_scan] пропуск, тема «{s['theme']}» у завода была за {REPEAT_DAYS} дня: {lead['title'][:70]}")
