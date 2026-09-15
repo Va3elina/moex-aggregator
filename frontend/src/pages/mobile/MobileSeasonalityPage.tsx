@@ -37,7 +37,9 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import { useAssetViewTracking } from '../../hooks/useAssetViewTracking';
 import { useLivePricesState } from '../../hooks/useLivePrices';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
-import { type PeriodConfig, makePeriodId } from '../../components/seasonality/periodConfig';
+import {
+  type PeriodConfig, makePeriodId, parseStoredPeriods, readStoredJson, resolvePeriods,
+} from '../../components/seasonality/periodConfig';
 
 // Mobile mode: 4 API modes + локальный 'yearly' который дёргает отдельный endpoint
 // (getSeasonalityYearly) и рендерится как line chart, не bars.
@@ -58,6 +60,10 @@ const MONTH_LABELS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'
 // Не считая current year (accent) и среднюю (серую) на yearly — они системные.
 // Лимит 5 = 6 серий на гистограмме (base + 5 user) и 7 на yearly (base + 5 + current).
 const MAX_COMPARE_SERIES = 5;
+
+// Сравнение (периоды + конкретные годы) общее для всех активов. Раньше жило
+// per-actor в `seasonality_compare_<тикер>` и при смене актива подменялось.
+const COMPARE_KEY = 'frame:seasonality:mobileCompare';
 
 // Инструменты без дивидендов (индексы/валюты/сырьё/вечные фьючерсы) — для них
 // тоггл «Без дивидендных гэпов» бесполезен, прячем (паритет с десктопом).
@@ -86,6 +92,7 @@ export default function MobileSeasonalityPage() {
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
   useAssetViewTracking('seasonality', selectedStock);
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
+  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
   // «Часы» (intraday) в мобильном списке не предлагаются, но режим мог
   // остаться в сохранённых настройках. Он строится по внутридневным ценам —
@@ -117,8 +124,28 @@ export default function MobileSeasonalityPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   // Сравнение: rolling window (с года X и позже, со своими настройками) +
   // single year (только X, без настроек).
-  const [periods, setPeriods] = useState<PeriodConfig[]>([]);
-  const [exactYears, setExactYears] = useState<number[]>([]);
+  // Сохранённая форма `{ p: PeriodConfig[], e: number[] }`. Загрузка понимает и
+  // прежние per-actor формы: legacy-массив годов, `{c:[годы], e}`, `{p, e}`.
+  // Нет общего ключа → миграция из per-actor ключа текущего актива.
+  const [compareSeed] = useState(() => {
+    const saved = (readStoredJson(COMPARE_KEY) ?? readStoredJson(`seasonality_compare_${selectedStock}`)) as
+      { p?: unknown; c?: unknown; e?: unknown } | unknown[] | null;
+    if (Array.isArray(saved)) return { p: parseStoredPeriods(saved), e: [] as number[] };
+    const e = Array.isArray(saved?.e) ? saved.e.filter((y): y is number => Number.isInteger(y)) : [];
+    return { p: parseStoredPeriods(saved?.p ?? saved?.c), e };
+  });
+  const [storedPeriods, setPeriods] = useState<PeriodConfig[]>(compareSeed.p);
+  const [storedExactYears, setExactYears] = useState<number[]>(compareSeed.e);
+  // Применённые к текущему активу: год периода зажат в историю актива,
+  // конкретные годы вне истории скрыты (в хранилище остаются).
+  const periods = useMemo(
+    () => resolvePeriods(storedPeriods, availableYears, hasDividends),
+    [storedPeriods, availableYears, hasDividends],
+  );
+  const exactYears = useMemo(
+    () => storedExactYears.filter((y) => availableYears.includes(y)),
+    [storedExactYears, availableYears],
+  );
 
   // Basic-гейт фильтров серии («Без выбросов» / «Без дивидендных гэпов»):
   // тумблеры для free выглядят как обычно, но попытка ВКЛЮЧИТЬ фильтр открывает
@@ -147,51 +174,16 @@ export default function MobileSeasonalityPage() {
   const [exactHistData, setExactHistData] = useState<SeasonalityResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // localStorage persist для periods + exactYears, per-actor.
-  // Новая форма `{ p: PeriodConfig[], e: number[] }`. Загрузка понимает 3 формы
-  // без падения: legacy-массив годов, старый `{c:[годы], e:[годы]}`, новый `{p,e}`.
-  // id регенерятся при загрузке — нужна только внутрисессионная стабильность.
   const yearToPeriod = (yr: number): PeriodConfig => ({
     id: makePeriodId(), sinceYear: yr, median: false, excludeDividends: false,
   });
   useEffect(() => {
-    if (!selectedStock) return;
     try {
-      const saved = localStorage.getItem(`seasonality_compare_${selectedStock}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setPeriods(parsed.map(yearToPeriod));
-          setExactYears([]);
-        } else if (Array.isArray(parsed.p)) {
-          setPeriods(parsed.p);
-          setExactYears(parsed.e ?? []);
-        } else {
-          // старая форма {c,e}
-          setPeriods((parsed.c ?? []).map(yearToPeriod));
-          setExactYears(parsed.e ?? []);
-        }
-      } else {
-        setPeriods([]);
-        setExactYears([]);
-      }
-    } catch {
-      setPeriods([]);
-      setExactYears([]);
-    }
-  }, [selectedStock]);
-
-  useEffect(() => {
-    if (!selectedStock) return;
-    try {
-      localStorage.setItem(
-        `seasonality_compare_${selectedStock}`,
-        JSON.stringify({ p: periods, e: exactYears }),
-      );
+      localStorage.setItem(COMPARE_KEY, JSON.stringify({ p: storedPeriods, e: storedExactYears }));
     } catch {
       // ignore quota errors
     }
-  }, [selectedStock, periods, exactYears]);
+  }, [storedPeriods, storedExactYears]);
 
   // Fetch availableYears на смену actor.
   useEffect(() => {
@@ -434,9 +426,6 @@ export default function MobileSeasonalityPage() {
   }, [seriesGroups]);
 
   // Subtitle: показываем текущее значение фильтров под заголовком
-  // Инструменты без дивидендов: тоггл «Без дивидендных гэпов» в строке периода прячем.
-  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
-
   const filtersDesc: string[] = [MODE_LABELS[mode]];
   if (periods.some((p) => p.excludeDividends)) filtersDesc.push('без дивидендов');
   if (periods.some((p) => p.median)) filtersDesc.push('медиана');

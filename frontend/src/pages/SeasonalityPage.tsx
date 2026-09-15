@@ -15,7 +15,9 @@ import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceCha
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
 import TestDashboard from '../components/seasonality/TestDashboard';
 import PeriodSettingsPopover from '../components/seasonality/PeriodSettingsPopover';
-import { type PeriodConfig, makePeriodId } from '../components/seasonality/periodConfig';
+import {
+  type PeriodConfig, makePeriodId, defaultPeriods, parseStoredPeriods, readStoredJson, resolvePeriods,
+} from '../components/seasonality/periodConfig';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { buildSeasonalityExportConfig } from '../components/export/exportConfigs';
@@ -57,6 +59,18 @@ type ChartType = 'histogram' | 'price' | 'yearly' | 'test';
 // Для Test-режима: все 4 гистограммы одновременно (Seasonax-style dashboard)
 const TEST_MODES: SeasonalityMode[] = ['intraday', 'weekday', 'monthday', 'monthly'];
 
+// Инструменты без дивидендов: индексы, валюты, сырьё.
+// Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
+const NON_DIVIDEND_TICKERS = new Set([
+  'IMOEX', 'RTSI', 'RGBI', 'RVI', 'MCFTR', 'RGBITR', 'RUSFAR3M',
+  'GLDRUB_TOM', 'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM',
+  // Вечные фьючерсы
+  'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
+]);
+
+// Периоды «С YYYY г.» общие для всех активов и переживают перезагрузку.
+const PERIODS_KEY = 'frame:seasonality:periods';
+
 // Всегда запрашиваем полную историю — логика "Актуальный/Базисный" (30/90 итераций)
 // убрана по просьбе пользователя. Бэкенд принимает iterations до 9999.
 const FULL_HISTORY_ITERS = 9999;
@@ -80,6 +94,7 @@ export default function SeasonalityPage() {
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
   useAssetViewTracking('seasonality', selectedStock);
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
+  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Mode & params (персистятся в localStorage — не сбрасываются на новой сессии)
@@ -128,38 +143,38 @@ export default function SeasonalityPage() {
   // Серии:
   // - periods: массив серий "Период с YYYY", каждая со своими настройками
   //   (median = "Без выбросов", excludeDividends = "Без дивидендных гэпов").
-  //   По умолчанию [{min_year}] — аналог старой "средней за все годы". Можно
-  //   добавить ещё через "+" (дубли года разрешены — напр. "С 2000" и
-  //   "С 2000 · медиана" рядом) или убрать через ×. Идентичность серии — id,
-  //   не год.
-  const [periods, setPeriods] = useState<PeriodConfig[]>([]);
+  //   По умолчанию один период «с начала истории» (FROM_START_YEAR) — аналог
+  //   старой "средней за все годы". Можно добавить ещё через "+" (дубли года
+  //   разрешены — напр. "С 2000" и "С 2000 · медиана" рядом) или убрать через ×.
+  //   Идентичность серии — id, не год.
+  // Выбор не привязан к активу: при смене актива периоды и их настройки
+  // сохраняются, год лишь зажимается в историю нового инструмента
+  // (resolvePeriods). Раньше здесь был сброс на первый год актива — выставленный
+  // «С 2022 г.» слетал при каждом переключении.
+  const [periodsSeed] = useState(() => {
+    const saved = parseStoredPeriods(readStoredJson(PERIODS_KEY));
+    return saved.length > 0 ? saved : defaultPeriods();
+  });
+  const [storedPeriods, setPeriods] = usePersistedState<PeriodConfig[]>(PERIODS_KEY, periodsSeed, periodsSeed);
   // Линия текущего года на годовом графике — можно скрыть тогглом.
   const [showCurrentYear, setShowCurrentYear] = usePersistedState('frame:seasonality:showCurrentYear', true);
   // Доступные годы (для dropdown). Обновляется при смене тикера.
   const [availableYears, setAvailableYears] = useState<number[]>([]);
+  // Периоды, применённые к текущему активу, — их читают фетчи, подписи и чипы.
+  // Сеттер setPeriods работает с сохранённым выбором (патчи/удаление по id).
+  const periods = useMemo(
+    () => resolvePeriods(storedPeriods, availableYears, hasDividends),
+    [storedPeriods, availableYears, hasDividends],
+  );
 
   // Фетч доступных лет при смене тикера.
-  // При смене актива полностью СБРАСЫВАЕМ periods:
-  // - periods → [{min_year нового актива}] (наибольший доступный период, настройки по умолчанию)
-  // Сохранение выбора "от прошлого актива" сбивает с толку — у каждого инструмента
-  // своя история данных, начало периодов разное. Пользователь ожидает чистый старт.
   useEffect(() => {
     if (!selectedStock) return;
     let cancelled = false;
     getSeasonalityYears(selectedStock).then((resp) => {
-      if (cancelled) return;
-      setAvailableYears(resp.years);
-      // Всегда ставим один период с min_year нового актива (настройки по умолчанию).
-      if (resp.years.length > 0) {
-        setPeriods([{ id: makePeriodId(), sinceYear: resp.years[0], median: false, excludeDividends: false }]);
-      } else {
-        setPeriods([]);
-      }
+      if (!cancelled) setAvailableYears(resp.years);
     }).catch(() => {
-      if (!cancelled) {
-        setAvailableYears([]);
-        setPeriods([]);
-      }
+      if (!cancelled) setAvailableYears([]);
     });
     return () => { cancelled = true; };
   }, [selectedStock]);
@@ -456,16 +471,6 @@ export default function SeasonalityPage() {
     if (periodMeta.length === 1) return periodMeta[0].label;
     return t('Периоды: {{list}}', { list: periodMeta.map(m => m.label).join('; ') });
   }, [seriesMeta, t]);
-
-  // Инструменты без дивидендов: индексы, валюты, сырьё.
-  // Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
-  const NON_DIVIDEND_TICKERS = new Set([
-    'IMOEX', 'RTSI', 'RGBI', 'RVI', 'MCFTR', 'RGBITR', 'RUSFAR3M',
-    'GLDRUB_TOM', 'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM',
-    // Вечные фьючерсы
-    'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
-  ]);
-  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
 
   // Годы, которые можно добавить как период. Дубли разрешены (у каждой серии
   // свои настройки) → фильтруем только текущий незавершённый год.
