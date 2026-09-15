@@ -62,7 +62,7 @@ from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 from signals.content_ai import (       # noqa: E402
     _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
-    _hype_filter_payload, TRIGGER_ID_HYPE_FILTER, _brain_hint_for_step_a,
+    _hype_accept, _brain_hint_for_step_a,
 )
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
@@ -279,20 +279,15 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                     print(f"[tg_hype_scan] {channel}: step-a fire failed for candidate "
                           f"{new_id}: {type(e).__name__}: {e}")
 
-            # Шаг Н — независимый фильтр «шутка/мусор vs реальная новость» для
-            # уведомления коллеги (см. TRIGGER_ID_HYPE_FILTER). Не завязан на
-            # Шаг А/тикеры, отдельный Routine — пока не создан в UI, token_hype
-            # пуст и фильтр просто не стреляет (см. run_once).
+            # ИИ-фильтра (Шаг Н) больше нет (15.09.2026): прошедшее порог сразу
+            # принимается и уходит в канал (см. content_ai._hype_accept). Если
+            # вызов упал — подберёт бэкстоп content_ai.run_once.
             if can_fire_hype:
                 try:
-                    hf_payload = _hype_filter_payload(
-                        new_id, channel, row["msg_text"] or headline, internal_token,
-                    )
-                    _fire(TRIGGER_ID_HYPE_FILTER, token_hype, hf_payload)
+                    _hype_accept(new_id, internal_token)
                     db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": new_id})
                     db.commit()
                     summary["hype_filter_fired"] += 1
-                    time.sleep(FIRE_STAGGER_SEC)
                 except Exception as e:
                     summary["hype_filter_fire_errors"] += 1
                     print(f"[tg_hype_scan] {channel}: hype-filter fire failed for candidate "
@@ -320,10 +315,9 @@ def run_once() -> dict:
     token_a = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_A", "")
     can_fire = bool(internal_token and token_a)
 
-    # Шаг Н (см. TRIGGER_ID_HYPE_FILTER) — опционален: пока Routine не создана
-    # в UI и/или токен не задан в .env, просто не стреляет (не ошибка).
-    token_hype = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_HYPE_FILTER", "")
-    can_fire_hype = bool(internal_token and token_hype and TRIGGER_ID_HYPE_FILTER)
+    # ИИ-фильтра больше нет (15.09.2026) — для приёмки нужен только internal-токен.
+    token_hype = ""
+    can_fire_hype = bool(internal_token)
 
     now = datetime.now(timezone.utc)
     db = SessionLocal()

@@ -388,6 +388,21 @@ def _notify_pipeline_stuck(step: str, gave_up: list) -> None:
             print(f"[content_ai] pipeline-stuck notify failed: {type(e).__name__}: {e}")
 
 
+def _hype_accept(candidate_id: int, internal_token: str) -> None:
+    """ИИ-фильтр (Шаг Н, Routine «шум или новость») убран 15.09.2026 по решению
+    Вадима: всё, что прошло порог репостов, сразу идёт в канал @news_framedata.
+    Зовём ту же ручку, куда отвечала Routine, с is_news=true — публикация
+    (_notify_hype_colleague в api) остаётся без изменений. Хост достаёт до
+    framedata.ru (проверено curl /api/health с сервера)."""
+    resp = requests.patch(
+        f"{INTERNAL_API_HOST}/api/internal/content-news/{candidate_id}/hype-filter",
+        headers={"X-Internal-Token": internal_token},
+        json={"is_news": True, "reason": "ИИ-фильтр отключён"},
+        timeout=30,  # ручка синхронно шлёт пост в Telegram (sendPhoto до 20с)
+    )
+    resp.raise_for_status()
+
+
 def _fire(trigger_id: str, bearer_token: str, text_payload: str) -> None:
     resp = requests.post(
         FIRE_URL_TMPL.format(trigger_id=trigger_id),
@@ -2249,7 +2264,9 @@ def run_once() -> dict:
     # Шаг Н — отдельный токен, отдельная проверка (не блокирует А/В, если ещё
     # не создан в UI, и наоборот — см. skill moex-content-routines).
     token_hype = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_HYPE_FILTER", "")
-    can_fire_hype = bool(internal_token and token_hype and TRIGGER_ID_HYPE_FILTER)
+    # С 15.09.2026 ИИ-фильтра нет — бэкстоп сразу принимает зависших (_hype_accept),
+    # Routine и её токен больше не нужны.
+    can_fire_hype = bool(internal_token)
     # Шаг Г — тоже свой токен и своя проверка: пока триггер не создан, судья просто
     # не запускается, а Шаги А/В/Н работают как раньше.
     token_g = os.environ.get("CLAUDE_ROUTINE_FIRE_TOKEN_STEP_G", "")
@@ -2398,13 +2415,10 @@ def run_once() -> dict:
             }).mappings().all()
             for row in hype_pending:
                 try:
-                    _fire(TRIGGER_ID_HYPE_FILTER, token_hype,
-                          _hype_filter_payload(row["id"], row["source"], row["raw_text"] or row["headline"],
-                                                internal_token))
+                    _hype_accept(row["id"], internal_token)
                     db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": row["id"]})
                     db.commit()
                     summary["hype_filter_fired"] += 1
-                    time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                 except Exception as e:
                     summary["errors"] += 1
                     print(f"[content_ai] hype-filter fire failed for candidate {row['id']}: "
