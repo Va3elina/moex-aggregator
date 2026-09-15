@@ -3038,15 +3038,17 @@ def price_weekly(
     # (см. db/migrations/047_intraday_covering_indexes.sql) — на холодном кэше
     # каждый проход платил за случайные чтения заново.
     #
-    # Фильтр sec_id + secid, без type: у акций secid == sec_id, а пара исключает
-    # датированные фьючерсы (у них secid 'SRU6' ≠ sec_id 'SR'); так запрос
-    # идёт по индексу (sec_id, interval, begin_time), как и графики.
+    # Фильтр именно по secid + type + interval: это ключ покрывающего
+    # idx_candles_stock_daily_secid_time (type, interval, secid, begin_time)
+    # INCLUDE (close, volume, value) — единственного, где есть value, то есть
+    # Index Only Scan без похода в таблицу. По sec_id нельзя: у ~110 тыс. старых
+    # дневных строк акций sec_id пуст (замер 2026-09-15), история бы оборвалась.
     def daily(secid: str) -> list[tuple]:
         return db.execute(text("""
             SELECT begin_time::date AS d, close, value,
                    extract(isodow FROM begin_time)::int AS dow
             FROM candles
-            WHERE sec_id = :t AND secid = :t AND interval = 24
+            WHERE secid = :t AND type = 'stock' AND interval = 24
               AND (close > 0 OR value > 0)
             ORDER BY begin_time
         """), {"t": secid}).all()
