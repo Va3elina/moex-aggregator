@@ -40,6 +40,18 @@ ISIN_ALIASES = {
     "US33835G2057": "RU000A10B5G8",  # Фикс Прайс FIXP-гдр → ПАО «Фикс Прайс» (FIXR)
 }
 
+# Имена для бумаг, которых ISS больше не знает (делистнутые расписки и т.п.): без них
+# short_name пустой, и витрина берёт самое короткое asset_name по фондам — у части фондов
+# это сам ISIN («US69269L1044» вместо Озона).
+NAME_OVERRIDES = {
+    "US69269L1044": "OZON-адр",
+    "RU000A1095U8": "НоваБев",
+    "US71922G4073": "PHOR-гдр",
+    "CY0109300810": "Озон (CY)",
+    "CY0104922212": "Русагро (CY)",
+    "NL0010514279": "X5 (NL)",
+}
+
 ISS_URL = ("https://iss.moex.com/iss/securities.json?iss.meta=off&q={q}"
            "&securities.columns=secid,shortname,isin,regnumber,type,is_traded")
 _UA = {"User-Agent": "frame-securities-ref/1.0"}
@@ -160,7 +172,7 @@ def main():
             found += 1
         else:
             # ISS не нашёл (делистнут/иностранный без записи) — строка-заглушка с алиасом
-            rec = {"isin": isin, "secid": None, "short_name": None, "sec_type": None,
+            rec = {"isin": isin, "secid": None, "short_name": NAME_OVERRIDES.get(isin), "sec_type": None,
                    "is_traded": None, "canonical_isin": canonical}
             miss += 1
         with engine.begin() as conn:
