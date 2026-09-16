@@ -431,16 +431,21 @@ def _notify_new_drafts() -> None:
                 db.commit()
                 # находка движка — к карточке её график (не блокирует отметку «отправлено»)
                 media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
+                photo = None
                 if media and media[0] in ("insight", "combo") and media[1]:
                     path = os.path.join(MEDIA_DIR, media[1])
                     if os.path.exists(path):
+                        photo = path
                         send_photo(config.ADMIN_USER_ID, path, f"график к черновику #{cid}")
                 _notify_failed_at.pop(cid, None)
                 # Коллеге — та же карточка, один раз: кандидат уже помечен
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
                 # Telegram ответит «chat not found», send_kb напечатает это в лог).
+                # С 16.09 и график следом за карточкой (Вадим: «фото пусть будет вместе с постом»).
                 for extra in config.CONTENT_DRAFT_EXTRA_CHAT_IDS:
                     send_kb(extra, txt, kb)
+                    if photo:
+                        send_photo(extra, photo, f"график к черновику #{cid}")
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
