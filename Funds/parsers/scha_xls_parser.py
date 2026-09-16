@@ -256,7 +256,15 @@ def _detect_column_positions(df: pd.DataFrame, start: int, end: int) -> Optional
         cols = {}
         for j, cell in enumerate(row):
             c = cell.lower().replace("\n", " ")
-            if "наименование эмитента" in c and "name" not in cols:
+            # Подраздел 2.11 «иные ценные бумаги»: ISIN лежит в колонке без слова «ISIN» в шапке
+            # (облигации ВЭБ.РФ и пр.) — без этого подраздел отбрасывался целиком.
+            if "позволяющие установить ценн" in c and "isin" not in cols:
+                cols["isin"] = j
+            # Подраздел 3.4 ГДР: «Наименование эмитента ценной бумаги» — это ДЕПОЗИТАРИЙ
+            # (The Bank of New York Mellon), компания — в «…представляемых ценных бумаг».
+            elif "наименование эмитента представляем" in c and "underlying_name" not in cols:
+                cols["underlying_name"] = j
+            elif "наименование эмитента" in c and "name" not in cols:
                 cols["name"] = j
             elif "огрн" in c and "ogrn" not in cols:
                 cols["ogrn"] = j
@@ -270,7 +278,8 @@ def _detect_column_positions(df: pd.DataFrame, start: int, end: int) -> Optional
                 cols["maturity"] = j
             elif "количество" in c and "положения" not in c and "положений" not in c and "positions" not in cols:
                 cols["positions"] = j
-            elif "стоимость актива" in c and "value" not in cols:
+            # 3.4 ГДР: шапка «Ценные бумаги иностранных эмитентов - стоимость» (без «актива»).
+            elif ("стоимость актива" in c or c.rstrip().endswith("- стоимость")) and "value" not in cols:
                 cols["value"] = j
             elif "биржа" in c and "exchange" not in cols:
                 cols["exchange"] = j
@@ -289,13 +298,18 @@ def _parse_asset_rows(df: pd.DataFrame, start: int, end: int, cols: dict) -> lis
         if pd.isna(isin_cell):
             continue
         isin_str = str(isin_cell).strip().replace(" ", "")
-        if not ISIN_PATTERN.match(isin_str):
+        # Любой ISIN, не только RU: иначе теряются ГДР (Подраздел 3.4), иностр. акции (3.6)
+        # и облигации (3.1) — у AKME/OPIF-432 в 2022–2024 до 23% активов.
+        if not ISIN_ANY.match(isin_str):
             continue
         positions = _norm_number(row.iloc[cols["positions"]]) if cols["positions"] < len(row) else None
         value_rub = _norm_number(row.iloc[cols["value"]]) if cols["value"] < len(row) else None
         if positions is None and value_rub is None:
             continue
         name = str(row.iloc[cols["name"]]).strip() if cols.get("name") is not None and cols["name"] < len(row) else None
+        un = cols.get("underlying_name")
+        if un is not None and un < len(row) and str(row.iloc[un]).strip() not in ("", "nan", "-"):
+            name = str(row.iloc[un]).strip()
         ogrn = str(row.iloc[cols["ogrn"]]).strip() if cols.get("ogrn") is not None and cols["ogrn"] < len(row) else None
         if ogrn == "nan":
             ogrn = None
