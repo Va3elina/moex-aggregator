@@ -404,6 +404,42 @@ def _card_view(row):
     return txt, kb
 
 
+_SELECT_CONTEXT = text("""
+    SELECT c.source, c.event_type, c.raw_text, c.source_url, c.reasoning,
+           a.asset_name, a.asset_id, a.clgroup, a.headline, a.context, a.signal_date
+    FROM content_candidates c
+    LEFT JOIN anomalies a ON a.id = c.matched_anomaly_id
+    WHERE c.id = :id
+""")
+
+_CONTEXT_CHUNK = 3900  # лимит Telegram 4096
+
+
+def _context_messages(db, cid: int) -> list:
+    """Контекст черновика простым текстом: у новостей — полный текст и ссылка,
+    у находок и связок raw_text и есть их бриф (ПОВОД/ГЛАВНОЕ/цифры); плюс
+    аномалия, с которой сверилась новость, и обоснование Шага А."""
+    r = db.execute(_SELECT_CONTEXT, {"id": cid}).fetchone()
+    if not r:
+        return []
+    (source, event_type, raw_text, source_url, reasoning,
+     a_name, a_id, a_group, a_head, a_ctx, a_date) = r
+    kind = {"combo": "Связка", "insight": "Находка"}.get(source or "", "Новость")
+    parts = [f"🔎 Контекст #{cid} · {kind} · {source or '—'}"
+             + (f" · {event_type}" if event_type else "")]
+    if raw_text:
+        parts.append(raw_text.strip())
+    if source_url:
+        parts.append(source_url)
+    if a_head:
+        parts.append(f"📊 Значения: {a_name or a_id} ({a_group or '—'}), "
+                     f"{a_date:%d.%m.%Y} — {a_head}" + (f", {a_ctx}" if a_ctx else ""))
+    if reasoning:
+        parts.append(f"Почему взяли: {reasoning.strip()}")
+    full = "\n\n".join(parts)
+    return [full[i:i + _CONTEXT_CHUNK] for i in range(0, len(full), _CONTEXT_CHUNK)]
+
+
 # Кандидат → когда Telegram последний раз отказал в карточке (time.monotonic()).
 _notify_failed_at: dict = {}
 _NOTIFY_RETRY_SEC = 600
@@ -437,6 +473,11 @@ def _notify_new_drafts() -> None:
                     if os.path.exists(path):
                         photo = path
                         send_photo(config.ADMIN_USER_ID, path, f"график к черновику #{cid}")
+                # Следом контекст: полная новость / находка / связка + значения — чтобы
+                # черновик читался рядом с тем, из чего он сделан (Вадим 16.09).
+                context = _context_messages(db, cid)
+                for part in context:
+                    send(config.ADMIN_USER_ID, part)
                 _notify_failed_at.pop(cid, None)
                 # Коллеге — та же карточка, один раз: кандидат уже помечен
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
@@ -446,6 +487,8 @@ def _notify_new_drafts() -> None:
                     send_kb(extra, txt, kb)
                     if photo:
                         send_photo(extra, photo, f"график к черновику #{cid}")
+                    for part in context:
+                        send(extra, part)
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
