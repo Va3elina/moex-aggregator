@@ -271,6 +271,65 @@ def episodes(arr, i, gap=40, hist=250) -> list:
     return eps
 
 
+def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> list:
+    """Тренд вместо пика. Вадим к #2124 (Самолёт, 15.09) и #2216 (АФК, 16.09): «важен не предыдущий
+    исторический пик, а тренд: последние месяцы чистая позиция снижается вместе с ценой; в октябре-ноябре
+    2024 шорт рос, цена падала, и только когда объём шорта начал снижаться, акция перешла к росту».
+
+    Тренд — знак изменения позиции и цены за W торговых дней (цена — не меньше MIN_PX). Прошлые эпизоды —
+    отрезки после 2022 года с тем же сочетанием знаков; «разворот» — первый день после отрезка, когда
+    позиция за 10 торговых дней пошла в обратную сторону, и от него — цена через месяц и три."""
+    if pser is None or len(arr) < W + 30:
+        return []
+    s = pd.Series(arr, index=dates)
+    ps = pser.reindex(dates).ffill()
+    dpos, dpx = s.diff(W), ps / ps.shift(W) - 1
+    cp, cx = dpos.iloc[-1], dpx.iloc[-1]
+    if not (np.isfinite(cp) and np.isfinite(cx)) or cp == 0 or abs(cx) < MIN_PX:
+        return []
+    sp, sx = np.sign(cp), np.sign(cx)
+    many = lab.startswith("покупки")
+    one = lab.startswith("число")
+    now_v = ("растут" if many else "растёт") if sp > 0 else ("снижаются" if many else "снижается")
+    past_v = (("росли" if many else "росло" if one else "рос") if sp > 0
+              else ("снижались" if many else "снижалось" if one else "снижался"))
+    turn_v = (("начали" if many else "начало" if one else "начал") + (" снижаться" if sp > 0 else " расти"))
+    ok = ((np.sign(dpos) == sp) & (np.sign(dpx) == sx) & (dpx.abs() >= MIN_PX)).values & (dates >= ERA_START)
+    runs = []
+    for i in np.flatnonzero(ok):
+        if runs and i - runs[-1][1] <= 5:
+            runs[-1][1] = i
+        else:
+            runs.append([i, i])
+    n = len(arr) - 1
+    cur = runs[-1] if runs and runs[-1][1] >= n - 5 else None
+    past = [r for r in runs if r is not cur and r[1] - r[0] >= 10]
+    d10 = s.diff(10)
+    out = [f"главное - тренд, а не прошлый пик: за последние два месяца {lab} {now_v}, а {plabel} {p_ru(cx)}"
+           + (f"; так идёт с {d_ru(dates[max(cur[0] - W, 0)], t)}" if cur else "")]
+    ups = n_after = 0
+    for i0, i1 in past[-4:]:
+        j = next((k for k in range(i1 + 1, n + 1) if np.sign(d10.iloc[k]) == -sp), None)
+        if j is None:
+            continue
+        a = max(i0 - W, 0)
+        r20, r60 = fwd(pser, dates[j], 20), fwd(pser, dates[j], 60)
+        tail = ([f"через месяц {p_ru(r20)}"] if r20 is not None else []) + \
+               ([f"через три {p_ru(r60)}"] if r60 is not None else [])
+        out.append(f"так же было {d_ru(dates[a], t)} - {d_ru(dates[i1], t)}: {lab} {past_v}, {plabel} "
+                   f"{p_ru(ps.iloc[i1] / ps.iloc[a] - 1)}; {d_ru(dates[j], t)} {lab} {turn_v} - "
+                   + (f"после этого {plabel} " + ", ".join(tail) if tail else "что было после, ещё не известно"))
+        if r20 is not None:
+            n_after += 1
+            ups += r20 > 0
+    if n_after >= 2:
+        out.append(f"итого: когда такой тренд позиции разворачивался, {plabel} через месяц {were} выше в {ups} "
+                   f"{plural(ups, ('случае', 'случаях', 'случаях'))} из {n_after}")
+    elif len(out) == 1:
+        out.append("похожих эпизодов такого тренда после 2022 года не было - прошлые пики ниже только фон")
+    return out
+
+
 # ── карточка: рекорд позиций ─────────────────────────────────────────────────────
 def positions_card(sec, leg, as_of) -> dict:
     P, *_ = data()
@@ -416,6 +475,10 @@ def positions_card(sec, leg, as_of) -> dict:
     if len(r20s) < 4:
         limits.append(f"прошлых пиков с известным продолжением всего {len(r20s)} - это история, "
                       f"а не закономерность: не обобщай")
+    trend = trend_lines(arr, dates, pser, t, lab, plabel, were)
+    if trend:
+        limits.append("пост строится на блоке ТРЕНД: прошлые пики - фон; «пик пройден», сравнение с прошлым пиком "
+                      "и число контрактов в пост не нужны")
     win = ser[ser.index >= t - pd.Timedelta(days=3 * 365)]
     chart = {"type": "line2", "title": f"{lab.capitalize()}, {nom}", "x": win.index, "y": win.values,
              "y_label": unit, "marks": [(r["date"], r["value"]) for r in rows if r["date"] >= win.index[0]]
@@ -425,7 +488,7 @@ def positions_card(sec, leg, as_of) -> dict:
         chart.update({"x2": pw.index, "y2": pw.values, "y2_label": plabel})
     return {"kind": "positions", "spec": {"sec": sec, "leg": leg}, "as_of": t,
             "headline": f"{lab.capitalize()} по {dat} - {q_ru(v, unit)}" + (f", {st}" if st else ""),
-            "facts": [f for f in facts if f], "after": after, "analogy": analogy, "price": price,
+            "facts": [f for f in facts if f], "trend": trend, "after": after, "analogy": analogy, "price": price,
             "context": context, "limits": limits, "chart": chart,
             "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} "
                            f"(серая); точками отмечены прошлые пики и текущее значение"],
@@ -547,7 +610,20 @@ def funds_card(cat, as_of) -> dict:
         rl, rs = rel[0], upto(rel[1], t)
         ra = rs.values
         price.append(f"{rl} - {px_ru(ra[-1], rl)}; за неделю {p_ru(ra[-1] / ra[-6] - 1)}, за месяц "
-                     f"{p_ru(ra[-1] / ra[-21] - 1)}; от максимума за год {p_ru(ra[-1] / ra[-250:].max() - 1)}")
+                     f"{p_ru(ra[-1] / ra[-21] - 1)}, за три месяца {p_ru(ra[-1] / ra[-63] - 1)}; "
+                     f"от максимума за год {p_ru(ra[-1] / ra[-250:].max() - 1)}")
+        # ставка рядом с потоками (#2127, #2217): приток в юаневые фонды в конце 2024 остановила ставка RUSFAR в
+        # юанях — 20% до ноября, в декабре около нуля и ниже; без ставки эпизод выглядит аналогией
+        rate = {"money_market": ("RUSFAR3M", "ставка RUSFAR на 3 месяца"),
+                "yuan": ("RUSFARCNY", "ставка RUSFAR в юанях")}.get(cat)
+        rf_m = None
+        if rate and rate[0] in idx:
+            rf = upto(idx[rate[0]].dropna(), t)
+            rf_m = rf.resample("ME").median()
+            pc = lambda x: f"{x:.1f}".replace(".", ",") + "%"  # noqa: E731
+            if len(rf) > 63:
+                price.append(f"{rate[1]} сейчас {pc(rf.iloc[-20:].median())} (медиана за 20 торговых дней), три месяца "
+                             f"назад {pc(rf.iloc[-83:-63].median())}")
         me = rs.resample("ME").last()
         avg12 = float(past.iloc[-12:].mean()) if len(past) >= 6 else 0.0
         pace = mtd * t.days_in_month / t.day      # месяц не закончился: темп, а не сумма
@@ -556,9 +632,18 @@ def funds_card(cat, as_of) -> dict:
             m0, m1 = e["months"][0], e["months"][-1]
             span = mn_ru(m1, t) if m0 == m1 else (f"{det.MONTHS[m0.month - 1]} - {mn_ru(m1, t)}" if m0.year == m1.year
                                                   else f"{mn_ru(m0, t)} - {mn_ru(m1, t)}")
+            note = ""
+            if rf_m is not None:
+                # до эпизода — максимум из медиан двух месяцев: в ноябре 2024 ставка уже падала (медиана 9%),
+                # а держатели юаневых фондов до конца ноября получали ~20% (Вадим к #2217)
+                r0 = rf_m[rf_m.index < m0].iloc[-2:].max() if (rf_m.index < m0).any() else None
+                r1 = rf_m[rf_m.index <= m1].iloc[-1] if (rf_m.index <= m1).any() else None
+                if r0 is not None and r1 is not None and abs(r1 - r0) >= 5:
+                    note = (f"; {rate[1]} за это время {'упала' if r1 < r0 else 'выросла'} с {pc(r0)} до {pc(r1)} - "
+                            f"поток тогда определяла ставка: если сейчас ставка стабильна, это не аналогия")
             after.append(f"похожий эпизод - приток остановился, {span}: за это время {'+' if e['flow'] > 0 else '-'}"
                          f"{n_ru(abs(e['flow']))} ₽, {rl} {p_ru(e['r_in'])}"
-                         + (f"; за три месяца после {p_ru(e['r3'])}" if e["r3"] is not None else ""))
+                         + (f"; за три месяца после {p_ru(e['r3'])}" if e["r3"] is not None else "") + note)
         if stalls:
             analogy.append(f"сейчас приток тоже {'остановился' if mtd <= 0 else 'почти остановился'}: средний приток за прошлый год - {n_ru(avg12)} ₽ в месяц, "
                            f"с начала {mname} - {word(mtd)} {n_ru(abs(mtd))} ₽; похожих эпизодов после 2022 года - {len(stalls)}")
@@ -705,7 +790,7 @@ def build_card(spec: dict, as_of) -> dict:
     return seasonality_card(spec["code"], as_of)
 
 
-SECTIONS = (("ЦИФРЫ", "facts"), ("ИСТОРИЯ РЯДА", "history"), ("ЧТО БЫЛО ПОСЛЕ ПРОШЛЫХ ЭПИЗОДОВ", "after"),
+SECTIONS = (("ЦИФРЫ", "facts"), ("ТРЕНД - главное для поста", "trend"), ("ИСТОРИЯ РЯДА", "history"), ("ЧТО БЫЛО ПОСЛЕ ПРОШЛЫХ ЭПИЗОДОВ", "after"),
             ("АНАЛОГИЯ", "analogy"), ("ЦЕНА И ФОН", "price"), ("ДРУГИЕ СТОРОНЫ ПОЗИЦИИ", "context"),
             ("ГРАФИК К ПОСТУ", "chart_note"), ("ОГРАНИЧЕНИЯ - чего не утверждать", "limits"))
 
@@ -717,6 +802,12 @@ def focus_lines(card: dict) -> list:
     k = card["kind"]
     after, analogy, facts = card.get("after") or [], card.get("analogy") or [], card.get("facts") or []
     weak = any("не аналогия по масштабу" in x for x in card.get("limits") or [])
+    if k == "positions" and card.get("trend"):
+        trend = card["trend"]
+        story = next((x for x in trend if x.startswith("так же было")), None)
+        stat = next((x for x in trend if x.startswith("итого")), None)
+        return ([f"находка: {card['headline']}", f"тренд: {trend[0]}"] + [f"одна история: {story}"] * bool(story)
+                + [f"опора для вывода: {stat}"] * bool(stat))
     if k == "positions":
         story = analogy[0] if analogy else (after[-2] if len(after) >= 2 else None)
         stat = after[-1] if after and after[-1].startswith("итого") else None
