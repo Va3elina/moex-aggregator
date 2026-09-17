@@ -111,9 +111,12 @@ def run_one(ns, b, params, st):
         ent = (j, px) if tgt != 0 else None
         pos = tgt
         if len(out) > MAX_TRADES: raise ValueError(f'больше {MAX_TRADES} сделок на бумагу — стратегия торгует на каждой свече?')
-    rows = [{'st': s, 'secid': str(b.secid[a]), 'side': sd, 'd': str(b.date[a]), 'm_in': int(b.minute[a]), 'px_in': float(pi),
-             'd_out': str(b.date[z]), 'm_out': int(b.minute[z]), 'px_out': float(po), 'exit_reason': why}
-            for s, a, sd, pi, z, po, why in out]
+    rows, hi, lo = [], b.high, b.low
+    for s, a, sd, pi, z, po, why in out:
+        zz = max(z, a + 1); up, dn = float(np.nanmax(hi[a:zz])) / pi - 1, float(np.nanmin(lo[a:zz])) / pi - 1
+        rows.append({'st': s, 'secid': str(b.secid[a]), 'side': sd, 'd': str(b.date[a]), 'm_in': int(b.minute[a]), 'px_in': float(pi),
+                     'd_out': str(b.date[z]), 'm_out': int(b.minute[z]), 'px_out': float(po), 'exit_reason': why,
+                     'mfe': max(0.0, up if sd > 0 else -dn), 'mae': min(0.0, dn if sd > 0 else -up)})
     return rows
 
 

@@ -6,6 +6,7 @@ import { btApi, type BtCandle, type BtEquity, type BtLiveTrade, type BtRealism, 
 import Checks from './Checks';
 import RobotReport from './RobotReport';
 import Sweep from './Sweep';
+import TradeCurve from './TradeCurve';
 import { EquityChart } from './ChartCell';
 import { cls, fmtDate, money, num, pct, signed } from './lib';
 import { byCalendar, byPeriod, compute, histogram, pnlOf, type Bucket, type Stats } from './stats';
@@ -89,14 +90,11 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
                 <Metric label="Макс. просадка" c="bt-down" sub={money_ ? pct(-S.maxDdPct) : S.maxDdDate ?? ''}>{money_ ? money(-S.maxDd) : pct(-S.maxDd)}</Metric>
                 <Metric label="Прибыльные сделки" sub={`${S.wins} из ${S.n}`}>{S.n ? num(100 * S.wins / S.n, 2) + '%' : '—'}</Metric>
                 <Metric label="Фактор прибыли">{num(S.pf, 2)}</Metric>
-                {money_ && <Metric label="Годовая доходность" c={cls(S.cagr)}>{pct(S.cagr)}</Metric>}
-                {money_ && <Metric label="Коэффициент Шарпа">{num(S.sharpe, 2)}</Metric>}
-                <Metric label="В среднем на сделку" c={cls(S.avgRet)} sub="после издержек">{pct(S.avgRet, 3)}</Metric>
-                <Metric label="Комиссии и спред" sub={money_ && S.grossProfit ? `${num(100 * S.costs / S.grossProfit, 0)}% валовой прибыли` : ''}>{money_ ? num(S.costs) + ' ₽' : pct(S.costs)}</Metric>
               </div>
             </Block>
             <Block id="dyn" title="Динамика" hidden={prefs.hidden} onHide={hide} right={compare && <span className="bt-dim">пунктир — #{compare.run.id} {runLabel(compare.run)}</span>}>
-              <Dynamics S={S} compare={symbol ? null : compare} money={money_} />
+              <TradeCurve trades={scoped} money={money_} capital={capital} names={names} onOpen={onPickTrade} />
+              {!symbol && compare && <Dynamics S={S} compare={compare} money={money_} />}
             </Block>
             <Block id="res" title="Анализ результатов" hidden={prefs.hidden} onHide={hide}>
               <Tabs items={[['dist', 'Распределение'], ['period', 'За период'], ['cmp', 'Сравнение'], ['margin', 'Использование ГО'], ['real', 'Реализм'], ['dd', 'Рост и спад']]} value={prefs.resultTab} onChange={k => set({ resultTab: k })} />
@@ -128,7 +126,7 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
             <Block id="trd" title="Анализ сделок" hidden={prefs.hidden} onHide={hide}>
               <Tabs items={[['dist', 'Распределение'], ['streak', 'Серии'], ['time', 'Временные закономерности']]} value={prefs.tradeTab} onChange={k => set({ tradeTab: k })} />
               {prefs.tradeTab === 'dist' && <>
-                <div className="bt-metrics"><Metric label="Ожидание" c={cls(S.expectancy)} sub={pct(S.avgRet, 3)}>{v(S.expectancy)}</Metric><Metric label="Средняя прибыль / убыток">{v(S.avgWin)} / {v(S.avgLoss)}</Metric>
+                <div className="bt-metrics"><Metric label="Ожидание" c={cls(S.expectancy)} sub={`${pct(S.avgRet, 3)} на сделку после издержек`}>{v(S.expectancy)}</Metric><Metric label="Средняя прибыль / убыток">{v(S.avgWin)} / {v(S.avgLoss)}</Metric>
                   <Metric label="Макс. прибыль" c="bt-up">{v(S.maxWin)}</Metric><Metric label="Макс. убыток" c="bt-down">{v(S.maxLoss)}</Metric></div>
                 <div className="bt-two"><div><h4>Распределение доходности сделок, %</h4><Hist trades={scoped} /></div>
                   <div><h4>Распределение сделок</h4><Donut parts={[{ label: 'Прибыльные', n: S.wins, color: '#26a69a' }, { label: 'Убыточные', n: S.losses, color: '#ef5350' }, { label: 'Безубыточные', n: S.flats, color: '#f5a524' }]} /></div></div>

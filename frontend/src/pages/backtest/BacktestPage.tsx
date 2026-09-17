@@ -2,28 +2,30 @@
 // Стенд — свой бэктест-терминал (/admin/backtest, только админы). Устройство как у TradingView: тонкая шапка
 // (бумага · таймфрейм · индикаторы · редактор стратегии · сетка), графики, снизу «Тестер стратегий».
 // План: backtest/PLAN.md. Расчёт — контейнер bt-worker; страница только показывает и помнит, как её оставили.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type BtTrade } from './api';
-import ChartCell, { type Focus } from './ChartCell';
+import ChartCell, { hoverStore, type Focus } from './ChartCell';
+import { AddIndicatorMenu, useIndicators } from '../embed/EmbedIndicators';
 import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
-import { TFS } from './lib';
-import { usePrefs, type IndCfg, type IndKind, type Layout, type Prefs } from './usePrefs';
+import { TFS, cls, num, pct, tfLabel } from './lib';
+import { usePrefs, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import './bt.css';
 
-const IND_LIST: { kind: IndKind; label: string; length: number; mult?: number; where: string }[] = [
-  { kind: 'sma', label: 'Скользящая средняя (SMA)', length: 20, where: 'на цене' }, { kind: 'ema', label: 'Экспоненциальная средняя (EMA)', length: 20, where: 'на цене' },
-  { kind: 'wma', label: 'Взвешенная средняя (WMA)', length: 20, where: 'на цене' }, { kind: 'bb', label: 'Полосы Боллинджера', length: 20, mult: 2, where: 'на цене' },
-  { kind: 'rsi', label: 'RSI', length: 14, where: 'панель' }, { kind: 'atr', label: 'ATR', length: 14, where: 'панель' },
-];
-const IND_COLORS = ['#f5a524', '#4c8dff', '#c678dd', '#56b6c2', '#e06c75', '#98c379'];
 const LAYOUTS: [Layout, string, number][] = [['1', '▢  Один график', 1], ['2h', '◫  Два рядом', 2], ['2v', '⊟  Два друг под другом', 2], ['4', '⊞  Четыре', 4]];
-const SHOW: [keyof Prefs['show'], string][] = [['markers', 'Стрелки сделок'], ['labels', 'Подписи у стрелок'], ['lines', 'Линии вход → выход'], ['window', 'Подсветка окна сигнала'], ['robot', 'Сделки робота (песочница)'], ['volume', 'Объём']];
+const SHOW: [keyof Prefs['show'], string][] = [['markers', 'Стрелки сделок'], ['labels', 'Подписи у стрелок'], ['lines', 'Линии вход → выход'], ['window', 'Подсветка окна сигнала'], ['robot', 'Сделки робота (песочница)']];
+
+/** Данные свечи под курсором активного графика — в шапке, как в TradingView. Свой компонент: обновляется без перерисовки страницы. */
+function Ohlc() {
+  const c = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
+  if (!c) return null; const k = cls(c.close - c.open) || 'bt-up'; const ch = c.open ? c.close / c.open - 1 : 0;
+  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{num(c.open, 2)}</i> В<i className={k}>{num(c.high, 2)}</i> Н<i className={k}>{num(c.low, 2)}</i> З<i className={k}>{num(c.close, 2)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём {num(c.volume)}</span></span>;
+}
 
 export default function BacktestPage() {
   const { user, loading: authLoading } = useAuth();
@@ -33,6 +35,7 @@ export default function BacktestPage() {
   useEffect(() => { if (!authLoading && !isAdmin) navigate('/', { replace: true }); }, [authLoading, isAdmin, navigate]);
 
   const [prefs, set] = usePrefs(sp.get('ws'));
+  const inds = useIndicators('frame:bt:indicators');     // движок индикаторов песочницы: настройка, перенос между панелями, профиль объёма
   const [meta, setMeta] = useState<BtMeta | null>(null);
   const [runs, setRuns] = useState<BtRun[]>([]);
   const [run, setRun] = useState<BtRun | null>(null);
@@ -101,7 +104,6 @@ export default function BacktestPage() {
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
-  const addIndicator = (k: typeof IND_LIST[number]) => set(p => ({ indicators: [...p.indicators, { id: `${k.kind}${Date.now()}`, kind: k.kind, length: k.length, mult: k.mult, color: IND_COLORS[p.indicators.length % IND_COLORS.length] }] }));
   const startRun = (spec: any) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => reloadRuns().then(() => set({ runId: r.id, view: 'overview' }))).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); }); };
   const deleteRun = (id: number) => btApi.deleteRun(id).then(() => { if (prefs.runId === id) { set({ runId: null }); setRun(null); setTrades([]); setEquity([]); } reloadRuns(); }).catch(fail);
 
@@ -127,14 +129,11 @@ export default function BacktestPage() {
       <div className="bt-toolbar">
         <button className="bt-tb sym" onClick={() => setSearch(true)} title="Выбрать инструмент (или просто начни печатать)"><Logo st={cell.st} size={20} /><b>{cell.st}</b><span className="bt-dim">{names.get(cell.st) ?? ''}</span></button>
         <i className="sep" />
-        {TFS.map(([v, l, full]) => <button key={v} title={full} className={`bt-tb ${cell.tf === v ? 'on' : ''}`} onClick={() => setCell(active, { tf: v })}>{l}</button>)}
+        <Menu label={<><b>{tfLabel(cell.tf)}</b> ▾</>} title="Таймфрейм">{close => <>{TFS.map(([v, , full]) => <MenuItem key={v} on={cell.tf === v} onClick={() => { setCell(active, { tf: v }); close(); }}>{full}</MenuItem>)}</>}</Menu>
         <i className="sep" />
-        <Menu label={<>Индикаторы{prefs.indicators.length ? <sup>{prefs.indicators.length}</sup> : null}</>}>{close => <>
-          <div className="bt-pop-h">Добавить на график</div>
-          {IND_LIST.map(k => <MenuItem key={k.kind} onClick={() => { addIndicator(k); close(); }} hint={`${k.length} · ${k.where}`}>{k.label}</MenuItem>)}
-          {!!prefs.indicators.length && <><div className="bt-pop-sep" /><MenuItem onClick={() => { set({ indicators: [] }); close(); }}>Убрать все</MenuItem></>}
-        </>}</Menu>
+        <Menu label={<>Индикаторы{inds.list.length ? <sup>{inds.list.length}</sup> : null}</>}>{close => <div data-theme="editorial-dark" className="bt-indmenu"><AddIndicatorMenu api={inds} hasVolume onDone={close} /></div>}</Menu>
         <button className={`bt-tb ${editor ? 'on' : ''}`} onClick={() => setEditor(e => !e)} title="Редактор стратегии: код правила, свойства счёта, запуск">{'{ }'} Стратегия</button>
+        <i className="sep" /><Ohlc />
         <span style={{ flex: 1 }} />
         {err && <span className="bt-err" title={err} onClick={() => setErr(null)}>{err}</span>}
         <Menu label="Вид" align="right">{() => <>
@@ -151,9 +150,9 @@ export default function BacktestPage() {
           {prefs.panel !== 'max' && (
             <div className={`bt-grid l${prefs.layout}`}>
               {prefs.cells.slice(0, nCells).map((c, i) => (
-                <ChartCell key={i} st={c.st} tf={c.tf} name={names.get(c.st) ?? c.st} active={nCells > 1 && i === active} rule={rule}
-                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} indicators={prefs.indicators}
-                  focus={i === active ? focus : null} onActivate={() => { if (i !== active) set({ active: i }); }} onIndicators={(next: IndCfg[]) => set({ indicators: next })} />
+                <ChartCell key={i} st={c.st} tf={c.tf} active={i === active} multi={nCells > 1} rule={rule}
+                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} inds={inds}
+                  focus={i === active ? focus : null} onActivate={() => { if (i !== active) { set({ active: i }); hoverStore.set(null); } }} />
               ))}
             </div>
           )}

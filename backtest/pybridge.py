@@ -27,7 +27,7 @@ def run(run_id, spec, s, progress=None):
 
 
 def to_frame(rows):
-    T = pd.DataFrame(rows, columns=['st', 'secid', 'side', 'd', 'm_in', 'px_in', 'd_out', 'm_out', 'px_out', 'exit_reason'])
+    T = pd.DataFrame(rows, columns=['st', 'secid', 'side', 'd', 'm_in', 'px_in', 'd_out', 'm_out', 'px_out', 'exit_reason', 'mfe', 'mae'])
     T['d'] = pd.to_datetime(T.d); T['d_out'] = pd.to_datetime(T.d_out)
     T['move'] = float('nan'); T['thr_up'] = float('nan'); T['thr_dn'] = float('nan')
     T['ret'] = T.px_out / T.px_in - 1; T['gross'] = T.side * T.ret
