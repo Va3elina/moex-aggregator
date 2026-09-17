@@ -93,6 +93,8 @@ sys.exit(0) if len(c) > 100 else sys.exit(f'rosstat-bundle.pem: только {le
 # стабильному пути, который ищет api/services/corpus_examples.py.
 COPY research/content_pipeline_v2/dataset/corpus.json.gz /app/data/corpus/corpus.json.gz
 COPY api/ ./api/
+# Стенд (бэктест-терминал): движок — общий для api (пресеты правил) и контейнера bt-worker
+COPY backtest/ ./backtest/
 COPY OI/ ./OI/
 COPY Candles/ ./Candles/
 COPY Funds/ ./Funds/
@@ -117,7 +119,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 # создаётся pre-emptively (api/logger.py делает mkdir при импорте) — если
 # не создать тут, runtime упадёт на PermissionError. Первая попытка
 # (commit 231411a) сломалась именно из-за этого.
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app
+RUN mkdir -p /app/logs /app/bt_data && chown -R appuser:appuser /app
 
 # Порт
 EXPOSE 8000

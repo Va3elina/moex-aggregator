@@ -1,0 +1,121 @@
+"""Воркер Стенда: берёт прогоны из bt_runs (queued), считает, пишет результат. Один прогон за раз.
+Живёт в отдельном контейнере с лимитом памяти — тяжёлый pandas не делит память с API сайта.
+
+    python -m backtest.worker            # вечный цикл
+    python -m backtest.worker --once     # обработать очередь и выйти
+"""
+import json, math, os, sys, time, traceback, datetime as dt
+import pandas as pd
+from sqlalchemy import create_engine, text
+from . import store, runner
+
+POLL_SEC = 2
+REFRESH_EVERY_SEC = 6 * 3600          # свечи в кэше не старше 6 часов; spec.refresh=true — докачать сейчас
+_url = os.environ['DB_URL']
+ENG = create_engine(_url, pool_pre_ping=True, connect_args={'ssl_context': False} if 'pg8000' in _url else {})
+
+
+def log(msg):
+    print(f'{dt.datetime.now():%Y-%m-%d %H:%M:%S} bt-worker  {msg}', flush=True)
+
+
+def _clean(v):
+    if v is None: return None
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)): return None
+    if isinstance(v, pd.Timestamp): return None if pd.isna(v) else v.date()
+    if hasattr(v, 'item'): return _clean(v.item())
+    return v
+
+
+INT_COLS = {'side', 'qty', 'positions', 'run_id'}
+
+
+def _rows(df, cols):
+    out = []
+    for r in df[cols].to_dict('records'):
+        row = {c: _clean(r[c]) for c in cols}
+        for c in INT_COLS & row.keys():                  # pandas отдаёт 1.0 / -1.0 — в smallint/integer так нельзя
+            if row[c] is not None: row[c] = int(row[c])
+        out.append(row)
+    return out
+
+
+def _insert(con, table, rows):
+    if not rows: return
+    cols = list(rows[0])
+    q = text(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)})")
+    for i in range(0, len(rows), 2000):
+        con.execute(q, rows[i:i + 2000])
+
+
+def ensure_data(force=False):
+    st = store.status()
+    stamp = store.DATA / 'refreshed_at'
+    fresh = stamp.exists() and time.time() - stamp.stat().st_mtime < REFRESH_EVERY_SEC
+    if st and fresh and not force: return
+    log('докачиваю свечи…' if st else 'первая загрузка свечей (несколько минут)…')
+    t0 = time.time(); store.refresh()
+    stamp.write_text(dt.datetime.now().isoformat())
+    log(f'свечи готовы за {time.time() - t0:.0f} с')
+
+
+def process(run_id, spec):
+    ensure_data(force=bool(spec.get('refresh')))
+    s, res, S, T, A, K, E = runner.execute(spec)
+    S = S.assign(run_id=run_id)
+    T = T.assign(run_id=run_id, thr=[u if sd > 0 else d for u, d, sd in zip(T.thr_up, T.thr_dn, T.side)])
+    acc_cols = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub']
+    if A is not None and len(A):
+        T = T.merge(A[['st', 'd'] + acc_cols], on=['st', 'd'], how='left')
+        T = T.merge(K.rename(columns={'reason': 'account_skip'})[['st', 'd', 'account_skip']], on=['st', 'd'], how='left')
+    else:
+        for c in acc_cols + ['account_skip']: T[c] = None
+    with ENG.begin() as con:
+        for t in ('bt_signals', 'bt_trades', 'bt_equity'):
+            con.execute(text(f'DELETE FROM {t} WHERE run_id = :r'), {'r': run_id})
+        _insert(con, 'bt_signals', _rows(S, ['run_id', 'st', 'd', 'secid', 'pa', 'pb', 'move', 'thr_up', 'thr_dn',
+                                             'straight', 'side', 'tradable', 'skip']))
+        _insert(con, 'bt_trades', _rows(T, ['run_id', 'st', 'd', 'secid', 'side', 'move', 'thr', 'px_in', 'd_out',
+                                            'px_out', 'gross', 'comm', 'spread', 'net'] + acc_cols + ['account_skip']))
+        if E is not None:
+            _insert(con, 'bt_equity', _rows(E.reset_index().assign(run_id=run_id),
+                                            ['run_id', 'd', 'equity', 'positions', 'notional', 'go_used']))
+        con.execute(text("""UPDATE bt_runs SET status='done', finished_at=now(), result=CAST(:res AS JSONB),
+                            spec_full=CAST(:sf AS JSONB), error=NULL WHERE id=:r"""),
+                    {'r': run_id, 'res': json.dumps(res, ensure_ascii=False, default=str),
+                     'sf': json.dumps(s, ensure_ascii=False, default=str)})
+    return res
+
+
+def take():
+    with ENG.begin() as con:
+        row = con.execute(text("""UPDATE bt_runs SET status='running', started_at=now()
+            WHERE id = (SELECT id FROM bt_runs WHERE status='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+            RETURNING id, spec""")).fetchone()
+    return row
+
+
+def main():
+    once = '--once' in sys.argv
+    log('старт')
+    with ENG.begin() as con:      # прогоны, оборванные перезапуском контейнера, — обратно в очередь
+        con.execute(text("UPDATE bt_runs SET status='queued' WHERE status='running'"))
+    while True:
+        row = take()
+        if row is None:
+            if once: return
+            time.sleep(POLL_SEC); continue
+        run_id, spec = row[0], row[1] if isinstance(row[1], dict) else json.loads(row[1])
+        t0 = time.time()
+        try:
+            res = process(run_id, spec)
+            log(f"прогон {run_id} готов за {time.time() - t0:.1f} с: сделок {res['per_trade'].get('сделок')}")
+        except Exception as e:
+            log(f'прогон {run_id} упал: {str(e)[:300]}\n{traceback.format_exc(limit=3)[-1500:]}')
+            with ENG.begin() as con:
+                con.execute(text("UPDATE bt_runs SET status='error', finished_at=now(), error=:e WHERE id=:r"),
+                            {'r': run_id, 'e': f'{type(e).__name__}: {e}'[:2000]})
+
+
+if __name__ == '__main__':
+    main()
