@@ -96,7 +96,7 @@ def process(run_id, spec):
         if S is not None: _insert(con, 'bt_signals', _rows(S, ['run_id', 'st', 'd', 'secid', 'pa', 'pb', 'move', 'thr_up', 'thr_dn',
                                              'straight', 'side', 'tradable', 'skip']))
         _insert(con, 'bt_trades', _rows(T, ['run_id', 'n', 'st', 'd', 'secid', 'side', 'move', 'thr', 'px_in', 'd_out',
-                                            'px_out', 'gross', 'comm', 'spread', 'net', 'm_in', 'm_out', 'exit_reason'] + acc_cols + ['account_skip']))
+                                            'px_out', 'gross', 'comm', 'spread', 'net', 'm_in', 'm_out', 'exit_reason', 'mfe', 'mae'] + acc_cols + ['account_skip']))
         if E is not None:
             _insert(con, 'bt_equity', _rows(E.reset_index().assign(run_id=run_id),
                                             ['run_id', 'd', 'equity', 'positions', 'notional', 'go_used', 'margin_call']))

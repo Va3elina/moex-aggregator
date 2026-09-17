@@ -13,7 +13,7 @@
 .bt-inline { display: inline-flex; align-items: center; gap: 7px; }
 
 /* шапка */
-.bt-toolbar { display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--panel); border-bottom: 1px solid var(--border); min-width: 0; }
+.bt-toolbar { position: relative; z-index: 50; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--panel); border-bottom: 1px solid var(--border); min-width: 0; }
 .bt-toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 5px; }
 .bt-tb { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; background: none; border: 0; border-radius: 6px; white-space: nowrap; transition: background .12s, color .12s; }
 .bt-tb:hover { background: var(--hover); } .bt-tb.on { color: #fff; background: rgba(41,98,255,.18); } .bt-tb:disabled { opacity: .4; cursor: default; }
@@ -58,12 +58,22 @@
 @keyframes bt-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 .bt-charterr { position: absolute; left: 12px; bottom: 34px; color: var(--down); z-index: 5; }
 
+/* шапка: данные свечи; ячейка: метка бумаги в сетке; меню индикаторов песочницы */
+.bt-toolbar .bt-ohlc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); padding-left: 4px; } .bt-toolbar .bt-ohlc i { font-style: normal; margin: 0 6px 0 2px; }
+.bt-celltag { position: absolute; right: 78px; top: 8px; z-index: 4; font-size: 11px; color: var(--dim); background: rgba(15,15,15,.7); padding: 1px 6px; border-radius: 4px; pointer-events: none; }
+.bt-indmenu { min-width: 260px; }
+/* «Динамика» */
+.bt-curve { position: relative; } .bt-curve canvas { display: block; cursor: crosshair; }
+.bt-tip { position: absolute; z-index: 5; min-width: 290px; padding: 10px 12px; background: rgba(48,50,56,.97); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.5); pointer-events: none; font-size: 12.5px; animation: bt-fade .1s; }
+.bt-tip .h { text-align: center; color: #c7cbd3; margin-bottom: 8px; } .bt-tip > div { display: flex; align-items: center; gap: 8px; padding: 2px 0; } .bt-tip b { margin-left: auto; font-weight: 500; padding-left: 18px; text-align: right; } .bt-tip b small { display: block; color: var(--dim); font-weight: 400; }
+.bt-tip i { width: 9px; height: 9px; border-radius: 50%; flex: none; } .bt-tip .f { display: block; text-align: center; color: var(--dim); margin-top: 8px; line-height: 1.5; } .bt-tip .row span { font-size: 14px; }
+
 /* тестер */
 .bt-split { height: 5px; flex: none; background: var(--border); cursor: ns-resize; transition: background .12s; } .bt-split:hover { background: var(--accent); }
 .bt-panel { flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
 .bt-reopen { flex: none; height: 32px; border: 0; border-top: 1px solid var(--border); background: var(--panel); color: var(--dim); text-align: left; padding: 0 14px; } .bt-reopen:hover { color: var(--text); background: var(--panel2); }
 .bt-tester { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.bt-thead { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); flex: none; min-width: 0; }
+.bt-thead { position: relative; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); flex: none; min-width: 0; }
 .bt-thead .bt-menu > .bt-tb { max-width: 420px; overflow: hidden; text-overflow: ellipsis; } .bt-thead .bt-tb b { font-weight: 600; }
 .bt-chip2 { color: var(--dim); padding: 3px 9px; border: 1px solid var(--border); border-radius: 14px; white-space: nowrap; font-size: 12px; }
 .bt-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--brand); color: var(--brand); } .bt-status.error { border-color: var(--down); color: var(--down); }

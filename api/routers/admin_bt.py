@@ -180,7 +180,7 @@ def _rows(db, sql, p):
 def run_trades(run_id: int, st: Optional[str] = None, db: Session = Depends(get_db),
                _admin: User = Depends(require_admin)):
     return _rows(db, f"""SELECT n, st, d, secid, side, move, thr, px_in, d_out, px_out, gross, comm, spread, net, qty,
-        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut, m_in, m_out, exit_reason
+        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut, m_in, m_out, exit_reason, mfe, mae
         FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, m_in, st""", {'r': run_id, 'st': st})
 
 

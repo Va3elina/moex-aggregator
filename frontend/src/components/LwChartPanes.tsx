@@ -25,7 +25,7 @@ import {
   createChart, ColorType, LineStyle, CrosshairMode,
   LineSeries, AreaSeries, HistogramSeries, CandlestickSeries, BarSeries,
   type IChartApi, type ISeriesApi, type IPriceLine, type UTCTimestamp, type Time, type LogicalRange,
-  type Logical, type Coordinate,
+  type Logical, type Coordinate, type SeriesType,
 } from 'lightweight-charts';
 import ChartWatermark from './ChartWatermark';
 import { createExpirationsLayer, type ExpirationMark } from './chart/expirationsLayer';
@@ -62,8 +62,18 @@ export interface LwChartPanesHandle {
   restoreAfterCapture: () => void;
 }
 
+/** Контекст для onSeriesBuilt: чарты панелей сверху вниз и доступ к серии по id её описания. */
+export interface LwSeriesBuiltCtx {
+  charts: IChartApi[];
+  getSeries: (pane: number, id: string) => ISeriesApi<SeriesType> | null;
+}
+
 interface LwChartPanesProps {
   panes: LwPane[];
+  /** Серии пересозданы (данные/состав панелей поменялись). Крючок для внешнего слоя, которому нужны сами серии:
+   *  бэктест-терминал (/admin/backtest) вешает на ценовую серию метки и линии сделок. Сайт и песочница этот проп
+   *  не передают — без него компонент ведёт себя ровно как раньше. */
+  onSeriesBuilt?: (ctx: LwSeriesBuiltCtx) => void;
   dark?: boolean;
   fitKey?: string;
   initialBars?: number;
@@ -327,7 +337,7 @@ function minFirstTime(ps: LwPane[]): number | null {
 const LOAD_MORE_BARS_AHEAD = 400;
 
 const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function LwChartPanes({
-  panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true, onReachStart,
+  panes, dark = true, fitKey, initialBars, tickFmt, showTooltip = true, onReachStart, onSeriesBuilt,
   drawPaneIndex, drawActive, drawTool, drawings, onDrawingsChange, drawColor, drawWidth,
   watermark, hideLegend, legendItems, crosshairTimeFmt, timeVisible, priceLines, onRemovePriceLine, expirations, volumeProfile, onCreateAlert, alertAxes,
   paneOverlay, paneSizes, onPaneSizesChange, staticView,
@@ -341,6 +351,8 @@ const LwChartPanes = forwardRef<LwChartPanesHandle, LwChartPanesProps>(function 
   // проп пересоздаётся каждый рендер владельца.
   const onReachStartRef = useRef(onReachStart);
   onReachStartRef.current = onReachStart;
+  const onSeriesBuiltRef = useRef(onSeriesBuilt);
+  onSeriesBuiltRef.current = onSeriesBuilt;
   // Первое время оси на прошлом рендере: по нему ловим догрузку истории
   // СЛЕВА и компенсируем сдвиг логических индексов (см. конец эффекта серий).
   const prevFirstTimeRef = useRef<number | null>(null);
@@ -2146,6 +2158,15 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       ReturnType<IChartApi['timeScale']>['setVisibleRange']
     >[0] | null;
 
+    // Крючок onSeriesBuilt: зовётся и после полной пересборки серий, и после быстрого пути (только данные).
+    const notifySeriesBuilt = () => onSeriesBuiltRef.current?.({
+      charts,
+      getSeries: (pi, id) => {
+        const k = seriesDefsRef.current[pi]?.findIndex((d) => d.id === id) ?? -1;
+        return k >= 0 ? apisRef.current[pi]?.[k] ?? null : null;
+      },
+    });
+
     // ── БЫСТРЫЙ ПУТЬ: только данные ───────────────────────────────────────────
     // Новый срез данных при НЕИЗМЕННОМ составе серий (пришёл реалтайм-тик,
     // доехала догрузка истории, обновился период) — самый частый случай. Полное
@@ -2254,6 +2275,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
         // SSE-фолбэка): прежние индексы указывают мимо данных — якорь по времени.
         try { lead0.timeScale().setVisibleRange(savedTimeRange); } catch { /* вне данных */ }
       }
+      notifySeriesBuilt();
       return;
     }
 
@@ -2647,6 +2669,7 @@ const showPill = (pi: number, sd: 'left' | 'right', price: number | null) => {
       prevFirstTimeRef.current = minFirstTime(panes);
     }
     drawShapesRef.current?.();
+    notifySeriesBuilt();
   }, [panes, fitKey, initialBars, paneCount, chartPrefs, priceLines, expirations, staticView]);
 
   /**

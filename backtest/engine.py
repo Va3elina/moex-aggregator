@@ -92,6 +92,31 @@ def _risk_walk(st, df, ex, first_min, last_min, inclusive):
         df.at[i, 'd_out'] = pd.Timestamp(day0 + np.timedelta64(int(tx // 1440), 'D')); df.at[i, 'm_out'] = int(tx % 1440)
 
 
+def _excursions(st, df, first_min):
+    """Благоприятное и неблагоприятное отклонение сделки (MFE / MAE), доли от цены входа: насколько цена уходила в нашу
+    сторону и против нас, пока позиция была открыта (по максимумам и минимумам 5-минутных свечей, будни)."""
+    df['mfe'] = np.nan; df['mae'] = np.nan
+    rows = df.index[(df.side != 0) & df.tradable]
+    if not len(rows): return
+    B = store.bars(st); B = B[B.d.dt.dayofweek < 5]
+    sec_arr = B.secid.values; order = np.argsort(sec_arr, kind='stable'); sec_sorted = sec_arr[order]
+    uniq, start = np.unique(sec_sorted, return_index=True)
+    bounds = dict(zip(uniq, zip(start, list(start[1:]) + [len(sec_sorted)])))
+    T = B.t.values.astype('datetime64[m]').astype('int64')[order]
+    H, L = B.high.values.astype(float)[order], B.low.values.astype(float)[order]
+    day0 = np.datetime64('1970-01-01')
+    for i in rows:
+        sec, side, pin = df.at[i, 'secid'], df.at[i, 'side'], df.at[i, 'px_in']
+        if sec not in bounds or not np.isfinite(pin) or pd.isna(df.at[i, 'd_out']): continue
+        a, b = bounds[sec]
+        t0 = (np.datetime64(df.at[i, 'd'], 'D') - day0).astype('int64') * 1440 + first_min
+        t1 = (np.datetime64(df.at[i, 'd_out'], 'D') - day0).astype('int64') * 1440 + int(df.at[i, 'm_out'])
+        lo = a + np.searchsorted(T[a:b], t0, 'left'); hi = a + np.searchsorted(T[a:b], t1, 'left')
+        if hi <= lo: df.at[i, 'mfe'] = 0.0; df.at[i, 'mae'] = 0.0; continue
+        up, dn = np.nanmax(H[lo:hi]) / pin - 1, np.nanmin(L[lo:hi]) / pin - 1
+        df.at[i, 'mfe'] = max(0.0, up if side > 0 else -dn); df.at[i, 'mae'] = min(0.0, dn if side > 0 else -up)
+
+
 def signals(rule, universe=None, since=None, until=None):
     """Журнал решений: каждая строка — день бумаги в ряду. Сделка = side != 0 и tradable."""
     r = R.load(rule)
@@ -143,6 +168,7 @@ def signals(rule, universe=None, since=None, until=None):
                            'px_out': px_out, 'm_in': m_in, 'm_out': m_out, 'exit_reason': 'время'})
         if risky:
             _risk_walk(st, df, r['exit'], t_in + 5, m_out if r['exit']['price'] == 'next_open' else t_out - 5, True)
+        _excursions(st, df, t_in + 5)
         df['ret'] = df.px_out / df.px_in - 1
         out.append(df)
     S = pd.concat(out, ignore_index=True)
