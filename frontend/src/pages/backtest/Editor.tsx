@@ -7,7 +7,7 @@ import type { Prefs, SavedRule } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import { paramLabel, setPath } from './Sweep';
 
-export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, slots: 6, go: 'mr1', leverage: 1, go_mult: 1, since: '', until: '', name: '', universe: null as string[] | null };
+export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, perDay: '' as string | number, go: 'mr1', leverage: 1, go_mult: 1, since: '', until: '', name: '', extra: [] as string[] };
 /** JSON с отступами, но короткие списки и словари чисел — в одну строку (иначе список бумаг занимает пол-экрана). */
 const pretty = (x: unknown) => JSON.stringify(x, null, 2)
   .replace(/\[\n\s+([^[\]{}]*?)\n\s+\]/g, (_, body: string) => `[${body.split(/,\n\s+/).join(', ')}]`)
@@ -27,8 +27,8 @@ function describe(r: any): string[] {
   } catch { return []; }
 }
 
-export default function Editor({ meta, state, saved, onState, onSaved, onRun, onClose, busy, error }: {
-  meta: BtMeta; state: Prefs['editor']; saved: SavedRule[]; onState: (e: NonNullable<Prefs['editor']>) => void; onSaved: (r: SavedRule[]) => void;
+export default function Editor({ meta, st, state, saved, onState, onSaved, onRun, onClose, busy, error }: {
+  meta: BtMeta; st: string; state: Prefs['editor']; saved: SavedRule[]; onState: (e: NonNullable<Prefs['editor']>) => void; onSaved: (r: SavedRule[]) => void;
   onRun: (spec: any) => void; onClose: () => void; busy: boolean; error: string | null;
 }) {
   const code = state?.code ?? pretty(meta.rules[0].rule);
@@ -54,7 +54,11 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
   }, [isPy, py]);
   const shown = isPy ? py : code;
 
-  const universe: string[] = props.universe ?? parsed.rule?.universe ?? meta.instruments.map(i => i.st);
+  // Как в TradingView: стратегия считается по бумаге активного графика. Остальные бумаги — только те, что добавлены явно.
+  const extra: string[] = (props.extra ?? []).filter((x: string) => x !== st);
+  const universe: string[] = [st, ...extra];
+  const slots = Number(props.perDay) || Math.min(6, universe.length);   // пусто = авто: одна бумага — весь капитал в сделку
+  const account = { capital: Number(props.capital) || null, slots, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null };
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Tab') { e.preventDefault(); const el = e.currentTarget, s = el.selectionStart, pad = isPy ? '    ' : '  '; setCode(shown.slice(0, s) + pad + shown.slice(el.selectionEnd)); requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + pad.length; }); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
@@ -63,13 +67,11 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
   const run = () => {
     if (isPy) {
       if (busy || pyInfo.error) return;
-      onRun({ code: py, params: pyParams, name: props.name || 'Стратегия на Python', universe: props.universe ?? meta.instruments.map(i => i.st).filter(s => s !== 'CR'), tariff: props.tariff, spread: props.spread,
-        capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
+      onRun({ code: py, params: pyParams, name: props.name || 'Стратегия на Python', universe, tariff: props.tariff, spread: props.spread, ...account });
       return;
     }
     if (!parsed.rule || busy) return;
-    onRun({ rule: parsed.rule, name: props.name || parsed.rule.name || null, exec: props.exec, universe, tariff: props.tariff, spread: props.spread,
-      capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
+    onRun({ rule: parsed.rule, name: props.name || parsed.rule.name || null, exec: props.exec, universe, tariff: props.tariff, spread: props.spread, ...account });
   };
   /** Правка поля правила из формы: меняем JSON и переформатируем код — форма и код всегда говорят одно и то же. */
   const setRule = (path: string, value: number | null) => { if (!parsed.rule) return; const r = JSON.parse(JSON.stringify(parsed.rule)); setPath(r, path, value); setCode(pretty(r)); };
@@ -95,7 +97,7 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
       <header>
         <Menu label={<>Открыть ▾</>}>{close => <>
           <div className="bt-pop-h">Готовые</div>
-          {meta.rules.map(r => <MenuItem key={r.id} onClick={() => { patch({ lang: 'rule', code: pretty(r.rule), props: { ...props, universe: null } }); close(); }} hint={r.frozen ? 'заморожена' : undefined}>{r.name}</MenuItem>)}
+          {meta.rules.map(r => <MenuItem key={r.id} onClick={() => { patch({ lang: 'rule', code: pretty(r.rule) }); close(); }} hint={r.frozen ? 'заморожена' : undefined}>{r.name}</MenuItem>)}
           <MenuItem onClick={() => { patch({ lang: 'python', py: meta.python_template ?? '' }); close(); }} hint="Python">Пример: пересечение двух EMA</MenuItem>
           {!!saved.length && <div className="bt-pop-h">Мои</div>}
           {saved.map(r => <div key={r.name} className="bt-mi-row"><MenuItem onClick={() => { if (r.code.startsWith('#python\n')) patch({ lang: 'python', py: r.code.slice(8) }); else patch({ lang: 'rule', code: r.code }); close(); }} hint={r.code.startsWith('#python\n') ? 'Python' : undefined}>{r.name}</MenuItem><button className="bt-x" title="удалить" onClick={() => onSaved(saved.filter(x => x.name !== r.name))}>✕</button></div>)}
@@ -104,7 +106,7 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
         {!isPy && <button className="bt-tb" disabled={!parsed.rule} onClick={() => parsed.rule && setCode(pretty(parsed.rule))}>Формат</button>}
         <div className="bt-seg"><button className={!isPy ? 'on' : ''} onClick={() => patch({ lang: 'rule' })}>Правило</button><button className={isPy ? 'on' : ''} onClick={() => patch({ lang: 'python' })}>Python</button></div>
         <span style={{ flex: 1 }} />
-        <button className="bt-run" disabled={(isPy ? !!pyInfo.error : !parsed.rule) || busy || !universe.length} onClick={run} title="⌘Enter">{busy ? 'Считается…' : '▶ Запустить'}</button>
+        <button className="bt-run" disabled={(isPy ? !!pyInfo.error : !parsed.rule) || busy} onClick={run} title={`⌘Enter · бумаги: ${universe.join(', ')}`}>{busy ? 'Считается…' : <>▶ Запустить на {st}{extra.length ? ` +${extra.length}` : ''}</>}</button>
         <button className="bt-x" onClick={onClose} title="закрыть редактор">✕</button>
       </header>
       <nav className="bt-subtabs">
@@ -122,14 +124,25 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
       </>}
       {tab === 'props' && (
         <div className="bt-form">
-          {isPy && <><div className="bt-form-h" style={{ borderTop: 0, paddingTop: 0 }}>Параметры стратегии <span>PARAMS из кода</span></div>
+          <div className="bt-form-h" style={{ borderTop: 0, paddingTop: 0 }}>Бумаги прогона <span>{universe.length === 1 ? 'только выбранная' : `выбранная + ${extra.length}`}</span></div>
+          <div className="bt-chips">
+            <button className="on main" title="бумага активного графика — меняется в шапке"><Logo st={st} size={14} />{st}</button>
+            {meta.instruments.filter(i => i.st !== st).map(i => <button key={i.st} title={i.name} className={extra.includes(i.st) ? 'on' : ''} onClick={() => setProp('extra', extra.includes(i.st) ? extra.filter(x => x !== i.st) : [...extra, i.st])}><Logo st={i.st} size={14} />{i.st}</button>)}
+          </div>
+          <div className="bt-chips">
+            <button onClick={() => setProp('extra', [])}>только {st}</button>
+            {!isPy && Array.isArray(parsed.rule?.universe) && <button onClick={() => setProp('extra', parsed.rule.universe)}>список из правила ({parsed.rule.universe.length})</button>}
+            <button onClick={() => setProp('extra', meta.instruments.map(i => i.st))}>все</button>
+          </div>
+          <div className="hint">Стратегия считается по бумаге активного графика. Другие бумаги добавляются сюда нажатием — тогда счёт общий на все.</div>
+          {isPy && <><div className="bt-form-h">Параметры стратегии <span>PARAMS из кода</span></div>
             {Object.keys(pyInfo.params).length ? <div className="row">{Object.entries(pyInfo.params).map(([k, d]) => <label key={k}>{k}<input value={String(pyParams[k] ?? d)} onChange={e => patch({ pyParams: { ...pyParams, [k]: typeof d === 'number' ? (e.target.value === '' ? d : Number(e.target.value)) : e.target.value } })} /></label>)}</div> : <div className="hint" style={{ marginTop: 0 }}>В коде нет словаря PARAMS.</div>}</>}
           {!isPy && <label>Исполнение<select value={props.exec} onChange={e => setProp('exec', e.target.value)}>{Object.entries(meta.exec).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>}
           <div className="row">
             <label>Капитал, ₽<input type="number" value={props.capital} onChange={e => setProp('capital', e.target.value)} /></label>
-            <label>Сделок в день, максимум<input type="number" min={1} max={30} value={props.slots} onChange={e => setProp('slots', e.target.value)} /></label>
+            <label>Сделок в день, максимум<input type="number" min={1} max={30} placeholder={`авто: ${Math.min(6, universe.length)}`} value={props.perDay} onChange={e => setProp('perDay', e.target.value)} /></label>
           </div>
-          <div className="hint">На сделку идёт капитал × плечо ÷ число сделок, целыми контрактами.</div>
+          <div className="hint">На сделку идёт капитал × плечо ÷ число сделок, целыми контрактами. Авто: по числу бумаг, но не больше 6 — на одной бумаге в сделку идёт весь капитал.</div>
           <div className="row">
             <label>Плечо<select value={props.leverage} onChange={e => setProp('leverage', e.target.value)}>{[1, 1.5, 2, 3, 4, 5].map(x => <option key={x} value={x}>{x === 1 ? 'без плеча' : `×${x}`}</option>)}</select></label>
             <label>Стресс: ГО выросло<select value={props.go_mult} onChange={e => setProp('go_mult', e.target.value)}>{[1, 1.5, 2, 3].map(x => <option key={x} value={x}>{x === 1 ? 'нет' : `в ${x} раза (как в 02.2022)`}</option>)}</select></label>
@@ -150,12 +163,6 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
             <label>С даты<input type="date" value={props.since} onChange={e => setProp('since', e.target.value)} /></label>
             <label>По дату<input type="date" value={props.until} onChange={e => setProp('until', e.target.value)} /></label>
           </div>
-          <label>Бумаги ({universe.length})
-            <div className="bt-chips">
-              <button onClick={() => setProp('universe', null)}>как в правиле</button><button onClick={() => setProp('universe', meta.instruments.map(i => i.st))}>все</button><button onClick={() => setProp('universe', [])}>ни одной</button>
-              {meta.instruments.map(i => <button key={i.st} title={i.name} className={universe.includes(i.st) ? 'on' : ''} onClick={() => setProp('universe', universe.includes(i.st) ? universe.filter(x => x !== i.st) : [...universe, i.st])}><Logo st={i.st} size={14} />{i.st}</button>)}
-            </div>
-          </label>
           <label>Название прогона<input value={props.name} onChange={e => setProp('name', e.target.value)} placeholder="по умолчанию — имя правила" /></label>
         </div>
       )}

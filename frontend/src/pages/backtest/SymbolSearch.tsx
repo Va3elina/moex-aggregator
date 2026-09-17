@@ -1,9 +1,9 @@
-// Стенд: выбор бумаги — как поиск символа в TradingView: строка поиска, группы, логотипы, результат прогона по бумаге.
+// Стенд: выбор бумаги — как поиск символа в TradingView: строка поиска, группы, логотипы. Ничего лишнего справа.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GROUP, cls, money, pct } from './lib';
+import { GROUP } from './lib';
 import { Logo } from './ui';
 
-export interface SymRow { st: string; name: string; n: number; avg: number | null; rub: number | null; inRun: boolean }
+export interface SymRow { st: string; name: string }
 
 export default function SymbolSearch({ rows, current, recent, onPick, onClose }: { rows: SymRow[]; current: string; recent: string[]; onPick: (st: string) => void; onClose: () => void }) {
   const [q, setQ] = useState(''); const [grp, setGrp] = useState('Все'); const [idx, setIdx] = useState(0);
@@ -31,7 +31,6 @@ export default function SymbolSearch({ rows, current, recent, onPick, onClose }:
           {list.map((r, i) => (
             <button key={r.st} className={`bt-symrow ${i === idx ? 'hover' : ''} ${r.st === current ? 'on' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => onPick(r.st)}>
               <Logo st={r.st} size={26} /><b>{r.st}</b><span>{r.name}<small>фьючерс · {GROUP[r.st] ?? ''} · MOEX</small></span>
-              {r.inRun ? <span className="res"><i className={cls(r.avg)}>{pct(r.avg)} на сделку</i><small>{r.n} сделок{r.rub != null ? ` · ${money(r.rub)}` : ''}</small></span> : <span className="res"><small>нет в прогоне</small></span>}
             </button>
           ))}
           {!list.length && <div className="bt-nodata">Ничего не найдено</div>}

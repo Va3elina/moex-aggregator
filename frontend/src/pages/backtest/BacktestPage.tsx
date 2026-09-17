@@ -96,11 +96,7 @@ export default function BacktestPage() {
   const names = useMemo(() => new Map(meta?.instruments.map(i => [i.st, i.name]) ?? []), [meta]);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
-  const symRows: SymRow[] = useMemo(() => (meta?.instruments ?? []).map(i => {
-    const ts_ = tradesBySt.get(i.st) ?? []; const ex = ts_.filter(t => !t.account_skip);
-    return { st: i.st, name: i.name, n: ts_.length, avg: ts_.length ? ts_.reduce((a, t) => a + t.net, 0) / ts_.length : null,
-      rub: run?.result?.account ? ex.reduce((a, t) => a + (t.pnl_rub ?? 0), 0) : null, inRun: (run?.spec_full?.universe ?? []).includes(i.st) };
-  }), [meta, tradesBySt, run]);
+  const symRows: SymRow[] = useMemo(() => (meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })), [meta]);
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
@@ -173,7 +169,7 @@ export default function BacktestPage() {
               </div>
             </>}
         </div>
-        {editor && meta && <Editor meta={meta} state={prefs.editor} saved={prefs.rules} onState={e => set({ editor: e })} onSaved={r => set({ rules: r })}
+        {editor && meta && <Editor meta={meta} st={cell.st} state={prefs.editor} saved={prefs.rules} onState={e => set({ editor: e })} onSaved={r => set({ rules: r })}
           onRun={startRun} onClose={() => setEditor(false)} busy={busy} error={runErr} />}
       </div>
       {search && <SymbolSearch rows={symRows} current={cell.st} recent={prefs.recent} onPick={pickSymbol} onClose={() => setSearch(false)} />}

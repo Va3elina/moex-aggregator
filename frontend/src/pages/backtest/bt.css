@@ -148,3 +148,5 @@
 .bt-symlist { overflow: auto; border-top: 1px solid var(--border); }
 .bt-symrow { display: grid; grid-template-columns: 30px 44px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 9px 16px; background: none; border: 0; border-bottom: 1px solid #22252b; text-align: left; }
 .bt-symrow.hover { background: var(--hover); } .bt-symrow.on b { color: var(--accent); } .bt-symrow small { display: block; color: var(--dim); font-size: 11.5px; } .bt-symrow .res { text-align: right; } .bt-symrow .res i { font-style: normal; }
+.bt-chips + .bt-chips { margin-top: 6px; } .bt-chips button.main { background: color-mix(in srgb, var(--accent) 18%, transparent); cursor: default; font-weight: 600; }
+.bt-chip2.warn { color: #e0a23c; border-color: #e0a23c55; }

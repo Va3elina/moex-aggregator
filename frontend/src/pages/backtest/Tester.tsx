@@ -29,14 +29,17 @@ const Tabs = ({ items, value, onChange }: { items: [string, string][]; value: st
 const Seg = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
   <div className="bt-seg">{items.map(([k, l]) => <button key={k} className={k === value ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>;
 
-export default function Tester({ runs, run, trades, equity, st, name, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks, onOpenVariant }: {
+export default function Tester({ runs, run, trades, equity, st: chartSt, name: chartName, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks, onOpenVariant }: {
   runs: BtRun[]; run: BtRun | null; trades: BtTrade[]; equity: BtEquity[]; st: string; name: string; names: Map<string, string>;
   prefs: Prefs; set: (p: Partial<Prefs>) => void; onPickTrade: (t: BtTrade) => void; selKey: string | null;
   onDeleteRun: (id: number) => void; onOpenEditor: () => void; compare: { run: BtRun; equity: BtEquity[] } | null;
   live: BtLiveTrade[]; onRunChecks: () => void; onOpenVariant: (params: Record<string, any>) => void;
 }) {
   const acc = run?.result?.account; const money_ = !!acc; const capital = run?.spec_full?.capital ?? 1_000_000;
-  const symbol = prefs.scope === 'symbol';
+  // прогон по одной бумаге: счёт и есть эта бумага — переключатель «бумага / весь счёт» не нужен
+  const uni: string[] = run?.spec_full?.universe ?? []; const single = uni.length === 1;
+  const symbol = !single && prefs.scope === 'symbol';
+  const st = single ? uni[0] : chartSt; const name = single ? names.get(st) ?? st : chartName;
   const scoped = useMemo(() => symbol ? trades.filter(t => t.st === st) : trades, [trades, symbol, st]);
   const S: Stats = useMemo(() => compute(scoped, symbol ? null : equity, capital, money_), [scoped, equity, symbol, capital, money_]);
   const hide = (id: string) => set({ hidden: [...prefs.hidden, id] });
@@ -58,9 +61,11 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
           <div className="bt-pop-sep" /><MenuItem onClick={() => { onOpenEditor(); close(); }}>Новая стратегия в редакторе…</MenuItem>
         </>}</Menu>
         {run && run.status !== 'done' && <span className={`bt-status ${run.status}`}>{STATUS[run.status]}</span>}
-        <Seg items={[['symbol', name], ['portfolio', 'Весь счёт']]} value={prefs.scope} onChange={k => set({ scope: k as Prefs['scope'] })} />
+        {single ? <span className="bt-chip2"><span className="bt-inline"><Logo st={st} size={16} /><b>{st}</b> {name}</span></span>
+          : <Seg items={[['symbol', name], ['portfolio', `Все бумаги прогона (${uni.length})`]]} value={prefs.scope} onChange={k => set({ scope: k as Prefs['scope'] })} />}
+        {run?.status === 'done' && !single && symbol && !uni.includes(st) && <span className="bt-chip2 warn" title="Открой редактор и запусти стратегию на этой бумаге">{st} нет в этом прогоне</span>}
         {run?.result?.period && <span className="bt-chip2">{fmtDate(run.result.period[0])} — {fmtDate(run.result.period[1])}</span>}
-        {money_ && <span className="bt-chip2">{num(capital / 1e6, 2)} млн ₽ · {run?.spec_full?.slots} сделок в день</span>}
+        {money_ && <span className="bt-chip2">{num(capital / 1e6, 2)} млн ₽ · сделок в день: до {run?.spec_full?.slots}</span>}
         <span style={{ flex: 1 }} />
         <Seg items={[['overview', 'Обзор'], ['trades', `Список сделок`], ['signals', 'Сигналы'], ['checks', 'Проверки'], ['robot', 'Робот']]} value={prefs.view} onChange={k => set({ view: k as Prefs['view'] })} />
         <Menu label="⚙" title="что показывать" align="right">{() => <>
