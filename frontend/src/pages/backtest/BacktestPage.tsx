@@ -162,7 +162,8 @@ export default function BacktestPage() {
               {prefs.panel === 'open' && <div className="bt-split" onMouseDown={drag} />}
               <div className="bt-panel" style={prefs.panel === 'max' ? { flex: 1 } : { height: prefs.panelH }}>
                 <Tester runs={runs} run={run} trades={trades} equity={equity} st={cell.st} name={names.get(cell.st) ?? cell.st} names={names} prefs={prefs} set={set}
-                  onPickTrade={pickTrade} selKey={selKey} onDeleteRun={deleteRun} onOpenEditor={() => setEditor(true)} compare={compare} />
+                  onPickTrade={pickTrade} selKey={selKey} onDeleteRun={deleteRun} onOpenEditor={() => setEditor(true)} compare={compare} live={live}
+                  onRunChecks={() => { if (run) btApi.runChecks(run.id).then(reloadRuns).catch(fail); }} />
               </div>
             </>}
         </div>

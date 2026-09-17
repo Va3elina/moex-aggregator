@@ -13,7 +13,7 @@ export interface SavedRule { name: string; code: string }
 export interface Prefs {
   layout: Layout; cells: Cell[]; active: number; runId: number | null; compareRunId: number | null;
   panel: 'open' | 'closed' | 'max'; panelH: number;
-  view: 'overview' | 'trades' | 'signals' | 'runs'; scope: 'symbol' | 'portfolio';
+  view: 'overview' | 'trades' | 'signals' | 'checks' | 'robot'; scope: 'symbol' | 'portfolio';
   resultTab: string; tradeTab: string; bucket: string; calKind: string; hidden: string[];
   indicators: IndCfg[]; show: { markers: boolean; lines: boolean; window: boolean; robot: boolean; volume: boolean; labels: boolean };
   recent: string[]; rules: SavedRule[]; editor: { code: string; props: Record<string, any> } | null; tradesOnlyExecuted: boolean;

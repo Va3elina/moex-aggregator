@@ -8,7 +8,7 @@ import pandas as pd
 from . import store, rules as R, engine, costs, account, metrics
 
 DEFAULTS = {'exec': 'close', 'universe': None, 'since': None, 'until': None, 'tariff': 'trader', 'spread': 'c3',
-            'capital': 1_000_000, 'slots': 6, 'go': 'mr1', 'go_limit': 1.0, 'leverage': 1.0, 'go_mult': 1.0}
+            'capital': 1_000_000, 'slots': 6, 'go': 'mr1', 'go_limit': 1.0, 'leverage': 1.0, 'go_mult': 1.0, 'checks': False}
 EXEC = {'close': None, 'next_open': R.EXEC_NEXT_OPEN, 'robot': R.EXEC_ROBOT}
 
 
@@ -31,6 +31,9 @@ def execute(spec):
            'per_trade': metrics.per_trade(T) if len(T) else {'сделок': 0},
            'by_instrument': metrics.by_instrument(T).reset_index().to_dict('records') if len(T) else [],
            'data_until': store.data_until(s['universe'])}
+    if spec.get('checks') and len(T) >= 60:
+        from . import checks
+        res['checks'] = checks.run_all(s, S, T)
     A = K = E = None
     if s['capital'] and len(T):
         A, K, E = account.simulate(T, s['capital'], s['slots'], s['go_limit'], s['go'], s['tariff'], s['spread'],

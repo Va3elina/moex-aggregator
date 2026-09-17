@@ -45,6 +45,7 @@ class RunIn(BaseModel):
     go_limit: float = Field(1.0, gt=0, le=10)
     leverage: float = Field(1.0, ge=0.1, le=10)
     go_mult: float = Field(1.0, ge=0.5, le=5)
+    checks: bool = False
     refresh: bool = False
 
 
@@ -110,6 +111,16 @@ def get_run(run_id: int, db: Session = Depends(get_db), _admin: User = Depends(r
     r = db.execute(text("SELECT * FROM bt_runs WHERE id=:r"), {'r': run_id}).fetchone()
     if not r: raise HTTPException(404, 'нет такого прогона')
     return _run_row(r, full=True)
+
+
+@router.post("/runs/{run_id}/checks")
+def run_checks(run_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Досчитать батарею проверок (плацебо, половины истории, хвосты, соседние параметры…) — прогон встаёт в очередь заново."""
+    n = db.execute(text("""UPDATE bt_runs SET spec = spec || '{"checks": true}'::jsonb, status='queued', error=NULL
+                           WHERE id=:r AND status IN ('done', 'error')"""), {'r': run_id}).rowcount
+    db.commit()
+    if not n: raise HTTPException(409, 'прогон не найден или ещё считается')
+    return {'id': run_id, 'status': 'queued'}
 
 
 @router.delete("/runs/{run_id}")

@@ -53,6 +53,7 @@ export const btApi = {
   runs: () => j<BtRun[]>('/runs'),
   run: (id: number) => j<BtRun>(`/runs/${id}`),
   createRun: (spec: any) => j<{ id: number }>('/runs', json('POST', spec)),
+  runChecks: (id: number) => j<{ id: number }>(`/runs/${id}/checks`, { method: 'POST' }),
   deleteRun: (id: number) => j<{ ok: boolean }>(`/runs/${id}`, { method: 'DELETE' }),
   trades: (id: number) => j<BtTrade[]>(`/runs/${id}/trades`),
   equity: (id: number) => j<BtEquity[]>(`/runs/${id}/equity`),

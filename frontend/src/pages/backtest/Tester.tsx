@@ -2,7 +2,9 @@
 // Стенд: «Тестер стратегий» — нижняя панель. Состав как у TradingView (основные данные, динамика, анализ результатов,
 // анализ сделок, список сделок) + наше: журнал решений, сравнение прогонов, загрузка ГО. Любой блок можно скрыть.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { btApi, type BtCandle, type BtEquity, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
+import { btApi, type BtCandle, type BtEquity, type BtLiveTrade, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
+import Checks from './Checks';
+import RobotReport from './RobotReport';
 import { EquityChart } from './ChartCell';
 import { cls, fmtDate, money, num, pct, signed } from './lib';
 import { byCalendar, byPeriod, compute, histogram, pnlOf, type Bucket, type Stats } from './stats';
@@ -24,10 +26,11 @@ const Tabs = ({ items, value, onChange }: { items: [string, string][]; value: st
 const Seg = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
   <div className="bt-seg">{items.map(([k, l]) => <button key={k} className={k === value ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>;
 
-export default function Tester({ runs, run, trades, equity, st, name, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare }: {
+export default function Tester({ runs, run, trades, equity, st, name, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks }: {
   runs: BtRun[]; run: BtRun | null; trades: BtTrade[]; equity: BtEquity[]; st: string; name: string; names: Map<string, string>;
   prefs: Prefs; set: (p: Partial<Prefs>) => void; onPickTrade: (t: BtTrade) => void; selKey: string | null;
   onDeleteRun: (id: number) => void; onOpenEditor: () => void; compare: { run: BtRun; equity: BtEquity[] } | null;
+  live: BtLiveTrade[]; onRunChecks: () => void;
 }) {
   const acc = run?.result?.account; const money_ = !!acc; const capital = run?.spec_full?.capital ?? 1_000_000;
   const symbol = prefs.scope === 'symbol';
@@ -56,7 +59,7 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
         {run?.result?.period && <span className="bt-chip2">{fmtDate(run.result.period[0])} — {fmtDate(run.result.period[1])}</span>}
         {money_ && <span className="bt-chip2">{num(capital / 1e6, 2)} млн ₽ · {run?.spec_full?.slots} сделок в день</span>}
         <span style={{ flex: 1 }} />
-        <Seg items={[['overview', 'Обзор'], ['trades', `Список сделок`], ['signals', 'Сигналы']]} value={prefs.view} onChange={k => set({ view: k as Prefs['view'] })} />
+        <Seg items={[['overview', 'Обзор'], ['trades', `Список сделок`], ['signals', 'Сигналы'], ['checks', 'Проверки'], ['robot', 'Робот']]} value={prefs.view} onChange={k => set({ view: k as Prefs['view'] })} />
         <Menu label="⚙" title="что показывать" align="right">{() => <>
           <div className="bt-pop-h">Блоки обзора</div>
           {BLOCKS.map(([id, l]) => <MenuItem key={id} on={!prefs.hidden.includes(id)} onClick={() => set({ hidden: prefs.hidden.includes(id) ? prefs.hidden.filter(x => x !== id) : [...prefs.hidden, id] })}>{l}</MenuItem>)}
@@ -73,6 +76,8 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
           : run.status !== 'done' ? <div className="bt-nodata big"><div className="bt-spinner" />Прогон считается… обычно 20–30 секунд.</div>
           : prefs.view === 'trades' ? <TradesList rows={scoped} money={money_} names={names} symbol={symbol} selKey={selKey} onPick={onPickTrade} onlyExec={prefs.tradesOnlyExecuted} setOnlyExec={x => set({ tradesOnlyExecuted: x })} />
           : prefs.view === 'signals' ? <Signals runId={run.id} st={st} name={name} />
+          : prefs.view === 'checks' ? <Checks run={run} onRun={onRunChecks} busy={false} />
+          : prefs.view === 'robot' ? <RobotReport live={live} trades={trades} names={names} onPick={onPickTrade} />
           : <>
             <Block id="main" title="Основные данные" hidden={prefs.hidden} onHide={hide}>
               <div className="bt-metrics">
