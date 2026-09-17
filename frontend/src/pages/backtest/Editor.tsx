@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BtMeta } from './api';
 import type { Prefs, SavedRule } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
+import { paramLabel, setPath } from './Sweep';
 
 export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, slots: 6, go: 'mr1', leverage: 1, go_mult: 1, since: '', until: '', name: '', universe: null as string[] | null };
 /** JSON с отступами, но короткие списки и словари чисел — в одну строку (иначе список бумаг занимает пол-экрана). */
@@ -21,7 +22,8 @@ function describe(r: any): string[] {
     return [`Сигнал: ход цены ${r.signal.from} → ${r.signal.to}`, side(r.long, 'Лонг'), side(r.short, 'Шорт'),
       ...(r.filters ?? []).map((f: any) => `Фильтр: ${f.type === 'straightness' ? `прямота хода ≥ ${typeof f.min === 'object' ? 'порога бумаги' : f.min}` : f.type}`),
       `Вход: ${r.signal.to}${r.entry?.delay_min ? ` + ${r.entry.delay_min} мин` : ''}, ${px(r.entry)}`,
-      `Выход: ${r.exit.at}${r.exit?.delay_min ? ` + ${r.exit.delay_min} мин` : ''} следующего торгового дня, ${px(r.exit)}`];
+      `Выход: ${r.exit.at}${r.exit?.delay_min ? ` + ${r.exit.delay_min} мин` : ''} ${(r.exit?.hold_days ?? 1) > 1 ? `через ${r.exit.hold_days} торговых дня` : 'следующего торгового дня'}, ${px(r.exit)}`,
+      ...(['stop', 'take', 'trail'] as const).filter(k => r.exit?.[k]).map(k => `${{ stop: 'Стоп', take: 'Тейк', trail: 'Трейлинг' }[k]}: ${(100 * r.exit[k]).toFixed(2)}% от цены входа — проверка по закрытию каждой 5-минутной свечи, выход по открытию следующей`)];
   } catch { return []; }
 }
 
@@ -31,7 +33,8 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
 }) {
   const code = state?.code ?? pretty(meta.rules[0].rule);
   const props = { ...DEFAULT_PROPS, ...(state?.props ?? {}) };
-  const [tab, setTab] = useState<'code' | 'props' | 'help'>('code');
+  const [tab, setTab] = useState<'code' | 'props' | 'sweep' | 'help'>('code');
+  const [grid, setGrid] = useState<Record<string, string>>({}); const [oos, setOos] = useState('2025-01-01');
   const ta = useRef<HTMLTextAreaElement>(null); const gutter = useRef<HTMLDivElement>(null);
   const parsed = useMemo(() => { try { return { rule: JSON.parse(code), err: null as string | null }; } catch (e) { return { rule: null, err: String((e as Error).message) }; } }, [code]);
   const lines = useMemo(() => code.split('\n').length, [code]);
@@ -50,6 +53,20 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
     if (!parsed.rule || busy) return;
     onRun({ rule: parsed.rule, name: props.name || parsed.rule.name || null, exec: props.exec, universe, tariff: props.tariff, spread: props.spread,
       capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
+  };
+  /** Правка поля правила из формы: меняем JSON и переформатируем код — форма и код всегда говорят одно и то же. */
+  const setRule = (path: string, value: number | null) => { if (!parsed.rule) return; const r = JSON.parse(JSON.stringify(parsed.rule)); setPath(r, path, value); setCode(pretty(r)); };
+  const numericPaths = useMemo(() => {
+    const out: string[] = []; const walk = (o: any, p: string) => { for (const [k, v] of Object.entries(o ?? {})) { const q = p ? `${p}.${k}` : k; if (typeof v === 'number') out.push(q); else if (v && typeof v === 'object' && !Array.isArray(v) && k !== 'universe') walk(v, q); else if (Array.isArray(v) && k === 'filters') v.forEach((f, i) => walk(f, `${q}.${i}`)); } };
+    if (parsed.rule) walk(parsed.rule, ''); for (const k of ['exit.stop', 'exit.take', 'exit.trail', 'exit.hold_days']) if (!out.includes(k)) out.push(k);
+    return out.filter(k => !/^(id|name)$/.test(k));
+  }, [parsed.rule]);
+  const parseVals = (s: string) => s.split(/[,;\s]+/).filter(Boolean).map(x => /^(нет|выкл|null|-)$/i.test(x) ? null : Number(x.replace('%', '')) / (x.includes('%') ? 100 : 1)).filter(x => x === null || isFinite(x as number));
+  const sweepGrid = Object.fromEntries(Object.entries(grid).map(([k, v]) => [k, parseVals(v)] as const).filter(([, v]) => v.length));
+  const nVariants = Object.values(sweepGrid).reduce((a, v) => a * v.length, 1);
+  const runSweep = () => {
+    if (!parsed.rule || busy || !Object.keys(sweepGrid).length) return;
+    onRun({ rule: parsed.rule, name: `Перебор: ${Object.keys(sweepGrid).map(paramLabel).join(', ')}`, exec: props.exec, universe, tariff: props.tariff, spread: props.spread, since: props.since || null, until: props.until || null, sweep: { grid: sweepGrid, oos_from: oos } });
   };
   const save = () => {
     const name = prompt('Название стратегии', parsed.rule?.name ?? 'Моя стратегия'); if (!name) return;
@@ -72,7 +89,7 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
         <button className="bt-x" onClick={onClose} title="закрыть редактор">✕</button>
       </header>
       <nav className="bt-subtabs">
-        {([['code', 'Код правила'], ['props', 'Свойства'], ['help', 'Справка']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+        {([['code', 'Код правила'], ['props', 'Свойства'], ['sweep', 'Перебор'], ['help', 'Справка']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
       </nav>
       {tab === 'code' && <>
         <div className="bt-code">
@@ -101,6 +118,12 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
             <label>Тариф брокера<select value={props.tariff} onChange={e => setProp('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{k} — {v}% за сторону</option>)}</select></label>
             <label>Спред стакана<select value={props.spread} onChange={e => setProp('spread', e.target.value)}>{meta.spread_daily && <option value="daily">по дням, с учётом глубины стакана</option>}<option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
           </div>
+          <div className="bt-form-h">Досрочный выход <span>записывается в код правила</span></div>
+          <div className="row3">
+            {([['stop', 'Стоп, %'], ['take', 'Тейк, %'], ['trail', 'Трейлинг, %']] as const).map(([k, l]) => <label key={k}>{l}<input type="number" min={0} step={0.5} placeholder="нет" value={parsed.rule?.exit?.[k] ? +(100 * parsed.rule.exit[k]).toFixed(4) : ''} onChange={e => setRule(`exit.${k}`, e.target.value ? Number(e.target.value) / 100 : null)} /></label>)}
+          </div>
+          <label>Держать позицию, торговых дней<input type="number" min={1} max={20} value={parsed.rule?.exit?.hold_days ?? 1} onChange={e => setRule('exit.hold_days', Number(e.target.value) > 1 ? Number(e.target.value) : null)} /></label>
+          <div className="hint">Стоп, тейк и трейлинг проверяются по закрытию каждой 5-минутной свечи (вечерняя и утренняя сессии), выход — по открытию следующей. Так же видит рынок робот, который просыпается раз в 5 минут.</div>
           <label>Гарантийное обеспечение<select value={props.go} onChange={e => setProp('go', e.target.value)}>{Object.entries(meta.go).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <div className="row">
             <label>С даты<input type="date" value={props.since} onChange={e => setProp('since', e.target.value)} /></label>
@@ -115,6 +138,19 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
           <label>Название прогона<input value={props.name} onChange={e => setProp('name', e.target.value)} placeholder="по умолчанию — имя правила" /></label>
         </div>
       )}
+      {tab === 'sweep' && (
+        <div className="bt-form">
+          <div className="hint" style={{ marginTop: 0 }}>Перебор прогоняет правило со всеми сочетаниями значений. Чтобы не подогнать параметры под историю, она делится на обучение и контроль: варианты ранжируются по обучению, а контроль показывает, что было бы на самом деле.</div>
+          {numericPaths.map(k => (
+            <label key={k}>{paramLabel(k)} <span className="bt-dim">{k} · сейчас {String(k.split('.').reduce((o: any, x) => o?.[x], parsed.rule) ?? 'выкл.')}</span>
+              <input value={grid[k] ?? ''} onChange={e => setGrid(g => ({ ...g, [k]: e.target.value }))} placeholder={/stop|take|trail|value/.test(k) ? 'например: нет, 2%, 3%, 5%' : k.endsWith('.q') ? 'например: 0.6, 0.67, 0.75, 0.8' : 'значения через запятую'} /></label>
+          ))}
+          <label>Контрольный период начинается с<input type="date" value={oos} onChange={e => setOos(e.target.value)} /></label>
+          <div className="hint">Вариантов: <b>{Object.keys(sweepGrid).length ? nVariants : 0}</b> (не больше 150). Каждый считается около секунды.</div>
+          <button className="bt-run" disabled={busy || !Object.keys(sweepGrid).length || nVariants > 150 || !parsed.rule} onClick={runSweep}>{busy ? 'Считается…' : `▶ Запустить перебор`}</button>
+          {error && <div className="bt-codestatus err">{error}</div>}
+        </div>
+      )}
       {tab === 'help' && (
         <div className="bt-help">
           <p>Стратегия описывается правилом в формате JSON. Это язык Стенда, а не Pine Script: правило задаёт окно сигнала, пороги входа и время выхода — без программирования. Произвольный код (стопы, свои индикаторы) — следующий этап.</p>
@@ -127,7 +163,9 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
   "filters": [ { "type": "straightness", "min": 0.58,
       "points": ["10:30","12:00","13:30","15:00","17:00"] } ],
   "entry": { "price": "next_open", "delay_min": 10 },   // close | next_open
-  "exit":  { "at": "11:00", "price": "next_open", "delay_min": 5 }
+  "exit":  { "at": "11:00", "price": "next_open", "delay_min": 5,
+             "hold_days": 1,                            // выход на N-й торговый день
+             "stop": 0.03, "take": 0.05, "trail": 0.02 }  // досрочный выход, доли от цены входа
 }`}</pre>
           <p><b>quantile</b> — порог считается по прошлым дням этой же бумаги (без заглядывания вперёд). <b>fixed</b> — число; можно словарём по бумагам: <code>{'{"Si": 0.009, "SS": 0.019}'}</code>. <b>strict</b>: true — строго больше.</p>
           <p>Время — начало 5-минутной свечи по Москве. <b>close</b> — цена закрытия этой свечи, <b>next_open</b> — открытие следующей (так исполняют рыночную заявку OsEngine и TradingView). Выход — всегда на следующий торговый день.</p>

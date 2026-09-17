@@ -54,11 +54,53 @@ def _px(st, p_secid, p_d, kind, minute):
     return s.reindex(pd.MultiIndex.from_arrays([p_secid, p_d])).values.astype(float)
 
 
+def _risk_walk(st, df, ex, first_min, last_min, inclusive):
+    """Досрочный выход по 5-минутным свечам: стоп, тейк, трейлинг. Условие проверяется по ЗАКРЫТИЮ свечи (так видит рынок
+    робот, который просыпается раз в 5 минут), выход — по открытию следующей. Свечи выходных пропускаются: робот в
+    выходные не работает. Меняет px_out / d_out / m_out / exit_reason у сработавших строк."""
+    stop, take, trail = ex.get('stop'), ex.get('take'), ex.get('trail')
+    B = store.bars(st)
+    B = B[B.d.dt.dayofweek < 5]
+    sec_arr = B.secid.values
+    order = np.argsort(sec_arr, kind='stable')
+    sec_sorted = sec_arr[order]
+    uniq, start = np.unique(sec_sorted, return_index=True)
+    bounds = dict(zip(uniq, zip(start, list(start[1:]) + [len(sec_sorted)])))
+    T = B.t.values.astype('datetime64[m]').astype('int64')[order]          # минуты от эпохи
+    O, C = B.open.values[order], B.close.values[order]
+    day0 = np.datetime64('1970-01-01')
+    rows = df.index[(df.side != 0) & df.tradable]
+    for i in rows:
+        sec, side, pin = df.at[i, 'secid'], df.at[i, 'side'], df.at[i, 'px_in']
+        if sec not in bounds or not np.isfinite(pin): continue
+        a, b = bounds[sec]
+        t0 = (np.datetime64(df.at[i, 'd'], 'D') - day0).astype('int64') * 1440 + first_min
+        t1 = (np.datetime64(df.at[i, 'd_out'], 'D') - day0).astype('int64') * 1440 + last_min
+        lo = a + np.searchsorted(T[a:b], t0, 'left'); hi = a + np.searchsorted(T[a:b], t1, 'right' if inclusive else 'left')
+        if hi <= lo: continue
+        r = side * (C[lo:hi] / pin - 1)
+        hit = np.zeros(len(r), bool); why = np.full(len(r), '', dtype=object)
+        if trail:
+            best = np.maximum.accumulate(np.maximum(r, 0.0)); m = (best - r) >= trail; why[m] = 'трейлинг'; hit |= m
+        if take: m = r >= take; why[m] = 'тейк'; hit |= m
+        if stop: m = r <= -stop; why[m] = 'стоп'; hit |= m
+        if not hit.any(): continue
+        j = lo + int(np.argmax(hit))
+        if j + 1 >= b or T[j + 1] > t1: continue                            # следующей свечи до планового выхода нет — выходим по плану
+        tx = T[j + 1]
+        df.at[i, 'px_out'] = O[j + 1]; df.at[i, 'exit_reason'] = why[j - lo]
+        df.at[i, 'd_out'] = pd.Timestamp(day0 + np.timedelta64(int(tx // 1440), 'D')); df.at[i, 'm_out'] = int(tx % 1440)
+
+
 def signals(rule, universe=None, since=None, until=None):
     """Журнал решений: каждая строка — день бумаги в ряду. Сделка = side != 0 и tradable."""
     r = R.load(rule)
     a, b = store.hm(r['signal']['from']), store.hm(r['signal']['to'])
     t_in = b + r['entry']['delay_min']; t_out = store.hm(r['exit']['at']) + r['exit']['delay_min']
+    hold = int(r['exit'].get('hold_days') or 1)
+    risky = any(r['exit'].get(k) for k in ('stop', 'take', 'trail'))
+    m_in = t_in + 5 if r['entry']['price'] == 'next_open' else t_in            # минута свечи, по которой исполнен вход
+    m_out = t_out + 5 if r['exit']['price'] == 'next_open' else t_out
     out = []
     for st in (universe or r['universe']):
         p = chain(st, a, b)
@@ -79,8 +121,13 @@ def signals(rule, universe=None, since=None, until=None):
             if hi is not None: ok &= straight <= hi
             side = np.where(ok, side, 0.)
         # ночь
-        nxt_sec = np.roll(p.secid.values, -1); nxt_d = pd.Series(p.d).shift(-1)
-        gap = (nxt_d - p.d).dt.days.values
+        # выход — на hold-й следующий день ряда; всё это время контракт тот же, и ни одного разрыва > 4 дней
+        nxt_d = pd.Series(p.d).shift(-hold); sec = pd.Series(p.secid)
+        same = np.ones(len(p), bool); gap = np.zeros(len(p))
+        for k in range(1, hold + 1):
+            same &= (sec.shift(-k) == sec).values
+            gap = np.fmax(gap, (pd.Series(p.d).shift(-k) - pd.Series(p.d).shift(-k + 1)).dt.days.values)
+        nxt_sec = np.where(same, p.secid.values, '')
         px_in = _px(st, p.secid, p.d, r['entry']['price'], t_in)
         px_out = _px(st, p.secid, nxt_d, r['exit']['price'], t_out)
         skip = np.full(len(p), '', dtype=object)
@@ -88,12 +135,14 @@ def signals(rule, universe=None, since=None, until=None):
         skip[~np.isfinite(px_in)] = 'нет цены входа'
         skip[gap > MAX_GAP_DAYS] = f'разрыв > {MAX_GAP_DAYS} дней'
         skip[nxt_sec != p.secid.values] = 'завтра другой контракт'
-        skip[-1] = 'последний день ряда'
+        skip[-hold:] = 'последний день ряда'
         df = pd.DataFrame({'st': st, 'd': p.d.values, 'secid': p.secid.values, 'pa': p.pa.values, 'pb': p.pb.values,
                            'move': mv, 'thr_up': np.where(np.isfinite(qu), qu, np.nan),
                            'thr_dn': np.where(np.isfinite(qd), qd, np.nan), 'straight': straight, 'side': side,
                            'tradable': skip == '', 'skip': skip, 'px_in': px_in, 'd_out': nxt_d.values,
-                           'px_out': px_out})
+                           'px_out': px_out, 'm_in': m_in, 'm_out': m_out, 'exit_reason': 'время'})
+        if risky:
+            _risk_walk(st, df, r['exit'], t_in + 5, m_out if r['exit']['price'] == 'next_open' else t_out - 5, True)
         df['ret'] = df.px_out / df.px_in - 1
         out.append(df)
     S = pd.concat(out, ignore_index=True)
@@ -103,6 +152,14 @@ def signals(rule, universe=None, since=None, until=None):
 
 
 def trades(S):
-    T = S[(S.side != 0) & S.tradable].copy()
+    T = S[(S.side != 0) & S.tradable].sort_values(['st', 'd'])
+    # по одной позиции на бумагу: пока прошлая сделка не закрыта (удержание несколько дней), новый сигнал пропускается
+    keep, last_st, busy_until = [], None, None
+    for st, d, d_out in zip(T.st.values, T.d.values, T.d_out.values):
+        if st != last_st: last_st, busy_until = st, None
+        ok = busy_until is None or d >= busy_until
+        keep.append(ok)
+        if ok: busy_until = d_out
+    T = T[np.array(keep, bool)].copy() if len(T) else T.copy()
     T['gross'] = T.side * T.ret
     return T.sort_values(['d', 'st']).reset_index(drop=True)

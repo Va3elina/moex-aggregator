@@ -16,13 +16,13 @@ export interface BtMeta {
 export interface BtRun {
   id: number; name: string | null; status: 'queued' | 'running' | 'done' | 'error';
   created_at: string; finished_at: string | null; error: string | null;
-  spec: any; spec_full?: any; result?: any; summary?: Record<string, number | null>;
+  spec: any; spec_full?: any; result?: any; summary?: Record<string, number | null>; kind?: 'run' | 'sweep'; progress?: number | null;
 }
 export interface BtTrade {
   st: string; d: string; secid: string; side: number; move: number; thr: number | null;
   px_in: number; d_out: string; px_out: number; gross: number; comm: number; spread: number; net: number;
   qty: number | null; notional: number | null; go: number | null; equity_in: number | null;
-  comm_rub: number | null; spread_rub: number | null; pnl_rub: number | null; account_skip: string | null; go_cut?: boolean | null;
+  comm_rub: number | null; spread_rub: number | null; pnl_rub: number | null; account_skip: string | null; go_cut?: boolean | null; m_in?: number | null; m_out?: number | null; exit_reason?: string | null;
 }
 export interface BtEquity { d: string; equity: number; positions: number; notional: number; go_used: number; margin_call: number | null }
 export interface BtRealism { st: string; asset: string; broker_coef: number; go_rate: [string, number][]; rub_per_point: [string, number][]; rub_per_point_const: number; spread: [string, number][]; spread_const: number }
