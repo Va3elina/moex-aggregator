@@ -102,6 +102,14 @@
 .bt-tradelist .bt-table th { top: 41px; }
 .bt-more { display: block; margin: 12px auto 20px; border: 1px solid var(--border); background: var(--panel2); border-radius: 6px; padding: 7px 16px; }
 
+/* проверки */
+.bt-checks { padding: 6px 0 20px; }
+.bt-check { padding: 14px 18px; border-bottom: 1px solid var(--border); } .bt-check h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 14.5px; font-weight: 600; }
+.bt-check h3 i { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-style: normal; font-size: 12px; font-weight: 700; color: #0f0f0f; flex: none; }
+.bt-check.ok h3 i { background: var(--up); } .bt-check.warn h3 i { background: #f5a524; } .bt-check.bad h3 i { background: var(--down); }
+.bt-check p { margin: 0 0 10px 30px; color: #b9bec7; max-width: 980px; line-height: 1.5; } .bt-check .bt-bars, .bt-check .bt-table { margin-left: 30px; width: calc(100% - 30px); max-width: 980px; }
+.bt-nodata .bt-run { margin-top: 6px; }
+
 /* редактор */
 .bt-editor { width: min(560px, 46vw); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--border); animation: bt-in .18s ease-out; }
 @keyframes bt-in { from { transform: translateX(24px); opacity: 0; } }
