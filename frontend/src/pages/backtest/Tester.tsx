@@ -54,7 +54,7 @@ export default function Tester({ runs, run, trades, equity, st: chartSt, name: c
           <div className="bt-pop-h">Прогоны</div>
           {runs.map(r => (
             <div key={r.id} className="bt-mi-row">
-              <MenuItem on={r.id === run?.id} onClick={() => { set({ runId: r.id }); close(); }} hint={r.kind === 'sweep' ? (r.status === 'done' ? 'перебор' : `перебор · ${r.progress ?? 0}%`) : r.status === 'done' ? `${num(r.summary?.['сделок'])} сд. · ${r.summary?.['годовых_%'] ?? '—'}% год.` : STATUS[r.status]}>#{r.id} · {runLabel(r)} · {r.spec.exec}</MenuItem>
+              <MenuItem on={r.id === run?.id} onClick={() => { set({ runId: r.id }); close(); }} hint={r.spec?.auto && r.status === 'done' ? `авто · ${r.spec.universe?.[0]} · ${r.summary?.['годовых_%'] ?? '—'}% год.` : r.kind === 'sweep' ? (r.status === 'done' ? 'перебор' : `перебор · ${r.progress ?? 0}%`) : r.status === 'done' ? `${num(r.summary?.['сделок'])} сд. · ${r.summary?.['годовых_%'] ?? '—'}% год.` : STATUS[r.status]}>#{r.id} · {runLabel(r)} · {r.spec.exec}</MenuItem>
               <button className="bt-x" title="удалить прогон" onClick={() => { if (confirm(`Удалить прогон #${r.id}?`)) onDeleteRun(r.id); }}>✕</button>
             </div>
           ))}

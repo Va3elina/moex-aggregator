@@ -58,7 +58,7 @@ export default function BacktestPage() {
   const setCell = useCallback((i: number, patch: Partial<Prefs['cells'][number]>) => set(p => ({ cells: p.cells.map((c, k) => k === i ? { ...c, ...patch } : c) })), [set]);
 
   // ссылка: ?run= и ?st= применяются один раз при открытии; дальше адрес только отражает состояние
-  const applied = useRef(false);
+  const applied = useRef(false); const followRun = useRef<number | null>(null);
   useEffect(() => {
     if (applied.current) return; applied.current = true;
     const r = Number(sp.get('run')); const s = sp.get('st');
@@ -73,7 +73,7 @@ export default function BacktestPage() {
   useEffect(() => { if (!prefs.runId && runs.length) set({ runId: (runs.find(x => x.status === 'done') ?? runs[0]).id }); }, [prefs.runId, runs, set]);
   useEffect(() => {
     if (!runs.some(r => r.status === 'queued' || r.status === 'running')) return;
-    const t = setInterval(reloadRuns, 2000); return () => clearInterval(t);
+    const t = setInterval(reloadRuns, 700); return () => clearInterval(t);
   }, [runs, reloadRuns]);
 
   // выбранный прогон: старые данные остаются на экране, пока не приехали новые — ничего не мигает и не прыгает
@@ -100,8 +100,27 @@ export default function BacktestPage() {
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
-  const startRun = (spec: any) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => reloadRuns().then(() => set({ runId: r.id, view: 'overview' }))).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); }); };
+  const startRun = (spec: any, keepView = false) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => { followRun.current = r.id; return reloadRuns().then(() => set(keepView ? { runId: r.id } : { runId: r.id, view: 'overview' })); }).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); }); };
   const deleteRun = (id: number) => btApi.deleteRun(id).then(() => { if (prefs.runId === id) { set({ runId: null }); setRun(null); setTrades([]); setEquity([]); } reloadRuns(); }).catch(fail);
+
+  // Как в TradingView: сменил бумагу (или активное окно) — стратегия пересчиталась на ней. Только для прогонов по одной
+  // бумаге: портфельный прогон от графика не зависит. Сегодняшний такой же прогон по этой бумаге берём готовым.
+  useEffect(() => {
+    if (!prefs.autoRun || busy || !run || run.id !== prefs.runId || run.status !== 'done' || run.kind === 'sweep') return;
+    const uni: string[] = run.spec_full?.universe ?? []; const fresh = followRun.current !== run.id; followRun.current = run.id;
+    if (uni.length !== 1 || uni[0] === cell.st) return;
+    if (fresh) { setCell(active, { st: uni[0] }); return; }      // прогон выбрали из списка — график идёт за прогоном, а не наоборот
+    const t = setTimeout(() => {
+      const want = sameSpecKey(run.spec); const today = new Date().toDateString();
+      const hit = runs.find(r => r.kind !== 'sweep' && r.status !== 'error' && r.spec?.universe?.length === 1 && r.spec.universe[0] === cell.st
+        && new Date(r.created_at).toDateString() === today && sameSpecKey(r.spec) === want);
+      if (hit) { followRun.current = hit.id; set({ runId: hit.id }); return; }
+      runs.filter(r => r.spec?.auto && r.id !== run.id).slice(AUTO_KEEP).forEach(r => { btApi.deleteRun(r.id).catch(() => undefined); });
+      startRun({ ...run.spec, universe: [cell.st], auto: true, checks: false, refresh: false }, true);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startRun пересоздаётся на каждый рендер, зависит только от set/reloadRuns
+  }, [prefs.autoRun, prefs.runId, busy, run, runs, cell.st, active, set, setCell]);
 
   useEffect(() => {                                   // как в TradingView: начал печатать — открылся поиск бумаги
     const key = (e: KeyboardEvent) => {
@@ -137,7 +156,8 @@ export default function BacktestPage() {
           {SHOW.map(([k, l]) => <MenuItem key={k} on={prefs.show[k]} onClick={() => set(p => ({ show: { ...p.show, [k]: !p.show[k] } }))}>{l}</MenuItem>)}
           <div className="bt-pop-sep" /><div className="bt-pop-h">Сетка графиков</div>
           {LAYOUTS.map(([k, l]) => <MenuItem key={k} on={prefs.layout === k} onClick={() => set({ layout: k, active: 0 })}>{l}</MenuItem>)}
-          <div className="bt-pop-sep" /><MenuItem on={prefs.panel !== 'closed'} onClick={() => set({ panel: prefs.panel === 'closed' ? 'open' : 'closed' })}>Тестер стратегий</MenuItem>
+          <div className="bt-pop-sep" /><MenuItem on={prefs.autoRun} onClick={() => set({ autoRun: !prefs.autoRun })}>Пересчитывать стратегию при смене бумаги</MenuItem>
+          <MenuItem on={prefs.panel !== 'closed'} onClick={() => set({ panel: prefs.panel === 'closed' ? 'open' : 'closed' })}>Тестер стратегий</MenuItem>
         </>}</Menu>
       </div>
 
@@ -176,4 +196,7 @@ export default function BacktestPage() {
     </div>
   );
 }
+const AUTO_KEEP = 25;                                  // столько автопрогонов храним, старые удаляются
+/** Ключ «та же стратегия с теми же свойствами» — всё, кроме бумаги, имени и служебных флагов. */
+const sameSpecKey = (s: any) => JSON.stringify({ ...s, universe: null, name: null, auto: null, checks: null, refresh: null });
 const EMPTY_T: BtTrade[] = []; const EMPTY_L: BtLiveTrade[] = [];

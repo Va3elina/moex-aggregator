@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from . import store, runner
 
-POLL_SEC = 2
+POLL_SEC = 0.5      # автопересчёт при смене бумаги: прогон по одной бумаге ~0.3 с, ждать очередь дольше расчёта нельзя
 REFRESH_EVERY_SEC = 6 * 3600          # свечи в кэше не старше 6 часов; spec.refresh=true — докачать сейчас
 _url = os.environ['DB_URL']
 ENG = create_engine(_url, pool_pre_ping=True, connect_args={'ssl_context': False} if 'pg8000' in _url else {})
