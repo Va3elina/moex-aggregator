@@ -29,7 +29,7 @@ def execute(spec):
     res = {'period': [str(S.d.min().date()), str(S.d.max().date())], 'signals': int((S.side != 0).sum()),
            'per_trade': metrics.per_trade(T) if len(T) else {'сделок': 0},
            'by_instrument': metrics.by_instrument(T).reset_index().to_dict('records') if len(T) else [],
-           'data_until': max((v[2] for k, v in store.status().items() if k in s['universe']), default=None)}
+           'data_until': store.data_until(s['universe'])}
     A = K = E = None
     if s['capital'] and len(T):
         A, K, E = account.simulate(T, s['capital'], s['slots'], s['go_limit'], s['go'], s['tariff'], s['spread'],

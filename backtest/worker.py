@@ -52,7 +52,7 @@ def ensure_data(force=False):
     st = store.status()
     stamp = store.DATA / 'refreshed_at'
     fresh = stamp.exists() and time.time() - stamp.stat().st_mtime < REFRESH_EVERY_SEC
-    if st and fresh and not force: return
+    if st and st.get('_format') == store.FORMAT and fresh and not force: return
     log('докачиваю свечи…' if st else 'первая загрузка свечей (несколько минут)…')
     t0 = time.time(); store.refresh()
     stamp.write_text(dt.datetime.now().isoformat())

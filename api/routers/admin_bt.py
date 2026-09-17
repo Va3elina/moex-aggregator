@@ -5,7 +5,7 @@ API ничего не считает: кладёт прогон в очеред�
 человек мышкой, агент делает вызовом (или `python -m backtest.cli` на сервере).
 Все ручки — обычные def (не async): SQLAlchemy синхронный, см. async_endpoints_blocking.
 """
-import json
+import csv, json, os
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api import cache
 from api.database import get_db
 from api.models import User
 from api.routers.auth import require_admin
@@ -143,16 +144,7 @@ def run_equity(run_id: int, db: Session = Depends(get_db), _admin: User = Depend
                  {'r': run_id})
 
 
-@router.get("/candles")
-def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias='from'),
-            date_to: Optional[date] = Query(None, alias='to'), db: Session = Depends(get_db),
-            _admin: User = Depends(require_admin)):
-    """Склеенный ряд: на каждый день — ближний неистёкший контракт с ≥ 60 свечами (как ряд V3 движка), будни.
-    time — секунды «как будто МСК = UTC»: график показывает московское время без пересчёта поясов."""
-    if tf not in TF or st not in bt_store.UNIVERSE_ALL:
-        raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta')
-    b = date_to or date.today()
-    a = max(date_from or (b - timedelta(days=90 if tf == 5 else MAX_DAYS[tf])), b - timedelta(days=MAX_DAYS[tf]))
+def _candles(db, st, tf, a, b):
     bucket = ("date_trunc('day', c.begin_time)" if tf == 1440 else
               f"date_trunc('day', c.begin_time) + floor((extract(hour from c.begin_time)*60 + "
               f"extract(minute from c.begin_time)) / {tf}) * interval '{tf} minutes'")
@@ -172,6 +164,83 @@ def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias=
         FROM candles c JOIN front ON front.secid = c.secid AND front.d = c.begin_time::date
         WHERE c.interval = 5 AND c.type = 'futures' AND c.begin_time >= :a AND c.begin_time < :b
         GROUP BY 1 ORDER BY 1"""), {'st': st, 'a': a, 'b': b + timedelta(days=1)}).fetchall()
-    return {'st': st, 'tf': tf, 'from': a, 'to': b,
-            'candles': [{'time': r.time, 'secid': r.secid, 'open': float(r.open), 'high': float(r.high),
-                         'low': float(r.low), 'close': float(r.close), 'volume': float(r.volume or 0)} for r in rows]}
+    # колонками, а не списком словарей: втрое меньше трафика и быстрее разбор в браузере
+    secids, prev = [], None
+    for i, r in enumerate(rows):
+        if r.secid != prev: secids.append([i, r.secid]); prev = r.secid
+    return {'st': st, 'tf': tf, 'from': a.isoformat(), 'to': b.isoformat(),
+            't': [r.time for r in rows], 'o': [float(r.open) for r in rows], 'h': [float(r.high) for r in rows],
+            'l': [float(r.low) for r in rows], 'c': [float(r.close) for r in rows],
+            'v': [float(r.volume or 0) for r in rows], 'secid': secids}
+
+
+@router.get("/candles")
+def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias='from'),
+            date_to: Optional[date] = Query(None, alias='to'), db: Session = Depends(get_db),
+            _admin: User = Depends(require_admin)):
+    """Склеенный ряд: на каждый день — ближний неистёкший контракт с ≥ 60 свечами (как ряд V3 движка), будни.
+    time — секунды «как будто МСК = UTC»: график показывает московское время без пересчёта поясов.
+    Страница просит куски по календарным границам (месяц / квартал / год) — поэтому ответ кэшируется в Redis:
+    прошлое — на сутки, кусок с сегодняшним днём — на 2 минуты."""
+    if tf not in TF or st not in bt_store.UNIVERSE_ALL:
+        raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta')
+    b = date_to or date.today()
+    a = max(date_from or (b - timedelta(days=90 if tf == 5 else MAX_DAYS[tf])), b - timedelta(days=MAX_DAYS[tf]))
+    ttl = 120 if b >= date.today() else 86400
+    return cache.get_or_compute(f'bt:candles:v2:{st}:{tf}:{a}:{b}', lambda: _candles(db, st, tf, a, b), ttl)
+
+
+# ─── раскладки (рабочие пространства) ────────────────────────────────────────────────────────────
+class WorkspaceIn(BaseModel):
+    data: dict
+
+
+@router.get("/workspaces")
+def list_workspaces(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    return _rows(db, "SELECT name, updated_at FROM bt_workspaces ORDER BY updated_at DESC", {})
+
+
+@router.get("/workspaces/{name}")
+def get_workspace(name: str, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    r = db.execute(text("SELECT name, data, updated_at FROM bt_workspaces WHERE name=:n"), {'n': name}).fetchone()
+    if not r: raise HTTPException(404, 'нет такой раскладки')
+    return {'name': r.name, 'data': _json(r.data), 'updated_at': r.updated_at}
+
+
+@router.put("/workspaces/{name}")
+def put_workspace(name: str, body: WorkspaceIn, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    if not name or len(name) > 80: raise HTTPException(422, 'имя раскладки: 1–80 символов')
+    db.execute(text("""INSERT INTO bt_workspaces (name, data) VALUES (:n, CAST(:d AS JSONB))
+        ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, updated_at = now()"""),
+               {'n': name, 'd': json.dumps(body.data, ensure_ascii=False)})
+    db.commit()
+    return {'ok': True}
+
+
+@router.delete("/workspaces/{name}")
+def delete_workspace(name: str, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    db.execute(text("DELETE FROM bt_workspaces WHERE name=:n"), {'n': name}); db.commit()
+    return {'ok': True}
+
+
+# ─── живые сделки робота ─────────────────────────────────────────────────────────────────────────
+ROBOT_JOURNAL = os.environ.get('BT_ROBOT_JOURNAL', '/data/hybrid_state/journal.csv')
+
+
+@router.get("/live/trades")
+def live_trades(_admin: User = Depends(require_admin)):
+    """Журнал робота гибрида (песочница T-Invest, /opt/hybrid-bot/state/journal.csv, смонтирован только для чтения):
+    чтобы рисовать настоящие сделки поверх бэктеста. Файла нет (локальная разработка) — пустой список."""
+    if not os.path.exists(ROBOT_JOURNAL):
+        return []
+    out = []
+    with open(ROBOT_JOURNAL, encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            if r.get('status_in') != 'EXECUTION_REPORT_STATUS_FILL': continue
+            num = lambda k: float(r[k]) if r.get(k) not in (None, '', 'nan') else None
+            out.append({'st': r['st'], 'secid': r['secid'], 'side': int(float(r['side'])), 'd': r['d_in'],
+                        't_in': r.get('t_in') or None, 'px_in': num('exec_in') or num('px_in'), 'qty': num('qty'),
+                        'd_out': r.get('d_out') or None, 't_out': r.get('t_out') or None,
+                        'px_out': num('exec_out') or num('px_out'), 'pnl_rub': num('pnl_rub'), 'move': num('move'),
+                        'note': r.get('note') or None})
+    return out
