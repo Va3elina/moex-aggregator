@@ -427,7 +427,11 @@ def _context_messages(db, cid: int) -> list:
     kind = {"combo": "Связка", "insight": "Находка"}.get(source or "", "Новость")
     parts = [f"🔎 Контекст #{cid} · {kind} · {source or '—'}"
              + (f" · {event_type}" if event_type else "")]
-    if raw_text:
+    if raw_text and source in ("insight", "combo"):
+        # Вадим 17.09: полная карточка писателя в «Контексте» — «перебор, читать невозможно»
+        from signals.brief_summary import summarize
+        parts.append(summarize(raw_text) + "\n\n(здесь только главное; полная карточка — у писателя)")
+    elif raw_text:
         parts.append(raw_text.strip())
     if source_url:
         parts.append(source_url)
