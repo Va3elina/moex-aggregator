@@ -1,0 +1,40 @@
+# Стенд — свой бэктест-терминал
+
+Страница `/admin/backtest` (только админы) · API `/api/admin/bt/*` · расчёт — контейнер `bt-worker` · план — [PLAN.md](PLAN.md).
+
+```
+браузер ──► api (admin_bt.py): кладёт прогон в bt_runs, читает bt_* ──► Postgres
+                                                                         ▲
+bt-worker (python -m backtest.worker, лимит 1.5 ГБ): очередь → движок → bt_signals / bt_trades / bt_equity
+```
+API ничего не считает. В интерфейсе нет действия, которого нет в API или командах — терминалом может управлять агент.
+
+## Команды (на сервере)
+```
+docker compose exec bt-worker python -m backtest.cli submit --rule hybrid7c --exec robot --name "гибрид как робот"
+docker compose exec bt-worker python -m backtest.cli runs
+docker compose exec bt-worker python -m backtest.cli show 12 --trades SS --last 10
+docker compose exec bt-worker python -m backtest.cli data status | pull
+journalctl -t frame-bt-worker -n 50
+```
+Прогон из `submit` виден на странице: `/admin/backtest?run=<id>&st=SS`.
+
+## Устройство
+- `store.py` — кэш 5-мин свечей всех контрактов 22 типов фьючерсов (pickle в томе `bt_data`), докачка из `candles`.
+  Цена «в T» = закрытие свечи, начавшейся в T.
+- `rules.py` — правило как JSON: окно сигнала, порог лонга/шорта (квантиль прошлых дней или число), фильтр прямоты,
+  цена и задержка входа/выхода. Пресеты: `hybrid7c`, `algozavr`, `straight_v2`. Новое правило = JSON в `POST /runs`.
+- `engine.py` — ряд V3 (ближний контракт, монотонно, ≥ 60 свечей, будни; ночь только если завтра тот же контракт и
+  разрыв ≤ 4 дней) → журнал решений → сделки.
+- `costs.py` — тарифы T-Bank за сторону с датой действия; спред стакана за круг (`data/costs.json`, Algopack obstats).
+- `account.py` — счёт в рублях: капитал/слоты на сделку, целые контракты, ГО, комиссия и спред списываются сразу.
+  ГО `mr1` — историческое: стоимость контракта × ставка рыночного риска МосБиржи на дату (`data/risk_rates.csv.gz`,
+  с 22.05.2018; бесплатный ISS `rms/engines/futures/objects/limits`; обновление — разовое, `research/backtest_terminal/fetch_risk_rates.py`).
+- `runner.py` — один прогон по spec; `worker.py` — очередь; `cli.py` — команды.
+- `tests/` — приёмочные числа (нужен кэш свечей; в CI пропускаются): база spec7c 3800/3801, +0.223 % на сделку,
+  Самолёт 09.2026 как в OsEngine и TradingView, 3949 сигналов, счёт OsEngine воспроизводится с точностью 1.5 %.
+
+## Что показала сверка 17.09.2026
+- В замороженной базе spec7c одна фиктивная сделка из 3801 (PT 15.09.2023: цена выхода другого контракта).
+- «+19.7 % годовых» из OsEngine завышено: размер позиции считался от капитала без вычета спреда. Честно: +16.3 %,
+  просадка −9.6 % (1 млн ₽, 6 слотов, «Трейдер», исполнение как OsEngine).

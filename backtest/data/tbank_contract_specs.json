@@ -1,0 +1,200 @@
+{
+ "AF": {
+  "ticker": "AFU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 840,
+  "go_sell": 841,
+  "value_rub": 3239
+ },
+ "AK": {
+  "ticker": "AKU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1861,
+  "go_sell": 1865,
+  "value_rub": 7364
+ },
+ "BR": {
+  "ticker": "BRV6",
+  "price_step": 0.01,
+  "step_cost_rub": 8.43363,
+  "lot": 1,
+  "go_buy": 19128,
+  "go_sell": 19294,
+  "value_rub": 88028
+ },
+ "CC": {
+  "ticker": "CCX6",
+  "price_step": 0.1,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 947,
+  "go_sell": 978,
+  "value_rub": 5158
+ },
+ "CR": {
+  "ticker": "CRU6",
+  "price_step": 0.001,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1012,
+  "go_sell": 1013,
+  "value_rub": 12553
+ },
+ "Eu": {
+  "ticker": "EuU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 14692,
+  "go_sell": 14701,
+  "value_rub": 97553
+ },
+ "GK": {
+  "ticker": "GKU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 224,
+  "go_sell": 225,
+  "value_rub": 1283
+ },
+ "GZ": {
+  "ticker": "GZU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1666,
+  "go_sell": 1669,
+  "value_rub": 9196
+ },
+ "LK": {
+  "ticker": "LKU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 9419,
+  "go_sell": 9434,
+  "value_rub": 52319
+ },
+ "MN": {
+  "ticker": "MNU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 357,
+  "go_sell": 357,
+  "value_rub": 1587
+ },
+ "MX": {
+  "ticker": "MXU6",
+  "price_step": 25.0,
+  "step_cost_rub": 25.0,
+  "lot": 1,
+  "go_buy": 23734,
+  "go_sell": 23760,
+  "value_rub": 227050
+ },
+ "NM": {
+  "ticker": "NMU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1276,
+  "go_sell": 1278,
+  "value_rub": 7141
+ },
+ "PI": {
+  "ticker": "PIU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1341,
+  "go_sell": 1343,
+  "value_rub": 5340
+ },
+ "PT": {
+  "ticker": "PTU6",
+  "price_step": 0.1,
+  "step_cost_rub": 8.43363,
+  "lot": 1,
+  "go_buy": 27676,
+  "go_sell": 27703,
+  "value_rub": 151368
+ },
+ "RI": {
+  "ticker": "RIU6",
+  "price_step": 10.0,
+  "step_cost_rub": 16.86726,
+  "lot": 1,
+  "go_buy": 22323,
+  "go_sell": 22337,
+  "value_rub": 143295
+ },
+ "SN": {
+  "ticker": "SNU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 3381,
+  "go_sell": 3386,
+  "value_rub": 16359
+ },
+ "SR": {
+  "ticker": "SRU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 4925,
+  "go_sell": 4933,
+  "value_rub": 28297
+ },
+ "SS": {
+  "ticker": "SSU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 152,
+  "go_sell": 152,
+  "value_rub": 320
+ },
+ "SZ": {
+  "ticker": "SZU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 509,
+  "go_sell": 510,
+  "value_rub": 694
+ },
+ "Si": {
+  "ticker": "SiU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 12674,
+  "go_sell": 12682,
+  "value_rub": 84228
+ },
+ "TT": {
+  "ticker": "TTU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 11048,
+  "go_sell": 11066,
+  "value_rub": 61283
+ },
+ "VB": {
+  "ticker": "VBU6",
+  "price_step": 1.0,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 905,
+  "go_sell": 907,
+  "value_rub": 5175
+ }
+}

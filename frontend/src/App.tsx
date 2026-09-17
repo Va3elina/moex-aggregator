@@ -73,6 +73,8 @@ const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'))
 const MobilePricingPage = lazy(() => import('./pages/mobile/MobilePricingPage'));
 // Песочница/конструктор — приватный роут /sandbox (вне навигации). Тянет все embed'ы → lazy.
 const SandboxPage = lazy(() => import('./pages/sandbox/SandboxPage'));
+// Стенд — свой бэктест-терминал, только админы (гейт на бэке: require_admin). Без Layout, прямой URL.
+const BacktestPage = lazy(() => import('./pages/backtest/BacktestPage'));
 
 // Тяжёлые/редкие desktop-страницы — code-split через lazy(), чтобы не тянуть их
 // в монолитный главный чанк (был 1.11MB). Гость на лендинге больше не качает код
@@ -219,6 +221,9 @@ export default function App() {
               нашими индикаторами). НЕ в навигации; прямой URL /sandbox. Без Layout.
               На узком экране вместо неё заглушка — см. SandboxRoute. */}
           <Route path="/sandbox" element={<SandboxRoute />} />
+
+          {/* Стенд: бэктест-терминал. НЕ в навигации; /admin/backtest. Без Layout (полноэкранный). */}
+          <Route path="/admin/backtest" element={<Suspense fallback={null}><BacktestPage /></Suspense>} />
 
           {/* Привязка реального email — обязательная страница для OAuth-юзеров
               с synthetic email (Telegram/VK без email). Без Layout — fullscreen

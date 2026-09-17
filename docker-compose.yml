@@ -310,6 +310,42 @@ services:
   # ═══════════════════════════════════════════════════════════════
   # Оркестратор (сбор данных)
   # ═══════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════
+  # Стенд: воркер бэктест-терминала (/admin/backtest, только админы)
+  # ═══════════════════════════════════════════════════════════════
+  # Отдельный контейнер, а не поток в api: pandas на 5 млн свечей не должен делить память с сайтом
+  # (урок OOM 06.09.2026). Берёт прогоны из таблицы bt_runs, пишет результат в bt_*. Сеть наружу не нужна.
+  bt-worker:
+    build: .
+    restart: always
+    user: "1000:1000"
+    command: ["python", "-m", "backtest.worker"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
+    mem_limit: 1500m
+    cpus: 1.5
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - bt_data:/app/bt_data          # кэш свечей (pickle по типам фьючерсов), ~300 МБ
+    environment:
+      - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+      - BT_DATA=/app/bt_data
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      disable: true
+    logging:
+      driver: journald
+      options:
+        <<: *journald-opts
+        tag: "frame-bt-worker"
+
   orchestrator:
     build: .
     restart: always
@@ -454,3 +490,5 @@ volumes:
   # /app/logs внутри read_only rootfs api-контейнера. Named volume
   # переживает container recreate — можно `docker cp` из инспекции инцидента.
   api_logs:
+  # Стенд: кэш свечей воркера бэктеста
+  bt_data:

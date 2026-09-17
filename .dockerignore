@@ -29,3 +29,6 @@ logs/
 ml4t_repo/
 *.pine
 btc_quant_lab.py
+
+# Стенд: локальный кэш свечей
+bt_data/

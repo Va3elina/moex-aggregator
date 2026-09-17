@@ -122,3 +122,4 @@ frontend/src/pages/sw.js
 research/content_pipeline_v2/dataset/corpus.json
 research/content_pipeline_v2/__pycache__/
 research/content_pipeline_v2/.venv/
+bt_data/
