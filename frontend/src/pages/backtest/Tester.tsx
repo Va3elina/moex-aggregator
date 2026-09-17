@@ -22,6 +22,7 @@ function Block({ id, title, hidden, onHide, right, children }: { id: string; tit
   if (hidden.includes(id)) return null;
   return <section className="bt-block"><h3>{title}<span className="bt-block-r">{right}<button className="bt-x" title="скрыть блок" onClick={() => onHide(id)}>✕</button></span></h3>{children}</section>;
 }
+const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const Tabs = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
   <div className="bt-pills">{items.map(([k, l]) => <button key={k} className={k === value ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>;
 const Seg = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
@@ -77,10 +78,11 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
           : run.status !== 'done' ? <div className="bt-nodata big"><div className="bt-spinner" />{run.kind === 'sweep' ? `Перебор считается… ${run.progress ?? 0}%` : 'Прогон считается… обычно 20–30 секунд.'}</div>
           : run.result?.kind === 'sweep' ? <Sweep run={run} onOpenVariant={onOpenVariant} />
           : prefs.view === 'trades' ? <TradesList rows={scoped} money={money_} names={names} symbol={symbol} selKey={selKey} onPick={onPickTrade} onlyExec={prefs.tradesOnlyExecuted} setOnlyExec={x => set({ tradesOnlyExecuted: x })} />
-          : prefs.view === 'signals' ? <Signals runId={run.id} st={st} name={name} />
+          : prefs.view === 'signals' ? (run.result?.python ? <div className="bt-nodata big">Журнал решений есть у стратегий-правил. У стратегии на Python решения — это сами сделки: смотри «Список сделок».</div> : <Signals runId={run.id} st={st} name={name} />)
           : prefs.view === 'checks' ? <Checks run={run} onRun={onRunChecks} busy={false} />
           : prefs.view === 'robot' ? <RobotReport live={live} trades={trades} names={names} onPick={onPickTrade} />
           : <>
+            {run.result?.python && <Lookahead info={run.result.python} />}
             <Block id="main" title="Основные данные" hidden={prefs.hidden} onHide={hide}>
               <div className="bt-metrics">
                 <Metric label="Общие ПР/УБ" c={cls(S.total)} sub={share(S.total)}>{v(S.total)}</Metric>
@@ -151,6 +153,14 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
       </div>
     </div>
   );
+}
+
+function Lookahead({ info }: { info: any }) {
+  const l = (info.lookahead ?? [])[0]; if (!l) return null;
+  const bad = l['индикаторы_из_будущего']?.length || l['обращений_к_будущим_свечам'] > 0;
+  return <section className={`bt-check ${bad ? 'bad' : 'ok'}`}><h3><i>{bad ? '✕' : '✓'}</i>Проверка на заглядывание вперёд</h3>
+    <p>{bad ? <>Стратегия использует данные из будущего — результату верить нельзя. {l['индикаторы_из_будущего']?.length ? `Индикаторы ${l['индикаторы_из_будущего'].join(', ')} на обрезанной истории получаются другими: расчёт в init() зависит от будущих свечей (сдвиг назад, нормировка по всей истории, центрированное окно). ` : ''}{l['обращений_к_будущим_свечам'] > 0 ? `В on_bar() ${num(l['обращений_к_будущим_свечам'])} обращений к свечам правее текущей (i + 1 и дальше, либо отрицательные индексы).` : ''}</>
+      : `Чисто (проверено на ${l['бумага']}): индикаторы из init() на обрезанной истории совпадают с полными, on_bar() ни разу не обратился к свечам правее текущей.`}{info.params && Object.keys(info.params).length ? ` Параметры: ${Object.entries(info.params).map(([k, x]) => `${k} = ${x}`).join(', ')}.` : ''}</p></section>;
 }
 
 function Dynamics({ S, compare, money }: { S: Stats; compare: { run: BtRun; equity: BtEquity[] } | null; money: boolean }) {
@@ -244,7 +254,9 @@ function Comparison({ S, run, compare, st, name, symbol, money }: { S: Stats; ru
 
 function Conditions({ run, S, money }: { run: BtRun; S: Stats; money: boolean }) {
   const s = run.spec_full ?? {}; const r = s.rule ?? {}; const acc = run.result?.account;
-  const rows: [string, ReactNode][] = [['Стратегия', r.name ?? r.id], ['Сигнал', `ход ${r.signal?.from} → ${r.signal?.to}`], ['Вход / выход', `${r.entry?.price === 'next_open' ? 'открытие следующей свечи' : 'закрытие свечи'}, задержка ${r.entry?.delay_min ?? 0} / ${r.exit?.delay_min ?? 0} мин; выход в ${r.exit?.at}`],
+  const rows: [string, ReactNode][] = r.python ? [['Стратегия', `${r.name} (код на Python, свеча за свечой, исполнение по открытию следующей свечи)`],
+    ['Тариф / спред / ГО', `${s.tariff} / ${s.spread} / ${s.go}`], ['Бумаги', (s.universe ?? []).join(', ')], ['Данные по', String(run.result?.data_until ?? '').slice(0, 16)], ['Сделок', num(run.result?.per_trade?.['сделок'])]]
+   : [['Стратегия', r.name ?? r.id], ['Сигнал', `ход ${r.signal?.from} → ${r.signal?.to}`], ['Вход / выход', `${r.entry?.price === 'next_open' ? 'открытие следующей свечи' : 'закрытие свечи'}, задержка ${r.entry?.delay_min ?? 0} / ${r.exit?.delay_min ?? 0} мин; выход в ${r.exit?.at}`],
     ['Тариф / спред / ГО', `${s.tariff} / ${s.spread} / ${s.go}`], ['Бумаги', (s.universe ?? []).join(', ')], ['Данные по', String(run.result?.data_until ?? '').slice(0, 16)], ['Сигналов / сделок', `${num(run.result?.signals)} / ${num(run.result?.per_trade?.['сделок'])}`]];
   if (money) rows.push(['Исполнено на счёте', num(acc?.['сделок_исполнено'])], ...Object.entries(S.skipped).map(([k, n]) => [`Пропущено: ${k}`, num(n)] as [string, ReactNode]), ...Object.entries(acc?.['по_годам_%'] ?? {}).map(([y, x]) => [`${y} год`, <span className={cls(x as number)}>{signed(x as number, 1)}%</span>] as [string, ReactNode]));
   return <table className="bt-table kv"><tbody>{rows.map(([k, x]) => <tr key={k}><td className="l bt-dim">{k}</td><td className="l">{x}</td></tr>)}</tbody></table>;
@@ -252,19 +264,19 @@ function Conditions({ run, S, money }: { run: BtRun; S: Stats; money: boolean })
 
 function TradesList({ rows, money, names, symbol, selKey, onPick, onlyExec, setOnlyExec }: { rows: BtTrade[]; money: boolean; names: Map<string, string>; symbol: boolean; selKey: string | null; onPick: (t: BtTrade) => void; onlyExec: boolean; setOnlyExec: (x: boolean) => void }) {
   const [limit, setLimit] = useState(300);
-  const list = useMemo(() => { const x = (onlyExec && money ? rows.filter(t => !t.account_skip) : rows).slice().sort((a, b) => a.d < b.d ? 1 : a.d > b.d ? -1 : 0); let cum = 0; const asc = [...x].reverse(); const cumMap = new Map<string, number>(); for (const t of asc) { if (!(money && t.account_skip)) cum += pnlOf(t, money); cumMap.set(t.st + t.d, cum); } return x.map((t, i) => ({ t, no: x.length - i, cum: cumMap.get(t.st + t.d) ?? 0 })); }, [rows, onlyExec, money]);
+  const list = useMemo(() => { const x = (onlyExec && money ? rows.filter(t => !t.account_skip) : rows).slice().sort((a, b) => a.d < b.d ? 1 : a.d > b.d ? -1 : 0); let cum = 0; const asc = [...x].reverse(); const cumMap = new Map<string, number>(); for (const t of asc) { if (!(money && t.account_skip)) cum += pnlOf(t, money); cumMap.set(tradeKey(t), cum); } return x.map((t, i) => ({ t, no: x.length - i, cum: cumMap.get(tradeKey(t)) ?? 0 })); }, [rows, onlyExec, money]);
   if (!rows.length) return <div className="bt-nodata big">Сделок нет</div>;
   return (
     <div className="bt-tradelist">
       <div className="bt-listbar"><b>Список сделок</b><span className="bt-dim">{list.length}</span>{money && <label><input type="checkbox" checked={onlyExec} onChange={e => setOnlyExec(e.target.checked)} /> только исполненные на счёте</label>}<span className="bt-dim">клик по сделке — показать на графике</span></div>
       <table className="bt-table tv"><thead><tr><th className="l">№ сделки</th>{!symbol && <th className="l">Бумага</th>}<th className="l">Тип</th><th className="l">Дата</th><th>Цена</th><th>Ход дня / порог</th>{money && <th>Размер</th>}<th>Чистая ПР/УБ</th><th>Доходность</th><th>Накопленная ПР/УБ</th></tr></thead>
-        <tbody>{list.slice(0, limit).map(({ t, no, cum }) => { const k = `${t.st}|${t.d}`, sk = money && !!t.account_skip; return (
+        <tbody>{list.slice(0, limit).map(({ t, no, cum }) => { const k = tradeKey(t), sk = money && !!t.account_skip; return (
           <tr key={k} className={`${k === selKey ? 'on' : ''} ${sk ? 'skipped' : ''}`} onClick={() => onPick(t)}>
             <td className="l"><span className="bt-dim">{no}</span> <b className={t.side > 0 ? 'bt-long' : 'bt-down'}>{t.side > 0 ? 'Длинная' : 'Короткая'}</b></td>
             {!symbol && <td className="l"><span className="bt-inline"><Logo st={t.st} size={18} /><b>{t.st}</b> <span className="bt-dim">{names.get(t.st)}</span></span></td>}
-            <td className="l two"><div className={t.exit_reason && t.exit_reason !== 'время' ? (t.exit_reason === 'тейк' ? 'bt-up' : 'bt-down') : ''}>{t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход'}</div><div>Вход</div></td><td className="l two"><div>{fmtDate(t.d_out)}</div><div>{fmtDate(t.d)}</div></td>
+            <td className="l two"><div className={t.exit_reason && t.exit_reason !== 'время' ? (t.exit_reason === 'тейк' ? 'bt-up' : 'bt-down') : ''}>{t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход'}</div><div>Вход</div></td><td className="l two"><div>{fmtDate(t.d_out)}{t.m_out != null ? `, ${mm(t.m_out)}` : ''}</div><div>{fmtDate(t.d)}{t.m_in != null ? `, ${mm(t.m_in)}` : ''}</div></td>
             <td className="two"><div>{num(t.px_out, 2)}</div><div>{num(t.px_in, 2)}</div></td>
-            <td className="two"><div>{pct(t.move)}</div><div className="bt-dim">{t.thr != null ? pct(t.side > 0 ? t.thr : -t.thr) : '—'}</div></td>
+            <td className="two"><div>{t.move != null ? pct(t.move) : '—'}</div><div className="bt-dim">{t.thr != null ? pct(t.side > 0 ? t.thr : -t.thr) : '—'}</div></td>
             {money && <td className="two">{sk ? <div className="bt-dim">{t.account_skip}</div> : <><div>{num(t.qty)} контр.</div><div className="bt-dim">{num(t.notional)} ₽ · ГО {num(t.go)} ₽</div></>}</td>}
             <td className={`two ${cls(sk ? null : pnlOf(t, money))}`}>{sk ? '—' : <><div>{money ? money_(t.pnl_rub) : pct(t.net)}</div><div className="bt-dim">издержки {money ? num((t.comm_rub ?? 0) + (t.spread_rub ?? 0)) + ' ₽' : pct(-(t.comm + t.spread))}</div></>}</td>
             <td className={cls(t.net)}>{pct(t.net)}</td><td className={cls(cum)}>{money ? money_(cum) : pct(cum)}</td>
@@ -274,6 +286,7 @@ function TradesList({ rows, money, names, symbol, selKey, onPick, onlyExec, setO
   );
 }
 const money_ = (v: number | null | undefined) => money(v);
+export const tradeKey = (t: BtTrade) => t.n != null ? `n${t.n}` : `${t.st}|${t.d}`;
 
 function Signals({ runId, st, name }: { runId: number; st: string; name: string }) {
   const [rows, setRows] = useState<BtSignal[] | null>(null); const [only, setOnly] = useState(true);

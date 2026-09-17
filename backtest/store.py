@@ -15,15 +15,16 @@ UNIVERSE_ALL = ['AF', 'AK', 'BR', 'CC', 'CR', 'Eu', 'GK', 'GZ', 'LK', 'MN', 'MX'
                 'SS', 'SZ', 'Si', 'TT', 'VB']
 SSH = ["ssh", "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "ConnectTimeout=30",
        "-i", str(pathlib.Path.home() / ".ssh/id_ed25519"), "root@103.88.243.232"]
-COLS = ['secid', 'lsttrade', 't', 'open', 'close']
-FORMAT = 2               # 2: только open/close, secid категорией — движку high/low/volume не нужны (графику свечи отдаёт API)
+COLS = ['secid', 'lsttrade', 't', 'open', 'high', 'low', 'close', 'volume']
+FORMAT = 3               # 3: open/close float64 (по ним сверяются замороженные спецификации), high/low/volume float32
+                         #    (нужны стратегиям на Python), secid категорией
 BARS_LRU = 2             # сколько типов держать в памяти целиком; производные ряды (цены в точках) — маленькие, живут все
 _CACHE = {}
 _BARS = {}
 
 
 def _sql(st, since):
-    return f"""SELECT c.secid, f.lsttrade, c.begin_time, c.open, c.close
+    return f"""SELECT c.secid, f.lsttrade, c.begin_time, c.open, c.high, c.low, c.close, c.volume
       FROM candles c JOIN futures_contracts f ON c.secid=f.secid
       WHERE c.interval=5 AND c.type='futures' AND f.sectype='{st}' AND c.begin_time>='{since}'
       ORDER BY c.secid, c.begin_time"""
@@ -57,6 +58,8 @@ def _typed(df):
     df['t'] = pd.to_datetime(df.t); df['lsttrade'] = pd.to_datetime(df.lsttrade)
     for c in ('open', 'close'):
         df[c] = pd.to_numeric(df[c], errors='coerce').astype(float)
+    for c in ('high', 'low', 'volume'):
+        df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     df['d'] = df.t.dt.normalize()
     df['m'] = (df.t.dt.hour * 60 + df.t.dt.minute).astype('int16')
     return df

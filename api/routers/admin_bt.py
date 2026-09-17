@@ -31,7 +31,9 @@ MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диап
 
 
 class RunIn(BaseModel):
-    rule: Any = Field(..., description="имя пресета или правило целиком (см. backtest/rules.py)")
+    rule: Any = Field(None, description="имя пресета или правило целиком (см. backtest/rules.py)")
+    code: Optional[str] = Field(None, max_length=60_000, description="стратегия на Python (backtest/pyengine.py); исполняется в bt-sandbox")
+    params: Optional[dict] = None
     name: Optional[str] = None
     exec: str = 'close'
     universe: Optional[list[str]] = None
@@ -70,6 +72,37 @@ def _run_row(r, full=False):
     return out
 
 
+def _py_template() -> str:
+    from backtest import pyengine
+    return pyengine.TEMPLATE
+
+
+def _inspect(code: str) -> dict:
+    """Синтаксис и PARAMS стратегии — через ast, БЕЗ исполнения кода (API-процесс чужой код не запускает никогда)."""
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return {'error': f'строка {e.lineno}: {e.msg}', 'params': {}, 'has_on_bar': False}
+    params, fns = {}, set()
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef): fns.add(node.name)
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'PARAMS' for t in node.targets):
+            try: params = ast.literal_eval(node.value)
+            except Exception: return {'error': 'PARAMS должен быть словарём из чисел и строк', 'params': {}, 'has_on_bar': 'on_bar' in fns}
+    return {'error': None if 'on_bar' in fns else 'в коде нет функции on_bar(i, b, pos, p)', 'params': params if isinstance(params, dict) else {},
+            'has_on_bar': 'on_bar' in fns}
+
+
+class CodeIn(BaseModel):
+    code: str = Field(..., max_length=60_000)
+
+
+@router.post("/python/inspect")
+def python_inspect(body: CodeIn, _admin: User = Depends(require_admin)):
+    return _inspect(body.code)
+
+
 @router.get("/meta")
 def meta(_admin: User = Depends(require_admin)):
     """Всё, из чего строится форма прогона: пресеты правил, бумаги, тарифы, режимы."""
@@ -78,6 +111,7 @@ def meta(_admin: User = Depends(require_admin)):
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
             'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()},
             'spread_daily': bool(bt_costs.spread_daily()),
+            'python_template': _py_template(),
             'exec': {'close': 'как в замороженной спецификации: цена закрытия свечи 17:00 / 11:00',
                      'next_open': 'как OsEngine и TradingView: открытие следующей свечи (17:05 / 11:05)',
                      'robot': 'как робот на сервере: вход ~17:15, выход ~11:10'},
@@ -88,10 +122,15 @@ def meta(_admin: User = Depends(require_admin)):
 @router.post("/runs")
 def create_run(body: RunIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     spec = json.loads(body.model_dump_json())
-    try:                                                   # проверка правила до очереди: ошибка сразу, а не из воркера
-        bt_rules.load(spec['rule'])
-    except Exception as e:
-        raise HTTPException(422, f'правило: {type(e).__name__}: {e}')
+    if body.code:                                          # здесь код только РАЗБИРАЕТСЯ (ast), не исполняется
+        info = _inspect(body.code)
+        if info['error']: raise HTTPException(422, info['error'])
+        if body.sweep: raise HTTPException(422, 'перебор параметров для стратегий на Python пока не поддержан')
+    else:
+        try:                                               # проверка правила до очереди: ошибка сразу, а не из воркера
+            bt_rules.load(spec['rule'])
+        except Exception as e:
+            raise HTTPException(422, f'правило: {type(e).__name__}: {e}')
     if body.exec not in ('close', 'next_open', 'robot') or body.tariff not in bt_costs.TARIFFS \
             or body.go not in ('mr1', 'snapshot', 'none') or body.spread not in ('daily', 'c3', 'c5', 'none'):
         raise HTTPException(422, 'exec / tariff / go / spread: недопустимое значение')
@@ -140,9 +179,9 @@ def _rows(db, sql, p):
 @router.get("/runs/{run_id}/trades")
 def run_trades(run_id: int, st: Optional[str] = None, db: Session = Depends(get_db),
                _admin: User = Depends(require_admin)):
-    return _rows(db, f"""SELECT st, d, secid, side, move, thr, px_in, d_out, px_out, gross, comm, spread, net, qty,
+    return _rows(db, f"""SELECT n, st, d, secid, side, move, thr, px_in, d_out, px_out, gross, comm, spread, net, qty,
         notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut, m_in, m_out, exit_reason
-        FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, st""", {'r': run_id, 'st': st})
+        FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, m_in, st""", {'r': run_id, 'st': st})
 
 
 @router.get("/runs/{run_id}/signals")

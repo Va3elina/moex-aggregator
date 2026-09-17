@@ -10,6 +10,7 @@ export interface BtMeta {
   instruments: { st: string; name: string }[];
   tariffs: Record<string, number>;
   spread_daily?: boolean;
+  python_template?: string;
   exec: Record<string, string>;
   go: Record<string, string>;
 }
@@ -19,7 +20,7 @@ export interface BtRun {
   spec: any; spec_full?: any; result?: any; summary?: Record<string, number | null>; kind?: 'run' | 'sweep'; progress?: number | null;
 }
 export interface BtTrade {
-  st: string; d: string; secid: string; side: number; move: number; thr: number | null;
+  n?: number; st: string; d: string; secid: string; side: number; move: number; thr: number | null;
   px_in: number; d_out: string; px_out: number; gross: number; comm: number; spread: number; net: number;
   qty: number | null; notional: number | null; go: number | null; equity_in: number | null;
   comm_rub: number | null; spread_rub: number | null; pnl_rub: number | null; account_skip: string | null; go_cut?: boolean | null; m_in?: number | null; m_out?: number | null; exit_reason?: string | null;
@@ -59,6 +60,7 @@ export const btApi = {
   equity: (id: number) => j<BtEquity[]>(`/runs/${id}/equity`),
   signals: (id: number, st: string) => j<BtSignal[]>(`/runs/${id}/signals?st=${st}`),
   live: () => j<BtLiveTrade[]>('/live/trades'),
+  inspect: (code: string) => j<{ error: string | null; params: Record<string, any>; has_on_bar: boolean }>('/python/inspect', json('POST', { code })),
   realism: (st: string) => j<BtRealism>(`/realism?st=${st}`),
   workspace: (name: string) => j<{ name: string; data: any }>(`/workspaces/${encodeURIComponent(name)}`),
   saveWorkspace: (name: string, data: any) => j<{ ok: boolean }>(`/workspaces/${encodeURIComponent(name)}`, json('PUT', { data })),

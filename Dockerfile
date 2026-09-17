@@ -119,7 +119,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 # создаётся pre-emptively (api/logger.py делает mkdir при импорте) — если
 # не создать тут, runtime упадёт на PermissionError. Первая попытка
 # (commit 231411a) сломалась именно из-за этого.
-RUN mkdir -p /app/logs /app/bt_data && chown -R appuser:appuser /app
+RUN mkdir -p /app/logs /app/bt_data /app/bt_jobs && chown -R appuser:appuser /app
 
 # Порт
 EXPOSE 8000

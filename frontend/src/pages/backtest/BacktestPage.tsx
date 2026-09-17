@@ -9,7 +9,7 @@ import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type B
 import ChartCell, { type Focus } from './ChartCell';
 import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
-import Tester from './Tester';
+import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
 import { TFS } from './lib';
 import { usePrefs, type IndCfg, type IndKind, type Layout, type Prefs } from './usePrefs';
@@ -100,7 +100,7 @@ export default function BacktestPage() {
   }), [meta, tradesBySt, run]);
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
-  const pickTrade = (t: BtTrade) => { setSelKey(`${t.st}|${t.d}`); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
+  const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
   const addIndicator = (k: typeof IND_LIST[number]) => set(p => ({ indicators: [...p.indicators, { id: `${k.kind}${Date.now()}`, kind: k.kind, length: k.length, mult: k.mult, color: IND_COLORS[p.indicators.length % IND_COLORS.length] }] }));
   const startRun = (spec: any) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => reloadRuns().then(() => set({ runId: r.id, view: 'overview' }))).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); }); };
   const deleteRun = (id: number) => btApi.deleteRun(id).then(() => { if (prefs.runId === id) { set({ runId: null }); setRun(null); setTrades([]); setEquity([]); } reloadRuns(); }).catch(fail);

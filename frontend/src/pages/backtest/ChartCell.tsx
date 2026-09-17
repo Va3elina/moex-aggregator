@@ -42,7 +42,7 @@ function chartOptions(timeVisible: boolean) {
 /** Минуты входа/выхода и окна сигнала по развёрнутому правилу прогона — как считает движок. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function execTimes(rule: any) {
-  if (!rule) return { a: 630, b: 1020, tin: 1020, tout: 660 };
+  if (!rule?.signal) return { a: 630, b: 1020, tin: 1020, tout: 660 };
   return { a: hm(rule.signal.from), b: hm(rule.signal.to),
     tin: hm(rule.signal.to) + (rule.entry?.delay_min ?? 0) + (rule.entry?.price === 'next_open' ? 5 : 0),
     tout: hm(rule.exit.at) + (rule.exit?.delay_min ?? 0) + (rule.exit?.price === 'next_open' ? 5 : 0) };
@@ -153,11 +153,11 @@ export default function ChartCell({ st, tf, name, active, rule, trades, live, sh
       const muted = !!t.account_skip, long = t.side > 0, tIn = bucket(t.d, t.m_in ?? times.tin), tOut = bucket(t.d_out, t.m_out ?? times.tout);
       const why = t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход';
       shapes.push({ tIn, pIn: t.px_in, tOut, pOut: t.px_out, side: t.side, good: t.net > 0, muted,
-        winFrom: tf <= 60 ? bucket(t.d, times.a) : null, winTo: tf <= 60 ? bucket(t.d, times.b) : null });
+        winFrom: tf <= 60 && rule?.signal ? bucket(t.d, times.a) : null, winTo: tf <= 60 && rule?.signal ? bucket(t.d, times.b) : null });
       if (!show.markers) continue;
-      const thr = t.thr != null ? ` · порог ${pct(long ? t.thr : -t.thr)}` : '';
+      const thr = t.thr != null ? ` · порог ${pct(long ? t.thr : -t.thr)}` : ''; const mv = t.move != null ? ` · ход ${pct(t.move)}` : '';
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: long ? 'belowBar' : 'aboveBar', shape: long ? 'arrowUp' : 'arrowDown',
-        color: muted ? '#5d6675' : long ? C.up : C.down, text: show.labels ? `${long ? 'Лонг' : 'Шорт'} ${num(t.px_in, 2)} · ход ${pct(t.move)}${tf <= 15 ? thr : ''}` : undefined });
+        color: muted ? '#5d6675' : long ? C.up : C.down, text: show.labels ? `${long ? 'Лонг' : 'Шорт'} ${num(t.px_in, 2)}${mv}${tf <= 15 ? thr : ''}` : undefined });
       if (have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: long ? 'aboveBar' : 'belowBar', shape: 'circle',
         color: muted ? '#5d6675' : t.net > 0 ? C.up : C.down, text: show.labels ? `${why} ${num(t.px_out, 2)} · ${pct(t.net)}` : undefined });
     }

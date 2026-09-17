@@ -335,10 +335,12 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - bt_data:/app/bt_data          # кэш свечей (pickle по типам фьючерсов), ~300 МБ
+      - bt_data:/app/bt_data          # кэш свечей (pickle по типам фьючерсов), ~450 МБ
+      - bt_jobs:/app/bt_jobs          # обмен с песочницей: задания и результаты стратегий на Python
     environment:
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - BT_DATA=/app/bt_data
+      - BT_JOBS=/app/bt_jobs
       - PYTHONUNBUFFERED=1
     healthcheck:
       disable: true
@@ -347,6 +349,39 @@ services:
       options:
         <<: *journald-opts
         tag: "frame-bt-worker"
+
+  # Песочница Стенда: исполняет стратегии на Python из редактора. НИ сети, НИ секретов: код чужой по определению.
+  # Воркер (у него DB_URL суперпользователя) код не исполняет — только кладёт задание в bt_jobs и ждёт результат.
+  bt-sandbox:
+    build: .
+    restart: always
+    user: "1000:1000"
+    command: ["python", "-m", "backtest.sandbox"]
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    mem_limit: 1500m
+    cpus: 1.0
+    pids_limit: 64
+    volumes:
+      - bt_data:/app/bt_data:ro       # свечи — только чтение
+      - bt_jobs:/app/bt_jobs
+    environment:                      # намеренно БЕЗ DB_URL, ключей и токенов
+      - BT_DATA=/app/bt_data
+      - BT_JOBS=/app/bt_jobs
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      disable: true
+    logging:
+      driver: journald
+      options:
+        <<: *journald-opts
+        tag: "frame-bt-sandbox"
 
   orchestrator:
     build: .
@@ -492,5 +527,6 @@ volumes:
   # /app/logs внутри read_only rootfs api-контейнера. Named volume
   # переживает container recreate — можно `docker cp` из инспекции инцидента.
   api_logs:
-  # Стенд: кэш свечей воркера бэктеста
+  # Стенд: кэш свечей воркера бэктеста и обмен заданиями с песочницей
   bt_data:
+  bt_jobs:

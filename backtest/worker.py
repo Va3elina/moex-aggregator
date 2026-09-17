@@ -27,7 +27,7 @@ def _clean(v):
     return v
 
 
-INT_COLS = {'side', 'qty', 'positions', 'run_id', 'margin_call', 'm_in', 'm_out'}
+INT_COLS = {'n', 'side', 'qty', 'positions', 'run_id', 'margin_call', 'm_in', 'm_out'}
 BOOL_COLS = {'go_cut'}
 
 
@@ -68,8 +68,12 @@ def process(run_id, spec):
         if i % 3 == 0 or i == n:
             with ENG.begin() as con:
                 con.execute(text("UPDATE bt_runs SET progress=:p WHERE id=:r"), {'r': run_id, 'p': int(100 * i / n)})
-    s, res, S, T, A, K, E = runner.execute(spec, progress)
-    if S is None:                                           # перебор: только итоговая таблица
+    py = None
+    if spec.get('code'):                                    # код стратегии исполняет ТОЛЬКО песочница (без сети и секретов)
+        from . import pybridge
+        py = pybridge.run(run_id, spec, runner.normalize(spec), progress)
+    s, res, S, T, A, K, E = runner.execute(spec, progress, py_trades=py)
+    if res.get('kind') == 'sweep':                          # перебор: только итоговая таблица
         with ENG.begin() as con:
             for t in ('bt_signals', 'bt_trades', 'bt_equity'):
                 con.execute(text(f'DELETE FROM {t} WHERE run_id = :r'), {'r': run_id})
@@ -78,20 +82,20 @@ def process(run_id, spec):
                         {'r': run_id, 'res': json.dumps(res, ensure_ascii=False, default=str),
                          'sf': json.dumps(s, ensure_ascii=False, default=str)})
         return res
-    S = S.assign(run_id=run_id)
+    S = S.assign(run_id=run_id) if S is not None else None
     T = T.assign(run_id=run_id, thr=[u if sd > 0 else d for u, d, sd in zip(T.thr_up, T.thr_dn, T.side)])
     acc_cols = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub', 'go_cut']
     if A is not None and len(A):
-        T = T.merge(A[['st', 'd'] + acc_cols], on=['st', 'd'], how='left')
-        T = T.merge(K.rename(columns={'reason': 'account_skip'})[['st', 'd', 'account_skip']], on=['st', 'd'], how='left')
+        T = T.merge(A[['n'] + acc_cols], on='n', how='left')
+        T = T.merge(K.rename(columns={'reason': 'account_skip'})[['n', 'account_skip']], on='n', how='left')
     else:
         for c in acc_cols + ['account_skip']: T[c] = None
     with ENG.begin() as con:
         for t in ('bt_signals', 'bt_trades', 'bt_equity'):
             con.execute(text(f'DELETE FROM {t} WHERE run_id = :r'), {'r': run_id})
-        _insert(con, 'bt_signals', _rows(S, ['run_id', 'st', 'd', 'secid', 'pa', 'pb', 'move', 'thr_up', 'thr_dn',
+        if S is not None: _insert(con, 'bt_signals', _rows(S, ['run_id', 'st', 'd', 'secid', 'pa', 'pb', 'move', 'thr_up', 'thr_dn',
                                              'straight', 'side', 'tradable', 'skip']))
-        _insert(con, 'bt_trades', _rows(T, ['run_id', 'st', 'd', 'secid', 'side', 'move', 'thr', 'px_in', 'd_out',
+        _insert(con, 'bt_trades', _rows(T, ['run_id', 'n', 'st', 'd', 'secid', 'side', 'move', 'thr', 'px_in', 'd_out',
                                             'px_out', 'gross', 'comm', 'spread', 'net', 'm_in', 'm_out', 'exit_reason'] + acc_cols + ['account_skip']))
         if E is not None:
             _insert(con, 'bt_equity', _rows(E.reset_index().assign(run_id=run_id),
