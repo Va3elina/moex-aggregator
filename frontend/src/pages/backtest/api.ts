@@ -9,6 +9,7 @@ export interface BtMeta {
   rules: BtRule[];
   instruments: { st: string; name: string }[];
   tariffs: Record<string, number>;
+  spread_daily?: boolean;
   exec: Record<string, string>;
   go: Record<string, string>;
 }
@@ -21,9 +22,10 @@ export interface BtTrade {
   st: string; d: string; secid: string; side: number; move: number; thr: number | null;
   px_in: number; d_out: string; px_out: number; gross: number; comm: number; spread: number; net: number;
   qty: number | null; notional: number | null; go: number | null; equity_in: number | null;
-  comm_rub: number | null; spread_rub: number | null; pnl_rub: number | null; account_skip: string | null;
+  comm_rub: number | null; spread_rub: number | null; pnl_rub: number | null; account_skip: string | null; go_cut?: boolean | null;
 }
-export interface BtEquity { d: string; equity: number; positions: number; notional: number; go_used: number }
+export interface BtEquity { d: string; equity: number; positions: number; notional: number; go_used: number; margin_call: number | null }
+export interface BtRealism { st: string; asset: string; broker_coef: number; go_rate: [string, number][]; rub_per_point: [string, number][]; rub_per_point_const: number; spread: [string, number][]; spread_const: number }
 export interface BtSignal {
   st: string; d: string; secid: string; pa: number; pb: number; move: number; thr_up: number | null; thr_dn: number | null;
   straight: number | null; side: number; tradable: boolean; skip: string;
@@ -56,6 +58,7 @@ export const btApi = {
   equity: (id: number) => j<BtEquity[]>(`/runs/${id}/equity`),
   signals: (id: number, st: string) => j<BtSignal[]>(`/runs/${id}/signals?st=${st}`),
   live: () => j<BtLiveTrade[]>('/live/trades'),
+  realism: (st: string) => j<BtRealism>(`/realism?st=${st}`),
   workspace: (name: string) => j<{ name: string; data: any }>(`/workspaces/${encodeURIComponent(name)}`),
   saveWorkspace: (name: string, data: any) => j<{ ok: boolean }>(`/workspaces/${encodeURIComponent(name)}`, json('PUT', { data })),
   candles: async (st: string, tf: number, from: string, to: string): Promise<BtCandle[]> => {

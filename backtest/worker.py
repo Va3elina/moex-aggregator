@@ -27,7 +27,8 @@ def _clean(v):
     return v
 
 
-INT_COLS = {'side', 'qty', 'positions', 'run_id'}
+INT_COLS = {'side', 'qty', 'positions', 'run_id', 'margin_call'}
+BOOL_COLS = {'go_cut'}
 
 
 def _rows(df, cols):
@@ -36,6 +37,8 @@ def _rows(df, cols):
         row = {c: _clean(r[c]) for c in cols}
         for c in INT_COLS & row.keys():                  # pandas отдаёт 1.0 / -1.0 — в smallint/integer так нельзя
             if row[c] is not None: row[c] = int(row[c])
+        for c in BOOL_COLS & row.keys():
+            row[c] = bool(row[c]) if row[c] is not None else None
         out.append(row)
     return out
 
@@ -64,7 +67,7 @@ def process(run_id, spec):
     s, res, S, T, A, K, E = runner.execute(spec)
     S = S.assign(run_id=run_id)
     T = T.assign(run_id=run_id, thr=[u if sd > 0 else d for u, d, sd in zip(T.thr_up, T.thr_dn, T.side)])
-    acc_cols = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub']
+    acc_cols = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub', 'go_cut']
     if A is not None and len(A):
         T = T.merge(A[['st', 'd'] + acc_cols], on=['st', 'd'], how='left')
         T = T.merge(K.rename(columns={'reason': 'account_skip'})[['st', 'd', 'account_skip']], on=['st', 'd'], how='left')
@@ -79,7 +82,7 @@ def process(run_id, spec):
                                             'px_out', 'gross', 'comm', 'spread', 'net'] + acc_cols + ['account_skip']))
         if E is not None:
             _insert(con, 'bt_equity', _rows(E.reset_index().assign(run_id=run_id),
-                                            ['run_id', 'd', 'equity', 'positions', 'notional', 'go_used']))
+                                            ['run_id', 'd', 'equity', 'positions', 'notional', 'go_used', 'margin_call']))
         con.execute(text("""UPDATE bt_runs SET status='done', finished_at=now(), result=CAST(:res AS JSONB),
                             spec_full=CAST(:sf AS JSONB), error=NULL WHERE id=:r"""),
                     {'r': run_id, 'res': json.dumps(res, ensure_ascii=False, default=str),

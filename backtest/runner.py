@@ -2,12 +2,13 @@
 
 spec = {"rule": "hybrid7c" | {...правило...}, "exec": "close"|"next_open"|"robot", "universe": [...]|null,
         "since": "2024-01-01"|null, "until": null, "tariff": "trader", "spread": "c3"|"none",
-        "capital": 1000000|null, "slots": 6, "go": "mr1"|"snapshot"|"none", "go_limit": 1.0, "name": "..."}"""
+        "capital": 1000000|null, "slots": 6, "go": "mr1"|"snapshot"|"none", "go_limit": 1.0, "name": "...",
+        "leverage": 1.0 (капитал × плечо / слоты на сделку), "go_mult": 1.0 (стресс: ГО выросло в k раз)}"""
 import pandas as pd
 from . import store, rules as R, engine, costs, account, metrics
 
 DEFAULTS = {'exec': 'close', 'universe': None, 'since': None, 'until': None, 'tariff': 'trader', 'spread': 'c3',
-            'capital': 1_000_000, 'slots': 6, 'go': 'mr1', 'go_limit': 1.0}
+            'capital': 1_000_000, 'slots': 6, 'go': 'mr1', 'go_limit': 1.0, 'leverage': 1.0, 'go_mult': 1.0}
 EXEC = {'close': None, 'next_open': R.EXEC_NEXT_OPEN, 'robot': R.EXEC_ROBOT}
 
 
@@ -33,9 +34,10 @@ def execute(spec):
     A = K = E = None
     if s['capital'] and len(T):
         A, K, E = account.simulate(T, s['capital'], s['slots'], s['go_limit'], s['go'], s['tariff'], s['spread'],
-                                   order=s['universe'])
+                                   order=s['universe'], leverage=float(s['leverage']), go_mult=float(s['go_mult']))
         res['account'] = {**metrics.curve(E, s['capital']), 'сделок_исполнено': int(len(A)),
                           'пропущено': K.reason.value_counts().to_dict(),
+                          'маржин_коллов': int(E.margin_call.sum()), 'урезано_по_ГО': int(A.go_cut.sum()) if len(A) else 0,
                           'по_годам_%': metrics.by_year(A, E, s['capital']),
                           'прибыль_руб': round(float(A.pnl_rub.sum())), 'комиссии_руб': round(float(A.comm_rub.sum())),
                           'спред_руб': round(float(A.spread_rub.sum()))}
