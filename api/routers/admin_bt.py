@@ -50,6 +50,7 @@ class RunIn(BaseModel):
     checks: bool = False
     sweep: Optional[dict] = Field(None, description='{"grid": {"long.q": [0.6, 0.67]}, "oos_from": "2025-01-01"} — перебор параметров')
     refresh: bool = False
+    auto: bool = Field(False, description='прогон создан автопересчётом при смене бумаги — интерфейс сам чистит старые')
 
 
 def _json(v):
