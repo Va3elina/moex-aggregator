@@ -46,6 +46,7 @@ class RunIn(BaseModel):
     leverage: float = Field(1.0, ge=0.1, le=10)
     go_mult: float = Field(1.0, ge=0.5, le=5)
     checks: bool = False
+    sweep: Optional[dict] = Field(None, description='{"grid": {"long.q": [0.6, 0.67]}, "oos_from": "2025-01-01"} — перебор параметров')
     refresh: bool = False
 
 
@@ -54,7 +55,8 @@ def _json(v):
 
 
 def _run_row(r, full=False):
-    out = {'id': r.id, 'name': r.name, 'status': r.status, 'created_at': r.created_at, 'started_at': r.started_at,
+    out = {'id': r.id, 'name': r.name, 'status': r.status, 'progress': getattr(r, 'progress', None),
+           'kind': 'sweep' if (_json(r.spec) or {}).get('sweep') else 'run', 'created_at': r.created_at, 'started_at': r.started_at,
            'finished_at': r.finished_at, 'error': r.error, 'spec': _json(r.spec)}
     res = _json(r.result)
     if full:
@@ -139,7 +141,7 @@ def _rows(db, sql, p):
 def run_trades(run_id: int, st: Optional[str] = None, db: Session = Depends(get_db),
                _admin: User = Depends(require_admin)):
     return _rows(db, f"""SELECT st, d, secid, side, move, thr, px_in, d_out, px_out, gross, comm, spread, net, qty,
-        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut
+        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut, m_in, m_out, exit_reason
         FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, st""", {'r': run_id, 'st': st})
 
 

@@ -150,7 +150,8 @@ export default function ChartCell({ st, tf, name, active, rule, trades, live, sh
     const have = byTime.current; const bucket = (d: string, m: number) => tf === 1440 ? ts(d) : ts(d, Math.floor(m / tf) * tf);
     const ms: SeriesMarker<Time>[] = []; const shapes: TradeShape[] = [];
     for (const t of trades) {
-      const muted = !!t.account_skip, long = t.side > 0, tIn = bucket(t.d, times.tin), tOut = bucket(t.d_out, times.tout);
+      const muted = !!t.account_skip, long = t.side > 0, tIn = bucket(t.d, t.m_in ?? times.tin), tOut = bucket(t.d_out, t.m_out ?? times.tout);
+      const why = t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход';
       shapes.push({ tIn, pIn: t.px_in, tOut, pOut: t.px_out, side: t.side, good: t.net > 0, muted,
         winFrom: tf <= 60 ? bucket(t.d, times.a) : null, winTo: tf <= 60 ? bucket(t.d, times.b) : null });
       if (!show.markers) continue;
@@ -158,7 +159,7 @@ export default function ChartCell({ st, tf, name, active, rule, trades, live, sh
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: long ? 'belowBar' : 'aboveBar', shape: long ? 'arrowUp' : 'arrowDown',
         color: muted ? '#5d6675' : long ? C.up : C.down, text: show.labels ? `${long ? 'Лонг' : 'Шорт'} ${num(t.px_in, 2)} · ход ${pct(t.move)}${tf <= 15 ? thr : ''}` : undefined });
       if (have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: long ? 'aboveBar' : 'belowBar', shape: 'circle',
-        color: muted ? '#5d6675' : t.net > 0 ? C.up : C.down, text: show.labels ? `Выход ${num(t.px_out, 2)} · ${pct(t.net)}` : undefined });
+        color: muted ? '#5d6675' : t.net > 0 ? C.up : C.down, text: show.labels ? `${why} ${num(t.px_out, 2)} · ${pct(t.net)}` : undefined });
     }
     if (show.robot) for (const r of live) {
       if (r.px_in == null) continue;

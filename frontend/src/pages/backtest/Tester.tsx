@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { btApi, type BtCandle, type BtEquity, type BtLiveTrade, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
 import Checks from './Checks';
 import RobotReport from './RobotReport';
+import Sweep from './Sweep';
 import { EquityChart } from './ChartCell';
 import { cls, fmtDate, money, num, pct, signed } from './lib';
 import { byCalendar, byPeriod, compute, histogram, pnlOf, type Bucket, type Stats } from './stats';
@@ -26,11 +27,11 @@ const Tabs = ({ items, value, onChange }: { items: [string, string][]; value: st
 const Seg = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
   <div className="bt-seg">{items.map(([k, l]) => <button key={k} className={k === value ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>;
 
-export default function Tester({ runs, run, trades, equity, st, name, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks }: {
+export default function Tester({ runs, run, trades, equity, st, name, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks, onOpenVariant }: {
   runs: BtRun[]; run: BtRun | null; trades: BtTrade[]; equity: BtEquity[]; st: string; name: string; names: Map<string, string>;
   prefs: Prefs; set: (p: Partial<Prefs>) => void; onPickTrade: (t: BtTrade) => void; selKey: string | null;
   onDeleteRun: (id: number) => void; onOpenEditor: () => void; compare: { run: BtRun; equity: BtEquity[] } | null;
-  live: BtLiveTrade[]; onRunChecks: () => void;
+  live: BtLiveTrade[]; onRunChecks: () => void; onOpenVariant: (params: Record<string, any>) => void;
 }) {
   const acc = run?.result?.account; const money_ = !!acc; const capital = run?.spec_full?.capital ?? 1_000_000;
   const symbol = prefs.scope === 'symbol';
@@ -48,7 +49,7 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
           <div className="bt-pop-h">Прогоны</div>
           {runs.map(r => (
             <div key={r.id} className="bt-mi-row">
-              <MenuItem on={r.id === run?.id} onClick={() => { set({ runId: r.id }); close(); }} hint={r.status === 'done' ? `${num(r.summary?.['сделок'])} сд. · ${r.summary?.['годовых_%'] ?? '—'}% год.` : STATUS[r.status]}>#{r.id} · {runLabel(r)} · {r.spec.exec}</MenuItem>
+              <MenuItem on={r.id === run?.id} onClick={() => { set({ runId: r.id }); close(); }} hint={r.kind === 'sweep' ? (r.status === 'done' ? 'перебор' : `перебор · ${r.progress ?? 0}%`) : r.status === 'done' ? `${num(r.summary?.['сделок'])} сд. · ${r.summary?.['годовых_%'] ?? '—'}% год.` : STATUS[r.status]}>#{r.id} · {runLabel(r)} · {r.spec.exec}</MenuItem>
               <button className="bt-x" title="удалить прогон" onClick={() => { if (confirm(`Удалить прогон #${r.id}?`)) onDeleteRun(r.id); }}>✕</button>
             </div>
           ))}
@@ -73,7 +74,8 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
       <div className="bt-tbody">
         {!run ? <div className="bt-nodata big">Прогонов пока нет. Открой редактор <b>{'{ }'}</b> в шапке, выбери стратегию и нажми «Запустить».</div>
           : run.status === 'error' ? <div className="bt-nodata big bt-down">Прогон упал: {run.error}</div>
-          : run.status !== 'done' ? <div className="bt-nodata big"><div className="bt-spinner" />Прогон считается… обычно 20–30 секунд.</div>
+          : run.status !== 'done' ? <div className="bt-nodata big"><div className="bt-spinner" />{run.kind === 'sweep' ? `Перебор считается… ${run.progress ?? 0}%` : 'Прогон считается… обычно 20–30 секунд.'}</div>
+          : run.result?.kind === 'sweep' ? <Sweep run={run} onOpenVariant={onOpenVariant} />
           : prefs.view === 'trades' ? <TradesList rows={scoped} money={money_} names={names} symbol={symbol} selKey={selKey} onPick={onPickTrade} onlyExec={prefs.tradesOnlyExecuted} setOnlyExec={x => set({ tradesOnlyExecuted: x })} />
           : prefs.view === 'signals' ? <Signals runId={run.id} st={st} name={name} />
           : prefs.view === 'checks' ? <Checks run={run} onRun={onRunChecks} busy={false} />
@@ -260,7 +262,7 @@ function TradesList({ rows, money, names, symbol, selKey, onPick, onlyExec, setO
           <tr key={k} className={`${k === selKey ? 'on' : ''} ${sk ? 'skipped' : ''}`} onClick={() => onPick(t)}>
             <td className="l"><span className="bt-dim">{no}</span> <b className={t.side > 0 ? 'bt-long' : 'bt-down'}>{t.side > 0 ? 'Длинная' : 'Короткая'}</b></td>
             {!symbol && <td className="l"><span className="bt-inline"><Logo st={t.st} size={18} /><b>{t.st}</b> <span className="bt-dim">{names.get(t.st)}</span></span></td>}
-            <td className="l two"><div>Выход</div><div>Вход</div></td><td className="l two"><div>{fmtDate(t.d_out)}</div><div>{fmtDate(t.d)}</div></td>
+            <td className="l two"><div className={t.exit_reason && t.exit_reason !== 'время' ? (t.exit_reason === 'тейк' ? 'bt-up' : 'bt-down') : ''}>{t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход'}</div><div>Вход</div></td><td className="l two"><div>{fmtDate(t.d_out)}</div><div>{fmtDate(t.d)}</div></td>
             <td className="two"><div>{num(t.px_out, 2)}</div><div>{num(t.px_in, 2)}</div></td>
             <td className="two"><div>{pct(t.move)}</div><div className="bt-dim">{t.thr != null ? pct(t.side > 0 ? t.thr : -t.thr) : '—'}</div></td>
             {money && <td className="two">{sk ? <div className="bt-dim">{t.account_skip}</div> : <><div>{num(t.qty)} контр.</div><div className="bt-dim">{num(t.notional)} ₽ · ГО {num(t.go)} ₽</div></>}</td>}

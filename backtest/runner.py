@@ -23,8 +23,13 @@ def normalize(spec):
     return s
 
 
-def execute(spec):
+def execute(spec, progress=None):
     s = normalize(spec)
+    if spec.get('sweep'):                                   # перебор параметров: без счёта и без строк сделок
+        from . import sweep
+        s['sweep'] = spec['sweep']
+        res = {'kind': 'sweep', 'sweep': sweep.run(s, progress), 'data_until': store.data_until(s['universe']), 'per_trade': {'сделок': 0}}
+        return s, res, None, None, None, None, None
     S = engine.signals(s['rule'], s['universe'], s['since'], s['until'])
     T = costs.apply(engine.trades(S), s['tariff'], s['spread'])
     res = {'period': [str(S.d.min().date()), str(S.d.max().date())], 'signals': int((S.side != 0).sum()),

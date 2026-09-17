@@ -7,8 +7,12 @@
  "short": {"type": "fixed", "value": 0.02},                                     # падение ≥ 2 %
  "filters": [{"type": "straightness", "points": ["10:00", ...], "min": 0.58}],  # min — число или {тип: число}
  "entry": {"price": "close" | "next_open", "delay_min": 0},
- "exit":  {"at": "11:00", "price": "close" | "next_open", "delay_min": 0}
+ "exit":  {"at": "11:00", "price": "close" | "next_open", "delay_min": 0,
+           "hold_days": 1,            # выход на N-й следующий торговый день (по одной позиции на бумагу)
+           "stop": 0.02, "take": 0.04, "trail": 0.015}   # досрочный выход; доли от цены входа; любой можно опустить
 }
+Стоп/тейк/трейлинг проверяются по закрытию каждой 5-минутной свечи между входом и плановым выходом (вечерняя и
+утренняя сессии, будни), выход — по открытию следующей свечи. Трейлинг — откат от лучшего закрытия в нашу сторону.
 Сторона: {"type":"fixed","value":v,"strict":bool} — ход > v (strict) или ≥ v; value — число или {тип фьючерса: число}.
 null — сторона выключена. Пороги квантиля считаются ТОЛЬКО по прошлым дням ряда.
 price: close — закрытие свечи T (как в замороженных спецификациях); next_open — открытие первой свечи ≥ T+5 мин
@@ -71,6 +75,10 @@ def load(x):
             s.setdefault('strict', False)
         else:
             raise ValueError(f"{side}.type = {s['type']}")
+    for k in ('stop', 'take', 'trail'):
+        v = r['exit'].get(k)
+        if v is not None and not (0 < float(v) < 1): raise ValueError(f'exit.{k}: доля от цены входа, например 0.02 (= 2 %)')
+    if not 1 <= int(r['exit'].get('hold_days') or 1) <= 20: raise ValueError('exit.hold_days: от 1 до 20')
     for p in (r['entry']['price'], r['exit']['price']):
         assert p in ('close', 'next_open'), p
     return r

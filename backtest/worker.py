@@ -27,7 +27,7 @@ def _clean(v):
     return v
 
 
-INT_COLS = {'side', 'qty', 'positions', 'run_id', 'margin_call'}
+INT_COLS = {'side', 'qty', 'positions', 'run_id', 'margin_call', 'm_in', 'm_out'}
 BOOL_COLS = {'go_cut'}
 
 
@@ -64,7 +64,20 @@ def ensure_data(force=False):
 
 def process(run_id, spec):
     ensure_data(force=bool(spec.get('refresh')))
-    s, res, S, T, A, K, E = runner.execute(spec)
+    def progress(i, n):
+        if i % 3 == 0 or i == n:
+            with ENG.begin() as con:
+                con.execute(text("UPDATE bt_runs SET progress=:p WHERE id=:r"), {'r': run_id, 'p': int(100 * i / n)})
+    s, res, S, T, A, K, E = runner.execute(spec, progress)
+    if S is None:                                           # перебор: только итоговая таблица
+        with ENG.begin() as con:
+            for t in ('bt_signals', 'bt_trades', 'bt_equity'):
+                con.execute(text(f'DELETE FROM {t} WHERE run_id = :r'), {'r': run_id})
+            con.execute(text("""UPDATE bt_runs SET status='done', finished_at=now(), result=CAST(:res AS JSONB),
+                                spec_full=CAST(:sf AS JSONB), error=NULL, progress=100 WHERE id=:r"""),
+                        {'r': run_id, 'res': json.dumps(res, ensure_ascii=False, default=str),
+                         'sf': json.dumps(s, ensure_ascii=False, default=str)})
+        return res
     S = S.assign(run_id=run_id)
     T = T.assign(run_id=run_id, thr=[u if sd > 0 else d for u, d, sd in zip(T.thr_up, T.thr_dn, T.side)])
     acc_cols = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub', 'go_cut']
@@ -79,7 +92,7 @@ def process(run_id, spec):
         _insert(con, 'bt_signals', _rows(S, ['run_id', 'st', 'd', 'secid', 'pa', 'pb', 'move', 'thr_up', 'thr_dn',
                                              'straight', 'side', 'tradable', 'skip']))
         _insert(con, 'bt_trades', _rows(T, ['run_id', 'st', 'd', 'secid', 'side', 'move', 'thr', 'px_in', 'd_out',
-                                            'px_out', 'gross', 'comm', 'spread', 'net'] + acc_cols + ['account_skip']))
+                                            'px_out', 'gross', 'comm', 'spread', 'net', 'm_in', 'm_out', 'exit_reason'] + acc_cols + ['account_skip']))
         if E is not None:
             _insert(con, 'bt_equity', _rows(E.reset_index().assign(run_id=run_id),
                                             ['run_id', 'd', 'equity', 'positions', 'notional', 'go_used', 'margin_call']))

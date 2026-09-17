@@ -10,6 +10,7 @@ import ChartCell, { type Focus } from './ChartCell';
 import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester from './Tester';
+import { paramLabel, setPath } from './Sweep';
 import { TFS } from './lib';
 import { usePrefs, type IndCfg, type IndKind, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
@@ -163,7 +164,13 @@ export default function BacktestPage() {
               <div className="bt-panel" style={prefs.panel === 'max' ? { flex: 1 } : { height: prefs.panelH }}>
                 <Tester runs={runs} run={run} trades={trades} equity={equity} st={cell.st} name={names.get(cell.st) ?? cell.st} names={names} prefs={prefs} set={set}
                   onPickTrade={pickTrade} selKey={selKey} onDeleteRun={deleteRun} onOpenEditor={() => setEditor(true)} compare={compare} live={live}
-                  onRunChecks={() => { if (run) btApi.runChecks(run.id).then(reloadRuns).catch(fail); }} />
+                  onRunChecks={() => { if (run) btApi.runChecks(run.id).then(reloadRuns).catch(fail); }}
+                  onOpenVariant={params => {
+                    if (!run?.spec_full) return; const s = run.spec_full; const rule = JSON.parse(JSON.stringify(s.rule));
+                    for (const [k, v] of Object.entries(params)) setPath(rule, k, v);
+                    const label = Object.entries(params).map(([k, v]) => `${paramLabel(k)} ${v ?? 'выкл.'}`).join(', ');
+                    startRun({ rule, name: `${rule.name ?? rule.id} · ${label}`, exec: 'close', universe: s.universe, tariff: s.tariff, spread: s.spread, capital: s.capital, slots: s.slots, go: s.go, leverage: s.leverage, go_mult: s.go_mult, since: s.since, until: s.until });
+                  }} />
               </div>
             </>}
         </div>
