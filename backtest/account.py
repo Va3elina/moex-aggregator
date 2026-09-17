@@ -86,24 +86,27 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
     Маржин-колл: утром перед выходом капитал с учётом ночного результата меньше требуемого ГО — событие в кривой."""
     hist = step_cost == 'history'                       # 'snapshot' — постоянная стоимость пункта, как считал OsEngine
     rank = {s: i for i, s in enumerate(order or sorted(T.st.unique()))}
-    T = T.assign(_r=T.st.map(rank)).sort_values(['d', '_r'])
+    T = T.copy()
+    if 'm_in' not in T: T['m_in'] = 1020
+    if 'm_out' not in T: T['m_out'] = 660
+    if 'n' not in T: T['n'] = range(len(T))
+    T = T.assign(_r=T.st.map(rank).fillna(999)).sort_values(['d', 'm_in', '_r'])
     equity, open_pos, done, skipped, curve = float(capital), [], [], [], []
     days = sorted(set(T.d) | set(T.d_out.dropna()))
     byday = {d: g for d, g in T.groupby('d')}
-    for d in days:
-        # утро: закрыть всё, у чего выход сегодня
-        still = []; mcall = 0
-        if open_pos and go_mode != 'none':
-            mtm = equity + sum(p['side'] * (p['px_out'] - p['px_in']) * rub_per_point(p['st'], p['d_out'] if hist else None) * p['qty']
-                               for p in open_pos if p['d_out'] <= d)
-            mcall = int(mtm < sum(p['go'] for p in open_pos))
-        for p in open_pos:
-            if p['d_out'] <= d:
-                rpp = rub_per_point(p['st'], d if hist else None)   # вариационная маржа считается по курсу дня выхода
+
+    def close_until(d, minute):
+        """Закрыть всё, у чего выход наступил к этому моменту. События идут по времени — поэтому внутридневные
+        сделки освобождают слот и ГО сразу, а не на следующий день."""
+        nonlocal equity, open_pos
+        still = []
+        for p in sorted(open_pos, key=lambda x: (x['d_out'], x['m_out'])):
+            if (p['d_out'], p['m_out']) <= (d, minute):
+                rpp = rub_per_point(p['st'], p['d_out'] if hist else None)   # вариационная маржа — по курсу дня выхода
                 cv_out = p['px_out'] * rpp * p['qty']
                 gross = p['side'] * (p['px_out'] - p['px_in']) * rpp * p['qty']
-                comm = costs.commission_side(tariff, p['d']) * p['notional'] + costs.commission_side(tariff, d) * cv_out
-                spr = costs.spread_on(p['st'], p['d'], d, spread) * p['notional']
+                comm = costs.commission_side(tariff, p['d']) * p['notional'] + costs.commission_side(tariff, p['d_out']) * cv_out
+                spr = costs.spread_on(p['st'], p['d'], p['d_out'], spread) * p['notional']
                 if spread == 'daily':                           # заявка больше глубины стакана — круг дороже
                     k = costs.depth_penalty(p['st'], p['d'], p['notional']); spr *= k; p['depth_k'] = k
                 p.update(gross_rub=gross, comm_rub=comm, spread_rub=spr, pnl_rub=gross - comm - spr)
@@ -111,8 +114,15 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
             else:
                 still.append(p)
         open_pos = still
-        # вечер: входы
-        for _, t in (byday[d].iterrows() if d in byday else []):
+
+    for d in days:
+        mcall = 0
+        if open_pos and go_mode != 'none':                  # утро: хватает ли капитала с учётом ночного результата на ГО
+            mtm = equity + sum(p['side'] * (p['px_out'] - p['px_in']) * rub_per_point(p['st'], p['d_out'] if hist else None) * p['qty']
+                               for p in open_pos if p['d_out'] <= d)
+            mcall = int(mtm < sum(p['go'] for p in open_pos))
+        for t in (byday[d].itertuples() if d in byday else []):
+            close_until(d, t.m_in)
             reason = ''; cut = False
             cv = contract_value(t.st, t.px_in, d if hist else None)
             go1 = go_per_contract(t.st, d, t.px_in, t.side, go_mode, 'same' if hist else None) * go_mult
@@ -128,12 +138,14 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
                         qty = math.floor(free / go1); cut = True
                         if qty < 1: reason = 'не хватает ГО'
             if reason:
-                skipped.append({'d': d, 'st': t.st, 'side': t.side, 'reason': reason}); continue
-            open_pos.append({'d': d, 'st': t.st, 'secid': t.secid, 'side': t.side, 'qty': qty, 'px_in': t.px_in,
-                             'd_out': t.d_out, 'px_out': t.px_out, 'notional': cv * qty,
-                             'go': (go1 or 0) * qty, 'equity_in': equity, 'move': t.move, 'ret': t.ret, 'go_cut': cut})
+                skipped.append({'n': t.n, 'd': d, 'st': t.st, 'side': t.side, 'reason': reason}); continue
+            open_pos.append({'n': t.n, 'd': d, 'm_in': t.m_in, 'st': t.st, 'secid': t.secid, 'side': t.side, 'qty': qty, 'px_in': t.px_in,
+                             'd_out': t.d_out, 'm_out': t.m_out, 'px_out': t.px_out, 'notional': cv * qty,
+                             'go': (go1 or 0) * qty, 'equity_in': equity, 'go_cut': cut})
+        close_until(d, 1440)
         curve.append({'d': d, 'equity': equity, 'positions': len(open_pos), 'margin_call': mcall,
                       'notional': sum(p['notional'] for p in open_pos), 'go_used': sum(p['go'] for p in open_pos)})
-    A = pd.DataFrame(done); K = pd.DataFrame(skipped, columns=['d', 'st', 'side', 'reason'])
+    A = pd.DataFrame(done, columns=None if done else ['n', 'd', 'st', 'qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub', 'go_cut'])
+    K = pd.DataFrame(skipped, columns=['n', 'd', 'st', 'side', 'reason'])
     E = pd.DataFrame(curve).set_index('d')
     return A, K, E

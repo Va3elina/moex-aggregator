@@ -16,7 +16,7 @@ export interface Prefs {
   view: 'overview' | 'trades' | 'signals' | 'checks' | 'robot'; scope: 'symbol' | 'portfolio';
   resultTab: string; tradeTab: string; bucket: string; calKind: string; hidden: string[];
   indicators: IndCfg[]; show: { markers: boolean; lines: boolean; window: boolean; robot: boolean; volume: boolean; labels: boolean };
-  recent: string[]; rules: SavedRule[]; editor: { code: string; props: Record<string, any> } | null; tradesOnlyExecuted: boolean;
+  recent: string[]; rules: SavedRule[]; editor: { code: string; props: Record<string, any>; lang?: 'rule' | 'python'; py?: string; pyParams?: Record<string, any> } | null; tradesOnlyExecuted: boolean;
 }
 export const DEFAULTS: Prefs = {
   layout: '1', cells: [{ st: 'SS', tf: 5 }, { st: 'Si', tf: 5 }, { st: 'SR', tf: 5 }, { st: 'MX', tf: 5 }], active: 0,

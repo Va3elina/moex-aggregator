@@ -103,9 +103,9 @@ deploy_api_rolling
 # Тот же образ, другая команда. Пересобираем, когда менялся движок или образ; в остальных деплоях не трогаем —
 # идущий прогон не обрывается.
 if echo "$changed" | grep -qE '^(backtest/|requirements\.txt|Dockerfile$|docker-compose\.yml$)'; then
-  echo "=== backtest changed -> rebuild bt-worker ==="
-  docker compose build bt-worker
-  docker compose up -d --no-deps --force-recreate bt-worker
+  echo "=== backtest changed -> rebuild bt-worker + bt-sandbox ==="
+  docker compose build bt-worker bt-sandbox
+  docker compose up -d --no-deps --force-recreate bt-worker bt-sandbox
 fi
 
 # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код.

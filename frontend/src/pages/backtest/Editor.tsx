@@ -2,7 +2,7 @@
 // Стенд: редактор стратегии. Слева код правила (JSON Стенда — см. backtest/rules.py), справа свойства счёта.
 // «Запустить» = прогон на сервере; готовый прогон сам открывается в тестере.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { BtMeta } from './api';
+import { btApi, type BtMeta } from './api';
 import type { Prefs, SavedRule } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import { paramLabel, setPath } from './Sweep';
@@ -37,19 +37,36 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
   const [grid, setGrid] = useState<Record<string, string>>({}); const [oos, setOos] = useState('2025-01-01');
   const ta = useRef<HTMLTextAreaElement>(null); const gutter = useRef<HTMLDivElement>(null);
   const parsed = useMemo(() => { try { return { rule: JSON.parse(code), err: null as string | null }; } catch (e) { return { rule: null, err: String((e as Error).message) }; } }, [code]);
-  const lines = useMemo(() => code.split('\n').length, [code]);
-  const setCode = (c: string) => onState({ code: c, props });
-  const setProp = (k: string, v: unknown) => onState({ code, props: { ...props, [k]: v } });
-  useEffect(() => { if (!state) onState({ code, props }); /* первая загрузка */ // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lines = useMemo(() => (state?.lang === 'python' ? (state?.py ?? meta.python_template ?? '') : code).split('\n').length, [code, state?.lang, state?.py, meta.python_template]);
+  const lang = state?.lang ?? 'rule'; const isPy = lang === 'python';
+  const py = state?.py ?? meta.python_template ?? ''; const pyParams = state?.pyParams ?? {};
+  const patch = (p: Partial<NonNullable<Prefs['editor']>>) => onState({ code, props, lang, py, pyParams, ...p });
+  const setCode = (c: string) => patch(isPy ? { py: c } : { code: c });
+  const setProp = (k: string, v: unknown) => patch({ props: { ...props, [k]: v } });
+  useEffect(() => { if (!state) patch({}); /* первая загрузка */ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Python: синтаксис и PARAMS проверяет сервер (только разбор кода, без исполнения) — с паузой после последнего нажатия
+  const [pyInfo, setPyInfo] = useState<{ error: string | null; params: Record<string, any> }>({ error: null, params: {} });
+  useEffect(() => {
+    if (!isPy) return; let dead = false;
+    const t = setTimeout(() => { btApi.inspect(py).then(r => { if (!dead) setPyInfo(r); }).catch(() => undefined); }, 500);
+    return () => { dead = true; clearTimeout(t); };
+  }, [isPy, py]);
+  const shown = isPy ? py : code;
 
   const universe: string[] = props.universe ?? parsed.rule?.universe ?? meta.instruments.map(i => i.st);
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') { e.preventDefault(); const el = e.currentTarget, s = el.selectionStart; setCode(code.slice(0, s) + '  ' + code.slice(el.selectionEnd)); requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 2; }); }
+    if (e.key === 'Tab') { e.preventDefault(); const el = e.currentTarget, s = el.selectionStart, pad = isPy ? '    ' : '  '; setCode(shown.slice(0, s) + pad + shown.slice(el.selectionEnd)); requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + pad.length; }); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
   };
   const run = () => {
+    if (isPy) {
+      if (busy || pyInfo.error) return;
+      onRun({ code: py, params: pyParams, name: props.name || 'Стратегия на Python', universe: props.universe ?? meta.instruments.map(i => i.st).filter(s => s !== 'CR'), tariff: props.tariff, spread: props.spread,
+        capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
+      return;
+    }
     if (!parsed.rule || busy) return;
     onRun({ rule: parsed.rule, name: props.name || parsed.rule.name || null, exec: props.exec, universe, tariff: props.tariff, spread: props.spread,
       capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
@@ -69,8 +86,8 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
     onRun({ rule: parsed.rule, name: `Перебор: ${Object.keys(sweepGrid).map(paramLabel).join(', ')}`, exec: props.exec, universe, tariff: props.tariff, spread: props.spread, since: props.since || null, until: props.until || null, sweep: { grid: sweepGrid, oos_from: oos } });
   };
   const save = () => {
-    const name = prompt('Название стратегии', parsed.rule?.name ?? 'Моя стратегия'); if (!name) return;
-    onSaved([{ name, code }, ...saved.filter(r => r.name !== name)]);
+    const name = prompt('Название стратегии', isPy ? 'Моя стратегия на Python' : parsed.rule?.name ?? 'Моя стратегия'); if (!name) return;
+    onSaved([{ name, code: isPy ? '#python\n' + py : code }, ...saved.filter(r => r.name !== name)]);
   };
 
   return (
@@ -78,32 +95,36 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
       <header>
         <Menu label={<>Открыть ▾</>}>{close => <>
           <div className="bt-pop-h">Готовые</div>
-          {meta.rules.map(r => <MenuItem key={r.id} onClick={() => { setCode(pretty(r.rule)); setProp('universe', null); close(); }} hint={r.frozen ? 'заморожена' : undefined}>{r.name}</MenuItem>)}
+          {meta.rules.map(r => <MenuItem key={r.id} onClick={() => { patch({ lang: 'rule', code: pretty(r.rule), props: { ...props, universe: null } }); close(); }} hint={r.frozen ? 'заморожена' : undefined}>{r.name}</MenuItem>)}
+          <MenuItem onClick={() => { patch({ lang: 'python', py: meta.python_template ?? '' }); close(); }} hint="Python">Пример: пересечение двух EMA</MenuItem>
           {!!saved.length && <div className="bt-pop-h">Мои</div>}
-          {saved.map(r => <div key={r.name} className="bt-mi-row"><MenuItem onClick={() => { setCode(r.code); close(); }}>{r.name}</MenuItem><button className="bt-x" title="удалить" onClick={() => onSaved(saved.filter(x => x.name !== r.name))}>✕</button></div>)}
+          {saved.map(r => <div key={r.name} className="bt-mi-row"><MenuItem onClick={() => { if (r.code.startsWith('#python\n')) patch({ lang: 'python', py: r.code.slice(8) }); else patch({ lang: 'rule', code: r.code }); close(); }} hint={r.code.startsWith('#python\n') ? 'Python' : undefined}>{r.name}</MenuItem><button className="bt-x" title="удалить" onClick={() => onSaved(saved.filter(x => x.name !== r.name))}>✕</button></div>)}
         </>}</Menu>
         <button className="bt-tb" onClick={save} title="⌘S">Сохранить</button>
-        <button className="bt-tb" disabled={!parsed.rule} onClick={() => parsed.rule && setCode(pretty(parsed.rule))}>Формат</button>
+        {!isPy && <button className="bt-tb" disabled={!parsed.rule} onClick={() => parsed.rule && setCode(pretty(parsed.rule))}>Формат</button>}
+        <div className="bt-seg"><button className={!isPy ? 'on' : ''} onClick={() => patch({ lang: 'rule' })}>Правило</button><button className={isPy ? 'on' : ''} onClick={() => patch({ lang: 'python' })}>Python</button></div>
         <span style={{ flex: 1 }} />
-        <button className="bt-run" disabled={!parsed.rule || busy || !universe.length} onClick={run} title="⌘Enter">{busy ? 'Считается…' : '▶ Запустить'}</button>
+        <button className="bt-run" disabled={(isPy ? !!pyInfo.error : !parsed.rule) || busy || !universe.length} onClick={run} title="⌘Enter">{busy ? 'Считается…' : '▶ Запустить'}</button>
         <button className="bt-x" onClick={onClose} title="закрыть редактор">✕</button>
       </header>
       <nav className="bt-subtabs">
-        {([['code', 'Код правила'], ['props', 'Свойства'], ['sweep', 'Перебор'], ['help', 'Справка']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+        {([['code', isPy ? 'Код стратегии' : 'Код правила'], ['props', 'Свойства'], ['sweep', 'Перебор'], ['help', 'Справка']] as const).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
       </nav>
       {tab === 'code' && <>
         <div className="bt-code">
           <div className="bt-gutter" ref={gutter}>{Array.from({ length: lines }, (_, i) => <div key={i}>{i + 1}</div>)}</div>
-          <textarea ref={ta} spellCheck={false} value={code} onChange={e => setCode(e.target.value)} onKeyDown={onKey}
+          <textarea ref={ta} spellCheck={false} value={shown} onChange={e => setCode(e.target.value)} onKeyDown={onKey}
             onScroll={e => { if (gutter.current) gutter.current.scrollTop = e.currentTarget.scrollTop; }} />
         </div>
-        <div className={`bt-codestatus ${parsed.err ? 'err' : ''}`}>{parsed.err ? `Ошибка JSON: ${parsed.err}` : '✓ JSON корректен · ⌘Enter — запустить'}</div>
+        <div className={`bt-codestatus ${(isPy ? pyInfo.error : parsed.err) ? 'err' : ''}`}>{isPy ? (pyInfo.error ? `Ошибка: ${pyInfo.error}` : '✓ синтаксис в порядке · ⌘Enter — запустить · выполняется в изолированном контейнере') : parsed.err ? `Ошибка JSON: ${parsed.err}` : '✓ JSON корректен · ⌘Enter — запустить'}</div>
         {error && <div className="bt-codestatus err">{error}</div>}
-        {parsed.rule && <ul className="bt-describe">{describe(parsed.rule).map(s => <li key={s}>{s}</li>)}</ul>}
+        {!isPy && parsed.rule && <ul className="bt-describe">{describe(parsed.rule).map(s => <li key={s}>{s}</li>)}</ul>}
       </>}
       {tab === 'props' && (
         <div className="bt-form">
-          <label>Исполнение<select value={props.exec} onChange={e => setProp('exec', e.target.value)}>{Object.entries(meta.exec).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          {isPy && <><div className="bt-form-h" style={{ borderTop: 0, paddingTop: 0 }}>Параметры стратегии <span>PARAMS из кода</span></div>
+            {Object.keys(pyInfo.params).length ? <div className="row">{Object.entries(pyInfo.params).map(([k, d]) => <label key={k}>{k}<input value={String(pyParams[k] ?? d)} onChange={e => patch({ pyParams: { ...pyParams, [k]: typeof d === 'number' ? (e.target.value === '' ? d : Number(e.target.value)) : e.target.value } })} /></label>)}</div> : <div className="hint" style={{ marginTop: 0 }}>В коде нет словаря PARAMS.</div>}</>}
+          {!isPy && <label>Исполнение<select value={props.exec} onChange={e => setProp('exec', e.target.value)}>{Object.entries(meta.exec).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>}
           <div className="row">
             <label>Капитал, ₽<input type="number" value={props.capital} onChange={e => setProp('capital', e.target.value)} /></label>
             <label>Сделок в день, максимум<input type="number" min={1} max={30} value={props.slots} onChange={e => setProp('slots', e.target.value)} /></label>
@@ -118,12 +139,12 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
             <label>Тариф брокера<select value={props.tariff} onChange={e => setProp('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{k} — {v}% за сторону</option>)}</select></label>
             <label>Спред стакана<select value={props.spread} onChange={e => setProp('spread', e.target.value)}>{meta.spread_daily && <option value="daily">по дням, с учётом глубины стакана</option>}<option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
           </div>
-          <div className="bt-form-h">Досрочный выход <span>записывается в код правила</span></div>
+          {!isPy && <><div className="bt-form-h">Досрочный выход <span>записывается в код правила</span></div>
           <div className="row3">
             {([['stop', 'Стоп, %'], ['take', 'Тейк, %'], ['trail', 'Трейлинг, %']] as const).map(([k, l]) => <label key={k}>{l}<input type="number" min={0} step={0.5} placeholder="нет" value={parsed.rule?.exit?.[k] ? +(100 * parsed.rule.exit[k]).toFixed(4) : ''} onChange={e => setRule(`exit.${k}`, e.target.value ? Number(e.target.value) / 100 : null)} /></label>)}
           </div>
           <label>Держать позицию, торговых дней<input type="number" min={1} max={20} value={parsed.rule?.exit?.hold_days ?? 1} onChange={e => setRule('exit.hold_days', Number(e.target.value) > 1 ? Number(e.target.value) : null)} /></label>
-          <div className="hint">Стоп, тейк и трейлинг проверяются по закрытию каждой 5-минутной свечи (вечерняя и утренняя сессии), выход — по открытию следующей. Так же видит рынок робот, который просыпается раз в 5 минут.</div>
+          <div className="hint">Стоп, тейк и трейлинг проверяются по закрытию каждой 5-минутной свечи (вечерняя и утренняя сессии), выход — по открытию следующей. Так же видит рынок робот, который просыпается раз в 5 минут.</div></>}
           <label>Гарантийное обеспечение<select value={props.go} onChange={e => setProp('go', e.target.value)}>{Object.entries(meta.go).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <div className="row">
             <label>С даты<input type="date" value={props.since} onChange={e => setProp('since', e.target.value)} /></label>
@@ -138,7 +159,8 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
           <label>Название прогона<input value={props.name} onChange={e => setProp('name', e.target.value)} placeholder="по умолчанию — имя правила" /></label>
         </div>
       )}
-      {tab === 'sweep' && (
+      {tab === 'sweep' && isPy && <div className="bt-help"><p>Перебор параметров для стратегий на Python появится следующим шагом. Сейчас перебор работает для стратегий-правил.</p></div>}
+      {tab === 'sweep' && !isPy && (
         <div className="bt-form">
           <div className="hint" style={{ marginTop: 0 }}>Перебор прогоняет правило со всеми сочетаниями значений. Чтобы не подогнать параметры под историю, она делится на обучение и контроль: варианты ранжируются по обучению, а контроль показывает, что было бы на самом деле.</div>
           {numericPaths.map(k => (
@@ -151,7 +173,17 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
           {error && <div className="bt-codestatus err">{error}</div>}
         </div>
       )}
-      {tab === 'help' && (
+      {tab === 'help' && isPy && (
+        <div className="bt-help">
+          <p>Стратегия на Python выполняется по каждой бумаге отдельно, свеча за свечой (5 минут, время московское) — как скрипт Pine в TradingView. Заявка исполняется по <b>открытию следующей свечи</b>. Позиция по бумаге одна. Перед сменой контракта позиция закрывается автоматически. Объём, комиссии, спред и ГО считает счёт — как у правил.</p>
+          <pre>{`PARAMS = {"n": 20}                 # параметры → форма в «Свойствах»\n\ndef init(b, p):                    # один раз на бумагу: индикаторы\n    b.ma = b.sma(b.close, p["n"])\n\ndef on_bar(i, b, pos, p):          # на каждой свече\n    return +1 | -1 | 0 | None      # желаемая позиция; None — не менять`}</pre>
+          <p><b>b</b> — свечи бумаги, массивы numpy: <code>b.open b.high b.low b.close b.volume</code>, <code>b.minute</code> (минуты от полуночи, 17:00 = 1020), <code>b.date</code>, <code>b.new_day</code>, <code>b.day_open</code>, <code>b.prev_close</code>.</p>
+          <p>Индикаторы: <code>b.sma(x, n)</code> <code>b.ema(x, n)</code> <code>b.rsi(x, n)</code> <code>b.atr(n)</code> <code>b.highest(x, n)</code> <code>b.lowest(x, n)</code>. Доступны <code>np</code> и <code>pd</code>.</p>
+          <p><b>Заглядывание вперёд.</b> В <code>on_bar</code> смотреть можно только на свечи 0…i. Каждый прогон проверяется автоматически: индикаторы пересчитываются на обрезанной истории, а обращения к будущим свечам отслеживаются. Результат — первым блоком в тестере.</p>
+          <p><b>Безопасность.</b> Код выполняется в отдельном контейнере без сети и без доступа к базе и паролям сайта, с потолком памяти и времени (10 минут процессора).</p>
+        </div>
+      )}
+      {tab === 'help' && !isPy && (
         <div className="bt-help">
           <p>Стратегия описывается правилом в формате JSON. Это язык Стенда, а не Pine Script: правило задаёт окно сигнала, пороги входа и время выхода — без программирования. Произвольный код (стопы, свои индикаторы) — следующий этап.</p>
           <pre>{`{
