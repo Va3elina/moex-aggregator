@@ -1,8 +1,14 @@
 """Счёт в рублях: капитал, слоты, целые контракты, ГО, комиссия и спред в рублях. Последовательная модель —
 как торгует робот: утром закрываем вчерашнее, вечером входим по сигналам в порядке бумаг правила.
 
-ГО: 'mr1'  — историческое: стоимость контракта × ставка рыночного риска MR1 МосБиржи на дату (data/risk_rates.csv.gz);
-    'snapshot' — константа из снимка T-Invest 15.09.2026 (так считал OsEngine);  'none' — не проверять."""
+ГО: 'mr1'  — историческое: стоимость контракта × ставка рыночного риска MR1 МосБиржи на дату (data/risk_rates.csv.gz)
+             × надбавка брокера (ГО T-Bank / ГО биржи по снимку 15.09.2026: у ликвидных ≈ 1.0–1.05, у Самолёта ≈ 1.2);
+    'snapshot' — константа из снимка T-Invest 15.09.2026 (так считал OsEngine);  'none' — не проверять.
+Стоимость пункта в рублях у контрактов в валюте (BR, PT, RI) — по дням, из данных самой биржи
+(data/step_cost.csv.gz = OPENPOSITIONVALUE / OPENPOSITION / SETTLEPRICE из бесплатной истории ISS): это тот курс,
+по которому биржа считала вариационную маржу. У остальных пункт стоит постоянно (шаг × лот в рублях).
+Плечо: leverage > 1 — на сделку идёт капитал × плечо / слоты; тогда ГО начинает ограничивать объём, а go_mult
+(стресс «ГО выросло в k раз», как в феврале 2022) и маржин-коллы становятся содержательными."""
 import json, math, gzip, csv
 import numpy as np, pandas as pd
 from . import store, costs
@@ -28,24 +34,57 @@ def risk_rates():
     return _C['mr1']
 
 
-def contract_value(st, price):
-    s = specs()[st]
-    return price / s['price_step'] * s['step_cost_rub'] * s['lot']
+def step_costs():
+    """{тип: Series[дата → ₽ за 1 пункт цены]} для контрактов в валюте."""
+    if 'rpp' not in _C:
+        f = store.REF / 'step_cost.csv.gz'; _C['rpp'] = {}
+        if f.exists():
+            df = pd.read_csv(f, parse_dates=['d'])
+            _C['rpp'] = {st: g.set_index('d').rub_per_point.sort_index() for st, g in df.groupby('st')}
+    return _C['rpp']
 
 
-def go_per_contract(st, d, price, side, mode):
+def rub_per_point(st, d=None):
+    s = specs()[st]; const = s['step_cost_rub'] / s['price_step'] * s['lot']
+    r = step_costs().get(st)
+    if r is None or d is None: return const
+    i = r.index.searchsorted(pd.Timestamp(d), side='right') - 1
+    return float(r.iloc[i]) if i >= 0 else const
+
+
+def contract_value(st, price, d=None):
+    return price * rub_per_point(st, d)
+
+
+def broker_coef(st):
+    """Надбавка брокера к биржевому ГО: ГО T-Bank из снимка / (цена × ставка MR1 на дату снимка)."""
+    k = ('coef', st)
+    if k not in _C:
+        try:
+            s = specs()[st]; d = pd.Timestamp('2026-09-15'); rr = risk_rates()
+            i = rr.index.searchsorted(d, side='right') - 1
+            base = s['value_rub'] * float(rr[ASSET[st]].iloc[i])
+            _C[k] = min(2.0, max(1.0, (s['go_buy'] + s['go_sell']) / 2 / base)) if base > 0 else 1.0
+        except Exception:
+            _C[k] = 1.0
+    return _C[k]
+
+
+def go_per_contract(st, d, price, side, mode, step_d='same'):
     if mode == 'none': return 0.0
     if mode == 'snapshot':
         s = specs()[st]; return s['go_buy'] if side > 0 else s['go_sell']
     rr = risk_rates(); a = ASSET[st]
     if a not in rr.columns: return float('nan')
     i = rr.index.searchsorted(pd.Timestamp(d), side='right') - 1
-    return contract_value(st, price) * float(rr[a].iloc[i]) if i >= 0 else float('nan')
+    return contract_value(st, price, d if step_d == 'same' else step_d) * float(rr[a].iloc[i]) * broker_coef(st) if i >= 0 else float('nan')
 
 
 def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff='trader', spread='c3',
-             order=None):
-    """T — сделки engine.trades(). Возвращает (сделки со счётом, журнал пропусков, дневная кривая капитала)."""
+             order=None, leverage=1.0, go_mult=1.0, step_cost='history'):
+    """T — сделки engine.trades(). Возвращает (сделки со счётом, журнал пропусков, дневная кривая капитала).
+    Маржин-колл: утром перед выходом капитал с учётом ночного результата меньше требуемого ГО — событие в кривой."""
+    hist = step_cost == 'history'                       # 'snapshot' — постоянная стоимость пункта, как считал OsEngine
     rank = {s: i for i, s in enumerate(order or sorted(T.st.unique()))}
     T = T.assign(_r=T.st.map(rank)).sort_values(['d', '_r'])
     equity, open_pos, done, skipped, curve = float(capital), [], [], [], []
@@ -53,13 +92,20 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
     byday = {d: g for d, g in T.groupby('d')}
     for d in days:
         # утро: закрыть всё, у чего выход сегодня
-        still = []
+        still = []; mcall = 0
+        if open_pos and go_mode != 'none':
+            mtm = equity + sum(p['side'] * (p['px_out'] - p['px_in']) * rub_per_point(p['st'], p['d_out'] if hist else None) * p['qty']
+                               for p in open_pos if p['d_out'] <= d)
+            mcall = int(mtm < sum(p['go'] for p in open_pos))
         for p in open_pos:
             if p['d_out'] <= d:
-                cv_out = contract_value(p['st'], p['px_out']) * p['qty']
-                gross = p['side'] * (cv_out - p['notional'])
+                rpp = rub_per_point(p['st'], d if hist else None)   # вариационная маржа считается по курсу дня выхода
+                cv_out = p['px_out'] * rpp * p['qty']
+                gross = p['side'] * (p['px_out'] - p['px_in']) * rpp * p['qty']
                 comm = costs.commission_side(tariff, p['d']) * p['notional'] + costs.commission_side(tariff, d) * cv_out
-                spr = costs.spread_round(p['st'], spread) * p['notional']
+                spr = costs.spread_on(p['st'], p['d'], d, spread) * p['notional']
+                if spread == 'daily':                           # заявка больше глубины стакана — круг дороже
+                    k = costs.depth_penalty(p['st'], p['d'], p['notional']); spr *= k; p['depth_k'] = k
                 p.update(gross_rub=gross, comm_rub=comm, spread_rub=spr, pnl_rub=gross - comm - spr)
                 equity += p['pnl_rub']; done.append(p)
             else:
@@ -67,26 +113,26 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
         open_pos = still
         # вечер: входы
         for _, t in (byday[d].iterrows() if d in byday else []):
-            reason = ''
-            cv = contract_value(t.st, t.px_in)
-            go1 = go_per_contract(t.st, d, t.px_in, t.side, go_mode)
+            reason = ''; cut = False
+            cv = contract_value(t.st, t.px_in, d if hist else None)
+            go1 = go_per_contract(t.st, d, t.px_in, t.side, go_mode, 'same' if hist else None) * go_mult
             if len(open_pos) >= slots:
                 reason = 'нет свободного слота'
             else:
-                qty = math.floor(equity / slots / cv) if cv > 0 else 0
+                qty = math.floor(equity * leverage / slots / cv) if cv > 0 else 0
                 if qty < 1:
                     reason = 'на слот меньше 1 контракта'
                 elif go1 and go1 > 0:
                     free = equity * go_limit - sum(p['go'] for p in open_pos)
                     if qty * go1 > free:
-                        qty = math.floor(free / go1)
+                        qty = math.floor(free / go1); cut = True
                         if qty < 1: reason = 'не хватает ГО'
             if reason:
                 skipped.append({'d': d, 'st': t.st, 'side': t.side, 'reason': reason}); continue
             open_pos.append({'d': d, 'st': t.st, 'secid': t.secid, 'side': t.side, 'qty': qty, 'px_in': t.px_in,
                              'd_out': t.d_out, 'px_out': t.px_out, 'notional': cv * qty,
-                             'go': (go1 or 0) * qty, 'equity_in': equity, 'move': t.move, 'ret': t.ret})
-        curve.append({'d': d, 'equity': equity, 'positions': len(open_pos),
+                             'go': (go1 or 0) * qty, 'equity_in': equity, 'move': t.move, 'ret': t.ret, 'go_cut': cut})
+        curve.append({'d': d, 'equity': equity, 'positions': len(open_pos), 'margin_call': mcall,
                       'notional': sum(p['notional'] for p in open_pos), 'go_used': sum(p['go'] for p in open_pos)})
     A = pd.DataFrame(done); K = pd.DataFrame(skipped, columns=['d', 'st', 'side', 'reason'])
     E = pd.DataFrame(curve).set_index('d')

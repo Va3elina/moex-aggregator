@@ -6,7 +6,7 @@ import type { BtMeta } from './api';
 import type { Prefs, SavedRule } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 
-export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, slots: 6, go: 'mr1', since: '', until: '', name: '', universe: null as string[] | null };
+export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, slots: 6, go: 'mr1', leverage: 1, go_mult: 1, since: '', until: '', name: '', universe: null as string[] | null };
 /** JSON с отступами, но короткие списки и словари чисел — в одну строку (иначе список бумаг занимает пол-экрана). */
 const pretty = (x: unknown) => JSON.stringify(x, null, 2)
   .replace(/\[\n\s+([^[\]{}]*?)\n\s+\]/g, (_, body: string) => `[${body.split(/,\n\s+/).join(', ')}]`)
@@ -49,7 +49,7 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
   const run = () => {
     if (!parsed.rule || busy) return;
     onRun({ rule: parsed.rule, name: props.name || parsed.rule.name || null, exec: props.exec, universe, tariff: props.tariff, spread: props.spread,
-      capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, since: props.since || null, until: props.until || null });
+      capital: Number(props.capital) || null, slots: Number(props.slots) || 6, go: props.go, leverage: Number(props.leverage) || 1, go_mult: Number(props.go_mult) || 1, since: props.since || null, until: props.until || null });
   };
   const save = () => {
     const name = prompt('Название стратегии', parsed.rule?.name ?? 'Моя стратегия'); if (!name) return;
@@ -91,10 +91,15 @@ export default function Editor({ meta, state, saved, onState, onSaved, onRun, on
             <label>Капитал, ₽<input type="number" value={props.capital} onChange={e => setProp('capital', e.target.value)} /></label>
             <label>Сделок в день, максимум<input type="number" min={1} max={30} value={props.slots} onChange={e => setProp('slots', e.target.value)} /></label>
           </div>
-          <div className="hint">На сделку идёт капитал ÷ число сделок, целыми контрактами, без плеча.</div>
+          <div className="hint">На сделку идёт капитал × плечо ÷ число сделок, целыми контрактами.</div>
+          <div className="row">
+            <label>Плечо<select value={props.leverage} onChange={e => setProp('leverage', e.target.value)}>{[1, 1.5, 2, 3, 4, 5].map(x => <option key={x} value={x}>{x === 1 ? 'без плеча' : `×${x}`}</option>)}</select></label>
+            <label>Стресс: ГО выросло<select value={props.go_mult} onChange={e => setProp('go_mult', e.target.value)}>{[1, 1.5, 2, 3].map(x => <option key={x} value={x}>{x === 1 ? 'нет' : `в ${x} раза (как в 02.2022)`}</option>)}</select></label>
+          </div>
+          <div className="hint">Без плеча ГО никогда не мешает. С плечом объём режется по свободному ГО, а при росте ГО появляются маржин-коллы — всё это видно в тестере, вкладка «Использование ГО».</div>
           <div className="row">
             <label>Тариф брокера<select value={props.tariff} onChange={e => setProp('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{k} — {v}% за сторону</option>)}</select></label>
-            <label>Спред стакана<select value={props.spread} onChange={e => setProp('spread', e.target.value)}><option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
+            <label>Спред стакана<select value={props.spread} onChange={e => setProp('spread', e.target.value)}>{meta.spread_daily && <option value="daily">по дням, с учётом глубины стакана</option>}<option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
           </div>
           <label>Гарантийное обеспечение<select value={props.go} onChange={e => setProp('go', e.target.value)}>{Object.entries(meta.go).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <div className="row">

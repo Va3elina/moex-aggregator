@@ -43,6 +43,8 @@ class RunIn(BaseModel):
     slots: int = Field(6, ge=1, le=30)
     go: str = 'mr1'
     go_limit: float = Field(1.0, gt=0, le=10)
+    leverage: float = Field(1.0, ge=0.1, le=10)
+    go_mult: float = Field(1.0, ge=0.5, le=5)
     refresh: bool = False
 
 
@@ -72,6 +74,7 @@ def meta(_admin: User = Depends(require_admin)):
                        'rule': r} for k, r in bt_rules.PRESETS.items()],
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
             'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()},
+            'spread_daily': bool(bt_costs.spread_daily()),
             'exec': {'close': 'как в замороженной спецификации: цена закрытия свечи 17:00 / 11:00',
                      'next_open': 'как OsEngine и TradingView: открытие следующей свечи (17:05 / 11:05)',
                      'robot': 'как робот на сервере: вход ~17:15, выход ~11:10'},
@@ -87,7 +90,7 @@ def create_run(body: RunIn, db: Session = Depends(get_db), admin: User = Depends
     except Exception as e:
         raise HTTPException(422, f'правило: {type(e).__name__}: {e}')
     if body.exec not in ('close', 'next_open', 'robot') or body.tariff not in bt_costs.TARIFFS \
-            or body.go not in ('mr1', 'snapshot', 'none') or body.spread not in ('c3', 'c5', 'none'):
+            or body.go not in ('mr1', 'snapshot', 'none') or body.spread not in ('daily', 'c3', 'c5', 'none'):
         raise HTTPException(422, 'exec / tariff / go / spread: недопустимое значение')
     rid = db.execute(text("""INSERT INTO bt_runs (name, created_by, spec) VALUES (:n, :u, CAST(:s AS JSONB))
                              RETURNING id"""),
@@ -125,7 +128,7 @@ def _rows(db, sql, p):
 def run_trades(run_id: int, st: Optional[str] = None, db: Session = Depends(get_db),
                _admin: User = Depends(require_admin)):
     return _rows(db, f"""SELECT st, d, secid, side, move, thr, px_in, d_out, px_out, gross, comm, spread, net, qty,
-        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip
+        notional, go, equity_in, comm_rub, spread_rub, pnl_rub, account_skip, go_cut
         FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, st""", {'r': run_id, 'st': st})
 
 
@@ -140,7 +143,7 @@ def run_signals(run_id: int, st: str, date_from: Optional[date] = Query(None, al
 
 @router.get("/runs/{run_id}/equity")
 def run_equity(run_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    return _rows(db, "SELECT d, equity, positions, notional, go_used FROM bt_equity WHERE run_id=:r ORDER BY d",
+    return _rows(db, "SELECT d, equity, positions, notional, go_used, margin_call FROM bt_equity WHERE run_id=:r ORDER BY d",
                  {'r': run_id})
 
 
@@ -188,6 +191,29 @@ def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias=
     a = max(date_from or (b - timedelta(days=90 if tf == 5 else MAX_DAYS[tf])), b - timedelta(days=MAX_DAYS[tf]))
     ttl = 120 if b >= date.today() else 86400
     return cache.get_or_compute(f'bt:candles:v2:{st}:{tf}:{a}:{b}', lambda: _candles(db, st, tf, a, b), ttl)
+
+
+def _realism(st):
+    from backtest import account as acc, costs as c
+    import pandas as pd
+    rr = acc.risk_rates(); a = acc.ASSET.get(st); coef = acc.broker_coef(st)
+    go = rr[a].dropna() if a in rr.columns else pd.Series(dtype=float)
+    go = go[go.shift() != go]                                          # только даты изменения ставки
+    rpp = acc.step_costs().get(st)
+    sp = c.spread_daily().get(st) if hasattr(c, 'spread_daily') else None
+    pts = lambda s, k=1.0: [[str(i.date()), round(float(v) * k, 6)] for i, v in s.items()]
+    return {'st': st, 'asset': a, 'broker_coef': round(coef, 3), 'go_rate': pts(go, 100 * coef),
+            'rub_per_point': pts(rpp.resample('W').last().dropna()) if rpp is not None else [],
+            'rub_per_point_const': acc.rub_per_point(st), 'spread': pts(sp.resample('W').median().dropna(), 100) if sp is not None else [],
+            'spread_const': c.spread_round(st, 'c3') * 100}
+
+
+@router.get("/realism")
+def realism(st: str, _admin: User = Depends(require_admin)):
+    """Из чего складывается реализм по бумаге: ставка ГО во времени (биржа × надбавка брокера), рублёвая стоимость
+    пункта (для контрактов в валюте — по дням, из данных биржи), спред стакана."""
+    if st not in bt_store.UNIVERSE_ALL: raise HTTPException(422, 'st — тип фьючерса из /meta')
+    return cache.get_or_compute(f'bt:realism:v1:{st}', lambda: _realism(st), 86400)
 
 
 # ─── раскладки (рабочие пространства) ────────────────────────────────────────────────────────────

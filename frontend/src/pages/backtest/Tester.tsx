@@ -2,7 +2,7 @@
 // Стенд: «Тестер стратегий» — нижняя панель. Состав как у TradingView (основные данные, динамика, анализ результатов,
 // анализ сделок, список сделок) + наше: журнал решений, сравнение прогонов, загрузка ГО. Любой блок можно скрыть.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { btApi, type BtCandle, type BtEquity, type BtRun, type BtSignal, type BtTrade } from './api';
+import { btApi, type BtCandle, type BtEquity, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
 import { EquityChart } from './ChartCell';
 import { cls, fmtDate, money, num, pct, signed } from './lib';
 import { byCalendar, byPeriod, compute, histogram, pnlOf, type Bucket, type Stats } from './stats';
@@ -90,7 +90,7 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
               <Dynamics S={S} compare={symbol ? null : compare} money={money_} />
             </Block>
             <Block id="res" title="Анализ результатов" hidden={prefs.hidden} onHide={hide}>
-              <Tabs items={[['dist', 'Распределение'], ['period', 'За период'], ['cmp', 'Сравнение'], ['margin', 'Использование ГО'], ['dd', 'Рост и спад']]} value={prefs.resultTab} onChange={k => set({ resultTab: k })} />
+              <Tabs items={[['dist', 'Распределение'], ['period', 'За период'], ['cmp', 'Сравнение'], ['margin', 'Использование ГО'], ['real', 'Реализм'], ['dd', 'Рост и спад']]} value={prefs.resultTab} onChange={k => set({ resultTab: k })} />
               {prefs.resultTab === 'dist' && <>
                 <div className="bt-metrics"><Metric label="Валовая прибыль" c="bt-up" sub={share(S.grossProfit)}>{v(S.grossProfit)}</Metric><Metric label="Валовый убыток" c="bt-down" sub={share(-S.grossLoss)}>{v(-S.grossLoss)}</Metric>
                   <Metric label="Профит-фактор">{num(S.pf, 2)}</Metric><Metric label="Комиссионная нагрузка" sub="комиссии и спред к валовой прибыли">{S.grossProfit ? num(100 * S.costs / S.grossProfit, 1) + '%' : '—'}</Metric></div>
@@ -105,6 +105,7 @@ export default function Tester({ runs, run, trades, equity, st, name, names, pre
               </>}
               {prefs.resultTab === 'cmp' && <Comparison S={S} run={run} compare={compare} st={st} name={name} symbol={symbol} money={money_} />}
               {prefs.resultTab === 'margin' && <Margin equity={equity} acc={acc} symbol={symbol} S={S} />}
+              {prefs.resultTab === 'real' && <Realism st={st} name={name} run={run} />}
               {prefs.resultTab === 'dd' && <>
                 <div className="bt-metrics"><Metric label="Средняя продолжительность роста">{S.avgUpDays != null ? num(S.avgUpDays) + ' дн.' : '—'}</Metric><Metric label="Средняя продолжительность просадки">{S.avgDdDays != null ? num(S.avgDdDays) + ' дн.' : '—'}</Metric>
                   <Metric label="Макс. просадка" c="bt-down" sub={S.maxDdDate ? 'дно ' + fmtDate(S.maxDdDate) : ''}>{money_ ? money(-S.maxDd) : pct(-S.maxDd)}</Metric><Metric label="Макс. просадка, % от пика" c="bt-down">{money_ ? pct(-S.maxDdPct) : '—'}</Metric></div>
@@ -182,9 +183,33 @@ function Margin({ equity, acc, symbol, S }: { equity: BtEquity[]; acc: any; symb
   const used = equity.filter(e => e.go_used > 0);
   return <>
     <div className="bt-metrics"><Metric label="ГО, максимум" sub="доля капитала под залогом">{acc['ГО_макс_%']}%</Metric><Metric label="ГО, в среднем в дни с позицией">{used.length ? num(used.reduce((a, e) => a + 100 * e.go_used / e.equity, 0) / used.length, 1) + '%' : '—'}</Metric>
-      <Metric label="Загрузка капитала, в среднем" sub="стоимость позиций к капиталу">{acc['загрузка_средняя_%']}%</Metric><Metric label="Маржин-коллы" sub="ГО ни разу не превысило капитал">0</Metric></div>
+      <Metric label="Загрузка капитала, в среднем" sub="стоимость позиций к капиталу">{acc['загрузка_средняя_%']}%</Metric>
+      <Metric label="Маржин-коллы" c={acc['маржин_коллов'] ? 'bt-down' : ''} sub={acc['маржин_коллов'] ? 'утром капитал был меньше требуемого ГО' : 'капитал всегда покрывал ГО'}>{num(acc['маржин_коллов'] ?? 0)}</Metric>
+      <Metric label="Сделок урезано по ГО" sub="объём меньше расчётного: не хватило свободного ГО">{num(acc['урезано_по_ГО'] ?? 0)}</Metric></div>
     <h4>Использование капитала, % {symbol && <span className="bt-dim">— показано по всему счёту</span>}</h4>
     <EquityChart lines={lines} height={220} /><div className="bt-dim bt-foot">Синяя — залог биржи (ГО), жёлтая пунктирная — стоимость открытых позиций. Прибыль на 1 ₽ среднего залога: {used.length ? num(S.total / (used.reduce((a, e) => a + e.go_used, 0) / used.length), 2) + ' ₽' : '—'}.</div>
+  </>;
+}
+
+function Realism({ st, name, run }: { st: string; name: string; run: BtRun }) {
+  const [r, setR] = useState<BtRealism | null>(null);
+  useEffect(() => { let dead = false; setR(null); btApi.realism(st).then(x => { if (!dead) setR(x); }).catch(() => undefined); return () => { dead = true; }; }, [st]);
+  const go = useMemo(() => r ? [{ name: 'ГО', color: '#4c8dff', points: r.go_rate.map(([d, v]) => ({ d, v })) }] : [], [r]);
+  const rpp = useMemo(() => r ? [{ name: '₽', color: '#f5a524', points: r.rub_per_point.map(([d, v]) => ({ d, v })) }] : [], [r]);
+  const sp = useMemo(() => r ? [{ name: 'спред', color: '#c678dd', points: r.spread.map(([d, v]) => ({ d, v })) }] : [], [r]);
+  if (!r) return <div className="bt-nodata"><div className="bt-spinner" /></div>;
+  const s = run.spec_full ?? {};
+  return <>
+    <div className="bt-metrics">
+      <Metric label={`ГО сейчас, % стоимости · ${name}`} sub={`биржа × надбавка брокера ${num(r.broker_coef, 2)}`}>{r.go_rate.length ? num(r.go_rate[r.go_rate.length - 1][1], 1) + '%' : '—'}</Metric>
+      <Metric label="ГО, максимум за историю" sub={r.go_rate.length ? fmtDate(r.go_rate.reduce((a, b) => b[1] > a[1] ? b : a)[0]) : ''}>{r.go_rate.length ? num(Math.max(...r.go_rate.map(x => x[1])), 1) + '%' : '—'}</Metric>
+      <Metric label="Стоимость пункта цены" sub={r.rub_per_point.length ? 'по дням, из данных биржи' : 'постоянная: контракт в рублях'}>{num(r.rub_per_point.length ? r.rub_per_point[r.rub_per_point.length - 1][1] : r.rub_per_point_const, 2)} ₽</Metric>
+      <Metric label="Спред стакана за круг" sub={r.spread.length ? 'по дням, Algopack' : 'одно число: медиана 09.2025–09.2026'}>{num(r.spread_const, 3)}%</Metric>
+    </div>
+    <h4>Ставка ГО, % от стоимости контракта <span className="bt-dim">ставка рыночного риска МосБиржи · в этом прогоне: {s.go}{s.go_mult > 1 ? `, стресс ×${s.go_mult}` : ''}{s.leverage > 1 ? `, плечо ×${s.leverage}` : ''}</span></h4>
+    {go[0]?.points.length ? <EquityChart lines={go} height={200} /> : <div className="bt-nodata">нет данных</div>}
+    {!!rpp[0]?.points.length && <><h4>Рублей за 1 пункт цены <span className="bt-dim">открытые позиции в рублях ÷ в контрактах ÷ расчётная цена — курс, по которому биржа считала вариационную маржу</span></h4><EquityChart lines={rpp} height={200} /></>}
+    {!!sp[0]?.points.length && <><h4>Спред за круг (3 уровня стакана), %</h4><EquityChart lines={sp} height={200} /></>}
   </>;
 }
 

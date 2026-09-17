@@ -56,7 +56,7 @@ def test_account_reproduces_osengine():
     S = engine.signals(rules.with_exec('hybrid7c', rules.EXEC_NEXT_OPEN), until=FROZEN_UNTIL)
     assert int((S.side != 0).sum()) == 3949
     T = costs.apply(engine.trades(S), 'trader', 'c3')
-    A, K, E = account.simulate(T, 1_000_000, 6, go_mode='snapshot', spread='none', order=rules.UNIVERSE_21)
+    A, K, E = account.simulate(T, 1_000_000, 6, go_mode='snapshot', spread='none', order=rules.UNIVERSE_21, step_cost='snapshot')
     spread = sum(costs.spread_round(s, 'c3') * n for s, n in zip(A.st, A.notional))
     final = 1_000_000 + A.pnl_rub.sum() - spread
     assert abs(len(A) - 3335) <= 15 and abs(final / 3_473_348 - 1) < 0.03, (len(A), final)
@@ -66,6 +66,22 @@ def test_account_honest():
     """Честный счёт: спред уменьшает капитал сразу, позиции считаются от него. Это ниже цифры OsEngine (+19.7 %)."""
     S = engine.signals(rules.with_exec('hybrid7c', rules.EXEC_NEXT_OPEN), until=FROZEN_UNTIL)
     T = costs.apply(engine.trades(S), 'trader', 'c3')
-    A, K, E = account.simulate(T, 1_000_000, 6, go_mode='snapshot', order=rules.UNIVERSE_21)
+    A, K, E = account.simulate(T, 1_000_000, 6, go_mode='snapshot', order=rules.UNIVERSE_21, step_cost='snapshot')
     c = metrics.curve(E, 1_000_000)
     assert 15.5 < c['годовых_%'] < 17.0 and -11 < c['просадка_%'] < -8.5, c
+
+
+def test_step_cost_from_exchange():
+    """Стоимость пункта Brent — из данных биржи по дням: в 2021 году ≈ 73 ₽/$ × 10 баррелей, в 2022-м пик > 1000 ₽."""
+    assert 700 < account.rub_per_point('BR', '2021-08-12') < 760
+    assert account.rub_per_point('BR', '2022-03-10') > 1000
+    assert account.rub_per_point('SR', '2022-03-10') == account.rub_per_point('SR')
+
+
+def test_leverage_and_go_stress():
+    """Без плеча ГО не мешает; с плечом ×4 и ГО ×2 — объём режется по ГО, и это видно в результате."""
+    S = engine.signals('hybrid7c', until=FROZEN_UNTIL); T = costs.apply(engine.trades(S), 'trader', 'c3')
+    A1, _, E1 = account.simulate(T, 1_000_000, 6, order=rules.UNIVERSE_21)
+    A4, K4, E4 = account.simulate(T, 1_000_000, 6, order=rules.UNIVERSE_21, leverage=4, go_mult=2)
+    assert int(A1.go_cut.sum()) == 0 and int(E1.margin_call.sum()) == 0
+    assert int(A4.go_cut.sum()) + int((K4.reason == 'не хватает ГО').sum()) > 50
