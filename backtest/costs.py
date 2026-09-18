@@ -52,6 +52,11 @@ def spread_daily():
         if f.exists():
             import pandas as pd
             df = pd.read_csv(f, parse_dates=['d'])
+            # Чистка замеров (19.09.2026): у юаня весной 2024 в obstats стоит «спред» 18–20 % за круг при обычных 0.03 % (1–3 замера
+            # за день вместо 12), у евро/доллара/платины — такие же выбросы и замеры выходных сессий. Один такой день стоил счёту
+            # 19 % капитала. Оставляем будни с ≥ 6 замерами и спредом не выше 5 медиан бумаги; выброшенный день = медиана бумаги.
+            med = df.groupby('st').c3.transform('median')
+            df = df[(df.d.dt.dayofweek < 5) & (df.n >= 6) & (df.c3 <= 5 * med)]
             _S['daily'] = {st: g.set_index('d').c3.sort_index() / 100 for st, g in df.groupby('st')}
             _S['cap'] = {st: g.set_index('d').cap3_rub.sort_index() for st, g in df.groupby('st')}
     return _S['daily']

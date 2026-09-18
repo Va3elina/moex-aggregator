@@ -85,3 +85,15 @@ def test_leverage_and_go_stress():
     A4, K4, E4 = account.simulate(T, 1_000_000, 6, order=rules.UNIVERSE_21, leverage=4, go_mult=2)
     assert int(A1.go_cut.sum()) == 0 and int(E1.margin_call.sum()) == 0
     assert int(A4.go_cut.sum()) + int((K4.reason == 'не хватает ГО').sum()) > 50
+
+
+def test_spread_daily_has_no_outliers():
+    """Спред по дням: ни у одной бумаги нет дня дороже 5 медиан (мусор Algopack obstats: юань 28.03–05.2024 — «спред» 19 % за круг)."""
+    from backtest import costs
+    costs._S.pop('daily', None); costs._S.pop('cap', None)
+    d = costs.spread_daily()
+    if not d: return
+    for st, s_ in d.items():
+        assert s_.max() <= 5.01 * s_.median() * 1.6, (st, float(s_.max()), float(s_.median()))   # медиана после чистки чуть ниже исходной
+        assert (s_.index.dayofweek < 5).all(), st
+
