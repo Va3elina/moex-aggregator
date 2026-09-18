@@ -8,7 +8,7 @@ export interface BtRule { id: string; name: string; frozen: boolean; universe: s
 export interface BtMeta {
   rules: BtRule[];
   instruments: { st: string; name: string }[];
-  tariffs: Record<string, number>;
+  tariffs: Record<string, number>; tariff_labels?: Record<string, string>;
   spread_daily?: boolean;
   python_template?: string;
   exec: Record<string, string>;

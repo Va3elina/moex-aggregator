@@ -11,11 +11,23 @@ TARIFFS = {            # тариф → [(действует с, % за стор
     'trader':   [('2000-01-01', 0.04)],
     'investor': [('2000-01-01', 0.10)],
     'sandbox':  [('2000-01-01', 0.05)],       # песочница T-Invest
+    'contract': [('2000-01-01', 0.0)],        # «за контракт»: PER_CONTRACT_RUB брокеру + биржевой сбор тейкера, см. ниже
 }
+# Тариф «за контракт» (Финам «Единый дневной» / «Инвестор», сайт брокера 18.09.2026): 0.45 ₽ за контракт за сторону + сбор MOEX
+# для заявки, забирающей ликвидность (moex.com/s93): валютные 0.00462 %, индексные 0.0066 %, товарные 0.0132 %, фондовые 0.0198 %.
+PER_CONTRACT_RUB = 0.45
+EXCHANGE_TAKER = {'Si': 0.00462, 'CR': 0.00462, 'Eu': 0.00462, 'MX': 0.0066, 'RI': 0.0066, 'BR': 0.0132, 'PT': 0.0132, 'CC': 0.0132}
+EXCHANGE_TAKER_STOCK = 0.0198
+TARIFF_LABELS = {'none': 'без комиссии', 'backtest': 'допущение старых бэктестов — 0.005% за сторону', 'premium': 'T-Банк «Премиум» — 0.025% за сторону',
+                 'trader': 'T-Банк «Трейдер» — 0.04% за сторону', 'investor': 'T-Банк «Инвестор» — 0.1% за сторону', 'sandbox': 'песочница T-Invest — 0.05% за сторону',
+                 'contract': 'за контракт — 0.45 ₽ + сбор биржи (как у Финама)'}
 
 
-def commission_side(tariff, d):
-    """Доля (не %) за сторону на дату."""
+def commission_side(tariff, d, st=None, contract_rub=None):
+    """Доля (не %) за сторону на дату. Тарифу «за контракт» нужны бумага и стоимость одного контракта в рублях."""
+    if tariff == 'contract':
+        exch = EXCHANGE_TAKER.get(st, EXCHANGE_TAKER_STOCK) / 100
+        return exch + (PER_CONTRACT_RUB / contract_rub if contract_rub and contract_rub > 0 else 0.0)
     rate = 0.0
     for since, pct in TARIFFS[tariff]:
         if str(d)[:10] >= since: rate = pct
@@ -70,7 +82,12 @@ def depth_penalty(st, d, notional):
 
 def apply(T, tariff='trader', spread='c3'):
     T = T.copy()
-    T['comm'] = [2 * commission_side(tariff, d) for d in T.d]
+    if tariff == 'contract':
+        from . import account                                  # стоимость контракта в рублях на дату (шаг цены, курс)
+        T['comm'] = [commission_side(tariff, d, s, account.contract_value(s, pi, d)) + commission_side(tariff, do, s, account.contract_value(s, po, do))
+                     for s, d, do, pi, po in zip(T.st, T.d, T.d_out, T.px_in, T.px_out)]
+    else:
+        T['comm'] = [2 * commission_side(tariff, d) for d in T.d]
     T['spread'] = [spread_on(s, di, do, spread) for s, di, do in zip(T.st, T.d, T.d_out)]
     T['net'] = T.gross - T.comm - T.spread
     return T

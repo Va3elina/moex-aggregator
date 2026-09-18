@@ -58,7 +58,7 @@ function Account({ spec, meta, busy, onApply, close }: { spec: Spec; meta: BtMet
         <label>Стресс: ГО выросло<select value={d.go_mult} onChange={e => set('go_mult', e.target.value)}>{[1, 1.5, 2, 3].map(x => <option key={x} value={x}>{x === 1 ? 'нет' : `в ${x} раза`}</option>)}</select></label>
       </div>
       <div className="row">
-        <label>Тариф брокера<select value={d.tariff} onChange={e => set('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{k} — {v}% за сторону</option>)}</select></label>
+        <label>Тариф брокера<select value={d.tariff} onChange={e => set('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{meta.tariff_labels?.[k] ?? `${k} — ${v}% за сторону`}</option>)}</select></label>
         <label>Спред стакана<select value={d.spread} onChange={e => set('spread', e.target.value)}>{meta.spread_daily && <option value="daily">по дням, с глубиной стакана</option>}<option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
       </div>
       <label>Гарантийное обеспечение<select value={d.go} onChange={e => set('go', e.target.value)}>{Object.entries(meta.go).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>

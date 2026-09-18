@@ -110,7 +110,7 @@ def meta(_admin: User = Depends(require_admin)):
     return {'rules': [{'id': k, 'name': r['name'], 'frozen': bool(r.get('frozen')), 'universe': r['universe'],
                        'rule': r} for k, r in bt_rules.PRESETS.items()],
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
-            'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()},
+            'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()}, 'tariff_labels': bt_costs.TARIFF_LABELS,
             'spread_daily': bool(bt_costs.spread_daily()),
             'python_template': _py_template(),
             'exec': {'close': 'как в замороженной спецификации: цена закрытия свечи 17:00 / 11:00',
