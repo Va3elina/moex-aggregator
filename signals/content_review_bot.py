@@ -178,6 +178,9 @@ _SELECT_NEW_DRAFTS = text("""
       AND (judge_verdict IS NOT NULL
            OR judge_gave_up_at IS NOT NULL
            OR updated_at < now() - interval '30 minutes')
+      -- находки и связки ждут живого судью (вердикт кода у них есть сразу), но не дольше 45 минут
+      AND (source NOT IN ('insight', 'combo') OR judge_items IS NOT NULL
+           OR judge_gave_up_at IS NOT NULL OR updated_at < now() - interval '45 minutes')
     ORDER BY id
 """)
 

@@ -867,7 +867,8 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     Пункты, которых модель не прислала, считаются ПРОЙДЕННЫМИ: иначе забытый в
     ответе ключ превращался бы в провал ворот и в ложный «брак»."""
     row = db.execute(
-        text("SELECT draft_text FROM content_candidates WHERE id = :id"),
+        text("SELECT draft_text, source, judge_items, judge_verdict, judge_failed, judge_defects "
+             "FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
@@ -891,6 +892,14 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     unknown = sorted(set(body.items) - known)
     items = {k: bool(v) for k, v in body.items.items() if k in known}
     verdict, failed, defects = _derive_judge_verdict(items, body.paragraphs)
+    # Находка / связка: до судьи вердикт уже поставила проверка кодом (insight_check). Первый разбор судьи
+    # её не стирает: замечания складываются, вердикт — худший из двух (разбор завода 18.09).
+    if row["source"] in ("insight", "combo") and row["judge_items"] is None and row["judge_verdict"]:
+        rank = {"годится": 0, "спорно": 1, "брак": 2}
+        if rank.get(row["judge_verdict"], 0) > rank.get(verdict, 0):
+            verdict = row["judge_verdict"]
+        failed = list(dict.fromkeys([*(f"код: {x}" for x in row["judge_failed"] or []), *failed]))
+        defects = list(dict.fromkeys([*(f"код: {x}" for x in row["judge_defects"] or []), *defects]))
 
     # ⚠️ Правка судьи применяется, но вердикт остаётся выданным на ИСХОДНЫЙ текст:
     # судья не перепроверяет сам себя, иначе независимость второго прохода исчезает
