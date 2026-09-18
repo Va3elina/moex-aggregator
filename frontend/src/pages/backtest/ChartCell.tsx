@@ -9,7 +9,7 @@ import {
 } from 'lightweight-charts';
 import LwChartPanes, { type LwPane, type LwSeriesBuiltCtx } from '../../components/LwChartPanes';
 import type { LwSeries } from '../../components/chart/lwTypes';
-import { IndicatorList, PaneIndicatorList, indicatorValues, useIndicatorSeries, useVolumeProfileSpec, type IndicatorsApi } from '../embed/EmbedIndicators';
+import { IndicatorList, PaneIndicatorList, useIndicatorSeries, useVolumeProfileSpec, type IndicatorsApi } from '../embed/EmbedIndicators';
 import { btApi, type BtCandle, type BtLiveTrade, type BtTrade } from './api';
 import { chunkEnd, chunkOf, chunkStep, hm, num, pct, today, ts, tsToIso, tfLabel } from './lib';
 import { TradesPrimitive, type TradeShape } from './TradesPrimitive';
@@ -54,9 +54,12 @@ export interface Focus { d: string; dOut: string; nonce: number }
 
 /** Свеча под курсором активной ячейки — отдельное хранилище, чтобы шапка обновлялась без перерисовки всей страницы. */
 type HoverListener = () => void;
+export interface HoverInd { label: string; color: string; text: string }
+/** Свеча и значения индикаторов на ней. Курсора нет — последняя свеча, как в TradingView. */
+export interface Hover { candle: BtCandle; inds: HoverInd[] }
 export const hoverStore = {
-  value: null as BtCandle | null, listeners: new Set<HoverListener>(),
-  set(v: BtCandle | null) { if (v === this.value) return; this.value = v; this.listeners.forEach(l => l()); },
+  value: null as Hover | null, listeners: new Set<HoverListener>(),
+  set(v: Hover | null) { if (v === this.value) return; this.value = v; this.listeners.forEach(l => l()); },
   subscribe(l: HoverListener) { hoverStore.listeners.add(l); return () => { hoverStore.listeners.delete(l); }; },
   get() { return hoverStore.value; },
 };
@@ -76,7 +79,7 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
   const edge = useRef({ loading: false, tf, range: { from: '', to: '' } });
   const candlesRef = useRef<BtCandle[]>([]);
   const activeRef = useRef(active); activeRef.current = active;
-  const subscribed = useRef<IChartApi | null>(null);
+  const subscribed = useRef<IChartApi | null>(null); const hovered = useRef(new WeakSet<IChartApi>());
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
 
   const [range, setRange] = useState(() => { const c = chunkOf(tf, today()); return { from: chunkStep(tf, c, -1) ?? c, to: c }; });
@@ -120,7 +123,16 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
   const indCandles = useMemo(() => candles.map(c => ({ time: String(c.time), value: c.close, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume })), [candles]);
   const indSeries = useIndicatorSeries(inds.list, indCandles, toSec, inds.colorOf, 'right');
   const vpSpec = useVolumeProfileSpec(inds.list, indCandles, 'price', inds.colorOf);
-  const indValues = useMemo(() => indicatorValues(indSeries), [indSeries]);
+  const volIds = useMemo(() => new Set(inds.list.filter(i => i.kind === 'volume').map(i => i.id)), [inds.list]);   // объём свечи в шапке уже есть — точным числом, не «2т»
+  // значения индикаторов на свече под курсором — в шапку страницы; на самих панелях чисел нет (только название и кнопки)
+  const indIndex = useMemo(() => indSeries.flat().filter(d => d && d.data.length && !volIds.has(d.id)).map(d => ({ label: d.label, color: d.color, fmt: d.axisFmt, at: new Map(d.data.map(p => [Number(p.time), p.value])) })), [indSeries, volIds]);
+  const hoverAt = useCallback((t: number | null): Hover | null => {
+    const cs = candlesRef.current; const candle = t != null ? byTime.current.get(t) : cs[cs.length - 1]; if (!candle) return null;
+    const out: HoverInd[] = [];
+    for (const x of indIndexRef.current) { const v = x.at.get(candle.time); if (v != null && isFinite(v)) out.push({ label: x.label, color: x.color, text: x.fmt ? x.fmt(v) : num(v, 2) }); }
+    return { candle, inds: out };
+  }, []);
+  const indIndexRef = useRef(indIndex); indIndexRef.current = indIndex;
   const paneMap = useMemo(() => [...new Set(inds.list.filter(i => i.pane > 0).map(i => i.pane))].sort((a, b) => a - b), [inds.list]);
   const panes = useMemo<LwPane[]>(() => {
     candlesRef.current = candles; byTime.current = new Map(candles.map(c => [c.time, c]));
@@ -171,9 +183,12 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
     }
     paintRef.current();
     const lead = ctx.charts[0];
+    // курсор в ЛЮБОЙ панели (цена, объём, RSI…) обновляет шапку; ушёл с графика — показываем последнюю свечу
+    for (const ch of ctx.charts) { if (hovered.current.has(ch)) continue; hovered.current.add(ch);
+      ch.subscribeCrosshairMove(p => { if (activeRef.current) hoverStore.set(hoverAt(p.time != null ? Number(p.time) : null)); }); }
+    if (activeRef.current) hoverStore.set(hoverAt(null));
     if (lead && subscribed.current !== lead) {
       subscribed.current = lead;
-      lead.subscribeCrosshairMove(p => { if (activeRef.current) hoverStore.set(p.time ? byTime.current.get(p.time as number) ?? null : null); });
       lead.timeScale().subscribeVisibleLogicalRangeChange((r: LogicalRange | null) => {
         const cs = candlesRef.current; if (!r || !cs.length) return;
         centerTime.current = cs[Math.max(0, Math.min(cs.length - 1, Math.round((r.from + r.to) / 2)))].time;
@@ -196,15 +211,16 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
         tsc.setVisibleLogicalRange({ from: i - 3, to: k + 3 });
       }
     }, 90);
-  }, []);
+  }, [hoverAt]);
+  useEffect(() => { if (active) hoverStore.set(hoverAt(null)); }, [active, hoverAt, candles, indIndex]);   // окно стало активным / данные приехали
 
   return (
     <div className={`bt-cell ${active && multi ? 'on' : ''}`} onMouseDown={onActivate} data-theme="editorial-dark">
       <div className="bt-cellmain">
         {candles.length > 0 && <LwChartPanes panes={panes} dark hideLegend watermark={false} showTooltip={false} drawPaneIndex={0} fitKey={viewKey} initialBars={220}
           timeVisible={tf !== 1440} volumeProfile={vpSpec} onReachStart={reachStart} onSeriesBuilt={onBuilt}
-          paneOverlay={i => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} values={indValues} />)} />}
-        <IndicatorList api={inds} native={EMPTY_ROWS} visible values={indValues} />
+          paneOverlay={i => (i === 0 ? null : <PaneIndicatorList api={inds} pane={paneMap[i - 1] ?? i} />)} />}
+        <IndicatorList api={inds} native={EMPTY_ROWS} visible />
         {multi && <span className="bt-celltag">{st} · {tfLabel(tf)}</span>}
         {loading && <div className="bt-loadbar" />}
         {error && <div className="bt-charterr">{error}</div>}
