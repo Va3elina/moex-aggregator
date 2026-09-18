@@ -145,7 +145,7 @@ export default function Editor({ meta, st, state, saved, onState, onSaved, onRun
           </div>
           <div className="hint">Без плеча ГО никогда не мешает. С плечом объём режется по свободному ГО, а при росте ГО появляются маржин-коллы — всё это видно в тестере, вкладка «Использование ГО».</div>
           <div className="row">
-            <label>Тариф брокера<select value={props.tariff} onChange={e => setProp('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{k} — {v}% за сторону</option>)}</select></label>
+            <label>Тариф брокера<select value={props.tariff} onChange={e => setProp('tariff', e.target.value)}>{Object.entries(meta.tariffs).map(([k, v]) => <option key={k} value={k}>{meta.tariff_labels?.[k] ?? `${k} — ${v}% за сторону`}</option>)}</select></label>
             <label>Спред стакана<select value={props.spread} onChange={e => setProp('spread', e.target.value)}>{meta.spread_daily && <option value="daily">по дням, с учётом глубины стакана</option>}<option value="c3">учитывать (3 уровня)</option><option value="c5">учитывать (5 уровней)</option><option value="none">не учитывать</option></select></label>
           </div>
           {!isPy && <><div className="bt-form-h">Досрочный выход <span>записывается в код правила</span></div>

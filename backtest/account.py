@@ -105,7 +105,8 @@ def simulate(T, capital=1_000_000, slots=6, go_limit=1.0, go_mode='mr1', tariff=
                 rpp = rub_per_point(p['st'], p['d_out'] if hist else None)   # вариационная маржа — по курсу дня выхода
                 cv_out = p['px_out'] * rpp * p['qty']
                 gross = p['side'] * (p['px_out'] - p['px_in']) * rpp * p['qty']
-                comm = costs.commission_side(tariff, p['d']) * p['notional'] + costs.commission_side(tariff, p['d_out']) * cv_out
+                comm = costs.commission_side(tariff, p['d'], p['st'], p['notional'] / p['qty']) * p['notional'] \
+                    + costs.commission_side(tariff, p['d_out'], p['st'], cv_out / p['qty']) * cv_out
                 spr = costs.spread_on(p['st'], p['d'], p['d_out'], spread) * p['notional']
                 if spread == 'daily':                           # заявка больше глубины стакана — круг дороже
                     k = costs.depth_penalty(p['st'], p['d'], p['notional']); spr *= k; p['depth_k'] = k
