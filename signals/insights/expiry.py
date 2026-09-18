@@ -5,6 +5,7 @@
 Строка из expiry_note уходит в ограничения карточек всех трёх конвейеров: находок, связок и
 новостей по тикеру.
 """
+import numpy as np
 import pandas as pd
 
 GEN = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября",
@@ -21,6 +22,19 @@ def next_expiry(t) -> pd.Timestamp:
             if d >= t:
                 return d
     raise ValueError(t)
+
+
+def near_expiry(t, before: int = 1, after: int = 1) -> bool:
+    """День экспирации или ±1 торговый день от неё: позиции физлиц в эти дни искажены переходом в
+    следующий контракт. Вадим 18.09 к #2419 (Мечел, данные 17.09): «надо проверить влияние экспираций»,
+    утром после открытия позиции «полетели вниз»."""
+    t = pd.Timestamp(t).normalize()
+    e = next_expiry(t - pd.Timedelta(days=7))
+    for d in (e, next_expiry(t)):
+        n = int(np.busday_count(min(d, t).date(), max(d, t).date()))
+        if (t <= d and n <= before) or (t > d and n <= after):
+            return True
+    return False
 
 
 def expiry_note(t, days: int = 7) -> str:

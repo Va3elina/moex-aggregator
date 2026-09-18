@@ -216,6 +216,19 @@ _DECLINE_REPEAT = text("""
 """)
 
 
+# Новость старше полутора суток — не повод: #2242 (крипта на Мосбирже, 16.09) дождался реакции позиций и
+# ушёл писателю 18.09 — «будто повторяют старые новости» (Вадим 18.09).
+STALE_NEWS_HOURS = 36
+
+
+def _stale_news(created_at) -> str | None:
+    if not created_at:
+        return None
+    age = datetime.now(timezone.utc) - (created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc))
+    return (f"новость устарела: {age.total_seconds() / 3600:.0f} ч с публикации, порог {STALE_NEWS_HOURS} ч"
+            if age > timedelta(hours=STALE_NEWS_HOURS) else None)
+
+
 def _repeat_of_ticker(db, candidate_id: int) -> str | None:
     r = db.execute(_RECENT_SAME_TICKER, {"id": candidate_id}).first()
     return (f"повтор: по тому же тикеру черновик #{r[0]} от {r[1]:%d.%m} - один тикер, один пост "
@@ -2096,8 +2109,12 @@ def _build_brief(db, row) -> dict:
     prior = _prior_post_line(db, row.get("thread_key"), row["id"], reused_signal)
     if prior and not prior.startswith("(нет"):
         brief["предыдущий_пост_этого_треда"] = prior
-    from signals.insights.expiry import expiry_note
-    if expiry_note(row["signal_date"]):
+    from signals.insights.expiry import expiry_note, near_expiry
+    if near_expiry(row["signal_date"]):
+        # #2242, #2375 (сигнал 17.09 = день экспирации): писатель строил абзац на скачке позиций
+        brief["экспирация"] = (expiry_note(row["signal_date"]) or "рядом с днём квартальной экспирации") + \
+            " ⚠️ ПОЗИЦИИ ФИЗЛИЦ В ЭТИ ДНИ ИСКАЖЕНЫ ЭКСПИРАЦИЕЙ: изменение позиций в пост не пиши вообще"
+    elif expiry_note(row["signal_date"]):
         brief["экспирация"] = expiry_note(row["signal_date"])
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
@@ -2350,7 +2367,7 @@ def run_once() -> dict:
                 summary["step_c_gave_up"] += 1
                 step_c_gave_up.append((row["id"], give_up_reason))
                 continue
-            rep = _repeat_of_ticker(db, row["id"])
+            rep = _repeat_of_ticker(db, row["id"]) or _stale_news(row.get("created_at"))
             if rep:
                 db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
                 summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1

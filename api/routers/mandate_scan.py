@@ -211,6 +211,18 @@ def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
     заново, даже если сформулирована другими словами. Уведомляем только на
     свежей вставке."""
     dedup_key = _fit("dedup_key", _dedup_key(body.source_key))
+    # Одно событие скаут приносит с разными ключами: FREEFLOATMOEX202609 (31.08, анонс) и
+    # FREEFLOATMOEX20260918 (18.09, вступление в силу) — Вадим: «эту новость мы уже видели».
+    # Дубль — тот же source_url или ключ, который продолжает уже известный (или наоборот).
+    dup = db.execute(text("""
+        SELECT id FROM mandate_candidates
+        WHERE (length(:k) >= 12 AND length(dedup_key) >= 12
+               AND (left(:k, length(dedup_key)) = dedup_key OR left(dedup_key, length(:k)) = :k))
+           OR (coalesce(:url, '') <> '' AND source_url = :url)
+        LIMIT 1
+    """), {"k": dedup_key, "url": body.source_url}).first()
+    if dup:
+        return {"status": "duplicate", "of": dup[0]}
     row = db.execute(text("""
         INSERT INTO mandate_candidates (
             source_ref, source_key, dedup_key, source_url, mandate_type, participant, sector, asset,

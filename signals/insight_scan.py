@@ -140,6 +140,16 @@ def drop_low_activity(items: list, log=print) -> list:
     return [x for x in items if not (x.get("family") == "позиции" and (x.get("facts") or {}).get("sec") in low)]
 
 
+def drop_expiry_days(items: list, log=print) -> list:
+    """Находки по позициям на день экспирации и ±1 торговый день — искажение перехода в следующий
+    контракт, а не сигнал (#2419 Мечел 17.09). Цена, фонды и сезонность не трогаются."""
+    from signals.insights.expiry import near_expiry
+    keep = [x for x in items if not (x.get("family") == "позиции" and near_expiry(x["date"]))]
+    if len(keep) < len(items):
+        log(f"экспирация: отложено находок по позициям - {len(items) - len(keep)}")
+    return keep
+
+
 def pick(items: list, log=print) -> list:
     """Лучшие находки дня по типам, по разным инструментам, с фильтрами."""
     res = []
@@ -222,7 +232,7 @@ def build(job: dict, now_iso: str) -> dict:
 def run_once(dry_run: bool = False) -> dict:
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
-    items = drop_low_activity(detect_window(until))
+    items = drop_expiry_days(drop_low_activity(detect_window(until)))
     jobs = pick(items)
     now_iso = datetime.now(timezone.utc).isoformat()
     summary = {"data_until": str(until.date()), "found": len(items), "picked": len(jobs), "created": 0,
