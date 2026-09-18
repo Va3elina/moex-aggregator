@@ -2,7 +2,7 @@
 // Стенд: «Тестер стратегий» — нижняя панель. Состав как у TradingView (основные данные, динамика, анализ результатов,
 // анализ сделок, список сделок) + наше: журнал решений, сравнение прогонов, загрузка ГО. Любой блок можно скрыть.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { btApi, type BtCandle, type BtEquity, type BtLiveTrade, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
+import { btApi, type BtCandle, type BtEquity, type BtLiveTrade, type BtMeta, type BtRealism, type BtRun, type BtSignal, type BtTrade } from './api';
 import Checks from './Checks';
 import RobotReport from './RobotReport';
 import Sweep from './Sweep';
@@ -12,6 +12,7 @@ import { cls, fmtDate, money, num, pct, signed } from './lib';
 import { byCalendar, byPeriod, compute, histogram, pnlOf, type Bucket, type Stats } from './stats';
 import type { Prefs } from './usePrefs';
 import { Bars, Donut, Logo, Menu, MenuItem } from './ui';
+import RunSettings from './RunSettings';
 
 const BLOCKS: [string, string][] = [['main', 'Основные данные'], ['dyn', 'Динамика'], ['res', 'Анализ результатов'], ['trd', 'Анализ сделок'], ['inst', 'По бумагам'], ['cond', 'Условия прогона']];
 const STATUS: Record<string, string> = { queued: 'в очереди', running: 'считается…', done: '', error: 'ошибка' };
@@ -29,11 +30,12 @@ const Tabs = ({ items, value, onChange }: { items: [string, string][]; value: st
 const Seg = ({ items, value, onChange }: { items: [string, string][]; value: string; onChange: (v: string) => void }) =>
   <div className="bt-seg">{items.map(([k, l]) => <button key={k} className={k === value ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>;
 
-export default function Tester({ runs, run, trades, equity, st: chartSt, name: chartName, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks, onOpenVariant }: {
+export default function Tester({ runs, run, trades, equity, st: chartSt, name: chartName, names, prefs, set, onPickTrade, selKey, onDeleteRun, onOpenEditor, compare, live, onRunChecks, onOpenVariant, meta, busy, onApplySettings }: {
   runs: BtRun[]; run: BtRun | null; trades: BtTrade[]; equity: BtEquity[]; st: string; name: string; names: Map<string, string>;
   prefs: Prefs; set: (p: Partial<Prefs>) => void; onPickTrade: (t: BtTrade) => void; selKey: string | null;
   onDeleteRun: (id: number) => void; onOpenEditor: () => void; compare: { run: BtRun; equity: BtEquity[] } | null;
   live: BtLiveTrade[]; onRunChecks: () => void; onOpenVariant: (params: Record<string, any>) => void;
+  meta: BtMeta | null; busy: boolean; onApplySettings: (spec: Record<string, any>) => void;
 }) {
   const acc = run?.result?.account; const money_ = !!acc; const capital = run?.spec_full?.capital ?? 1_000_000;
   // прогон по одной бумаге: счёт и есть эта бумага — переключатель «бумага / весь счёт» не нужен
@@ -64,8 +66,7 @@ export default function Tester({ runs, run, trades, equity, st: chartSt, name: c
         {single ? <span className="bt-chip2"><span className="bt-inline"><Logo st={st} size={16} /><b>{st}</b> {name}</span></span>
           : <Seg items={[['symbol', name], ['portfolio', `Все бумаги прогона (${uni.length})`]]} value={prefs.scope} onChange={k => set({ scope: k as Prefs['scope'] })} />}
         {run?.status === 'done' && !single && symbol && !uni.includes(st) && <span className="bt-chip2 warn" title="Открой редактор и запусти стратегию на этой бумаге">{st} нет в этом прогоне</span>}
-        {run?.result?.period && <span className="bt-chip2">{fmtDate(run.result.period[0])} — {fmtDate(run.result.period[1])}</span>}
-        {money_ && <span className="bt-chip2">{num(capital / 1e6, 2)} млн ₽ · сделок в день: до {run?.spec_full?.slots}</span>}
+        {run?.status === 'done' && <RunSettings run={run} meta={meta} busy={busy} onApply={onApplySettings} />}
         <span style={{ flex: 1 }} />
         <Seg items={[['overview', 'Обзор'], ['trades', `Список сделок`], ['signals', 'Сигналы'], ['checks', 'Проверки'], ['robot', 'Робот']]} value={prefs.view} onChange={k => set({ view: k as Prefs['view'] })} />
         <Menu label="⚙" title="что показывать" align="right">{() => <>

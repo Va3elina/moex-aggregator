@@ -55,3 +55,8 @@ export function chunkEnd(tf: number, start: string): string {
   d.setUTCMonth(d.getUTCMonth() + (tf === 5 ? 1 : tf === 15 ? 3 : 12)); d.setUTCDate(0);
   const s = iso(d); return s > today() ? today() : s;
 }
+
+/** JSON с отступами, но короткие списки и словари чисел — в одну строку (иначе список бумаг занимает пол-экрана). */
+export const pretty = (x: unknown) => JSON.stringify(x, null, 2)
+  .replace(/\[\n\s+([^[\]{}]*?)\n\s+\]/g, (_, body: string) => `[${body.split(/,\n\s+/).join(', ')}]`)
+  .replace(/\{\n\s+((?:"[^"]+": -?[\d.]+,?\n?\s*)+)\}/g, (_, body: string) => `{ ${body.trim().split(/,\n\s+/).join(', ')} }`);

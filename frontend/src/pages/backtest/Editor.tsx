@@ -6,13 +6,9 @@ import { btApi, type BtMeta } from './api';
 import type { Prefs, SavedRule } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import { paramLabel, setPath } from './Sweep';
+import { pretty } from './lib';
 
 export const DEFAULT_PROPS = { exec: 'robot', tariff: 'trader', spread: 'c3', capital: 1_000_000, perDay: '' as string | number, go: 'mr1', leverage: 1, go_mult: 1, since: '', until: '', name: '', extra: [] as string[] };
-/** JSON с отступами, но короткие списки и словари чисел — в одну строку (иначе список бумаг занимает пол-экрана). */
-const pretty = (x: unknown) => JSON.stringify(x, null, 2)
-  .replace(/\[\n\s+([^[\]{}]*?)\n\s+\]/g, (_, body: string) => `[${body.split(/,\n\s+/).join(', ')}]`)
-  .replace(/\{\n\s+((?:"[^"]+": -?[\d.]+,?\n?\s*)+)\}/g, (_, body: string) => `{ ${body.trim().split(/,\n\s+/).join(', ')} }`);
-
 function describe(r: any): string[] {
   try {
     const side = (s: any, word: string) => !s ? `${word}: выключен` : s.type === 'quantile'

@@ -10,8 +10,9 @@ export function Logo({ st, size = 20 }: { st: string; size?: number }) {
 }
 
 /** Кнопка с выпадающим меню; закрывается кликом мимо и Esc. */
-export function Menu({ label, title, children, align = 'left', className = '' }: { label: ReactNode; title?: string; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string }) {
-  const [open, setOpen] = useState(false); const ref = useRef<HTMLDivElement>(null);
+export function Menu({ label, title, children, align = 'left', className = '', tall = false }: { label: ReactNode; title?: string; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string; tall?: boolean }) {
+  const [open, setOpen] = useState(false); const [fit, setFit] = useState<{ up: boolean; max: number } | null>(null);     // tall: высокая форма — если снизу тесно, открыться вверх
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -21,8 +22,8 @@ export function Menu({ label, title, children, align = 'left', className = '' }:
   }, [open]);
   return (
     <div className={`bt-menu ${className}`} ref={ref}>
-      <button className={`bt-tb ${open ? 'on' : ''}`} title={title} onClick={() => setOpen(o => !o)}>{label}</button>
-      {open && <div className={`bt-pop ${align}`}>{children(() => setOpen(false))}</div>}
+      <button className={`bt-tb ${open ? 'on' : ''}`} title={title} onClick={() => { if (tall && ref.current) { const b = ref.current.getBoundingClientRect(); const below = window.innerHeight - b.bottom - 14, above = b.top - 14; const up = below < 560 && above > below; setFit({ up, max: up ? above : below }); } setOpen(o => !o); }}>{label}</button>
+      {open && <div className={`bt-pop ${align} ${fit?.up ? 'up' : ''}`} style={fit ? { maxHeight: fit.max } : undefined}>{children(() => setOpen(false))}</div>}
     </div>
   );
 }

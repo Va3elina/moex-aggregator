@@ -12,7 +12,7 @@ import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
-import { TFS, cls, num, pct, tfLabel } from './lib';
+import { TFS, cls, num, pct, pretty, tfLabel } from './lib';
 import { usePrefs, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import './bt.css';
@@ -22,9 +22,9 @@ const SHOW: [keyof Prefs['show'], string][] = [['markers', 'Стрелки сд�
 
 /** Данные свечи под курсором активного графика — в шапке, как в TradingView. Свой компонент: обновляется без перерисовки страницы. */
 function Ohlc() {
-  const c = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
-  if (!c) return null; const k = cls(c.close - c.open) || 'bt-up'; const ch = c.open ? c.close / c.open - 1 : 0;
-  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{num(c.open, 2)}</i> В<i className={k}>{num(c.high, 2)}</i> Н<i className={k}>{num(c.low, 2)}</i> З<i className={k}>{num(c.close, 2)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём {num(c.volume)}</span></span>;
+  const h = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
+  if (!h) return null; const c = h.candle; const k = cls(c.close - c.open) || 'bt-up'; const ch = c.open ? c.close / c.open - 1 : 0;
+  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{num(c.open, 2)}</i> В<i className={k}>{num(c.high, 2)}</i> Н<i className={k}>{num(c.low, 2)}</i> З<i className={k}>{num(c.close, 2)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём</span><i>{num(c.volume)}</i>{h.inds.map(x => <span key={x.label} className="ind"><b style={{ background: x.color }} />{x.label}<i>{x.text}</i></span>)}</span>;
 }
 
 export default function BacktestPage() {
@@ -100,7 +100,17 @@ export default function BacktestPage() {
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
-  const startRun = (spec: any, keepView = false) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => { followRun.current = r.id; return reloadRuns().then(() => set(keepView ? { runId: r.id } : { runId: r.id, view: 'overview' })); }).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); }); };
+  const startRun = (spec: any, keepView = false) => { setBusy(true); setRunErr(null); btApi.createRun(spec).then(r => { followRun.current = r.id; return reloadRuns().then(() => set(keepView ? { runId: r.id } : { runId: r.id, view: 'overview' })); }).catch(e => { setBusy(false); setRunErr(String(e.message ?? e)); if (keepView) fail(e); }); };
+  /** Настройки из шапки тестера: та же стратегия с новыми значениями. Сегодняшний такой же прогон берём готовым;
+   *  редактор получает те же значения — код, «Свойства» и шапка тестера всегда говорят одно. */
+  const applySettings = (spec: any) => {
+    const next = { ...spec, auto: true, checks: false, refresh: false }; const uni = JSON.stringify(next.universe ?? null); const day = new Date().toDateString();
+    const ed = prefs.editor; const props = { ...(ed?.props ?? {}), capital: next.capital, perDay: next.slots, leverage: next.leverage, go_mult: next.go_mult, tariff: next.tariff, spread: next.spread, go: next.go, exec: next.exec, since: next.since ?? '', until: next.until ?? '', extra: (next.universe ?? []).filter((x: string) => x !== cell.st) };
+    set({ editor: next.code ? { code: ed?.code ?? '', ...ed, props, lang: 'python', py: next.code, pyParams: next.params ?? {} } : { ...ed, props, lang: 'rule', code: pretty(next.rule) } });
+    const hit = runs.find(r => r.kind !== 'sweep' && r.status !== 'error' && JSON.stringify(r.spec?.universe ?? null) === uni && new Date(r.created_at).toDateString() === day && sameSpecKey(r.spec) === sameSpecKey(next));
+    if (hit) { followRun.current = hit.id; set({ runId: hit.id }); return; }
+    startRun(next, true);
+  };
   const deleteRun = (id: number) => btApi.deleteRun(id).then(() => { if (prefs.runId === id) { set({ runId: null }); setRun(null); setTrades([]); setEquity([]); } reloadRuns(); }).catch(fail);
 
   // Как в TradingView: сменил бумагу (или активное окно) — стратегия пересчиталась на ней. Только для прогонов по одной
@@ -168,7 +178,7 @@ export default function BacktestPage() {
               {prefs.cells.slice(0, nCells).map((c, i) => (
                 <ChartCell key={i} st={c.st} tf={c.tf} active={i === active} multi={nCells > 1} rule={rule}
                   trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} inds={inds}
-                  focus={i === active ? focus : null} onActivate={() => { if (i !== active) { set({ active: i }); hoverStore.set(null); } }} />
+                  focus={i === active ? focus : null} onActivate={() => { if (i !== active) set({ active: i }); }} />
               ))}
             </div>
           )}
@@ -179,6 +189,7 @@ export default function BacktestPage() {
               <div className="bt-panel" style={prefs.panel === 'max' ? { flex: 1 } : { height: prefs.panelH }}>
                 <Tester runs={runs} run={run} trades={trades} equity={equity} st={cell.st} name={names.get(cell.st) ?? cell.st} names={names} prefs={prefs} set={set}
                   onPickTrade={pickTrade} selKey={selKey} onDeleteRun={deleteRun} onOpenEditor={() => setEditor(true)} compare={compare} live={live}
+                  meta={meta} busy={busy} onApplySettings={applySettings}
                   onRunChecks={() => { if (run) btApi.runChecks(run.id).then(reloadRuns).catch(fail); }}
                   onOpenVariant={params => {
                     if (!run?.spec_full) return; const s = run.spec_full; const rule = JSON.parse(JSON.stringify(s.rule));
