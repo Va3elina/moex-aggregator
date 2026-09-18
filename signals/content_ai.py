@@ -155,7 +155,7 @@ _SELECT_CANDIDATES = text("""
 """)
 
 _SELECT_DRAFT_READY = text("""
-    SELECT c.id, c.headline, c.raw_text, c.tickers, c.event_type, c.futures_ticker,
+    SELECT c.id, c.source, c.headline, c.raw_text, c.tickers, c.event_type, c.futures_ticker,
            c.reasoning, c.dispatch_attempts, c.forwards_count,
            c.thread_key, c.created_at,
            a.id AS anomaly_id, a.asset_id, a.asset_name, a.type AS anomaly_type,
@@ -227,6 +227,90 @@ def _stale_news(created_at) -> str | None:
     age = datetime.now(timezone.utc) - (created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc))
     return (f"новость устарела: {age.total_seconds() / 3600:.0f} ч с публикации, порог {STALE_NEWS_HOURS} ч"
             if age > timedelta(hours=STALE_NEWS_HOURS) else None)
+
+
+# R16 — значимость новости по реакции цены (Вадим 15.09, #1992: «цена с момента публикации никак сильно не
+# реагировала, что первостепенно»). Калибровка 18.09 на разобранных черновиках: максимальный ход цены за два
+# торговых дня после новости к обычному дневному ходу — понравившиеся ×2,0…×4,5 (#2375 ×2,01, #2139 ×3,6,
+# #2100, #2133), забракованные ×1,0…×1,8 (#2134 ×1,0, #1727 ×1,4, #1933 ×1,4, #1992 ×1,76). Порог ×1,9.
+# Выборка 4 + 4 — пересматривать по новым решениям (research/content_pipeline_v2/regression.py).
+NEWS_MOVE_MIN_RATIO = 1.9
+NEWS_MOVE_MIN_BARS = 6        # меньше часовых свечей после новости — реакции ещё не видно, не судим
+# R17 — дивиденд без сюрприза (#1858, #2134: Яндекс, доходность 3%): закрытие реестра и решение собрания с
+# доходностью ниже порога — не повод. При ставке ЦБ 14% обычная выплата — не новость.
+DIV_YIELD_MIN = 0.06
+
+_SELECT_DAILY_CLOSES = text("""
+    SELECT close FROM candles
+    WHERE secid = :s AND interval = 24 AND type = 'stock' AND begin_time BETWEEN :a AND :b
+    ORDER BY begin_time
+""")
+_SELECT_DIVIDEND_NEAR = text("""
+    SELECT value FROM dividends
+    WHERE secid = :s AND registry_close_date BETWEEN :a AND :b
+    ORDER BY abs(registry_close_date - CAST(:d AS date)) LIMIT 1
+""")
+_DIV_IN_TEXT = re.compile(r"дивиденд\w*\s+(?:в размере\s+)?(\d+(?:[.,]\d+)?)\s*руб", re.I)
+
+
+def _msk_naive(ts):
+    """Свечи в БД — наивное время МСК."""
+    return (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)).astimezone(_MSK).replace(tzinfo=None)
+
+
+def _weak_reaction(db, row) -> str | None:
+    """R16: новость, на которую цена не отреагировала сильнее обычного дня, — не повод."""
+    if row.get("source") == "moex_calendar":      # событие из календаря ещё не случилось — реакции нет
+        return None
+    secid, created = (row.get("tickers") or [None])[0], row.get("created_at")
+    if not secid or not created:
+        return None
+    t = _msk_naive(created)
+    bars = db.execute(_SELECT_HOURLY, {"secid": secid, "since": t - timedelta(days=4),
+                                       "until": t + timedelta(days=3)}).fetchall()
+    before = [c for b, c in bars if b <= t and c is not None]
+    after = [c for b, c in bars if b > t and c is not None][:18]
+    if not before or len(after) < NEWS_MOVE_MIN_BARS:
+        return None
+    base = float(before[-1])
+    move = max(abs(float(c) / base - 1) for c in after)
+    closes = [float(r[0]) for r in db.execute(_SELECT_DAILY_CLOSES, {"s": secid, "a": t - timedelta(days=100),
+                                                                      "b": t}).fetchall() if r[0]]
+    if len(closes) < 20:
+        return None
+    usual = sorted(abs(closes[i] / closes[i - 1] - 1) for i in range(1, len(closes)))[(len(closes) - 1) // 2]
+    if usual <= 0 or move / usual >= NEWS_MOVE_MIN_RATIO:
+        return None
+    return (f"новость не стоит поста: цена после неё прошла максимум {move:.1%} при обычном дневном ходе "
+            f"{usual:.1%} (×{move / usual:.1f} < ×{NEWS_MOVE_MIN_RATIO}) - R16")
+
+
+def _div_no_surprise(db, row) -> str | None:
+    """R17: закрытие реестра / решение собрания по дивидендам с доходностью ниже DIV_YIELD_MIN — не повод."""
+    if row.get("source") not in ("moex_calendar", "fm_disclosure") or \
+            row.get("event_type") not in ("register_closing", "dividend"):
+        return None
+    secid, created = (row.get("tickers") or [None])[0], row.get("created_at")
+    if not secid or not created:
+        return None
+    m = _DIV_IN_TEXT.search(f"{row.get('headline') or ''} {row.get('raw_text') or ''}")
+    amount = float(m.group(1).replace(",", ".")) if m else None
+    day = _msk_naive(created).date()
+    if amount is None:
+        v = db.execute(_SELECT_DIVIDEND_NEAR, {"s": secid, "a": day - timedelta(days=30),
+                                               "b": day + timedelta(days=120), "d": day}).scalar()
+        amount = float(v) if v else None
+    closes = db.execute(_SELECT_DAILY_CLOSES, {"s": secid, "a": _msk_naive(created) - timedelta(days=10),
+                                               "b": _msk_naive(created)}).fetchall()
+    price = float(closes[-1][0]) if closes and closes[-1][0] else None
+    if not amount or not price or amount / price >= DIV_YIELD_MIN:
+        return None
+    return (f"дивиденд без сюрприза: {amount:g} ₽ на акцию, доходность {amount / price:.1%} "
+            f"< {DIV_YIELD_MIN:.0%} - R17")
+
+
+def _not_newsworthy(db, row) -> str | None:
+    return _div_no_surprise(db, row) or _weak_reaction(db, row)
 
 
 def _repeat_of_ticker(db, candidate_id: int) -> str | None:
@@ -2396,7 +2480,8 @@ def run_once() -> dict:
                 summary["step_c_gave_up"] += 1
                 step_c_gave_up.append((row["id"], give_up_reason))
                 continue
-            rep = _repeat_of_ticker(db, row["id"]) or _stale_news(row.get("created_at"))
+            rep = (_repeat_of_ticker(db, row["id"]) or _stale_news(row.get("created_at"))
+                   or _not_newsworthy(db, row))
             if rep:
                 db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
                 summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1

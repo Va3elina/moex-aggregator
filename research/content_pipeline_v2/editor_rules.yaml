@@ -166,20 +166,24 @@ rules:
     source: {date: 2026-09-15, cases: [1992], quote: "цена с момента публикации никак сильно не реагировала, что первостепенно"}
     pipelines: [news]
     enforced_by:
+      - {kind: filter, where: "signals/content_ai.py: _weak_reaction (+ content_match) — ход за 2 торг. дня / обычный дневной < ×1,9"}
       - {kind: prompt, where: "prompt_step_c_v2_routine.md: «ЗНАЧИМОСТЬ НОВОСТИ»"}
-    status: prompt_only
-    todo: "filter: ход цены после новости < обычного дневного → не запускать писателя"
+    status: enforced
+    calibration: "18.09: понравившиеся ×2,0–×4,5, забракованные ×1,0–×1,8; выборка 4+4 — пересматривать"
     regression: [1992]
+    regression_pass: [2100, 2133, 2139, 2375]
 
   - id: R17
     rule: "Дивиденды в рамках консенсуса и закрытие реестра без сюрприза — не повод"
     source: {date: 2026-09-15, cases: [1858, 2134]}
     pipelines: [news]
     enforced_by:
+      - {kind: filter, where: "signals/content_ai.py: _div_no_surprise (+ content_match) — доходность < 6% (сумма из текста или таблицы dividends)"}
       - {kind: prompt, where: "prompt_step_c_v2_routine.md: «ДИВИДЕНДЫ В РАМКАХ КОНСЕНСУСА»"}
-    status: prompt_only
-    todo: "filter для moex_calendar / fm_disclosure дивидендов: доходность ниже порога — без поста"
+    status: enforced
+    calibration: "18.09: Яндекс 3,0% — брак; в очереди проходят HeadHunter 7,3%, БСПБ 7,5%, Газпром нефть 7,8%"
     regression: [1858, 2134]
+    regression_pass: [1859, 1860, 2060]
 
   - id: R18
     rule: "Мнения аналитиков брокеров — не повод и не аргумент"
