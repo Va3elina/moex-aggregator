@@ -21,7 +21,11 @@ BOILERPLATE = re.compile(r"стоит последить|покажут ближ
 # Правка Вадима к #2104 (14.09): «кто писали?», «медиана слишком сложная», шорт не объяснять
 STYLE = ((re.compile(r"(?:^|[.!?◽️]\s*)(?:писали|сообщали),? что", re.I | re.M), "«писали, что» - подай новость событием"),
          (re.compile(r"медиан", re.I), "«медиана» - скажи проще: «в 2 случаях из 3»"),
-         (re.compile(r"без вычета (?:лонгов|шортов)|не чистая позиция", re.I), "объяснение индикатора - читатель его знает"))
+         (re.compile(r"без вычета (?:лонгов|шортов)|не чистая позиция", re.I), "объяснение индикатора - читатель его знает"),
+         # R02, R18 из editor_rules.yaml — правила, которые держались только на промпте и повторялись
+         (re.compile(r"\d[\d  ,]*\s*(?:тыс\w*\.?|млн\w*\.?)?\s*контракт", re.I),
+          "число контрактов - не называй, «исторический максимум» говорит больше (R02)"),
+         (re.compile(r"аналитик\w*", re.I), "мнение аналитиков брокеров - не повод и не аргумент (R18)"))
 CODES = re.compile(r"\b(?:MX|IMOEXF|USDRUBF|CNYRUBF|CR|Si)\b")
 TITLE_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]️?\s*$")
 
@@ -55,6 +59,9 @@ def check(draft: str, card: str) -> dict:
     if BOILERPLATE.search(draft or ""):
         defects.append("заготовка вместо вывода")
     defects += [msg for rx, msg in STYLE if rx.search(body)]
+    paras = sum(1 for x in lines[1:] if x.lstrip().startswith("◽"))
+    if paras > 3:
+        defects.append(f"абзацев {paras} - не больше трёх (R23)")
     n = len(re.sub(r"\s+", " ", body))
     if not 450 <= n <= 1000:
         defects.append(f"длина {n} знаков, цель 600-800")

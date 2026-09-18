@@ -1,0 +1,300 @@
+# Правила редактора (Вадим) — реестр.
+#
+# Каждое правило: откуда оно (дата, кандидаты, слова), какие конвейеры затрагивает и ЧЕМ исполняется.
+# Порядок предпочтения: data (данные сами правильные) > filter (кандидат не создаётся) > card (факт посчитан
+# кодом в карточке) > check (проверка текста кодом) > judge (судья) > prompt (только текст инструкции).
+# Правило со status: prompt_only — кандидат на повтор ошибки: такие правила Вадим находил снова.
+# regression — кандидаты, на которых правило проявилось: по ним проверяем, что правка держится.
+#
+# Конвейеры: news (новости по тикеру), insight (находки), combo (связки).
+
+rules:
+  - id: R01
+    rule: "«Исторический» — после 2022 года; пики до 2022 (другой рынок, нерезиденты) — не аналогия"
+    source: {date: 2026-09-14, cases: [2104], quote: "исторические шорты — после 2022 года, это ключевая точка проекта"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "signals/insights/cards.py: ERA_START, era_status, older_peak, эпизоды после 2022"}
+      - {kind: card, where: "signals/insights/combos.py: legible/GLOSS «максимум с <2022»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Как писать п.6"}
+    status: enforced
+    regression: [2104]
+
+  - id: R02
+    rule: "Число контрактов не называть — «исторический максимум»; «на N контрактов выше» только если канал уже писал про этот рекорд"
+    source: {date: 2026-09-14, cases: [2104, 2124, 2216], quote: "цифру контрактов совсем не обязательно упоминать"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: check, where: "api/services/insight_check.py: STYLE «N контрактов» (R02)"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Как писать п.8"}
+    status: enforced
+    regression: [2104, 2216]
+
+  - id: R03
+    rule: "Не объяснять индикатор («все шорты без вычета лонгов») — читатель знает"
+    source: {date: 2026-09-14, cases: [2104]}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: check, where: "api/services/insight_check.py: STYLE «без вычета»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: связка п.6"}
+    status: enforced
+    regression: [2104]
+
+  - id: R04
+    rule: "Новость — событием, без «писали/сообщали»; масштаб события не занижать"
+    source: {date: 2026-09-14, cases: [2104], quote: "кто писали — смешно; это мега-новость, а не «скорее»"}
+    pipelines: [news, insight, combo]
+    enforced_by:
+      - {kind: check, where: "insight_check.py: STYLE «писали, что»"}
+      - {kind: card, where: "combos.brief: ПОВОД — «подавай событием»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: связка п.4, ворота п.2"}
+    status: partial
+    todo: "news: в prompt_step_c ворота п.7 всё ещё «news_context — поводы»; проверки кодом у новостей нет"
+    regression: [2104]
+
+  - id: R05
+    rule: "Статистику — словами («в 2 случаях из 3»), без «медианы»"
+    source: {date: 2026-09-14, cases: [2104]}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards.positions_card: итого без медианы"}
+      - {kind: check, where: "insight_check.py: STYLE «медиан»"}
+    status: enforced
+    regression: [2104]
+
+  - id: R06
+    rule: "Итог толпы — в плюсе или в минусе позиция (средняя цена входа против нынешней)"
+    source: {date: 2026-09-14, cases: [2104], quote: "пост коллеги: спекулянты в незафиксированном убытке"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards.positions_card: «итог толпы»"}
+    status: enforced
+    regression: [2124, 2125]
+
+  - id: R07
+    rule: "Прочтение толпы — только из фактов карточки и с «похоже»; инсайд, сговор, «не просто так» — нельзя"
+    source: {date: 2026-09-14, cases: [2084, 2104]}
+    pipelines: [news, insight, combo]
+    enforced_by:
+      - {kind: check, where: "insight_check.py: BOILERPLATE «не просто так»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: ворота п.4"}
+      - {kind: judge, where: "prompt_step_g_routine.md: claim_falsifiable"}
+    status: partial
+    regression: [2084]
+
+  - id: R08
+    rule: "Фонды золота у нас — валютная защита сбережений; золото↔доллар после 2022 «как по теории» не связаны"
+    source: {date: 2026-09-14, cases: [2084]}
+    pipelines: [combo, insight]
+    enforced_by:
+      - {kind: card, where: "combos.GLOSS: фонды золота — валютная защита"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: связка п.9"}
+    status: enforced
+    regression: [2084]
+
+  - id: R09
+    rule: "Малый ход цены (в пределах обычного) — не связь и не тема"
+    source: {date: 2026-09-14, cases: [2084, 2121], quote: "пару процентов — большая наглость утверждать связь"}
+    pipelines: [combo, insight]
+    enforced_by:
+      - {kind: card, where: "combos.usual_move: «обычный ход»"}
+      - {kind: filter, where: "combos.Engine.assemble: цена не главная нога"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: связка п.7, п.13"}
+    status: enforced
+    regression: [2084, 2121]
+
+  - id: R10
+    rule: "Один знак на квартальном и вечном фьючерсе одного актива — подтверждение, назвать"
+    source: {date: 2026-09-14, cases: [2084]}
+    pipelines: [combo]
+    enforced_by:
+      - {kind: card, where: "combos.pair_lines"}
+    status: enforced
+    regression: [2084]
+
+  - id: R11
+    rule: "Рекорд — главная тема поста"
+    source: {date: 2026-09-14, cases: [2084], quote: "самые сильные оттоки в истории — могли бы быть основной темой"}
+    pipelines: [combo]
+    enforced_by:
+      - {kind: filter, where: "combos.Engine.assemble: рекорд_или_экстремум — приоритет главной ноги"}
+    status: enforced
+    regression: [2084]
+
+  - id: R12
+    rule: "Потоки в фонды сравнивать только вместе со ставкой; эпизод, где поток определяла ставка, — не аналогия"
+    source: {date: 2026-09-15, cases: [2127, 2217], quote: "210 млрд при 21% и 16 млрд при 14% — несравнимые периоды"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards.funds_card: stall_episodes + RUSFAR3M/RUSFARCNY, пометка «не аналогия»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Как писать п.13"}
+    status: enforced
+    regression: [2127, 2217, 2271]
+
+  - id: R13
+    rule: "По 2–3 случаям можно сказать «оба раза…», но прямо назвать, что их мало — сопутствующий сигнал"
+    source: {date: 2026-09-14, cases: [2084]}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards: limits «похожих эпизодов всего N»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: ворота п.3"}
+    status: enforced
+    regression: []
+
+  - id: R14
+    rule: "Один тикер — один пост за три дня (внутри вида: данные / новость)"
+    source: {date: 2026-09-15, cases: [2117, 2133, 2375], quote: "делать это сразу вторым постом не имеет места"}
+    pipelines: [news, insight, combo]
+    enforced_by:
+      - {kind: filter, where: "signals/content_ai.py: _repeat_of_ticker (цикл Шага В и находок)"}
+      - {kind: filter, where: "signals/content_match.py: тот же отсев (второй путь запуска)"}
+      - {kind: filter, where: "signals/combo_scan.py: по инструменту"}
+    status: enforced
+    regression: [2117, 2133, 2375]
+
+  - id: R15
+    rule: "У сюжета про одну бумагу новость должна называть бумагу; цена другой бумаги — не подтверждение"
+    source: {date: 2026-09-15, cases: [2117, 2104], quote: "нет связи между санкциями на ВТБ и Лукойлом"}
+    pipelines: [combo]
+    enforced_by:
+      - {kind: filter, where: "combos.Engine.assemble: single_stock"}
+    status: enforced
+    regression: [2117]
+
+  - id: R16
+    rule: "Значимость новости — по реакции цены: цена не отреагировала — не повод"
+    source: {date: 2026-09-15, cases: [1992], quote: "цена с момента публикации никак сильно не реагировала, что первостепенно"}
+    pipelines: [news]
+    enforced_by:
+      - {kind: prompt, where: "prompt_step_c_v2_routine.md: «ЗНАЧИМОСТЬ НОВОСТИ»"}
+    status: prompt_only
+    todo: "filter: ход цены после новости < обычного дневного → не запускать писателя"
+    regression: [1992]
+
+  - id: R17
+    rule: "Дивиденды в рамках консенсуса и закрытие реестра без сюрприза — не повод"
+    source: {date: 2026-09-15, cases: [1858, 2134]}
+    pipelines: [news]
+    enforced_by:
+      - {kind: prompt, where: "prompt_step_c_v2_routine.md: «ДИВИДЕНДЫ В РАМКАХ КОНСЕНСУСА»"}
+    status: prompt_only
+    todo: "filter для moex_calendar / fm_disclosure дивидендов: доходность ниже порога — без поста"
+    regression: [1858, 2134]
+
+  - id: R18
+    rule: "Мнения аналитиков брокеров — не повод и не аргумент"
+    source: {date: 2026-09-15, cases: [2125]}
+    pipelines: [news, insight, combo]
+    enforced_by:
+      - {kind: check, where: "api/services/insight_check.py: STYLE «аналитик» (R18) — находки и связки"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Как писать п.11; prompt_step_c_v2_routine.md"}
+    status: partial
+    todo: "news: проверки кодом нет (только промпт Шага В и судья)"
+    regression: [2125]
+
+  - id: R19
+    rule: "Экспирация: позиции в день экспирации ±1 торговый день искажены — не сигнал и не тема"
+    source: {date: 2026-09-15, cases: [1992, 1858, 2242, 2375, 2419], quote: "перед каждой экспирацией снижение чистых покупок"}
+    pipelines: [news, insight, combo]
+    enforced_by:
+      - {kind: filter, where: "signals/insights/expiry.near_expiry → insight_scan.drop_expiry_days (находки, связки)"}
+      - {kind: card, where: "expiry_note в ограничениях карточек; новостной бриф — «позиции искажены, не пиши»"}
+      - {kind: judge, where: "prompt_step_g_routine.md: link_earned"}
+    status: enforced
+    regression: [2242, 2375, 2419]
+
+  - id: R20
+    rule: "Малоактивные контракты (скрыты на сайте) — не находки"
+    source: {date: 2026-09-15, cases: [2126]}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: filter, where: "insight_scan.drop_low_activity ← oi_screener.low_activity_set"}
+    status: partial
+    todo: "news: аномалии для Шага Б тоже фильтровать по low_activity_set"
+    regression: [2126]
+
+  - id: R21
+    rule: "Тренд важнее пика: что позиция и цена делают последние месяцы и что было после разворота такого тренда"
+    source: {date: 2026-09-16, cases: [2124, 2216], quote: "важно упоминать не предыдущий исторический пик, а тренд"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards.trend_lines → ГЛАВНОЕ (focus_lines), «позиция всё ещё растёт»"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Как писать п.10"}
+    status: enforced
+    regression: [2124, 2216, 2270]
+
+  - id: R22
+    rule: "Одна тема и один сопутствующий фактор; сезонность может быть самостоятельной темой"
+    source: {date: 2026-09-15, cases: [2120], quote: "этот пост полный винегрет"}
+    pipelines: [combo]
+    enforced_by:
+      - {kind: filter, where: "combos.Engine.assemble: sup.head(1) (у отчёта ЦБ — 3)"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: связка п.1"}
+    status: enforced
+    regression: [2120]
+
+  - id: R23
+    rule: "Не больше трёх абзацев"
+    source: {date: 2026-09-15, cases: [2128]}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: check, where: "api/services/insight_check.py: абзацев ◽️ > 3 (R23)"}
+      - {kind: prompt, where: "prompt_insight_writer_routine.md: Голос и форма"}
+    status: enforced
+    regression: [2128]
+
+  - id: R24
+    rule: "Новость старше полутора суток — не пишем"
+    source: {date: 2026-09-18, cases: [2242], quote: "будто повторяют старые новости"}
+    pipelines: [news]
+    enforced_by:
+      - {kind: filter, where: "content_ai._stale_news (+ content_match)"}
+    status: enforced
+    regression: [2242]
+
+  - id: R25
+    rule: "События других компаний без связи с новостью в пост не пишем"
+    source: {date: 2026-09-18, cases: [2242, 2117], quote: "абзацы — к чему тут?"}
+    pipelines: [news]
+    enforced_by:
+      - {kind: prompt, where: "prompt_step_c_v2_routine.md: события_вокруг_новости — промолчи"}
+      - {kind: judge, where: "prompt_step_g_routine.md: has_thesis"}
+    status: partial
+    regression: [2242]
+
+  - id: R26
+    rule: "Заголовок не сильнее новости («готовность к 1 декабря» ≠ «торги с 1 декабря»)"
+    source: {date: 2026-09-18, cases: [2242]}
+    pipelines: [news]
+    enforced_by:
+      - {kind: prompt, where: "prompt_step_c_v2_routine.md: ворота п.9"}
+    status: prompt_only
+    regression: [2242]
+
+  - id: R27
+    rule: "Ряд позиций — только после последнего перерыва торгов (перезапуск контракта)"
+    source: {date: 2026-09-18, cases: [2417], quote: "пробел данных в Полюсе, на сайте данных до сентября 2025 нет"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: data, where: "signals/insights/detect.py: _after_last_gap (60 дней)"}
+    status: enforced
+    regression: [2417]
+
+  - id: R28
+    rule: "Сверка с утром: если к утру позиция уже развернулась — оговорка или без поста"
+    source: {date: 2026-09-18, cases: [2419], quote: "утром после открытия сессии позиции полетели вниз"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: card, where: "cards.intraday_now: строка «утром к ЧЧ:ММ»"}
+      - {kind: filter, where: "insight_scan: откат ≤−20% — без черновика"}
+    status: enforced
+    regression: [2419]
+
+  - id: R29
+    rule: "Данные завода совпадают с сайтом (поправки на реорганизации фондов)"
+    source: {date: 2026-09-14, cases: [2084], quote: "0,7 млрд — самый крупный за нашу историю проекта"}
+    pipelines: [insight, combo]
+    enforced_by:
+      - {kind: data, where: "api/services/fund_reorg.py: FLOW_REORG_CORRECTIONS (общая с сайтом)"}
+    status: enforced
+    regression: [2084]
