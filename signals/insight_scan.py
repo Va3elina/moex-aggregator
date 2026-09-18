@@ -242,6 +242,11 @@ def run_once(dry_run: bool = False) -> dict:
         for n, job in enumerate(jobs, 1):
             b = build(job, now_iso)
             card = b["card"]
+            chg = card.get("intraday_change")
+            if chg is not None and chg <= cards.INTRADAY_SKIP:
+                print(f"[insight_scan] пропуск, к утру позиция уже {chg:+.0%} к закрытию: {card['headline'][:80]}")
+                summary["skipped_intraday"] = summary.get("skipped_intraday", 0) + 1
+                continue
             head = card["headline"][:300]
             if db.execute(_EXISTS, {"headline": head}).first():
                 summary["skipped_exists"] += 1
