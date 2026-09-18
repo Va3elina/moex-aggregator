@@ -29,6 +29,8 @@
 |---|---|---|
 | Повтор по тикеру за 3 дня (внутри вида: данные / новость) | `content_ai._repeat_of_ticker` (+ `content_match`), `combo_scan` (по инструменту) | все |
 | Новость старше 36 ч | `content_ai._stale_news` (+ `content_match`) | новости |
+| Цена не отреагировала: ход за 2 торг. дня / обычный дневной < ×1,9 (R16) | `content_ai._weak_reaction` (+ `content_match`) | новости |
+| Дивиденд без сюрприза: доходность < 6% (R17) | `content_ai._div_no_surprise` (+ `content_match`) | новости (календарь, раскрытия) |
 | Малоактивные контракты (как на сайте) | `insight_scan.drop_low_activity` ← `api/services/oi_screener.low_activity_set` | находки, связки |
 | Экспирация: день ±1 торговый | `signals/insights/expiry.near_expiry`; `drop_expiry_days`; в новостном брифе — запрет | все |
 | Ряд после перерыва > 60 дней | `detect._after_last_gap` | находки, связки |

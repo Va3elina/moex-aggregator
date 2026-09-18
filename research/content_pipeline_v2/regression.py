@@ -31,7 +31,8 @@ TEXT_MARK = {"R02": "контракт", "R03": "объяснение индик�
              "R07": "заготовка", "R18": "аналитик", "R23": "абзацев"}
 
 _ROW = text("""
-    SELECT c.id, c.source, c.tickers, c.futures_ticker, c.created_at, c.updated_at, c.raw_text,
+    SELECT c.id, c.source, c.event_type, c.headline, c.tickers, c.futures_ticker, c.created_at, c.updated_at,
+           c.raw_text,
            coalesce(c.draft_text_ai, c.draft_text) AS draft_ai, a.signal_date
     FROM content_candidates c LEFT JOIN anomalies a ON a.id = c.matched_anomaly_id
     WHERE c.id = :id
@@ -49,7 +50,8 @@ def main() -> int:
     out, caught, total = [], 0, 0
     try:
         for r in rules:
-            for cid in r.get("regression") or []:
+            for cid, must_catch in [(c, True) for c in r.get("regression") or []] + \
+                                   [(c, False) for c in r.get("regression_pass") or []]:
                 row = db.execute(_ROW, {"id": cid}).mappings().first()
                 if not row:
                     out.append((r["id"], cid, "—", "нет в базе"))
@@ -73,11 +75,20 @@ def main() -> int:
                 elif r["id"] == "R20":
                     how.append("малоактивный контракт")
                     hit = (row["futures_ticker"] or "") in low
+                elif r["id"] == "R16":
+                    how.append("реакция цены" + ("" if must_catch else " (должен пройти)"))
+                    hit = bool(ca._weak_reaction(db, dict(row)))
+                elif r["id"] == "R17":
+                    how.append("доходность дивиденда" + ("" if must_catch else " (должен пройти)"))
+                    hit = bool(ca._div_no_surprise(db, dict(row)))
+                if hit is not None and not must_catch:
+                    hit = not hit          # понравившийся черновик фильтр НЕ должен ловить
                 if hit is not None:
                     total += 1
                     caught += bool(hit)
+                ok_word, bad_word = ("поймано", "❌ НЕ поймано") if must_catch else ("пропущено", "❌ ЛОЖНО пойман")
                 out.append((r["id"], cid, " + ".join(how) or "—",
-                            "н/п" if hit is None else ("поймано" if hit else "❌ НЕ поймано")))
+                            "н/п" if hit is None else (ok_word if hit else bad_word)))
     finally:
         db.close()
     w = max(len(x[2]) for x in out) if out else 10
