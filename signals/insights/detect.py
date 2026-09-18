@@ -181,8 +181,26 @@ def load_positions():
     oi["nl"] = oi.pos_long_num
     oi["ns"] = oi.pos_short_num
     oi["npart"] = oi.pos_long_num.fillna(0) + oi.pos_short_num.fillna(0)
-    return {c: oi.pivot_table(index="tradedate", columns="sectype", values=c, aggfunc="last").sort_index()
+    return {c: _after_last_gap(oi.pivot_table(index="tradedate", columns="sectype", values=c,
+                                              aggfunc="last").sort_index())
             for c in ("net", "long", "short", "nl", "ns", "npart")}
+
+
+GAP_DAYS = 60
+
+
+def _after_last_gap(df):
+    """Ряд — только после последнего перерыва торгов дольше GAP_DAYS. У мини-фьючерса на Полюс (PX)
+    дыра 19.11.2024 → 04.09.2025 (перезапуск контракта): склеенный ряд дал «исторический максимум за всё
+    время, с 2019 года» (#2417), а на сайте данные только с сентября 2025 (Вадим 18.09)."""
+    for c in df.columns:
+        s = df[c].dropna()
+        if len(s) < 2:
+            continue
+        gaps = s.index.to_series().diff() > pd.Timedelta(days=GAP_DAYS)
+        if gaps.any():
+            df.loc[df.index < gaps[gaps].index[-1], c] = np.nan
+    return df
 
 
 def instruments():

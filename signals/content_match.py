@@ -59,7 +59,7 @@ from api.database import SessionLocal      # noqa: E402
 from signals import config                 # noqa: E402
 from signals.db import has_intraday_oi     # noqa: E402
 from signals.content_ai import (           # noqa: E402
-    _fire, _step_c_payload, TRIGGER_ID_STEP_C,
+    _fire, _step_c_payload, TRIGGER_ID_STEP_C, _repeat_of_ticker, _stale_news, _DECLINE_REPEAT,
 )
 
 # Найдено 2026-07-14 (session 3) — пауза между _fire() подряд
@@ -199,6 +199,14 @@ def run_once() -> dict:
                     ).mappings().first()
 
                 if match:
+                    # Тот же отсев, что в content_ai: сюда писатель уходит напрямую — #2375 (Самолёт) прошёл
+                    # третьим черновиком за три дня, #2242 — через двое суток после новости
+                    rep = _repeat_of_ticker(db, row["id"]) or _stale_news(row["created_at"])
+                    if rep:
+                        db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
+                        db.commit()
+                        summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
+                        continue
                     db.execute(_MARK_DRAFT_READY, {
                         "id": row["id"], "anomaly_id": match["id"],
                     })

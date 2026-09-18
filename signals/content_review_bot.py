@@ -316,6 +316,11 @@ def _fix_line(fixed_at, note) -> str:
     return out
 
 
+def _cut(s: str, n: int = 300) -> str:
+    """Сомнение целиком — на 110 знаках оно обрывалось посреди мысли (Вадим 18.09: «будто обрезаны»)."""
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
 def _doubts_line(paragraphs) -> str:
     """Сомнения судьи по абзацам — прямо в карточке.
 
@@ -339,9 +344,9 @@ def _doubts_line(paragraphs) -> str:
         doubt = (p.get("doubt") or "").strip()
         if p.get("supported") is False:
             claim = (p.get("claim") or "").strip()
-            lines.append(f"⛔ абз.{n}: не на чём держится — {html.escape(claim[:110])}")
+            lines.append(f"⛔ абз.{n}: не на чём держится — {html.escape(_cut(claim))}")
         elif doubt:
-            lines.append(f"• абз.{n}: {html.escape(doubt[:110])}")
+            lines.append(f"• абз.{n}: {html.escape(_cut(doubt))}")
     if not lines:
         return ""
     return "\n\n🤔 под сомнением:\n" + "\n".join(lines)
