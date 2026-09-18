@@ -1450,12 +1450,54 @@ const numInput = (w: number, dim = false): CSSProperties => ({
   background: 'var(--bg-base, transparent)', color: 'var(--text-primary)',
 });
 
-/** Границы зон не должны пересекаться, иначе заливка выворачивается наизнанку:
- *  верхняя держится выше середины, нижняя ниже. */
-function clampBand(raw: string, min: number, max: number, def: number): number {
-  const v = Number(raw);
-  if (!Number.isFinite(v)) return def;
-  return Math.max(min, Math.min(max, Math.round(v)));
+/**
+ * Числовое поле с черновиком.
+ *
+ * ⚠️ Зажимать значение в границы на КАЖДОЕ нажатие нельзя: при min=2 набор
+ * «14» начинается с «1», единица тут же превращалась в 2, и в поле выходило
+ * «24». То же со стиранием: пустая строка давала значение по умолчанию, и его
+ * приходилось стирать снова. Поэтому набранный текст живёт локально, наружу
+ * сразу уходит только значение, уже попавшее в границы (график под окном
+ * реагирует вживую), а зажим и откат мусора — на blur и Enter.
+ */
+function NumField({ value, min, max, step, integer = true, disabled, width, onCommit }: {
+  value: number; min: number; max: number; step?: number;
+  /** Длины — целые; множители отклонения — дробные. */
+  integer?: boolean;
+  disabled?: boolean; width: number;
+  onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const focused = useRef(false);
+  // Значение сменили снаружи (другое поле, «Отмена», стрелки) — догоняем. В
+  // фокусе не трогаем: там черновик главнее, иначе «2.» схлопывалось бы в «2».
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value));
+  }, [value]);
+
+  const norm = (v: number) => (integer ? Math.round(v) : v);
+  const finish = () => {
+    const v = Number(draft);
+    const next = draft.trim() === '' || !Number.isFinite(v) ? value : Math.max(min, Math.min(max, norm(v)));
+    if (next !== value) onCommit(next);
+    setDraft(String(next));
+  };
+
+  return (
+    <input
+      type="number" min={min} max={max} step={step} value={draft} disabled={disabled}
+      onFocus={() => { focused.current = true; }}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const v = Number(raw);
+        if (raw.trim() !== '' && Number.isFinite(v) && v >= min && v <= max && norm(v) !== value) onCommit(norm(v));
+      }}
+      onBlur={() => { focused.current = false; finish(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') finish(); }}
+      style={numInput(width, disabled)}
+    />
+  );
 }
 
 /**
@@ -1517,11 +1559,7 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
             <>
               <Section label={`Настройки ${indShortName(inst)}`}>
                 <Field label={d.lengthLabel ?? 'Длина'}>
-                  <input
-                    type="number" min={2} max={500} value={inst.length}
-                    onChange={(e) => set({ length: clampBand(e.target.value, 2, 500, d.defLength) })}
-                    style={numInput(78)}
-                  />
+                  <NumField value={inst.length} min={2} max={500} width={78} onCommit={(v) => set({ length: v })} />
                 </Field>
                 {/* Выбор источника только на цене: у точки ОИ одно значение,
                     и open/high/low/close там совпадают — селект предлагал бы
@@ -1537,11 +1575,7 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                 )}
                 {inst.kind === 'bb' && (
                   <Field label="Отклонение">
-                    <input
-                      type="number" min={0.5} max={5} step={0.5} value={inst.mult ?? 2}
-                      onChange={(e) => set({ mult: Math.max(0.5, Math.min(5, Number(e.target.value) || 2)) })}
-                      style={numInput(78)}
-                    />
+                    <NumField value={inst.mult ?? 2} min={0.5} max={5} step={0.5} integer={false} width={78} onCommit={(v) => set({ mult: v })} />
                   </Field>
                 )}
                 {inst.kind === 'vp' && (
@@ -1591,11 +1625,7 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     />
                   </Field>
                   <Field label="Длина" dim={!inst.volMaOn}>
-                    <input
-                      type="number" min={2} max={500} value={inst.volMaLength ?? 20} disabled={!inst.volMaOn}
-                      onChange={(e) => set({ volMaLength: clampBand(e.target.value, 2, 500, 20) })}
-                      style={numInput(78, !inst.volMaOn)}
-                    />
+                    <NumField value={inst.volMaLength ?? 20} min={2} max={500} width={78} disabled={!inst.volMaOn} onCommit={(v) => set({ volMaLength: v })} />
                   </Field>
                 </Section>
               )}
@@ -1610,21 +1640,13 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     />
                   </Field>
                   <Field label="Длина" dim={smooth === 'none'}>
-                    <input
-                      type="number" min={2} max={500} value={inst.smoothLength ?? 14} disabled={smooth === 'none'}
-                      onChange={(e) => set({ smoothLength: clampBand(e.target.value, 2, 500, 14) })}
-                      style={numInput(78, smooth === 'none')}
-                    />
+                    <NumField value={inst.smoothLength ?? 14} min={2} max={500} width={78} disabled={smooth === 'none'} onCommit={(v) => set({ smoothLength: v })} />
                   </Field>
                   {/* Отклонение живёт только у варианта с полосами — в остальных
                       случаях поле показываем погашенным, как в оригинале, чтобы
                       было видно, что оно относится именно к этому выбору. */}
                   <Field label="Боллинджер, откл." dim={smooth !== 'sma_bb'}>
-                    <input
-                      type="number" min={0.5} max={5} step={0.5} value={inst.bbMult ?? 2} disabled={smooth !== 'sma_bb'}
-                      onChange={(e) => set({ bbMult: Math.max(0.5, Math.min(5, Number(e.target.value) || 2)) })}
-                      style={numInput(78, smooth !== 'sma_bb')}
-                    />
+                    <NumField value={inst.bbMult ?? 2} min={0.5} max={5} step={0.5} integer={false} width={78} disabled={smooth !== 'sma_bb'} onCommit={(v) => set({ bbMult: v })} />
                   </Field>
                 </Section>
               )}
@@ -1685,7 +1707,10 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     style={inst.styles?.upper ?? { color: '#9C9C9C', dash: 'dashed' }}
                     onStyle={(p) => api.patchStyle(inst.id, 'upper', p)}
                     value={inst.upper ?? d.bands.upper}
-                    onValue={(v) => set({ upper: clampBand(String(v), 51, 99, d.bands!.upper) })}
+                    // Границы зон не должны пересекаться, иначе заливка выворачивается
+                    // наизнанку: верхняя держится выше середины, нижняя ниже.
+                    valueRange={[51, 99]}
+                    onValue={(v) => set({ upper: v })}
                   />
                   <StyleRow
                     label="Средняя"
@@ -1700,7 +1725,8 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     style={inst.styles?.lower ?? { color: '#9C9C9C', dash: 'dashed' }}
                     onStyle={(p) => api.patchStyle(inst.id, 'lower', p)}
                     value={inst.lower ?? d.bands.lower}
-                    onValue={(v) => set({ lower: clampBand(String(v), 1, 49, d.bands!.lower) })}
+                    valueRange={[1, 49]}
+                    onValue={(v) => set({ lower: v })}
                   />
                   <StyleRow
                     label="Заливка зоны"
@@ -1819,10 +1845,12 @@ function Field({ label, children, dim }: { label: string; children: ReactNode; d
 }
 
 /** Строка вкладки «Стиль»: галка · подпись · кнопка цвета/линии · значение. */
-function StyleRow({ label, on, onToggle, style, onStyle, value, onValue, noLine }: {
+function StyleRow({ label, on, onToggle, style, onStyle, value, onValue, valueRange, noLine }: {
   label: string; on: boolean; onToggle?: () => void;
   style?: ElStyle; onStyle?: (p: Partial<ElStyle>) => void;
   value?: number; onValue?: (v: number) => void;
+  /** Допустимые границы значения [min, max]. */
+  valueRange?: [number, number];
   /** Заливкам линия не нужна — только цвет и прозрачность. */
   noLine?: boolean;
 }) {
@@ -1839,10 +1867,9 @@ function StyleRow({ label, on, onToggle, style, onStyle, value, onValue, noLine 
       <span style={{ fontSize: 11.5, color: 'var(--text-primary)', flex: 1 }}>{label}</span>
       {style && onStyle && <ColorButton value={style} onChange={onStyle} showLine={!noLine} />}
       {value != null && (
-        <input
-          type="number" value={value} disabled={!onValue}
-          onChange={(e) => onValue?.(Number(e.target.value))}
-          style={numInput(52, !onValue)}
+        <NumField
+          value={value} min={valueRange?.[0] ?? 0} max={valueRange?.[1] ?? 100} width={52}
+          disabled={!onValue} onCommit={(v) => onValue?.(v)}
         />
       )}
     </div>
