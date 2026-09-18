@@ -20,6 +20,14 @@ from api.database import SessionLocal
 # полтора месяца событий); позиции, фонды, цены — вся история: рекорд «с 2012 года»
 # считается по всему ряду.
 QUERIES = {
+    # последняя 5-минутная запись физлиц за самый свежий день — сверка находки с утром (Вадим 18.09:
+    # Мечел — шорт 70,7 тыс. на закрытии 17.09, к 09:10 МСК 38,8 тыс.: позиции «полетели вниз»)
+    "oi_intraday_last": """
+        SELECT DISTINCT ON (sectype) sectype, tradedate, tradetime, pos_long, pos_short, pos_long_num, pos_short_num
+        FROM open_interest
+        WHERE interval = 5 AND clgroup = 'FIZ'
+          AND tradedate = (SELECT max(tradedate) FROM open_interest WHERE interval = 5 AND clgroup = 'FIZ')
+        ORDER BY sectype, tradetime DESC""",
     "oi_daily": """
         SELECT DISTINCT ON (sectype, clgroup, tradedate)
                sectype, clgroup, tradedate, pos_long, pos_short, pos_long_num, pos_short_num

@@ -330,6 +330,24 @@ def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> li
     return out
 
 
+INTRADAY_NOTE, INTRADAY_SKIP = -0.10, -0.20   # откат к утру: оговорка / находка не идёт в пост
+
+
+def intraday_now(sec, leg, as_of):
+    """Последнее утреннее значение позиции (5-минутные данные, время МСК), если оно новее закрытия as_of."""
+    try:
+        df = dbdata.read("oi_intraday_last", parse_dates=["tradedate"])
+    except Exception:  # noqa: BLE001 — без интрадея карточка та же, что раньше
+        return None
+    r = df[df.sectype == sec]
+    if r.empty or r.tradedate.iloc[0] <= pd.Timestamp(as_of):
+        return None
+    r = r.iloc[0]
+    val = {"long": r.pos_long, "short": -r.pos_short, "net": r.pos_long + r.pos_short,
+           "nl": r.pos_long_num, "ns": r.pos_short_num}.get(leg)
+    return None if val is None or pd.isna(val) else (float(val), r.tradedate, r.tradetime)
+
+
 # ── карточка: рекорд позиций ─────────────────────────────────────────────────────
 def positions_card(sec, leg, as_of) -> dict:
     P, *_ = data()
@@ -373,6 +391,16 @@ def positions_card(sec, leg, as_of) -> dict:
             ch.append(f"{w} {'+' if v - arr[i - k] >= 0 else '-'}{q_ru(abs(v - arr[i - k]), unit)}")
     if ch:
         facts.append("изменение: " + ", ".join(ch))
+    intraday_chg = None
+    now = intraday_now(sec, leg, t)
+    if now and v > 0:
+        iv, iday, itime = now
+        iv *= sign
+        intraday_chg = iv / v - 1
+        facts.append(f"утром {d_ru(iday, t)} к {str(itime)[:5]} МСК {lab} - {q_ru(iv, unit)} "
+                     f"({p_ru(intraday_chg)} к закрытию {d_ru(t, t)})"
+                     + (" - картина к утру уже развернулась: без этой оговорки пост писать нельзя"
+                        if intraday_chg <= INTRADAY_NOTE else ""))
     if leg != "net" and st and i >= 5 and arr[i - 5] > 0 and v > arr[i - 5]:
         # #2124 SMLT: писатель объявил «пик пройден», а позиция ещё росла
         facts.append("позиция всё ещё растёт: нынешний эпизод не закончен - «пик пройден» не пиши; "
@@ -489,6 +517,7 @@ def positions_card(sec, leg, as_of) -> dict:
     return {"kind": "positions", "spec": {"sec": sec, "leg": leg}, "as_of": t,
             "headline": f"{lab.capitalize()} по {dat} - {q_ru(v, unit)}" + (f", {st}" if st else ""),
             "facts": [f for f in facts if f], "trend": trend, "after": after, "analogy": analogy, "price": price,
+            "intraday_change": intraday_chg,
             "context": context, "limits": limits, "chart": chart,
             "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} "
                            f"(серая); точками отмечены прошлые пики и текущее значение"],
