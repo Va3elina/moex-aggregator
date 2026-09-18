@@ -13,7 +13,7 @@
 | Отбор | Шаг А (Routine) → `apply_step_a`; Шаг Б `content_match.py` (*/5): новость ↔ аномалия позиций | `detect_window` → `drop_low_activity` → `drop_expiry_days` → `pick` | те же отсевы → `combos.Engine` (темы, ноги, главная нога) |
 | Карточка писателю | `_build_brief` (`signals/content_ai.py`), JSON | `cards.build_card` + `brief_text` (`signals/insights/cards.py`) | `combos.brief` (`signals/insights/combos.py`) |
 | Писатель (Routine) | «Шаг В: писатель по новости» `trig_01KPtMNbEYNfqewKvwhdo4rj` → `prompt_step_c_v2_routine.md` | «Шаг В: писатель по находке» `trig_0117KQ5EwUUpb35LLEsAq2Dc` → `prompt_insight_writer_routine.md` | тот же писатель по находке, раздел «ЖАНР СВЯЗКА» |
-| Проверка | style-check (сам писатель) + судья Шаг Г (`TRIGGER_ID_STEP_G`, `prompt_step_g_routine.md`) — может править текст | `api/services/insight_check.py` при приёмке (числа из карточки, прогноз, заготовки, форма) | как у находок |
+| Проверка | style-check (сам писатель) + судья Шаг Г (`TRIGGER_ID_STEP_G`, `prompt_step_g_routine.md`) — может править текст | `insight_check.py` при приёмке + с 18.09 судья Шаг Г по карточке (`_SELECT_JUDGE_PENDING_CARD`); бот ждёт судью до 45 мин | как у находок |
 | Кто запускает писателя | `content_match.py` (сразу при совпадении) и `content_ai.py` (*/15, бэкстоп) | `content_ai.py` | `content_ai.py` |
 
 ⚠️ У новостей ДВА пути запуска писателя: `content_match` и `content_ai`. Любой отсев ставить в оба
@@ -91,3 +91,6 @@ TRIGGER_ID_STEP_C_INSIGHT, token, _insight_payload(...))`. Скрипт запу
 - Дневной ОИ за день D грузится ночным прогоном D+1; если прогон пропал — `fetch_oi_daily_realtime.py --once`
   в `frame-orchestrator-1`.
 - `channel_posts` — только @FrameTool.
+- pytest не установлен ни локально, ни на сервере, ни в api-контейнере: тесты `research/content_pipeline_v2/test_*.py`
+  запускать функциями внутри api-контейнера (там есть FastAPI), копию кода — в `/tmp` контейнера.
+- У находок/связок `judge_verdict` сначала ставит проверка кодом; признак «живой судья разобрал» — `judge_items`.

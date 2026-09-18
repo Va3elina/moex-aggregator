@@ -319,6 +319,23 @@ _SELECT_JUDGE_PENDING = text("""
     ORDER BY c.id
     LIMIT :batch_limit
 """)
+# Судья и для находок и связок (разбор завода 18.09): у них вердикт при приёмке ставит проверка кодом
+# (insight_check), и живой судья их не читал — в боте стояло «судья: годится» без судьи. Признак «судья ещё не
+# разбирал» — пустой judge_items (его пишет только PATCH step-g). Только те, что ещё не ушли человеку.
+_SELECT_JUDGE_PENDING_CARD = text("""
+    SELECT c.id, c.source, c.raw_text, c.draft_text, c.judge_dispatch_attempts
+    FROM content_candidates c
+    WHERE c.source IN ('insight', 'combo')
+      AND c.draft_text IS NOT NULL
+      AND c.status = 'draft_ready'
+      AND c.reviewer_notified_at IS NULL
+      AND c.judge_items IS NULL
+      AND c.judge_gave_up_at IS NULL
+      AND c.judge_dispatch_attempts < :max_attempts
+      AND (c.judge_dispatch_attempts = 0 OR c.judge_checked_at < :cutoff)
+    ORDER BY c.id
+    LIMIT :batch_limit
+""")
 _MARK_JUDGE_DISPATCHED = text("""
     UPDATE content_candidates
     SET judge_dispatch_attempts = judge_dispatch_attempts + 1, judge_checked_at = now()
@@ -2298,6 +2315,18 @@ def _step_g_payload(db, row, internal_token: str) -> str:
     }, internal_token)
 
 
+def _step_g_card_payload(row, internal_token: str) -> str:
+    """Судье находки или связки — карточка вместо новостного брифа (у них нет аномалии и _build_brief)."""
+    draft = row["draft_text"] or ""
+    return _payload({
+        "candidate_id": row["id"],
+        "жанр": "связка" if row["source"] == "combo" else "находка",
+        "карточка": row["raw_text"] or "",
+        "черновик_на_проверку": draft,
+        "draft_hash": hashlib.md5(draft.encode("utf-8")).hexdigest(),
+    }, internal_token)
+
+
 def run_once() -> dict:
     summary = {"step_a_fired": 0, "step_c_fired": 0, "errors": 0, "skipped_no_token": 0,
                "step_a_gave_up": 0, "step_c_gave_up": 0,
@@ -2441,6 +2470,21 @@ def run_once() -> dict:
                 except Exception as e:
                     summary["errors"] += 1
                     print(f"[content_ai] step-g fire failed for candidate {row['id']}: "
+                          f"{type(e).__name__}: {e}")
+            card_rows = db.execute(
+                _SELECT_JUDGE_PENDING_CARD,
+                {"cutoff": cutoff, "batch_limit": BATCH_LIMIT, "max_attempts": MAX_DISPATCH_ATTEMPTS},
+            ).mappings().all()
+            for row in card_rows:
+                try:
+                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_card_payload(row, internal_token))
+                    db.execute(_MARK_JUDGE_DISPATCHED, {"id": row["id"]})
+                    db.commit()
+                    summary["judge_fired"] += 1
+                    time.sleep(FIRE_STAGGER_SEC)
+                except Exception as e:
+                    summary["errors"] += 1
+                    print(f"[content_ai] step-g (карточка) fire failed for candidate {row['id']}: "
                           f"{type(e).__name__}: {e}")
 
             # Тот же бэкстоп, что у остальных шагов: исчерпанные попытки → сдаёмся
