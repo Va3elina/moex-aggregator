@@ -72,7 +72,7 @@ GAP_CHECK_INTERVAL = 3600
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-# 65 тикеров Algopack OI
+# 69 тикеров Algopack OI
 ALGOPACK_OI_TICKERS = [
     "CR", "CNYRUBF", "Si", "Eu", "IB", "VB", "USDRUBF", "GZ", "IMOEXF", "RB",
     "CC", "GL", "GLDRUBF", "NA", "NR", "ED", "GK", "SV", "SS", "X5",
@@ -81,6 +81,9 @@ ALGOPACK_OI_TICKERS = [
     "HS", "NK", "RI", "RL", "LK", "UC", "PD", "NM", "MC", "RM",
     "RN", "SP", "SN", "ME", "HY", "BM", "TT", "OJ", "MG", "W4",
     "DX", "CH", "MY", "VI", "AU",
+    # + 16.09.2026 Algopack добавил в FUTOI: Биткоин, Эфириум, Новатэк, Ozon
+    # (5-минутки с 16.09 23:25, истории раньше нет)
+    "BT", "EH", "NV", "ON",
 ]
 
 

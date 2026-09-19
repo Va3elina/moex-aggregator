@@ -67,6 +67,9 @@ ALGOPACK_TICKERS = [
     "HS", "NK", "RI", "RL", "LK", "UC", "PD", "NM", "MC", "RM",
     "RN", "SP", "SN", "ME", "HY", "BM", "TT", "OJ", "MG", "W4",
     "DX", "CH", "MY", "VI", "AU",
+    # + 16.09.2026 Algopack добавил в FUTOI: Биткоин, Эфириум, Новатэк, Ozon
+    # (5-минутки с 16.09 23:25, истории раньше нет)
+    "BT", "EH", "NV", "ON",
 ]
 
 
