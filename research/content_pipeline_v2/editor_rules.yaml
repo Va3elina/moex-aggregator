@@ -248,11 +248,13 @@ rules:
     regression: [2128]
 
   - id: R24
-    rule: "Новость старше полутора суток — не пишем"
-    source: {date: 2026-09-18, cases: [2242], quote: "будто повторяют старые новости"}
-    pipelines: [news]
+    rule: "Новость старше полутора суток — не пишем; сюжет и находка — только на последнем дне данных"
+    source: {date: 2026-09-18, cases: [2242, 2491], quote: "будто повторяют старые новости; всё это уже было"}
+    pipelines: [news, insight, combo]
     enforced_by:
       - {kind: filter, where: "content_ai._stale_news (+ content_match)"}
+      - {kind: filter, where: "combo_scan: день данных сюжета = последний день ОИ до запуска; главная нога ≤ 4 дней в обоих режимах; новость сюжета ≤ 36 ч"}
+      - {kind: filter, where: "insight_scan.pick: позиции и сезонность — последний день данных, фонды ≤ 4 дней"}
     status: enforced
     regression: [2242]
 

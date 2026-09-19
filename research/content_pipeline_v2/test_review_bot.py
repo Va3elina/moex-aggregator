@@ -126,3 +126,38 @@ def test_colleague_actions_reach_admin_but_admins_own_do_not(monkeypatch):
     assert sent == []
     bot._tell_admin(2, {"first_name": "Саша"}, "❌ отклонил #1933")
     assert sent == [(1, "👤 Саша: ❌ отклонил #1933")]
+
+
+# ── Формат карточки (Вадим 19.09): сверху пост, под ним два свёрнутых блока ────
+
+def _row(draft, status="draft_ready"):
+    return (2491, "рынок целиком: сезонность", ["MIX"], draft, status, None, None,
+            "брак", ["link_earned"], [], [{"n": 3, "supported": False, "claim": "нет опоры"}],
+            "2026-09-19", "заменил «обещает» на «показывает»", None)
+
+
+def test_card_starts_with_post_and_has_two_folds():
+    txt, kb = bot._card_view(_row("Толпа против календаря\n\nТекст поста."),
+                             "🔎 #2491 · откуда пост: связка · MIX\nСезонность <8 из 10>")
+    assert txt.startswith("Толпа против календаря")
+    assert txt.count("<blockquote expandable>") == 2
+    assert txt.index("откуда пост") < txt.index("судья: брак")
+    assert "&lt;8 из 10&gt;" in txt            # контекст экранирован
+    assert kb
+
+
+def test_card_fits_telegram_limit_with_long_context():
+    txt, _ = bot._card_view(_row("П" * 3400), "🔎 #1 · откуда пост: новость · SBER\n" + "н" * 5000)
+    assert bot._visible_len(txt) <= bot._TG_LIMIT
+    assert txt.count("<blockquote expandable>") == 2
+
+
+def test_decided_card_has_status_and_no_buttons():
+    txt, kb = bot._card_view(_row("Пост", status="rejected"))
+    assert "[статус: rejected]" in txt and kb == []
+
+
+def test_photo_goes_before_card_and_context_is_inside_it():
+    src = inspect.getsource(bot._notify_new_drafts)
+    assert src.index("send_photo(config.ADMIN_USER_ID") < src.index("if send_kb(config.ADMIN_USER_ID")
+    assert "send(config.ADMIN_USER_ID, part)" not in src
