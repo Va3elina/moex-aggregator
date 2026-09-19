@@ -36,7 +36,8 @@ MAX_DATA = 2            # утром — не больше двух связок
 MAX_NEWS_DAY = 3        # днём — не больше трёх новостных связок за сутки
 REPEAT_DAYS = 3         # тема у завода — не чаще раза в три дня
 CHANNEL_DAYS = 2        # канал писал о том же за двое суток — пропуск
-STALE_DAYS = 4          # новостной сюжет: главная нога не старше четырёх календарных дней
+STALE_DAYS = 4          # главная нога не старше четырёх календарных дней (и утром, и днём)
+NEWS_FRESH_HOURS = 36   # новость сюжета не старше 36 часов — как у новостного конвейера (_stale_news)
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 CACHE_DIR = os.environ.get("COMBO_CACHE_DIR", "/opt/frame/data/combo_cache")
 
@@ -82,6 +83,17 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
     eng = combos.Engine(drop_expiry_days(drop_low_activity(detections(until))))
     stories = eng.evening() if mode == "data" else eng.at(now)
     summary = {"mode": mode, "data_until": str(until.date()), "stories": len(stories), "created": 0}
+    # #2491 (19.09): дни экспирации 16–18.09 отложены (drop_expiry_days), и утренний прогон собрал
+    # сюжет «на вечер 15 сентября» с новостью от 14-го — Вадим: «всё это уже было». День данных
+    # сюжета обязан быть последним днём ОИ до дня запуска (ОИ приходит на следующий день).
+    run_day = now.tz_convert("Europe/Moscow").tz_localize(None).normalize()
+    days = sorted(d for d in oi.tradedate.dt.normalize().unique() if d < run_day)
+    need = pd.Timestamp(days[-1]).date() if days else None
+    fresh = [s for s in stories if need and pd.Timestamp(s["data_day"]).date() >= need]
+    if len(fresh) < len(stories):
+        print(f"[combo_scan] пропуск {len(stories) - len(fresh)} сюжетов: данные на "
+              f"{min(s['data_day'] for s in stories)}, а нужны не старше {need} (дни экспирации отложены)")
+    stories = fresh
     db = SessionLocal()
     try:
         recent = db.execute(_RECENT).fetchall()
@@ -108,10 +120,19 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
             if lead["instrument"] and any(lead["instrument"] in (r[4] or []) for r in recent):
                 print(f"[combo_scan] пропуск, по {lead['instrument']} завод писал за {REPEAT_DAYS} дня: {lead['title'][:70]}")
                 continue
-            # новостной сюжет на данных недельной давности — «на этом фоне» уже неправда
-            if mode == "news" and lead.get("date") and (today - pd.Timestamp(lead["date"]).date()).days > STALE_DAYS:
+            # сюжет на данных недельной давности — «на этом фоне» уже неправда; утренний прогон
+            # тоже (#2491: сезонность от 14.09 ушла 19.09)
+            if lead.get("date") and (today - pd.Timestamp(lead["date"]).date()).days > STALE_DAYS:
                 print(f"[combo_scan] пропуск, находка от {lead['date']} старше {STALE_DAYS} дней: {lead['title'][:70]}")
                 continue
+            # новость сюжета — тоже не старше суток с небольшим (#2491: перемирие от 14.09)
+            if s["is_news"] and s["news"]:
+                newest = max(pd.Timestamp(n["t"]) for n in s["news"])
+                newest = newest.tz_localize("UTC") if newest.tzinfo is None else newest
+                if now - newest > pd.Timedelta(hours=NEWS_FRESH_HOURS):
+                    print(f"[combo_scan] пропуск, новость сюжета от {newest:%d.%m %H:%M} старше "
+                          f"{NEWS_FRESH_HOURS} ч: {lead['title'][:70]}")
+                    continue
             if s["theme"] in themes:
                 print(f"[combo_scan] пропуск, тема «{s['theme']}» у завода была за {REPEAT_DAYS} дня: {lead['title'][:70]}")
                 continue

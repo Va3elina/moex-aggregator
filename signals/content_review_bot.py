@@ -46,6 +46,7 @@ draft_text (оригинал ИИ терялся), причина отказа �
 """
 import html
 import json
+import re
 import time
 from datetime import datetime, timezone
 
@@ -313,7 +314,7 @@ def _fix_line(fixed_at, note) -> str:
     """
     if not fixed_at:
         return ""
-    out = "\n\n✏️ текст выше ПОПРАВЛЕН СУДЬЁЙ (вердикт ниже — на исходный текст)"
+    out = "\n\n✏️ пост выше ПОПРАВЛЕН СУДЬЁЙ (вердикт — на исходный текст)"
     if note:
         out += "\n" + html.escape(str(note)[:300])
     return out
@@ -382,11 +383,34 @@ def _reason_kb(cid: int) -> list:
     return rows
 
 
-def _card_view(row):
-    """Превью карточки — тело поста рендерится ТЕМИ ЖЕ premium custom-emoji, что
-    и реальная публикация (apply_custom_emoji), чтобы «Одобрить» не преподносил
-    сюрпризов в оформлении. Обвязка карточки (заголовок/тикеры) — свой html.escape,
-    т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb)."""
+_TG_LIMIT = 4000  # лимит Telegram 4096 видимых символов, с запасом
+
+
+def _visible_len(s: str) -> int:
+    """Сколько символов увидит Telegram: он считает текст ПОСЛЕ разбора HTML."""
+    return len(html.unescape(re.sub(r"<[^>]+>", "", s)))
+
+
+def _fold(title: str, body: str) -> str:
+    """Сворачиваемый блок: в свёрнутом виде виден заголовок и пара строк."""
+    inner = title + (f"\n{body}" if body else "")
+    return f"<blockquote expandable>{inner}</blockquote>"
+
+
+def _judge_section(verdict, failed, defects, paragraphs, fixed_at, fix_note) -> str:
+    return (_judge_line(verdict, failed, defects) + _fix_line(fixed_at, fix_note)
+            + _doubts_line(paragraphs)).strip("\n")
+
+
+def _card_view(row, context: str = ""):
+    """Карточка черновика — как пост в канале: сверху САМ ПОСТ, под ним два свёрнутых блока —
+    «откуда» (новость / находка / связка и почему взяли) и «судья» (Вадим 19.09: «чтобы черновик
+    сразу показывал пост, а дальше два раздела, которые можно развернуть», как у Т-Банка).
+
+    Тело поста рендерится ТЕМИ ЖЕ premium custom-emoji, что и реальная публикация
+    (apply_custom_emoji), чтобы «Одобрить» не преподносил сюрпризов в оформлении. Остальное —
+    свой html.escape, т.к. сообщение целиком уходит с parse_mode=HTML (см. send_kb).
+    `context` — простой текст из _context_text; без него блок «откуда» — заголовок кандидата."""
     (cid, headline, tickers, draft_text, status, reason_code, reason_text,
      j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note,
      _annotation) = row
@@ -395,15 +419,33 @@ def _card_view(row):
     # 10.09.2026 нет ни в канале, ни здесь (Вадим: «не пиши в самом посту»).
     body = apply_custom_emoji(with_frame_signature(
         (draft_text or "")[:_DRAFT_PREVIEW_LIMIT]))
-    tick = html.escape(", ".join(tickers or []) or "—")
-    txt = f"📝 Кандидат #{cid} · {tick}\n{html.escape(headline or '')}\n\n{body}"
-    txt += (_fix_line(j_fixed_at, j_fix_note)
-            + _judge_line(j_verdict, j_failed, j_defects)
-            + _doubts_line(j_paragraphs))
+    tick = ", ".join(tickers or []) or "—"
+    origin = context or f"🔎 #{cid} · {tick}\n{headline or ''}"
+    o_title, _, o_body = origin.partition("\n")
+    judge = _judge_section(j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note)
+    j_title, _, j_body = judge.partition("\n")
+    tail = ""
+    if status != "draft_ready":
+        tail = f"\n\n[статус: {status}]{_reason_line(reason_code, reason_text)}"
+
+    def build(ob: str, jb: str) -> str:
+        return (f"{body}\n\n{_fold(html.escape(o_title), html.escape(ob))}"
+                f"\n{_fold(j_title, jb)}{tail}")
+
+    txt = build(o_body.strip("\n"), j_body)
+    # не влезло — сначала режем «откуда» (полная новость бывает длинной), потом сомнения судьи
+    over = _visible_len(txt) - _TG_LIMIT
+    if over > 0:
+        o_body = o_body.strip("\n")
+        o_body = o_body[:max(0, len(o_body) - over - 20)].rstrip() + "…"
+        txt = build(o_body, j_body)
+    over = _visible_len(txt) - _TG_LIMIT
+    if over > 0:
+        txt = build(o_body, _fix_line(j_fixed_at, j_fix_note).strip("\n") + "\n…сомнения не влезли")
     if status != "draft_ready":
         # Карточка открыта повторно ПОСЛЕ решения (напр. по старой кнопке) — не даём
         # кнопки действия, только факт.
-        return txt + f"\n\n[статус: {status}]{_reason_line(reason_code, reason_text)}", []
+        return txt, []
     kb = [
         [{"text": "✅ Одобрить и опубликовать", "callback_data": f"a:{cid}"}],
         [{"text": "✏️ Править", "callback_data": f"e:{cid}"},
@@ -414,31 +456,28 @@ def _card_view(row):
 
 _SELECT_CONTEXT = text("""
     SELECT c.source, c.event_type, c.raw_text, c.source_url, c.reasoning,
-           a.asset_name, a.asset_id, a.clgroup, a.headline, a.context, a.signal_date
+           a.asset_name, a.asset_id, a.clgroup, a.headline, a.context, a.signal_date, c.tickers
     FROM content_candidates c
     LEFT JOIN anomalies a ON a.id = c.matched_anomaly_id
     WHERE c.id = :id
 """)
 
-_CONTEXT_CHUNK = 3900  # лимит Telegram 4096
-
-
-def _context_messages(db, cid: int) -> list:
-    """Контекст черновика простым текстом: у новостей — полный текст и ссылка,
-    у находок и связок raw_text и есть их бриф (ПОВОД/ГЛАВНОЕ/цифры); плюс
-    аномалия, с которой сверилась новость, и обоснование Шага А."""
+def _context_text(db, cid: int) -> str:
+    """Откуда черновик — простым текстом (экранирует _card_view): у новостей полный текст и
+    ссылка, у находок и связок — выжимка брифа (ПОВОД/ГЛАВНОЕ/цифры); плюс аномалия, с которой
+    сверилась новость, и обоснование Шага А. Первая строка — заголовок свёрнутого блока."""
     r = db.execute(_SELECT_CONTEXT, {"id": cid}).fetchone()
     if not r:
-        return []
+        return ""
     (source, event_type, raw_text, source_url, reasoning,
-     a_name, a_id, a_group, a_head, a_ctx, a_date) = r
-    kind = {"combo": "Связка", "insight": "Находка"}.get(source or "", "Новость")
-    parts = [f"🔎 Контекст #{cid} · {kind} · {source or '—'}"
-             + (f" · {event_type}" if event_type else "")]
+     a_name, a_id, a_group, a_head, a_ctx, a_date, tickers) = r
+    kind = {"combo": "связка", "insight": "находка"}.get(source or "", "новость")
+    tick = ", ".join(tickers or []) or "—"
+    parts = [f"🔎 #{cid} · откуда пост: {kind} · {tick}"]
     if raw_text and source in ("insight", "combo"):
-        # Вадим 17.09: полная карточка писателя в «Контексте» — «перебор, читать невозможно»
+        # Вадим 17.09: полная карточка писателя — «перебор, читать невозможно»
         from signals.brief_summary import summarize
-        parts.append(summarize(raw_text) + "\n\n(здесь только главное; полная карточка — у писателя)")
+        parts.append(summarize(raw_text))
     elif raw_text:
         parts.append(raw_text.strip())
     if source_url:
@@ -448,12 +487,13 @@ def _context_messages(db, cid: int) -> list:
                      f"{a_date:%d.%m.%Y} — {a_head}" + (f", {a_ctx}" if a_ctx else ""))
     if reasoning:
         parts.append(f"Почему взяли: {reasoning.strip()}")
-    full = "\n\n".join(parts)
-    return [full[i:i + _CONTEXT_CHUNK] for i in range(0, len(full), _CONTEXT_CHUNK)]
+    return parts[0] + "\n" + "\n\n".join(parts[1:])
 
 
 # Кандидат → когда Telegram последний раз отказал в карточке (time.monotonic()).
 _notify_failed_at: dict = {}
+# Кандидаты, чьё фото админу уже ушло, а карточку Telegram пока не принял.
+_photo_sent: set = set()
 _NOTIFY_RETRY_SEC = 600
 
 
@@ -472,35 +512,32 @@ def _notify_new_drafts() -> None:
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
             if not row:
                 continue
-            txt, kb = _card_view(row)
+            txt, kb = _card_view(row, _context_text(db, cid))
+            # График — над постом, как в канале (Вадим 16.09: «фото пусть будет вместе с постом»):
+            # фото, под ним карточка. Отказ карточки повторится через _NOTIFY_RETRY_SEC — фото
+            # второй раз не шлём.
+            media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
+            photo = None
+            if media and media[0] in ("insight", "combo") and media[1]:
+                path = os.path.join(MEDIA_DIR, media[1])
+                if os.path.exists(path):
+                    photo = path
+            if photo and cid not in _photo_sent:
+                send_photo(config.ADMIN_USER_ID, photo, f"график к черновику #{cid}")
+                _photo_sent.add(cid)
             # «Отправлено» ставим ТОЛЬКО если Telegram сообщение принял (см. send_kb).
             if send_kb(config.ADMIN_USER_ID, txt, kb):
                 db.execute(_MARK_NOTIFIED, {"id": cid})
                 db.commit()
-                # находка движка — к карточке её график (не блокирует отметку «отправлено»)
-                media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
-                photo = None
-                if media and media[0] in ("insight", "combo") and media[1]:
-                    path = os.path.join(MEDIA_DIR, media[1])
-                    if os.path.exists(path):
-                        photo = path
-                        send_photo(config.ADMIN_USER_ID, path, f"график к черновику #{cid}")
-                # Следом контекст: полная новость / находка / связка + значения — чтобы
-                # черновик читался рядом с тем, из чего он сделан (Вадим 16.09).
-                context = _context_messages(db, cid)
-                for part in context:
-                    send(config.ADMIN_USER_ID, part)
                 _notify_failed_at.pop(cid, None)
+                _photo_sent.discard(cid)
                 # Коллеге — та же карточка, один раз: кандидат уже помечен
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
                 # Telegram ответит «chat not found», send_kb напечатает это в лог).
-                # С 16.09 и график следом за карточкой (Вадим: «фото пусть будет вместе с постом»).
                 for extra in config.CONTENT_DRAFT_EXTRA_CHAT_IDS:
-                    send_kb(extra, txt, kb)
                     if photo:
                         send_photo(extra, photo, f"график к черновику #{cid}")
-                    for part in context:
-                        send(extra, part)
+                    send_kb(extra, txt, kb)
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
@@ -612,14 +649,14 @@ def process_callback(cb: dict) -> None:
         if op == "a":
             ok, note = _approve(db, cid)
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            txt, kb = _card_view(row) if row else (note, [])
+            txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
             _tell_admin(chat_id, who, f"✅ одобрил #{cid}: {note}")
         elif op == "x":
             ok, note = _reject(db, cid)
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            txt, kb = _card_view(row) if row else (note, [])
+            txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
             # Причину спрашиваем ПОСЛЕ применённого решения: если Вадим не

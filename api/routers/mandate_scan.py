@@ -23,6 +23,7 @@ GET /known — Routine читает это ПЕРЕД поиском, чтобы
 import logging
 import os
 import re
+from datetime import date, timedelta
 from typing import Optional
 
 import requests
@@ -104,6 +105,21 @@ class MandateCandidate(BaseModel):
     pine_testable: str = "low"          # high|medium|low
     hypothesis: str
     durability_note: Optional[str] = None
+    # Дата самого события (публикация акта / решение / пресс-релиз), а не статьи о нём.
+    # 19.09 скаут принёс делистинг ПИК, решённый 07.09, со старой ценой выкупа — Вадим:
+    # «всё это уже было». В таблицу не пишется: нужна только для отсева старого.
+    event_date: Optional[date] = None
+
+
+# Событие старше недели — не находка, а пересказ: в /known его кладём (чтобы скаут не
+# приносил его каждый день), но в бот не шлём.
+MANDATE_MAX_AGE_DAYS = 7
+
+
+def _is_stale(event_date: Optional[date], today: Optional[date] = None) -> bool:
+    if event_date is None:
+        return False
+    return event_date < (today or date.today()) - timedelta(days=MANDATE_MAX_AGE_DAYS)
 
 
 def _notify_admin(candidate: MandateCandidate) -> bool:
@@ -121,7 +137,9 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
     trigger_line = f"\n⚙️ Триггер: {candidate.trigger_description}" if candidate.trigger_description else ""
     text_msg = (
         f"🏛 <b>Новый мандат-кандидат</b>\n"
-        f"{candidate.source_ref}\n\n"
+        f"{candidate.source_ref}\n"
+        + (f"📅 событие от {candidate.event_date:%d.%m.%Y}\n" if candidate.event_date else "")
+        + "\n"
         f"Участник: {candidate.participant} · Сектор: {candidate.sector or '—'}\n"
         f"Актив: <b>{candidate.asset}</b> · Статус: {candidate.status_now}\n"
         f"Pine-тестируемость: <b>{candidate.pine_testable}</b>{trigger_line}\n\n"
@@ -250,6 +268,10 @@ def submit_candidate(body: MandateCandidate, db: Session = Depends(get_db)):
 
     if not row:
         return {"status": "duplicate"}
+    if _is_stale(body.event_date):
+        logger.info(f"mandate_scan: {body.source_key} от {body.event_date} старше "
+                    f"{MANDATE_MAX_AGE_DAYS} дней — записан в известные, без уведомления")
+        return {"status": "stale", "id": row["id"], "event_date": str(body.event_date)}
 
     notified = _notify_admin(body)
     if notified:

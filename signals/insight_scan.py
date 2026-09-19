@@ -39,6 +39,7 @@ FAMILY = {"positions": "позиции", "funds": "фонды", "seasonality": "
 HASHTAG = {"positions": r"#открыт\w+", "funds": r"#деньгивфондах", "seasonality": r"#сезонность"}
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 REPEAT_DAYS, SKIP_DAYS = 14, 3
+FUNDS_LAG_DAYS = 4        # потоки фондов приходят с опозданием: день-два плюс выходные
 TOPIC = {"positions": r"шорт|лонг|позици|покупк|продаж|физлиц|физик|толп",
          "funds": r"фонд|приток|отток|БПИФ", "seasonality": r"сезонн"}
 FUND_INST = {"bonds": r"облигац|ОФЗ", "stocks": r"фонд\w* акци", "money_market": r"денежн\w* рынк|ликвидност",
@@ -150,7 +151,7 @@ def drop_expiry_days(items: list, log=print) -> list:
     return keep
 
 
-def pick(items: list, log=print) -> list:
+def pick(items: list, log=print, until=None) -> list:
     """Лучшие находки дня по типам, по разным инструментам, с фильтрами."""
     res = []
     for kind, fam in FAMILY.items():
@@ -166,6 +167,14 @@ def pick(items: list, log=print) -> list:
         if not pool:
             continue
         last = max(x["date"] for x in pool)
+        # После экспирации дни позиций отложены, и «последний день» пула откатывался назад: находка
+        # недельной давности уходила как свежая (#2491 у связок). Позиции и сезонность — только за
+        # последний день данных, фонды отстают на день-два.
+        if until is not None:
+            lag = (pd.Timestamp(until).normalize() - pd.Timestamp(last)).days
+            if lag > (FUNDS_LAG_DAYS if kind == "funds" else 0):
+                log(f"пропуск {kind}: последняя находка от {last}, данные по {pd.Timestamp(until):%Y-%m-%d}")
+                continue
         seen = set()
         for x in sorted((x for x in pool if x["date"] == last), key=lambda z: -z["score"]):
             if x["instrument"] in seen or len(seen) >= PER[kind]:
@@ -233,7 +242,7 @@ def run_once(dry_run: bool = False) -> dict:
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
     items = drop_expiry_days(drop_low_activity(detect_window(until)))
-    jobs = pick(items)
+    jobs = pick(items, until=until)
     now_iso = datetime.now(timezone.utc).isoformat()
     summary = {"data_until": str(until.date()), "found": len(items), "picked": len(jobs), "created": 0,
                "skipped_exists": 0}
