@@ -47,6 +47,11 @@ _COMMODITY_SECIDS = {
 # прогоном 09:00, поэтому лаг 2 торговых дня для них — норма, не stale.
 _T_PLUS_1_SECIDS = {"MCFTR", "EUR_RUB__TOM"}
 
+# Серии, которые пишутся только по выходным: IMOEX2 с 11.09.2026 (#1480) берётся
+# лишь для субботних/воскресных точек «Силы рынка», в будни его заменяет IMOEX.
+# По каденсу «close» он краснел каждый будний день — ложная тревога.
+_WEEKEND_ONLY_SECIDS = {"IMOEX2"}
+
 # macro_data: только ЖИВЫЕ индикаторы. ⚠️ ZCYC с 05.09.2026 снова живой: скрипт
 # был одноразовым, ряд три месяца стоял на 11.06, монитор молчал именно потому,
 # что ряд отсюда исключили как «мёртвый». Теперь zcyc_daily в оркестраторе.
@@ -201,6 +206,8 @@ def health_data(
             kind = "intraday"
         elif row.secid in _T_PLUS_1_SECIDS:
             kind = "t_plus_1"
+        elif row.secid in _WEEKEND_ONLY_SECIDS:
+            kind = "weekly"
         else:
             kind = "close"
         sources.append(entry(f"index:{row.secid}", kind, row.md))
