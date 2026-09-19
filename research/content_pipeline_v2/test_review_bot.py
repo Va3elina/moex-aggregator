@@ -51,8 +51,9 @@ def test_send_kb_false_on_non_json(monkeypatch):
 
 def test_card_marked_sent_only_after_telegram_accepts():
     src = inspect.getsource(bot._notify_new_drafts)
-    assert "if send_kb(" in src
-    assert src.index("if send_kb(") < src.index("_MARK_NOTIFIED")
+    # deliver: rich-карточка, при отказе — прежняя; True только если Telegram принял одну из них
+    assert "if send_rich(chat_id" in src and "return send_kb(chat_id" in src
+    assert src.index("if deliver(config.ADMIN_USER_ID)") < src.index("_MARK_NOTIFIED")
 
 
 def test_edit_button_sends_remarks_to_writer_not_replaces_post():
@@ -157,7 +158,34 @@ def test_decided_card_has_status_and_no_buttons():
     assert "[статус: rejected]" in txt and kb == []
 
 
-def test_photo_goes_before_card_and_context_is_inside_it():
+def test_rich_card_is_post_then_two_details():
+    """19.09: «как у Т-Банка» — разделы <details>; «убери стикеры лупы и кирпича, просто два раздела
+    новость и судья, внутри без смайликов, коротко и по пунктам»."""
+    h = bot._card_rich(_row("Толпа против календаря\n\nТекст поста."))
+    assert h.startswith("<p>Толпа против календаря</p>")
+    assert "<details><summary>Новость</summary><ul>" in h
+    assert "<details><summary>Судья: брак</summary><ul>" in h
+    assert h.index("Новость") < h.index("Судья")
+    assert "<blockquote" not in h
+    after_post = h[h.index("<details>"):]
+    assert not bot._EMOJI.search(after_post), after_post
+
+
+def test_judge_items_are_short_points():
+    title, items = bot._judge_items("брак", ["link_earned"], [], [{"n": 2, "doubt": "🙂 " + "д" * 500}],
+                                    "2026-09-19", "заменил слово")
+    assert title == "Судья: брак"
+    assert items[0] == "Провалено: link_earned"
+    assert all(len(x) <= bot._ITEM_LIMIT for x in items)
+    assert not any(bot._EMOJI.search(x) for x in items)
+
+
+def test_rich_first_old_format_as_fallback():
     src = inspect.getsource(bot._notify_new_drafts)
-    assert src.index("send_photo(config.ADMIN_USER_ID") < src.index("if send_kb(config.ADMIN_USER_ID")
+    assert src.index("send_rich(chat_id") < src.index("send_kb(chat_id")
     assert "send(config.ADMIN_USER_ID, part)" not in src
+
+
+def test_rich_card_decision_changes_only_buttons():
+    src = inspect.getsource(bot.process_callback)
+    assert '"rich_message" in msg' in src and "edit_markup(" in src

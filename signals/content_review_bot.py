@@ -127,6 +127,45 @@ MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 _SELECT_INSIGHT_MEDIA = text("SELECT source, media_filename FROM content_candidates WHERE id = :id")
 
 
+def send_rich(chat_id, rich_html: str, inline_keyboard: list, photo: str | None = None) -> bool:
+    """Карточка как rich-сообщение (Bot API 10.1+, sendRichMessage): фото, пост и раскрывающиеся
+    разделы <details> — как посты Т-Банка (Вадим 19.09: «на фото как у Т-Банка, а ты сделал
+    цитирование»). Фото встроено в само сообщение (tg://photo?id=chart + attach://chart).
+    Возвращает, принял ли Telegram сообщение — при отказе вызывающий шлёт старый формат."""
+    rich = {"html": rich_html}
+    files = None
+    if photo:
+        rich["media"] = [{"id": "chart", "media": {"type": "photo", "media": "attach://chart"}}]
+    data = {"chat_id": chat_id, "rich_message": json.dumps(rich, ensure_ascii=False),
+            "reply_markup": json.dumps({"inline_keyboard": inline_keyboard}, ensure_ascii=False)}
+    try:
+        if photo:
+            with open(photo, "rb") as f:
+                files = {"chart": (os.path.basename(photo), f, "image/png")}
+                resp = requests.post(f"{API_BASE}/sendRichMessage", data=data, files=files, timeout=30)
+        else:
+            resp = requests.post(f"{API_BASE}/sendRichMessage", data=data, timeout=15)
+        d = resp.json()
+    except (requests.RequestException, ValueError, OSError) as e:
+        print(f"[content_review_bot] send_rich error: {_redact(e)}")
+        return False
+    if not d.get("ok"):
+        print(f"[content_review_bot] send_rich: Telegram отклонил: {_redact(d.get('description') or d)}")
+        return False
+    return True
+
+
+def edit_markup(chat_id, message_id, inline_keyboard: list) -> None:
+    """Rich-карточку после решения не переписываем (editMessageText с фото — лишняя сложность):
+    меняем только кнопки на строку статуса."""
+    try:
+        requests.post(f"{API_BASE}/editMessageReplyMarkup",
+                      json={"chat_id": chat_id, "message_id": message_id,
+                            "reply_markup": {"inline_keyboard": inline_keyboard}}, timeout=15)
+    except requests.RequestException as e:
+        print(f"[content_review_bot] edit_markup error: {_redact(e)}")
+
+
 def send_photo(chat_id, path: str, caption: str = "") -> bool:
     """График к черновику «от находки» (signals/insight_scan.py рисует его вместе с
     карточкой) — отдельным сообщением сразу под карточкой черновика."""
@@ -454,6 +493,99 @@ def _card_view(row, context: str = ""):
     return txt, kb
 
 
+def _paras(h: str) -> str:
+    """Уже экранированный текст → абзацы <p>, переносы строк → <br>."""
+    return "".join(f"<p>{p.strip(chr(10)).replace(chr(10), '<br>')}</p>"
+                   for p in h.split("\n\n") if p.strip())
+
+
+# Эмодзи и маркеры строк — в rich-карточке их нет (Вадим 19.09: «убери лишние стикеры лупы и кирпича,
+# внутри тоже без смайликов, максимально коротко и по пунктам»). В самом посте эмодзи остаются.
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u25A0-\u25FF\uFE0F\u200D]")
+_ITEM_LIMIT = 160
+
+
+def _plain(s: str, n: int = _ITEM_LIMIT) -> str:
+    s = _EMOJI.sub(" ", s or "").strip().lstrip("•-– ").strip()
+    s = re.sub(r"\s+", " ", s)
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def _ul(items: list) -> str:
+    return "<ul>" + "".join(f"<li>{html.escape(x)}</li>" for x in items if x) + "</ul>"
+
+
+def _origin_items(db, cid: int, tickers) -> tuple:
+    """Раздел «Новость» (у находок и связок — «Находка» / «Связка»): короткие пункты без эмодзи."""
+    r = db.execute(_SELECT_CONTEXT, {"id": cid}).fetchone()
+    if not r:
+        return "Новость", [f"#{cid}"]
+    (source, _event_type, raw_text, source_url, reasoning,
+     a_name, a_id, a_group, a_head, a_ctx, a_date, _t) = r
+    kind = {"combo": "Связка", "insight": "Находка"}.get(source or "", "Новость")
+    items = [f"#{cid} · {', '.join(tickers or []) or '—'}"]
+    if raw_text and source in ("insight", "combo"):
+        from signals.brief_summary import summarize
+        items += [_plain(x) for x in summarize(raw_text).splitlines() if x.strip()]
+    elif raw_text:
+        items.append(_plain(raw_text, 300))
+    if a_head:
+        items.append(_plain(f"Значения: {a_name or a_id}, {a_date:%d.%m.%Y} — {a_head}"
+                            + (f", {a_ctx}" if a_ctx else "")))
+    if reasoning:
+        items.append(_plain(f"Почему взяли: {reasoning}"))
+    if source_url:
+        items.append(source_url)
+    return kind, items
+
+
+def _judge_items(verdict, failed, defects, paragraphs, fixed_at, fix_note) -> tuple:
+    """Раздел «Судья»: заголовок с вердиктом, внутри — пункты без эмодзи."""
+    if not verdict:
+        return "Судья: ещё не смотрел", []
+    items = []
+    if failed:
+        items.append("Провалено: " + ", ".join(failed))
+    if defects:
+        items.append("Дефекты: " + ", ".join(defects))
+    if fixed_at:
+        items.append(_plain("Поправил текст (вердикт — по исходному)" + (f": {fix_note}" if fix_note else "")))
+    try:
+        ps = paragraphs if isinstance(paragraphs, list) else json.loads(paragraphs or "[]")
+    except (TypeError, ValueError):
+        ps = []
+    for p in ps:
+        if not isinstance(p, dict):
+            continue
+        if p.get("supported") is False:
+            items.append(_plain(f"Абз. {p.get('n', '?')} без опоры: {p.get('claim') or ''}"))
+        elif (p.get("doubt") or "").strip():
+            items.append(_plain(f"Абз. {p.get('n', '?')}: {p['doubt']}"))
+    return f"Судья: {verdict}", items
+
+
+def _card_rich(row, db=None) -> str:
+    """Rich-версия карточки: пост абзацами, под ним два раскрывающихся раздела <details> —
+    «Новость» (или «Связка» / «Находка») и «Судья». Фото вставляет send_rich (первым блоком)."""
+    (cid, headline, tickers, draft_text, status, reason_code, reason_text,
+     j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note,
+     _annotation) = row
+    body = _paras(apply_custom_emoji(with_frame_signature((draft_text or "")[:_DRAFT_PREVIEW_LIMIT])))
+    if db is not None:
+        o_title, o_items = _origin_items(db, cid, tickers)
+    else:
+        o_title, o_items = "Новость", [f"#{cid} · {', '.join(tickers or []) or '—'}", _plain(headline or "")]
+    j_title, j_items = _judge_items(j_verdict, j_failed, j_defects, j_paragraphs, j_fixed_at, j_fix_note)
+    judge = f"<details><summary>{html.escape(j_title)}</summary>{_ul(j_items)}</details>" if j_items \
+        else f"<p>{html.escape(j_title)}</p>"
+    return (f"{body}<details><summary>{html.escape(o_title)}</summary>{_ul(o_items)}</details>{judge}")
+
+
+def _decided_kb(cid: int, what: str) -> list:
+    """Кнопки rich-карточки после решения — одна строка статуса (нажатие ничего не делает)."""
+    return [[{"text": what, "callback_data": f"n:{cid}"}]]
+
+
 _SELECT_CONTEXT = text("""
     SELECT c.source, c.event_type, c.raw_text, c.source_url, c.reasoning,
            a.asset_name, a.asset_id, a.clgroup, a.headline, a.context, a.signal_date, c.tickers
@@ -492,8 +624,6 @@ def _context_text(db, cid: int) -> str:
 
 # Кандидат → когда Telegram последний раз отказал в карточке (time.monotonic()).
 _notify_failed_at: dict = {}
-# Кандидаты, чьё фото админу уже ушло, а карточку Telegram пока не принял.
-_photo_sent: set = set()
 _NOTIFY_RETRY_SEC = 600
 
 
@@ -512,32 +642,35 @@ def _notify_new_drafts() -> None:
             row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
             if not row:
                 continue
-            txt, kb = _card_view(row, _context_text(db, cid))
-            # График — над постом, как в канале (Вадим 16.09: «фото пусть будет вместе с постом»):
-            # фото, под ним карточка. Отказ карточки повторится через _NOTIFY_RETRY_SEC — фото
-            # второй раз не шлём.
+            context = _context_text(db, cid)
+            txt, kb = _card_view(row, context)
+            rich = _card_rich(row, db)
             media = db.execute(_SELECT_INSIGHT_MEDIA, {"id": cid}).first()
             photo = None
             if media and media[0] in ("insight", "combo") and media[1]:
                 path = os.path.join(MEDIA_DIR, media[1])
                 if os.path.exists(path):
                     photo = path
-            if photo and cid not in _photo_sent:
-                send_photo(config.ADMIN_USER_ID, photo, f"график к черновику #{cid}")
-                _photo_sent.add(cid)
-            # «Отправлено» ставим ТОЛЬКО если Telegram сообщение принял (см. send_kb).
-            if send_kb(config.ADMIN_USER_ID, txt, kb):
+
+            def deliver(chat_id) -> bool:
+                """Rich-карточка (фото внутри); Telegram отказал — прежний формат: фото, затем
+                пост со свёрнутыми цитатами. Карточка не должна теряться из-за нового формата."""
+                if send_rich(chat_id, rich, kb, photo):
+                    return True
+                if photo:
+                    send_photo(chat_id, photo, f"график к черновику #{cid}")
+                return send_kb(chat_id, txt, kb)
+
+            # «Отправлено» ставим ТОЛЬКО если Telegram сообщение принял.
+            if deliver(config.ADMIN_USER_ID):
                 db.execute(_MARK_NOTIFIED, {"id": cid})
                 db.commit()
                 _notify_failed_at.pop(cid, None)
-                _photo_sent.discard(cid)
                 # Коллеге — та же карточка, один раз: кандидат уже помечен
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
                 # Telegram ответит «chat not found», send_kb напечатает это в лог).
                 for extra in config.CONTENT_DRAFT_EXTRA_CHAT_IDS:
-                    if photo:
-                        send_photo(extra, photo, f"график к черновику #{cid}")
-                    send_kb(extra, txt, kb)
+                    deliver(extra)
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
@@ -630,6 +763,8 @@ def process_callback(cb: dict) -> None:
             answer_cb(cb_id)
         return
     who = cb.get("from")
+    # карточка отправлена sendRichMessage (фото и <details>) — у неё переписываем только кнопки
+    rich_card = "rich_message" in msg
 
     # 'r:<code>:<cid>' несёт ДВА поля, остальные операции — только id.
     # Без этой развилки int("stretched_link:845") падал бы в ValueError и
@@ -648,16 +783,22 @@ def process_callback(cb: dict) -> None:
     try:
         if op == "a":
             ok, note = _approve(db, cid)
-            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
-            edit_kb(chat_id, message_id, txt, kb)
+            if rich_card:
+                edit_markup(chat_id, message_id, _decided_kb(cid, "✅ опубликовано") if ok else [])
+            else:
+                row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
+                txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
+                edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
             _tell_admin(chat_id, who, f"✅ одобрил #{cid}: {note}")
         elif op == "x":
             ok, note = _reject(db, cid)
-            row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
-            txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
-            edit_kb(chat_id, message_id, txt, kb)
+            if rich_card:
+                edit_markup(chat_id, message_id, _decided_kb(cid, "❌ отклонено") if ok else [])
+            else:
+                row = db.execute(_SELECT_CANDIDATE, {"id": cid}).fetchone()
+                txt, kb = _card_view(row, _context_text(db, cid)) if row else (note, [])
+                edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, note[:190])
             # Причину спрашиваем ПОСЛЕ применённого решения: если Вадим не
             # ответит, теряется причина, а не сам отказ.
