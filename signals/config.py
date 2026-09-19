@@ -66,7 +66,7 @@ OI_ASSETS = [
     "SE", "TN", "PT", "AF", "KC", "FF", "AL", "EURRUBF", "SBERF", "CE",
     "HS", "NK", "RI", "RL", "LK", "UC", "PD", "NM", "MC", "RM",
     "RN", "SP", "SN", "ME", "HY", "BM", "TT", "OJ", "MG", "W4",
-    "DX", "CH", "MY", "VI", "AU", "BT",
+    "DX", "CH", "MY", "VI", "AU", "BT", "EH", "ON",
     # + 29 акций из ticker_futures_map, отсутствовавших здесь (миграция 024,
     # найдено 2026-07-14): PX(Полюс) + 28 daily-only акций.
     "PX", "AK", "AS", "BN", "BS", "CM", "FE", "FL", "FS", "HD", "IR", "KM",
