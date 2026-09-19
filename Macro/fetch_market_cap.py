@@ -248,8 +248,12 @@ def parse_per_company_caps(html_clean: str) -> List[Tuple[str, float]]:
     rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html_clean, re.DOTALL)
 
     for row in rows:
-        # Ищем строки с тикерами (ссылка на /q/TICKER, но не на shares_fundamental)
-        if '/q/' not in row or 'shares_fundamental' in row:
+        # Ищем строки с тикерами: ссылка вида /q/TICKER/. С 16.09.2026 SmartLab
+        # добавил в каждую строку ссылку «Исключить компанию» на
+        # /q/shares_fundamental/?... — старый фильтр «нет shares_fundamental»
+        # отбрасывал ВСЕ строки, и капа по компаниям молча перестала писаться
+        # (общая «Всего» парсится отдельно и шла дальше — шаг был зелёным).
+        if not re.search(r'/q/[A-Za-z0-9]+/', row):
             continue
 
         cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
