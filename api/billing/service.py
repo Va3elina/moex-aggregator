@@ -1381,11 +1381,27 @@ def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
                 "tier": result.get("tier"),
                 "expires_at": result.get("expires_at"),
             }
+        # Текст провайдера («ChargeQr REJECTED») юзеру показывать нельзя —
+        # проверено вживую на счёте с нулевым остатком. Отдаём человеческое
+        # сообщение, техническое остаётся в логах.
+        human = (
+            "Счёт привязан, но оплатить не удалось: банк отклонил списание. "
+            "Проверьте остаток на счёте и попробуйте ещё раз."
+        )
+        if result.get("failure_kind") == "nsf":
+            human = (
+                "Счёт привязан, но на нём недостаточно средств. "
+                "Пополните счёт и попробуйте ещё раз."
+            )
+        log.warning(
+            "poll_sbp_binding: первое списание не прошло sub=%s pm=%s: %s",
+            sub.id, pm.id, result.get("message"),
+        )
         return {
             "status": "failed",
             "payment_method_id": pm.id,
             "failure_kind": result.get("failure_kind"),
-            "message": result.get("message") or "Списание не прошло",
+            "message": human,
         }
 
     # Привязка отклонена или заявка протухла.
