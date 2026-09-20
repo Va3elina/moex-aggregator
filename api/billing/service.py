@@ -36,7 +36,7 @@ from api.models.user import User
 log = logging.getLogger(__name__)
 
 
-def _test_price_for(user: User, default_amount: float) -> float:
+def test_price_for(user: User, default_amount: float) -> float:
     """
     Тестовая цена для прод-проверок рекуррента (например, привязки счёта по СБП).
 
@@ -255,7 +255,7 @@ def create_checkout_for_user(
 
     # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
     # глобальный override (реальный юзер не должен купить Basic за 5₽).
-    checkout_amount = _test_price_for(user, plan.amount)
+    checkout_amount = test_price_for(user, plan.amount)
     if provider.name == "yookassa":
         test_price = os.getenv("YOOKASSA_TEST_PRICE_RUB", "").strip()
         if test_price:
@@ -1075,7 +1075,7 @@ def charge_recurrent(
     # клиент не списывался и молча терял доступ.
     # Тест-цена (BILLING_TEST_USER_IDS) действует и на продлении — иначе первое
     # списание 3₽, а следующее уже 2900₽ и тест рекуррента стоит как боевой.
-    base_amount = _test_price_for(user, plan.amount)
+    base_amount = test_price_for(user, plan.amount)
     effective_amount = base_amount
     if discount_pct and 0 < discount_pct < 100:
         effective_amount = (
