@@ -19,7 +19,7 @@ import { dateLocale } from '../i18n';
 import {
   X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
-  CalendarDays, Banknote, LayoutGrid, Settings,
+  CalendarDays, Banknote, LayoutGrid, Settings, CreditCard,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -974,27 +974,33 @@ function ConsentModal({
 /**
  * PayMark — значок способа оплаты в развилке «Как оплатить».
  *
- * Нарисованы у нас, официальные брендовые файлы сюда не клали: их нельзя
- * перерисовывать «на глаз» и нельзя тащить из интернета в сборку. Если нужны
- * настоящие лого T-Pay / СБП — кладём svg в public/ и меняем здесь на <img>.
+ * СБП — официальный знак из медиакита НСПК (sbp.nspk.ru/file/logo.zip,
+ * SBP_logo_RGB, уменьшен до 160px). Лежит в public/pay/sbp.png.
+ * Карта/T-Pay — нейтральная иконка: официальную кнопку T-Pay банк отдаёт
+ * своим JS-SDK, отдельного svg в открытом доступе нет. Будет файл из ЛК —
+ * подставим <img> так же, как у СБП.
  */
 function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
-  const label = kind === 'tpay' ? 'T-Pay' : 'СБП';
+  if (kind === 'sbp') {
+    return (
+      <img
+        src="/pay/sbp.png"
+        alt=""
+        aria-hidden="true"
+        width={36}
+        height={26}
+        className="shrink-0"
+        style={{ width: 36, height: 26, objectFit: 'contain' }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden="true"
-      className="inline-flex items-center justify-center shrink-0 rounded-md font-black"
-      style={{
-        width: 44,
-        height: 28,
-        fontSize: 11,
-        letterSpacing: '-0.02em',
-        background: kind === 'tpay' ? '#FFDD2D' : 'transparent',
-        color: kind === 'tpay' ? '#111' : 'var(--accent)',
-        border: kind === 'tpay' ? 'none' : '1px solid var(--accent)',
-      }}
+      className="inline-flex items-center justify-center shrink-0 rounded-md"
+      style={{ width: 36, height: 26, color: 'var(--text-secondary)' }}
     >
-      {label}
+      <CreditCard size={22} />
     </span>
   );
 }
