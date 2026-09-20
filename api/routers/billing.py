@@ -126,10 +126,22 @@ async def list_plans(user: User | None = Depends(get_current_user_optional)):
     # иначе SpeedPay-кнопки инициализировались бы боевым ключом, а Init шёл бы
     # на демо-терминал. Гостю — дефолт (оплатить он всё равно не может).
     provider = get_provider_for(user) if user is not None else get_payment_provider()
+    tiers = tiers_grouped()
+    # Тест-режим цены (BILLING_TEST_USER_IDS): витрину показываем тест-юзеру ту же
+    # сумму, что реально спишется, иначе на /pricing 2900₽, а в чеке 3₽ — и по
+    # карточке непонятно, включился ли тест. Остальным — настоящие цены.
+    if user is not None:
+        for tier_card in tiers:
+            for period in ("monthly", "yearly"):
+                plan_card = tier_card.get(period)
+                if plan_card:
+                    plan_card["amount"] = billing_service.test_price_for(
+                        user, plan_card["amount"]
+                    )
     response: dict = {
         "provider": provider.name,
         "currency": "RUB",
-        "tiers": tiers_grouped(),
+        "tiers": tiers,
         # Публичный флаг для гостевого trial-тизера (гость не может звать /status).
         # trial_eligible для залогиненных по-прежнему считается в /status.
         "trial_enabled": trial_service.TRIAL_ENABLED,
