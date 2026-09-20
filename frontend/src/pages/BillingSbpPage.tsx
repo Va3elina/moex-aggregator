@@ -52,12 +52,19 @@ export default function BillingSbpPage() {
   const pollingRef = useRef(false);
 
   // Картинку QR рисует банк (data_type='IMAGE'), мы её только показываем.
-  // Base64 без префикса — дописываем data-URL сами.
+  // ⚠️ AddAccountQr отдаёт НЕ base64, а готовую SVG-разметку («<svg …»), в
+  // отличие от GetQr, который присылает base64-PNG. Оборачиваем в data-URL
+  // через encodeURIComponent: btoa на кириллицу в Description падает.
   const isImage = nav.data_type === 'IMAGE';
-  const qrSrc =
-    isImage && nav.payload
-      ? (nav.payload.startsWith('data:') ? nav.payload : `data:image/png;base64,${nav.payload}`)
-      : null;
+  const qrSrc = (() => {
+    const raw = nav.payload || '';
+    if (!isImage || !raw) return null;
+    if (raw.startsWith('data:')) return raw;
+    if (raw.trimStart().startsWith('<svg')) {
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
+    }
+    return `data:image/png;base64,${raw}`;
+  })();
 
   const poll = useCallback(async (): Promise<BindState | null> => {
     try {
