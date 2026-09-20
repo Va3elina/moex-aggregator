@@ -36,6 +36,39 @@ from api.models.user import User
 log = logging.getLogger(__name__)
 
 
+def _test_price_for(user: User, default_amount: float) -> float:
+    """
+    Тестовая цена для прод-проверок рекуррента (например, привязки счёта по СБП).
+
+    Применяется ТОЛЬКО юзерам из `BILLING_TEST_USER_IDS` (csv id'шников) и только
+    к СУММЕ СПИСАНИЯ — витрина /plans и цены в UI остаются настоящими, реальный
+    клиент купить Basic за 3₽ не может. Без env-переменных — полный no-op.
+
+    Env: BILLING_TEST_USER_IDS=37, BILLING_TEST_PRICE_RUB=3
+    Откат — убрать env + recreate api (без деплоя кода).
+    """
+    ids_raw = (os.getenv("BILLING_TEST_USER_IDS") or "").strip()
+    price_raw = (os.getenv("BILLING_TEST_PRICE_RUB") or "").strip()
+    if not ids_raw or not price_raw:
+        return default_amount
+    allowed = {chunk.strip() for chunk in ids_raw.split(",") if chunk.strip()}
+    if str(user.id) not in allowed:
+        return default_amount
+    try:
+        amount = float(price_raw)
+    except ValueError:
+        log.warning("BILLING_TEST_PRICE_RUB=%r не число — игнорирую", price_raw)
+        return default_amount
+    if amount <= 0:
+        log.warning("BILLING_TEST_PRICE_RUB=%r <= 0 — игнорирую", price_raw)
+        return default_amount
+    log.warning(
+        "BILLING TEST PRICE: user #%s платит %.2f₽ вместо %.2f₽ (тест-режим)",
+        user.id, amount, default_amount,
+    )
+    return amount
+
+
 def _upsert_payment_method(
     db: Session,
     user_id: int,
@@ -222,7 +255,7 @@ def create_checkout_for_user(
 
     # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
     # глобальный override (реальный юзер не должен купить Basic за 5₽).
-    checkout_amount = plan.amount
+    checkout_amount = _test_price_for(user, plan.amount)
     if provider.name == "yookassa":
         test_price = os.getenv("YOOKASSA_TEST_PRICE_RUB", "").strip()
         if test_price:
@@ -1040,10 +1073,13 @@ def charge_recurrent(
     # plan.amount — float (plans.py), у float нет .quantize(): без конверсии в
     # Decimal первое же продление с retention-скидкой падало AttributeError →
     # клиент не списывался и молча терял доступ.
-    effective_amount = plan.amount
+    # Тест-цена (BILLING_TEST_USER_IDS) действует и на продлении — иначе первое
+    # списание 3₽, а следующее уже 2900₽ и тест рекуррента стоит как боевой.
+    base_amount = _test_price_for(user, plan.amount)
+    effective_amount = base_amount
     if discount_pct and 0 < discount_pct < 100:
         effective_amount = (
-            Decimal(str(plan.amount)) * (100 - discount_pct) / 100
+            Decimal(str(base_amount)) * (100 - discount_pct) / 100
         ).quantize(Decimal("0.01"))
 
     # Продление идёт через провайдера ПРИВЯЗКИ (pm.provider), не через
