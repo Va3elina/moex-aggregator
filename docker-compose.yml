@@ -290,6 +290,10 @@ services:
       # Пусто = штатные 2900₽. Должна совпадать в api И orchestrator (конверсию
       # считает оркестратор). Откат — убрать из .env + recreate (без деплоя).
       - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
+      # Точечная тест-цена: только юзерам из списка и только на сумму списания
+      # (витрина /pricing не меняется). Пусто = штатные цены. См. service.py.
+      - BILLING_TEST_USER_IDS=${BILLING_TEST_USER_IDS:-}
+      - BILLING_TEST_PRICE_RUB=${BILLING_TEST_PRICE_RUB:-}
       # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
       # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
       # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.
@@ -429,6 +433,10 @@ services:
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-FRAME}
       # Прод-тест рекуррента: цена basic для конверсии триала (должна совпадать с api).
       - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
+      # Точечная тест-цена (продления считает оркестратор — список должен
+      # совпадать с api, иначе первое списание 3₽, а продление 2900₽).
+      - BILLING_TEST_USER_IDS=${BILLING_TEST_USER_IDS:-}
+      - BILLING_TEST_PRICE_RUB=${BILLING_TEST_PRICE_RUB:-}
       # FinanceMarker: карточки компаний (fm_cards_daily). Квота платная и месячная,
       # расход считается в таблице api_budget — потолок можно менять без деплоя кода.
       - FM_API_TOKEN=${FM_API_TOKEN:-}
