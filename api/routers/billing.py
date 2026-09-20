@@ -146,10 +146,10 @@ async def list_plans(user: User | None = Depends(get_current_user_optional)):
         # trial_eligible для залогиненных по-прежнему считается в /status.
         "trial_enabled": trial_service.TRIAL_ENABLED,
         "trial_days": dict(TRIAL_DAYS),
-        # Кнопка «СБП — QR-код» в consent-модалке. Убрана 02.07.2026 (GetQr
-        # отдавал «Внутреннюю ошибку»), возвращается пока только тест-юзерам:
-        # проба 20.09 показала, что GetQr отвечает Success при сумме ≥10₽.
-        "sbp_qr_enabled": billing_service.is_test_user(user),
+        # Показывать ли выбор способа оплаты со «Счётом по СБП». Гостю не нужен:
+        # он всё равно не может платить, а привязка требует авторизации.
+        # Раскатано на всех 20.09.2026 после проверки обоих рекуррентов вживую.
+        "sbp_qr_enabled": user is not None,
     }
     if provider.name in ("tbank", "tbank_demo"):
         # terminalKey — публичный (зашит в каждый Init request, отображается
@@ -273,10 +273,6 @@ async def sbp_bind_start(
     фронт показывает по ней QR (десктоп) или ведёт по ней же (телефон). Дальше
     фронт опрашивает GET /sbp/bind/{subscription_id}.
     """
-    # Пока флоу на обкатке — открыт только тест-юзерам (тем же, кто видит
-    # кнопку на /pricing). Убрать вместе с sbp_qr_enabled, когда раскатываем всем.
-    if not billing_service.is_test_user(user):
-        raise HTTPException(403, "Привязка счёта по СБП пока недоступна")
     try:
         return billing_service.start_sbp_binding(
             db=db, user=user, plan_id=body.plan_id, data_type=body.data_type
