@@ -149,15 +149,19 @@ export default function BillingSbpPage() {
           : t('Откройте приложение банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.')}
       </p>
 
+      {/* Оборачивающий flex: раньше QR был inline-block и вставал в строку
+          со статусом ожидания — код уезжал влево, статус прилипал справа. */}
       {qrSrc && (
-        <div className="inline-block p-4 rounded-2xl bg-white mb-4">
+        <div className="flex justify-center mb-4">
+          <div className="inline-block p-4 rounded-2xl bg-white">
           <img
             src={qrSrc}
             alt={t('QR-код для привязки счёта')}
             width={240}
             height={240}
             style={{ display: 'block', width: 240, height: 240 }}
-          />
+            />
+          </div>
         </div>
       )}
 
@@ -176,13 +180,13 @@ export default function BillingSbpPage() {
       )}
 
       {phase === 'waiting' && (
-        <p className="inline-flex items-center gap-2 text-theme-secondary text-sm">
+        <p className="flex items-center justify-center gap-2 text-theme-secondary text-sm">
           <Clock size={16} className="animate-pulse" /> {t('Ждём подтверждение в банке…')}
         </p>
       )}
 
       {phase === 'charging' && (
-        <p className="inline-flex items-center gap-2 text-theme-secondary text-sm">
+        <p className="flex items-center justify-center gap-2 text-theme-secondary text-sm">
           <Loader2 size={16} className="animate-spin" /> {t('Счёт привязан, списываем оплату…')}
         </p>
       )}
