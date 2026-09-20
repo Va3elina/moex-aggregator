@@ -1,114 +1,124 @@
 /**
- * BillingSbpPage — оплата подписки через СБП по QR-коду.
+ * BillingSbpPage — привязка счёта по СБП и первое списание.
  *
- * Приходим сюда из ConsentModal (PricingPage) после выбора «СБП — QR-код».
- * payment_id / qr_image / qr_payload передаются через location.state — qr_image
- * это крупный data-URL (картинка QR), в query его не положишь.
+ * Порядок перевёрнут относительно старого QR-флоу: сначала юзер подтверждает
+ * в банке ПРИВЯЗКУ СЧЁТА (денег не двигается), и только потом мы сами делаем
+ * первое списание через ChargeQr. Так привязка становится главным действием
+ * экрана, а не необязательным постскриптумом после оплаты — по правилам НСПК
+ * привязать счёт молча, по ходу платежа, нельзя.
  *
- * Серверный QR обходит исходную проблему серта: оплата завершается в приложении
- * банка по СБП напрямую, браузер не ходит на недоверенную платёжку T-Bank.
+ * Приходим сюда из ConsentModal (PricingPage) с subscription_id + payload
+ * (ссылка sub.nspk.ru) в location.state.
  *
- * Поллинг статуса — как в BillingSuccessPage:
- *  1. POST /api/billing/sync (GetState у T-Bank) — страховка от задержки webhook.
- *  2. polling /api/billing/status каждые 2с (СБП руками дольше карты → до 2 мин).
- *  3. при is_active → /billing/success (там общий success-UI + воронка).
- *  4. таймаут → кнопка «Проверить статус».
+ * Состояния экрана:
+ *   waiting  — ждём подтверждения в банке (поллим GET /sbp/bind/{id})
+ *   charging — привязка получена, идёт первое списание
+ *   failed   — привязали, но списать не смогли (чаще всего нет денег на счёте)
+ *   expired  — заявка протухла или банк отклонил привязку
+ * Успех → /billing/success (общий success-UI).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Clock, AlertCircle, RotateCw, Smartphone } from 'lucide-react';
+import { AlertCircle, Clock, Loader2, Smartphone } from 'lucide-react';
 import { apiFetch } from '../services/api';
 
 interface SbpNavState {
-  payment_id?: string;
-  qr_image?: string | null;
-  qr_payload?: string | null;
+  subscription_id?: number;
+  // payload — либо ссылка sub.nspk.ru (data_type='PAYLOAD', телефон), либо
+  // base64-картинка QR от банка (data_type='IMAGE', десктоп).
+  payload?: string | null;
+  data_type?: 'PAYLOAD' | 'IMAGE';
   plan_id?: string;
+  amount?: number;
 }
 
-interface Status {
-  tier: string;
-  is_active: boolean;
+interface BindState {
+  status: 'waiting' | 'charged' | 'failed' | 'expired' | string;
+  message?: string;
+  failure_kind?: string;
 }
 
 export default function BillingSbpPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const sbp = (location.state || {}) as SbpNavState;
-  const [state, setState] = useState<'await' | 'timeout'>('await');
-  const [syncing, setSyncing] = useState(false);
+  const nav = (location.state || {}) as SbpNavState;
 
-  /** Принудительный sync через GetState у провайдера. */
-  const runSync = useCallback(async (): Promise<Status | null> => {
+  const [phase, setPhase] = useState<'waiting' | 'charging' | 'failed' | 'expired'>('waiting');
+  const [message, setMessage] = useState<string | null>(null);
+  // Гварда от повторного входа в поллинг при ре-рендере (ручка не идемпотентна:
+  // именно она проводит первое списание).
+  const pollingRef = useRef(false);
+
+  // Картинку QR рисует банк (data_type='IMAGE'), мы её только показываем.
+  // Base64 без префикса — дописываем data-URL сами.
+  const isImage = nav.data_type === 'IMAGE';
+  const qrSrc =
+    isImage && nav.payload
+      ? (nav.payload.startsWith('data:') ? nav.payload : `data:image/png;base64,${nav.payload}`)
+      : null;
+
+  const poll = useCallback(async (): Promise<BindState | null> => {
     try {
-      const r = await apiFetch('/api/billing/sync', { method: 'POST' });
+      const r = await apiFetch(`/api/billing/sbp/bind/${nav.subscription_id}`);
       if (!r.ok) return null;
-      return (await r.json()) as Status;
+      return (await r.json()) as BindState;
     } catch {
       return null;
     }
-  }, []);
-
-  /** Лёгкий polling статуса. */
-  const fetchStatus = useCallback(async (): Promise<Status | null> => {
-    try {
-      const r = await apiFetch('/api/billing/status');
-      if (!r.ok) return null;
-      return (await r.json()) as Status;
-    } catch {
-      return null;
-    }
-  }, []);
+  }, [nav.subscription_id]);
 
   useEffect(() => {
-    if (!sbp.qr_image) return; // нет QR (refresh/прямой заход) — поллить нечего
+    if (!nav.subscription_id || pollingRef.current) return;
+    pollingRef.current = true;
     let cancelled = false;
     let attempts = 0;
-    const maxAttempts = 60; // СБП-оплата вручную дольше карты: 60 × 2с = 2 мин
+    const maxAttempts = 90; // 90 × 2с = 3 мин: подтверждение в банке руками
 
-    const done = () => {
-      if (!cancelled) navigate('/billing/success');
-    };
-
-    (async () => {
-      const synced = await runSync();
+    const tick = async () => {
       if (cancelled) return;
-      if (synced?.is_active) return done();
+      const s = await poll();
+      if (cancelled) return;
 
-      const tick = async () => {
-        if (cancelled) return;
-        const s = await fetchStatus();
-        if (s?.is_active) return done();
-        attempts++;
-        if (attempts >= maxAttempts) setState('timeout');
-        else setTimeout(tick, 2000);
-      };
+      if (s?.status === 'charged') {
+        navigate('/billing/success');
+        return;
+      }
+      if (s?.status === 'failed') {
+        setMessage(s.message || null);
+        setPhase('failed');
+        return;
+      }
+      if (s?.status === 'expired') {
+        setPhase('expired');
+        return;
+      }
+
+      attempts++;
+      if (attempts >= maxAttempts) {
+        setPhase('expired');
+        return;
+      }
       setTimeout(tick, 2000);
-    })();
+    };
+    setTimeout(tick, 2000);
 
     return () => {
       cancelled = true;
     };
-  }, [sbp.qr_image, runSync, fetchStatus, navigate]);
+  }, [nav.subscription_id, poll, navigate]);
 
-  const handleManualSync = async () => {
-    setSyncing(true);
-    const s = await runSync();
-    setSyncing(false);
-    if (s?.is_active) navigate('/billing/success');
-    else setState('await'); // продолжаем ждать
-  };
-
-  // QR живёт только в navigation state → при обновлении страницы он теряется.
-  if (!sbp.qr_image) {
+  // Заявка живёт только в navigation state → при обновлении страницы теряется.
+  if (!nav.subscription_id || !nav.payload) {
     return (
       <div className="max-w-xl mx-auto px-6 py-12 text-center">
         <AlertCircle className="w-16 h-16 mx-auto mb-4 text-amber-400" />
-        <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('QR-код недоступен')}</h1>
+        <h1 className="text-2xl font-bold text-theme-primary mb-2">
+          {t('Привязка недоступна')}
+        </h1>
         <p className="text-theme-secondary mb-6">
-          {t('Похоже, страница была обновлена. Вернись к тарифам и сгенерируй новый QR.')}
+          {t('Похоже, страница была обновлена. Вернись к тарифам и начни заново.')}
         </p>
         <Link
           to="/pricing"
@@ -123,27 +133,31 @@ export default function BillingSbpPage() {
 
   return (
     <div className="max-w-xl mx-auto px-6 py-12 text-center">
-      <h1 className="text-2xl font-bold text-theme-primary mb-2">{t('Оплата через СБП')}</h1>
+      <h1 className="text-2xl font-bold text-theme-primary mb-2">
+        {t('Подтвердите привязку счёта')}
+      </h1>
       <p className="text-theme-secondary mb-6">
-        {t('Отсканируй QR-код камерой или приложением банка. На телефоне — нажми кнопку ниже.')}
+        {isImage
+          ? t('Отсканируйте код приложением банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.')
+          : t('Откройте приложение банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.')}
       </p>
 
-      {/* QR-код (T-Bank GetQr DataType=IMAGE → data-URL). Фон белый для контраста. */}
-      <div className="inline-block p-4 rounded-2xl bg-white mb-4">
-        <img
-          src={sbp.qr_image}
-          alt={t('СБП QR-код для оплаты')}
-          width={240}
-          height={240}
-          style={{ display: 'block', width: 240, height: 240 }}
-        />
-      </div>
+      {qrSrc && (
+        <div className="inline-block p-4 rounded-2xl bg-white mb-4">
+          <img
+            src={qrSrc}
+            alt={t('QR-код для привязки счёта')}
+            width={240}
+            height={240}
+            style={{ display: 'block', width: 240, height: 240 }}
+          />
+        </div>
+      )}
 
-      {/* Мобильный диплинк — СБП-ссылка (qr.nspk.ru/...) открывает приложение банка. */}
-      {sbp.qr_payload && (
+      {!isImage && nav.payload && (
         <div className="mb-6">
           <a
-            href={sbp.qr_payload}
+            href={nav.payload}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium"
@@ -154,30 +168,50 @@ export default function BillingSbpPage() {
         </div>
       )}
 
-      {/* Статус ожидания / таймаут */}
-      {state === 'await' ? (
+      {phase === 'waiting' && (
         <p className="inline-flex items-center gap-2 text-theme-secondary text-sm">
-          <Clock size={16} className="animate-pulse" /> {t('Ждём подтверждение оплаты…')}
+          <Clock size={16} className="animate-pulse" /> {t('Ждём подтверждение в банке…')}
         </p>
-      ) : (
+      )}
+
+      {phase === 'charging' && (
+        <p className="inline-flex items-center gap-2 text-theme-secondary text-sm">
+          <Loader2 size={16} className="animate-spin" /> {t('Счёт привязан, списываем оплату…')}
+        </p>
+      )}
+
+      {phase === 'failed' && (
         <div>
           <p className="text-theme-secondary text-sm mb-3">
-            {t('Если ты уже оплатил, но статус не обновился — проверь вручную.')}
+            {message || t('Счёт привязан, но списание не прошло.')}
           </p>
-          <button
-            onClick={handleManualSync}
-            disabled={syncing}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium disabled:opacity-50"
-            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+          <Link
+            to="/pricing"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium"
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
           >
-            <RotateCw size={16} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? t('Проверяем…') : t('Проверить статус')}
-          </button>
+            {t('Попробовать ещё раз')}
+          </Link>
+        </div>
+      )}
+
+      {phase === 'expired' && (
+        <div>
+          <p className="text-theme-secondary text-sm mb-3">
+            {t('Привязка не подтверждена. Начните заново — ссылка действует ограниченное время.')}
+          </p>
+          <Link
+            to="/pricing"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium"
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+          >
+            {t('К тарифам')}
+          </Link>
         </div>
       )}
 
       <p className="mt-8 text-xs" style={{ color: 'var(--text-muted)' }}>
-        {t('Подписка продлевается автоматически по СБП. Отменить можно в профиле.')}
+        {t('После привязки подписка продлевается автоматически по СБП. Отвязать счёт можно в профиле.')}
       </p>
     </div>
   );

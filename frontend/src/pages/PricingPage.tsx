@@ -307,6 +307,47 @@ export default function PricingPage() {
     }
   };
 
+  /**
+   * Привязка счёта по СБП: заявка на бэке (AddAccountQr) → экран /billing/sbp,
+   * где юзер подтверждает привязку в банке. Денег здесь не двигается — первое
+   * списание делает бэк сразу после подтверждения (ChargeQr).
+   */
+  const confirmSbpBinding = async () => {
+    if (!pendingPlanId) return;
+    const planId = pendingPlanId;
+    const isPhone = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    setCheckoutLoading(planId);
+    setError(null);
+    track('checkout_start', { plan: planId, rail: 'sbp_bind' });
+    trackEvent('checkout_start', { plan: planId, rail: 'sbp_bind' });
+    try {
+      const resp = await apiFetch('/api/billing/sbp/bind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Телефон — ссылка (откроем банк прямо), десктоп — картинка QR от
+        // банка. Одна заявка = одна форма: вторая перебила бы первую.
+        body: JSON.stringify({ plan_id: planId, data_type: isPhone ? 'PAYLOAD' : 'IMAGE' }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok || !body.payload) {
+        throw new Error(body.detail || body.error?.message || t('Не удалось начать привязку счёта'));
+      }
+      navigate('/billing/sbp', {
+        state: {
+          subscription_id: body.subscription_id,
+          payload: body.payload,
+          data_type: body.data_type,
+          plan_id: planId,
+          amount: body.amount,
+        },
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('Ошибка'));
+      setCheckoutLoading(null);
+      setPendingPlanId(null);
+    }
+  };
+
   // Подтверждение: создаём checkout-сессию на бэке и редиректим на pay.tbank.ru
   const confirmCheckout = async (rail: 'card' | 'sbp' = 'card') => {
     if (!pendingPlanId) return;
@@ -331,19 +372,6 @@ export default function PricingPage() {
         throw new Error(errData.detail || errData.error?.message || t('Ошибка создания платежа'));
       }
       const body = await resp.json();
-      if (rail === 'sbp') {
-        // СБП: переходим на страницу QR. qr_image — крупный data-URL, поэтому
-        // передаём через navigation state (в query не положишь).
-        navigate('/billing/sbp', {
-          state: {
-            payment_id: body.payment_id,
-            qr_image: body.qr_image,
-            qr_payload: body.qr_payload,
-            plan_id: planId,
-          },
-        });
-        return;
-      }
       // Карта: full-page redirect на pay.tbank.ru (или /billing/stub).
       window.location.href = body.confirmation_url;
     } catch (e) {
@@ -653,7 +681,7 @@ export default function PricingPage() {
           onAgreementChange={setAgreementConsent}
           onConfirm={() => confirmCheckout('card')}
           // СБП (QR, рекуррент) — пока только тест-юзерам, см. sbp_qr_enabled.
-          onConfirmSbp={data.sbp_qr_enabled ? () => confirmCheckout('sbp') : undefined}
+          onConfirmSbp={data.sbp_qr_enabled ? confirmSbpBinding : undefined}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
@@ -880,9 +908,7 @@ function ConsentModal({
           >
             {isLoading
               ? (trialInfo ? t('Открываем…') : t('Создаём…'))
-              : (trialInfo
-                  ? t('Начать бесплатно')
-                  : (onConfirmSbp ? t('Оплатить картой') : t('Оплатить')))}
+              : (trialInfo ? t('Начать бесплатно') : t('Оплатить'))}
           </button>
         </div>
 
@@ -896,7 +922,7 @@ function ConsentModal({
             <div className="flex items-center gap-3 my-4">
               <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
               <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                {t('или оплатить через')}
+                {t('или')}
               </span>
               <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
             </div>
@@ -910,8 +936,11 @@ function ConsentModal({
                 background: 'transparent',
               }}
             >
-              {isLoading ? t('Создаём…') : t('СБП — QR-код')}
+              {isLoading ? t('Создаём…') : t('Привязать счёт по СБП')}
             </button>
+            <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+              {t('Один раз подтвердите счёт в приложении банка — дальше оплата и продления пройдут без подтверждений.')}
+            </p>
           </>
         )}
       </div>

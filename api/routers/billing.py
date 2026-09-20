@@ -254,6 +254,60 @@ async def my_history(
 #  3. POST /checkout — создать платёж
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class SbpBindRequest(BaseModel):
+    plan_id: str
+    # 'PAYLOAD' — ссылка для телефона, 'IMAGE' — картинка QR для десктопа.
+    data_type: str = "PAYLOAD"
+
+
+@router.post("/sbp/bind")
+async def sbp_bind_start(
+    body: SbpBindRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Заявка на привязку счёта по СБП (AddAccountQr). Денег не двигает.
+
+    Отдаёт {subscription_id, payload, amount, ...}: payload — ссылка sub.nspk.ru,
+    фронт показывает по ней QR (десктоп) или ведёт по ней же (телефон). Дальше
+    фронт опрашивает GET /sbp/bind/{subscription_id}.
+    """
+    # Пока флоу на обкатке — открыт только тест-юзерам (тем же, кто видит
+    # кнопку на /pricing). Убрать вместе с sbp_qr_enabled, когда раскатываем всем.
+    if not billing_service.is_test_user(user):
+        raise HTTPException(403, "Привязка счёта по СБП пока недоступна")
+    try:
+        return billing_service.start_sbp_binding(
+            db=db, user=user, plan_id=body.plan_id, data_type=body.data_type
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.error("sbp_bind_start failed: %s", e)
+        raise HTTPException(502, "Не удалось начать привязку счёта. Попробуйте позже.")
+
+
+@router.get("/sbp/bind/{subscription_id}")
+async def sbp_bind_state(
+    subscription_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Статус привязки. Когда банк подтвердил — здесь же проходит ПЕРВОЕ списание
+    (ChargeQr), поэтому ручка не идемпотентна по смыслу: вызывать поллингом
+    раз в 2-3 секунды, но не параллельно из двух вкладок.
+    """
+    try:
+        return billing_service.poll_sbp_binding(db=db, user=user, subscription_id=subscription_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        log.error("sbp_bind_state failed: %s", e)
+        raise HTTPException(502, "Не удалось проверить привязку счёта")
+
+
 @router.post("/checkout", response_model=CheckoutResponse)
 async def checkout(
     body: CheckoutRequest,

@@ -466,6 +466,63 @@ class TBankProvider:
         rk = data.get("RequestKey")
         return data.get("Data"), (str(rk) if rk else None)
 
+    def add_account_qr(
+        self,
+        *,
+        customer_key: str,
+        description: str,
+        data_type: str = "PAYLOAD",
+    ) -> dict | None:
+        """POST /AddAccountQr — заявка на привязку счёта по СБП (Вариант №1).
+
+        Отдельный сценарий: клиент подтверждает в банке ПРИВЯЗКУ, денег не
+        двигается. Первое списание делаем сами через charge_qr по полученному
+        AccountToken. Возвращает {data, request_key} или None.
+
+        data_type: 'PAYLOAD' → ссылка на sub.nspk.ru (сам выбирает банк),
+                   'IMAGE'   → base64-картинка QR.
+
+        ⚠️ Подпись: CustomerKey в Token НЕ входит (проверено перебором всех
+        комбинаций полей 20.09.2026: с ним терминал отдаёт 204 «Неверный токен»).
+        В теле его передавать нужно — иначе привязку не с кем связать. Та же
+        история, что с AddCard и URL-полями, см. _make_token.
+
+        ⚠️ Валидация полей у T-Bank срабатывает РАНЬШЕ проверки токена: ответ
+        9999 «Поле Description не должно быть пустым» НЕ означает, что подпись
+        принята. На этом легко сделать неверный вывод.
+        """
+        body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "CustomerKey": str(customer_key)[:36],
+            "Description": (description or "Привязка счёта")[:250],
+            "DataType": data_type,
+        }
+        body["Token"] = self._make_token(body, extra_exclude=("CustomerKey",))
+        try:
+            with httpx.Client(timeout=15, verify=RU_TLS_VERIFY) as client:
+                resp = client.post(f"{TBANK_API_BASE}/AddAccountQr", json=body)
+        except httpx.HTTPError as e:
+            log.error("TBank.add_account_qr(%s): HTTP error: %s", customer_key, e)
+            return None
+        if resp.status_code >= 400:
+            log.error(
+                "TBank.add_account_qr(%s): %s %s",
+                customer_key, resp.status_code, resp.text,
+            )
+            return None
+        data = resp.json()
+        if not data.get("Success"):
+            log.error(
+                "TBank.add_account_qr(%s): Success=false %s / %s",
+                customer_key, data.get("ErrorCode"), data.get("Message"),
+            )
+            return None
+        rk = data.get("RequestKey")
+        return {
+            "data": data.get("Data"),
+            "request_key": str(rk) if rk else None,
+        }
+
     def get_account_qr_state(self, request_key: str) -> dict | None:
         """POST /GetAddAccountQrState — статус СБП-привязки счёта по RequestKey.
         Возвращает {status, account_token, bank_member_id} или None при ошибке.
