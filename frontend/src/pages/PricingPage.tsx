@@ -762,6 +762,12 @@ function ConsentModal({
 }) {
   const { t } = useTranslation();
   const amountStr = trialInfo ? trialInfo.amount.toLocaleString('ru-RU') : '';
+  // Второй шаг «как платим». Появляется только когда доступна СБП-привязка:
+  // форма банка и привязка счёта — два РАЗНЫХ сценария у T-Bank, одним вызовом
+  // их не объединить, выбор должен произойти до ухода с сайта. Чтобы в модалке
+  // была одна кнопка, развилку вынесли на отдельный шаг.
+  const [step, setStep] = useState<'consent' | 'method'>('consent');
+  const hasMethodStep = !trialInfo && !!onConfirmSbp;
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
@@ -807,7 +813,9 @@ function ConsentModal({
             paddingRight: '2rem',
           }}
         >
-          {trialInfo ? t('Бесплатный пробный период') : t('Подтверждение')}
+          {step === 'method'
+            ? t('Как оплатить')
+            : (trialInfo ? t('Бесплатный пробный период') : t('Подтверждение'))}
         </h2>
         <p
           style={{
@@ -817,11 +825,58 @@ function ConsentModal({
             marginBottom: trialInfo ? '0.75rem' : '1.25rem',
           }}
         >
-          {trialInfo
-            ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
-            : t('Перед оплатой подтвердите согласие со следующими условиями:')}
+          {step === 'method'
+            ? t('Выберите способ оплаты:')
+            : (trialInfo
+                ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
+                : t('Перед оплатой подтвердите согласие со следующими условиями:'))}
         </p>
 
+        {step === 'method' ? (
+          <>
+            <button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="w-full text-left rounded-xl border p-4 transition-colors disabled:opacity-50"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
+            >
+              <span className="block text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                {isLoading ? t('Создаём…') : t('Картой или T-Pay')}
+              </span>
+              <span className="block mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                {t('Форма банка. Автопродление включится само.')}
+              </span>
+            </button>
+
+            <button
+              onClick={onConfirmSbp}
+              disabled={isLoading}
+              className="w-full text-left rounded-xl border p-4 mt-3 transition-colors disabled:opacity-50"
+              style={{ borderColor: 'var(--accent)', background: 'transparent' }}
+            >
+              <span className="block text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                {isLoading ? t('Создаём…') : t('Счёт по СБП')}
+              </span>
+              <span className="block mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                {t('Один раз подтвердите счёт в банке — дальше без подтверждений.')}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setStep('consent')}
+              disabled={isLoading}
+              className="w-full py-3 mt-4 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
+              style={{
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-secondary)',
+                background: 'transparent',
+              }}
+            >
+              {t('Назад')}
+            </button>
+          </>
+        ) : (
+          <>
         {trialInfo && (
           <div
             style={{
@@ -898,7 +953,7 @@ function ConsentModal({
             {t('Отменить', { context: 'checkout' })}
           </button>
           <button
-            onClick={onConfirm}
+            onClick={hasMethodStep ? () => setStep('method') : onConfirm}
             disabled={!canConfirm || isLoading}
             className="flex-1 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
@@ -912,37 +967,9 @@ function ConsentModal({
           </button>
         </div>
 
-        {/* Оплата через СБП (QR). Была убрана 02.07.2026 — GetQr(IMAGE) отдавал
-            «Внутреннюю ошибку системы», юзер упирался в тупиковый экран. Проба
-            20.09.2026: GetQr отвечает Success, если сумма от 10 ₽ (на 1 ₽ —
-            ErrorCode 3016/3050). Кнопку вернули, но пока только тест-юзерам
-            (бэкенд отдаёт sbp_qr_enabled по BILLING_TEST_USER_IDS). */}
-        {!trialInfo && onConfirmSbp && (
-          <>
-            <div className="flex items-center gap-3 my-4">
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                {t('или')}
-              </span>
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-            </div>
-            <button
-              onClick={onConfirmSbp}
-              disabled={!canConfirm || isLoading}
-              className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border"
-              style={{
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-                background: 'transparent',
-              }}
-            >
-              {isLoading ? t('Создаём…') : t('Привязать счёт по СБП')}
-            </button>
-            <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-              {t('Один раз подтвердите счёт в приложении банка — дальше оплата и продления пройдут без подтверждений.')}
-            </p>
           </>
         )}
+
       </div>
     </div>
   );
