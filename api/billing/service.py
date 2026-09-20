@@ -179,6 +179,48 @@ def _demo_return_url(return_url: str) -> str:
     return f"{origin}/billing/unavailable"
 
 
+def assert_can_purchase(db: Session, user: User, plan) -> None:
+    """
+    Гейты покупки, общие для всех способов оплаты: админ, подтверждённый
+    email, запрет дубля/понижения тарифа. Кидает ValueError с текстом для UI.
+    Вынесено из create_checkout_for_user, чтобы СБП-привязка
+    (start_sbp_binding) проходила ровно те же проверки.
+    """
+    if getattr(user, "role", None) == "admin":
+        raise ValueError("У админа полный доступ — оформление подписок не требуется")
+
+    # === Гейт верификации email (ANTI-BYPASS, серверная проверка из БД) ===
+    # Оплатить можно только с подтверждённым РЕАЛЬНЫМ email: иначе чек 54-ФЗ
+    # уйдёт в никуда, и email юзеру не принадлежит. Фронт прячет кнопку оплаты
+    # при !is_verified, но прямой вызов POST /api/billing/checkout с валидным JWT
+    # закрывается здесь (is_verified читается живьём из user — в JWT его нет,
+    # подделать нельзя). Покрывает: synthetic @oauth.local, неподтверждённый
+    # добавленный email, неподтверждённую регистрацию по почте.
+    user_email = (getattr(user, "email", "") or "")
+    if (not user.is_verified) or user_email.endswith("@oauth.local"):
+        raise ValueError("Подтвердите email перед оплатой")
+
+    active_sub = current_subscription(db, user)
+    # is_trial исключаем из дедуп-гейта: во время пробного периода юзер ДОЛЖЕН
+    # иметь возможность оформить платную подписку досрочно (купленная active того
+    # же tier через Guard 1 в renew_expiring_subs заглушит конвертацию триала).
+    if active_sub and not active_sub.cancelled_at and not active_sub.is_trial:
+        active_plan = get_plan(active_sub.plan_id)
+        if active_plan:
+            active_level = TIER_LEVELS.get(active_plan.tier, 0)
+            card_level = TIER_LEVELS.get(plan.tier, 0)
+            if card_level < active_level:
+                raise ValueError(
+                    f"У вас уже активен более высокий тариф ({active_plan.tier}). "
+                    "Понижение тарифа возможно после окончания текущего периода."
+                )
+            if card_level == active_level and active_sub.plan_id == plan.plan_id:
+                raise ValueError(
+                    "Этот план уже активен. Сменить период — после окончания текущего."
+                )
+
+
+
 def create_checkout_for_user(
     db: Session,
     user: User,
@@ -213,38 +255,7 @@ def create_checkout_for_user(
     #       иначе → разрешаем (period switch / upgrade)
     #   - active sub с cancelled_at (юзер отменил, доступ до expires) →
     #       разрешаем продление того же плана и всё что выше
-    if getattr(user, "role", None) == "admin":
-        raise ValueError("У админа полный доступ — оформление подписок не требуется")
-
-    # === Гейт верификации email (ANTI-BYPASS, серверная проверка из БД) ===
-    # Оплатить можно только с подтверждённым РЕАЛЬНЫМ email: иначе чек 54-ФЗ
-    # уйдёт в никуда, и email юзеру не принадлежит. Фронт прячет кнопку оплаты
-    # при !is_verified, но прямой вызов POST /api/billing/checkout с валидным JWT
-    # закрывается здесь (is_verified читается живьём из user — в JWT его нет,
-    # подделать нельзя). Покрывает: synthetic @oauth.local, неподтверждённый
-    # добавленный email, неподтверждённую регистрацию по почте.
-    user_email = (getattr(user, "email", "") or "")
-    if (not user.is_verified) or user_email.endswith("@oauth.local"):
-        raise ValueError("Подтвердите email перед оплатой")
-
-    active_sub = current_subscription(db, user)
-    # is_trial исключаем из дедуп-гейта: во время пробного периода юзер ДОЛЖЕН
-    # иметь возможность оформить платную подписку досрочно (купленная active того
-    # же tier через Guard 1 в renew_expiring_subs заглушит конвертацию триала).
-    if active_sub and not active_sub.cancelled_at and not active_sub.is_trial:
-        active_plan = get_plan(active_sub.plan_id)
-        if active_plan:
-            active_level = TIER_LEVELS.get(active_plan.tier, 0)
-            card_level = TIER_LEVELS.get(plan.tier, 0)
-            if card_level < active_level:
-                raise ValueError(
-                    f"У вас уже активен более высокий тариф ({active_plan.tier}). "
-                    "Понижение тарифа возможно после окончания текущего периода."
-                )
-            if card_level == active_level and active_sub.plan_id == plan.plan_id:
-                raise ValueError(
-                    "Этот план уже активен. Сменить период — после окончания текущего."
-                )
+    assert_can_purchase(db, user, plan)
 
     # Роутинг: новые юзеры (env BILLING_DEMO_SINCE) — на демо-терминал T-Bank,
     # тест-юзеры ЮKassa (env YOOKASSA_TEST_USER_IDS) — в ЮKassa, остальные —
@@ -1219,6 +1230,176 @@ def charge_recurrent(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  7a. СБП-ПРИВЯЗКА СЧЁТА (Вариант №1 T-Bank): сначала привязка, потом деньги
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Сколько живёт незавершённая заявка на привязку. Юзер ушёл в банк и не вернулся
+# — через этот срок заявка гасится, чтобы не висела в «binding» вечно.
+SBP_BINDING_TTL_MINUTES = 30
+
+
+def start_sbp_binding(
+    db: Session, user: User, plan_id: str, data_type: str = "PAYLOAD"
+) -> dict:
+    """
+    Шаг 1: заявка на привязку счёта по СБП. Денег НЕ двигает.
+
+    Создаёт Subscription(status='binding') — промежуточное состояние «счёт ещё
+    не привязан, не оплачено» — и зовёт AddAccountQr. Юзер подтверждает привязку
+    в приложении банка, дальше фронт опрашивает poll_sbp_binding, который и
+    делает первое списание.
+
+    data_type: 'PAYLOAD' — ссылка sub.nspk.ru (телефон: открываем банк прямо),
+              'IMAGE'   — готовая картинка QR от банка (десктоп: сканируем).
+    Форма выбирается ДО запроса: одна заявка = одна форма, а вторую создавать
+    нельзя — подтверждение новой привязки гасит предыдущую.
+
+    Возвращает {subscription_id, request_key, payload, data_type, plan_id, tier, amount}.
+    """
+    plan = get_plan(plan_id)
+    if not plan:
+        raise ValueError(f"Unknown plan_id: {plan_id}")
+    assert_can_purchase(db, user, plan)
+
+    provider = get_provider_for(user)
+    if not hasattr(provider, "add_account_qr"):
+        raise ValueError("Привязка счёта по СБП сейчас недоступна")
+
+    # Гасим прошлые незавершённые заявки этого юзера: иначе их RequestKey'и
+    # копятся, а подтверждение новой привязки делает старые INACTIVE.
+    for stale in db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == "binding",
+    ).all():
+        stale.status = "failed"
+        stale.sbp_request_key = None
+
+    sub = Subscription(
+        user_id=user.id,
+        tier=plan.tier,
+        period=plan.period,
+        plan_id=plan.plan_id,
+        amount=test_price_for(user, plan.amount),
+        currency="RUB",
+        status="binding",
+        yk_method="sbp",
+    )
+    db.add(sub)
+    db.flush()
+
+    res = provider.add_account_qr(  # type: ignore[attr-defined]
+        customer_key=str(user.id),
+        description=f"{plan.title} — подписка Фрейм",
+        data_type="IMAGE" if data_type == "IMAGE" else "PAYLOAD",
+    )
+    if not res or not res.get("request_key"):
+        sub.status = "failed"
+        db.commit()
+        raise RuntimeError("Банк не принял заявку на привязку счёта")
+
+    sub.sbp_request_key = res["request_key"]
+    db.commit()
+    log.info(
+        "start_sbp_binding: sub=%s user=%s plan=%s request_key=%s",
+        sub.id, user.id, plan.plan_id, sub.sbp_request_key,
+    )
+    return {
+        "subscription_id": sub.id,
+        "request_key": sub.sbp_request_key,
+        "payload": res.get("data"),
+        "data_type": "IMAGE" if data_type == "IMAGE" else "PAYLOAD",
+        "plan_id": plan.plan_id,
+        "tier": plan.tier,
+        "amount": float(sub.amount),
+    }
+
+
+def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
+    """
+    Шаг 2: узнать, подтвердил ли юзер привязку, и если да — списать.
+
+    Статусы ответа (их читает фронт):
+      waiting  — банк ещё не подтвердил привязку, опрашивать дальше
+      charged  — привязка есть, первое списание прошло, подписка активна
+      failed   — привязка есть, но списание не прошло (message — почему)
+      expired  — заявка протухла / банк отклонил привязку
+
+    Первое списание идёт тем же charge_recurrent, что и все продления — один
+    путь вместо двух (ради этого и переезжали на AddAccountQr).
+    """
+    sub = db.get(Subscription, subscription_id)
+    if not sub or sub.user_id != user.id:
+        raise ValueError("Заявка на привязку не найдена")
+
+    if sub.status != "binding":
+        # Уже дообработана (или погашена) — отдаём финальное состояние.
+        return {"status": "expired" if sub.status == "failed" else sub.status}
+
+    provider = get_provider_for(user)
+    st = provider.get_account_qr_state(sub.sbp_request_key) if sub.sbp_request_key else None  # type: ignore[attr-defined]
+    state = (st or {}).get("status")
+    token = (st or {}).get("account_token")
+    bank = (st or {}).get("bank_member_id")
+
+    if state == "ACTIVE" and token:
+        ev = WebhookEvent(
+            payment_id=sub.yk_payment_id or "",
+            event_type="payment.succeeded",
+            payment_method="sbp",
+            account_token=str(token),
+            bank_member_id=str(bank) if bank else None,
+            customer_key=str(user.id),
+            provider_name=provider.name,
+        )
+        pm = _upsert_payment_method(db, user.id, ev)
+        if not pm:
+            sub.status = "failed"
+            db.commit()
+            return {"status": "failed", "message": "Не удалось сохранить привязку счёта"}
+
+        # Заявка отыграла: сама она подпиской не становится, реальную создаёт
+        # charge_recurrent — так первое списание и продления идут одним кодом.
+        sub.status = "bound"
+        sub.payment_method_id = pm.id
+        sub.sbp_request_key = None
+        db.commit()
+
+        try:
+            result = charge_recurrent(db, user, sub.plan_id, pm)
+        except Exception as e:  # провайдер лёг / сеть
+            log.error("poll_sbp_binding: charge_qr упал sub=%s: %s", sub.id, e)
+            return {
+                "status": "failed",
+                "payment_method_id": pm.id,
+                "message": "Счёт привязан, но списание не прошло. Попробуйте ещё раз.",
+            }
+
+        if result.get("ok"):
+            return {
+                "status": "charged",
+                "subscription_id": result.get("subscription_id"),
+                "tier": result.get("tier"),
+                "expires_at": result.get("expires_at"),
+            }
+        return {
+            "status": "failed",
+            "payment_method_id": pm.id,
+            "failure_kind": result.get("failure_kind"),
+            "message": result.get("message") or "Списание не прошло",
+        }
+
+    # Привязка отклонена или заявка протухла.
+    age = datetime.now(timezone.utc) - (sub.created_at or datetime.now(timezone.utc))
+    if state in ("INACTIVE", "REJECTED") or age > timedelta(minutes=SBP_BINDING_TTL_MINUTES):
+        sub.status = "failed"
+        sub.sbp_request_key = None
+        db.commit()
+        return {"status": "expired"}
+
+    return {"status": "waiting"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  7b. RECONCILER СБП-привязок — дотягивание AccountToken после оплаты
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1252,6 +1433,10 @@ def resolve_sbp_bindings(db: Session, max_age_minutes: int = 30) -> dict:
     subs = db.query(Subscription).filter(
         Subscription.sbp_request_key.isnot(None),
         Subscription.payment_method_id.is_(None),
+        # status='binding' — это заявки нового флоу (сначала привязка, потом
+        # деньги), их ведёт poll_sbp_binding. Если реконсилер заберёт их себе,
+        # он привяжет счёт, но списания не сделает — юзер останется без подписки.
+        Subscription.status != "binding",
     ).all()
 
     for sub in subs:

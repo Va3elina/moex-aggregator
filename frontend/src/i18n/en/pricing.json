@@ -130,5 +130,9 @@
   "Самый популярный": "Most popular",
   "Оплатить картой": "Pay by card",
   "или оплатить через": "or pay with",
-  "СБП — QR-код": "SBP — QR code"
+  "СБП — QR-код": "SBP — QR code",
+  "Привязать счёт по СБП": "Link an account via SBP",
+  "или": "or",
+  "Один раз подтвердите счёт в приложении банка — дальше оплата и продления пройдут без подтверждений.": "Confirm the account once in your bank app — the payment and all renewals will then go through without confirmations.",
+  "Не удалось начать привязку счёта": "Could not start account linking"
 }

@@ -245,5 +245,16 @@
   "Почти готово": "Almost done",
   "Не удалось подтвердить привязку карты автоматически.": "Could not confirm the card link automatically.",
   "Проверить ещё раз": "Check again",
-  "Вернуться к тарифам": "Back to pricing"
+  "Вернуться к тарифам": "Back to pricing",
+  "Подтвердите привязку счёта": "Confirm account linking",
+  "Отсканируйте код приложением банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.": "Scan the code with your bank app and tap “Link”. No money is taken at this step — we charge right after the account is linked.",
+  "QR-код для привязки счёта": "QR code for linking an account",
+  "Ждём подтверждение в банке…": "Waiting for confirmation in your bank…",
+  "Счёт привязан, списываем оплату…": "Account linked, taking the payment…",
+  "Счёт привязан, но списание не прошло.": "The account is linked, but the payment did not go through.",
+  "Привязка не подтверждена. Начните заново — ссылка действует ограниченное время.": "The link was not confirmed. Start again — the link is valid for a limited time.",
+  "Привязка недоступна": "Linking unavailable",
+  "Похоже, страница была обновлена. Вернись к тарифам и начни заново.": "Looks like the page was reloaded. Go back to pricing and start again.",
+  "После привязки подписка продлевается автоматически по СБП. Отвязать счёт можно в профиле.": "After linking, the subscription renews automatically via SBP. You can unlink the account in your profile.",
+  "Откройте приложение банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.": "Open your bank app and tap “Link”. No money is taken at this step — we charge right after the account is linked."
 }
