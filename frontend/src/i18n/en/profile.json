@@ -257,5 +257,6 @@
   "Похоже, страница была обновлена. Вернись к тарифам и начни заново.": "Looks like the page was reloaded. Go back to pricing and start again.",
   "После привязки подписка продлевается автоматически по СБП. Отвязать счёт можно в профиле.": "After linking, the subscription renews automatically via SBP. You can unlink the account in your profile.",
   "Откройте приложение банка и нажмите «Привязать». Деньги на этом шаге не списываются — оплату мы проведём сразу после привязки.": "Open your bank app and tap “Link”. No money is taken at this step — we charge right after the account is linked.",
-  "Привязанный счёт": "Linked account"
+  "Привязанный счёт": "Linked account",
+  "Договор о рекуррентных платежах": "Recurring payments agreement"
 }
