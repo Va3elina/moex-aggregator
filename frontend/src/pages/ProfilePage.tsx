@@ -618,9 +618,14 @@ export default function ProfilePage() {
             {paymentMethods.map((pm) => {
               const isSbp = pm.method_type === 'sbp';
               const badge = isSbp ? t('СБП') : (pm.card_brand || t('КАРТА'));
+              // Номера карты может не быть: у T-Pay привязка идёт по счёту, и
+              // маска в вебхуке не приходит. «···· ????» в этом случае — мусор,
+              // берём человекочитаемое имя с бэкенда.
               const label = isSbp
                 ? (pm.display_name || t('Счёт по СБП'))
-                : `···· ${pm.card_last4 || '????'}`;
+                : (pm.card_last4
+                    ? `···· ${pm.card_last4}`
+                    : (pm.display_name || t('Привязанный счёт')));
               return (
                 <div
                   key={pm.id}

@@ -30,6 +30,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Any
@@ -635,17 +636,24 @@ class TBankProvider:
         # CustomerKey — мы его слали в Init, T-Bank возвращает обратно.
         customer_key = data.get("CustomerKey")
 
-        # Pan: T-Bank присылает "430000******0333" — берём только last4.
+        # Pan: для карты T-Bank присылает маску "430000******0333" — берём last4.
+        # Но не для всех способов: при оплате через T-Pay (Source=TinkoffPay)
+        # в Pan приходит не номер, а слово — 20.09.2026 в базу так легло
+        # card_last4='ount' (последние 4 символа от "…ount"). Поэтому сначала
+        # проверяем, что это вообще похоже на номер: только цифры и звёздочки.
         pan = data.get("Pan") or ""
-        card_last4 = pan[-4:] if len(pan) >= 4 else None
+        is_card_pan = bool(re.fullmatch(r"[0-9*]{6,}", pan))
+        card_last4 = pan[-4:] if is_card_pan else None
 
         # card_fingerprint — sha256 маскированного PAN. Маска (first6+last4) у
         # одной карты одинакова между разными CustomerKey/RebillId, поэтому это
         # рабочий кросс-аккаунтный анти-абуз ключ для триала (rebill_id — нет, он
         # per-привязка). 152-ФЗ: храним хеш, не сам PAN. Требуется ≥10 значащих
         # символов маски, иначе слишком слабо — тогда None.
+        # Считаем только от настоящей маски карты: хеш от слова "Account" был бы
+        # одинаков у всех T-Pay-юзеров и склеил бы их в анти-абузе триала.
         card_fingerprint = None
-        if len(pan) >= 10:
+        if is_card_pan and len(pan) >= 10:
             card_fingerprint = hashlib.sha256(pan.encode("utf-8")).hexdigest()
 
         # CardType: 'VISA' / 'MASTERCARD' / 'MIR' / 'MAESTRO' / 'JCB' / ...

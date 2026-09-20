@@ -134,6 +134,9 @@ class UserPaymentMethod(Base):
         """Для UI: 'VISA ····0333' для карты, 'СБП' для СБП-привязки."""
         if self.method_type == "sbp":
             return "СБП"
+        # Номера может не быть вовсе: у T-Pay привязка идёт по счёту, и в
+        # вебхуке нет маски карты. «Карта ····????» в таком случае — мусор.
+        if not self.card_last4:
+            return self.card_brand or "Сохранённый способ оплаты"
         brand = self.card_brand or "Карта"
-        last4 = self.card_last4 or "????"
-        return f"{brand} ····{last4}"
+        return f"{brand} ····{self.card_last4}"
