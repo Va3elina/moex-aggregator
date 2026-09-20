@@ -127,5 +127,8 @@
   "Выгрузка рядов в CSV и Excel и доступ по API. Функция готовится к запуску и войдёт в Pro.": "Export series to CSV and Excel and access via API. The feature is being prepared for launch and will be part of Pro.",
   "{{n}} ₽/мес": "{{n}} ₽/mo",
   "Скидка 20%": "20% off",
-  "Самый популярный": "Most popular"
+  "Самый популярный": "Most popular",
+  "Оплатить картой": "Pay by card",
+  "или оплатить через": "or pay with",
+  "СБП — QR-код": "SBP — QR code"
 }

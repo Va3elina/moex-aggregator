@@ -146,6 +146,10 @@ async def list_plans(user: User | None = Depends(get_current_user_optional)):
         # trial_eligible для залогиненных по-прежнему считается в /status.
         "trial_enabled": trial_service.TRIAL_ENABLED,
         "trial_days": dict(TRIAL_DAYS),
+        # Кнопка «СБП — QR-код» в consent-модалке. Убрана 02.07.2026 (GetQr
+        # отдавал «Внутреннюю ошибку»), возвращается пока только тест-юзерам:
+        # проба 20.09 показала, что GetQr отвечает Success при сумме ≥10₽.
+        "sbp_qr_enabled": billing_service.is_test_user(user),
     }
     if provider.name in ("tbank", "tbank_demo"):
         # terminalKey — публичный (зашит в каждый Init request, отображается
