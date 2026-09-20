@@ -837,28 +837,24 @@ function ConsentModal({
             <button
               onClick={onConfirm}
               disabled={isLoading}
-              className="w-full text-left rounded-xl border p-4 transition-colors disabled:opacity-50"
+              className="w-full flex items-center gap-3 rounded-xl border p-4 transition-colors disabled:opacity-50"
               style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
             >
-              <span className="block text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+              <PayMark kind="tpay" />
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                 {isLoading ? t('Создаём…') : t('Картой или T-Pay')}
-              </span>
-              <span className="block mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                {t('Форма банка. Автопродление включится само.')}
               </span>
             </button>
 
             <button
               onClick={onConfirmSbp}
               disabled={isLoading}
-              className="w-full text-left rounded-xl border p-4 mt-3 transition-colors disabled:opacity-50"
+              className="w-full flex items-center gap-3 rounded-xl border p-4 mt-3 transition-colors disabled:opacity-50"
               style={{ borderColor: 'var(--accent)', background: 'transparent' }}
             >
-              <span className="block text-sm font-bold" style={{ color: 'var(--accent)' }}>
+              <PayMark kind="sbp" />
+              <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
                 {isLoading ? t('Создаём…') : t('Счёт по СБП')}
-              </span>
-              <span className="block mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                {t('Один раз подтвердите счёт в банке — дальше без подтверждений.')}
               </span>
             </button>
 
@@ -972,6 +968,34 @@ function ConsentModal({
 
       </div>
     </div>
+  );
+}
+
+/**
+ * PayMark — значок способа оплаты в развилке «Как оплатить».
+ *
+ * Нарисованы у нас, официальные брендовые файлы сюда не клали: их нельзя
+ * перерисовывать «на глаз» и нельзя тащить из интернета в сборку. Если нужны
+ * настоящие лого T-Pay / СБП — кладём svg в public/ и меняем здесь на <img>.
+ */
+function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
+  const label = kind === 'tpay' ? 'T-Pay' : 'СБП';
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex items-center justify-center shrink-0 rounded-md font-black"
+      style={{
+        width: 44,
+        height: 28,
+        fontSize: 11,
+        letterSpacing: '-0.02em',
+        background: kind === 'tpay' ? '#FFDD2D' : 'transparent',
+        color: kind === 'tpay' ? '#111' : 'var(--accent)',
+        border: kind === 'tpay' ? 'none' : '1px solid var(--accent)',
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
