@@ -63,6 +63,12 @@ interface PlansResponse {
   trial_enabled?: boolean;
   /** Длительность триала по tier'ам: {basic:14, pro:7}. */
   trial_days?: Record<string, number>;
+  /**
+   * Показывать ли кнопку «СБП — QR-код» в consent-модалке. Бэкенд отдаёт true
+   * только тест-юзерам (BILLING_TEST_USER_IDS): QR-флоу вернули на проверку
+   * после пробы 20.09.2026 — GetQr отвечает Success при сумме от 10 ₽.
+   */
+  sbp_qr_enabled?: boolean;
 }
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
@@ -646,6 +652,8 @@ export default function PricingPage() {
           agreementConsent={agreementConsent}
           onAgreementChange={setAgreementConsent}
           onConfirm={() => confirmCheckout('card')}
+          // СБП (QR, рекуррент) — пока только тест-юзерам, см. sbp_qr_enabled.
+          onConfirmSbp={data.sbp_qr_enabled ? () => confirmCheckout('sbp') : undefined}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
@@ -705,6 +713,7 @@ function ConsentModal({
   agreementConsent,
   onAgreementChange,
   onConfirm,
+  onConfirmSbp,
   onClose,
   isLoading,
   canConfirm,
@@ -713,6 +722,9 @@ function ConsentModal({
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
   onConfirm: () => void;
+  // Оплата через СБП (QR) — второй способ. Приходит только в checkout-режиме
+  // (не trial) и только когда бэкенд отдал sbp_qr_enabled.
+  onConfirmSbp?: () => void;
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
@@ -868,15 +880,40 @@ function ConsentModal({
           >
             {isLoading
               ? (trialInfo ? t('Открываем…') : t('Создаём…'))
-              : (trialInfo ? t('Начать бесплатно') : t('Оплатить'))}
+              : (trialInfo
+                  ? t('Начать бесплатно')
+                  : (onConfirmSbp ? t('Оплатить картой') : t('Оплатить')))}
           </button>
         </div>
 
-        {/* Кнопка «СБП — QR-код» убрана 2026-07-02: T-Bank GetQr(IMAGE) стабильно
-            отдавал «Внутренняя ошибка системы» → юзер видел тупиковый экран.
-            СБП остаётся доступен внутри хостед-формы T-Bank («Быстрая оплата»).
-            Механизм QR-флоу (confirmCheckout('sbp') + /billing/sbp + бэк) сохранён —
-            вернуть = снова передать onConfirmSbp в ConsentModal. */}
+        {/* Оплата через СБП (QR). Была убрана 02.07.2026 — GetQr(IMAGE) отдавал
+            «Внутреннюю ошибку системы», юзер упирался в тупиковый экран. Проба
+            20.09.2026: GetQr отвечает Success, если сумма от 10 ₽ (на 1 ₽ —
+            ErrorCode 3016/3050). Кнопку вернули, но пока только тест-юзерам
+            (бэкенд отдаёт sbp_qr_enabled по BILLING_TEST_USER_IDS). */}
+        {!trialInfo && onConfirmSbp && (
+          <>
+            <div className="flex items-center gap-3 my-4">
+              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
+              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                {t('или оплатить через')}
+              </span>
+              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
+            </div>
+            <button
+              onClick={onConfirmSbp}
+              disabled={!canConfirm || isLoading}
+              className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border"
+              style={{
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+                background: 'transparent',
+              }}
+            >
+              {isLoading ? t('Создаём…') : t('СБП — QR-код')}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

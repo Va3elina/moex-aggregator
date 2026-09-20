@@ -36,6 +36,16 @@ from api.models.user import User
 log = logging.getLogger(__name__)
 
 
+def is_test_user(user: User | None) -> bool:
+    """Юзер в BILLING_TEST_USER_IDS — для прод-тестов платёжных сценариев."""
+    if user is None:
+        return False
+    ids_raw = (os.getenv("BILLING_TEST_USER_IDS") or "").strip()
+    if not ids_raw:
+        return False
+    return str(user.id) in {c.strip() for c in ids_raw.split(",") if c.strip()}
+
+
 def test_price_for(user: User, default_amount: float) -> float:
     """
     Тестовая цена для прод-проверок рекуррента (например, привязки счёта по СБП).
