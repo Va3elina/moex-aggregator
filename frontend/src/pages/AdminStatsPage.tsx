@@ -23,10 +23,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, ChevronDown, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
 import SimpleChart from '../components/SimpleChart';
 import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
@@ -176,6 +177,15 @@ const METRIC_HINTS = {
 /** Группы страницы: деление по типу вопроса, а не по источнику данных.
  *  Сами секции внутри групп не меняются — это только раскладка. */
 type Group = 'audience' | 'behavior' | 'retention' | 'people';
+
+/** Кого смотрим в группе «Люди»: зарегистрированных, гостей или сразу обоих. */
+type Who = 'users' | 'guests' | 'both';
+
+const WHO_OPTIONS: { key: Who; label: string }[] = [
+  { key: 'users', label: 'Зарегистрированные' },
+  { key: 'guests', label: 'Гости' },
+  { key: 'both', label: 'И те, и другие' },
+];
 
 const GROUPS: { key: Group; label: string; note: string }[] = [
   { key: 'audience',  label: 'Аудитория',  note: 'сколько людей и откуда' },
@@ -343,6 +353,9 @@ export default function AdminStatsPage() {
   // из шапки, который делит аудиторию на гостей/вошедших/админов.
   const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
   const [group, setGroup] = usePersistedState<Group>('frame:admin:group', 'audience');
+  // Кого показываем в группе «Люди». Раньше гости были свёрнутым разделом под
+  // таблицей пользователей — их там просто не находили.
+  const [who, setWho] = usePersistedState<Who>('frame:admin:who', 'users');
   const [segReport, setSegReport] = useState<SegmentReport | null>(null);
   const [segLoading, setSegLoading] = useState(true);
 
@@ -793,17 +806,25 @@ export default function AdminStatsPage() {
 
       {group === 'people' && (
         <>
-      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock range={range} segment={indSegment} />
-      </Section>
-      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
-        <GuestsBlock range={range} segment={indSegment} />
-      </CollapsibleSection>
+      <div className="mb-6 md:mb-8">
+        <SegmentedControl<Who> options={WHO_OPTIONS} value={who} onChange={setWho} />
+      </div>
+
+      {(who === 'users' || who === 'both') && (
+        <Section title="Зарегистрированные" hint={METRIC_HINTS.users_section}>
+          <UsersBlock range={range} segment={indSegment} />
+        </Section>
+      )}
+
+      {(who === 'guests' || who === 'both') && (
+        <Section title="Гости" hint={METRIC_HINTS.guests_section}>
+          <GuestsBlock range={range} segment={indSegment} />
+        </Section>
+      )}
 
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
         <AlertsBlock range={range} />
       </Section>
-
         </>
       )}
       </div>
@@ -1354,33 +1375,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
         <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
       </div>
       {children}
-    </section>
-  );
-}
-
-/** Секция, свёрнутая по умолчанию: содержимое не монтируется, пока не раскрыли,
- *  поэтому тяжёлый запрос не уходит на каждый заход на страницу. */
-function CollapsibleSection({ title, hint, storageKey, children }: {
-  title: string; hint?: string; storageKey: string; children: React.ReactNode;
-}) {
-  const [open, setOpen] = usePersistedState<boolean>(storageKey, false);
-  return (
-    <section className="mb-6 md:mb-8">
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 text-xs uppercase"
-          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-          aria-expanded={open}
-        >
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          {title}
-        </button>
-        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} />}
-        <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-      </div>
-      {open && children}
     </section>
   );
 }
