@@ -1350,7 +1350,7 @@ export interface AdminUser {
   last_paid_sub?: { tier: string; status: string; expires_at: string | null } | null;
 }
 
-export async function listAdminUsers(opts: AdminRange & {
+export async function listAdminUsers(opts: AdminRange & SegmentParams & {
   sort?: string;
   search?: string;
   /** all / paid / paid_basic / paid_pro / invite / free / churned / pending / admin */
@@ -1371,6 +1371,7 @@ export async function listAdminUsers(opts: AdminRange & {
   if (opts.sort) params.set('sort', opts.sort);
   if (opts.search) params.set('search', opts.search);
   if (opts.filter && opts.filter !== 'all') params.set('filter', opts.filter);
+  segmentParams(params, opts);
   const response = await apiFetch(`${API_BASE}/api/analytics/users?${params}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
@@ -1385,6 +1386,52 @@ export async function listAdminUsers(opts: AdminRange & {
 // localStorage, живёт год). Залогинившийся визитор из выдачи исключён: он
 // уже в «Пользователях», двоиться не должен.
 // ═══════════════════════════════════════════════════════════════════
+
+/** Сегмент по индикаторам — общий для списка гостей, списка пользователей
+ *  и сводки: один и тот же отбор должен давать сходящиеся цифры везде. */
+export interface SegmentParams {
+  /** Пути индикаторов, которые человек смотрел. */
+  seen?: string[];
+  /** Пути, которые он НЕ смотрел за период. */
+  notSeen?: string[];
+  /** all — смотрел каждый из seen, any — хотя бы один. */
+  seenMode?: 'all' | 'any';
+}
+
+function segmentParams(params: URLSearchParams, s: SegmentParams) {
+  if (s.seen?.length) params.set('seen', s.seen.join(','));
+  if (s.notSeen?.length) params.set('not_seen', s.notSeen.join(','));
+  if (s.seenMode === 'any') params.set('seen_mode', 'any');
+}
+
+export interface SegmentReport {
+  date_from: string;
+  date_to: string;
+  seen: string[];
+  not_seen: string[];
+  seen_mode: 'all' | 'any';
+  /** Люди: аккаунт, иначе браузер, иначе вкладка (для данных до 11.09.2026). */
+  people: number;
+  registered: number;
+  guests: number;
+  paying: number;
+  /** Охват каждого индикатора ВНУТРИ сегмента. */
+  indicators: { path: string; name: string; people: number; registered: number }[];
+  /** Полный список индикаторов для интерфейса — чтобы фронт не хардкодил пути. */
+  all_indicators: { path: string; name: string }[];
+}
+
+export async function getSegment(opts: AdminRange & SegmentParams): Promise<SegmentReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, opts);
+  segmentParams(params, opts);
+  const response = await apiFetch(`${API_BASE}/api/analytics/segment?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch segment');
+  }
+  return response.json();
+}
 
 export interface AdminGuest {
   visitor_id: string;
@@ -1403,7 +1450,7 @@ export interface AdminGuest {
   pages: string[];
 }
 
-export async function listAdminGuests(opts: AdminRange & {
+export async function listAdminGuests(opts: AdminRange & SegmentParams & {
   /** days / sessions / pageviews / last_seen / first_seen */
   sort?: string;
   /** Только те, кто заходил в N и более разных дней. */
@@ -1424,6 +1471,7 @@ export async function listAdminGuests(opts: AdminRange & {
   if (opts.sort) params.set('sort', opts.sort);
   if (opts.minDays && opts.minDays > 1) params.set('min_days', String(opts.minDays));
   if (opts.device && opts.device !== 'all') params.set('device', opts.device);
+  segmentParams(params, opts);
   const response = await apiFetch(`${API_BASE}/api/analytics/guests?${params}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
