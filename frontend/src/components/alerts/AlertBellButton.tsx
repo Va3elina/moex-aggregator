@@ -8,6 +8,7 @@ import { AlarmClock, Lock } from 'lucide-react';
 import CreateAlertModal, { type AlertMetricOption } from './CreateAlertModal';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { t } from '../../i18n';
 
 interface Props {
@@ -22,9 +23,14 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
     const [open, setOpen] = useState(false);
     const quota = useCommonFeatures().telegram_alerts_quota;  // 0 / число / null(∞)
     const { showUpgrade } = useUpgradePrompt();
+    const { track } = useAnalytics();
     const locked = quota === 0;  // Free/guest — алерты на Basic+
 
     const handleClick = () => {
+        // Клик по замку — главная цифра этой воронки: спрос на уведомления
+        // среди тех, кому они недоступны по тарифу. Без него «мало алертов»
+        // невозможно отличить от «мало кто их хочет».
+        track('alert_bell_click', { indicator, locked });
         if (locked) {
             // Замочек уже виден; клик объясняет почему и ведёт на апгрейд.
             showUpgrade({ tier: 'basic', featureName: t('Уведомления в мессенджере'), indicator: 'alerts' });

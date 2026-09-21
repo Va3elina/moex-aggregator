@@ -96,6 +96,21 @@ ALLOWED_EVENT_TYPES = {
     "fund_open",
     "terminal_layout",
     "terminal_panel_add",
+        # Путь до уведомлений в мессенджере. Уведомления доступны с Basic, поэтому
+    # клик по ЗАБЛОКИРОВАННОМУ колокольчику — не шум, а прямая мера спроса
+    # среди тех, кто платить ещё не начал:
+    #   alert_bell_click {indicator, locked, from}
+    #   alert_modal_open {indicator}
+    #   alert_created    {indicator, metric, mode, n}
+    #   tg_link_click    {from} — нажал «подключить», бот открылся
+    #   tg_linked        {from, sec} — привязка подтвердилась, за сколько секунд
+    #   tg_unlink        {from}
+    "alert_bell_click",
+    "alert_modal_open",
+    "alert_created",
+    "tg_link_click",
+    "tg_linked",
+    "tg_unlink",
         # Согласие: тумблер в профиле. Пишем сам факт смены выбора, без payload —
     # иначе отказ виден только как тишина и его невозможно посчитать.
     "consent_optout",

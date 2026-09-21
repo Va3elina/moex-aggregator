@@ -18,6 +18,7 @@ import MessengerChoice from './MessengerChoice';
 import InstrumentSearchModal from '../InstrumentSearchModal';
 import { usePortalTheme } from '../../hooks/usePortalTheme';
 import { t } from '../../i18n';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 
 // Каналы доставки. E-mail пока за флагом (SMTP noreply настраивается — см. план):
 // пилюля рендерится, но выбрать нельзя, пока EMAIL_CHANNEL_ENABLED=false.
@@ -169,6 +170,10 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [created, setCreated] = useState(false);
     const [createdCount, setCreatedCount] = useState(0);
+    const { track } = useAnalytics();
+    // Когда нажали «подключить» — чтобы измерить длительность перехода в бот.
+    const linkStartedAtRef = useRef<number | null>(null);
+    useEffect(() => { track('alert_modal_open', { indicator, asset }); }, [indicator, asset, track]);
 
     // ── Мульти-выбор активов (только oi_move) ───────────────────────────────
     // Выбранные активы как map sectype→name; по умолчанию — текущий актив.
@@ -252,7 +257,16 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         const t = setInterval(async () => {
             try {
                 const s = await getTelegramStatus();
-                if (s.linked) { setLinked(true); clearInterval(t); }
+                if (s.linked) {
+                    // Сколько секунд занял переход в бот и обратно: быстрый
+                    // успех и долгий — разные истории, и лечатся по-разному.
+                    track('tg_linked', {
+                        from: 'alert_modal',
+                        sec: linkStartedAtRef.current
+                            ? Math.round((Date.now() - linkStartedAtRef.current) / 1000) : undefined,
+                    });
+                    setLinked(true); clearInterval(t);
+                }
             } catch { /* ignore */ }
         }, 3000);
         return () => clearInterval(t);
@@ -262,6 +276,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         setBusy(true); setMsg(null);
         try {
             const { deep_link } = await createTelegramLink();
+            track('tg_link_click', { from: 'alert_modal' });
+            linkStartedAtRef.current = Date.now();
             setLinkUrl(deep_link);
             window.open(deep_link, '_blank');
         } catch (e) {
@@ -330,6 +346,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
                 };
                 await createAlert(payload);
+                track('alert_created', { indicator, metric: metric.metric, mode, n: 1 });
                 setCreatedCount(1);
                 setCreated(true);
             } catch (e) {
@@ -351,6 +368,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
                 };
                 await createAlert(payload);
+                track('alert_created', { indicator, metric: metric.metric, mode, n: 1 });
                 setCreatedCount(1);
                 setCreated(true);
             } catch (e) {
@@ -381,6 +399,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
             }));
             const res = await createAlertsBatch(payloads);
             if (res.created > 0) {
+                track('alert_created', { indicator, metric: metric.metric, mode, n: res.created });
                 setCreatedCount(res.created);
                 setCreated(true);
                 const notes: string[] = [];
