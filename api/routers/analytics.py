@@ -1006,6 +1006,97 @@ def _compute_segment(rng: dict, seen: list[str], not_seen: list[str], mode: str)
     }
 
 
+@router.get("/audience")
+def get_audience(user=Depends(require_admin)):
+    """Аудитория по дням за всю доступную историю.
+
+    Отвечает ровно на три вопроса: сколько людей пришло, сколько из них
+    впервые, сколько зарегистрировалось. Человек опознаётся как везде:
+    аккаунт → браузер → вкладка.
+    """
+    return get_or_compute("admin:audience:v1", _compute_audience, ttl=600)
+
+
+def _compute_audience() -> dict:
+    with get_engine().connect() as conn:
+        rows = conn.execute(text("""
+            WITH vis_user AS (
+                SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+                GROUP BY visitor_id
+            ),
+            ev AS (
+                SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                                'v' || a.visitor_id, 's' || a.session_id) AS ident,
+                       COALESCE(a.user_id, vu.uid) IS NOT NULL AS is_reg,
+                       ((a.server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+                FROM analytics_events a
+                LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+                WHERE a.user_id IS NULL
+                   OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin')
+            ),
+            daily AS (SELECT DISTINCT day, ident, is_reg FROM ev),
+            first_day AS (SELECT ident, MIN(day) AS d0 FROM ev GROUP BY ident)
+            SELECT d.day,
+                   COUNT(*) AS people,
+                   -- «Впервые» считается по всей истории, а не по периоду:
+                   -- иначе каждый первый день периода объявлял бы новыми всех.
+                   COUNT(*) FILTER (WHERE f.d0 = d.day) AS newcomers,
+                   COUNT(*) FILTER (WHERE f.d0 < d.day) AS returning,
+                   COUNT(*) FILTER (WHERE d.is_reg) AS with_account
+            FROM daily d JOIN first_day f USING (ident)
+            GROUP BY d.day ORDER BY d.day
+        """)).fetchall()
+
+        regs = conn.execute(text("""
+            SELECT (created_at AT TIME ZONE 'Europe/Moscow')::date AS day, COUNT(*) AS n
+            FROM users WHERE role IS DISTINCT FROM 'admin'
+            GROUP BY 1 ORDER BY 1
+        """)).fetchall()
+
+        # Откуда приходят — в людях, а не в визитах, чтобы сходилось с рядом выше.
+        sources = conn.execute(text("""
+            WITH vis_user AS (
+                SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+                GROUP BY visitor_id
+            ),
+            ev AS (
+                SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                                'v' || a.visitor_id, 's' || a.session_id) AS ident,
+                       a.payload->'acq'->>'ref' AS ref
+                FROM analytics_events a
+                LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+                WHERE a.payload ? 'acq'
+                  AND (a.user_id IS NULL
+                       OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin'))
+            )
+            SELECT COALESCE(NULLIF(ref, ''), 'прямые заходы') AS source,
+                   COUNT(DISTINCT ident) AS people
+            FROM ev GROUP BY 1 ORDER BY people DESC LIMIT 12
+        """)).fetchall()
+
+    reg_map = {r[0]: int(r[1]) for r in regs}
+    days = [{
+        "date": r[0].isoformat(),
+        "people": int(r[1]),
+        "newcomers": int(r[2]),
+        "returning": int(r[3]),
+        "with_account": int(r[4]),
+        "registrations": reg_map.get(r[0], 0),
+    } for r in rows]
+
+    return {
+        "days": days,
+        "since": days[0]["date"] if days else None,
+        "sources": [{"source": r[0], "people": int(r[1])} for r in sources],
+        "totals": {
+            "people": sum(d["people"] for d in days),
+            "registrations": sum(reg_map.values()),
+        },
+    }
+
+
 @router.get("/people")
 def list_people(
     days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),

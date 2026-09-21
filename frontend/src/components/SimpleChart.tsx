@@ -82,6 +82,9 @@ interface SimpleChartProps {
   primaryType?: ChartSeriesType;
   showValueHeader?: boolean;
   legendPosition?: 'top' | 'bottom';
+  /** Водяной знак нужен публичным графикам, которые скачивают и репостят.
+   *  В админке он только мешает читать цифры. */
+  showWatermark?: boolean;
   showDownloadButton?: boolean;
   showNavigator?: boolean;
   /** Индекс первого видимого элемента при первом рендере и сбросе (смена data).
@@ -194,6 +197,7 @@ export default function SimpleChart({
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
+  showWatermark = true,
   showNavigator = false,
   initialStartIndex,
   chartPadding,
@@ -2276,7 +2280,7 @@ export default function SimpleChart({
             края. Это даёт ОДИНАКОВОЕ визуальное положение на OI page (dual axis,
             padding.right=95) и на Funds Money page (single axis, padding.right=12),
             независимо от ширины wrapper'а или количества Y-осей. */}
-        <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
+        {showWatermark && <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />}
 
         {/* Asset name перенесён в legendBlock row — выше chartWrapRef'а в DOM,
             на одном уровне с legend строкой. Раньше был absolute здесь, сидел
