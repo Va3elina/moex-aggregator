@@ -13,6 +13,7 @@ import { Lock } from 'lucide-react';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
+import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import TrialOfferCard from './TrialOfferCard';
 import { useTranslation } from 'react-i18next';
 
@@ -115,9 +116,12 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                 display: 'flex',
                 alignItems: isMobile ? 'flex-end' : 'center',
                 justifyContent: 'center',
-                // Выше модалок-пикеров (FundPickerModal z-[100000]): апселл
-                // открывается ИЗ них по попытке действия и обязан лечь поверх.
-                zIndex: 100001,
+                // Выше ВСЕХ модалок-пикеров: апселл открывается ИЗ них по
+                // попытке действия и обязан лечь поверх. Пикеры «Денег в
+                // фондах» живут на z-[100000], пикеры «Сделок фондов» и поиск
+                // активов — на MODAL_LAYER_Z (100100), поэтому считаем от него,
+                // а не от захардкоженного числа.
+                zIndex: MODAL_LAYER_Z + 1,
                 animation: 'fadeIn 0.2s ease-out',
             }}
         >
