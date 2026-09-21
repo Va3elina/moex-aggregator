@@ -42,7 +42,6 @@ export const DETAIL_HINTS = {
   avg: 'Среднее время визита: от первого до последнего действия. Пока человек активен на вкладке, раз в минуту уходит сигнал присутствия. Через 5 минут без действий он останавливается.',
   total: 'Сумма времени всех визитов за период.',
   days: 'В скольких разных днях человек был на сайте за период. Это мера привычки: 1 — заглянул, 10+ — ходит почти каждый день.',
-  rhythm: 'Когда именно он приходит — по дням недели и по часам Москвы. Будни до открытия торгов и вечерний разбор выглядят здесь по-разному.',
   assets: 'Какие активы открывал: считается и выбор в пикере, и переход по ссылке.',
 } as const;
 
@@ -139,68 +138,7 @@ export function Chip({ icon, label }: { icon?: React.ReactNode; label: string })
   );
 }
 
-const DOW_NAMES = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-
-/** Ритм посещений: по дням недели и по часам Москвы. */
-function RhythmCard({ byDow, byHour }: {
-  byDow: ActivityDetail['by_dow']; byHour: ActivityDetail['by_hour'];
-}) {
-  const dow = DOW_NAMES.map((name, i) => ({
-    name, views: byDow.find(d => d.dow === i)?.views ?? 0, weekend: i === 0 || i === 6,
-  }));
-  const hours = Array.from({ length: 24 }, (_, h) => ({
-    h, views: byHour.find(x => x.hour === h)?.views ?? 0,
-  }));
-  const dowMax = Math.max(1, ...dow.map(d => d.views));
-  const hourMax = Math.max(1, ...hours.map(x => x.views));
-  const empty = dowMax === 1 && dow.every(d => d.views === 0);
-
-  return (
-    <Card padding="md">
-      <div className="flex items-center gap-2 mb-3">
-        <p className="text-xs uppercase" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-          Когда приходит
-        </p>
-        <HelpTooltip icon="help" title="Когда приходит" content={DETAIL_HINTS.rhythm} size={12} />
-      </div>
-      {empty ? (
-        <p className="text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>—</p>
-      ) : (
-        <>
-          <div className="flex items-end gap-1.5 mb-4" style={{ height: 64 }}>
-            {dow.map(d => (
-              <div key={d.name} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${d.name}: ${d.views}`}>
-                <div className="w-full rounded-t" style={{
-                  height: `${Math.max(2, (d.views / dowMax) * 46)}px`,
-                  backgroundColor: d.weekend
-                    ? 'color-mix(in srgb, var(--accent) 30%, transparent)'
-                    : 'var(--accent)',
-                }} />
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{d.name}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-end gap-px" style={{ height: 40 }}>
-            {hours.map(x => (
-              <div key={x.h} className="flex-1 flex flex-col items-center justify-end" title={`${x.h}:00 — ${x.views}`}>
-                <div className="w-full" style={{
-                  height: `${Math.max(1, (x.views / hourMax) * 32)}px`,
-                  backgroundColor: 'color-mix(in srgb, var(--accent) 55%, transparent)',
-                  borderRadius: '2px 2px 0 0',
-                }} />
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            <span>0:00</span><span>12:00</span><span>23:00</span>
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
-/** Топы, ритм, устройства и лента — всё, что одинаково у гостя и у юзера. */
+/** Топы, устройства и лента — всё, что одинаково у гостя и у юзера. */
 export function ActivityBlocks({ data, pageNames }: {
   data: ActivityDetail;
   /** Человеческие названия страниц; для неизвестного пути покажем сам путь. */
@@ -221,11 +159,14 @@ export function ActivityBlocks({ data, pageNames }: {
             note: p.days > 1 ? `${p.days} дн.` : undefined,
           }))}
         />
-        <SimpleTopList title="Какие активы" hint={DETAIL_HINTS.assets} items={assets} />
+        <SimpleTopList
+          title={data.assets_all_time ? 'Какие активы · за всё время' : 'Какие активы'}
+          hint={DETAIL_HINTS.assets}
+          items={assets}
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6">
-        <RhythmCard byDow={data.by_dow} byHour={data.by_hour} />
+      <div className="mb-6">
         <Card padding="md">
           <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
             Устройства / страны

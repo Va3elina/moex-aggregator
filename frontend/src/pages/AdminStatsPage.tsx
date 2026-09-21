@@ -277,6 +277,8 @@ export default function AdminStatsPage() {
   const [showOwn, setShowOwn] = usePersistedState<boolean>('frame:admin:stats:showOwn', false);
   // Раз в 5 минут, пока вкладка на экране, перезапрашиваем всё: Метрика
   // обновляет отчёты с задержкой в несколько минут, бэкенд кэширует на 5.
+  // Группа объявлена до загрузчиков: они от неё зависят.
+  const [group, setGroup] = usePersistedState<Group>('frame:admin:group', 'audience');
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -301,7 +303,9 @@ export default function AdminStatsPage() {
   const metricaCache = useRef(new Map<string, MetricaReport>());
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') return;
+    // Трафик нужен только «Аудитории». Раньше он грузился и при возврате из
+    // карточки человека в «Люди» — отсюда ощущение, что страница лагает.
+    if (!user || user.role !== 'admin' || group !== 'audience') return;
     const key = `${JSON.stringify(range)}|${segment}|${device}`;
     const hit = statsCache.current.get(key);
     // Ответ на прошлый фильтр, пришедший позже нового, не должен его затереть.
@@ -321,10 +325,10 @@ export default function AdminStatsPage() {
         if (alive) setLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, segment, device, tick]);
+  }, [user, range, segment, device, tick, group]);
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') return;
+    if (!user || user.role !== 'admin' || group !== 'audience') return;
     const key = `${JSON.stringify(range)}|${segment}|${device}`;
     const hit = metricaCache.current.get(key);
     let alive = true;
@@ -342,7 +346,7 @@ export default function AdminStatsPage() {
         if (alive) setMetricaLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, segment, device, tick]);
+  }, [user, range, segment, device, tick, group]);
 
   // Воронка, удержание, гости, первые источники — от фильтров сегмента и
   // устройства не зависят, только от периода.
@@ -351,7 +355,6 @@ export default function AdminStatsPage() {
   // показывали бы разных людей. Имя indSegment — чтобы не путать с segment
   // из шапки, который делит аудиторию на гостей/вошедших/админов.
   const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
-  const [group, setGroup] = usePersistedState<Group>('frame:admin:group', 'audience');
   // Кого показываем в группе «Люди». Раньше гости были свёрнутым разделом под
   // таблицей пользователей — их там просто не находили.
   const [who, setWho] = usePersistedState<Who>('frame:admin:who', 'users');
@@ -364,7 +367,8 @@ export default function AdminStatsPage() {
 
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
-    if (!user || user.role !== 'admin') return;
+    // Когорты и гости нужны только «Удержанию».
+    if (!user || user.role !== 'admin' || group !== 'retention') return;
     const key = JSON.stringify(range);
     const hit = growthCache.current.get(key);
     let alive = true;
@@ -382,7 +386,7 @@ export default function AdminStatsPage() {
         if (alive) setGrowthLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, tick]);
+  }, [user, range, tick, group]);
 
   // Затемняем только блок, который реально ждёт, и только если он ждёт
   // дольше 250 мс: ответ из кэша или быстрый ответ проходит без вспышки.
@@ -1811,9 +1815,16 @@ const USER_FILTERS: { key: string; label: string }[] = [
   { key: 'admin', label: 'Админы' },
 ];
 
+/** Сортировки, которые включаются кликом по шапке (и их обратные направления). */
+const HEADER_SORTS = new Set([
+  'visits', 'time', 'last_active', 'created', 'paid_at',
+  'visits_asc', 'time_asc', 'last_active_asc', 'created_asc', 'paid_at_asc',
+]);
+
 const USER_SORTS: { key: string; label: string }[] = [
   { key: 'last_active', label: 'По активности' },
   { key: 'tier', label: 'По тарифу: Pro, Basic, инвайт' },
+  { key: 'paid_at', label: 'Недавно оплатили' },
   { key: 'plan', label: 'Сначала купившие' },
   { key: 'expires', label: 'Скоро закончится подписка' },
   { key: 'visits', label: 'По визитам' },
@@ -1865,7 +1876,7 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
         ...range, sort: safeSort, minDays: safeMin,
         seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
       })
-        .then(setData)
+        .then(r => { setData(r); restoreScrollOnce(); })
         .catch(() => { setData(null); setError(true); })
         .finally(() => setLoading(false));
     }, 250);
@@ -1981,7 +1992,7 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
                   key={g.visitor_id}
                   className="hover:bg-white/[0.03] transition-colors cursor-pointer"
                   style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                  onClick={() => navigate(`/admin/guests/${g.visitor_id}`)}
+                  onClick={() => { rememberScroll(); navigate(`/admin/guests/${g.visitor_id}`); }}
                 >
                   <td style={{ ...td, fontFamily: NUM_FONT, color: 'var(--text-primary)' }} title={g.visitor_id}>
                     {g.visitor_id.slice(0, 8)}
@@ -2012,12 +2023,37 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
   );
 }
 
+/** Последний ответ списка людей по ключу запроса. Живёт, пока открыта вкладка:
+ *  вернувшись из карточки, человек сразу видит прежнюю таблицу, а свежие данные
+ *  подменяют её тихо — без скелета и второй «загрузки». */
+const usersCache = new Map<string, { users: AdminUser[]; counts: Record<string, number> | null }>();
+
+const SCROLL_KEY = 'frame:admin:stats:scrollY';
+/** Запомнить место перед уходом в карточку. */
+function rememberScroll() {
+  try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch { /* приватный режим */ }
+}
+/** Вернуть прокрутку один раз, когда таблица уже отрисована, — раньше высоты
+ *  страницы не хватает, и браузер честно остаётся наверху. */
+function restoreScrollOnce() {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_KEY);
+    if (raw === null) return;
+    sessionStorage.removeItem(SCROLL_KEY);
+    const y = Number(raw);
+    if (Number.isFinite(y) && y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+  } catch { /* приватный режим */ }
+}
+
 function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentState }) {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
-  const dim = useDelayedFlag(loading && users.length > 0);
+  // Затемнение только когда человек сам что-то поменял. Тихое обновление
+  // поверх кэша его не показывает — иначе таблица «мигает» при каждом возврате.
+  const [quiet, setQuiet] = useState(false);
+  const dim = useDelayedFlag(loading && users.length > 0 && !quiet);
   // Всё сохраняется: после перехода в карточку пользователя и назад
   // фильтр, сортировка и поиск остаются как были.
   const [search, setSearch] = usePersistedState<string>('frame:admin:users:search', '');
@@ -2025,9 +2061,19 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
   const [filter, setFilter] = usePersistedState<string>('frame:admin:users:filter', 'all');
 
   const safeFilter = USER_FILTERS.some(f => f.key === filter) ? filter : 'all';
-  const safeSort = USER_SORTS.some(o => o.key === sort) ? sort : 'last_active';
+  const safeSort = USER_SORTS.some(o => o.key === sort) || HEADER_SORTS.has(sort) ? sort : 'last_active';
 
   useEffect(() => {
+    const key = JSON.stringify([range, safeSort, search.trim(), safeFilter, segment]);
+    const hit = usersCache.get(key);
+    if (hit) {
+      setUsers(hit.users);
+      setCounts(hit.counts);
+      restoreScrollOnce();
+    }
+    setQuiet(!!hit);
+    let alive = true;
+    // Пауза нужна только набору в поиске; из кэша и по клику грузим сразу.
     const t = window.setTimeout(() => {
       setLoading(true);
       listAdminUsers({
@@ -2035,16 +2081,22 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
         seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
       })
         .then(r => {
+          if (!alive) return;
+          const c = r.counts ?? { all: r.total_count, paid: r.paid_count, invite: r.invite_count };
+          usersCache.set(key, { users: r.users, counts: c });
           setUsers(r.users);
-          setCounts(r.counts ?? {
-            all: r.total_count, paid: r.paid_count, invite: r.invite_count,
-          });
+          setCounts(c);
+          if (!hit) restoreScrollOnce();
         })
-        .catch(() => setUsers([]))
-        .finally(() => setLoading(false));
-    }, 250);
-    return () => clearTimeout(t);
+        .catch(() => { if (alive && !hit) setUsers([]); })
+        .finally(() => { if (alive) setLoading(false); });
+    }, hit ? 0 : 250);
+    return () => { alive = false; clearTimeout(t); };
   }, [range, safeSort, search, safeFilter, segment]);
+
+  /** Клик по шапке: первый раз — по убыванию, второй — по возрастанию. */
+  const sortBy = (k: string) => setSort(safeSort === k ? `${k}_asc` : k);
+  const arrow = (k: string) => (safeSort === k ? ' ↓' : safeSort === `${k}_asc` ? ' ↑' : '');
 
   const filterOptions = USER_FILTERS.map(f => ({
     key: f.key,
@@ -2091,6 +2143,7 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
         <Dropdown<string>
           options={USER_SORTS}
           value={safeSort}
+          placeholder="По возрастанию"
           onChange={setSort}
           menuMaxWidth={320}
         />
@@ -2118,25 +2171,26 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
             <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
               <UCol>Пользователь</UCol>
               <UCol align="left">Подписка</UCol>
+              <UCol align="left" hide="lg" onSort={() => sortBy('paid_at')}>Оплатил{arrow('paid_at')}</UCol>
               <UCol align="left" hide="md">Роль</UCol>
-              <UCol align="right">Визитов</UCol>
-              <UCol align="right" hide="md">Время</UCol>
-              <UCol align="right" hide="lg">Послед. активность</UCol>
-              <UCol align="left" hide="lg">Создан</UCol>
+              <UCol align="right" onSort={() => sortBy('visits')}>Визитов{arrow('visits')}</UCol>
+              <UCol align="right" hide="md" onSort={() => sortBy('time')}>Время{arrow('time')}</UCol>
+              <UCol align="right" hide="lg" onSort={() => sortBy('last_active')}>Послед. активность{arrow('last_active')}</UCol>
+              <UCol align="left" hide="lg" onSort={() => sortBy('created')}>Создан{arrow('created')}</UCol>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {loading && users.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6">
+                <td colSpan={9} className="py-6">
                   <Skeleton height={24} rounded="md" />
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+                <td colSpan={9} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
                   Никого не нашли
                 </td>
               </tr>
@@ -2146,7 +2200,7 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
                 key={u.id}
                 className="hover:bg-white/[0.03] transition-colors cursor-pointer"
                 style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                onClick={() => navigate(`/admin/users/${u.id}`)}
+                onClick={() => { rememberScroll(); navigate(`/admin/users/${u.id}`); }}
               >
                 <td className="px-2 py-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -2188,6 +2242,11 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
                     inviteNote={u.invite_note}
                     lastPaid={u.last_paid_sub}
                   />
+                </td>
+
+                <td className="px-2 py-2 text-xs hidden lg:table-cell"
+                    style={{ color: u.paid_at ? 'var(--text-primary)' : 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {u.paid_at ? fmtShortDate(u.paid_at) : '—'}
                 </td>
 
                 <td className="px-2 py-2 hidden md:table-cell">
@@ -2258,16 +2317,24 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
   );
 }
 
-function UCol({ children, align = 'left', hide }: {
+function UCol({ children, align = 'left', hide, onSort }: {
   children: React.ReactNode; align?: 'left' | 'right'; hide?: 'md' | 'lg';
+  /** Клик по заголовку сортирует таблицу по этой колонке. */
+  onSort?: () => void;
 }) {
-  const cls = `${align === 'right' ? 'text-right' : 'text-left'} px-2 py-2 text-xs uppercase ${
+  const cls = `${align === 'right' ? 'text-right' : 'text-left'} px-2 py-2 text-xs uppercase whitespace-nowrap ${
     hide === 'md' ? 'hidden md:table-cell' : hide === 'lg' ? 'hidden lg:table-cell' : ''
   }`;
   return (
     <th className={cls}
         style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
-      {children}
+      {onSort ? (
+        <button type="button" onClick={onSort} className="uppercase hover:opacity-70 transition-opacity"
+                style={{ letterSpacing: 'inherit', fontWeight: 'inherit', color: 'inherit' }}
+                title="Сортировать">
+          {children}
+        </button>
+      ) : children}
     </th>
   );
 }
@@ -2378,7 +2445,100 @@ function AlertsBlock({ range }: { range: AdminRange }) {
           emptyText="Нет активных уведомлений"
         />
       )}
+
+      <AlertsPeople stats={stats} />
     </div>
+  );
+}
+
+/** Кто и когда ставил уведомления. Без этого блок был обезличенным: счётчики
+ *  есть, а людей за ними не видно. */
+function AlertsPeople({ stats }: { stats: AlertsStats }) {
+  const navigate = useNavigate();
+  const byUser = stats.by_user ?? [];
+  const recent = stats.recent ?? [];
+  const byDay = stats.by_day ?? [];
+  if (byUser.length === 0 && recent.length === 0) return null;
+  const maxU = Math.max(...byUser.map(u => u.alerts), 1);
+  const line: React.CSSProperties = { borderTop: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)' };
+
+  return (
+    <>
+      {byDay.length > 1 && (
+        <Card padding="md" className="md:p-5">
+          <SimpleChart
+            data={byDay.map(d => ({ time: d.date, value: d.created }))}
+            primaryColor="var(--accent)"
+            primaryLabel="Поставили уведомлений в день"
+            formatValue={(v) => Math.round(v).toString()}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showWatermark={false}
+            showNavigator={false}
+            hideTime
+            defaultHistogram
+            height={180}
+          />
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+        <Card padding="md" className="md:p-5">
+          <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+            Кто ставит
+          </p>
+          <div className="flex flex-col">
+            {byUser.map(u => (
+              <button key={u.user_id} type="button"
+                      onClick={() => { rememberScroll(); navigate(`/admin/users/${u.user_id}`); }}
+                      className="relative grid items-center text-left hover:bg-white/[0.03] transition-colors"
+                      style={{ gridTemplateColumns: '1fr auto', gap: 'var(--sp-3)', padding: '8px 6px', ...line }}>
+                <span aria-hidden className="absolute inset-y-px left-0"
+                      style={{ width: `${(u.alerts / maxU) * 100}%`, backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} />
+                <span className="relative min-w-0">
+                  <span className="block truncate text-sm" style={{ color: 'var(--text-primary)' }}>{u.user || `id ${u.user_id}`}</span>
+                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+                    первое {u.first_at ? fmtShortDate(u.first_at) : '—'} · последнее {u.last_at ? fmtShortDate(u.last_at) : '—'}
+                  </span>
+                </span>
+                <span className="relative text-right" style={{ fontFamily: NUM_FONT }}>
+                  <span className="block text-sm font-semibold">{u.alerts}</span>
+                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>{u.active} активных</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card padding="md" className="md:p-5">
+          <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+            Последние поставленные
+          </p>
+          <div className="flex flex-col">
+            {recent.slice(0, 12).map(a => (
+              <button key={a.id} type="button"
+                      onClick={() => { rememberScroll(); navigate(`/admin/users/${a.user_id}`); }}
+                      className="grid items-center text-left hover:bg-white/[0.03] transition-colors"
+                      style={{ gridTemplateColumns: '1fr auto', gap: 'var(--sp-3)', padding: '8px 6px', ...line }}>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {a.asset || '—'} <span style={{ color: 'var(--text-muted)' }}>· {a.user || `id ${a.user_id}`}</span>
+                  </span>
+                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {a.status === 'active' ? 'активно' : a.status === 'paused' ? 'на паузе' : a.status}
+                    {a.fires > 0 && ` · срабатывало ${a.fires} раз`}
+                  </span>
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: NUM_FONT }}>
+                  {a.created_at ? fmtShortDate(a.created_at) : '—'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </>
   );
 }
 

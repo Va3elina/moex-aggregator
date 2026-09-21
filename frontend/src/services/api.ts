@@ -1333,6 +1333,8 @@ export async function getGrowth(range: AdminRange): Promise<GrowthReport> {
 // ═══════════════════════════════════════════════════════════════════
 
 export interface AdminUser {
+  /** Когда в последний раз платил (без инвайтов, триалов и возвратов). */
+  paid_at?: string | null;
   id: number;
   email: string;
   display_name: string | null;
@@ -1731,9 +1733,8 @@ export interface ActivityDetail {
   top_exports: { indicator: string; count: number }[];
   devices: { device: string; sessions: number }[];
   countries: { country: string; sessions: number }[];
-  /** 0 — воскресенье, как в Postgres. */
-  by_dow: { dow: number; views: number }[];
-  by_hour: { hour: number; views: number }[];
+  /** Активы показаны за всё время: за выбранный период их не было. */
+  assets_all_time?: boolean;
 }
 
 export interface UserDetailResponse extends ActivityDetail {
@@ -2527,6 +2528,11 @@ export interface AlertFire {
 }
 // Admin-статистика алертов (GET /api/analytics/alerts-stats).
 export interface AlertsStats {
+  /** Кто и когда поставил — последние 40. Поля новые, поэтому необязательные. */
+  recent?: { id: number; user_id: number; user: string | null; asset: string | null; indicator: string | null;
+             metric: string | null; status: string; created_at: string | null; last_fired_at: string | null; fires: number }[];
+  by_user?: { user_id: number; user: string | null; alerts: number; active: number; first_at: string | null; last_at: string | null }[];
+  by_day?: { date: string; created: number }[];
     period_days: number;
     created: number; deleted: number; paused: number; resumed: number;
     active_now: number; with_fires: number;
