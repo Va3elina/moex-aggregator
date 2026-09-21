@@ -178,13 +178,13 @@ const METRIC_HINTS = {
  *  Сами секции внутри групп не меняются — это только раскладка. */
 type Group = 'audience' | 'behavior' | 'retention' | 'people';
 
-/** Кого смотрим в группе «Люди»: зарегистрированных, гостей или сразу обоих. */
-type Who = 'users' | 'guests' | 'both';
+/** Кого смотрим в группе «Люди». Две таблицы одновременно — это шум: непонятно,
+ *  в какую смотреть, поэтому показываем ровно одну. */
+type Who = 'users' | 'guests';
 
 const WHO_OPTIONS: { key: Who; label: string }[] = [
   { key: 'users', label: 'Зарегистрированные' },
   { key: 'guests', label: 'Гости' },
-  { key: 'both', label: 'И те, и другие' },
 ];
 
 const GROUPS: { key: Group; label: string; note: string }[] = [
@@ -356,6 +356,9 @@ export default function AdminStatsPage() {
   // Кого показываем в группе «Люди». Раньше гости были свёрнутым разделом под
   // таблицей пользователей — их там просто не находили.
   const [who, setWho] = usePersistedState<Who>('frame:admin:who', 'users');
+  // В localStorage мог остаться убранный вариант «и те, и другие» — без этого
+  // у тех, кто его выбирал, не отрисовалась бы ни одна таблица.
+  const safeWho: Who = WHO_OPTIONS.some(o => o.key === who) ? who : 'users';
   const [segReport, setSegReport] = useState<SegmentReport | null>(null);
   const [segLoading, setSegLoading] = useState(true);
 
@@ -807,16 +810,16 @@ export default function AdminStatsPage() {
       {group === 'people' && (
         <>
       <div className="mb-6 md:mb-8">
-        <SegmentedControl<Who> options={WHO_OPTIONS} value={who} onChange={setWho} />
+        <SegmentedControl<Who> options={WHO_OPTIONS} value={safeWho} onChange={setWho} />
       </div>
 
-      {(who === 'users' || who === 'both') && (
+      {safeWho === 'users' && (
         <Section title="Зарегистрированные" hint={METRIC_HINTS.users_section}>
           <UsersBlock range={range} segment={indSegment} />
         </Section>
       )}
 
-      {(who === 'guests' || who === 'both') && (
+      {safeWho === 'guests' && (
         <Section title="Гости" hint={METRIC_HINTS.guests_section}>
           <GuestsBlock range={range} segment={indSegment} />
         </Section>
