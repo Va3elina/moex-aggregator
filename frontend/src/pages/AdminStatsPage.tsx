@@ -48,7 +48,6 @@ import type {
   GrowthReport,
   AnalyticsStats,
   AdminUser,
-  AdminGuest,
   AlertsStats,
   AdminRange,
   MetricaReport,
@@ -1577,11 +1576,11 @@ const GUEST_SORTS: { key: string; label: string }[] = [
 /** Пороги по числу разных дней. Границы не с потолка: на первых двух неделях
  *  данных три четверти гостей заходили ровно один день, 2+ — примерно четверть,
  *  4+ — каждый десятый, 7+ — три процента. Это и есть ядро. */
-const GUEST_MIN_DAYS: { key: number; label: string; countKey?: 'all' | 'd2' | 'd4' | 'd7' }[] = [
-  { key: 1, label: 'Все гости', countKey: 'all' },
-  { key: 2, label: 'Заходили 2+ дня', countKey: 'd2' },
-  { key: 4, label: 'Постоянные: 4+ дня', countKey: 'd4' },
-  { key: 7, label: 'Ядро: 7+ дней', countKey: 'd7' },
+const GUEST_MIN_DAYS: { key: string; label: string; countKey?: 'all' | 'd2' | 'd4' | 'd7' }[] = [
+  { key: '1', label: 'Все гости', countKey: 'all' },
+  { key: '2', label: 'Заходили 2+ дня', countKey: 'd2' },
+  { key: '4', label: 'Постоянные: 4+ дня', countKey: 'd4' },
+  { key: '7', label: 'Ядро: 7+ дней', countKey: 'd7' },
 ];
 
 /** Гости: те, кто ходит на сайт и не регистрируется. */
@@ -1621,8 +1620,8 @@ function GuestsBlock({ range }: { range: AdminRange }) {
   }));
   // Своё значение из поля ввода — отдельным пунктом, иначе Dropdown не нашёл бы
   // выбранный ключ и показал бы чужую подпись.
-  if (!GUEST_MIN_DAYS.some(o => o.key === safeMin)) {
-    minOptions.push({ key: safeMin, label: `От ${safeMin} дней${c ? ` (${c.matched})` : ''}` });
+  if (!GUEST_MIN_DAYS.some(o => o.key === String(safeMin))) {
+    minOptions.push({ key: String(safeMin), label: `От ${safeMin} дней${c ? ` (${c.matched})` : ''}` });
   }
 
   const applyMin = (raw: string) => {
@@ -1637,10 +1636,10 @@ function GuestsBlock({ range }: { range: AdminRange }) {
   return (
     <Card padding="md" className="md:p-5">
       <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<number>
+        <Dropdown<string>
           options={minOptions}
-          value={safeMin}
-          onChange={setMinDays}
+          value={String(safeMin)}
+          onChange={v => setMinDays(Number(v))}
           menuMaxWidth={320}
           trailing={<HelpTooltip icon="help" title="Порог по заходам" content={METRIC_HINTS.guests_filter} size={13} align="right" />}
         />
