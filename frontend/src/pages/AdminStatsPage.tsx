@@ -32,6 +32,8 @@ import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
+import { IndicatorSegment, EMPTY_SEGMENT, SEGMENT_HINT } from '../components/admin/IndicatorSegment';
+import type { SegmentState } from '../components/admin/IndicatorSegment';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useDelayedFlag } from '../hooks/useDelayedFlag';
@@ -40,6 +42,7 @@ import {
   getAnalyticsStats,
   listAdminUsers,
   listAdminGuests,
+  getSegment,
   getAlertsStats,
   getMetrica,
   getGrowth,
@@ -48,6 +51,7 @@ import type {
   GrowthReport,
   AnalyticsStats,
   AdminUser,
+  SegmentReport,
   AlertsStats,
   AdminRange,
   MetricaReport,
@@ -322,8 +326,24 @@ export default function AdminStatsPage() {
 
   // Воронка, удержание, гости, первые источники — от фильтров сегмента и
   // устройства не зависят, только от периода.
+  // Сегмент по индикаторам живёт на странице, а не внутри блоков: один отбор
+  // действует и на гостей, и на зарегистрированных, иначе две таблицы
+  // показывали бы разных людей. Имя indSegment — чтобы не путать с segment
+  // из шапки, который делит аудиторию на гостей/вошедших/админов.
+  const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
+  const [segReport, setSegReport] = useState<SegmentReport | null>(null);
+  const [segLoading, setSegLoading] = useState(true);
+
   const [growth, setGrowth] = useState<GrowthReport | null>(null);
   const [growthLoading, setGrowthLoading] = useState(true);
+
+  useEffect(() => {
+    setSegLoading(true);
+    getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
+      .then(setSegReport)
+      .catch(() => setSegReport(null))
+      .finally(() => setSegLoading(false));
+  }, [range, indSegment]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -709,12 +729,22 @@ export default function AdminStatsPage() {
         <AlertsBlock range={range} />
       </Section>
 
+      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
+        <IndicatorSegment
+          indicators={segReport?.all_indicators ?? []}
+          value={indSegment}
+          onChange={setIndSegment}
+          summary={segReport}
+          loading={segLoading}
+        />
+      </Section>
+
       <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
-        <GuestsBlock range={range} />
+        <GuestsBlock range={range} segment={indSegment} />
       </CollapsibleSection>
 
       <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock range={range} />
+        <UsersBlock range={range} segment={indSegment} />
       </Section>
     </div>
   );
@@ -1584,7 +1614,7 @@ const GUEST_MIN_DAYS: { key: string; label: string; countKey?: 'all' | 'd2' | 'd
 ];
 
 /** Гости: те, кто ходит на сайт и не регистрируется. */
-function GuestsBlock({ range }: { range: AdminRange }) {
+function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentState }) {
   const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof listAdminGuests>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1605,13 +1635,16 @@ function GuestsBlock({ range }: { range: AdminRange }) {
     const t = window.setTimeout(() => {
       setLoading(true);
       setError(false);
-      listAdminGuests({ ...range, sort: safeSort, minDays: safeMin })
+      listAdminGuests({
+        ...range, sort: safeSort, minDays: safeMin,
+        seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
+      })
         .then(setData)
         .catch(() => { setData(null); setError(true); })
         .finally(() => setLoading(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [range, safeSort, safeMin]);
+  }, [range, safeSort, safeMin, segment]);
 
   const c = data?.counts;
   const minOptions = GUEST_MIN_DAYS.map(o => ({
@@ -1753,7 +1786,7 @@ function GuestsBlock({ range }: { range: AdminRange }) {
   );
 }
 
-function UsersBlock({ range }: { range: AdminRange }) {
+function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentState }) {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -1771,7 +1804,10 @@ function UsersBlock({ range }: { range: AdminRange }) {
   useEffect(() => {
     const t = window.setTimeout(() => {
       setLoading(true);
-      listAdminUsers({ ...range, sort: safeSort, search: search.trim(), filter: safeFilter })
+      listAdminUsers({
+        ...range, sort: safeSort, search: search.trim(), filter: safeFilter,
+        seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
+      })
         .then(r => {
           setUsers(r.users);
           setCounts(r.counts ?? {
@@ -1782,7 +1818,7 @@ function UsersBlock({ range }: { range: AdminRange }) {
         .finally(() => setLoading(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [range, safeSort, search, safeFilter]);
+  }, [range, safeSort, search, safeFilter, segment]);
 
   const filterOptions = USER_FILTERS.map(f => ({
     key: f.key,

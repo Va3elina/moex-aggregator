@@ -696,6 +696,69 @@ def _loyal_guests(conn, window: dict) -> dict:
     }
 
 
+# Индикаторы, по которым сегментируем людей. Белый список, а не любой путь:
+# сегмент должен означать «пользуется инструментом», а /login или /profile
+# такого смысла не несут и только засоряли бы выбор.
+INDICATOR_PATHS: dict[str, str] = {
+    "/oi": "Открытый интерес",
+    "/heatmap": "Карта рынка",
+    "/strength": "Сила рынка",
+    "/funds-money": "Деньги в фондах",
+    "/fund-trades": "Покупки фондов",
+    "/seasonality": "Сезонность",
+    "/buffett": "Индикатор Баффета",
+    "/cbr-flows": "Потоки капитала",
+    "/repo": "Репо в акциях",
+}
+
+
+def _parse_paths(raw: Optional[str]) -> list[str]:
+    """CSV путей из query → только известные индикаторы, без повторов."""
+    if not raw:
+        return []
+    out: list[str] = []
+    for p in raw.split(","):
+        p = p.strip()
+        if p in INDICATOR_PATHS and p not in out:
+            out.append(p)
+    return out
+
+
+def _segment_sql(scope_sql: str, period_sql: str, seen: list[str],
+                 not_seen: list[str], seen_mode: str, params: dict) -> str:
+    """Условие «смотрел одни индикаторы и не смотрел другие» — кусок для WHERE.
+
+    scope_sql — как связать событие с человеком (`se.user_id = u.id` или
+    `se.visitor_id = agg.visitor_id`), period_sql — рамки периода для этих
+    событий. Период тот же, что у самого раздела: иначе «не смотрел» значило бы
+    «не смотрел никогда», а это другой вопрос.
+
+    seen_mode: all — смотрел каждый из выбранных, any — хотя бы один.
+    """
+    if not seen and not not_seen:
+        return ""
+
+    def exists(paths: list[str], key: str, negate: bool) -> str:
+        params[key] = paths
+        return (f"{'NOT ' if negate else ''}EXISTS ("
+                f"SELECT 1 FROM analytics_events se "
+                f"WHERE {scope_sql} AND {period_sql} "
+                f"AND se.event_type = 'pageview' AND se.event_path = ANY(:{key}))")
+
+    parts: list[str] = []
+    if seen:
+        if seen_mode == "any":
+            parts.append(exists(seen, "seg_seen", False))
+        else:
+            # «Смотрел каждый» — отдельный EXISTS на путь: один EXISTS с ANY
+            # ответил бы «хотя бы один», а это совсем другой сегмент.
+            parts.extend(exists([p], f"seg_seen_{i}", False) for i, p in enumerate(seen))
+    if not_seen:
+        parts.append(exists(not_seen, "seg_not", True))
+
+    return " AND " + " AND ".join(parts)
+
+
 GUEST_SORTS = {
     "days": "days DESC, pageviews DESC",
     "sessions": "sessions DESC, days DESC",
@@ -710,6 +773,116 @@ GUEST_SORTS = {
 GUESTS_LIMIT = 300
 
 
+@router.get("/segment")
+def get_segment(
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    seen: Optional[str] = Query(None, description="Смотрел эти индикаторы, CSV путей"),
+    not_seen: Optional[str] = Query(None, description="Не смотрел эти индикаторы, CSV путей"),
+    seen_mode: str = Query("all", description="all — смотрел каждый из seen, any — хотя бы один"),
+    user=Depends(require_admin),
+):
+    """Сколько людей в сегменте — гости и зарегистрированные одной цифрой.
+
+    Человек здесь опознаётся так же, как в сводке: аккаунт, иначе браузер,
+    иначе вкладка (для событий до 11.09.2026, когда ID браузера ещё не писали).
+    Гостевые события того, кто потом вошёл, приклеиваются к его аккаунту —
+    поэтому один человек не попадает и в гости, и в зарегистрированные.
+
+    Также отдаёт охват каждого индикатора внутри сегмента: видно, чем ещё
+    пользуются те, кто выбран.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    seen_l, not_seen_l = _parse_paths(seen), _parse_paths(not_seen)
+    mode = "any" if seen_mode == "any" else "all"
+    key = (f"admin:segment:v1:{rng['d0']}:{rng['d1']}"
+           f":{','.join(seen_l)}:{','.join(not_seen_l)}:{mode}")
+    return get_or_compute(
+        key, lambda: _compute_segment(rng, seen_l, not_seen_l, mode), ttl=180)
+
+
+# Люди за период под единым ключом: аккаунт → браузер → вкладка.
+_SEGMENT_PEOPLE_SQL = """
+    WITH vis_user AS (
+        SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+        WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+        GROUP BY visitor_id
+    ),
+    ev AS (
+        SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                        'v' || a.visitor_id,
+                        's' || a.session_id) AS ident,
+               COALESCE(a.user_id, vu.uid) AS uid,
+               a.visitor_id, a.session_id, a.event_path, a.event_type
+        FROM analytics_events a
+        LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+        WHERE a.server_ts >= :start AND a.server_ts < :end
+          AND (a.user_id IS NULL OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin'))
+    ),
+    people AS (
+        SELECT ident, MAX(uid) AS uid,
+               ARRAY_AGG(DISTINCT event_path) FILTER (
+                   WHERE event_type = 'pageview' AND event_path IS NOT NULL) AS paths
+        FROM ev GROUP BY ident
+    )
+"""
+
+
+def _compute_segment(rng: dict, seen: list[str], not_seen: list[str], mode: str) -> dict:
+    # Сегмент считаем по массиву путей человека, а не подзапросом на события:
+    # люди уже собраны в CTE, и проверка вырождается в операции над массивом.
+    conds: list[str] = []
+    params: dict[str, Any] = {"start": rng["start"], "end": rng["end"]}
+    if seen:
+        params["seg_seen"] = seen
+        conds.append("paths @> :seg_seen" if mode == "all" else "paths && :seg_seen")
+    if not_seen:
+        params["seg_not"] = not_seen
+        conds.append("NOT (paths && :seg_not)")
+    where = (" AND " + " AND ".join(conds)) if conds else ""
+
+    with get_engine().connect() as conn:
+        row = conn.execute(text(f"""
+            {_SEGMENT_PEOPLE_SQL}
+            SELECT COUNT(*) AS people,
+                   COUNT(*) FILTER (WHERE uid IS NOT NULL) AS registered,
+                   COUNT(*) FILTER (WHERE uid IS NULL) AS guests,
+                   COUNT(*) FILTER (WHERE uid IN (
+                       SELECT user_id FROM subscriptions
+                       WHERE status = 'active' AND period <> 'invite')) AS paying
+            FROM people WHERE paths IS NOT NULL {where}
+        """), params).fetchone()
+
+        # Чем ещё пользуются выбранные — охват каждого индикатора в сегменте.
+        coverage = conn.execute(text(f"""
+            {_SEGMENT_PEOPLE_SQL}
+            SELECT p.path, COUNT(*) AS people,
+                   COUNT(*) FILTER (WHERE people.uid IS NOT NULL) AS registered
+            FROM people, LATERAL UNNEST(people.paths) AS p(path)
+            WHERE people.paths IS NOT NULL {where}
+              AND p.path = ANY(:all_paths)
+            GROUP BY p.path ORDER BY people DESC
+        """), {**params, "all_paths": list(INDICATOR_PATHS)}).fetchall()
+
+    total = int(row[0] or 0) if row else 0
+    return {
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "seen": seen, "not_seen": not_seen, "seen_mode": mode,
+        "people": total,
+        "registered": int(row[1] or 0) if row else 0,
+        "guests": int(row[2] or 0) if row else 0,
+        "paying": int(row[3] or 0) if row else 0,
+        "indicators": [
+            {"path": r[0], "name": INDICATOR_PATHS.get(r[0], r[0]),
+             "people": int(r[1]), "registered": int(r[2])}
+            for r in coverage
+        ],
+        "all_indicators": [{"path": p, "name": n} for p, n in INDICATOR_PATHS.items()],
+    }
+
+
 @router.get("/guests")
 def list_guests(
     days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
@@ -718,6 +891,9 @@ def list_guests(
     sort: str = Query("days", description="days / sessions / pageviews / last_seen / first_seen"),
     min_days: int = Query(1, ge=1, le=MAX_RANGE_DAYS, description="Только те, кто заходил в N и более разных дней"),
     device: str = Query("all", description="all / mobile / desktop / tablet"),
+    seen: Optional[str] = Query(None, description="Смотрел эти индикаторы, CSV путей"),
+    not_seen: Optional[str] = Query(None, description="Не смотрел эти индикаторы, CSV путей"),
+    seen_mode: str = Query("all", description="all — смотрел каждый из seen, any — хотя бы один"),
     user=Depends(require_admin),
 ):
     """Гости за период: браузеры, с которых ни разу не входили в аккаунт.
@@ -733,16 +909,29 @@ def list_guests(
     они нужны для подписей на кнопках фильтра.
     """
     rng = _resolve_range(days, date_from, date_to)
-    key = f"admin:guests:v1:{rng['d0']}:{rng['d1']}:{sort}:{min_days}:{device}"
-    return get_or_compute(key, lambda: _compute_guests(rng, sort, min_days, device), ttl=180)
+    seen_l, not_seen_l = _parse_paths(seen), _parse_paths(not_seen)
+    mode = "any" if seen_mode == "any" else "all"
+    key = (f"admin:guests:v2:{rng['d0']}:{rng['d1']}:{sort}:{min_days}:{device}"
+           f":{','.join(seen_l)}:{','.join(not_seen_l)}:{mode}")
+    return get_or_compute(
+        key, lambda: _compute_guests(rng, sort, min_days, device, seen_l, not_seen_l, mode), ttl=180)
 
 
-def _compute_guests(rng: dict, sort: str, min_days: int, device: str) -> dict:
+def _compute_guests(rng: dict, sort: str, min_days: int, device: str,
+                    seen: list[str] | None = None, not_seen: list[str] | None = None,
+                    seen_mode: str = "all") -> dict:
     order_by = GUEST_SORTS.get(sort, GUEST_SORTS["days"])
     params = {
         "start": rng["start"], "end": rng["end"],
         "min_days": min_days, "limit": GUESTS_LIMIT,
     }
+    # Сегмент по индикаторам. Гость — браузер, поэтому связываем по visitor_id.
+    seg_period = "se.server_ts >= :start AND se.server_ts < :end AND se.user_id IS NULL"
+    segment_sql = _segment_sql("se.visitor_id = agg.visitor_id", seg_period,
+                               seen or [], not_seen or [], seen_mode, params)
+    # Тот же сегмент для счётчиков — там человек живёт в CTE d, алиас другой.
+    segment_sql_d = _segment_sql("se.visitor_id = d.visitor_id", seg_period,
+                                 seen or [], not_seen or [], seen_mode, params)
     device_sql = ""
     if device in ("mobile", "desktop", "tablet"):
         device_sql = " AND device = :device"
@@ -782,12 +971,14 @@ def _compute_guests(rng: dict, sort: str, min_days: int, device: str) -> dict:
                            FILTER (WHERE event_type = 'pageview' AND event_path IS NOT NULL) AS pages
                 FROM ev GROUP BY visitor_id
             )
-            SELECT * FROM agg WHERE days >= :min_days
+            SELECT * FROM agg WHERE days >= :min_days {segment_sql}
             ORDER BY {order_by} LIMIT :limit
         """), params).fetchall()
 
         # Счётчики по всему периоду — независимо от min_days, иначе подписи на
-        # кнопках фильтра менялись бы от самого фильтра.
+        # кнопках фильтра менялись бы от самого фильтра. Сегмент по индикаторам,
+        # наоборот, учитывается: при активном сегменте «Все гости» должно
+        # означать «все в сегменте», а не всех подряд.
         counts_row = conn.execute(text(f"""
             WITH logged AS (
                 SELECT DISTINCT visitor_id FROM analytics_events
@@ -805,7 +996,7 @@ def _compute_guests(rng: dict, sort: str, min_days: int, device: str) -> dict:
             )
             SELECT COUNT(*), COUNT(*) FILTER (WHERE days >= 2), COUNT(*) FILTER (WHERE days >= 4),
                    COUNT(*) FILTER (WHERE days >= 7), COUNT(*) FILTER (WHERE days >= :min_days)
-            FROM d
+            FROM d WHERE TRUE {segment_sql_d}
         """), params).fetchone()
 
         names = _asset_names(conn, sorted({s for r in rows for s in (r.assets or [])}))
@@ -1125,6 +1316,9 @@ def list_users(
     search: str = Query("", description="Поиск по email или display_name"),
     flt: str = Query("all", alias="filter",
                      description="all / paid / paid_basic / paid_pro / invite / free / churned / pending / admin"),
+    seen: Optional[str] = Query(None, description="Смотрел эти индикаторы, CSV путей"),
+    not_seen: Optional[str] = Query(None, description="Не смотрел эти индикаторы, CSV путей"),
+    seen_mode: str = Query("all", description="all — смотрел каждый из seen, any — хотя бы один"),
     user=Depends(require_admin),
 ):
     """Список пользователей со статистикой за период.
@@ -1169,6 +1363,13 @@ def list_users(
     order_by = order_clauses.get(sort, order_clauses["last_active"])
 
     params: dict[str, Any] = {"start": rng["start"], "end": rng["end"]}
+    # Сегмент по индикаторам — в тех же рамках периода, что и остальная
+    # статистика раздела: «не смотрел» значит «не смотрел за период».
+    segment_sql = _segment_sql(
+        "se.user_id = u.id",
+        "se.server_ts >= :start AND se.server_ts < :end",
+        _parse_paths(seen), _parse_paths(not_seen),
+        "any" if seen_mode == "any" else "all", params)
     where_search = ""
     if search_clean:
         where_search = " AND (u.email ILIKE :q OR u.display_name ILIKE :q OR u.username ILIKE :q)"
@@ -1280,7 +1481,7 @@ def list_users(
             FROM users u
             {sub_lateral}
             LEFT JOIN uv ON uv.user_id = u.id
-            WHERE 1=1 {where_search}{where_filter}
+            WHERE 1=1 {where_search}{where_filter}{segment_sql}
             ORDER BY {order_by}
             LIMIT 300
         """), params).fetchall()
@@ -1293,7 +1494,8 @@ def list_users(
             SELECT COUNT(*) AS all_users, {count_sql}
             FROM users u
             {sub_lateral}
-        """)).mappings().fetchone()
+            WHERE TRUE {segment_sql}
+        """), params).mappings().fetchone()
 
     counts = {k: int(v or 0) for k, v in dict(counts_row or {}).items()}
     counts["all"] = counts.pop("all_users", 0)
