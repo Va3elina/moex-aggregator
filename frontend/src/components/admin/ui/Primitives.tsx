@@ -203,3 +203,95 @@ export function Empty({ text }: { text: string }) {
 export function Failed({ text = 'Не удалось загрузить' }: { text?: string }) {
   return <p className="py-6 text-center text-sm" style={{ color: 'var(--danger)' }}>{text}</p>;
 }
+
+/* ── Навигация разделов ───────────────────────────────────────────────── */
+
+/** Разделы страницы. Не «ещё один фильтр»: они не сужают данные, а меняют
+ *  вопрос, на который страница отвечает. Поэтому их место — под заголовком,
+ *  отдельно от контролов периода. */
+export function SectionTabs<T extends string>({ tabs, value, onChange }: {
+  tabs: { key: T; label: string }[];
+  value: T;
+  onChange: (k: T) => void;
+}) {
+  return (
+    <nav
+      role="tablist"
+      className="flex gap-1 overflow-x-auto"
+      style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 35%, transparent)', scrollbarWidth: 'none' }}
+    >
+      {tabs.map(t => {
+        const on = t.key === value;
+        return (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(t.key)}
+            className="whitespace-nowrap px-3.5 pt-2 pb-2.5 text-[13px] transition-colors"
+            style={{
+              color: on ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: on ? 600 : 400,
+              borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Строка таблицы кликается целиком — отдельной кнопки «открыть» не нужно. */
+export function DataTable({ head, children, minWidth = 720 }: {
+  head: { label: string; align?: 'left' | 'right'; hide?: 'md' | 'lg' }[];
+  children: React.ReactNode;
+  minWidth?: number;
+}) {
+  return (
+    <div className="overflow-x-auto -mx-2">
+      <table className="w-full" style={{ minWidth }}>
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th
+                key={i}
+                className={cn(
+                  'px-2 pb-2 text-[11px] uppercase font-medium',
+                  h.align === 'right' ? 'text-right' : 'text-left',
+                  h.hide === 'md' && 'hidden md:table-cell',
+                  h.hide === 'lg' && 'hidden lg:table-cell',
+                )}
+                style={{ fontFamily: MONO, letterSpacing: '.08em', color: 'var(--text-muted)' }}
+              >
+                {h.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Состояние данных в строке: бейдж, а не крашеная строка. */
+export function Badge({ text, tone = 'muted' }: {
+  text: string;
+  tone?: 'accent' | 'good' | 'info' | 'muted';
+}) {
+  const color = {
+    accent: 'var(--accent)', good: 'var(--success)',
+    info: 'var(--info)', muted: 'var(--text-muted)',
+  }[tone];
+  return (
+    <span
+      className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+      style={{ backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`, color }}
+    >
+      {text}
+    </span>
+  );
+}
