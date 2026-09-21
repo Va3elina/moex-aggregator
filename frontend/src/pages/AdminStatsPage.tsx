@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, ChevronDown, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -38,6 +38,7 @@ import { useTweened } from '../hooks/useTweened';
 import {
   getAnalyticsStats,
   listAdminUsers,
+  listAdminGuests,
   getAlertsStats,
   getMetrica,
   getGrowth,
@@ -46,6 +47,7 @@ import type {
   GrowthReport,
   AnalyticsStats,
   AdminUser,
+  AdminGuest,
   AlertsStats,
   AdminRange,
   MetricaReport,
@@ -153,6 +155,10 @@ const METRIC_HINTS = {
   alerts_source: 'Активные уведомления прямо сейчас по разделу сайта: ОИ или фонды.',
   alerts_top:
     'Активы, на которые прямо сейчас стоит больше всего активных уведомлений. Цифра — число уведомлений. От периода не зависит.',
+  guests_section:
+    'Люди, которые ходят на сайт и не завели аккаунт. Один человек — один ID браузера (живёт год, как cookie Метрики). Кто хоть раз входил в аккаунт, сюда не попадает: он уже в «Пользователях». «Заходов» — в скольких разных днях человек был на сайте за выбранный период: это и есть мера возвращаемости. ID браузера пишем с 11.09.2026, за более ранние периоды раздел пуст.',
+  guests_filter:
+    'Порог по числу разных дней. 2+ — вернулись хотя бы раз. 4+ — ходят регулярно. 7+ — ядро, заходят почти каждый день.',
   users_section:
     'Только зарегистрированные аккаунты. Подписка и фильтры по ней — текущее состояние, от периода не зависят. Визиты и время — за выбранный период, по действиям под аккаунтом, считаются так же, как в сводке. Последняя активность — за всё время и видна даже у тех, кто отказался от статистики: учитываются входы и обновление сессии.',
   users_filter:
@@ -724,6 +730,10 @@ export default function AdminStatsPage() {
         <AlertsBlock range={range} />
       </Section>
 
+      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
+        <GuestsBlock range={range} />
+      </CollapsibleSection>
+
       <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
         <UsersBlock range={range} />
       </Section>
@@ -1278,6 +1288,33 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
+/** Секция, свёрнутая по умолчанию: содержимое не монтируется, пока не раскрыли,
+ *  поэтому тяжёлый запрос не уходит на каждый заход на страницу. */
+function CollapsibleSection({ title, hint, storageKey, children }: {
+  title: string; hint?: string; storageKey: string; children: React.ReactNode;
+}) {
+  const [open, setOpen] = usePersistedState<boolean>(storageKey, false);
+  return (
+    <section className="mb-6 md:mb-8">
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          aria-expanded={open}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {title}
+        </button>
+        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} />}
+        <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+      </div>
+      {open && children}
+    </section>
+  );
+}
+
 type Delta = { text: string; good: boolean } | null;
 
 function pctDelta(v: number | null | undefined): Delta {
@@ -1548,6 +1585,188 @@ const USER_SORTS: { key: string; label: string }[] = [
   { key: 'time', label: 'По времени на сайте' },
   { key: 'created', label: 'По регистрации' },
 ];
+
+const GUEST_SORTS: { key: string; label: string }[] = [
+  { key: 'days', label: 'По числу заходов' },
+  { key: 'sessions', label: 'По визитам' },
+  { key: 'pageviews', label: 'По просмотрам' },
+  { key: 'last_seen', label: 'Кто был позже всех' },
+  { key: 'first_seen', label: 'Кто появился раньше всех' },
+];
+
+/** Пороги по числу разных дней. Границы не с потолка: на первых двух неделях
+ *  данных три четверти гостей заходили ровно один день, 2+ — примерно четверть,
+ *  4+ — каждый десятый, 7+ — три процента. Это и есть ядро. */
+const GUEST_MIN_DAYS: { key: number; label: string; countKey?: 'all' | 'd2' | 'd4' | 'd7' }[] = [
+  { key: 1, label: 'Все гости', countKey: 'all' },
+  { key: 2, label: 'Заходили 2+ дня', countKey: 'd2' },
+  { key: 4, label: 'Постоянные: 4+ дня', countKey: 'd4' },
+  { key: 7, label: 'Ядро: 7+ дней', countKey: 'd7' },
+];
+
+/** Гости: те, кто ходит на сайт и не регистрируется. */
+function GuestsBlock({ range }: { range: AdminRange }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof listAdminGuests>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const dim = useDelayedFlag(loading && !!data);
+  const [sort, setSort] = usePersistedState<string>('frame:admin:guests:sort', 'days');
+  const [minDays, setMinDays] = usePersistedState<number>('frame:admin:guests:minDays', 1);
+  // Отдельное состояние для поля ввода: пока человек стирает цифру, оно
+  // бывает пустым, а minDays должен оставаться валидным числом.
+  const [minInput, setMinInput] = useState(String(minDays));
+
+  const safeSort = GUEST_SORTS.some(o => o.key === sort) ? sort : 'days';
+  const safeMin = Number.isFinite(minDays) && minDays >= 1 ? Math.floor(minDays) : 1;
+
+  useEffect(() => { setMinInput(String(safeMin)); }, [safeMin]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setLoading(true);
+      setError(false);
+      listAdminGuests({ ...range, sort: safeSort, minDays: safeMin })
+        .then(setData)
+        .catch(() => { setData(null); setError(true); })
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [range, safeSort, safeMin]);
+
+  const c = data?.counts;
+  const minOptions = GUEST_MIN_DAYS.map(o => ({
+    key: o.key,
+    label: c && o.countKey ? `${o.label} (${c[o.countKey]})` : o.label,
+  }));
+  // Своё значение из поля ввода — отдельным пунктом, иначе Dropdown не нашёл бы
+  // выбранный ключ и показал бы чужую подпись.
+  if (!GUEST_MIN_DAYS.some(o => o.key === safeMin)) {
+    minOptions.push({ key: safeMin, label: `От ${safeMin} дней${c ? ` (${c.matched})` : ''}` });
+  }
+
+  const applyMin = (raw: string) => {
+    setMinInput(raw);
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1) setMinDays(n);
+  };
+
+  const td: React.CSSProperties = { padding: '9px 8px', verticalAlign: 'top' };
+  const guests = data?.guests ?? [];
+
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
+        <Dropdown<number>
+          options={minOptions}
+          value={safeMin}
+          onChange={setMinDays}
+          menuMaxWidth={320}
+          trailing={<HelpTooltip icon="help" title="Порог по заходам" content={METRIC_HINTS.guests_filter} size={13} align="right" />}
+        />
+        <label
+          className="flex items-center"
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1.5px solid var(--text-primary)',
+            borderRadius: 9999,
+            padding: 'var(--sp-2) var(--sp-3)',
+            gap: 'var(--sp-2)',
+          }}
+        >
+          <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>от</span>
+          <input
+            type="number"
+            min={1}
+            name="guest_min_days"
+            id="admin-guest-min-days"
+            value={minInput}
+            onChange={e => applyMin(e.target.value)}
+            onBlur={() => setMinInput(String(safeMin))}
+            className="bg-transparent outline-none"
+            style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', width: 44, fontFamily: NUM_FONT }}
+          />
+          <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>дней</span>
+        </label>
+        <Dropdown<string>
+          options={GUEST_SORTS}
+          value={safeSort}
+          onChange={setSort}
+          menuMaxWidth={320}
+        />
+        <span className="text-xs ml-auto whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+          показано {guests.length}
+          {c && c.matched > guests.length && ` из ${c.matched}`}
+          {c && (
+            <>
+              {' · '}
+              <span style={{ fontWeight: 600 }}>всего гостей: {c.all}</span>
+            </>
+          )}
+        </span>
+      </div>
+
+      {error && (
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+          Не удалось загрузить гостей
+        </p>
+      )}
+
+      {!error && !loading && guests.length === 0 && (
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+          {data && data.counts.all === 0
+            ? `За период гостей не видно. ID браузера пишем с ${fmtShortDay(data.since)} — за более ранние периоды раздел пуст.`
+            : 'Под этот порог никто не подходит'}
+        </p>
+      )}
+
+      {loading && !data && <Skeleton height={240} rounded="lg" />}
+
+      {guests.length > 0 && (
+        <div className="overflow-x-auto -mx-2" style={dimStyle(dim)}>
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 860 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <UCol align="left">Гость</UCol>
+                <UCol align="right">Заходов</UCol>
+                <UCol align="right">Визитов</UCol>
+                <UCol align="right" hide="md">Просмотров</UCol>
+                <UCol align="left" hide="md">Устройство</UCol>
+                <UCol align="left" hide="lg">Источник</UCol>
+                <UCol align="left">Что смотрит</UCol>
+                <UCol align="left" hide="lg">Заходил</UCol>
+              </tr>
+            </thead>
+            <tbody>
+              {guests.map(g => (
+                <tr key={g.visitor_id} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}>
+                  <td style={{ ...td, fontFamily: NUM_FONT, color: 'var(--text-primary)' }} title={g.visitor_id}>
+                    {g.visitor_id.slice(0, 8)}
+                    {g.pricing_views > 0 && (
+                      <span className="ml-2 text-xs" style={{ color: 'var(--accent)', fontWeight: 600 }} title="Заходил на страницу тарифов">
+                        тарифы
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT, fontWeight: 600, color: 'var(--text-primary)' }}>{g.days}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT }}>{g.sessions}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT }} className="hidden md:table-cell">{g.pageviews}</td>
+                  <td style={td} className="hidden md:table-cell">{DEVICE_NAMES[g.device] || g.device}</td>
+                  <td style={{ ...td, color: 'var(--text-muted)' }} className="hidden lg:table-cell">{g.source || 'прямой'}</td>
+                  <td style={{ ...td, color: 'var(--text-primary)' }}>
+                    {[...g.assets, ...g.pages.map(x => PAGE_NAMES[x] || x)].slice(0, 5).join(', ') || '—'}
+                  </td>
+                  <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--text-muted)' }} className="hidden lg:table-cell">
+                    {g.first_seen === g.last_seen ? fmtShortDay(g.first_seen) : `${fmtShortDay(g.first_seen)} – ${fmtShortDay(g.last_seen)}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function UsersBlock({ range }: { range: AdminRange }) {
   const navigate = useNavigate();

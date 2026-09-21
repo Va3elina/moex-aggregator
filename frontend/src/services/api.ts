@@ -1379,6 +1379,59 @@ export async function listAdminUsers(opts: AdminRange & {
   return response.json();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Admin: Guests panel
+// Гость — браузер, с которого ни разу не входили в аккаунт (visitor_id в
+// localStorage, живёт год). Залогинившийся визитор из выдачи исключён: он
+// уже в «Пользователях», двоиться не должен.
+// ═══════════════════════════════════════════════════════════════════
+
+export interface AdminGuest {
+  visitor_id: string;
+  /** В скольких разных днях заходил — мера повторных заходов. */
+  days: number;
+  sessions: number;
+  pageviews: number;
+  events: number;
+  first_seen: string;
+  last_seen: string;
+  device: string;
+  /** Хост реферера первого визита; null — прямой заход или до фазы источников. */
+  source: string | null;
+  pricing_views: number;
+  assets: string[];
+  pages: string[];
+}
+
+export async function listAdminGuests(opts: AdminRange & {
+  /** days / sessions / pageviews / last_seen / first_seen */
+  sort?: string;
+  /** Только те, кто заходил в N и более разных дней. */
+  minDays?: number;
+  device?: string;
+}): Promise<{
+  since: string;
+  date_from: string;
+  date_to: string;
+  /** Потолок выдачи на бэке — показываем «показано X из Y», когда упёрлись. */
+  limit: number;
+  /** Счётчики по всему периоду, не зависят от minDays. */
+  counts: { all: number; d2: number; d4: number; d7: number; matched: number };
+  guests: AdminGuest[];
+}> {
+  const params = new URLSearchParams();
+  rangeParams(params, opts);
+  if (opts.sort) params.set('sort', opts.sort);
+  if (opts.minDays && opts.minDays > 1) params.set('min_days', String(opts.minDays));
+  if (opts.device && opts.device !== 'all') params.set('device', opts.device);
+  const response = await apiFetch(`${API_BASE}/api/analytics/guests?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch guests');
+  }
+  return response.json();
+}
+
 export interface UserSubscription {
   id: number;
   tier: string;

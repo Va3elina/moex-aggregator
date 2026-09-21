@@ -696,6 +696,149 @@ def _loyal_guests(conn, window: dict) -> dict:
     }
 
 
+GUEST_SORTS = {
+    "days": "days DESC, pageviews DESC",
+    "sessions": "sessions DESC, days DESC",
+    "pageviews": "pageviews DESC, days DESC",
+    "last_seen": "last_seen DESC, days DESC",
+    "first_seen": "first_seen ASC, days DESC",
+}
+
+# Сколько гостей показываем за раз. Гостей на порядок больше, чем
+# зарегистрированных, и у каждого агрегируются массивы страниц и тикеров —
+# без потолка запрос на широком периоде становится самым дорогим на странице.
+GUESTS_LIMIT = 300
+
+
+@router.get("/guests")
+def list_guests(
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None, description="Начало периода, YYYY-MM-DD по Москве"),
+    date_to: Optional[str] = Query(None, description="Конец периода включительно, YYYY-MM-DD"),
+    sort: str = Query("days", description="days / sessions / pageviews / last_seen / first_seen"),
+    min_days: int = Query(1, ge=1, le=MAX_RANGE_DAYS, description="Только те, кто заходил в N и более разных дней"),
+    device: str = Query("all", description="all / mobile / desktop / tablet"),
+    user=Depends(require_admin),
+):
+    """Гости за период: браузеры, с которых ни разу не входили в аккаунт.
+
+    Один человек = один visitor_id (localStorage + cookie на год). Визитор,
+    который хоть раз залогинился, исключается целиком — он уже в «Пользователях»,
+    и считать его дважды нельзя.
+
+    min_days — «сколько разных дней заходил». Это и есть мера повторных
+    заходов: 1 — все гости, 2 — вернувшиеся хотя бы раз, 4+ — постоянные.
+
+    Счётчики в counts считаются по всему периоду и не зависят от min_days:
+    они нужны для подписей на кнопках фильтра.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    key = f"admin:guests:v1:{rng['d0']}:{rng['d1']}:{sort}:{min_days}:{device}"
+    return get_or_compute(key, lambda: _compute_guests(rng, sort, min_days, device), ttl=180)
+
+
+def _compute_guests(rng: dict, sort: str, min_days: int, device: str) -> dict:
+    order_by = GUEST_SORTS.get(sort, GUEST_SORTS["days"])
+    params = {
+        "start": rng["start"], "end": rng["end"],
+        "min_days": min_days, "limit": GUESTS_LIMIT,
+    }
+    device_sql = ""
+    if device in ("mobile", "desktop", "tablet"):
+        device_sql = " AND device = :device"
+        params["device"] = device
+
+    with get_engine().connect() as conn:
+        rows = conn.execute(text(f"""
+            WITH logged AS (
+                SELECT DISTINCT visitor_id FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+            ),
+            ev AS (
+                SELECT visitor_id, session_id, event_type, event_path, payload, device,
+                       server_ts,
+                       ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+                FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NULL
+                  AND server_ts >= :start AND server_ts < :end
+                  AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+                  {device_sql}
+            ),
+            agg AS (
+                SELECT visitor_id,
+                       COUNT(DISTINCT day) AS days,
+                       COUNT(DISTINCT session_id) AS sessions,
+                       COUNT(*) FILTER (WHERE event_type = 'pageview') AS pageviews,
+                       COUNT(*) AS events,
+                       MIN(day) AS first_seen,
+                       MAX(day) AS last_seen,
+                       MODE() WITHIN GROUP (ORDER BY device) AS device,
+                       MODE() WITHIN GROUP (ORDER BY payload->'acq'->>'ref')
+                           FILTER (WHERE payload ? 'acq') AS source,
+                       COUNT(*) FILTER (WHERE event_path = '/pricing') AS pricing_views,
+                       ARRAY_AGG(DISTINCT payload->>'secid')
+                           FILTER (WHERE event_type = 'asset_view' AND payload->>'secid' IS NOT NULL) AS assets,
+                       ARRAY_AGG(DISTINCT event_path)
+                           FILTER (WHERE event_type = 'pageview' AND event_path IS NOT NULL) AS pages
+                FROM ev GROUP BY visitor_id
+            )
+            SELECT * FROM agg WHERE days >= :min_days
+            ORDER BY {order_by} LIMIT :limit
+        """), params).fetchall()
+
+        # Счётчики по всему периоду — независимо от min_days, иначе подписи на
+        # кнопках фильтра менялись бы от самого фильтра.
+        counts_row = conn.execute(text(f"""
+            WITH logged AS (
+                SELECT DISTINCT visitor_id FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+            ),
+            d AS (
+                SELECT visitor_id,
+                       COUNT(DISTINCT ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date) AS days
+                FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NULL
+                  AND server_ts >= :start AND server_ts < :end
+                  AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+                  {device_sql}
+                GROUP BY visitor_id
+            )
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE days >= 2), COUNT(*) FILTER (WHERE days >= 4),
+                   COUNT(*) FILTER (WHERE days >= 7), COUNT(*) FILTER (WHERE days >= :min_days)
+            FROM d
+        """), params).fetchone()
+
+        names = _asset_names(conn, sorted({s for r in rows for s in (r.assets or [])}))
+
+    return {
+        "since": GUESTS_SINCE,
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "limit": GUESTS_LIMIT,
+        "counts": {
+            "all": int(counts_row[0] or 0),
+            "d2": int(counts_row[1] or 0),
+            "d4": int(counts_row[2] or 0),
+            "d7": int(counts_row[3] or 0),
+            "matched": int(counts_row[4] or 0),
+        },
+        "guests": [{
+            "visitor_id": r.visitor_id,
+            "days": int(r.days),
+            "sessions": int(r.sessions),
+            "pageviews": int(r.pageviews),
+            "events": int(r.events),
+            "first_seen": r.first_seen.isoformat(),
+            "last_seen": r.last_seen.isoformat(),
+            "device": r.device or "unknown",
+            "source": r.source,
+            "pricing_views": int(r.pricing_views or 0),
+            "assets": [names.get(s, s) for s in (r.assets or [])][:4],
+            "pages": list(r.pages or [])[:6],
+        } for r in rows],
+    }
+
+
 def _compute_stats(rng: dict, segment: str, device: str) -> dict:
     engine = get_engine()
     with engine.begin() as conn:
