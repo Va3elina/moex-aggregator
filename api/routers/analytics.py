@@ -669,6 +669,7 @@ def _compute_growth(rng: dict) -> dict:
             FROM acc GROUP BY 1 ORDER BY 1
         """)).fetchall()
         guests = _loyal_guests(conn, window)
+        retention = _retention_matrix(conn)
     return {
         "admin_ids": admin_ids,
         "payer_ids": payer_ids,
@@ -679,6 +680,70 @@ def _compute_growth(rng: dict) -> dict:
             "active_30": r[4], "active_7": r[5], "paid": r[6],
         } for r in cohorts],
         "guests": guests,
+        "retention": retention,
+    }
+
+
+def _retention_matrix(conn) -> dict:
+    """Удержание когортами, как в отчёте Метрики: строка — месяц регистрации,
+    колонка — сколько месяцев спустя, значение — сколько из когорты вернулось.
+
+    Активность берём не только из событий: у отказавшихся от cookie
+    analytics_events пуст навсегда, но ротация refresh-токенов и входы видны,
+    и без них такие люди выглядели бы ушедшими в первый же месяц.
+    """
+    rows = conn.execute(text("""
+        WITH u AS (
+            SELECT id, date_trunc('month', created_at AT TIME ZONE 'Europe/Moscow') AS c
+            FROM users WHERE role IS DISTINCT FROM 'admin'
+        ),
+        act AS (
+            SELECT user_id, date_trunc('month', (server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow') AS m
+            FROM analytics_events WHERE user_id IS NOT NULL
+            UNION
+            SELECT user_id, date_trunc('month', created_at AT TIME ZONE 'Europe/Moscow') AS m
+            FROM refresh_tokens
+            UNION
+            SELECT id, date_trunc('month', last_login_at AT TIME ZONE 'Europe/Moscow') AS m
+            FROM users WHERE last_login_at IS NOT NULL
+        )
+        SELECT to_char(u.c, 'YYYY-MM') AS cohort,
+               (EXTRACT(YEAR FROM age(a.m, u.c)) * 12
+                + EXTRACT(MONTH FROM age(a.m, u.c)))::int AS n,
+               COUNT(DISTINCT u.id) AS users
+        FROM u JOIN act a ON a.user_id = u.id AND a.m >= u.c
+        GROUP BY 1, 2 ORDER BY 1, 2
+    """)).fetchall()
+
+    sizes = conn.execute(text("""
+        SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'Europe/Moscow'), 'YYYY-MM') AS cohort,
+               COUNT(*) AS size
+        FROM users WHERE role IS DISTINCT FROM 'admin'
+        GROUP BY 1 ORDER BY 1
+    """)).fetchall()
+
+    size_map = {r[0]: int(r[1]) for r in sizes}
+    grid: dict[str, dict[int, int]] = {}
+    for cohort, n, users in rows:
+        grid.setdefault(cohort, {})[int(n)] = int(users)
+
+    max_n = max((n for cells in grid.values() for n in cells), default=0)
+    return {
+        "max_n": max_n,
+        "cohorts": [{
+            "month": m,
+            "size": size_map.get(m, 0),
+            # Доля от размера когорты: абсолютные числа между когортами разного
+            # размера несопоставимы, а проценты — да.
+            "cells": [
+                {"n": n, "users": grid[m].get(n, 0),
+                 "pct": round(grid[m].get(n, 0) / size_map[m] * 100) if size_map.get(m) else 0}
+                for n in range(0, max_n + 1)
+                # Хвост будущих месяцев у молодой когорты — не ноль, а «ещё не
+                # наступило»: обрезаем, чтобы не рисовать пустые клетки.
+                if n <= max((k for k in grid[m]), default=0)
+            ],
+        } for m in sorted(size_map) if m in grid],
     }
 
 
@@ -707,9 +772,40 @@ def _loyal_guests(conn, window: dict) -> dict:
     """), window).fetchall()
     loyal = [r for r in rows if r[0] >= 2]
     names = _asset_names(conn, sorted({s for r in loyal[:15] for s in (r[6] or [])}))
+
+    # Сколько гостей приходило каждый день и сколько их было за такой же
+    # предыдущий период: одна цифра без динамики ни с чем не сравнивается.
+    by_day = conn.execute(text("""
+        WITH logged AS (
+            SELECT DISTINCT visitor_id FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+        )
+        SELECT ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day,
+               COUNT(DISTINCT visitor_id) AS guests
+        FROM analytics_events
+        WHERE visitor_id IS NOT NULL AND user_id IS NULL
+          AND server_ts >= :start AND server_ts < :end
+          AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+        GROUP BY 1 ORDER BY 1
+    """), window).fetchall()
+
+    span = window["end"] - window["start"]
+    prev_total = conn.execute(text("""
+        WITH logged AS (
+            SELECT DISTINCT visitor_id FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+        )
+        SELECT COUNT(DISTINCT visitor_id) FROM analytics_events
+        WHERE visitor_id IS NOT NULL AND user_id IS NULL
+          AND server_ts >= :pstart AND server_ts < :pend
+          AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+    """), {"pstart": window["start"] - span, "pend": window["start"]}).scalar()
+
     return {
         "since": GUESTS_SINCE,
         "total": len(rows),
+        "prev_total": int(prev_total or 0),
+        "by_day": [{"date": r[0].isoformat(), "guests": int(r[1])} for r in by_day],
         "days2": len(loyal),
         "days3": sum(1 for r in rows if r[0] >= 3),
         "days7": sum(1 for r in rows if r[0] >= 7),
