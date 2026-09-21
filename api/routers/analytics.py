@@ -600,7 +600,7 @@ def get_growth(
     from api.services import metrica
 
     rng = _resolve_range(days, date_from, date_to)
-    db = dict(get_or_compute(f"admin:growth:v1:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
+    db = dict(get_or_compute(f"admin:growth:v2:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
     admin_ids = db.pop("admin_ids")
     payer_ids = db.pop("payer_ids")
     visitors = None

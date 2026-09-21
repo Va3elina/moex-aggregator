@@ -922,14 +922,14 @@ function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading
 function RetentionMatrix({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={260} rounded="lg" />;
   const ret = growth?.retention;
-  if (!ret || ret.cohorts.length === 0) {
+  if (!ret || !ret.cohorts?.length) {
     return (
       <Card padding="md">
         <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
       </Card>
     );
   }
-  const cols = Array.from({ length: ret.max_n + 1 }, (_, i) => i);
+  const cols = Array.from({ length: (ret.max_n ?? 0) + 1 }, (_, i) => i);
   const head: React.CSSProperties = {
     padding: '0 8px 8px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em',
     color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap',
@@ -1062,10 +1062,10 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
     <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
       {/* Динамика прежде цифр: сколько гостей приходило по дням — иначе
           «550 гостей» не с чем сравнить. */}
-      {g.by_day.length > 1 && (
+      {(g.by_day?.length ?? 0) > 1 && (
         <Card padding="md" className="md:p-5">
           <SimpleChart
-            data={g.by_day.map(d => ({ time: d.date, value: d.guests }))}
+            data={(g.by_day ?? []).map(d => ({ time: d.date, value: d.guests }))}
             primaryColor="var(--accent)"
             primaryLabel="Гостей в день"
             formatValue={(v) => Math.round(v).toString()}
