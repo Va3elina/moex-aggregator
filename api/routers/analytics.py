@@ -600,7 +600,7 @@ def get_growth(
     from api.services import metrica
 
     rng = _resolve_range(days, date_from, date_to)
-    db = dict(get_or_compute(f"admin:growth:v2:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
+    db = dict(get_or_compute(f"admin:growth:v3:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
     admin_ids = db.pop("admin_ids")
     payer_ids = db.pop("payer_ids")
     visitors = None
@@ -805,6 +805,11 @@ def _loyal_guests(conn, window: dict) -> dict:
         "since": GUESTS_SINCE,
         "total": len(rows),
         "prev_total": int(prev_total or 0),
+        # Сколько гостей заходило ровно в N разных дней — гистограмма возвращаемости.
+        "days_hist": [
+            {"days": d, "guests": sum(1 for r in rows if r[0] == d)}
+            for d in sorted({r[0] for r in rows})
+        ],
         "by_day": [{"date": r[0].isoformat(), "guests": int(r[1])} for r in by_day],
         "days2": len(loyal),
         "days3": sum(1 for r in rows if r[0] >= 3),
