@@ -173,6 +173,17 @@ const METRIC_HINTS = {
 // ПЕРИОДЫ — пресеты и произвольный диапазон, всё в московских датах
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Группы страницы: деление по типу вопроса, а не по источнику данных.
+ *  Сами секции внутри групп не меняются — это только раскладка. */
+type Group = 'audience' | 'behavior' | 'retention' | 'people';
+
+const GROUPS: { key: Group; label: string; note: string }[] = [
+  { key: 'audience',  label: 'Аудитория',  note: 'сколько людей и откуда' },
+  { key: 'behavior',  label: 'Поведение',  note: 'что смотрят на сайте' },
+  { key: 'retention', label: 'Удержание',  note: 'возвращаются ли' },
+  { key: 'people',    label: 'Люди',       note: 'кто именно' },
+];
+
 type Preset = 'today' | 'yesterday' | '7d' | '30d' | 'this_month' | 'last_month' | '90d' | '180d' | '365d' | 'custom';
 
 const PRESET_OPTIONS: { key: Preset; label: string }[] = [
@@ -331,6 +342,7 @@ export default function AdminStatsPage() {
   // показывали бы разных людей. Имя indSegment — чтобы не путать с segment
   // из шапки, который делит аудиторию на гостей/вошедших/админов.
   const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
+  const [group, setGroup] = usePersistedState<Group>('frame:admin:group', 'audience');
   const [segReport, setSegReport] = useState<SegmentReport | null>(null);
   const [segLoading, setSegLoading] = useState(true);
 
@@ -338,12 +350,15 @@ export default function AdminStatsPage() {
   const [growthLoading, setGrowthLoading] = useState(true);
 
   useEffect(() => {
+    // Сегмент считается по всем событиям периода и стоит дорого — грузим его
+    // только в своей группе, а не на каждом заходе на страницу.
+    if (group !== 'behavior') return;
     setSegLoading(true);
     getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
       .then(setSegReport)
       .catch(() => setSegReport(null))
       .finally(() => setSegLoading(false));
-  }, [range, indSegment]);
+  }, [range, indSegment, group]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -481,7 +496,36 @@ export default function AdminStatsPage() {
         </Card>
       )}
 
+      {/* Деление по типу вопроса. Ничего нового не добавлено — это только
+          раскладка того, что на странице уже было: одна длинная лента
+          разбита на четыре группы. */}
+      <div className="flex flex-wrap gap-2 mb-6 md:mb-8">
+        {GROUPS.map(gr => {
+          const on = group === gr.key;
+          return (
+            <button
+              key={gr.key}
+              type="button"
+              onClick={() => setGroup(gr.key)}
+              aria-pressed={on}
+              className="editorial-press text-left"
+              style={{
+                padding: 'var(--sp-2) var(--sp-4)',
+                border: `2px solid ${on ? 'var(--text-primary)' : 'var(--border-color)'}`,
+                backgroundColor: on ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
+              }}
+            >
+              <span className="block text-sm font-semibold">{gr.label}</span>
+              <span className="block text-xs" style={{ opacity: 0.65 }}>{gr.note}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div>
+      {group === 'audience' && (
+        <>
         {/* ═══ Воронка ═══ */}
         <Section title="Воронка" hint={METRIC_HINTS.funnel}>
           <div style={dimStyle(growthDim)}>
@@ -659,6 +703,11 @@ export default function AdminStatsPage() {
           </div>
         )}
 
+        </>
+      )}
+
+      {group === 'behavior' && (
+        <>
         {/* ═══ Чего нет в Метрике ═══ */}
         <div style={dimStyle(ownDim)}>
         <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
@@ -710,8 +759,22 @@ export default function AdminStatsPage() {
           </div>
         </Section>
         </div>
-      </div>
 
+      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
+        <IndicatorSegment
+          indicators={segReport?.all_indicators ?? []}
+          value={indSegment}
+          onChange={setIndSegment}
+          summary={segReport}
+          loading={segLoading}
+        />
+      </Section>
+
+        </>
+      )}
+
+      {group === 'retention' && (
+        <>
       {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
       <div style={dimStyle(growthDim)}>
         <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
@@ -725,27 +788,25 @@ export default function AdminStatsPage() {
         </Section>
       </div>
 
-      <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
-        <AlertsBlock range={range} />
-      </Section>
+        </>
+      )}
 
-      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
-        <IndicatorSegment
-          indicators={segReport?.all_indicators ?? []}
-          value={indSegment}
-          onChange={setIndSegment}
-          summary={segReport}
-          loading={segLoading}
-        />
+      {group === 'people' && (
+        <>
+      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
+        <UsersBlock range={range} segment={indSegment} />
       </Section>
-
       <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
         <GuestsBlock range={range} segment={indSegment} />
       </CollapsibleSection>
 
-      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock range={range} segment={indSegment} />
+      <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
+        <AlertsBlock range={range} />
       </Section>
+
+        </>
+      )}
+      </div>
     </div>
   );
 }
