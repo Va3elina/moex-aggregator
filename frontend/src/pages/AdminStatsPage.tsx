@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Layers, Grid3x3, Wallet, ArrowLeftRight, CalendarDays, Waves, Scale, ListFilter, type LucideIcon, BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -32,7 +32,8 @@ import SimpleChart from '../components/SimpleChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
-import { IndicatorSegment, EMPTY_SEGMENT, SEGMENT_HINT } from '../components/admin/IndicatorSegment';
+import { IndicatorGlyph, indicatorKey } from '../components/admin/indicatorMeta';
+import { EMPTY_SEGMENT } from '../components/admin/IndicatorSegment';
 import type { SegmentState } from '../components/admin/IndicatorSegment';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -42,7 +43,6 @@ import {
   getAnalyticsStats,
   listAdminUsers,
   listAdminGuests,
-  getSegment,
   getAudience,
   getBehavior,
   getAlertsStats,
@@ -53,7 +53,6 @@ import type {
   GrowthReport,
   AnalyticsStats,
   AdminUser,
-  SegmentReport,
   AudienceReport,
   BehaviorReport,
   AlertsStats,
@@ -359,22 +358,10 @@ export default function AdminStatsPage() {
   // В localStorage мог остаться убранный вариант «и те, и другие» — без этого
   // у тех, кто его выбирал, не отрисовалась бы ни одна таблица.
   const safeWho: Who = WHO_OPTIONS.some(o => o.key === who) ? who : 'users';
-  const [segReport, setSegReport] = useState<SegmentReport | null>(null);
-  const [segLoading, setSegLoading] = useState(true);
 
   const [growth, setGrowth] = useState<GrowthReport | null>(null);
   const [growthLoading, setGrowthLoading] = useState(true);
 
-  useEffect(() => {
-    // Сегмент считается по всем событиям периода и стоит дорого — грузим его
-    // только в своей группе, а не на каждом заходе на страницу.
-    if (group !== 'behavior') return;
-    setSegLoading(true);
-    getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
-      .then(setSegReport)
-      .catch(() => setSegReport(null))
-      .finally(() => setSegLoading(false));
-  }, [range, indSegment, group]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -450,8 +437,8 @@ export default function AdminStatsPage() {
         </Link>
       </div>
 
-      {/* Фильтры едут вместе со страницей: период и срез нужны в любой точке
-          прокрутки, а не только наверху. */}
+      {/* Липкая шапка: сверху разделы, под ними фильтры. И то и другое нужно в
+          любой точке прокрутки — раздел меняет вопрос, фильтры сужают ответ. */}
       <div
         className="flex flex-wrap items-end mb-2"
         style={{
@@ -469,6 +456,29 @@ export default function AdminStatsPage() {
           boxShadow: '0 1px 0 color-mix(in srgb, var(--border-color) 25%, transparent)',
         }}
       >
+        <div className="flex flex-wrap gap-2 w-full">
+          {GROUPS.map(gr => {
+            const on = group === gr.key;
+            return (
+              <button
+                key={gr.key}
+                type="button"
+                onClick={() => { setGroup(gr.key); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                aria-pressed={on}
+                title={gr.note}
+                className="editorial-press text-sm font-semibold"
+                style={{
+                  padding: 'var(--sp-2) var(--sp-4)',
+                  border: `2px solid ${on ? 'var(--text-primary)' : 'var(--border-color)'}`,
+                  backgroundColor: on ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                  color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
+                }}
+              >
+                {gr.label}
+              </button>
+            );
+          })}
+        </div>
         <Dropdown<Preset>
           options={PRESET_OPTIONS}
           value={preset}
@@ -528,33 +538,6 @@ export default function AdminStatsPage() {
           <p style={{ color: 'var(--danger)' }}>Ошибка: {error}</p>
         </Card>
       )}
-
-      {/* Деление по типу вопроса. Ничего нового не добавлено — это только
-          раскладка того, что на странице уже было: одна длинная лента
-          разбита на четыре группы. */}
-      <div className="flex flex-wrap gap-2 mb-6 md:mb-8">
-        {GROUPS.map(gr => {
-          const on = group === gr.key;
-          return (
-            <button
-              key={gr.key}
-              type="button"
-              onClick={() => setGroup(gr.key)}
-              aria-pressed={on}
-              className="editorial-press text-left"
-              style={{
-                padding: 'var(--sp-2) var(--sp-4)',
-                border: `2px solid ${on ? 'var(--text-primary)' : 'var(--border-color)'}`,
-                backgroundColor: on ? 'var(--text-primary)' : 'var(--bg-secondary)',
-                color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
-              }}
-            >
-              <span className="block text-sm font-semibold">{gr.label}</span>
-              <span className="block text-xs" style={{ opacity: 0.65 }}>{gr.note}</span>
-            </button>
-          );
-        })}
-      </div>
 
       <div>
       {group === 'audience' && (
@@ -731,18 +714,13 @@ export default function AdminStatsPage() {
       {group === 'behavior' && (
         <>
         <Section title="Что смотрят" hint={METRIC_HINTS.behavior}>
-          <BehaviorBlock range={range} segment={segment} device={device} />
+          <BehaviorBlock
+            range={range} segment={segment} device={device}
+            // Клетка матрицы — это готовый отбор «смотрят и то, и другое»:
+            // открываем этих людей списком в группе «Люди».
+            onPickPair={(a, b) => { setIndSegment({ seen: [a, b], notSeen: [], mode: 'all' }); setGroup('people'); }}
+          />
         </Section>
-
-      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
-        <IndicatorSegment
-          indicators={segReport?.all_indicators ?? []}
-          value={indSegment}
-          onChange={setIndSegment}
-          summary={segReport}
-          loading={segLoading}
-        />
-      </Section>
 
         </>
       )}
@@ -771,8 +749,19 @@ export default function AdminStatsPage() {
 
       {group === 'people' && (
         <>
-      <div className="mb-6 md:mb-8">
+      <div className="flex flex-wrap items-center gap-3 mb-6 md:mb-8">
         <SegmentedControl<Who> options={WHO_OPTIONS} value={safeWho} onChange={setWho} />
+        {indSegment.seen.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIndSegment(EMPTY_SEGMENT)}
+            className="editorial-press text-xs"
+            style={{ padding: 'var(--sp-1) var(--sp-3)', border: '1.5px solid var(--accent)', color: 'var(--text-primary)' }}
+            title="Снять отбор"
+          >
+            Смотрят: {indSegment.seen.map(x => PAGE_NAMES[x] || x).join(' и ')} ✕
+          </button>
+        )}
       </div>
 
       {safeWho === 'users' && (
@@ -1001,160 +990,174 @@ function AudienceBlock() {
   );
 }
 
-/** Иконки разделов — те же, что в терминале, чтобы раздел узнавался глазом. */
-const INDICATOR_ICONS: Record<string, { Icon: LucideIcon; color: string }> = {
-  '/oi': { Icon: Layers, color: 'var(--c-cyan, var(--info))' },
-  '/heatmap': { Icon: Grid3x3, color: 'var(--c-down, var(--danger))' },
-  '/funds-money': { Icon: Wallet, color: 'var(--c-up, var(--success))' },
-  '/fund-trades': { Icon: ArrowLeftRight, color: 'var(--accent)' },
-  '/strength': { Icon: Activity, color: 'var(--info)' },
-  '/seasonality': { Icon: CalendarDays, color: 'var(--success)' },
-  '/cbr-flows': { Icon: Waves, color: 'var(--info)' },
-  '/buffett': { Icon: Scale, color: 'var(--warning)' },
-  '/repo': { Icon: ListFilter, color: 'var(--text-muted)' },
-  '/sandbox': { Icon: Grid3x3, color: 'var(--accent)' },
-};
-
-/** Что смотрят: сводка по разделам, и по клику — что смотрят внутри раздела. */
-function BehaviorBlock({ range, segment, device }: {
+/** Что смотрят: разделы с иконками. Клик ведёт на страницу раздела — у каждого
+ *  своя глубина, и в выпадающий блок под списком она не помещалась. */
+function BehaviorBlock({ range, segment, device, onPickPair }: {
   range: AdminRange; segment: string; device: string;
+  onPickPair: (a: string, b: string) => void;
 }) {
+  const navigate = useNavigate();
   const [data, setData] = useState<BehaviorReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [picked, setPicked] = usePersistedState<string>('frame:admin:beh:picked', '');
   const dim = useDelayedFlag(loading && !!data);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setFailed(false);
-    getBehavior({ ...range, segment, device, indicator: picked || null })
+    getBehavior({ ...range, segment, device })
       .then(r => { if (alive) setData(r); })
       .catch(() => { if (alive) setFailed(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [range, segment, device, picked]);
+  }, [range, segment, device]);
 
   if (loading && !data) return <Skeleton height={360} rounded="lg" />;
   if (failed || !data) {
     return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--danger)' }}>Не удалось загрузить</p></Card>;
   }
-
   const max = Math.max(...data.indicators.map(i => i.people), 1);
-  const cur = data.indicators.find(i => i.path === picked);
-  const trend = data.by_day.map(row => ({
-    time: String(row.date),
-    value: Number(row[picked || data.indicators[0]?.path] ?? 0),
-  }));
 
   return (
-    <div className="space-y-3 md:space-y-4" style={dimStyle(dim)}>
+    <div className="space-y-6 md:space-y-8" style={dimStyle(dim)}>
       <Card padding="md" className="md:p-5">
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-          Сколько людей открывало раздел. Клик — посмотреть, что смотрят внутри него.
+          Сколько людей открывало раздел. Клик — страница раздела: что смотрят внутри, откуда приходят и куда уходят.
         </p>
         <div className="flex flex-col">
-          {data.indicators.map(ind => {
-            const on = ind.path === picked;
-            const ic = INDICATOR_ICONS[ind.path];
-            return (
-              <button
-                key={ind.path}
-                type="button"
-                onClick={() => setPicked(on ? '' : ind.path)}
-                aria-pressed={on}
-                className="relative grid items-center text-left"
-                style={{
-                  gridTemplateColumns: 'auto 1fr auto',
-                  gap: 'var(--sp-3)',
-                  padding: '9px 10px',
-                  borderBottom: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)',
-                }}
-              >
-                <span
-                  aria-hidden
-                  className="absolute inset-y-px left-0 transition-[width] duration-500"
-                  style={{
-                    width: `${(ind.people / max) * 100}%`,
-                    backgroundColor: on
-                      ? 'color-mix(in srgb, var(--accent) 24%, transparent)'
-                      : 'color-mix(in srgb, var(--accent) 10%, transparent)',
-                  }}
-                />
-                <span
-                  className="relative flex items-center justify-center rounded-md shrink-0"
-                  style={{
-                    width: 30, height: 30,
-                    backgroundColor: `color-mix(in srgb, ${ic?.color || 'var(--accent)'} 16%, transparent)`,
-                    color: ic?.color || 'var(--accent)',
-                  }}
-                >
-                  {ic ? <ic.Icon size={16} /> : <Eye size={16} />}
+          {data.indicators.map(ind => (
+            <button
+              key={ind.path}
+              type="button"
+              onClick={() => navigate(`/admin/indicator/${indicatorKey(ind.path)}`)}
+              className="relative grid items-center text-left hover:bg-white/[0.03] transition-colors"
+              style={{
+                gridTemplateColumns: 'auto 1fr auto auto', gap: 'var(--sp-3)', padding: '9px 10px',
+                borderBottom: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)',
+              }}
+            >
+              <span aria-hidden className="absolute inset-y-px left-0 transition-[width] duration-500"
+                    style={{ width: `${(ind.people / max) * 100}%`, backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} />
+              <span className="relative"><IndicatorGlyph path={ind.path} /></span>
+              <span className="relative min-w-0">
+                <span className="block text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{ind.name}</span>
+                <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {ind.registered} с аккаунтом · {fmtNum(ind.views)} просмотров
                 </span>
-                <span className="relative min-w-0">
-                  <span className="block text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {ind.name}
-                  </span>
-                  {/* Раньше рядом стояли две цифры без подписи и было непонятно,
-                      что есть что. Теперь подписано словами. */}
-                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {ind.registered} с аккаунтом · {fmtNum(ind.views)} просмотров
-                  </span>
-                </span>
-                <span
-                  className="relative text-right"
-                  style={{ fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums' }}
-                >
-                  <span className="block text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {fmtNum(ind.people)}
-                  </span>
-                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>человек</span>
-                </span>
-              </button>
-            );
-          })}
+              </span>
+              <span className="relative text-right" style={{ fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums' }}>
+                <span className="block text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtNum(ind.people)}</span>
+                <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>человек</span>
+              </span>
+              <ChevronRight size={16} className="relative" style={{ color: 'var(--text-muted)' }} />
+            </button>
+          ))}
         </div>
       </Card>
 
-      {trend.length > 1 && (
-        <Card padding="md" className="md:p-5">
-          <SimpleChart
-            key={picked || 'top'}
-            data={trend}
-            primaryColor="var(--accent)"
-            primaryLabel={`${cur?.name || data.indicators[0]?.name || 'Раздел'} — людей в день`}
-            formatValue={(v) => Math.round(v).toString()}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showWatermark={false}
-            showNavigator={false}
-            hideTime
-            defaultHistogram
-            height={220}
-          />
-        </Card>
-      )}
+      <OverlapMatrix data={data} onPickPair={onPickPair} />
+    </div>
+  );
+}
 
-      {picked && data.detail && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
-          <TopList
-            title={`Активы внутри «${cur?.name || ''}»`}
-            columns={['людей', 'просмотры']}
-            items={data.detail.assets.map(a => ({ label: a.name, note: a.secid, value: a.people, value2: a.views }))}
-            loading={false}
-            emptyText="Здесь не выбирают активы"
-          />
-          <TopList
-            title="Куда уходят дальше"
-            columns={['людей']}
-            items={data.detail.next.map(n => ({ label: n.name, value: n.people }))}
-            loading={false}
-            emptyText="Уходят сразу с сайта"
-          />
+/** Кто чем пользуется — инфографикой: для каждой пары разделов доля аудитории
+ *  строки, которая смотрит и столбец. Заливка гуще там, где пересечение больше. */
+function OverlapMatrix({ data, onPickPair }: {
+  data: BehaviorReport; onPickPair: (a: string, b: string) => void;
+}) {
+  const inds = data.indicators;
+  const size = new Map(inds.map(i => [i.path, i.people]));
+  const pair = new Map(data.overlap.map(o => [`${o.a}|${o.b}`, o.people]));
+  const totalBreadth = data.breadth.reduce((a, b) => a + b.people, 0) || 1;
+  const maxBreadth = Math.max(...data.breadth.map(b => b.people), 1);
+  const short = (name: string) => name.replace('Индикатор ', '').replace('Открытый интерес', 'ОИ');
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 md:gap-4">
+      <Card padding="md" className="md:p-5 xl:col-span-2">
+        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+          Кто чем пользуется
+        </p>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          Строка — чья аудитория, столбец — что она смотрит ещё. «ОИ → Карта 46%» значит: 46% смотрящих ОИ открывают и карту. Клик по клетке — эти люди списком.
+        </p>
+        <div className="overflow-x-auto">
+          <table style={{ borderCollapse: 'collapse', minWidth: 620, width: '100%' }}>
+            <thead>
+              <tr>
+                <th />
+                {inds.map(c => (
+                  <th key={c.path} className="pb-1.5" style={{ fontWeight: 400 }}>
+                    <span className="flex justify-center" title={c.name}><IndicatorGlyph path={c.path} size={24} /></span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {inds.map(r => (
+                <tr key={r.path}>
+                  <td className="pr-2 py-0.5 whitespace-nowrap">
+                    <span className="flex items-center gap-2">
+                      <IndicatorGlyph path={r.path} size={22} />
+                      <span className="text-xs" style={{ color: 'var(--text-primary)' }}>{short(r.name)}</span>
+                    </span>
+                  </td>
+                  {inds.map(c => {
+                    const n = pair.get(`${r.path}|${c.path}`) ?? 0;
+                    const pct = Math.round((n / Math.max(size.get(r.path) ?? 1, 1)) * 100);
+                    const self = r.path === c.path;
+                    return (
+                      <td key={c.path} style={{ padding: 2 }}>
+                        <button
+                          type="button"
+                          disabled={self}
+                          onClick={() => onPickPair(r.path, c.path)}
+                          title={self ? `${r.name}: ${n} человек` : `${n} человек смотрят «${r.name}» и «${c.name}»`}
+                          className="w-full transition-transform hover:scale-[1.06]"
+                          style={{
+                            padding: '7px 2px',
+                            fontFamily: NUM_FONT, fontSize: 11.5, fontWeight: 600,
+                            cursor: self ? 'default' : 'pointer',
+                            color: self ? 'var(--text-muted)' : pct >= 55 ? 'var(--text-inverse)' : 'var(--text-primary)',
+                            backgroundColor: self
+                              ? 'color-mix(in srgb, var(--text-muted) 12%, transparent)'
+                              : `color-mix(in srgb, var(--accent) ${Math.round(pct * 0.9)}%, transparent)`,
+                          }}
+                        >
+                          {self ? fmtNum(n) : `${pct}%`}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </Card>
+
+      <Card padding="md" className="md:p-5">
+        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+          Сколько разделов на человека
+        </p>
+        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+          {Math.round(((data.breadth.find(b => b.n === 1)?.people ?? 0) / totalBreadth) * 100)}% открывают ровно один раздел.
+        </p>
+        <div className="flex items-end gap-1.5" style={{ height: 150 }}>
+          {data.breadth.map(b => (
+            <div key={b.n} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${b.n}: ${b.people} человек`}>
+              <span className="text-[10px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{b.people}</span>
+              <div className="w-full transition-[height] duration-500"
+                   style={{
+                     height: `${Math.max(3, (b.people / maxBreadth) * 110)}px`,
+                     backgroundColor: b.n === 1 ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 45%, transparent)',
+                   }} />
+              <span className="text-xs" style={{ fontFamily: NUM_FONT, color: 'var(--text-secondary)' }}>{b.n}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

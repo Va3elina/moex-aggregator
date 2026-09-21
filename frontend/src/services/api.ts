@@ -1472,29 +1472,74 @@ export async function getAudience(): Promise<AudienceReport> {
   return response.json();
 }
 
-/** Что смотрят: сводка по разделам, а с indicator — что внутри раздела. */
+/** Что смотрят: сводка по разделам, динамика и пересечения аудиторий. */
 export interface BehaviorReport {
   date_from: string;
   date_to: string;
-  indicator: string | null;
   indicators: { path: string; name: string; people: number; registered: number; views: number }[];
   /** По дню на объект: { date, '/oi': 120, '/heatmap': 80, ... } */
   by_day: Record<string, string | number>[];
-  detail: {
-    assets: { secid: string; name: string; people: number; views: number }[];
-    next: { path: string; name: string; people: number }[];
-    exports: number;
-  } | null;
+  /** Сколько людей смотрят и a, и b; при a === b — вся аудитория раздела. */
+  overlap: { a: string; b: string; people: number }[];
+  /** Сколько людей смотрят ровно n разделов. */
+  breadth: { n: number; people: number }[];
+}
+
+/** Страница одного раздела. Глубина у разделов разная, поэтому inside — союз. */
+export type IndicatorInside =
+  | { kind: 'none' }
+  | { kind: 'assets'; assets: { secid: string; name: string; people: number; views: number }[] }
+  | { kind: 'funds_money';
+      categories: { key: string; people: number; views: number }[];
+      views: { key: string; people: number }[];
+      funds: { ticker: string; people: number; name?: string; uk_id?: string | number | null }[] }
+  | { kind: 'fund_trades';
+      tabs: { key: string; people: number; views: number }[];
+      assets: { name: string; people: number }[];
+      funds: { ticker: string; people: number; name?: string; uk_id?: string | number | null }[] }
+  | { kind: 'terminal';
+      panel_types: { key: string; people: number; panels: number }[];
+      with_layout: number; avg_panels: number; avg_sheets: number; max_panels: number };
+
+export interface IndicatorReport {
+  path: string;
+  name: string;
+  date_from: string;
+  date_to: string;
+  people: number;
+  registered: number;
+  views: number;
+  trend: { date: string; people: number }[];
+  prev: { path: string; name: string; people: number }[];
+  next: { path: string; name: string; people: number }[];
+  inside: IndicatorInside;
+  top_people: { ident: string; user_id: number | null; days: number; views: number; last_day: string; name: string | null }[];
+}
+
+export async function getIndicator(path: string, opts: AdminRange & {
+  segment?: string; device?: string;
+}): Promise<IndicatorReport> {
+  const params = new URLSearchParams();
+  params.set('path', path);
+  rangeParams(params, opts);
+  if (opts.segment && opts.segment !== 'all') params.set('segment', opts.segment);
+  if (opts.device && opts.device !== 'all') params.set('device', opts.device);
+  const response = await apiFetch(`${API_BASE}/api/analytics/indicator?${params}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error(t('Такого раздела нет'));
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch indicator');
+  }
+  return response.json();
 }
 
 export async function getBehavior(opts: AdminRange & {
-  segment?: string; device?: string; indicator?: string | null;
+  segment?: string; device?: string;
 }): Promise<BehaviorReport> {
   const params = new URLSearchParams();
   rangeParams(params, opts);
   if (opts.segment && opts.segment !== 'all') params.set('segment', opts.segment);
   if (opts.device && opts.device !== 'all') params.set('device', opts.device);
-  if (opts.indicator) params.set('indicator', opts.indicator);
   const response = await apiFetch(`${API_BASE}/api/analytics/behavior?${params}`);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
