@@ -31,6 +31,7 @@ import SimpleChart from '../components/SimpleChart';
 import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
+import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useDelayedFlag } from '../hooks/useDelayedFlag';
@@ -228,21 +229,6 @@ function fmtRange(a: string, b: string): string {
   return a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`;
 }
 
-// Человеческие имена разделов для топа страниц. Неизвестный путь показывается как есть.
-const PAGE_NAMES: Record<string, string> = {
-  '/': 'Главная',
-  '/oi': 'Открытый интерес',
-  '/heatmap': 'Карта рынка',
-  '/strength': 'Сила рынка',
-  '/funds-money': 'Деньги в фондах',
-  '/fund-trades': 'Покупки фондов',
-  '/seasonality': 'Сезонность',
-  '/repo': 'Репо в акциях',
-  '/pricing': 'Тарифы',
-  '/profile': 'Профиль',
-  '/login': 'Вход',
-};
-
 const INDICATOR_NAMES: Record<string, string> = {
   oi: 'ОИ',
   seasonality: 'Сезонность',
@@ -250,12 +236,6 @@ const INDICATOR_NAMES: Record<string, string> = {
   funds: 'Фонды',
 };
 
-const DEVICE_NAMES: Record<string, string> = {
-  desktop: 'Компьютер',
-  mobile: 'Телефон',
-  tablet: 'Планшет',
-  unknown: 'Не определено',
-};
 
 export default function AdminStatsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -1606,6 +1586,7 @@ const GUEST_MIN_DAYS: { key: number; label: string; countKey?: 'all' | 'd2' | 'd
 
 /** Гости: те, кто ходит на сайт и не регистрируется. */
 function GuestsBlock({ range }: { range: AdminRange }) {
+  const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof listAdminGuests>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -1738,7 +1719,12 @@ function GuestsBlock({ range }: { range: AdminRange }) {
             </thead>
             <tbody>
               {guests.map(g => (
-                <tr key={g.visitor_id} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}>
+                <tr
+                  key={g.visitor_id}
+                  className="hover:bg-white/[0.03] transition-colors cursor-pointer"
+                  style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
+                  onClick={() => navigate(`/admin/guests/${g.visitor_id}`)}
+                >
                   <td style={{ ...td, fontFamily: NUM_FONT, color: 'var(--text-primary)' }} title={g.visitor_id}>
                     {g.visitor_id.slice(0, 8)}
                     {g.pricing_views > 0 && (

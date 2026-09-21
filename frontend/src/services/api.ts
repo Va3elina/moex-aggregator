@@ -1456,14 +1456,9 @@ export interface UserTimelineEvent {
   session_id: string;
 }
 
-export interface UserDetailResponse {
-  user: AdminUser & {
-    last_login_ip?: string | null;
-    oauth_id?: string | null;
-    updated_at?: string | null;
-    last_seen_at?: string | null;
-  };
-  subscriptions: UserSubscription[];
+/** Активность одного человека — считается общим кодом для гостя и
+ *  зарегистрированного (`_activity_detail` на бэке), поэтому тип один. */
+export interface ActivityDetail {
   summary: {
     period_days: number;
     events: number;
@@ -1472,13 +1467,44 @@ export interface UserDetailResponse {
     last_active_ts: string | null;
     avg_session_sec: number;
     total_time_sec: number;
+    /** В скольких разных днях (по Москве) был на сайте за период. */
+    active_days: number;
   };
   timeline: UserTimelineEvent[];
-  top_pages: { path: string; views: number }[];
-  top_instruments: { secid: string; selects: number }[];
+  top_pages: { path: string; views: number; days: number }[];
+  top_instruments: { secid: string; name: string | null; selects: number }[];
+  /** Какие активы открывал: asset_view ловит и пикер, и переход по ссылке. */
+  top_assets: { secid: string; name: string | null; views: number; last_ts: string | null }[];
   top_exports: { indicator: string; count: number }[];
   devices: { device: string; sessions: number }[];
   countries: { country: string; sessions: number }[];
+  /** 0 — воскресенье, как в Postgres. */
+  by_dow: { dow: number; views: number }[];
+  by_hour: { hour: number; views: number }[];
+}
+
+export interface UserDetailResponse extends ActivityDetail {
+  user: AdminUser & {
+    last_login_ip?: string | null;
+    oauth_id?: string | null;
+    updated_at?: string | null;
+    last_seen_at?: string | null;
+  };
+  subscriptions: UserSubscription[];
+}
+
+export interface GuestDetailResponse extends ActivityDetail {
+  guest: {
+    visitor_id: string;
+    first_seen_at: string | null;
+    last_seen_at: string | null;
+    events_total: number;
+    device: string | null;
+    country: string | null;
+    source: string | null;
+    utm_source: string | null;
+    utm_campaign: string | null;
+  };
 }
 
 export async function getAdminUserDetail(userId: number, days: number = 30): Promise<UserDetailResponse> {
@@ -1487,6 +1513,18 @@ export async function getAdminUserDetail(userId: number, days: number = 30): Pro
     if (response.status === 404) throw new Error(t('Пользователь не найден'));
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch user detail');
+  }
+  return response.json();
+}
+
+export async function getAdminGuestDetail(visitorId: string, days: number = 30): Promise<GuestDetailResponse> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/guests/${visitorId}?days=${days}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error(t('Гость не найден'));
+    // Браузер, с которого потом вошли в аккаунт: вся история — в карточке пользователя.
+    if (response.status === 409) throw new Error(t('С этого браузера вошли в аккаунт — смотрите карточку пользователя'));
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch guest detail');
   }
   return response.json();
 }
