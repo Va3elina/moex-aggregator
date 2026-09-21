@@ -1097,6 +1097,148 @@ def _compute_audience() -> dict:
     }
 
 
+@router.get("/behavior")
+def get_behavior(
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    segment: str = Query("all"),
+    device: str = Query("all"),
+    indicator: Optional[str] = Query(None, description="Путь индикатора — что смотрят внутри него"),
+    user=Depends(require_admin),
+):
+    """Что смотрят: сводка по индикаторам, а с `indicator` — что внутри него.
+
+    Без indicator — сколько людей у каждого раздела и как это менялось по дням.
+    С indicator — активы, экспорты и настройки именно этого раздела, плюс куда
+    люди уходят с него дальше.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    ind = indicator if indicator in INDICATOR_PATHS else None
+    key = f"admin:behavior:v1:{rng['d0']}:{rng['d1']}:{segment}:{device}:{ind or '-'}"
+    return get_or_compute(key, lambda: _compute_behavior(rng, segment, device, ind), ttl=180)
+
+
+def _compute_behavior(rng: dict, segment: str, device: str, indicator: Optional[str]) -> dict:
+    params: dict[str, Any] = {
+        "start": rng["start"], "end": rng["end"], "ind": list(INDICATOR_PATHS),
+    }
+    ev_where = []
+    if segment == "all":
+        ev_where.append("(a.user_id IS NULL OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin'))")
+    elif segment == "auth":
+        ev_where.append("a.user_id IS NOT NULL AND a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin')")
+    elif segment == "guest":
+        ev_where.append("a.user_id IS NULL AND vu.uid IS NULL")
+    elif segment == "admin":
+        ev_where.append("a.user_id IN (SELECT id FROM users WHERE role = 'admin')")
+    if device in ("mobile", "desktop", "tablet"):
+        ev_where.append("a.device = :device")
+        params["device"] = device
+    ev_sql = (" AND " + " AND ".join(ev_where)) if ev_where else ""
+
+    base = f"""
+        WITH vis_user AS (
+            SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL GROUP BY visitor_id
+        ),
+        ev AS (
+            SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                            'v' || a.visitor_id, 's' || a.session_id) AS ident,
+                   COALESCE(a.user_id, vu.uid) IS NOT NULL AS is_reg,
+                   a.session_id, a.event_path, a.event_type, a.payload, a.server_ts,
+                   ((a.server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+            FROM analytics_events a
+            LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+            WHERE a.server_ts >= :start AND a.server_ts < :end{ev_sql}
+        )
+    """
+
+    with get_engine().connect() as conn:
+        # Сводка: сколько людей у каждого раздела.
+        overview = conn.execute(text(f"""
+            {base}
+            SELECT event_path AS path,
+                   COUNT(DISTINCT ident) AS people,
+                   COUNT(DISTINCT ident) FILTER (WHERE is_reg) AS registered,
+                   COUNT(*) AS views
+            FROM ev
+            WHERE event_type = 'pageview' AND event_path = ANY(:ind)
+            GROUP BY 1 ORDER BY people DESC
+        """), params).fetchall()
+
+        # Динамика по дням: без неё «878 человек» не с чем сравнить.
+        trend = conn.execute(text(f"""
+            {base}
+            SELECT day, event_path AS path, COUNT(DISTINCT ident) AS people
+            FROM ev
+            WHERE event_type = 'pageview' AND event_path = ANY(:ind)
+            GROUP BY 1, 2 ORDER BY 1
+        """), params).fetchall()
+
+        detail: dict[str, Any] = {}
+        if indicator:
+            params["one"] = indicator
+            # Сессии, в которых человек был на этом разделе: по ним считаем всё
+            # остальное — активы, экспорты и куда ушёл дальше.
+            detail["assets"] = [
+                {"secid": r[0], "name": r[1], "people": int(r[2]), "views": int(r[3])}
+                for r in conn.execute(text(f"""
+                    {base},
+                    sess AS (SELECT DISTINCT session_id FROM ev
+                             WHERE event_type = 'pageview' AND event_path = :one)
+                    SELECT e.payload->>'secid' AS secid, NULL AS name,
+                           COUNT(DISTINCT e.ident) AS people, COUNT(*) AS views
+                    FROM ev e JOIN sess s USING (session_id)
+                    WHERE e.event_type = 'asset_view' AND e.payload->>'secid' IS NOT NULL
+                      AND COALESCE(e.payload->>'indicator', '') <> ''
+                    GROUP BY 1 ORDER BY people DESC LIMIT 12
+                """), params).fetchall()
+            ]
+            detail["next"] = [
+                {"path": r[0], "name": INDICATOR_PATHS.get(r[0], r[0]), "people": int(r[1])}
+                for r in conn.execute(text(f"""
+                    {base},
+                    seq AS (
+                        SELECT ident, event_path,
+                               LEAD(event_path) OVER (PARTITION BY session_id ORDER BY server_ts) AS nxt
+                        FROM ev WHERE event_type = 'pageview'
+                    )
+                    SELECT nxt AS path, COUNT(DISTINCT ident) AS people
+                    FROM seq WHERE event_path = :one AND nxt IS NOT NULL AND nxt <> :one
+                    GROUP BY 1 ORDER BY people DESC LIMIT 8
+                """), params).fetchall()
+            ]
+            detail["exports"] = int(conn.execute(text(f"""
+                {base}
+                SELECT COUNT(*) FROM ev
+                WHERE event_type = 'chart_export'
+                  AND {_export_indicator_canon_sql("payload->>'indicator'")} =
+                      {_export_indicator_canon_sql(":one_key")}
+            """), {**params, "one_key": indicator.lstrip('/')}).scalar() or 0)
+
+            names = _asset_names(conn, [a["secid"] for a in detail["assets"]])
+            for a in detail["assets"]:
+                a["name"] = names.get(a["secid"], a["secid"])
+
+    by_day: dict[str, dict[str, int]] = {}
+    for day, path, people in trend:
+        by_day.setdefault(day.isoformat(), {})[path] = int(people)
+
+    return {
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "indicator": indicator,
+        "indicators": [
+            {"path": r[0], "name": INDICATOR_PATHS.get(r[0], r[0]),
+             "people": int(r[1]), "registered": int(r[2]), "views": int(r[3])}
+            for r in overview
+        ],
+        "by_day": [{"date": d, **v} for d, v in sorted(by_day.items())],
+        "detail": detail or None,
+    }
+
+
 @router.get("/people")
 def list_people(
     days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),

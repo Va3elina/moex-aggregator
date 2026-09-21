@@ -24,6 +24,9 @@
      fs-3xl: 30.7 → 67.2 → cap at 56   (h1 page title)
 */
 :root {
+  /* Высота липкой шапки сайта: h-14 на мобильном, h-16 от md. Нужна тем
+     блокам, которые сами липкие и иначе уезжают под неё. */
+  --admin-bar-top: 56px;
   /* TYPE SCALE */
   --fs-2xs: clamp(8px,  0.4vw + 0.4rem,  11px);  /* axis ticks, captions */
   --fs-xs:  clamp(10px, 0.5vw + 0.45rem, 12.5px); /* small labels, secondary */
@@ -2488,4 +2491,9 @@ a.btn-accent:active {
     animation-duration: 0.001s;
     animation-delay: 0s;
   }
+}
+
+
+@media (min-width: 768px) {
+  :root { --admin-bar-top: 64px; }
 }
