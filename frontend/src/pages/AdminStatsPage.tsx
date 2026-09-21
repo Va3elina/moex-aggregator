@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
+import { Layers, Grid3x3, Wallet, ArrowLeftRight, CalendarDays, Waves, Scale, ListFilter, type LucideIcon, BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -44,6 +44,7 @@ import {
   listAdminGuests,
   getSegment,
   getAudience,
+  getBehavior,
   getAlertsStats,
   getMetrica,
   getGrowth,
@@ -54,6 +55,7 @@ import type {
   AdminUser,
   SegmentReport,
   AudienceReport,
+  BehaviorReport,
   AlertsStats,
   AdminRange,
   MetricaReport,
@@ -75,6 +77,8 @@ const METRIC_HINTS = {
     + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
     + '5) Вошедших и админов Метрика узнаёт по номеру аккаунта, который получает с 11.09.2026, и только в браузерах, где после этого входили в аккаунт. Наш трекер знает всех вошедших. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
+  behavior:
+    'Сколько разных людей открывало каждый раздел за период. Клик по разделу показывает, что смотрят внутри него: какие активы выбирают и куда уходят дальше в той же сессии. Человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке.',
   audience:
     'Сколько людей приходило на сайт по дням за всю доступную историю, сколько из них было впервые и сколько зарегистрировалось. Человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке (для данных до 11.09.2026). «Впервые» считается по всей истории, а не по выбранному периоду.',
   metrica_section:
@@ -255,12 +259,6 @@ function fmtRange(a: string, b: string): string {
   return a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`;
 }
 
-const INDICATOR_NAMES: Record<string, string> = {
-  oi: 'ОИ',
-  seasonality: 'Сезонность',
-  repo: 'Репо',
-  funds: 'Фонды',
-};
 
 
 export default function AdminStatsPage() {
@@ -459,11 +457,16 @@ export default function AdminStatsPage() {
         style={{
           gap: 'var(--sp-2)',
           position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          paddingTop: 'var(--sp-2)',
-          paddingBottom: 'var(--sp-2)',
+          // Шапка сайта сама липкая (h-14 на мобильном, h-16 дальше) и лежит
+          // выше по z-index: без этого отступа фильтры уезжали бы под неё.
+          top: 'var(--admin-bar-top)',
+          zIndex: 30,
+          paddingTop: 'var(--sp-3)',
+          paddingBottom: 'var(--sp-3)',
           backgroundColor: 'var(--bg-primary)',
+          // Тонкая линия появляется только когда блок прилип — иначе он
+          // выглядит приклеенным к заголовку ещё до прокрутки.
+          boxShadow: '0 1px 0 color-mix(in srgb, var(--border-color) 25%, transparent)',
         }}
       >
         <Dropdown<Preset>
@@ -727,57 +730,9 @@ export default function AdminStatsPage() {
 
       {group === 'behavior' && (
         <>
-        {/* ═══ Чего нет в Метрике ═══ */}
-        <div style={dimStyle(ownDim)}>
-        <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-            <TopList
-              title="Топ активов"
-              hint={METRIC_HINTS.top_assets}
-              columns={['посетители', 'показы']}
-              items={data?.top_assets.map((r) => ({
-                label: r.name || r.secid,
-                note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
-                value: r.visitors,
-                value2: r.views,
-              })) || null}
-              loading={loading}
-              emptyText="Данные собираются с 11.09.2026"
-            />
-            <TopList
-              title="Выбор в поиске"
-              hint={METRIC_HINTS.top_search}
-              hintAlign="right"
-              columns={['выборы', 'посетители']}
-              items={data?.top_search.map((r) => ({
-                label: r.name || r.secid,
-                note: r.name ? r.secid : undefined,
-                value: r.picks,
-                value2: r.visitors,
-              })) || null}
-              loading={loading}
-              emptyText="Нет выборов в поиске"
-            />
-            <TopList
-              title="Экспорты PNG"
-              hint={METRIC_HINTS.top_exports}
-              columns={['скачивания', 'посетители']}
-              items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
-              loading={loading}
-              emptyText="Никто не экспортировал"
-            />
-            <TopList
-              title="Сезонность: режимы"
-              hint={METRIC_HINTS.modes}
-              hintAlign="right"
-              columns={['переключения', 'посетители']}
-              items={data?.mode_distribution.map((r) => ({ label: r.mode, value: r.count, value2: r.visitors })) || null}
-              loading={loading}
-              emptyText="Нет переключений режима"
-            />
-          </div>
+        <Section title="Что смотрят" hint={METRIC_HINTS.behavior}>
+          <BehaviorBlock range={range} segment={segment} device={device} />
         </Section>
-        </div>
 
       <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
         <IndicatorSegment
@@ -1042,6 +997,164 @@ function AudienceBlock() {
         loading={false}
         emptyText="Источники ещё не собраны"
       />
+    </div>
+  );
+}
+
+/** Иконки разделов — те же, что в терминале, чтобы раздел узнавался глазом. */
+const INDICATOR_ICONS: Record<string, { Icon: LucideIcon; color: string }> = {
+  '/oi': { Icon: Layers, color: 'var(--c-cyan, var(--info))' },
+  '/heatmap': { Icon: Grid3x3, color: 'var(--c-down, var(--danger))' },
+  '/funds-money': { Icon: Wallet, color: 'var(--c-up, var(--success))' },
+  '/fund-trades': { Icon: ArrowLeftRight, color: 'var(--accent)' },
+  '/strength': { Icon: Activity, color: 'var(--info)' },
+  '/seasonality': { Icon: CalendarDays, color: 'var(--success)' },
+  '/cbr-flows': { Icon: Waves, color: 'var(--info)' },
+  '/buffett': { Icon: Scale, color: 'var(--warning)' },
+  '/repo': { Icon: ListFilter, color: 'var(--text-muted)' },
+  '/sandbox': { Icon: Grid3x3, color: 'var(--accent)' },
+};
+
+/** Что смотрят: сводка по разделам, и по клику — что смотрят внутри раздела. */
+function BehaviorBlock({ range, segment, device }: {
+  range: AdminRange; segment: string; device: string;
+}) {
+  const [data, setData] = useState<BehaviorReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [picked, setPicked] = usePersistedState<string>('frame:admin:beh:picked', '');
+  const dim = useDelayedFlag(loading && !!data);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setFailed(false);
+    getBehavior({ ...range, segment, device, indicator: picked || null })
+      .then(r => { if (alive) setData(r); })
+      .catch(() => { if (alive) setFailed(true); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [range, segment, device, picked]);
+
+  if (loading && !data) return <Skeleton height={360} rounded="lg" />;
+  if (failed || !data) {
+    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--danger)' }}>Не удалось загрузить</p></Card>;
+  }
+
+  const max = Math.max(...data.indicators.map(i => i.people), 1);
+  const cur = data.indicators.find(i => i.path === picked);
+  const trend = data.by_day.map(row => ({
+    time: String(row.date),
+    value: Number(row[picked || data.indicators[0]?.path] ?? 0),
+  }));
+
+  return (
+    <div className="space-y-3 md:space-y-4" style={dimStyle(dim)}>
+      <Card padding="md" className="md:p-5">
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          Сколько людей открывало раздел. Клик — посмотреть, что смотрят внутри него.
+        </p>
+        <div className="flex flex-col">
+          {data.indicators.map(ind => {
+            const on = ind.path === picked;
+            const ic = INDICATOR_ICONS[ind.path];
+            return (
+              <button
+                key={ind.path}
+                type="button"
+                onClick={() => setPicked(on ? '' : ind.path)}
+                aria-pressed={on}
+                className="relative grid items-center text-left"
+                style={{
+                  gridTemplateColumns: 'auto 1fr auto',
+                  gap: 'var(--sp-3)',
+                  padding: '9px 10px',
+                  borderBottom: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)',
+                }}
+              >
+                <span
+                  aria-hidden
+                  className="absolute inset-y-px left-0 transition-[width] duration-500"
+                  style={{
+                    width: `${(ind.people / max) * 100}%`,
+                    backgroundColor: on
+                      ? 'color-mix(in srgb, var(--accent) 24%, transparent)'
+                      : 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                  }}
+                />
+                <span
+                  className="relative flex items-center justify-center rounded-md shrink-0"
+                  style={{
+                    width: 30, height: 30,
+                    backgroundColor: `color-mix(in srgb, ${ic?.color || 'var(--accent)'} 16%, transparent)`,
+                    color: ic?.color || 'var(--accent)',
+                  }}
+                >
+                  {ic ? <ic.Icon size={16} /> : <Eye size={16} />}
+                </span>
+                <span className="relative min-w-0">
+                  <span className="block text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                    {ind.name}
+                  </span>
+                  {/* Раньше рядом стояли две цифры без подписи и было непонятно,
+                      что есть что. Теперь подписано словами. */}
+                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {ind.registered} с аккаунтом · {fmtNum(ind.views)} просмотров
+                  </span>
+                </span>
+                <span
+                  className="relative text-right"
+                  style={{ fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  <span className="block text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {fmtNum(ind.people)}
+                  </span>
+                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>человек</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {trend.length > 1 && (
+        <Card padding="md" className="md:p-5">
+          <SimpleChart
+            key={picked || 'top'}
+            data={trend}
+            primaryColor="var(--accent)"
+            primaryLabel={`${cur?.name || data.indicators[0]?.name || 'Раздел'} — людей в день`}
+            formatValue={(v) => Math.round(v).toString()}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showWatermark={false}
+            showNavigator={false}
+            hideTime
+            defaultHistogram
+            height={220}
+          />
+        </Card>
+      )}
+
+      {picked && data.detail && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+          <TopList
+            title={`Активы внутри «${cur?.name || ''}»`}
+            columns={['людей', 'просмотры']}
+            items={data.detail.assets.map(a => ({ label: a.name, note: a.secid, value: a.people, value2: a.views }))}
+            loading={false}
+            emptyText="Здесь не выбирают активы"
+          />
+          <TopList
+            title="Куда уходят дальше"
+            columns={['людей']}
+            items={data.detail.next.map(n => ({ label: n.name, value: n.people }))}
+            loading={false}
+            emptyText="Уходят сразу с сайта"
+          />
+        </div>
+      )}
     </div>
   );
 }

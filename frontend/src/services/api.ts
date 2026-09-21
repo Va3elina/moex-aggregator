@@ -1472,6 +1472,37 @@ export async function getAudience(): Promise<AudienceReport> {
   return response.json();
 }
 
+/** Что смотрят: сводка по разделам, а с indicator — что внутри раздела. */
+export interface BehaviorReport {
+  date_from: string;
+  date_to: string;
+  indicator: string | null;
+  indicators: { path: string; name: string; people: number; registered: number; views: number }[];
+  /** По дню на объект: { date, '/oi': 120, '/heatmap': 80, ... } */
+  by_day: Record<string, string | number>[];
+  detail: {
+    assets: { secid: string; name: string; people: number; views: number }[];
+    next: { path: string; name: string; people: number }[];
+    exports: number;
+  } | null;
+}
+
+export async function getBehavior(opts: AdminRange & {
+  segment?: string; device?: string; indicator?: string | null;
+}): Promise<BehaviorReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, opts);
+  if (opts.segment && opts.segment !== 'all') params.set('segment', opts.segment);
+  if (opts.device && opts.device !== 'all') params.set('device', opts.device);
+  if (opts.indicator) params.set('indicator', opts.indicator);
+  const response = await apiFetch(`${API_BASE}/api/analytics/behavior?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch behavior');
+  }
+  return response.json();
+}
+
 export interface AdminPerson {
   ident: string;
   user_id: number | null;
