@@ -42,8 +42,6 @@ import {
   getAnalyticsStats,
   listAdminUsers,
   listAdminGuests,
-  listPeople,
-  getRevenue,
   getSegment,
   getAlertsStats,
   getMetrica,
@@ -54,9 +52,6 @@ import type {
   AnalyticsStats,
   AdminUser,
   SegmentReport,
-  PeopleReport,
-  AdminPerson,
-  RevenueReport,
   AlertsStats,
   AdminRange,
   MetricaReport,
@@ -164,12 +159,6 @@ const METRIC_HINTS = {
   alerts_source: 'Активные уведомления прямо сейчас по разделу сайта: ОИ или фонды.',
   alerts_top:
     'Активы, на которые прямо сейчас стоит больше всего активных уведомлений. Цифра — число уведомлений. От периода не зависит.',
-  people_kpis:
-    'Люди, а не сессии: человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке (для данных до 11.09.2026). Гостевые заходы того, кто потом вошёл, приклеиваются к его аккаунту, поэтому один человек не попадает в обе группы. Клик по метрике открывает этих людей списком.',
-  people_table:
-    'Гости и зарегистрированные в одном списке. Клик по строке открывает карточку: у зарегистрированного — профиль и подписки, у гостя — его поведение. Выдача ограничена 300 строками, счётчик показывает полное число.',
-  money_section:
-    'Только реальные платежи: начатые подписки с суммой больше нуля, без триалов, возвратов и подарочных инвайтов. Инвайт в выручке не учитывается — иначе она выглядит в разы больше, чем есть.',
   guests_section:
     'Люди, которые ходят на сайт и не завели аккаунт. Один человек — один ID браузера (живёт год, как cookie Метрики). Кто хоть раз входил в аккаунт, сюда не попадает: он уже в «Пользователях». «Заходов» — в скольких разных днях человек был на сайте за выбранный период: это и есть мера возвращаемости. ID браузера пишем с 11.09.2026, за более ранние периоды раздел пуст.',
   guests_filter:
@@ -342,11 +331,6 @@ export default function AdminStatsPage() {
   // показывали бы разных людей. Имя indSegment — чтобы не путать с segment
   // из шапки, который делит аудиторию на гостей/вошедших/админов.
   const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
-  // Вкладка страницы: вместо одной длинной ленты из одиннадцати секций —
-  // пять разделов по вопросам. Запоминается между заходами.
-  const [pageTab, setPageTab] = usePersistedState<PageTab>('frame:admin:tab', 'over');
-  // Какой срез людей открыт: приходит из клика по метрике на «Обзоре».
-  const [peopleKind, setPeopleKind] = usePersistedState<string>('frame:admin:peopleKind', 'all');
   const [segReport, setSegReport] = useState<SegmentReport | null>(null);
   const [segLoading, setSegLoading] = useState(true);
 
@@ -354,15 +338,12 @@ export default function AdminStatsPage() {
   const [growthLoading, setGrowthLoading] = useState(true);
 
   useEffect(() => {
-    // Запрос уходит только на своей вкладке: сегмент считается по всем событиям
-    // периода и на «Обзоре» был бы самым дорогим запросом страницы впустую.
-    if (pageTab !== 'usage') return;
     setSegLoading(true);
     getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
       .then(setSegReport)
       .catch(() => setSegReport(null))
       .finally(() => setSegLoading(false));
-  }, [range, indSegment, pageTab]);
+  }, [range, indSegment]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -500,36 +481,7 @@ export default function AdminStatsPage() {
         </Card>
       )}
 
-      <nav className="flex gap-1 mb-6 overflow-x-auto" role="tablist"
-           style={{ borderBottom: '1px solid var(--border-color)', scrollbarWidth: 'none' }}>
-        {PAGE_TABS.map(tb => (
-          <button
-            key={tb.key}
-            role="tab"
-            aria-selected={pageTab === tb.key}
-            onClick={() => setPageTab(tb.key)}
-            className="whitespace-nowrap"
-            style={{
-              padding: '9px 15px 10px',
-              fontSize: 'var(--fs-sm)',
-              fontWeight: pageTab === tb.key ? 600 : 400,
-              color: pageTab === tb.key ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderBottom: `3px solid ${pageTab === tb.key ? 'var(--accent)' : 'transparent'}`,
-              marginBottom: -1,
-            }}
-          >
-            {tb.label}
-          </button>
-        ))}
-      </nav>
-
       <div>
-      {pageTab === 'over' && (
-        <>
-          <Section title="Сводка" hint={METRIC_HINTS.people_kpis}>
-            <PeopleKpis range={range} segment={segment} device={device}
-                        onPick={k => { setPeopleKind(k); setPageTab('people'); }} />
-          </Section>
         {/* ═══ Воронка ═══ */}
         <Section title="Воронка" hint={METRIC_HINTS.funnel}>
           <div style={dimStyle(growthDim)}>
@@ -707,47 +659,6 @@ export default function AdminStatsPage() {
           </div>
         )}
 
-        </>
-      )}
-
-      {pageTab === 'people' && (
-        <>
-          <PeopleBlock range={range} segment={segment} device={device}
-                       kind={peopleKind} onKind={setPeopleKind} />
-      {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
-      <div style={dimStyle(growthDim)}>
-        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
-          <CohortsBlock growth={growth} loading={growthLoading} />
-        </Section>
-        <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
-          <LoyalGuestsBlock growth={growth} loading={growthLoading} />
-        </Section>
-        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
-          <FirstSourcesBlock growth={growth} loading={growthLoading} />
-        </Section>
-      </div>
-
-      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
-        <GuestsBlock range={range} segment={indSegment} />
-      </CollapsibleSection>
-
-        </>
-      )}
-
-      {pageTab === 'users' && (
-        <>
-      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock range={range} segment={indSegment} />
-      </Section>
-      <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
-        <AlertsBlock range={range} />
-      </Section>
-
-        </>
-      )}
-
-      {pageTab === 'usage' && (
-        <>
         {/* ═══ Чего нет в Метрике ═══ */}
         <div style={dimStyle(ownDim)}>
         <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
@@ -799,6 +710,24 @@ export default function AdminStatsPage() {
           </div>
         </Section>
         </div>
+      </div>
+
+      {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
+      <div style={dimStyle(growthDim)}>
+        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
+          <CohortsBlock growth={growth} loading={growthLoading} />
+        </Section>
+        <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
+          <LoyalGuestsBlock growth={growth} loading={growthLoading} />
+        </Section>
+        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
+          <FirstSourcesBlock growth={growth} loading={growthLoading} />
+        </Section>
+      </div>
+
+      <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
+        <AlertsBlock range={range} />
+      </Section>
 
       <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
         <IndicatorSegment
@@ -810,15 +739,13 @@ export default function AdminStatsPage() {
         />
       </Section>
 
-        </>
-      )}
+      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
+        <GuestsBlock range={range} segment={indSegment} />
+      </CollapsibleSection>
 
-      {pageTab === 'money' && (
-        <Section title="Деньги" hint={METRIC_HINTS.money_section}>
-          <RevenueBlock />
-        </Section>
-      )}
-      </div>
+      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
+        <UsersBlock range={range} segment={indSegment} />
+      </Section>
     </div>
   );
 }
@@ -1856,331 +1783,6 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
         </div>
       )}
     </Card>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// ВКЛАДКИ СТРАНИЦЫ
-// ════════════════════════════════════════════════════════════════════════════
-
-type PageTab = 'over' | 'people' | 'users' | 'usage' | 'money';
-
-const PAGE_TABS: { key: PageTab; label: string }[] = [
-  { key: 'over', label: 'Обзор' },
-  { key: 'people', label: 'Люди' },
-  { key: 'users', label: 'Пользователи' },
-  { key: 'usage', label: 'Что смотрят' },
-  { key: 'money', label: 'Деньги' },
-];
-
-/** Срезы людей — одни и те же на «Обзоре» (как метрики) и в «Людях» (как фильтр). */
-const PEOPLE_KINDS: { key: string; label: string; countKey: keyof PeopleReport['counts'] }[] = [
-  { key: 'all', label: 'Людей', countKey: 'people' },
-  { key: 'guest', label: 'Без аккаунта', countKey: 'guests' },
-  { key: 'reg', label: 'Зарегистрированы', countKey: 'registered' },
-  { key: 'loyal', label: 'Ходят часто', countKey: 'loyal' },
-  { key: 'paid', label: 'Платят', countKey: 'paid' },
-  { key: 'alerts', label: 'С уведомлениями', countKey: 'alerts' },
-];
-
-const PEOPLE_SORTS: { key: string; label: string }[] = [
-  { key: 'days', label: 'По числу заходов' },
-  { key: 'visits', label: 'По визитам' },
-  { key: 'views', label: 'По просмотрам' },
-  { key: 'last', label: 'Кто был позже всех' },
-];
-
-function usePeople(args: {
-  range: AdminRange; segment: string; device: string;
-  kind?: string; sort?: string; seg?: SegmentState;
-}) {
-  const [data, setData] = useState<PeopleReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { range, segment, device, kind = 'all', sort = 'days', seg } = args;
-  const segKey = seg ? JSON.stringify(seg) : '';
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    listPeople({
-      ...range, segment, device, kind, sort,
-      seen: seg?.seen, notSeen: seg?.notSeen, seenMode: seg?.mode,
-    })
-      .then(r => { if (alive) setData(r); })
-      .catch(() => { if (alive) setData(null); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [range, segment, device, kind, sort, segKey]);
-  return { data, loading };
-}
-
-/** Сводка на «Обзоре»: шесть цифр, каждая открывает этих людей. */
-function PeopleKpis({ range, segment, device, onPick }: {
-  range: AdminRange; segment: string; device: string; onPick: (kind: string) => void;
-}) {
-  const { data, loading } = usePeople({ range, segment, device });
-  const dim = useDelayedFlag(loading && !!data);
-  if (loading && !data) return <Skeleton height={104} rounded="lg" />;
-  if (!data) return null;
-  const c = data.counts;
-  const share = (n: number) => (c.people ? `${Math.round((n / c.people) * 100)}% людей` : undefined);
-  const subs: Record<string, string | undefined> = {
-    all: `${fmtNum(c.visits)} визитов`,
-    guest: share(c.guests),
-    reg: share(c.registered),
-    loyal: `4+ дня · ${c.loyal_guests} без аккаунта`,
-    paid: 'активная платная подписка',
-    alerts: `${c.tg} с телеграмом`,
-  };
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 md:gap-4" style={dimStyle(dim)}>
-      {PEOPLE_KINDS.map(k => (
-        <button key={k.key} onClick={() => onPick(k.key)} className="text-left">
-          <SummaryCard
-            icon={<Users size={16} />}
-            label={k.label}
-            value={c[k.countKey]}
-            sub={subs[k.key]}
-          />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Вкладка «Люди»: срезы, сегмент по индикаторам и таблица гостей с юзерами. */
-function PeopleBlock({ range, segment, device, kind, onKind }: {
-  range: AdminRange; segment: string; device: string;
-  kind: string; onKind: (k: string) => void;
-}) {
-  const navigate = useNavigate();
-  const [sort, setSort] = usePersistedState<string>('frame:admin:people:sort', 'days');
-  const [seg, setSeg] = usePersistedState<SegmentState>('frame:admin:people:seg', EMPTY_SEGMENT);
-  const safeSort = PEOPLE_SORTS.some(o => o.key === sort) ? sort : 'days';
-  const { data, loading } = usePeople({ range, segment, device, kind, sort: safeSort, seg });
-  const dim = useDelayedFlag(loading && !!data);
-
-  const rows = data?.people ?? [];
-
-  return (
-    <>
-      <Section title="Срезы" hint={METRIC_HINTS.people_kpis}>
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 md:gap-3">
-          {PEOPLE_KINDS.map(k => {
-            const on = kind === k.key;
-            return (
-              <button
-                key={k.key}
-                onClick={() => onKind(on ? 'all' : k.key)}
-                className="editorial-press text-left"
-                style={{
-                  padding: 'var(--sp-3)',
-                  border: `2px solid ${on ? 'var(--text-primary)' : 'var(--border-color)'}`,
-                  backgroundColor: on ? 'var(--text-primary)' : 'var(--bg-secondary)',
-                  color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
-                }}
-              >
-                <div className="text-xs uppercase" style={{ letterSpacing: '0.08em', opacity: 0.7 }}>
-                  {k.label}
-                </div>
-                <div style={{ fontFamily: NUM_FONT, fontSize: '1.3rem', fontWeight: 600 }}>
-                  {data ? fmtNum(data.counts[k.countKey]) : '—'}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
-      <Section title="Кто чем пользуется" hint={SEGMENT_HINT}>
-        <Card padding="md" className="md:p-5">
-          <IndicatorSegment
-            indicators={data?.all_indicators ?? []}
-            value={seg}
-            onChange={setSeg}
-            summary={data ? {
-              people: data.matched,
-              registered: rows.filter(p => p.user_id).length,
-              guests: rows.filter(p => !p.user_id).length,
-              paying: rows.filter(p => p.kind === 'paid').length,
-              indicators: data.indicators,
-            } : null}
-            loading={loading}
-          />
-        </Card>
-      </Section>
-
-      <Section title="Люди" hint={METRIC_HINTS.people_table}>
-        <Card padding="md" className="md:p-5">
-          <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
-            <Dropdown<string>
-              options={PEOPLE_SORTS}
-              value={safeSort}
-              onChange={setSort}
-              menuMaxWidth={280}
-            />
-            <span className="text-xs ml-auto whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-              показано {rows.length}
-              {data && data.matched > rows.length && ` из ${fmtNum(data.matched)}`}
-            </span>
-          </div>
-
-          <div className="overflow-x-auto -mx-2" style={dimStyle(dim)}>
-            <table className="w-full" style={{ minWidth: 760 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <UCol>Кто</UCol>
-                  <UCol align="right">Дней</UCol>
-                  <UCol align="right">Визитов</UCol>
-                  <UCol align="right" hide="md">Просмотров</UCol>
-                  <UCol align="left" hide="md">Устройство</UCol>
-                  <UCol align="left">Что смотрит</UCol>
-                  <UCol align="left" hide="lg">Последний раз</UCol>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && rows.length === 0 && (
-                  <tr><td colSpan={8} className="py-6"><Skeleton height={24} rounded="md" /></td></tr>
-                )}
-                {!loading && rows.length === 0 && (
-                  <tr><td colSpan={8} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Под этот отбор никто не подходит
-                  </td></tr>
-                )}
-                {rows.map(p => (
-                  <tr
-                    key={p.ident}
-                    className="hover:bg-white/[0.03] transition-colors cursor-pointer"
-                    style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                    onClick={() => navigate(p.user_id
-                      ? `/admin/users/${p.user_id}`
-                      : `/admin/guests/${p.ident.slice(1)}`)}
-                  >
-                    <td className="px-2 py-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <PersonBadge kind={p.kind} />
-                        <span className="truncate text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {p.name || p.ident.slice(1, 9)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="text-right px-2 py-2 text-sm font-semibold"
-                        style={{ fontFamily: NUM_FONT, color: 'var(--text-primary)' }}>{p.days}</td>
-                    <td className="text-right px-2 py-2 text-sm" style={{ fontFamily: NUM_FONT }}>{p.visits}</td>
-                    <td className="text-right px-2 py-2 text-sm hidden md:table-cell"
-                        style={{ fontFamily: NUM_FONT, color: 'var(--text-secondary)' }}>{p.views}</td>
-                    <td className="px-2 py-2 text-xs hidden md:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                      {DEVICE_NAMES[p.device] || p.device}
-                    </td>
-                    <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      <span className="block truncate" style={{ maxWidth: 260 }}>
-                        {p.paths.map(x => PAGE_NAMES[x] || x).join(', ') || '—'}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-xs hidden lg:table-cell" style={{ color: 'var(--text-muted)' }}>
-                      {fmtShortDay(p.last_day)}
-                    </td>
-                    <td className="px-2 py-2 text-right" style={{ color: 'var(--text-muted)' }}>
-                      <ChevronRight size={16} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </Section>
-    </>
-  );
-}
-
-function PersonBadge({ kind }: { kind: AdminPerson['kind'] }) {
-  const map: Record<string, { text: string; color: string }> = {
-    paid:   { text: 'платит',  color: 'var(--success)' },
-    invite: { text: 'инвайт',  color: 'var(--text-secondary)' },
-    reg:    { text: 'аккаунт', color: 'var(--info)' },
-    guest:  { text: 'гость',   color: 'var(--text-muted)' },
-  };
-  const m = map[kind] || map.guest;
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
-          style={{ backgroundColor: `color-mix(in srgb, ${m.color} 18%, transparent)`, color: m.color }}>
-      {m.text}
-    </span>
-  );
-}
-
-/** Вкладка «Деньги»: платящие, выручка по месяцам, что покупают, повторные. */
-function RevenueBlock() {
-  const [data, setData] = useState<RevenueReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    setLoading(true);
-    getRevenue().then(setData).catch(() => setData(null)).finally(() => setLoading(false));
-  }, []);
-  if (loading && !data) return <Skeleton height={320} rounded="lg" />;
-  if (!data) return (
-    <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-      Не удалось загрузить</p></Card>
-  );
-  const rub = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
-  return (
-    <div className="space-y-3 md:space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard icon={<Users size={16} />} label="Платящих" value={data.payers}
-                     sub={`${data.payments} платежей`} />
-        <SummaryCard icon={<Zap size={16} />} label="Выручка" value={rub(data.rub)}
-                     sub="без триалов, возвратов и инвайтов" />
-        <SummaryCard icon={<Users size={16} />} label="Платят сейчас" value={data.active_paid}
-                     sub={`${rub(data.rub_30)} за 30 дней`} />
-        <SummaryCard icon={<TrendingUp size={16} />} label="Конверсия"
-                     value={`${Math.round((data.payers / Math.max(data.registered, 1)) * 100)}%`}
-                     sub={`${data.payers} из ${data.registered} аккаунтов`} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-        <Card padding="md" className="md:p-5">
-          <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-            Выручка по месяцам
-          </p>
-          <SimpleChart
-            data={data.by_month.map(m => ({ time: `${m.month}-01`, value: m.rub }))}
-            primaryColor="var(--accent)"
-            primaryLabel="Выручка"
-            formatValue={(v) => `${Math.round(v / 1000)}т`}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showNavigator={false}
-            hideTime={true}
-            defaultHistogram
-            height={240}
-          />
-        </Card>
-        <div className="space-y-3 md:space-y-4">
-          <TopList
-            title="Что покупают"
-            columns={['платежей', '₽']}
-            items={data.mix.map(m => ({
-              label: `${m.tier === 'pro' ? 'Pro' : 'Basic'} · ${m.period === 'yearly' ? 'год' : 'месяц'}`,
-              value: m.n, value2: Math.round(m.rub),
-            }))}
-            loading={false}
-            emptyText="Платежей нет"
-          />
-          <TopList
-            title="Сколько раз платил один человек"
-            columns={['людей']}
-            items={data.repeat.map(r => ({
-              label: r.payments === 1 ? 'заплатил один раз' : `платил ${r.payments} раза`,
-              value: r.users,
-            }))}
-            loading={false}
-            emptyText="Платежей нет"
-          />
-        </div>
-      </div>
-    </div>
   );
 }
 
