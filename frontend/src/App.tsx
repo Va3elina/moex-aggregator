@@ -1,5 +1,5 @@
 import { useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
 import { useIsPhone } from './hooks/useIsPhone';
 import { useViewportWidth } from './hooks/useViewportWidth';
@@ -147,9 +147,13 @@ function RouterErrorBoundary({ children }: { children: React.ReactNode }) {
     - вообще теряется ощущение «новая страница» */
 function ScrollToTop() {
   const { pathname } = useLocation();
+  const navType = useNavigationType();
   useEffect(() => {
+    // «Назад» и «вперёд» — возврат на уже виденную страницу: бросать человека
+    // наверх там нельзя, место прокрутки восстанавливает сама страница.
+    if (navType === 'POP') return;
     window.scrollTo(0, 0);
-  }, [pathname]);
+  }, [pathname, navType]);
   return null;
 }
 

@@ -2185,6 +2185,32 @@ def get_alerts_stats(
             LIMIT 10
         """)).fetchall()
 
+    # Кто и когда поставил: без этого блок был обезличенным — счётчики есть,
+    # а людей за ними не видно. Отдельным соединением, чтобы не трогать выше.
+    with engine.connect() as conn:
+        recent_rows = conn.execute(text("""
+            SELECT a.id, a.user_id, u.display_name, u.email,
+                   COALESCE(a.asset_name, a.asset) AS asset, a.indicator, a.metric,
+                   a.status, a.created_at, a.last_fired_at,
+                   (SELECT COUNT(*) FROM alert_fires f WHERE f.alert_id = a.id) AS fires
+            FROM alerts a JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC LIMIT 40
+        """)).fetchall()
+        by_user_rows = conn.execute(text("""
+            SELECT a.user_id, u.display_name, u.email, COUNT(*) AS alerts,
+                   COUNT(*) FILTER (WHERE a.status = 'active') AS active,
+                   MIN(a.created_at) AS first_at, MAX(a.created_at) AS last_at
+            FROM alerts a JOIN users u ON u.id = a.user_id
+            GROUP BY 1, 2, 3 ORDER BY alerts DESC
+        """)).fetchall()
+        by_day_rows = conn.execute(text("""
+            SELECT (created_at AT TIME ZONE 'Europe/Moscow')::date AS day, COUNT(*)
+            FROM alerts GROUP BY 1 ORDER BY 1
+        """)).fetchall()
+
+    def _who(name, email):
+        return name or (email.split("@")[0] if email else None)
+
     return {
         "period_days": rng["n"],
         "created": int(ev_row[0]) if ev_row else 0,
@@ -2195,6 +2221,20 @@ def get_alerts_stats(
         "with_fires": int(with_fires),
         "by_source": [{"source": r[0], "active": int(r[1])} for r in by_source_rows],
         "top_assets": [{"asset": r[0], "count": int(r[1])} for r in top_assets_rows],
+        "recent": [{
+            "id": int(r[0]), "user_id": int(r[1]), "user": _who(r[2], r[3]),
+            "asset": r[4], "indicator": r[5], "metric": r[6], "status": r[7],
+            "created_at": r[8].isoformat() if r[8] else None,
+            "last_fired_at": r[9].isoformat() if r[9] else None,
+            "fires": int(r[10] or 0),
+        } for r in recent_rows],
+        "by_user": [{
+            "user_id": int(r[0]), "user": _who(r[1], r[2]), "alerts": int(r[3]),
+            "active": int(r[4]),
+            "first_at": r[5].isoformat() if r[5] else None,
+            "last_at": r[6].isoformat() if r[6] else None,
+        } for r in by_user_rows],
+        "by_day": [{"date": r[0].isoformat(), "created": int(r[1])} for r in by_day_rows],
     }
 
 
@@ -2259,6 +2299,14 @@ def list_users(
         "tier": f"{tier_rank} ASC, sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
         # Скоро заканчивается — сверху те, у кого подписка истекает раньше.
         "expires": "sub.expires_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
+        # Недавно оплатившие — сверху.
+        "paid_at": "paid_at DESC NULLS LAST, last_active_ts DESC NULLS LAST",
+        # Обратные направления — для клика по шапке таблицы.
+        "visits_asc": "COALESCE(uv.visits, 0) ASC, last_active_ts DESC NULLS LAST",
+        "time_asc": "COALESCE(uv.time_sec, 0) ASC, last_active_ts DESC NULLS LAST",
+        "created_asc": "u.created_at ASC",
+        "last_active_asc": "last_active_ts ASC NULLS LAST",
+        "paid_at_asc": "paid_at ASC NULLS LAST, last_active_ts DESC NULLS LAST",
     }
     order_by = order_clauses.get(sort, order_clauses["last_active"])
 
@@ -2377,7 +2425,12 @@ def list_users(
                   WHERE p.user_id = u.id AND p.period <> 'invite' AND p.status <> 'active'
                   -- Сначала реально оплаченные (истекла/отменена), потом попытки.
                   ORDER BY (p.status IN ('expired', 'cancelled')) DESC, p.created_at DESC
-                  LIMIT 1) AS last_paid_sub
+                  LIMIT 1) AS last_paid_sub,
+                -- Когда человек в последний раз платил: чтобы найти недавно купивших.
+                (SELECT MAX(p.started_at) FROM subscriptions p
+                  WHERE p.user_id = u.id AND p.period <> 'invite' AND p.amount > 0
+                    AND p.started_at IS NOT NULL AND p.status <> 'refunded'
+                    AND NOT COALESCE(p.is_trial, false)) AS paid_at
             FROM users u
             {sub_lateral}
             LEFT JOIN uv ON uv.user_id = u.id
@@ -2440,6 +2493,7 @@ def list_users(
                 "last_active_ts": r[17].isoformat() if r[17] else None,
                 "time_sec": int(r[18] or 0),
                 "last_paid_sub": last_paid(r[19]) if r[11] is None else None,
+                "paid_at": r[20].isoformat() if r[20] else None,
             }
             for r in rows
         ],
@@ -2703,24 +2757,17 @@ def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
         GROUP BY ip_country ORDER BY sessions DESC
     """), params).fetchall()
 
-    # По каким дням он приходит — видно ритуал: будни перед открытием торгов
-    # или разовые заходы. 0 = воскресенье, как в PG.
-    by_dow = conn.execute(text(f"""
-        SELECT EXTRACT(DOW FROM (server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::int AS dow,
-               COUNT(*) FILTER (WHERE event_type = 'pageview') AS views
-        FROM analytics_events
-        WHERE {where} AND server_ts >= :cutoff
-        GROUP BY dow ORDER BY dow
-    """), params).fetchall()
-
-    # В какие часы по Москве — тот же смысл: утро перед рынком или вечер.
-    by_hour = conn.execute(text(f"""
-        SELECT EXTRACT(HOUR FROM (server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::int AS hour,
-               COUNT(*) FILTER (WHERE event_type = 'pageview') AS views
-        FROM analytics_events
-        WHERE {where} AND server_ts >= :cutoff
-        GROUP BY hour ORDER BY hour
-    """), params).fetchall()
+    # За период активов может не быть, хотя человек их смотрел раньше: тогда
+    # показываем за всё время и честно это помечаем, а не оставляем пустоту.
+    assets_all_time = False
+    if not top_assets:
+        top_assets = conn.execute(text(f"""
+            SELECT payload->>'secid' AS secid, COUNT(*) AS views, MAX(server_ts) AS last_ts
+            FROM analytics_events
+            WHERE {where} AND event_type = 'asset_view' AND payload->>'secid' IS NOT NULL
+            GROUP BY payload->>'secid' ORDER BY views DESC LIMIT 15
+        """), params).fetchall()
+        assets_all_time = bool(top_assets)
 
     names = _asset_names(conn, sorted({r[0] for r in top_assets} | {r[0] for r in top_instruments}))
 
@@ -2753,8 +2800,7 @@ def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
         "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
         "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
         "countries": [{"country": r[0], "sessions": int(r[1])} for r in countries],
-        "by_dow": [{"dow": int(r[0]), "views": int(r[1] or 0)} for r in by_dow],
-        "by_hour": [{"hour": int(r[0]), "views": int(r[1] or 0)} for r in by_hour],
+        "assets_all_time": assets_all_time,
     }
 
 
