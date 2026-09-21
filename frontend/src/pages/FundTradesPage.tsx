@@ -69,6 +69,8 @@ import { type MonthRange } from '../components/fundtrades/MonthRangePicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
+import { useSnapshotTracking } from '../hooks/useSnapshotTracking';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buildFundTradesTour } from '../data/tours/fund-trades';
@@ -251,6 +253,12 @@ export default function FundTradesPage() {
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
     const [period] = useState<FundTradesPeriod>('1m');
     const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+    const { track } = useAnalytics();
+    // Какой именно фонд открыли карточкой — отдельное событие, а не снимок:
+    // это разовое осмысленное действие, и дебаунс тут только терял бы его.
+    useEffect(() => {
+        if (selectedTicker) track('fund_open', { ticker: selectedTicker, from: 'fund-trades' });
+    }, [selectedTicker, track]);
     // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
     // Период доходности: показывается на плитках И используется для сортировки по доходности.
     const [returnPeriod, setReturnPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:returnPeriod', 'y1');
@@ -395,6 +403,25 @@ export default function FundTradesPage() {
         () => Array.from(portfolioFunds).join(','),
         [portfolioFunds],
     );
+
+    // Что человек смотрит в «Сделках фондов»: сама вкладка плюс только её
+    // настройки — мешать в один снимок параметры всех вкладок значило бы
+    // записывать то, чего человек сейчас не видит.
+    useSnapshotTracking('fund_trades_view', {
+        tab,
+        ...(tab === 'funds' ? { sort: fundSort, return_period: returnPeriod } : {}),
+        ...(tab === 'portfolio' ? {
+            mode: portfolioMode,
+            movers_period: portfolioMoversPeriod,
+            funds_n: portfolioFunds.size,
+            all_funds: portfolioFunds.size === 0 || undefined,
+        } : {}),
+        ...(tab === 'movers' ? {
+            metric,
+            funds_n: selectedMoverFunds.size,
+            all_funds: selectedMoverFunds.size === 0 || undefined,
+        } : {}),
+    });
 
     // Фонды, не отчитавшиеся за месяц среза (бэк не включает их в портфель) —
     // пикер помечает их знаком «!».

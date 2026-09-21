@@ -72,6 +72,13 @@ type EventType =
   | 'theme_toggle'
   | 'lang_toggle'
   | 'session_heartbeat'
+  // Что смотрят внутри разделов: снимок настроек с паузой после последнего
+  // изменения (useSnapshotTracking), а не событие на каждый клик.
+  | 'funds_view'
+  | 'fund_trades_view'
+  | 'fund_open'
+  | 'terminal_layout'
+  | 'terminal_panel_add'
   // Воронка монетизации: намерение → оплата/триал
   | 'checkout_start'
   | 'trial_start'

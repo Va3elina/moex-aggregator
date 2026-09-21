@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
+import { useSnapshotTracking } from '../hooks/useSnapshotTracking';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundPickerModal from '../components/funds/FundPickerModal';
@@ -347,6 +348,24 @@ export default function FundsMoneyPage() {
 
     // Выбраны не все фонды → счётчик на кнопке подсвечивается акцентом
     // (сигнал, что на графике не вся категория, а подвыборка).
+    // Что человек тут на самом деле смотрит: категория, режим, период и —
+    // главное — какие именно фонды он оставил на графике. Пустой funds означает
+    // «все доступные»: перечислять полный список в каждом снимке незачем, а
+    // осознанный выбор подмножества как раз интересен.
+    useSnapshotTracking('funds_view', data ? {
+        category,
+        view: viewMode,
+        period,
+        timeframe: viewMode === 'flows' ? flowTimeframe : undefined,
+        rolling: viewMode === 'flows' && flowRolling !== 'none' ? flowRolling : undefined,
+        index: showIndex || undefined,
+        funds: visibleAccessibleFunds.length < accessibleFunds.length
+            ? visibleAccessibleFunds.map(f => f.ticker).slice(0, 20)
+            : [],
+        visible_n: visibleAccessibleFunds.length,
+        total_n: accessibleFunds.length,
+    } : null);
+
     const fundsPartiallySelected = accessibleFunds.length > 0
         && visibleAccessibleFunds.length < accessibleFunds.length;
 

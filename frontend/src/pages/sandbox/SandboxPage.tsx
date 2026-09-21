@@ -39,6 +39,8 @@ import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
 import { NoChartAnimCtx } from '../../components/chart/chartAnim';
 import FrameLogo from '../../components/FrameLogo';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
+import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
@@ -348,6 +350,23 @@ export default function SandboxPage() {
   const saveTimer = useRef<number | undefined>(undefined);
 
   const panels = st.bySheet[st.activeSheet] || [];
+
+  const { track } = useAnalytics();
+  // Как человек собрал терминал: сколько листов и окон, из каких индикаторов и
+  // в какой теме. Снимок с паузой — раскладку двигают непрерывно, и событие на
+  // каждое движение мыши было бы и бесполезным, и разрушительным для объёма.
+  useSnapshotTracking('terminal_layout', {
+    sheets: st.sheets.length,
+    panels: panels.length,
+    // Сколько окон каждого индикатора: два ОИ рядом — обычный сценарий
+    // сравнения, и он должен быть отличим от одного.
+    types: panels.reduce<Record<string, number>>((acc, p) => {
+      acc[p.type] = (acc[p.type] || 0) + 1;
+      return acc;
+    }, {}),
+    theme: st.sbTheme,
+    total_panels: Object.values(st.bySheet).reduce((n, list) => n + (list?.length ?? 0), 0),
+  });
   // Листы, которые уже открывали в этой сессии: их панели остаются
   // СМОНТИРОВАННЫМИ при переключении листа (слой прячется visibility:hidden),
   // чтобы возврат на лист не перезагружал графики заново (фидбек Вадима:
@@ -449,7 +468,10 @@ export default function SandboxPage() {
       return [...ps, { id: uid('p'), type, x, y, w: sz.w, h: sz.h, z, themeOverride: null, ...(cfg ? { cfg } : {}) }];
     });
     setMenuOpen(false);
-  }, [setActivePanels]);
+    // Какой индикатор вынесли в окно — разовое действие, шлём сразу: снимок
+    // раскладки ниже покажет итог, но не скажет, что человек искал.
+    track('terminal_panel_add', { type, ...(cfg ? { preset: true } : {}) });
+  }, [setActivePanels, track]);
 
   // §6.10: клик по сигналу → спавн панели нужного индикатора на активе сигнала.
   const onSignal = useCallback((dl: AnomalyDeepLink) => {
