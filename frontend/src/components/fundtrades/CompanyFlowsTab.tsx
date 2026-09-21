@@ -65,6 +65,7 @@ import ChartActionsMenu from '../ChartActionsMenu';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import ChartSettings from '../chart/ChartSettings';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
 // UI-кит панелей (тулбар окна). Лежит в pages/embed, но это именно набор
 // примитивов, а не страница: сайтовые SegmentedControl/таблетки в тулбар окна
 // не влезают (та же причина, по которой скринер не переиспользует OiScreenerTable).
@@ -427,6 +428,18 @@ export default function CompanyFlowsTab({
         () => assets.find(a => a.key === selectedKey) ?? null,
         [assets, selectedKey],
     );
+
+    // Какую бумагу и в каком режиме смотрят во вкладке «По бумаге». Идёт тем же
+    // типом, что и остальные снимки «Сделок фондов»: вкладка — их часть, и в
+    // отчёте не должна отрываться от tab.
+    useSnapshotTracking('fund_trades_view', selectedAsset ? {
+        tab: 'company',
+        asset: selectedAsset.asset_name,
+        isin: selectedAsset.isin ?? undefined,
+        mode,
+        period,
+        funds_off: fundsOff?.length || undefined,
+    } : null);
 
     // Тикер выбранной бумаги для подписи в таблетке (как в «Сезонности», где
     // под именем — тикер). Резолвим по ISIN/имени; нет тикера (облигация/ОФЗ) →

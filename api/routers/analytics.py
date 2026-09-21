@@ -84,7 +84,19 @@ ALLOWED_EVENT_TYPES = {
     "trial_start",
     "purchase_success",
     "trial_activated",
-    # Согласие: тумблер в профиле. Пишем сам факт смены выбора, без payload —
+    # Что человек смотрит внутри раздела — снимок настроек, а не каждый клик
+    # (шлётся с паузой после последнего изменения, см. useSnapshotTracking):
+    #   funds_view       {category, view, period, timeframe, rolling, funds[]}
+    #   fund_trades_view {tab, ...настройки вкладки}
+    #   fund_open        {ticker, from} — открыли карточку конкретного фонда
+    #   terminal_layout  {sheets, panels, types{}, theme}
+    #   terminal_panel_add {type} — какой индикатор вынесли в окно терминала
+    "funds_view",
+    "fund_trades_view",
+    "fund_open",
+    "terminal_layout",
+    "terminal_panel_add",
+        # Согласие: тумблер в профиле. Пишем сам факт смены выбора, без payload —
     # иначе отказ виден только как тишина и его невозможно посчитать.
     "consent_optout",
     "consent_optin",
