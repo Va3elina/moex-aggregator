@@ -8,24 +8,24 @@
  *  - Profile card (avatar, email, role, plan, OAuth provider, last login)
  *  - Summary metrics (sessions / events / avg session / total time / first&last active)
  *  - Subscriptions history
- *  - Activity timeline (последние 100 events с timestamps)
- *  - Top pages / instruments / exports
- *  - Devices + countries breakdown
+ *  - Общие блоки активности (ActivityBlocks): что смотрит, какие активы,
+ *    когда приходит, устройства/страны, лента действий — тот же компонент,
+ *    что и в карточке гостя.
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import {
-  ArrowLeft, User, Mail, ShieldCheck, Calendar, Clock, Globe, Monitor,
-  Activity, Zap, AlertCircle,
-} from 'lucide-react';
+import { ArrowLeft, User, Mail, ShieldCheck, Calendar, Clock, AlertCircle } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import AvatarImg from '../components/AvatarImg';
-import HelpTooltip from '../components/HelpTooltip';
 import Dropdown from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { getAdminUserDetail } from '../services/api';
 import type { UserDetailResponse } from '../services/api';
+import {
+  ActivityBlocks, SectionHeader, SmallStat, DETAIL_HINTS, PAGE_NAMES,
+  fmtDate, fmtDateTime, fmtDuration,
+} from '../components/admin/ActivityBlocks';
 
 export default function AdminUserDetailPage() {
   const { user, loading: authLoading } = useAuth();
@@ -185,7 +185,8 @@ export default function AdminUserDetailPage() {
           </Card>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
+            <SmallStat label="Дней на сайте" hint={DETAIL_HINTS.days} value={data.summary.active_days} />
             <SmallStat label="Визитов" hint={DETAIL_HINTS.visits} value={data.summary.sessions} />
             <SmallStat label="Действий" hint={DETAIL_HINTS.actions} value={data.summary.events} />
             <SmallStat label="Среднее время" hint={DETAIL_HINTS.avg} value={data.summary.avg_session_sec} formatter={fmtDuration} />
@@ -235,206 +236,9 @@ export default function AdminUserDetailPage() {
             </Card>
           )}
 
-          {/* Top lists row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6">
-            <SimpleTopList title="Топ страниц" items={data.top_pages.map(p => ({ label: p.path, value: p.views }))} />
-            <SimpleTopList title="Топ тикеров" items={data.top_instruments.map(p => ({ label: p.secid, value: p.selects }))} />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-6">
-            <SimpleTopList title="Экспорты PNG" items={data.top_exports.map(p => ({ label: p.indicator, value: p.count }))} />
-            <Card padding="md">
-              <p className="text-xs uppercase mb-3" style={{
-                color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600,
-              }}>
-                Устройства / страны
-              </p>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {data.devices.map(d => (
-                  <Chip key={d.device} icon={<Monitor size={11} />} label={`${d.device}: ${d.sessions}`} />
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {data.countries.map(c => (
-                  <Chip key={c.country} icon={<Globe size={11} />} label={`${c.country}: ${c.sessions}`} />
-                ))}
-                {data.devices.length === 0 && data.countries.length === 0 && (
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Нет данных</p>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          {/* Activity timeline */}
-          <SectionHeader title="Activity timeline" subtitle={`Последние ${data.timeline.length} событий`} />
-          <Card padding="md">
-            {data.timeline.length === 0 ? (
-              <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Нет событий за выбранный период
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {data.timeline.map((ev, i) => (
-                  <div key={i}
-                       className="flex items-center justify-between py-1.5 px-2 -mx-2 rounded"
-                       style={{
-                         fontSize: 'var(--fs-xs)',
-                         backgroundColor: i % 2 === 0 ? 'transparent' : 'color-mix(in srgb, var(--bg-secondary) 50%, transparent)',
-                       }}>
-                    <div className="flex items-center min-w-0 flex-1" style={{ gap: 'var(--sp-2)' }}>
-                      <Zap size={10} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <span className="font-semibold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
-                        {/* Бэкенд схлопывает подряд идущие heartbeat'ы в один
-                            спан с payload {beats, mins} — рисуем его как
-                            человекочитаемое «на сайте», а не простыню событий. */}
-                        {ev.event_type === 'session_heartbeat' && typeof ev.payload?.mins === 'number'
-                          ? `на сайте ~${String(ev.payload?.mins)} мин`
-                          : ev.event_type}
-                      </span>
-                      {ev.event_path && (
-                        <span className="truncate" style={{
-                          color: 'var(--text-secondary)',
-                          fontFamily: "'IBM Plex Mono', monospace",
-                        }}>
-                          {ev.event_path}
-                        </span>
-                      )}
-                      {ev.payload && !(ev.event_type === 'session_heartbeat') && (
-                        <span className="truncate" style={{ color: 'var(--text-muted)' }}>
-                          {JSON.stringify(ev.payload).slice(0, 80)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center flex-shrink-0 ml-3" style={{ gap: 'var(--sp-2)', color: 'var(--text-muted)' }}>
-                      {ev.device && <span>{ev.device}</span>}
-                      <span>{fmtDateTime(ev.server_ts)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          <ActivityBlocks data={data} pageNames={PAGE_NAMES} />
         </>
       )}
     </div>
   );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// SUBCOMPONENTS
-// ═══════════════════════════════════════════════════════════════════════
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-3 mt-6">
-      <p className="text-xs uppercase" style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}>
-        {title}
-      </p>
-      <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-      {subtitle && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{subtitle}</span>}
-    </div>
-  );
-}
-
-const DETAIL_HINTS = {
-  visits: 'Визит — серия действий. Пауза дольше 30 минут начинает новый визит, как в Яндекс Метрике. Считаются только действия под аккаунтом.',
-  actions: 'Просмотры страниц, показы активов, выборы в поиске, экспорты и другие действия. Служебный сигнал присутствия не считается.',
-  avg: 'Среднее время визита: от первого до последнего действия. Пока человек активен на вкладке, раз в минуту уходит сигнал присутствия. Через 5 минут без действий он останавливается.',
-  total: 'Сумма времени всех визитов за период.',
-} as const;
-
-function SmallStat({
-  label, value, hint, formatter = (v) => v.toLocaleString('ru-RU'),
-}: {
-  label: string; value: number; hint?: string; formatter?: (v: number) => string;
-}) {
-  return (
-    <Card padding="md">
-      <div className="flex items-center gap-2 mb-1" style={{ color: 'var(--text-muted)' }}>
-        <Activity size={12} />
-        <span className="text-xs uppercase" style={{ letterSpacing: '0.1em', fontWeight: 600 }}>{label}</span>
-        {hint && <HelpTooltip icon="help" title={label} content={hint} size={12} />}
-      </div>
-      <div className="font-bold" style={{
-        color: 'var(--text-primary)',
-        fontSize: 'clamp(1.2rem, 2vw, 1.6rem)',
-        fontFamily: "'IBM Plex Mono', monospace",
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-        {formatter(value)}
-      </div>
-    </Card>
-  );
-}
-
-function SimpleTopList({ title, items }: { title: string; items: { label: string; value: number }[] }) {
-  const max = items.length > 0 ? items[0].value : 1;
-  return (
-    <Card padding="md">
-      <p className="text-xs uppercase mb-3" style={{
-        color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600,
-      }}>{title}</p>
-      {items.length === 0 ? (
-        <p className="text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>—</p>
-      ) : (
-        <div className="space-y-1">
-          {items.map((it, i) => (
-            <div key={`${it.label}-${i}`} className="relative">
-              <div className="absolute inset-y-0 left-0 rounded" style={{
-                width: `${(it.value / max) * 100}%`,
-                backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-              }} />
-              <div className="relative flex items-center justify-between py-1.5 px-2">
-                <span className="text-sm truncate" style={{ color: 'var(--text-primary)' }} title={it.label}>
-                  {it.label || '—'}
-                </span>
-                <span className="text-sm font-semibold flex-shrink-0 ml-2" style={{
-                  color: 'var(--text-primary)',
-                  fontFamily: "'IBM Plex Mono', monospace",
-                }}>
-                  {it.value}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
-  return (
-    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full" style={{
-      backgroundColor: 'var(--bg-secondary)',
-      color: 'var(--text-secondary)',
-      border: '1px solid var(--border-color)',
-      gap: 4,
-    }}>
-      {icon}
-      {label}
-    </span>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// FORMATTERS
-// ═══════════════════════════════════════════════════════════════════════
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ru-RU');
-}
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
-}
-function fmtDuration(sec: number): string {
-  if (!sec || sec < 0) return '0с';
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  if (h > 0) return `${h}ч ${m}м`;
-  if (m > 0) return `${m}м ${s}с`;
-  return `${s}с`;
 }

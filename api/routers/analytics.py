@@ -696,6 +696,149 @@ def _loyal_guests(conn, window: dict) -> dict:
     }
 
 
+GUEST_SORTS = {
+    "days": "days DESC, pageviews DESC",
+    "sessions": "sessions DESC, days DESC",
+    "pageviews": "pageviews DESC, days DESC",
+    "last_seen": "last_seen DESC, days DESC",
+    "first_seen": "first_seen ASC, days DESC",
+}
+
+# Сколько гостей показываем за раз. Гостей на порядок больше, чем
+# зарегистрированных, и у каждого агрегируются массивы страниц и тикеров —
+# без потолка запрос на широком периоде становится самым дорогим на странице.
+GUESTS_LIMIT = 300
+
+
+@router.get("/guests")
+def list_guests(
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None, description="Начало периода, YYYY-MM-DD по Москве"),
+    date_to: Optional[str] = Query(None, description="Конец периода включительно, YYYY-MM-DD"),
+    sort: str = Query("days", description="days / sessions / pageviews / last_seen / first_seen"),
+    min_days: int = Query(1, ge=1, le=MAX_RANGE_DAYS, description="Только те, кто заходил в N и более разных дней"),
+    device: str = Query("all", description="all / mobile / desktop / tablet"),
+    user=Depends(require_admin),
+):
+    """Гости за период: браузеры, с которых ни разу не входили в аккаунт.
+
+    Один человек = один visitor_id (localStorage + cookie на год). Визитор,
+    который хоть раз залогинился, исключается целиком — он уже в «Пользователях»,
+    и считать его дважды нельзя.
+
+    min_days — «сколько разных дней заходил». Это и есть мера повторных
+    заходов: 1 — все гости, 2 — вернувшиеся хотя бы раз, 4+ — постоянные.
+
+    Счётчики в counts считаются по всему периоду и не зависят от min_days:
+    они нужны для подписей на кнопках фильтра.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    key = f"admin:guests:v1:{rng['d0']}:{rng['d1']}:{sort}:{min_days}:{device}"
+    return get_or_compute(key, lambda: _compute_guests(rng, sort, min_days, device), ttl=180)
+
+
+def _compute_guests(rng: dict, sort: str, min_days: int, device: str) -> dict:
+    order_by = GUEST_SORTS.get(sort, GUEST_SORTS["days"])
+    params = {
+        "start": rng["start"], "end": rng["end"],
+        "min_days": min_days, "limit": GUESTS_LIMIT,
+    }
+    device_sql = ""
+    if device in ("mobile", "desktop", "tablet"):
+        device_sql = " AND device = :device"
+        params["device"] = device
+
+    with get_engine().connect() as conn:
+        rows = conn.execute(text(f"""
+            WITH logged AS (
+                SELECT DISTINCT visitor_id FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+            ),
+            ev AS (
+                SELECT visitor_id, session_id, event_type, event_path, payload, device,
+                       server_ts,
+                       ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+                FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NULL
+                  AND server_ts >= :start AND server_ts < :end
+                  AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+                  {device_sql}
+            ),
+            agg AS (
+                SELECT visitor_id,
+                       COUNT(DISTINCT day) AS days,
+                       COUNT(DISTINCT session_id) AS sessions,
+                       COUNT(*) FILTER (WHERE event_type = 'pageview') AS pageviews,
+                       COUNT(*) AS events,
+                       MIN(day) AS first_seen,
+                       MAX(day) AS last_seen,
+                       MODE() WITHIN GROUP (ORDER BY device) AS device,
+                       MODE() WITHIN GROUP (ORDER BY payload->'acq'->>'ref')
+                           FILTER (WHERE payload ? 'acq') AS source,
+                       COUNT(*) FILTER (WHERE event_path = '/pricing') AS pricing_views,
+                       ARRAY_AGG(DISTINCT payload->>'secid')
+                           FILTER (WHERE event_type = 'asset_view' AND payload->>'secid' IS NOT NULL) AS assets,
+                       ARRAY_AGG(DISTINCT event_path)
+                           FILTER (WHERE event_type = 'pageview' AND event_path IS NOT NULL) AS pages
+                FROM ev GROUP BY visitor_id
+            )
+            SELECT * FROM agg WHERE days >= :min_days
+            ORDER BY {order_by} LIMIT :limit
+        """), params).fetchall()
+
+        # Счётчики по всему периоду — независимо от min_days, иначе подписи на
+        # кнопках фильтра менялись бы от самого фильтра.
+        counts_row = conn.execute(text(f"""
+            WITH logged AS (
+                SELECT DISTINCT visitor_id FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+            ),
+            d AS (
+                SELECT visitor_id,
+                       COUNT(DISTINCT ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date) AS days
+                FROM analytics_events
+                WHERE visitor_id IS NOT NULL AND user_id IS NULL
+                  AND server_ts >= :start AND server_ts < :end
+                  AND visitor_id NOT IN (SELECT visitor_id FROM logged)
+                  {device_sql}
+                GROUP BY visitor_id
+            )
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE days >= 2), COUNT(*) FILTER (WHERE days >= 4),
+                   COUNT(*) FILTER (WHERE days >= 7), COUNT(*) FILTER (WHERE days >= :min_days)
+            FROM d
+        """), params).fetchone()
+
+        names = _asset_names(conn, sorted({s for r in rows for s in (r.assets or [])}))
+
+    return {
+        "since": GUESTS_SINCE,
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "limit": GUESTS_LIMIT,
+        "counts": {
+            "all": int(counts_row[0] or 0),
+            "d2": int(counts_row[1] or 0),
+            "d4": int(counts_row[2] or 0),
+            "d7": int(counts_row[3] or 0),
+            "matched": int(counts_row[4] or 0),
+        },
+        "guests": [{
+            "visitor_id": r.visitor_id,
+            "days": int(r.days),
+            "sessions": int(r.sessions),
+            "pageviews": int(r.pageviews),
+            "events": int(r.events),
+            "first_seen": r.first_seen.isoformat(),
+            "last_seen": r.last_seen.isoformat(),
+            "device": r.device or "unknown",
+            "source": r.source,
+            "pricing_views": int(r.pricing_views or 0),
+            "assets": [names.get(s, s) for s in (r.assets or [])][:4],
+            "pages": list(r.pages or [])[:6],
+        } for r in rows],
+    }
+
+
 def _compute_stats(rng: dict, segment: str, device: str) -> dict:
     engine = get_engine()
     with engine.begin() as conn:
@@ -1260,6 +1403,259 @@ def _collapse_heartbeats(rows: list) -> list:
     return out
 
 
+@router.get("/guests/{visitor_id}")
+def guest_detail(
+    visitor_id: str,
+    days: int = Query(30, ge=1, le=180),
+    user=Depends(require_admin),
+):
+    """Карточка одного гостя — что смотрит, где и как часто.
+
+    Гость опознаётся по visitor_id (localStorage + cookie на год). Если с этого
+    браузера хоть раз входили в аккаунт, отдаём 404 со ссылкой на пользователя:
+    карточка гостя показала бы его обрезанную половину, а вся его история —
+    в карточке пользователя.
+    """
+    if len(visitor_id) != 36:
+        raise HTTPException(404, "Гость не найден")
+
+    engine = get_engine()
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    params = {"vid": visitor_id, "cutoff": cutoff}
+
+    with engine.connect() as conn:
+        owner = conn.execute(text("""
+            SELECT MAX(user_id) FROM analytics_events
+            WHERE visitor_id = :vid AND user_id IS NOT NULL
+        """), {"vid": visitor_id}).scalar()
+        if owner:
+            raise HTTPException(409, f"Этот браузер принадлежит пользователю {owner}")
+
+        prof = conn.execute(text("""
+            SELECT MIN(server_ts), MAX(server_ts), COUNT(*),
+                   MODE() WITHIN GROUP (ORDER BY device),
+                   MODE() WITHIN GROUP (ORDER BY ip_country)
+            FROM analytics_events
+            WHERE visitor_id = :vid AND user_id IS NULL
+        """), {"vid": visitor_id}).fetchone()
+        if not prof or not prof[2]:
+            raise HTTPException(404, "Гость не найден")
+
+        # Источник первого визита за всю историю, не только за период: откуда
+        # человек пришёл впервые — это про привлечение, а не про последний заход.
+        source = conn.execute(text("""
+            SELECT payload->'acq'->>'ref', payload->'acq'->>'utm_source',
+                   payload->'acq'->>'utm_campaign'
+            FROM analytics_events
+            WHERE visitor_id = :vid AND user_id IS NULL AND payload ? 'acq'
+            ORDER BY server_ts ASC LIMIT 1
+        """), {"vid": visitor_id}).fetchone()
+
+        act = _activity_detail(conn, "visitor_id = :vid AND user_id IS NULL", params, days)
+
+    return {
+        "guest": {
+            "visitor_id": visitor_id,
+            "first_seen_at": prof[0].isoformat() if prof[0] else None,
+            "last_seen_at": prof[1].isoformat() if prof[1] else None,
+            "events_total": int(prof[2] or 0),
+            "device": prof[3],
+            "country": prof[4],
+            "source": source[0] if source else None,
+            "utm_source": source[1] if source else None,
+            "utm_campaign": source[2] if source else None,
+        },
+        **act,
+    }
+
+
+def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
+    """Активность одного «действующего лица» за период: сводка, лента, топы.
+
+    where — условие отбора его событий (`user_id = :id` для зарегистрированного,
+    `visitor_id = :vid AND user_id IS NULL` для гостя), params — его значения
+    плюс :cutoff. Один код на обоих: иначе «визиты» у пользователя и у гостя
+    незаметно разъехались бы в определениях.
+    """
+    # Те же определения, что в сводке /stats. Визит — разрыв больше 30 минут;
+    # старые пульсы без флага act засчитываются только в пределах 30 минут
+    # после настоящего действия; «действия» — события без служебного пульса.
+    summary = conn.execute(text(f"""
+        WITH ue AS (
+            SELECT session_id, event_type, server_ts,
+                   (event_type = 'session_heartbeat' AND (payload->>'act') IS NULL) AS legacy_hb
+            FROM analytics_events
+            WHERE {where} AND server_ts >= :cutoff
+        ),
+        lr AS (
+            SELECT ue.*,
+                   MAX(CASE WHEN NOT legacy_hb THEN server_ts END) OVER (
+                       PARTITION BY session_id ORDER BY server_ts ROWS UNBOUNDED PRECEDING
+                   ) AS last_real
+            FROM ue
+        ),
+        act AS (
+            SELECT event_type, server_ts FROM lr
+            WHERE NOT legacy_hb
+               OR (last_real IS NOT NULL
+                   AND server_ts - last_real <= INTERVAL '{VISIT_GAP_MIN} minutes')
+        ),
+        num AS (
+            SELECT a.*,
+                   SUM(CASE WHEN prev_ts IS NULL
+                              OR server_ts - prev_ts > INTERVAL '{VISIT_GAP_MIN} minutes'
+                            THEN 1 ELSE 0 END) OVER (ORDER BY server_ts ROWS UNBOUNDED PRECEDING) AS vno
+            FROM (SELECT act.*, LAG(server_ts) OVER (ORDER BY server_ts) AS prev_ts FROM act) a
+        ),
+        v AS (
+            SELECT vno, EXTRACT(EPOCH FROM (MAX(server_ts) - MIN(server_ts)))::int AS dur
+            FROM num GROUP BY vno
+        )
+        SELECT
+            (SELECT COUNT(*) FROM act WHERE event_type <> 'session_heartbeat'),
+            (SELECT COUNT(*) FROM v),
+            (SELECT MIN(server_ts) FROM act),
+            (SELECT MAX(server_ts) FROM act),
+            (SELECT COALESCE(AVG(dur), 0)::int FROM v),
+            (SELECT COALESCE(SUM(dur), 0)::int FROM v),
+            (SELECT COUNT(DISTINCT ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date)
+               FROM act)
+    """), params).fetchone()
+
+    # Лента. Сырых событий берём с запасом: heartbeat идёт раз в минуту с каждой
+    # открытой вкладки, и лимит в 100 строк целиком съедался монотонной
+    # простынёй «сидит на сайте». Подряд идущие heartbeat'ы схлопываются ниже.
+    timeline_raw = conn.execute(text(f"""
+        SELECT event_type, event_path, payload, server_ts, ip_country, device, session_id
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+        ORDER BY server_ts DESC
+        LIMIT 2000
+    """), params).fetchall()
+    timeline = _collapse_heartbeats(timeline_raw)[:100]
+
+    top_pages = conn.execute(text(f"""
+        SELECT event_path, COUNT(*) AS views,
+               COUNT(DISTINCT ((server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date) AS days
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+          AND event_type = 'pageview' AND event_path IS NOT NULL
+        GROUP BY event_path
+        ORDER BY views DESC
+        LIMIT 10
+    """), params).fetchall()
+
+    top_instruments = conn.execute(text(f"""
+        SELECT payload->>'secid' AS secid, COUNT(*) AS selects
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+          AND event_type = 'instrument_select'
+          AND payload->>'secid' IS NOT NULL
+        GROUP BY payload->>'secid'
+        ORDER BY selects DESC
+        LIMIT 10
+    """), params).fetchall()
+
+    # Какие активы открывал — asset_view ловит и пикер, и переход по ссылке,
+    # в отличие от instrument_select, который срабатывает только на поиске.
+    top_assets = conn.execute(text(f"""
+        SELECT payload->>'secid' AS secid, COUNT(*) AS views,
+               MAX(server_ts) AS last_ts
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+          AND event_type = 'asset_view'
+          AND payload->>'secid' IS NOT NULL
+        GROUP BY payload->>'secid'
+        ORDER BY views DESC
+        LIMIT 15
+    """), params).fetchall()
+
+    # Экспорты: нормализуем алиасы indicator к канону (как в /stats), чтобы
+    # один индикатор не двоился (open_interest→oi, fund/funds_money→funds).
+    top_exports = conn.execute(text(f"""
+        WITH normalized AS (
+            SELECT {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
+            FROM analytics_events
+            WHERE {where} AND server_ts >= :cutoff
+              AND event_type = 'chart_export'
+              AND payload->>'indicator' IS NOT NULL
+        )
+        SELECT indicator, COUNT(*) AS count
+        FROM normalized
+        GROUP BY indicator
+        ORDER BY count DESC
+        LIMIT 10
+    """), params).fetchall()
+
+    devices = conn.execute(text(f"""
+        SELECT device, COUNT(DISTINCT session_id) AS sessions
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff AND device IS NOT NULL
+        GROUP BY device ORDER BY sessions DESC
+    """), params).fetchall()
+
+    countries = conn.execute(text(f"""
+        SELECT ip_country, COUNT(DISTINCT session_id) AS sessions
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff AND ip_country IS NOT NULL
+        GROUP BY ip_country ORDER BY sessions DESC
+    """), params).fetchall()
+
+    # По каким дням он приходит — видно ритуал: будни перед открытием торгов
+    # или разовые заходы. 0 = воскресенье, как в PG.
+    by_dow = conn.execute(text(f"""
+        SELECT EXTRACT(DOW FROM (server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::int AS dow,
+               COUNT(*) FILTER (WHERE event_type = 'pageview') AS views
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+        GROUP BY dow ORDER BY dow
+    """), params).fetchall()
+
+    # В какие часы по Москве — тот же смысл: утро перед рынком или вечер.
+    by_hour = conn.execute(text(f"""
+        SELECT EXTRACT(HOUR FROM (server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::int AS hour,
+               COUNT(*) FILTER (WHERE event_type = 'pageview') AS views
+        FROM analytics_events
+        WHERE {where} AND server_ts >= :cutoff
+        GROUP BY hour ORDER BY hour
+    """), params).fetchall()
+
+    names = _asset_names(conn, sorted({r[0] for r in top_assets} | {r[0] for r in top_instruments}))
+
+    return {
+        "summary": {
+            "period_days": days,
+            "events": int(summary[0]) if summary else 0,
+            "sessions": int(summary[1]) if summary else 0,
+            "first_active_ts": summary[2].isoformat() if summary and summary[2] else None,
+            "last_active_ts": summary[3].isoformat() if summary and summary[3] else None,
+            "avg_session_sec": int(summary[4]) if summary and summary[4] else 0,
+            "total_time_sec": int(summary[5]) if summary and summary[5] else 0,
+            "active_days": int(summary[6]) if summary and summary[6] else 0,
+        },
+        "timeline": [
+            {
+                "event_type": t[0], "event_path": t[1], "payload": t[2],
+                "server_ts": t[3].isoformat(), "country": t[4],
+                "device": t[5], "session_id": t[6],
+            } for t in timeline
+        ],
+        "top_pages": [{"path": r[0], "views": int(r[1]), "days": int(r[2])} for r in top_pages],
+        "top_instruments": [
+            {"secid": r[0], "name": names.get(r[0]), "selects": int(r[1])} for r in top_instruments
+        ],
+        "top_assets": [
+            {"secid": r[0], "name": names.get(r[0]), "views": int(r[1]),
+             "last_ts": r[2].isoformat() if r[2] else None} for r in top_assets
+        ],
+        "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
+        "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
+        "countries": [{"country": r[0], "sessions": int(r[1])} for r in countries],
+        "by_dow": [{"dow": int(r[0]), "views": int(r[1] or 0)} for r in by_dow],
+        "by_hour": [{"hour": int(r[0]), "views": int(r[1] or 0)} for r in by_hour],
+    }
+
+
 @router.get("/users/{user_id}")
 def user_detail(
     user_id: int,
@@ -1270,8 +1666,11 @@ def user_detail(
        - basic info + subscriptions
        - summary metrics (sessions/events/avg_session/total_time)
        - activity timeline (последние 100 events)
-       - top pages / instruments / exports
-       - device + country distribution
+       - top pages / instruments / assets / exports
+       - device + country distribution, ритм по дням недели и часам
+
+    Всё, кроме профиля и подписок, считает _activity_detail — тот же код, что
+    у карточки гостя.
     """
     engine = get_engine()
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -1296,121 +1695,7 @@ def user_detail(
             ORDER BY created_at DESC
         """), {"id": user_id}).fetchall()
 
-        # Summary: те же определения, что в сводке /stats. Визит — разрыв
-        # больше 30 минут; старые пульсы без флага act засчитываются только
-        # в пределах 30 минут после настоящего действия; «действия» — события
-        # без служебного пульса.
-        summary = conn.execute(text(f"""
-            WITH ue AS (
-                SELECT session_id, event_type, server_ts,
-                       (event_type = 'session_heartbeat' AND (payload->>'act') IS NULL) AS legacy_hb
-                FROM analytics_events
-                WHERE user_id = :id AND server_ts >= :cutoff
-            ),
-            lr AS (
-                SELECT ue.*,
-                       MAX(CASE WHEN NOT legacy_hb THEN server_ts END) OVER (
-                           PARTITION BY session_id ORDER BY server_ts ROWS UNBOUNDED PRECEDING
-                       ) AS last_real
-                FROM ue
-            ),
-            act AS (
-                SELECT event_type, server_ts FROM lr
-                WHERE NOT legacy_hb
-                   OR (last_real IS NOT NULL
-                       AND server_ts - last_real <= INTERVAL '{VISIT_GAP_MIN} minutes')
-            ),
-            num AS (
-                SELECT a.*,
-                       SUM(CASE WHEN prev_ts IS NULL
-                                  OR server_ts - prev_ts > INTERVAL '{VISIT_GAP_MIN} minutes'
-                                THEN 1 ELSE 0 END) OVER (ORDER BY server_ts ROWS UNBOUNDED PRECEDING) AS vno
-                FROM (SELECT act.*, LAG(server_ts) OVER (ORDER BY server_ts) AS prev_ts FROM act) a
-            ),
-            v AS (
-                SELECT vno, EXTRACT(EPOCH FROM (MAX(server_ts) - MIN(server_ts)))::int AS dur
-                FROM num GROUP BY vno
-            )
-            SELECT
-                (SELECT COUNT(*) FROM act WHERE event_type <> 'session_heartbeat'),
-                (SELECT COUNT(*) FROM v),
-                (SELECT MIN(server_ts) FROM act),
-                (SELECT MAX(server_ts) FROM act),
-                (SELECT COALESCE(AVG(dur), 0)::int FROM v),
-                (SELECT COALESCE(SUM(dur), 0)::int FROM v)
-        """), {"id": user_id, "cutoff": cutoff}).fetchone()
-        avg_session = (summary[4], summary[5]) if summary else (0, 0)
-
-        # Activity timeline. Сырых событий берём с запасом: heartbeat идёт раз в
-        # минуту с каждой открытой вкладки, и лимит в 100 строк целиком съедался
-        # монотонной простынёй «сидит на сайте». Подряд идущие heartbeat'ы ниже
-        # схлопываются в один спан (см. _collapse_heartbeats), 100 — уже после.
-        timeline_raw = conn.execute(text("""
-            SELECT event_type, event_path, payload, server_ts, ip_country, device, session_id
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff
-            ORDER BY server_ts DESC
-            LIMIT 2000
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
-        timeline = _collapse_heartbeats(timeline_raw)[:100]
-
-        # Top pages
-        top_pages = conn.execute(text("""
-            SELECT event_path, COUNT(*) AS views
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff
-              AND event_type = 'pageview' AND event_path IS NOT NULL
-            GROUP BY event_path
-            ORDER BY views DESC
-            LIMIT 10
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
-
-        # Top instruments selected
-        top_instruments = conn.execute(text("""
-            SELECT payload->>'secid' AS secid, COUNT(*) AS selects
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff
-              AND event_type = 'instrument_select'
-              AND payload->>'secid' IS NOT NULL
-            GROUP BY payload->>'secid'
-            ORDER BY selects DESC
-            LIMIT 10
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
-
-        # Top exports — нормализуем алиасы indicator к канону (как в /stats),
-        # чтобы один индикатор не двоился (open_interest→oi, fund/funds_money→funds).
-        top_exports = conn.execute(text(f"""
-            WITH normalized AS (
-                SELECT {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
-                FROM analytics_events
-                WHERE user_id = :id AND server_ts >= :cutoff
-                  AND event_type = 'chart_export'
-                  AND payload->>'indicator' IS NOT NULL
-            )
-            SELECT indicator, COUNT(*) AS count
-            FROM normalized
-            GROUP BY indicator
-            ORDER BY count DESC
-            LIMIT 10
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
-
-        # Devices
-        devices = conn.execute(text("""
-            SELECT device, COUNT(DISTINCT session_id) AS sessions
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff AND device IS NOT NULL
-            GROUP BY device
-            ORDER BY sessions DESC
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
-
-        # Countries
-        countries = conn.execute(text("""
-            SELECT ip_country, COUNT(DISTINCT session_id) AS sessions
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff AND ip_country IS NOT NULL
-            GROUP BY ip_country
-            ORDER BY sessions DESC
-        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+        act = _activity_detail(conn, "user_id = :id", {"id": user_id, "cutoff": cutoff}, days)
 
         # «Был(а) в сети» без событий: у consent-отказников analytics_events
         # пуст, но входы и ротация refresh-токенов есть (см. список юзеров).
@@ -1454,29 +1739,5 @@ def user_detail(
                 "created_at": s[10].isoformat() if s[10] else None,
             } for s in subs
         ],
-        "summary": {
-            "period_days": days,
-            "events": int(summary[0]) if summary else 0,
-            "sessions": int(summary[1]) if summary else 0,
-            "first_active_ts": summary[2].isoformat() if summary and summary[2] else None,
-            "last_active_ts": summary[3].isoformat() if summary and summary[3] else None,
-            "avg_session_sec": int(avg_session[0]) if avg_session and avg_session[0] else 0,
-            "total_time_sec": int(avg_session[1]) if avg_session and avg_session[1] else 0,
-        },
-        "timeline": [
-            {
-                "event_type": t[0],
-                "event_path": t[1],
-                "payload": t[2],
-                "server_ts": t[3].isoformat(),
-                "country": t[4],
-                "device": t[5],
-                "session_id": t[6],
-            } for t in timeline
-        ],
-        "top_pages": [{"path": r[0], "views": int(r[1])} for r in top_pages],
-        "top_instruments": [{"secid": r[0], "selects": int(r[1])} for r in top_instruments],
-        "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
-        "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
-        "countries": [{"country": r[0], "sessions": int(r[1])} for r in countries],
+        **act,
     }
