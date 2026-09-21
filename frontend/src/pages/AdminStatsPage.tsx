@@ -23,13 +23,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import SimpleChart from '../components/SimpleChart';
-import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
@@ -44,6 +43,7 @@ import {
   listAdminUsers,
   listAdminGuests,
   getSegment,
+  getAudience,
   getAlertsStats,
   getMetrica,
   getGrowth,
@@ -53,13 +53,13 @@ import type {
   AnalyticsStats,
   AdminUser,
   SegmentReport,
+  AudienceReport,
   AlertsStats,
   AdminRange,
   MetricaReport,
   MetricaRow,
   MetricaMetric,
   MetricaSummary,
-  MetricaBySource,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,6 +75,8 @@ const METRIC_HINTS = {
     + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
     + '5) Вошедших и админов Метрика узнаёт по номеру аккаунта, который получает с 11.09.2026, и только в браузерах, где после этого входили в аккаунт. Наш трекер знает всех вошедших. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
+  audience:
+    'Сколько людей приходило на сайт по дням за всю доступную историю, сколько из них было впервые и сколько зарегистрировалось. Человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке (для данных до 11.09.2026). «Впервые» считается по всей истории, а не по выбранному периоду.',
   metrica_section:
     'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками. День 20.06.2026 исключён целиком: в тот день была купленная накрутка.',
   funnel:
@@ -450,8 +452,20 @@ export default function AdminStatsPage() {
         </Link>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-end mb-2" style={{ gap: 'var(--sp-2)' }}>
+      {/* Фильтры едут вместе со страницей: период и срез нужны в любой точке
+          прокрутки, а не только наверху. */}
+      <div
+        className="flex flex-wrap items-end mb-2"
+        style={{
+          gap: 'var(--sp-2)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          paddingTop: 'var(--sp-2)',
+          paddingBottom: 'var(--sp-2)',
+          backgroundColor: 'var(--bg-primary)',
+        }}
+      >
         <Dropdown<Preset>
           options={PRESET_OPTIONS}
           value={preset}
@@ -542,11 +556,10 @@ export default function AdminStatsPage() {
       <div>
       {group === 'audience' && (
         <>
-        {/* ═══ Воронка ═══ */}
-        <Section title="Воронка" hint={METRIC_HINTS.funnel}>
-          <div style={dimStyle(growthDim)}>
-            <FunnelBlock growth={growth} loading={growthLoading} />
-          </div>
+        {/* Аудитория за всю историю. Воронка отсюда убрана: её четыре числа
+            дословно повторяли трафик ниже. */}
+        <Section title="Сколько людей и откуда" hint={METRIC_HINTS.audience}>
+          <AudienceBlock />
         </Section>
 
         {/* ═══ Трафик из Яндекс Метрики ═══ */}
@@ -619,17 +632,6 @@ export default function AdminStatsPage() {
                 prev={formatDuration(p.avg_visit_sec)}
               />
               <SummaryCard
-                icon={<LogOut size={16} />}
-                label="Отказы"
-                hint={METRIC_HINTS.bounce}
-                value={s.bounce_pct === null ? '—' : `${fmtNum(s.bounce_pct)}%`}
-                delta={s.delta_bounce_pp === null ? null : {
-                  text: `${s.delta_bounce_pp >= 0 ? '+' : '−'}${fmtNum(Math.abs(s.delta_bounce_pp))} п.п.`,
-                  good: s.delta_bounce_pp <= 0,
-                }}
-                prev={p.bounce_pct === null ? '—' : `${fmtNum(p.bounce_pct)}%`}
-              />
-              <SummaryCard
                 icon={<Repeat size={16} />}
                 label="Вернулись"
                 hint={METRIC_HINTS.returning}
@@ -662,6 +664,7 @@ export default function AdminStatsPage() {
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}
+          showWatermark={false}
                 showNavigator={false}
                 hideTime={true}
                 height={320}
@@ -859,66 +862,6 @@ const fmtShortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateStr
 const NUM_FONT = "'IBM Plex Mono', monospace";
 
 /** Воронка: от посетителя до оплаты, у каждого шага — доля от предыдущего. */
-function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) {
-    return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={116} rounded="lg" />)}
-      </div>
-    );
-  }
-  if (!growth) {
-    return <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>Не удалось посчитать воронку.</p></Card>;
-  }
-  const f = growth.funnel;
-  const steps: { label: string; value: number | null; share: string | null; note: string }[] = [
-    { label: 'Посетители', value: f.visitors, share: null, note: f.visitors === null ? 'Метрика не подключена' : 'разные люди за период' },
-    { label: 'Зарегистрировались', value: f.registered, share: shareText(f.registered, f.visitors), note: 'от посетителей' },
-    {
-      label: 'Вернулись', value: f.returned, share: shareText(f.returned, f.can_return),
-      note: f.can_return === 0 ? 'сутки ещё не прошли'
-        : f.can_return < f.registered ? `из ${f.can_return}, у кого прошли сутки` : 'от зарегистрированных',
-    },
-    { label: 'Оплатили', value: f.paid, share: shareText(f.paid, f.registered), note: 'от зарегистрированных' },
-  ];
-  return (
-    <div className="space-y-2" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {steps.map((s) => (
-          <Card key={s.label} padding="md" className="md:p-5">
-            <div className="text-xs uppercase mb-2" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-              {s.label}
-            </div>
-            <div
-              className="font-bold"
-              style={{
-                color: 'var(--text-primary)', fontSize: 'clamp(1.5rem, 2.4vw, 2rem)', letterSpacing: '-0.02em',
-                fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {s.value === null ? '—' : <TweenedValue value={s.value} format={fmtInt} />}
-            </div>
-            <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              {s.share && <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: NUM_FONT }}>{s.share} </span>}
-              {s.note}
-            </div>
-          </Card>
-        ))}
-      </div>
-      {f.invite > 0 && (
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Ещё {f.invite} из зарегистрированных за период получили Pro по инвайту — в «Оплатили» они не входят.
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Когорты: все, кто зарегистрировался в месяце, и что с ними сейчас. */
-/** Удержание когортами — таблица как в отчёте Метрики: строка это месяц
- *  регистрации, колонка — сколько месяцев спустя, заливка клетки тем гуще,
- *  чем выше доля вернувшихся. Проценты, а не абсолютные числа: когорты разного
- *  размера иначе несопоставимы. */
 function RetentionMatrix({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={260} rounded="lg" />;
   const ret = growth?.retention;
@@ -997,6 +940,112 @@ function RetentionMatrix({ growth, loading }: { growth: GrowthReport | null; loa
   );
 }
 
+/** Наш же домен в реферере — это переход между страницами сайта, а не источник. */
+const OWN_HOSTS = new Set(['framedata.ru', 'www.framedata.ru', 'xn--80aklbnczmv.xn--p1ai', 'таймфрейм.рф']);
+const srcLabel = (s: string) =>
+  OWN_HOSTS.has(s) ? 'переход внутри сайта'
+  : s === 'oauth.yandex.ru' ? 'вход через Яндекс'
+  : s;
+
+/** Аудитория за всю историю: сколько людей приходило, сколько впервые и
+ *  сколько зарегистрировалось. Три вопроса — три серии, без глубины и отказов. */
+function AudienceBlock() {
+  const [data, setData] = useState<AudienceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [mode, setMode] = usePersistedState<'people' | 'new' | 'reg'>('frame:admin:aud:mode', 'people');
+
+  useEffect(() => {
+    setLoading(true);
+    setFailed(false);
+    getAudience().then(setData).catch(() => setFailed(true)).finally(() => setLoading(false));
+  }, []);
+
+  if (loading && !data) return <Skeleton height={340} rounded="lg" />;
+  if (failed || !data) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--danger)' }}>Не удалось загрузить</p>
+      </Card>
+    );
+  }
+  const d = data.days;
+  if (d.length < 2) {
+    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Данных пока мало</p></Card>;
+  }
+
+  const series = {
+    people: { main: d.map(x => x.people), mainLabel: 'Людей',
+              sec: d.map(x => x.with_account), secLabel: 'Из них с аккаунтом' },
+    new:    { main: d.map(x => x.newcomers), mainLabel: 'Впервые',
+              sec: d.map(x => x.returning), secLabel: 'Вернулись' },
+    reg:    { main: d.map(x => x.registrations), mainLabel: 'Регистраций',
+              sec: null, secLabel: '' },
+  }[mode];
+
+  const total = (k: 'people' | 'newcomers' | 'registrations') => d.reduce((a, x) => a + x[k], 0);
+  const last30 = d.slice(-30);
+  const avg = Math.round(last30.reduce((a, x) => a + x.people, 0) / Math.max(last30.length, 1));
+
+  return (
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <SummaryCard icon={<Users size={16} />} label="Людей за всё время" value={total('people')}
+                     sub={`с ${data.since ? fmtShortDay(data.since) : '—'}`} />
+        <SummaryCard icon={<Zap size={16} />} label="Впервые" value={total('newcomers')}
+                     sub="первый заход на сайт" />
+        <SummaryCard icon={<Activity size={16} />} label="В среднем за день" value={avg}
+                     sub="последние 30 дней" />
+        <SummaryCard icon={<Gift size={16} />} label="Регистраций" value={data.totals.registrations}
+                     sub="всего аккаунтов" />
+      </div>
+
+      <Card padding="md" className="md:p-5">
+        <div className="flex flex-wrap gap-2 mb-4">
+          <SegmentedControl<'people' | 'new' | 'reg'>
+            options={[
+              { key: 'people', label: 'Сколько пришло' },
+              { key: 'new', label: 'Впервые и вернулись' },
+              { key: 'reg', label: 'Регистрации' },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+        </div>
+        <SimpleChart
+          key={mode}
+          data={d.map((x, i) => ({ time: x.date, value: series.main[i] }))}
+          secondaryData={series.sec ? d.map((x, i) => ({ time: x.date, value: series.sec![i] })) : undefined}
+          showSecondary={!!series.sec}
+          primaryColor="var(--accent)"
+          secondaryColor="var(--accent-secondary)"
+          primaryLabel={series.mainLabel}
+          secondaryLabel={series.secLabel}
+          formatValue={(v) => Math.round(v).toString()}
+          formatSecondaryAxis={(v) => Math.round(v).toString()}
+          showValueHeader={false}
+          legendPosition="top"
+          showDownloadButton={false}
+          showWatermark={false}
+          showNavigator={false}
+          hideTime
+          defaultHistogram={mode === 'reg'}
+          height={300}
+          chartPadding={{ right: 80 }}
+        />
+      </Card>
+
+      <TopList
+        title="Откуда приходят"
+        columns={['людей']}
+        items={data.sources.map(s => ({ label: srcLabel(s.source), value: s.people }))}
+        loading={false}
+        emptyText="Источники ещё не собраны"
+      />
+    </div>
+  );
+}
+
 function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
   if (!growth || growth.cohorts.length === 0) {
@@ -1072,6 +1121,7 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
             showValueHeader={false}
             legendPosition="top"
             showDownloadButton={false}
+          showWatermark={false}
             showNavigator={false}
             hideTime
             defaultHistogram
@@ -1240,11 +1290,10 @@ function metricaDelta(def: MetricaMetricDef, cur: number, prev: number | undefin
   return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%`, good, up: diff >= 0 };
 }
 
-/** Показатели Метрики переключателями, как на её сводке, и график выбранного по источникам. */
-function MetricaTraffic({ cur, prev, bySource, error }: {
+/** Показатели Метрики переключателями, как на её сводке. */
+function MetricaTraffic({ cur, prev, error }: {
   cur: MetricaSummary;
   prev: MetricaSummary | null;
-  bySource: MetricaBySource | null;
   error?: string;
 }) {
   const [picked, setPicked] = usePersistedState<MetricaMetric>('frame:admin-stats:metrica-metric', 'visits');
@@ -1314,20 +1363,8 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
           );
         })}
       </div>
-      {bySource && bySource.dates.length > 0 ? (
-        <MetricaSourcesChart
-          data={bySource}
-          metric={def.key}
-          label={def.label}
-          hint={METRIC_HINTS.metrica_chart}
-          totalValue={cur[def.key]}
-          format={def.format}
-          formatAxis={def.formatAxis}
-        />
-      ) : (
-        <p className="text-sm" style={{ color: error ? 'var(--danger)' : 'var(--text-muted)' }}>
-          {error ? `График не пришёл: ${error}` : 'Нет данных за период'}
-        </p>
+      {error && (
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>Данные не пришли: {error}</p>
       )}
     </Card>
   );
@@ -1392,27 +1429,10 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
 
   return (
     <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      <div className="flex flex-wrap gap-2">
-        <a
-          href={`https://metrika.yandex.ru/dashboard?id=${counter}`}
-          target="_blank" rel="noreferrer"
-          className="editorial-press rounded-full inline-flex items-center text-xs"
-          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
-        >
-          <ExternalLink size={12} /> Открыть Метрику
-        </a>
-        <a
-          href={`https://metrika.yandex.ru/stat/visor?id=${counter}`}
-          target="_blank" rel="noreferrer"
-          className="editorial-press rounded-full inline-flex items-center text-xs"
-          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
-        >
-          <ExternalLink size={12} /> Вебвизор
-        </a>
-      </div>
+      
 
       {cur ? (
-        <MetricaTraffic cur={cur} prev={prev ?? null} bySource={report.by_source ?? null} error={err.by_source} />
+        <MetricaTraffic cur={cur} prev={prev ?? null} error={err.summary} />
       ) : (
         <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
       )}

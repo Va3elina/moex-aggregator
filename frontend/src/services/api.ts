@@ -1447,6 +1447,31 @@ export async function getSegment(opts: AdminRange & SegmentParams): Promise<Segm
 }
 
 /** Человек за период: аккаунт, иначе браузер, иначе вкладка (старые данные). */
+/** Аудитория по дням за всю доступную историю. */
+export interface AudienceReport {
+  since: string | null;
+  days: {
+    date: string;
+    people: number;
+    /** Впервые на сайте — считается по всей истории, а не по периоду. */
+    newcomers: number;
+    returning: number;
+    with_account: number;
+    registrations: number;
+  }[];
+  sources: { source: string; people: number }[];
+  totals: { people: number; registrations: number };
+}
+
+export async function getAudience(): Promise<AudienceReport> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/audience`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch audience');
+  }
+  return response.json();
+}
+
 export interface AdminPerson {
   ident: string;
   user_id: number | null;
