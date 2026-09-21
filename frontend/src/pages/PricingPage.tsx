@@ -809,28 +809,29 @@ function ConsentModal({
             fontWeight: 800,
             letterSpacing: '-0.02em',
             color: 'var(--text-primary)',
-            marginBottom: '0.4rem',
+            // на развилке подзаголовка нет — заголовку нужен полный отступ
+            marginBottom: step === 'method' ? '1.25rem' : '0.4rem',
             paddingRight: '2rem',
           }}
         >
           {step === 'method'
-            ? t('Как оплатить')
+            ? t('Выберите способ оплаты')
             : (trialInfo ? t('Бесплатный пробный период') : t('Подтверждение'))}
         </h2>
-        <p
-          style={{
-            fontSize: 'var(--fs-sm, 13px)',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.5,
-            marginBottom: trialInfo ? '0.75rem' : '1.25rem',
-          }}
-        >
-          {step === 'method'
-            ? t('Выберите способ оплаты:')
-            : (trialInfo
-                ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
-                : t('Перед оплатой подтвердите согласие со следующими условиями:'))}
-        </p>
+        {step !== 'method' && (
+          <p
+            style={{
+              fontSize: 'var(--fs-sm, 13px)',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+              marginBottom: trialInfo ? '0.75rem' : '1.25rem',
+            }}
+          >
+            {trialInfo
+              ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
+              : t('Перед оплатой подтвердите согласие со следующими условиями:')}
+          </p>
+        )}
 
         {step === 'method' ? (
           <>
@@ -850,25 +851,12 @@ function ConsentModal({
               onClick={onConfirmSbp}
               disabled={isLoading}
               className="w-full flex items-center gap-3 rounded-xl border p-4 mt-3 transition-colors disabled:opacity-50"
-              style={{ borderColor: 'var(--accent)', background: 'transparent' }}
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
             >
               <PayMark kind="sbp" />
-              <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                 {isLoading ? t('Создаём…') : t('Счёт по СБП')}
               </span>
-            </button>
-
-            <button
-              onClick={() => setStep('consent')}
-              disabled={isLoading}
-              className="w-full py-3 mt-4 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
-              style={{
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-secondary)',
-                background: 'transparent',
-              }}
-            >
-              {t('Назад')}
             </button>
           </>
         ) : (
