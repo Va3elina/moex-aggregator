@@ -216,6 +216,15 @@ DAILY_UPDATE_MINUTE = 10
 FUNDS_EARLY_UPDATE_HOUR = 14
 FUNDS_EARLY_UPDATE_MINUTE = 30
 
+# Утренний прогон funds — добирает ПРОШЛЫЙ торговый день. Вечерние прогоны
+# (14:30/18:00-cron/19:10) видят день T неполным: часть УК отдаёт NAV в Cbonds
+# уже после 19:10, а в понедельник пятничные NAV к воскресному weekend-catchup
+# ещё не готовы. Без утреннего слота эти хвосты висят на сайте до 14:30
+# следующего дня (18.09 пришёл 36/50 фондов только в 14:30 21.09).
+# UPSERT на (fund_id, trade_date) → повторный прогон безопасен.
+FUNDS_MORNING_UPDATE_HOUR = 9
+FUNDS_MORNING_UPDATE_MINUTE = 30
+
 # Ранний прогон indices — MOEX публикует history по MCFTR/EUR_RUB__TOM только
 # ночью (T+1), вечерний 19:10 их день T не видит (остальные серии успевают —
 # либо history к 19:10, либо use_candles). Утренний прогон добирает вчерашние
@@ -612,6 +621,7 @@ class MainOrchestrator:
         self.last_hourly_aggregate = None
         self.last_daily_update = None
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
+        self.last_funds_morning_update = None  # утренний funds-only прогон в 09:30 (догон прошлого дня)
         self.last_indices_early_update = None  # ранний indices-прогон в 09:00 (T+1-публикации ISS)
         self.last_commodity_update = None
         # Карточки и граф владения ведут свои отметки: у них своё расписание,
@@ -1578,6 +1588,7 @@ class MainOrchestrator:
         log.info(f"    5м цикл: XX:00:{BUFFER_5MIN:02d}, XX:05:{BUFFER_5MIN:02d}...")
         log.info(f"    Агрегация: XX:02:00")
         log.info(f"    Commodity: {COMMODITY_UPDATE_HOUR:02d}:{COMMODITY_UPDATE_MINUTE:02d}")
+        log.info(f"    Funds morning: {FUNDS_MORNING_UPDATE_HOUR:02d}:{FUNDS_MORNING_UPDATE_MINUTE:02d}")
         log.info(f"    Funds early: {FUNDS_EARLY_UPDATE_HOUR:02d}:{FUNDS_EARLY_UPDATE_MINUTE:02d}")
         log.info(f"    Daily: {DAILY_UPDATE_HOUR:02d}:{DAILY_UPDATE_MINUTE:02d}")
         log.info(f"  Календарь MOEX: {'✓ загружен' if CALENDAR_AVAILABLE else '✗ не найден'}")
@@ -1798,6 +1809,18 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний funds update...")
                     await self.run_funds_update()
                     self.last_funds_early_update = slot_day
+
+                # === Утренний funds-прогон (09:30 МСК) ===
+                # Догоняет прошлый торговый день: NAV, доехавшие в Cbonds после
+                # вечерних прогонов, и пятничные строки в понедельник (в выходные
+                # оркестратор фонды не трогает). Скрипт идёт с --force, поэтому
+                # прогон не гейтится торговым днём — он и нужен ПОСЛЕ выходных.
+                if (slot_day != self.last_funds_morning_update and
+                        now.hour == FUNDS_MORNING_UPDATE_HOUR and
+                        now.minute >= FUNDS_MORNING_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Утренний funds update...")
+                    await self.run_funds_update()
+                    self.last_funds_morning_update = slot_day
 
                 # === Ранний indices-прогон (09:00 МСК) ===
                 # MCFTR/EUR_RUB__TOM публикуются в ISS history ночью (T+1) —
