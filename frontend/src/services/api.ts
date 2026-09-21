@@ -1292,6 +1292,8 @@ export interface GrowthReport {
     /** Столько же гостей было за такой же предыдущий период. */
     prev_total: number;
     by_day: { date: string; guests: number }[];
+    /** Сколько гостей заходило ровно в N разных дней. */
+    days_hist: { days: number; guests: number }[];
     days2: number;
     days3: number;
     days7: number;

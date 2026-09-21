@@ -729,19 +729,18 @@ export default function AdminStatsPage() {
         <>
       {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
       <div style={dimStyle(growthDim)}>
-        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
-          <RetentionMatrix growth={growth} loading={growthLoading} />
+        <Section title="Продолжают ли заходить после регистрации" hint={METRIC_HINTS.cohorts}>
+          <RetentionCurves growth={growth} loading={growthLoading} />
         </Section>
 
-        <Section title="Что стало с когортами" hint={METRIC_HINTS.cohorts}>
-          <CohortsBlock growth={growth} loading={growthLoading} />
+        <Section title="Что стало с каждым месяцем регистраций" hint={METRIC_HINTS.cohorts}>
+          <CohortFunnels growth={growth} loading={growthLoading} />
         </Section>
+
         <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
           <LoyalGuestsBlock growth={growth} loading={growthLoading} />
         </Section>
-        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
-          <FirstSourcesBlock growth={growth} loading={growthLoading} />
-        </Section>
+        {/* «Откуда пришли зарегистрированные» убрано: источники живут в «Аудитории». */}
       </div>
 
         </>
@@ -790,96 +789,74 @@ export default function AdminStatsPage() {
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Доля part от whole: «6%», для малых — с одним знаком («0,4%»). */
-function shareText(part: number, whole: number | null | undefined): string | null {
-  if (!whole) return null;
-  const v = (part / whole) * 100;
-  return `${v > 0 && v < 10 ? v.toFixed(1).replace('.', ',') : Math.round(v)}%`;
-}
 
-const MONTH_NAMES_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
-const fmtMonth = (ym: string) => {
-  const [y, m] = ym.split('-').map(Number);
-  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
-};
 const fmtShortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 const NUM_FONT = "'IBM Plex Mono', monospace";
 
-/** Воронка: от посетителя до оплаты, у каждого шага — доля от предыдущего. */
-function RetentionMatrix({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) return <Skeleton height={260} rounded="lg" />;
+const COHORT_COLORS = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-5)', 'var(--viz-6)', 'var(--viz-7)', 'var(--viz-8)'];
+const MONTHS_RU = ['', 'январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const cohortName = (m: string) => { const [y, mm] = m.split('-'); return `${MONTHS_RU[+mm]} ${y.slice(2)}`; };
+
+/** Удержание кривыми: у каждой когорты своя линия — какая доля зарегистрировавшихся
+ *  в этом месяце заходила через месяц, два, три. Линия, которая падает медленнее,
+ *  — когорта, которая держится лучше. */
+function RetentionCurves({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={300} rounded="lg" />;
   const ret = growth?.retention;
-  if (!ret || !ret.cohorts?.length) {
-    return (
-      <Card padding="md">
-        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
-      </Card>
-    );
+  // Когорты из одного-двух человек дают линии 0–100% и только путают.
+  const cohorts = (ret?.cohorts ?? []).filter(c => c.size >= 5 && c.cells.length > 0);
+  if (!ret || cohorts.length === 0) {
+    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока мало</p></Card>;
   }
-  const cols = Array.from({ length: (ret.max_n ?? 0) + 1 }, (_, i) => i);
-  const head: React.CSSProperties = {
-    padding: '0 8px 8px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em',
-    color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap',
-  };
-  const monthName = (m: string) => {
-    const [y, mm] = m.split('-');
-    return `${['','янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][+mm]} ${y.slice(2)}`;
-  };
+  const maxN = Math.max(ret.max_n ?? 0, 1);
+  const W = 720, H = 260, L = 44, R = 16, T = 14, B = 34;
+  const X = (n: number) => L + (n / maxN) * (W - L - R);
+  const Y = (pct: number) => T + (1 - pct / 100) * (H - T - B);
+  const best = [...cohorts].filter(c => c.cells.length > 1)
+    .sort((a, b) => (b.cells[1]?.pct ?? 0) - (a.cells[1]?.pct ?? 0))[0];
+
   return (
     <Card padding="md" className="md:p-5">
-      <div className="overflow-x-auto" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-        <table className="w-full" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 520 }}>
-          <thead>
-            <tr>
-              <th style={{ ...head, textAlign: 'left' }}>Когорта</th>
-              <th style={{ ...head, textAlign: 'right' }}>Людей</th>
-              {cols.map(n => (
-                <th key={n} style={{ ...head, textAlign: 'center' }}>
-                  {n === 0 ? 'в тот же месяц' : `+${n} мес`}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ret.cohorts.map(c => (
-              <tr key={c.month} style={{ borderTop: '1px solid color-mix(in srgb, var(--border-color) 25%, transparent)' }}>
-                <td style={{ padding: '7px 8px', fontSize: 13, whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
-                  {monthName(c.month)}
-                </td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: NUM_FONT, fontSize: 13, fontWeight: 600 }}>
-                  {c.size}
-                </td>
-                {cols.map(n => {
-                  const cell = c.cells.find(x => x.n === n);
-                  if (!cell) {
-                    // Месяц ещё не наступил для этой когорты — это не ноль.
-                    return <td key={n} style={{ padding: 3 }} />;
-                  }
-                  return (
-                    <td key={n} style={{ padding: 3, textAlign: 'center' }}>
-                      <div
-                        title={`${cell.users} из ${c.size}`}
-                        style={{
-                          padding: '6px 4px',
-                          fontFamily: NUM_FONT, fontSize: 12.5, fontWeight: 600,
-                          color: cell.pct >= 55 ? 'var(--text-inverse)' : 'var(--text-primary)',
-                          backgroundColor: `color-mix(in srgb, var(--accent) ${Math.round(cell.pct * 0.9)}%, transparent)`,
-                        }}
-                      >
-                        {cell.pct}%
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-        Доля когорты, заходившей в этот месяц. Учитываются не только действия на сайте, но и входы:
-        у отказавшихся от cookie аналитика пуста, и без этого они выглядели бы ушедшими сразу.
+      <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+        Какая доля зарегистрировавшихся продолжает заходить через месяц, два, три.
+        {best && <> Лучше всех держится <b style={{ color: 'var(--text-primary)' }}>{cohortName(best.month)}</b>: через месяц заходили {best.cells[1].pct}%.</>}
       </p>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} role="img" aria-label="Кривые удержания по когортам">
+        {[0, 25, 50, 75, 100].map(p => (
+          <g key={p}>
+            <line x1={L} y1={Y(p)} x2={W - R} y2={Y(p)} style={{ stroke: 'color-mix(in srgb, var(--border-color) 18%, transparent)' }} />
+            <text x={L - 8} y={Y(p) + 4} textAnchor="end" fontSize="11" style={{ fill: 'var(--text-muted)', ...{ fontFamily: "'IBM Plex Mono',monospace" } }}>{p}%</text>
+          </g>
+        ))}
+        {Array.from({ length: maxN + 1 }, (_, n) => (
+          <text key={n} x={X(n)} y={H - 10} textAnchor="middle" fontSize="11"
+                style={{ fill: 'var(--text-muted)', fontFamily: "'IBM Plex Mono',monospace" }}>
+            {n === 0 ? 'месяц регистрации' : `+${n} мес`}
+          </text>
+        ))}
+        {cohorts.map((c, i) => {
+          const color = COHORT_COLORS[i % COHORT_COLORS.length];
+          const pts = c.cells.map(cell => `${X(cell.n).toFixed(1)},${Y(cell.pct).toFixed(1)}`).join(' ');
+          return (
+            <g key={c.month}>
+              <polyline points={pts} fill="none" strokeWidth="2.2" strokeLinejoin="round" style={{ stroke: color }} />
+              {c.cells.map(cell => (
+                <circle key={cell.n} cx={X(cell.n)} cy={Y(cell.pct)} r="3.4" style={{ fill: color }}>
+                  <title>{`${cohortName(c.month)}, ${cell.n === 0 ? 'месяц регистрации' : `+${cell.n} мес`}: ${cell.pct}% (${cell.users} из ${c.size})`}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+        {cohorts.map((c, i) => (
+          <span key={c.month} className="inline-flex items-center gap-1.5">
+            <i className="inline-block w-3 h-0.5" style={{ backgroundColor: COHORT_COLORS[i % COHORT_COLORS.length] }} />
+            {cohortName(c.month)} · {c.size} чел.
+          </span>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -891,8 +868,56 @@ const srcLabel = (s: string) =>
   : s === 'oauth.yandex.ru' ? 'вход через Яндекс'
   : s;
 
-/** Аудитория за всю историю: сколько людей приходило, сколько впервые и
- *  сколько зарегистрировалось. Три вопроса — три серии, без глубины и отказов. */
+/** Что стало с когортами — вложенными полосами: вся когорта → вернулись →
+ *  активны за 30 дней → оплатили. Длина полосы — доля от когорты. */
+function CohortFunnels({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
+  const rows = (growth?.cohorts ?? []).filter(c => c.registered > 0);
+  if (rows.length === 0) {
+    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p></Card>;
+  }
+  const maxSize = Math.max(...rows.map(r => r.registered), 1);
+  const layers = [
+    { key: 'registered' as const, label: 'зарегистрировались', color: 'color-mix(in srgb, var(--text-muted) 28%, transparent)' },
+    { key: 'returned' as const, label: 'вернулись после первых суток', color: 'color-mix(in srgb, var(--accent) 38%, transparent)' },
+    { key: 'active_30' as const, label: 'заходили за 30 дней', color: 'var(--accent)' },
+    { key: 'paid' as const, label: 'оплатили', color: 'var(--success)' },
+  ];
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="flex flex-col gap-3">
+        {rows.map(r => (
+          <div key={r.month} className="grid items-center" style={{ gridTemplateColumns: '92px 1fr', gap: 'var(--sp-3)' }}>
+            <div>
+              <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{cohortName(r.month)}</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: NUM_FONT }}>{r.registered} чел.</div>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {layers.map(l => {
+                const v = r[l.key];
+                return (
+                  <div key={l.key} className="flex items-center gap-2" title={`${l.label}: ${v}`}>
+                    <div className="transition-[width] duration-500"
+                         style={{ height: 9, width: `${Math.max((v / maxSize) * 100, v > 0 ? 0.8 : 0)}%`, backgroundColor: l.color }} />
+                    <span className="text-[11px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{v}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
+        {layers.map(l => (
+          <span key={l.key} className="inline-flex items-center gap-1.5">
+            <i className="inline-block w-3 h-2" style={{ backgroundColor: l.color }} />{l.label}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function AudienceBlock() {
   const [data, setData] = useState<AudienceReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1162,73 +1187,30 @@ function OverlapMatrix({ data, onPickPair }: {
   );
 }
 
-function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
-  if (!growth || growth.cohorts.length === 0) {
-    return (
-      <Card padding="md">
-        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
-      </Card>
-    );
-  }
-  const td: React.CSSProperties = { padding: '9px 8px', textAlign: 'right', fontFamily: NUM_FONT, whiteSpace: 'nowrap' };
-  const cell = (n: number, of: number) => (
-    <>
-      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{n}</span>
-      {of > 0 && <span className="text-xs" style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{shareText(n, of)}</span>}
-    </>
-  );
-  const heads = ['Месяц регистрации', 'Людей', 'Вернулись после первых суток', 'Заходили за 30 дней', 'За 7 дней', 'Оплатили'];
-  return (
-    <Card padding="md" className="md:p-5">
-      <div className="overflow-x-auto" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-        <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
-          <thead>
-            <tr>
-              {heads.map((h, i) => (
-                <th
-                  key={h}
-                  className="text-xs uppercase"
-                  style={{
-                    color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em',
-                    textAlign: i ? 'right' : 'left', padding: '0 8px 8px', verticalAlign: 'bottom',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...growth.cohorts].reverse().map((c) => (
-              <tr key={c.month} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
-                <td style={{ padding: '9px 8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{fmtMonth(c.month)}</td>
-                <td style={{ ...td, color: 'var(--text-primary)', fontWeight: 600 }}>{c.registered}</td>
-                <td style={td}>{cell(c.returned, c.can_return)}</td>
-                <td style={td}>{cell(c.active_30, c.registered)}</td>
-                <td style={td}>{cell(c.active_7, c.registered)}</td>
-                <td style={td}>{cell(c.paid, c.registered)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
-/** Постоянные гости: заходят в разные дни, но ни разу не входили в аккаунт. */
 function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
   if (!growth) return null;
   const g = growth.guests;
-  const td: React.CSSProperties = { padding: '9px 8px', verticalAlign: 'top' };
+  const hist = g.days_hist ?? [];
+  const maxHist = Math.max(...hist.map(h => h.guests), 1);
+  const returning = hist.filter(h => h.days >= 2).reduce((a, h) => a + h.guests, 0);
+  const growthPct = g.prev_total ? Math.round(((g.total - g.prev_total) / g.prev_total) * 100) : null;
+
   return (
-    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      {/* Динамика прежде цифр: сколько гостей приходило по дням — иначе
-          «550 гостей» не с чем сравнить. */}
-      {(g.by_day?.length ?? 0) > 1 && (
-        <Card padding="md" className="md:p-5">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <Card padding="md" className="md:p-5">
+        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+          Гостей в день
+        </p>
+        <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+          <b style={{ color: 'var(--text-primary)', fontFamily: NUM_FONT }}>{fmtNum(g.total)}</b> за период
+          {growthPct !== null
+            ? <> · <span style={{ color: growthPct >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                {growthPct >= 0 ? '+' : '−'}{Math.abs(growthPct)}%</span> к прошлому ({fmtNum(g.prev_total)})</>
+            // ID браузера пишем с 11.09.2026 — раньше сравнивать не с чем.
+            : <> · сравнить пока не с чем: считаем с {fmtShortDay(g.since)}</>}
+        </p>
+        {(g.by_day?.length ?? 0) > 1 ? (
           <SimpleChart
             data={(g.by_day ?? []).map(d => ({ time: d.date, value: d.guests }))}
             primaryColor="var(--accent)"
@@ -1237,116 +1219,49 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
             showValueHeader={false}
             legendPosition="top"
             showDownloadButton={false}
-          showWatermark={false}
+            showWatermark={false}
             showNavigator={false}
             hideTime
             defaultHistogram
             height={200}
           />
-        </Card>
-      )}
+        ) : <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Данных пока мало</p>}
+      </Card>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard
-          icon={<Users size={16} />}
-          label="Гостей за период"
-          value={g.total}
-          delta={g.prev_total ? pctDelta(Math.round((g.total - g.prev_total) / g.prev_total * 100)) : null}
-          prev={g.prev_total ? String(g.prev_total) : undefined}
-          sub={g.prev_total
-            // ID браузера пишем с 11.09.2026 — за более ранний период сравнивать
-            // просто не с чем, и показывать «+∞%» было бы враньём.
-            ? `считаем с ${fmtShortDay(g.since)}`
-            : `сравнивать не с чем: ID браузера пишем с ${fmtShortDay(g.since)}`}
-        />
-        <SummaryCard icon={<Repeat size={16} />} label="Заходили 2+ дня" value={g.days2} sub={shareText(g.days2, g.total) ? `${shareText(g.days2, g.total)} гостей` : undefined} />
-        <SummaryCard icon={<Repeat size={16} />} label="3+ дня" value={g.days3} />
-        <SummaryCard icon={<Repeat size={16} />} label="7+ дней" value={g.days7} />
-      </div>
       <Card padding="md" className="md:p-5">
-        {g.top.length === 0 ? (
-          <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-            За период никто из гостей не заходил в разные дни. ID браузера пишем с {fmtShortDay(g.since)}, данные копятся.
-          </p>
+        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+          Сколько дней заходил один гость
+        </p>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+          <b style={{ color: 'var(--text-primary)', fontFamily: NUM_FONT }}>{fmtNum(returning)}</b> вернулись хотя бы раз
+          {g.total > 0 && <> — {Math.round((returning / g.total) * 100)}% гостей</>}
+        </p>
+        {hist.length === 0 ? (
+          <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>За период гостей не видно</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
-              <thead>
-                <tr>
-                  {['Дней', 'Просмотров', 'Устройство', 'Что смотрит', 'Заходил'].map((h, i) => (
-                    <th
-                      key={h}
-                      className="text-xs uppercase"
-                      style={{ color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em', textAlign: i < 2 ? 'right' : 'left', padding: '0 8px 8px' }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {g.top.map((r, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
-                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT, fontWeight: 600, color: 'var(--text-primary)' }}>{r.days}</td>
-                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT }}>{r.pageviews}</td>
-                    <td style={td}>{DEVICE_NAMES[r.device] || r.device}</td>
-                    <td style={{ ...td, color: 'var(--text-primary)' }}>
-                      {[...r.assets, ...r.pages.map((p) => PAGE_NAMES[p] || p)].slice(0, 5).join(', ') || '—'}
-                    </td>
-                    <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
-                      {r.first_seen === r.last_seen ? fmtShortDay(r.first_seen) : `${fmtShortDay(r.first_seen)} – ${fmtShortDay(r.last_seen)}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex items-end gap-1.5" style={{ height: 170 }}>
+            {hist.map(h => (
+              <div key={h.days} className="flex-1 flex flex-col items-center justify-end gap-1"
+                   title={`${h.days} дн.: ${h.guests} гостей`}>
+                <span className="text-[10px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{h.guests}</span>
+                <div className="w-full transition-[height] duration-500"
+                     style={{
+                       height: `${Math.max(3, (h.guests / maxHist) * 125)}px`,
+                       backgroundColor: h.days === 1 ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'var(--accent)',
+                     }} />
+                <span className="text-xs" style={{ fontFamily: NUM_FONT, color: 'var(--text-secondary)' }}>{h.days}</span>
+              </div>
+            ))}
           </div>
         )}
+        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+          По горизонтали — в скольких разных днях был гость. Бледный столбец — зашли один раз.
+        </p>
       </Card>
     </div>
   );
 }
 
-/** Откуда впервые пришли зарегистрированные и платящие — по Метрике. */
-function FirstSourcesBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) return <Skeleton height={200} rounded="lg" />;
-  const src = growth?.sources;
-  if (!src) {
-    return (
-      <Card padding="md">
-        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Нужна Яндекс Метрика: сейчас она не подключена.</p>
-      </Card>
-    );
-  }
-  const items = (rows: { label: string; value: number }[]) => rows.map((r) => ({ label: r.label, value: r.value }));
-  return (
-    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-        Первый заход известен у {src.registered.seen} из {src.registered_total} зарегистрированных
-        {src.paying ? ` и у ${src.paying.seen} из ${src.paying_total} платящих` : ''}.
-        Число растёт само: человек попадает сюда, как только входит в аккаунт.
-      </p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-        <TopList
-          title="Зарегистрированные · первый источник" columns={['людей']}
-          items={items(src.registered.types)} loading={false} emptyText="Пока никого не видно"
-        />
-        <TopList
-          title="Платящие · первый источник" columns={['людей']} hintAlign="right"
-          items={src.paying ? items(src.paying.types) : []} loading={false} emptyText="Пока никого не видно"
-        />
-        {src.registered.sites.length > 0 && (
-          <TopList
-            title="Сайты, с которых пришли впервые" columns={['людей']}
-            items={items(src.registered.sites)} loading={false} emptyText="—"
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Блок ждёт данных дольше 250 мс — чуть гасим, но оставляем читаемым. */
 function dimStyle(on: boolean): React.CSSProperties {
   return { opacity: on ? 0.6 : 1, transition: 'opacity 0.25s ease' };
 }
