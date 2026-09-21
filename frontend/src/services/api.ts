@@ -1276,9 +1276,22 @@ export interface GrowthReport {
     active_7: number;
     paid: number;
   }[];
+  /** Удержание когортами: строка — месяц регистрации, колонка — сколько
+   *  месяцев спустя, значение — сколько из когорты вернулось. */
+  retention: {
+    max_n: number;
+    cohorts: {
+      month: string;
+      size: number;
+      cells: { n: number; users: number; pct: number }[];
+    }[];
+  };
   guests: {
     since: string;
     total: number;
+    /** Столько же гостей было за такой же предыдущий период. */
+    prev_total: number;
+    by_day: { date: string; guests: number }[];
     days2: number;
     days3: number;
     days7: number;

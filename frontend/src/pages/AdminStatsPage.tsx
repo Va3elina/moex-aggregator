@@ -794,6 +794,10 @@ export default function AdminStatsPage() {
       {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
       <div style={dimStyle(growthDim)}>
         <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
+          <RetentionMatrix growth={growth} loading={growthLoading} />
+        </Section>
+
+        <Section title="Что стало с когортами" hint={METRIC_HINTS.cohorts}>
           <CohortsBlock growth={growth} loading={growthLoading} />
         </Section>
         <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
@@ -911,6 +915,88 @@ function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading
 }
 
 /** Когорты: все, кто зарегистрировался в месяце, и что с ними сейчас. */
+/** Удержание когортами — таблица как в отчёте Метрики: строка это месяц
+ *  регистрации, колонка — сколько месяцев спустя, заливка клетки тем гуще,
+ *  чем выше доля вернувшихся. Проценты, а не абсолютные числа: когорты разного
+ *  размера иначе несопоставимы. */
+function RetentionMatrix({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={260} rounded="lg" />;
+  const ret = growth?.retention;
+  if (!ret || ret.cohorts.length === 0) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
+      </Card>
+    );
+  }
+  const cols = Array.from({ length: ret.max_n + 1 }, (_, i) => i);
+  const head: React.CSSProperties = {
+    padding: '0 8px 8px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em',
+    color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap',
+  };
+  const monthName = (m: string) => {
+    const [y, mm] = m.split('-');
+    return `${['','янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][+mm]} ${y.slice(2)}`;
+  };
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="overflow-x-auto" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+        <table className="w-full" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 520 }}>
+          <thead>
+            <tr>
+              <th style={{ ...head, textAlign: 'left' }}>Когорта</th>
+              <th style={{ ...head, textAlign: 'right' }}>Людей</th>
+              {cols.map(n => (
+                <th key={n} style={{ ...head, textAlign: 'center' }}>
+                  {n === 0 ? 'в тот же месяц' : `+${n} мес`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ret.cohorts.map(c => (
+              <tr key={c.month} style={{ borderTop: '1px solid color-mix(in srgb, var(--border-color) 25%, transparent)' }}>
+                <td style={{ padding: '7px 8px', fontSize: 13, whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
+                  {monthName(c.month)}
+                </td>
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: NUM_FONT, fontSize: 13, fontWeight: 600 }}>
+                  {c.size}
+                </td>
+                {cols.map(n => {
+                  const cell = c.cells.find(x => x.n === n);
+                  if (!cell) {
+                    // Месяц ещё не наступил для этой когорты — это не ноль.
+                    return <td key={n} style={{ padding: 3 }} />;
+                  }
+                  return (
+                    <td key={n} style={{ padding: 3, textAlign: 'center' }}>
+                      <div
+                        title={`${cell.users} из ${c.size}`}
+                        style={{
+                          padding: '6px 4px',
+                          fontFamily: NUM_FONT, fontSize: 12.5, fontWeight: 600,
+                          color: cell.pct >= 55 ? 'var(--text-inverse)' : 'var(--text-primary)',
+                          backgroundColor: `color-mix(in srgb, var(--accent) ${Math.round(cell.pct * 0.9)}%, transparent)`,
+                        }}
+                      >
+                        {cell.pct}%
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+        Доля когорты, заходившей в этот месяц. Учитываются не только действия на сайте, но и входы:
+        у отказавшихся от cookie аналитика пуста, и без этого они выглядели бы ушедшими сразу.
+      </p>
+    </Card>
+  );
+}
+
 function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
   if (!growth || growth.cohorts.length === 0) {
@@ -974,8 +1060,39 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
   const td: React.CSSProperties = { padding: '9px 8px', verticalAlign: 'top' };
   return (
     <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      {/* Динамика прежде цифр: сколько гостей приходило по дням — иначе
+          «550 гостей» не с чем сравнить. */}
+      {g.by_day.length > 1 && (
+        <Card padding="md" className="md:p-5">
+          <SimpleChart
+            data={g.by_day.map(d => ({ time: d.date, value: d.guests }))}
+            primaryColor="var(--accent)"
+            primaryLabel="Гостей в день"
+            formatValue={(v) => Math.round(v).toString()}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showNavigator={false}
+            hideTime
+            defaultHistogram
+            height={200}
+          />
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard icon={<Users size={16} />} label="Гостей за период" value={g.total} sub={`считаем с ${fmtShortDay(g.since)}`} />
+        <SummaryCard
+          icon={<Users size={16} />}
+          label="Гостей за период"
+          value={g.total}
+          delta={g.prev_total ? pctDelta(Math.round((g.total - g.prev_total) / g.prev_total * 100)) : null}
+          prev={g.prev_total ? String(g.prev_total) : undefined}
+          sub={g.prev_total
+            // ID браузера пишем с 11.09.2026 — за более ранний период сравнивать
+            // просто не с чем, и показывать «+∞%» было бы враньём.
+            ? `считаем с ${fmtShortDay(g.since)}`
+            : `сравнивать не с чем: ID браузера пишем с ${fmtShortDay(g.since)}`}
+        />
         <SummaryCard icon={<Repeat size={16} />} label="Заходили 2+ дня" value={g.days2} sub={shareText(g.days2, g.total) ? `${shareText(g.days2, g.total)} гостей` : undefined} />
         <SummaryCard icon={<Repeat size={16} />} label="3+ дня" value={g.days3} />
         <SummaryCard icon={<Repeat size={16} />} label="7+ дней" value={g.days7} />
