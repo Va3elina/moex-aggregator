@@ -7,7 +7,8 @@
  *  - tier-aware: Free (quota 0) → upgrade на Basic.
  * Рендерится внутри карточки ProfilePage (как ExtensionTokenSection).
  */
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useTranslation } from 'react-i18next';
 import { t as tr, getLang } from '../../i18n';
 import {
@@ -148,6 +149,9 @@ export default function TelegramAlertsSection() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const { track } = useAnalytics();
+    // Когда нажали «подключить» — чтобы измерить длительность перехода в бот.
+    const linkStartedAtRef = useRef<number | null>(null);
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
     // ── UI-стейт нового списка ──
@@ -195,7 +199,14 @@ export default function TelegramAlertsSection() {
         const t = setInterval(async () => {
             try {
                 const s = await getTelegramStatus();
-                if (s.linked) { setLinked(true); setUsername(s.username); setLinkUrl(null); clearInterval(t); }
+                if (s.linked) {
+                    track('tg_linked', {
+                        from: 'profile',
+                        sec: linkStartedAtRef.current
+                            ? Math.round((Date.now() - linkStartedAtRef.current) / 1000) : undefined,
+                    });
+                    setLinked(true); setUsername(s.username); setLinkUrl(null); clearInterval(t);
+                }
             } catch { /* ignore */ }
         }, 3000);
         return () => clearInterval(t);
@@ -205,6 +216,8 @@ export default function TelegramAlertsSection() {
         setBusy(true); setMsg(null);
         try {
             const { deep_link } = await createTelegramLink();
+            track('tg_link_click', { from: 'profile' });
+            linkStartedAtRef.current = Date.now();
             setLinkUrl(deep_link);
             window.open(deep_link, '_blank');
         } catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
@@ -213,7 +226,11 @@ export default function TelegramAlertsSection() {
     const handleUnlink = async () => {
         if (!window.confirm(t('Отвязать Telegram? Уведомления перестанут приходить.'))) return;
         setBusy(true); setMsg(null);
-        try { await unlinkTelegram(); setLinked(false); setUsername(null); setLinkUrl(null); }
+        try {
+            await unlinkTelegram();
+            track('tg_unlink', { from: 'profile' });
+            setLinked(false); setUsername(null); setLinkUrl(null);
+        }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
         finally { setBusy(false); }
     };
@@ -323,7 +340,13 @@ export default function TelegramAlertsSection() {
             </p>
 
             {quota === 0 ? (
-                <button onClick={() => showUpgrade({ tier: 'basic', featureName: t('Уведомления в мессенджере'), indicator: 'alerts' })}
+                <button onClick={() => {
+                        // Тот же счётчик спроса, что и у колокольчика на
+                        // индикаторе: человек пришёл за уведомлениями и упёрся
+                        // в тариф.
+                        track('alert_bell_click', { indicator: 'profile', locked: true });
+                        showUpgrade({ tier: 'basic', featureName: t('Уведомления в мессенджере'), indicator: 'alerts' });
+                    }}
                     className="editorial-press" style={{ padding: '10px 16px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 600 }}>
                     {t('Доступно на Basic и Pro — улучшить тариф')}
                 </button>

@@ -79,6 +79,14 @@ type EventType =
   | 'fund_open'
   | 'terminal_layout'
   | 'terminal_panel_add'
+  // Путь до уведомлений: спрос (в том числе упёршийся в тариф), привязка
+  // мессенджера и само создание уведомления.
+  | 'alert_bell_click'
+  | 'alert_modal_open'
+  | 'alert_created'
+  | 'tg_link_click'
+  | 'tg_linked'
+  | 'tg_unlink'
   // Воронка монетизации: намерение → оплата/триал
   | 'checkout_start'
   | 'trial_start'
