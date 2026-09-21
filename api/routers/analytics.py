@@ -831,7 +831,9 @@ INDICATOR_PATHS: dict[str, str] = {
     "/seasonality": "Сезонность",
     "/buffett": "Индикатор Баффета",
     "/cbr-flows": "Потоки капитала",
-    "/repo": "Репо в акциях",
+    # Терминал — полноценный раздел со своей аудиторией. «Репо в акциях» сюда
+    # не входит: это админская обкатка, людей у неё нет, в сводке она шум.
+    "/sandbox": "Терминал",
 }
 
 
@@ -1115,7 +1117,7 @@ def get_behavior(
     """
     rng = _resolve_range(days, date_from, date_to)
     ind = indicator if indicator in INDICATOR_PATHS else None
-    key = f"admin:behavior:v1:{rng['d0']}:{rng['d1']}:{segment}:{device}:{ind or '-'}"
+    key = f"admin:behavior:v2:{rng['d0']}:{rng['d1']}:{segment}:{device}:{ind or '-'}"
     return get_or_compute(key, lambda: _compute_behavior(rng, segment, device, ind), ttl=180)
 
 
@@ -1176,50 +1178,25 @@ def _compute_behavior(rng: dict, segment: str, device: str, indicator: Optional[
             GROUP BY 1, 2 ORDER BY 1
         """), params).fetchall()
 
-        detail: dict[str, Any] = {}
-        if indicator:
-            params["one"] = indicator
-            # Сессии, в которых человек был на этом разделе: по ним считаем всё
-            # остальное — активы, экспорты и куда ушёл дальше.
-            detail["assets"] = [
-                {"secid": r[0], "name": r[1], "people": int(r[2]), "views": int(r[3])}
-                for r in conn.execute(text(f"""
-                    {base},
-                    sess AS (SELECT DISTINCT session_id FROM ev
-                             WHERE event_type = 'pageview' AND event_path = :one)
-                    SELECT e.payload->>'secid' AS secid, NULL AS name,
-                           COUNT(DISTINCT e.ident) AS people, COUNT(*) AS views
-                    FROM ev e JOIN sess s USING (session_id)
-                    WHERE e.event_type = 'asset_view' AND e.payload->>'secid' IS NOT NULL
-                      AND COALESCE(e.payload->>'indicator', '') <> ''
-                    GROUP BY 1 ORDER BY people DESC LIMIT 12
-                """), params).fetchall()
-            ]
-            detail["next"] = [
-                {"path": r[0], "name": INDICATOR_PATHS.get(r[0], r[0]), "people": int(r[1])}
-                for r in conn.execute(text(f"""
-                    {base},
-                    seq AS (
-                        SELECT ident, event_path,
-                               LEAD(event_path) OVER (PARTITION BY session_id ORDER BY server_ts) AS nxt
-                        FROM ev WHERE event_type = 'pageview'
-                    )
-                    SELECT nxt AS path, COUNT(DISTINCT ident) AS people
-                    FROM seq WHERE event_path = :one AND nxt IS NOT NULL AND nxt <> :one
-                    GROUP BY 1 ORDER BY people DESC LIMIT 8
-                """), params).fetchall()
-            ]
-            detail["exports"] = int(conn.execute(text(f"""
-                {base}
-                SELECT COUNT(*) FROM ev
-                WHERE event_type = 'chart_export'
-                  AND {_export_indicator_canon_sql("payload->>'indicator'")} =
-                      {_export_indicator_canon_sql(":one_key")}
-            """), {**params, "one_key": indicator.lstrip('/')}).scalar() or 0)
+        # Кто чем пользуется: для каждой пары разделов — сколько людей смотрят оба.
+        # Из этого рисуется матрица пересечений вместо ряда чипов-фильтров.
+        pairs = conn.execute(text(f"""
+            {base},
+            pv AS (SELECT DISTINCT ident, event_path AS path FROM ev
+                   WHERE event_type = 'pageview' AND event_path = ANY(:ind))
+            SELECT a.path, b.path, COUNT(*) AS people
+            FROM pv a JOIN pv b USING (ident)
+            GROUP BY 1, 2
+        """), params).fetchall()
 
-            names = _asset_names(conn, [a["secid"] for a in detail["assets"]])
-            for a in detail["assets"]:
-                a["name"] = names.get(a["secid"], a["secid"])
+        breadth = conn.execute(text(f"""
+            {base}
+            SELECT n, COUNT(*) AS people FROM (
+                SELECT ident, COUNT(DISTINCT event_path) AS n FROM ev
+                WHERE event_type = 'pageview' AND event_path = ANY(:ind)
+                GROUP BY ident) t
+            GROUP BY n ORDER BY n
+        """), params).fetchall()
 
     by_day: dict[str, dict[str, int]] = {}
     for day, path, people in trend:
@@ -1235,7 +1212,254 @@ def _compute_behavior(rng: dict, segment: str, device: str, indicator: Optional[
             for r in overview
         ],
         "by_day": [{"date": d, **v} for d, v in sorted(by_day.items())],
-        "detail": detail or None,
+        # overlap[x][y] — сколько людей смотрят и x, и y; диагональ — аудитория раздела.
+        "overlap": [{"a": r[0], "b": r[1], "people": int(r[2])} for r in pairs],
+        "breadth": [{"n": int(r[0]), "people": int(r[1])} for r in breadth],
+    }
+
+
+@router.get("/indicator")
+def get_indicator(
+    path: str = Query(..., description="Путь раздела, например /oi"),
+    days: int = Query(30, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    segment: str = Query("all"),
+    device: str = Query("all"),
+    user=Depends(require_admin),
+):
+    """Страница одного раздела: кто смотрит, что внутри, откуда и куда.
+
+    Глубина у разделов разная, поэтому `inside` у каждого свой: у ОИ и
+    сезонности — активы, у «Денег в фондах» — категории и выбранные фонды,
+    у «Покупок фондов» — вкладки, бумаги и открытые фонды, у терминала —
+    из чего собирают окна. У одностраничных графиков (Баффет, сила рынка)
+    внутри выбирать нечего, и мы это честно говорим, а не показываем чужие
+    активы из той же сессии.
+    """
+    if path not in INDICATOR_PATHS:
+        raise HTTPException(404, "Такого раздела нет")
+    rng = _resolve_range(days, date_from, date_to)
+    key = f"admin:indicator:v1:{path}:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    return get_or_compute(key, lambda: _compute_indicator(path, rng, segment, device), ttl=180)
+
+
+def _fund_meta(conn, tickers: list[str]) -> dict[str, dict]:
+    """Имя и УК фонда по тикеру — чтобы фронт нарисовал лого УК."""
+    if not tickers:
+        return {}
+    try:
+        rows = conn.execute(text(
+            "SELECT ticker, name, uk_id FROM funds WHERE ticker = ANY(:t)"
+        ), {"t": tickers}).fetchall()
+    except Exception:
+        return {}
+    return {r[0]: {"name": r[1], "uk_id": r[2]} for r in rows}
+
+
+def _compute_indicator(path: str, rng: dict, segment: str, device: str) -> dict:
+    params: dict[str, Any] = {"start": rng["start"], "end": rng["end"], "one": path}
+    ev_where = []
+    if segment == "all":
+        ev_where.append("(a.user_id IS NULL OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin'))")
+    elif segment == "auth":
+        ev_where.append("a.user_id IS NOT NULL AND a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin')")
+    elif segment == "guest":
+        ev_where.append("a.user_id IS NULL AND vu.uid IS NULL")
+    elif segment == "admin":
+        ev_where.append("a.user_id IN (SELECT id FROM users WHERE role = 'admin')")
+    if device in ("mobile", "desktop", "tablet"):
+        ev_where.append("a.device = :device")
+        params["device"] = device
+    ev_sql = (" AND " + " AND ".join(ev_where)) if ev_where else ""
+
+    base = f"""
+        WITH vis_user AS (
+            SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL GROUP BY visitor_id
+        ),
+        ev AS (
+            SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                            'v' || a.visitor_id, 's' || a.session_id) AS ident,
+                   COALESCE(a.user_id, vu.uid) AS uid,
+                   a.session_id, a.event_path, a.event_type, a.payload, a.server_ts,
+                   ((a.server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+            FROM analytics_events a
+            LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+            WHERE a.server_ts >= :start AND a.server_ts < :end{ev_sql}
+        )
+    """
+
+    with get_engine().connect() as conn:
+        head = conn.execute(text(f"""
+            {base}
+            SELECT COUNT(DISTINCT ident), COUNT(DISTINCT ident) FILTER (WHERE uid IS NOT NULL), COUNT(*)
+            FROM ev WHERE event_type = 'pageview' AND event_path = :one
+        """), params).fetchone()
+
+        trend = conn.execute(text(f"""
+            {base}
+            SELECT day, COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'pageview' AND event_path = :one
+            GROUP BY 1 ORDER BY 1
+        """), params).fetchall()
+
+        # Откуда приходят на раздел и куда уходят — в пределах одной сессии.
+        flow = conn.execute(text(f"""
+            {base},
+            seq AS (
+                SELECT ident, event_path,
+                       LAG(event_path)  OVER w AS prv,
+                       LEAD(event_path) OVER w AS nxt
+                FROM ev WHERE event_type = 'pageview'
+                WINDOW w AS (PARTITION BY session_id ORDER BY server_ts)
+            )
+            SELECT 'prev' AS kind, COALESCE(prv, '(сразу сюда)') AS p, COUNT(DISTINCT ident)
+            FROM seq WHERE event_path = :one AND (prv IS NULL OR prv <> :one) GROUP BY 2
+            UNION ALL
+            SELECT 'next', COALESCE(nxt, '(ушли с сайта)'), COUNT(DISTINCT ident)
+            FROM seq WHERE event_path = :one AND (nxt IS NULL OR nxt <> :one) GROUP BY 2
+        """), params).fetchall()
+
+        people = conn.execute(text(f"""
+            {base}
+            SELECT e.ident, MAX(e.uid) AS uid, COUNT(DISTINCT e.day) AS days,
+                   COUNT(*) AS views, MAX(e.day) AS last_day,
+                   MAX(u.display_name) AS name, MAX(u.email) AS email
+            FROM ev e LEFT JOIN users u ON u.id = e.uid
+            WHERE e.event_type = 'pageview' AND e.event_path = :one
+            GROUP BY e.ident ORDER BY days DESC, views DESC LIMIT 12
+        """), params).fetchall()
+
+        inside: dict[str, Any] = {"kind": "none"}
+
+        if path in ("/oi", "/seasonality"):
+            rows = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'secid', COUNT(DISTINCT ident), COUNT(*)
+                FROM ev
+                -- Активы именно ЭТОГО раздела: по пути события, а не «из тех же
+                -- сессий» — иначе у разделов без активов всплывали чужие.
+                WHERE event_type = 'asset_view' AND event_path = :one
+                  AND payload->>'secid' IS NOT NULL
+                GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 20
+            """), params).fetchall()
+            names = _asset_names(conn, [r[0] for r in rows])
+            inside = {"kind": "assets", "assets": [
+                {"secid": r[0], "name": names.get(r[0], r[0]), "people": int(r[1]), "views": int(r[2])}
+                for r in rows]}
+
+        elif path == "/funds-money":
+            cats = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'category', COUNT(DISTINCT ident), COUNT(*)
+                FROM ev WHERE event_type = 'funds_view' GROUP BY 1 ORDER BY 2 DESC
+            """), params).fetchall()
+            views = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'view', COUNT(DISTINCT ident)
+                FROM ev WHERE event_type = 'funds_view' GROUP BY 1 ORDER BY 2 DESC
+            """), params).fetchall()
+            picked = conn.execute(text(f"""
+                {base}
+                SELECT f.t, COUNT(DISTINCT ident)
+                FROM ev, LATERAL jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(payload->'funds') = 'array'
+                         THEN payload->'funds' ELSE '[]'::jsonb END) AS f(t)
+                WHERE event_type = 'funds_view'
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+            """), params).fetchall()
+            meta = _fund_meta(conn, [r[0] for r in picked])
+            inside = {
+                "kind": "funds_money",
+                "categories": [{"key": r[0], "people": int(r[1]), "views": int(r[2])} for r in cats],
+                "views": [{"key": r[0], "people": int(r[1])} for r in views],
+                "funds": [{"ticker": r[0], "people": int(r[1]), **meta.get(r[0], {})} for r in picked],
+            }
+
+        elif path == "/fund-trades":
+            tabs = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'tab', COUNT(DISTINCT ident), COUNT(*)
+                FROM ev WHERE event_type = 'fund_trades_view' GROUP BY 1 ORDER BY 2 DESC
+            """), params).fetchall()
+            assets = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'asset', COUNT(DISTINCT ident)
+                FROM ev WHERE event_type = 'fund_trades_view'
+                  AND payload->>'tab' = 'company' AND payload->>'asset' IS NOT NULL
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 12
+            """), params).fetchall()
+            opened = conn.execute(text(f"""
+                {base}
+                SELECT payload->>'ticker', COUNT(DISTINCT ident)
+                FROM ev WHERE event_type = 'fund_open' AND payload->>'ticker' IS NOT NULL
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 12
+            """), params).fetchall()
+            meta = _fund_meta(conn, [r[0] for r in opened])
+            inside = {
+                "kind": "fund_trades",
+                "tabs": [{"key": r[0], "people": int(r[1]), "views": int(r[2])} for r in tabs],
+                "assets": [{"name": r[0], "people": int(r[1])} for r in assets],
+                "funds": [{"ticker": r[0], "people": int(r[1]), **meta.get(r[0], {})} for r in opened],
+            }
+
+        elif path == "/sandbox":
+            # Последний снимок раскладки каждого человека: из чего собран его терминал.
+            snap = conn.execute(text(f"""
+                {base},
+                last AS (
+                    SELECT DISTINCT ON (ident) ident, payload FROM ev
+                    WHERE event_type = 'terminal_layout' ORDER BY ident, server_ts DESC
+                )
+                SELECT t.key, COUNT(DISTINCT l.ident), SUM((t.value)::int)
+                FROM last l, LATERAL jsonb_each_text(
+                    CASE WHEN jsonb_typeof(l.payload->'types') = 'object'
+                         THEN l.payload->'types' ELSE '{{}}'::jsonb END) AS t(key, value)
+                GROUP BY 1 ORDER BY 2 DESC, 3 DESC
+            """), params).fetchall()
+            sizes = conn.execute(text(f"""
+                {base},
+                last AS (
+                    SELECT DISTINCT ON (ident) ident, payload FROM ev
+                    WHERE event_type = 'terminal_layout' ORDER BY ident, server_ts DESC
+                )
+                SELECT COUNT(*), COALESCE(AVG((payload->>'total_panels')::numeric), 0),
+                       COALESCE(AVG((payload->>'sheets')::numeric), 0),
+                       COALESCE(MAX((payload->>'total_panels')::int), 0)
+                FROM last
+            """), params).fetchone()
+            inside = {
+                "kind": "terminal",
+                "panel_types": [{"key": r[0], "people": int(r[1]), "panels": int(r[2] or 0)} for r in snap],
+                "with_layout": int(sizes[0] or 0),
+                "avg_panels": round(float(sizes[1] or 0), 1),
+                "avg_sheets": round(float(sizes[2] or 0), 1),
+                "max_panels": int(sizes[3] or 0),
+            }
+
+    def flow_rows(kind: str) -> list[dict]:
+        out = [{"path": r[1], "name": INDICATOR_PATHS.get(r[1], r[1]), "people": int(r[2])}
+               for r in flow if r[0] == kind]
+        return sorted(out, key=lambda x: -x["people"])[:8]
+
+    return {
+        "path": path,
+        "name": INDICATOR_PATHS[path],
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "people": int(head[0] or 0),
+        "registered": int(head[1] or 0),
+        "views": int(head[2] or 0),
+        "trend": [{"date": r[0].isoformat(), "people": int(r[1])} for r in trend],
+        "prev": flow_rows("prev"),
+        "next": flow_rows("next"),
+        "inside": inside,
+        "top_people": [{
+            "ident": r[0], "user_id": r[1], "days": int(r[2]), "views": int(r[3]),
+            "last_day": r[4].isoformat(),
+            "name": r[5] or (r[6].split("@")[0] if r[6] else None),
+        } for r in people],
     }
 
 

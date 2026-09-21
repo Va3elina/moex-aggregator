@@ -87,6 +87,7 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
 const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
 const AdminGuestDetailPage = lazy(() => import('./pages/AdminGuestDetailPage'));
+const AdminIndicatorPage = lazy(() => import('./pages/AdminIndicatorPage'));
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 // Экспериментальная «Перекраска» (admin-only): % free float, сменивший руки за месяц.
 const RepaintPage = lazy(() => import('./pages/RepaintPage'));
@@ -343,6 +344,7 @@ export default function App() {
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/guests/:visitorId" element={<AdminGuestDetailPage />} />
+            <Route path="/admin/indicator/:key" element={<AdminIndicatorPage />} />
             {/* Доска новостей живёт во вкладке «Завод постов» панели; старый адрес — редирект. */}
             <Route path="/admin/content-news" element={<Navigate to="/admin/dashboard/posts" replace />} />
             {/* Вкладка и объект — в адресе, а не в состоянии компонента: иначе на экран
