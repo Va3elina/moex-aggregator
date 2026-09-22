@@ -184,6 +184,7 @@ def stable_runs(
     days: List[date],
     choices: Dict[date, Optional[str]],
     min_run_days: int = 5,
+    windows: Optional[List[FrontWindow]] = None,
 ) -> List[tuple]:
     """Сжимает по-дневные выборы контракта в устойчивые раны: [(первый_день, sec_id)].
 
@@ -197,6 +198,13 @@ def stable_runs(
     `days` — отсортированные торговые дни; `choices` — {день: sec_id | None}
     (None-дни пропускаются). Настоящий ролл (ран длиной в квартал/месяц)
     проходит без изменений — метка встаёт на первый день рана, как раньше.
+
+    `windows` — фронт-окна того же sectype. Ран, ПЕРВЫЙ день которого совпал с
+    календарным фронтом, от схлопывания защищён: дата экспирации там известна
+    точно (futures_contracts.lsttrade), сомневаться не в чем, а порог глушил
+    свежий ролл на первые min_run_days дней — последняя метка появлялась
+    только через неделю после смены контракта. Без `windows` поведение прежнее
+    (порог для всех ранов), чтобы старые вызовы не менялись молча.
     """
     runs: List[List] = []  # [sec_id, [дни]]
     for d in days:
@@ -208,10 +216,17 @@ def stable_runs(
         else:
             runs.append([c, [d]])
 
+    def _calendar_backed(run: List) -> bool:
+        if not windows:
+            return False
+        return front_sec_id_for_day(windows, run[1][0]) == run[0]
+
     changed = True
     while changed:
         changed = False
         for i in range(len(runs)):
+            if _calendar_backed(runs[i]):
+                continue
             if len(runs[i][1]) < min_run_days and len(runs) > 1:
                 if i > 0:
                     runs[i - 1][1].extend(runs[i][1])

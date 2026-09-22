@@ -174,6 +174,39 @@ def test_stable_runs_none_days_skipped():
     assert runs == [(days[0], "SRH")]
 
 
+def test_stable_runs_keeps_fresh_calendar_roll():
+    """Свежий КАЛЕНДАРНЫЙ ролл даёт метку сразу, не дожидаясь min_run_days.
+
+    SiU6 экспирировал 17.09.2026 → с 18.09 фронт SiZ. Ран нового контракта ещё
+    короче порога, но дата экспирации точная — метка обязана быть на графике
+    в день смены, а не через неделю.
+    """
+    w = compute_windows(SI)
+    days = [date(2026, 9, 10) + timedelta(days=i) for i in range(12)]  # по 21.09
+    choices = {d: front_sec_id_for_day(w, d) for d in days}
+    assert choices[date(2026, 9, 21)] == "SiZ"
+    runs = stable_runs(days, choices, min_run_days=5, windows=w)
+    assert runs == [(days[0], "SiU"), (date(2026, 9, 18), "SiZ")]
+
+
+def test_stable_runs_still_suppresses_noncalendar_flip():
+    """Короткая вылазка на НЕкалендарный контракт схлопывается и с windows."""
+    w = compute_windows(SI)
+    days = [date(2026, 8, 3) + timedelta(days=i) for i in range(30)]
+    choices = {d: front_sec_id_for_day(w, d) for d in days}
+    for d in days[10:12]:
+        choices[d] = "SiH"   # объёмный fallback метнулся на дальний контракт
+    runs = stable_runs(days, choices, min_run_days=5, windows=w)
+    assert runs == [(days[0], "SiU")]
+
+
+def test_stable_runs_without_windows_unchanged():
+    """Без windows поведение прежнее: короткий хвост вливается в предыдущий ран."""
+    days = [date(2026, 9, 10) + timedelta(days=i) for i in range(12)]
+    choices = {d: ("SiU" if d <= date(2026, 9, 17) else "SiZ") for d in days}
+    assert stable_runs(days, choices, min_run_days=5) == [(days[0], "SiU")]
+
+
 def test_resolve_day_prefers_calendar_when_available():
     w = compute_windows(BR)
     day = date(2026, 7, 15)  # календарь говорит BRQ
