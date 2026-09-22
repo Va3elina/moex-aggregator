@@ -654,9 +654,12 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     # Метки смены контракта — по УСТОЙЧИВЫМ ранам, а не по-дневным выборам:
     # в зонах без календаря fallback может на день-два переметнуться между
     # контрактами, и каждый флип давал бы ложную метку экспирации на графике.
+    # windows передаём, чтобы порог устойчивости НЕ глушил календарные роллы:
+    # там дата экспирации точная, и метка обязана встать в день смены, а не
+    # через неделю (иначе свежая экспирация «пропадает» с графика).
     contract_switches = []
     prev_run = None
-    for run_day, run_sec_id in stable_runs(sorted_days, best_contract_by_day):
+    for run_day, run_sec_id in stable_runs(sorted_days, best_contract_by_day, windows=windows):
         contract_switches.append({
             "date": run_day.isoformat(),
             "from": prev_run,
