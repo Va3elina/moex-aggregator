@@ -9,7 +9,6 @@
   "выбор фондов": "fund selection",
   "фонд {{name}} ({{ticker}})": "fund {{name}} ({{ticker}})",
   "Сигналы по фондам": "Fund alerts",
-
   "Денежный рынок": "Money market",
   "Золото": "Gold",
   "Юань": "Yuan",
@@ -20,7 +19,6 @@
   "юаня": "yuan",
   "Скоро": "Soon",
   "Раздел скоро появится": "Coming soon",
-
   "1М": "1M",
   "1Г": "1Y",
   "3Г": "3Y",
@@ -32,7 +30,6 @@
   "1г": "1Y",
   "6м": "6M",
   "3м": "3M",
-
   "Выбрать фонды для графика": "Select funds for the chart",
   "Выбор фондов — на тарифе Basic или Pro": "Fund selection is available on Basic or Pro",
   "Фонды: {{name}}": "Funds: {{name}}",
@@ -56,7 +53,6 @@
   "Потоки из фондов {{cat}} за скользящие 3 месяца (млрд ₽)": "Rolling 3-month flows, {{cat}} funds (bn ₽)",
   "Чистые притоки и оттоки (млрд ₽)": "Net inflows and outflows (bn ₽)",
   "Чистые притоки и оттоки из фондов {{cat}} (млрд ₽)": "Net inflows and outflows, {{cat}} funds (bn ₽)",
-
   "Прочее": "Other",
   "позиций": "positions",
   "Не выбрано ни одного фонда": "No funds selected",
@@ -71,12 +67,10 @@
   "{{v}} млрд": "{{v}} bn",
   "{{v}} млн": "{{v}} m",
   "{{v}} тыс": "{{v}} k",
-
   "Тип": "Type",
   "Состав фонда": "Fund holdings",
   "Прочее ({{n}})": "Other ({{n}})",
   "Состав не публикуется": "Holdings are not disclosed",
-
   "Чистый поток": "Net flow",
   "Состав на {{date}}": "Holdings as of {{date}}",
   "Загружаем…": "Loading…",
@@ -118,7 +112,6 @@
   "Сплит": "Split",
   " (обратный)": " (reverse)",
   "Сплит акций ~1:{{n}}{{rev}} · {{date}}. Кол-во и цена в графике/таблице скорректированы под сплит.": "Stock split ~1:{{n}}{{rev}} · {{date}}. Quantity and price on the chart/table are split-adjusted.",
-
   "Загрузка истории...": "Loading history...",
   "млн шт": "m units",
   "тыс шт": "k units",
@@ -134,7 +127,6 @@
   "за {{n}} снапшота": "over {{n}} snapshot",
   "Позиции по снапшотам, шт": "Positions by snapshot, units",
   "ВСЕ СНАПШОТЫ": "ALL SNAPSHOTS",
-
   "Фонды {{cat}}": "{{cat}} funds",
   "На {{date}}": "As of {{date}}",
   "часть фондов запаздывает": "some funds lag behind",
@@ -155,7 +147,6 @@
   "Авторские": "Author strategies",
   "Доступно на повышенном тарифе": "Available on a higher plan",
   "СЧА этого фонда отстаёт от общей даты данных. Актуальна на {{date}}": "This fund's NAV lags behind the common data date. Current as of {{date}}",
-
   "СЧА — весь «денежный пул» фонда. Растёт по двум причинам:": "NAV is the fund's entire “money pool”. It grows for two reasons:",
   "люди заносят деньги": "investors add money",
   "и": "and",
@@ -176,7 +167,6 @@
   "индекс-эталон": "the benchmark index",
   "— рост не только от рынка, а и от чистых притоков денег.": "— growth comes not only from the market but also from net inflows.",
   "приток": "inflow",
-
   "Что это": "What it is",
   "Индикатор показывает, где сейчас находятся деньги российских частных инвесторов в биржевых фондах и в какую сторону они перетекают между категориями. Для каждого фонда мы отслеживаем, как меняется стоимость его активов и сколько денег инвесторы в него заносят или из него забирают.": "The indicator shows where Russian retail investors' money currently sits in exchange-traded funds and which way it is moving between categories. For every fund we track how the value of its assets changes and how much money investors put in or take out.",
   "Это «барометр настроения»: когда деньги массово уходят в безопасные инструменты — на рынке осторожность; когда возвращаются в акции — аппетит к риску.": "It is a sentiment barometer: when money flees en masse into safe instruments, the market is cautious; when it returns to equities, risk appetite is back.",
@@ -270,7 +260,6 @@
   "Вводный тур": "Intro tour",
   "Хотите ещё раз пройти пошаговый гайд по категориям, режимам, шагу времени и таблице фондов, который показывался при первом открытии страницы — нажмите кнопку ниже.": "Want to replay the step-by-step guide to categories, modes, time step and the fund table shown on your first visit? Press the button below.",
   "Показать вводный тур ещё раз": "Show the intro tour again",
-
   "Где сейчас": "Where",
   "деньги российских инвесторов": "Russian investors' money",
   "в биржевых фондах: акции, облигации, золото, валюты, денежный рынок. И в каком направлении они перетекают между категориями.": "sits in exchange-traded funds: equities, bonds, gold, currencies, money market. And which way it flows between categories.",
@@ -315,5 +304,15 @@
   "— открывает карточку с составом и подробностями.": "— opens the card with holdings and details.",
   "Готово!": "Done!",
   "методологии": "methodology",
-  "— 6 сценариев трактовки: что значит приток в денежный рынок, отток из золота, расхождение СЧА и индекса.": "— 6 interpretation scenarios: what an inflow into the money market, an outflow from gold, or a NAV/index divergence means."
+  "— 6 сценариев трактовки: что значит приток в денежный рынок, отток из золота, расхождение СЧА и индекса.": "— 6 interpretation scenarios: what an inflow into the money market, an outflow from gold, or a NAV/index divergence means.",
+  "Индикатор показывает, где сейчас находятся деньги частных инвесторов в биржевых фондах и куда они перетекают между направлениями: денежный рынок, акции, облигации, золото, юань. Для каждого фонда видно, как меняется стоимость его активов и сколько денег инвесторы заносят или забирают. Данные — с Московской биржи, обновление раз в торговый день.": "The indicator shows where retail investors' money sits in exchange-traded funds and how it moves between asset classes: money market, stocks, bonds, gold, yuan. For each fund you can see how its assets change and how much money investors add or withdraw. Data comes from the Moscow Exchange, updated once per trading day.",
+  "Притоки и СЧА": "Flows and NAV",
+  "«Притоки-Оттоки» — чистое движение денег: зелёный столбик — в фонды занесли больше, чем забрали, красный — наоборот. Этот режим очищен от движения котировок и показывает решения людей, а не переоценку активов. «СЧА» — стоимость чистых активов, общий «денежный пул» фондов направления. Она растёт и когда люди заносят деньги, и когда активы дорожают, поэтому рядом рисуется рыночный ориентир направления — так видно, откуда рост.": "'Flows' is the net movement of money: a green bar means more was added to funds than withdrawn, red means the opposite. This mode strips out price moves and shows people's decisions, not asset revaluation. 'NAV' is net asset value, the total 'money pool' of the category's funds. It grows both when people add money and when assets appreciate, so the category's market benchmark is drawn alongside to show where the growth comes from.",
+  "Отдельная цифра сама по себе — не сигнал. Индикатор показывает направление денег и настроение инвесторов. Самое информативное — сопоставить притоки, СЧА и ориентир:": "A single number is not a signal by itself. The indicator shows the direction of money and investor sentiment. The most informative view is to compare flows, NAV and the benchmark:",
+  "СЧА растёт, ориентир стоит или падает": "NAV rises, benchmark flat or falling",
+  "Притоки заметнее движения рынка — инвесторы заносят деньги. Для денежного рынка это обычная картина.": "Inflows outweigh the market move: investors are adding money. For the money market this is the usual picture.",
+  "СЧА падает, ориентир растёт": "NAV falls, benchmark rises",
+  "Заметный приток в денежный рынок": "Notable inflow into the money market",
+  "Инвесторы перекладываются в менее рисковые инструменты. Может отражать осторожность на рынке.": "Investors are shifting into lower-risk instruments. May reflect caution in the market.",
+  "Заметный приток в акции": "Notable inflow into stocks"
 }

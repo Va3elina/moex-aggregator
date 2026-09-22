@@ -15,5 +15,6 @@
   "Главные показатели рынка на одной странице.": "Key market indicators on one page.",
   "Ключевые котировки, настроение рынка, лидеры роста и падения, движение по секторам и фондам. Обновляется автоматически в торговое время.": "Key quotes, market sentiment, top gainers and losers, sector and fund moves. Updates automatically during trading hours.",
   "Кто покупает, кто продаёт на бирже по категориям участников.": "Who is buying and who is selling on the exchange, by participant type.",
-  "Среднемесячные нетто-покупки и нетто-продажи по типам участников торгов: нерезиденты, банки, физические лица, фонды и другие. Положительные значения — покупки, отрицательные — продажи. Источник: ежемесячный обзор Банка России (ОРФР).": "Average monthly net purchases and net sales by participant type: non-residents, banks, retail investors, funds and others. Positive values are purchases, negative are sales. Source: the Bank of Russia's monthly Financial Market Risks Review."
+  "Среднемесячные нетто-покупки и нетто-продажи по типам участников торгов: нерезиденты, банки, физические лица, фонды и другие. Положительные значения — покупки, отрицательные — продажи. Источник: ежемесячный обзор Банка России (ОРФР).": "Average monthly net purchases and net sales by participant type: non-residents, banks, retail investors, funds and others. Positive values are purchases, negative are sales. Source: the Bank of Russia's monthly Financial Market Risks Review.",
+  "Как читать": "How to read it"
 }
