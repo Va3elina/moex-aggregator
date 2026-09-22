@@ -9,6 +9,7 @@
   ни в публикацию, а писатель её в брифе не видит.
 """
 import inspect
+import json
 import os
 import sys
 from pathlib import Path
@@ -189,3 +190,23 @@ def test_rich_first_old_format_as_fallback():
 def test_rich_card_decision_changes_only_buttons():
     src = inspect.getsource(bot.process_callback)
     assert '"rich_message" in msg' in src and "edit_markup(" in src
+
+
+def test_rich_photo_is_referenced_in_html(monkeypatch):
+    """22.09: «черновики пришли без фото» — media без ссылки tg://photo в html не показывается."""
+    sent = {}
+
+    def fake_post(url, data=None, files=None, timeout=None, json=None):
+        sent["data"], sent["files"] = data, files
+        return _Resp({"ok": True, "result": {"message_id": 1}})
+
+    monkeypatch.setattr(bot.requests, "post", fake_post)
+    assert bot.send_rich(1, "<p>пост</p>", [], photo=__file__) is True
+    payload = json.loads(sent["data"]["rich_message"])
+    assert payload["html"].startswith('<img src="tg://photo?id=chart"/>')
+    assert payload["media"][0]["id"] == "chart"
+    assert "chart" in sent["files"]
+
+    monkeypatch.setattr(bot.requests, "post", fake_post)
+    assert bot.send_rich(1, "<p>пост</p>", []) is True
+    assert "media" not in json.loads(sent["data"]["rich_message"])

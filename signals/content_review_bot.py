@@ -127,12 +127,17 @@ MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 _SELECT_INSIGHT_MEDIA = text("SELECT source, media_filename FROM content_candidates WHERE id = :id")
 
 
+_PHOTO_BLOCK = '<img src="tg://photo?id=chart"/>'
+
+
 def send_rich(chat_id, rich_html: str, inline_keyboard: list, photo: str | None = None) -> bool:
     """Карточка как rich-сообщение (Bot API 10.1+, sendRichMessage): фото, пост и раскрывающиеся
     разделы <details> — как посты Т-Банка (Вадим 19.09: «на фото как у Т-Банка, а ты сделал
     цитирование»). Фото встроено в само сообщение (tg://photo?id=chart + attach://chart).
     Возвращает, принял ли Telegram сообщение — при отказе вызывающий шлёт старый формат."""
-    rich = {"html": rich_html}
+    # ⚠️ Мало объявить медиа в media: его ещё нужно ПОКАЗАТЬ ссылкой tg://photo?id= в самом html,
+    # иначе Telegram принимает сообщение, но графика в нём нет (22.09: «черновики пришли без фото»).
+    rich = {"html": (_PHOTO_BLOCK + rich_html) if photo else rich_html}
     files = None
     if photo:
         rich["media"] = [{"id": "chart", "media": {"type": "photo", "media": "attach://chart"}}]
