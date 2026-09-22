@@ -75,7 +75,6 @@
   "Закрыть (ESC)": "Close (ESC)",
   "Отклонение:": "Deviation:",
   "(разброс ±{{v}}%)": "(spread ±{{v}}%)",
-
   "«Календарь» показывает": "\"Calendar\" shows the",
   "средний ход по периодам года": "average move by period of the year",
   "Столбик вверх (зелёный) — период, в который актив в среднем рос; вниз (красный) — в среднем снижался. Здесь виден типичный рисунок: слабое лето и сильный конец года.": "An upward (green) bar is a period in which the asset rose on average; a downward (red) bar is one in which it fell. The typical picture is visible here: a weak summer and a strong year-end.",
@@ -178,7 +177,6 @@
   "Год пока идёт хуже типичного. Это описание факта, а не сигнал: расхождение может как сократиться, так и усилиться.": "The year is running behind the typical one so far. This is a statement of fact, not a signal: the gap may narrow or widen.",
   "Вводный тур": "Intro tour",
   "Повторить пошаговый гайд по выбору актива, видам графика, срезам и сравнению периодов:": "Replay the step-by-step guide to choosing an asset, chart types, views and period comparison:",
-
   "Историческая статистика": "Historical statistics of an",
   "доходности актива": "asset's returns",
   "по периодам года: дням недели, месяцам, годам. «Что обычно происходит с ценой в этот сезон» — на основе многих лет данных.": "by period of the year: weekdays, months, years. \"What usually happens to the price in this season\" — based on many years of data.",
@@ -215,5 +213,10 @@
   "не просто «средняя доходность», а «как часто это работало».": "not just \"average return\" but \"how often it worked\".",
   "Внимание: сезонность не предсказывает будущее, а показывает историческую тенденцию. Текущий год может пойти против паттерна.": "Note: seasonality does not predict the future; it shows a historical tendency. The current year may go against the pattern.",
   "Готово!": "Done!",
-  "6 сценариев трактовки: когда паттерн надёжный, разница среднего и медианы, ограничения коротких историй.": "6 interpretation scenarios: when a pattern is reliable, mean vs median, the limits of short histories."
+  "6 сценариев трактовки: когда паттерн надёжный, разница среднего и медианы, ограничения коротких историй.": "6 interpretation scenarios: when a pattern is reliable, mean vs median, the limits of short histories.",
+  "Среднее изменение цены актива по периодам года: как бумага, индекс или валюта обычно ведут себя в определённые часы, дни недели, числа месяца и месяцы — усреднённо по всей доступной истории. Данные — с Московской биржи.": "The average price change of an asset by period of the year: how a stock, index or currency usually behaves at certain hours, weekdays, days of the month and months, averaged over all available history. Data comes from the Moscow Exchange.",
+  "Это не прогноз, а описание прошлого: в какие периоды актив в среднем чаще рос, а в какие — снижался. Прошлое поведение ничего не гарантирует на будущее.": "This is not a forecast but a description of the past: in which periods the asset rose more often on average and in which it fell. Past behaviour guarantees nothing about the future.",
+  "«Календарь» — столбики среднего хода по выбранному срезу: вверх — период в среднем рос, вниз — снижался. «Годовая» — усреднённая траектория цены внутри года, поверх которой можно наложить текущий год и сравнить его с обычным ходом. Можно сравнивать разные отрезки истории между собой — свежие годы и всю историю целиком.": "'Calendar' shows bars of the average move by the selected slice: up means the period rose on average, down means it fell. 'Yearly' is the averaged price path within a year, over which you can overlay the current year and compare it with the usual path. You can also compare different stretches of history, recent years against the full record.",
+  "Короткая история": "Short history",
+  "Несколько лет наблюдений — слабая статистика. Чем длиннее история актива, тем устойчивее его сезонный рисунок; у молодых тикеров паттерн ещё не сформирован.": "A few years of observations is weak statistics. The longer the asset's history, the more stable its seasonal pattern; young tickers have not formed one yet."
 }

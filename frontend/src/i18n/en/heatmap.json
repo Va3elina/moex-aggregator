@@ -139,5 +139,13 @@
   "Транспорт": "Transport",
   "Финансы": "Financials",
   "Химия": "Chemicals",
-  "Энергетика": "Utilities"
+  "Энергетика": "Utilities",
+  "Все акции Московской биржи в виде плиток на одном экране. Каждая плитка — одна компания: размер показывает её вклад в рынок, цвет — изменение цены за выбранный период. За пару секунд видно общее состояние рынка, какие сектора лидируют и кто двигает индекс.": "Every Moscow Exchange stock as tiles on one screen. Each tile is one company: size shows its weight in the market, colour shows the price change over the selected period. In a couple of seconds you can see the overall state of the market, which sectors lead and who moves the index.",
+  "Цвет и группировка": "Colour and grouping",
+  "Зелёная плитка — цена выросла, красная — упала, тёмно-серая — почти не изменилась. Чем насыщеннее цвет, тем сильнее движение. Плитки собраны в блоки по отраслям, поэтому отраслевые движения видны сразу. Наведение на плитку открывает карточку с ценой и изменениями за разные периоды.": "A green tile means the price rose, red means it fell, dark grey means it barely moved. The more saturated the colour, the bigger the move. Tiles are grouped into sector blocks, so sector moves are visible at once. Hovering over a tile opens a card with the price and changes over several periods.",
+  "Тяжеловесы снижаются. Их вес в рынке большой, поэтому индекс в такие дни чаще тоже в минусе, даже если средние акции в плюсе.": "Heavyweights are falling. Their market weight is large, so on such days the index is usually down too, even if mid-caps are up.",
+  "Общий день слабый, но отдельные сектора или акции идут против рынка — обычно на отчётности, новостях или дивидендах.": "A weak day overall, but some sectors or stocks move against the market, usually on earnings, news or dividends.",
+  "Отраслевой рост — нередко связан с новостями по отрасли. Внутри сектора движение обычно ведут крупнейшие бумаги.": "A sector rally, often tied to sector news. Within the sector, the largest names usually lead the move.",
+  "Красный за день при зелёном за месяц": "Red for the day, green for the month",
+  "Локальный откат внутри более длинного роста. Красный и там и там — более затяжное снижение.": "A local pullback within a longer uptrend. Red on both means a more prolonged decline."
 }
