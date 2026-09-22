@@ -23,17 +23,16 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, Repeat, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, ChevronDown, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
-import SegmentedControl from '../components/SegmentedControl';
 import SimpleChart from '../components/SimpleChart';
+import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
-import { IndicatorGlyph, indicatorKey } from '../components/admin/indicatorMeta';
-import { EMPTY_SEGMENT } from '../components/admin/IndicatorSegment';
+import { IndicatorSegment, EMPTY_SEGMENT, SEGMENT_HINT } from '../components/admin/IndicatorSegment';
 import type { SegmentState } from '../components/admin/IndicatorSegment';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -43,8 +42,7 @@ import {
   getAnalyticsStats,
   listAdminUsers,
   listAdminGuests,
-  getAudience,
-  getBehavior,
+  getSegment,
   getAlertsStats,
   getMetrica,
   getGrowth,
@@ -53,14 +51,14 @@ import type {
   GrowthReport,
   AnalyticsStats,
   AdminUser,
-  AudienceReport,
-  BehaviorReport,
+  SegmentReport,
   AlertsStats,
   AdminRange,
   MetricaReport,
   MetricaRow,
   MetricaMetric,
   MetricaSummary,
+  MetricaBySource,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -76,10 +74,6 @@ const METRIC_HINTS = {
     + '4) Блокировщики рекламы режут Метрику чаще, чем наш трекер. '
     + '5) Вошедших и админов Метрика узнаёт по номеру аккаунта, который получает с 11.09.2026, и только в браузерах, где после этого входили в аккаунт. Наш трекер знает всех вошедших. '
     + '6) Метрика считает роботов по своей базе, мы отсекаем их по строке браузера.',
-  behavior:
-    'Сколько разных людей открывало каждый раздел за период. Клик по разделу показывает, что смотрят внутри него: какие активы выбирают и куда уходят дальше в той же сессии. Человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке.',
-  audience:
-    'Сколько людей приходило на сайт по дням за всю доступную историю, сколько из них было впервые и сколько зарегистрировалось. Человек считается по аккаунту, иначе по постоянному ID браузера, иначе по вкладке (для данных до 11.09.2026). «Впервые» считается по всей истории, а не по выбранному периоду.',
   metrica_section:
     'Трафик сайта берём из Яндекс Метрики: она видит всех посетителей, сама отсекает роботов, знает поисковые фразы, города и браузеры. Данные обновляются раз в 5 минут, у самой Метрики задержка несколько минут. Свой трекер оставлен для того, чего у Метрики нет: активы, действия внутри индикаторов, связь с аккаунтами и подписками. День 20.06.2026 исключён целиком: в тот день была купленная накрутка.',
   funnel:
@@ -179,26 +173,6 @@ const METRIC_HINTS = {
 // ПЕРИОДЫ — пресеты и произвольный диапазон, всё в московских датах
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Группы страницы: деление по типу вопроса, а не по источнику данных.
- *  Сами секции внутри групп не меняются — это только раскладка. */
-type Group = 'audience' | 'behavior' | 'retention' | 'people';
-
-/** Кого смотрим в группе «Люди». Две таблицы одновременно — это шум: непонятно,
- *  в какую смотреть, поэтому показываем ровно одну. */
-type Who = 'users' | 'guests';
-
-const WHO_OPTIONS: { key: Who; label: string }[] = [
-  { key: 'users', label: 'Зарегистрированные' },
-  { key: 'guests', label: 'Гости' },
-];
-
-const GROUPS: { key: Group; label: string; note: string }[] = [
-  { key: 'audience',  label: 'Аудитория',  note: 'сколько людей и откуда' },
-  { key: 'behavior',  label: 'Поведение',  note: 'что смотрят на сайте' },
-  { key: 'retention', label: 'Удержание',  note: 'возвращаются ли' },
-  { key: 'people',    label: 'Люди',       note: 'кто именно' },
-];
-
 type Preset = 'today' | 'yesterday' | '7d' | '30d' | 'this_month' | 'last_month' | '90d' | '180d' | '365d' | 'custom';
 
 const PRESET_OPTIONS: { key: Preset; label: string }[] = [
@@ -258,6 +232,12 @@ function fmtRange(a: string, b: string): string {
   return a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`;
 }
 
+const INDICATOR_NAMES: Record<string, string> = {
+  oi: 'ОИ',
+  seasonality: 'Сезонность',
+  repo: 'Репо',
+  funds: 'Фонды',
+};
 
 
 export default function AdminStatsPage() {
@@ -277,8 +257,6 @@ export default function AdminStatsPage() {
   const [showOwn, setShowOwn] = usePersistedState<boolean>('frame:admin:stats:showOwn', false);
   // Раз в 5 минут, пока вкладка на экране, перезапрашиваем всё: Метрика
   // обновляет отчёты с задержкой в несколько минут, бэкенд кэширует на 5.
-  // Группа объявлена до загрузчиков: они от неё зависят.
-  const [group, setGroup] = usePersistedState<Group>('frame:admin:group', 'audience');
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -303,9 +281,7 @@ export default function AdminStatsPage() {
   const metricaCache = useRef(new Map<string, MetricaReport>());
 
   useEffect(() => {
-    // Трафик нужен только «Аудитории». Раньше он грузился и при возврате из
-    // карточки человека в «Люди» — отсюда ощущение, что страница лагает.
-    if (!user || user.role !== 'admin' || group !== 'audience') return;
+    if (!user || user.role !== 'admin') return;
     const key = `${JSON.stringify(range)}|${segment}|${device}`;
     const hit = statsCache.current.get(key);
     // Ответ на прошлый фильтр, пришедший позже нового, не должен его затереть.
@@ -325,10 +301,10 @@ export default function AdminStatsPage() {
         if (alive) setLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, segment, device, tick, group]);
+  }, [user, range, segment, device, tick]);
 
   useEffect(() => {
-    if (!user || user.role !== 'admin' || group !== 'audience') return;
+    if (!user || user.role !== 'admin') return;
     const key = `${JSON.stringify(range)}|${segment}|${device}`;
     const hit = metricaCache.current.get(key);
     let alive = true;
@@ -346,7 +322,7 @@ export default function AdminStatsPage() {
         if (alive) setMetricaLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, segment, device, tick, group]);
+  }, [user, range, segment, device, tick]);
 
   // Воронка, удержание, гости, первые источники — от фильтров сегмента и
   // устройства не зависят, только от периода.
@@ -355,20 +331,22 @@ export default function AdminStatsPage() {
   // показывали бы разных людей. Имя indSegment — чтобы не путать с segment
   // из шапки, который делит аудиторию на гостей/вошедших/админов.
   const [indSegment, setIndSegment] = usePersistedState<SegmentState>('frame:admin:indicatorSegment', EMPTY_SEGMENT);
-  // Кого показываем в группе «Люди». Раньше гости были свёрнутым разделом под
-  // таблицей пользователей — их там просто не находили.
-  const [who, setWho] = usePersistedState<Who>('frame:admin:who', 'users');
-  // В localStorage мог остаться убранный вариант «и те, и другие» — без этого
-  // у тех, кто его выбирал, не отрисовалась бы ни одна таблица.
-  const safeWho: Who = WHO_OPTIONS.some(o => o.key === who) ? who : 'users';
+  const [segReport, setSegReport] = useState<SegmentReport | null>(null);
+  const [segLoading, setSegLoading] = useState(true);
 
   const [growth, setGrowth] = useState<GrowthReport | null>(null);
   const [growthLoading, setGrowthLoading] = useState(true);
 
+  useEffect(() => {
+    setSegLoading(true);
+    getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
+      .then(setSegReport)
+      .catch(() => setSegReport(null))
+      .finally(() => setSegLoading(false));
+  }, [range, indSegment]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
-    // Когорты и гости нужны только «Удержанию».
-    if (!user || user.role !== 'admin' || group !== 'retention') return;
+    if (!user || user.role !== 'admin') return;
     const key = JSON.stringify(range);
     const hit = growthCache.current.get(key);
     let alive = true;
@@ -386,7 +364,7 @@ export default function AdminStatsPage() {
         if (alive) setGrowthLoading(false);
       });
     return () => { alive = false; };
-  }, [user, range, tick, group]);
+  }, [user, range, tick]);
 
   // Затемняем только блок, который реально ждёт, и только если он ждёт
   // дольше 250 мс: ответ из кэша или быстрый ответ проходит без вспышки.
@@ -441,48 +419,8 @@ export default function AdminStatsPage() {
         </Link>
       </div>
 
-      {/* Липкая шапка: сверху разделы, под ними фильтры. И то и другое нужно в
-          любой точке прокрутки — раздел меняет вопрос, фильтры сужают ответ. */}
-      <div
-        className="flex flex-wrap items-end mb-2"
-        style={{
-          gap: 'var(--sp-2)',
-          position: 'sticky',
-          // Шапка сайта сама липкая (h-14 на мобильном, h-16 дальше) и лежит
-          // выше по z-index: без этого отступа фильтры уезжали бы под неё.
-          top: 'var(--admin-bar-top)',
-          zIndex: 30,
-          paddingTop: 'var(--sp-3)',
-          paddingBottom: 'var(--sp-3)',
-          backgroundColor: 'var(--bg-primary)',
-          // Тонкая линия появляется только когда блок прилип — иначе он
-          // выглядит приклеенным к заголовку ещё до прокрутки.
-          boxShadow: '0 1px 0 color-mix(in srgb, var(--border-color) 25%, transparent)',
-        }}
-      >
-        <div className="flex flex-wrap gap-2 w-full">
-          {GROUPS.map(gr => {
-            const on = group === gr.key;
-            return (
-              <button
-                key={gr.key}
-                type="button"
-                onClick={() => { setGroup(gr.key); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                aria-pressed={on}
-                title={gr.note}
-                className="editorial-press text-sm font-semibold"
-                style={{
-                  padding: 'var(--sp-2) var(--sp-4)',
-                  border: `2px solid ${on ? 'var(--text-primary)' : 'var(--border-color)'}`,
-                  backgroundColor: on ? 'var(--text-primary)' : 'var(--bg-secondary)',
-                  color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
-                }}
-              >
-                {gr.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* Filters */}
+      <div className="flex flex-wrap items-end mb-2" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<Preset>
           options={PRESET_OPTIONS}
           value={preset}
@@ -544,12 +482,11 @@ export default function AdminStatsPage() {
       )}
 
       <div>
-      {group === 'audience' && (
-        <>
-        {/* Аудитория за всю историю. Воронка отсюда убрана: её четыре числа
-            дословно повторяли трафик ниже. */}
-        <Section title="Сколько людей и откуда" hint={METRIC_HINTS.audience}>
-          <AudienceBlock />
+        {/* ═══ Воронка ═══ */}
+        <Section title="Воронка" hint={METRIC_HINTS.funnel}>
+          <div style={dimStyle(growthDim)}>
+            <FunnelBlock growth={growth} loading={growthLoading} />
+          </div>
         </Section>
 
         {/* ═══ Трафик из Яндекс Метрики ═══ */}
@@ -622,6 +559,17 @@ export default function AdminStatsPage() {
                 prev={formatDuration(p.avg_visit_sec)}
               />
               <SummaryCard
+                icon={<LogOut size={16} />}
+                label="Отказы"
+                hint={METRIC_HINTS.bounce}
+                value={s.bounce_pct === null ? '—' : `${fmtNum(s.bounce_pct)}%`}
+                delta={s.delta_bounce_pp === null ? null : {
+                  text: `${s.delta_bounce_pp >= 0 ? '+' : '−'}${fmtNum(Math.abs(s.delta_bounce_pp))} п.п.`,
+                  good: s.delta_bounce_pp <= 0,
+                }}
+                prev={p.bounce_pct === null ? '—' : `${fmtNum(p.bounce_pct)}%`}
+              />
+              <SummaryCard
                 icon={<Repeat size={16} />}
                 label="Вернулись"
                 hint={METRIC_HINTS.returning}
@@ -654,7 +602,6 @@ export default function AdminStatsPage() {
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}
-          showWatermark={false}
                 showNavigator={false}
                 hideTime={true}
                 height={320}
@@ -712,79 +659,93 @@ export default function AdminStatsPage() {
           </div>
         )}
 
-        </>
-      )}
-
-      {group === 'behavior' && (
-        <>
-        <Section title="Что смотрят" hint={METRIC_HINTS.behavior}>
-          <BehaviorBlock
-            range={range} segment={segment} device={device}
-            // Клетка матрицы — это готовый отбор «смотрят и то, и другое»:
-            // открываем этих людей списком в группе «Люди».
-            onPickPair={(a, b) => { setIndSegment({ seen: [a, b], notSeen: [], mode: 'all' }); setGroup('people'); }}
-          />
+        {/* ═══ Чего нет в Метрике ═══ */}
+        <div style={dimStyle(ownDim)}>
+        <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+            <TopList
+              title="Топ активов"
+              hint={METRIC_HINTS.top_assets}
+              columns={['посетители', 'показы']}
+              items={data?.top_assets.map((r) => ({
+                label: r.name || r.secid,
+                note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
+                value: r.visitors,
+                value2: r.views,
+              })) || null}
+              loading={loading}
+              emptyText="Данные собираются с 11.09.2026"
+            />
+            <TopList
+              title="Выбор в поиске"
+              hint={METRIC_HINTS.top_search}
+              hintAlign="right"
+              columns={['выборы', 'посетители']}
+              items={data?.top_search.map((r) => ({
+                label: r.name || r.secid,
+                note: r.name ? r.secid : undefined,
+                value: r.picks,
+                value2: r.visitors,
+              })) || null}
+              loading={loading}
+              emptyText="Нет выборов в поиске"
+            />
+            <TopList
+              title="Экспорты PNG"
+              hint={METRIC_HINTS.top_exports}
+              columns={['скачивания', 'посетители']}
+              items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
+              loading={loading}
+              emptyText="Никто не экспортировал"
+            />
+            <TopList
+              title="Сезонность: режимы"
+              hint={METRIC_HINTS.modes}
+              hintAlign="right"
+              columns={['переключения', 'посетители']}
+              items={data?.mode_distribution.map((r) => ({ label: r.mode, value: r.count, value2: r.visitors })) || null}
+              loading={loading}
+              emptyText="Нет переключений режима"
+            />
+          </div>
         </Section>
+        </div>
+      </div>
 
-        </>
-      )}
-
-      {group === 'retention' && (
-        <>
       {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
       <div style={dimStyle(growthDim)}>
-        <Section title="Продолжают ли заходить после регистрации" hint={METRIC_HINTS.cohorts}>
-          <RetentionCurves growth={growth} loading={growthLoading} />
+        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
+          <CohortsBlock growth={growth} loading={growthLoading} />
         </Section>
-
-        <Section title="Что стало с каждым месяцем регистраций" hint={METRIC_HINTS.cohorts}>
-          <CohortFunnels growth={growth} loading={growthLoading} />
-        </Section>
-
         <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
           <LoyalGuestsBlock growth={growth} loading={growthLoading} />
         </Section>
-        {/* «Откуда пришли зарегистрированные» убрано: источники живут в «Аудитории». */}
-      </div>
-
-        </>
-      )}
-
-      {group === 'people' && (
-        <>
-      <div className="flex flex-wrap items-center gap-3 mb-6 md:mb-8">
-        <SegmentedControl<Who> options={WHO_OPTIONS} value={safeWho} onChange={setWho} />
-        {indSegment.seen.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setIndSegment(EMPTY_SEGMENT)}
-            className="editorial-press text-xs"
-            style={{ padding: 'var(--sp-1) var(--sp-3)', border: '1.5px solid var(--accent)', color: 'var(--text-primary)' }}
-            title="Снять отбор"
-          >
-            Смотрят: {indSegment.seen.map(x => PAGE_NAMES[x] || x).join(' и ')} ✕
-          </button>
-        )}
-      </div>
-
-      {safeWho === 'users' && (
-        <Section title="Зарегистрированные" hint={METRIC_HINTS.users_section}>
-          <UsersBlock range={range} segment={indSegment} />
+        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
+          <FirstSourcesBlock growth={growth} loading={growthLoading} />
         </Section>
-      )}
-
-      {safeWho === 'guests' && (
-        <Section title="Гости" hint={METRIC_HINTS.guests_section}>
-          <GuestsBlock range={range} segment={indSegment} />
-        </Section>
-      )}
+      </div>
 
       <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
         <AlertsBlock range={range} />
       </Section>
-        </>
-      )}
-      </div>
+
+      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
+        <IndicatorSegment
+          indicators={segReport?.all_indicators ?? []}
+          value={indSegment}
+          onChange={setIndSegment}
+          summary={segReport}
+          loading={segLoading}
+        />
+      </Section>
+
+      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
+        <GuestsBlock range={range} segment={indSegment} />
+      </CollapsibleSection>
+
+      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
+        <UsersBlock range={range} segment={indSegment} />
+      </Section>
     </div>
   );
 }
@@ -793,479 +754,231 @@ export default function AdminStatsPage() {
 // SUBCOMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Доля part от whole: «6%», для малых — с одним знаком («0,4%»). */
+function shareText(part: number, whole: number | null | undefined): string | null {
+  if (!whole) return null;
+  const v = (part / whole) * 100;
+  return `${v > 0 && v < 10 ? v.toFixed(1).replace('.', ',') : Math.round(v)}%`;
+}
 
+const MONTH_NAMES_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const fmtMonth = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
+};
 const fmtShortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 const NUM_FONT = "'IBM Plex Mono', monospace";
 
-const COHORT_COLORS = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-5)', 'var(--viz-6)', 'var(--viz-7)', 'var(--viz-8)'];
-const MONTHS_RU = ['', 'январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
-const cohortName = (m: string) => { const [y, mm] = m.split('-'); return `${MONTHS_RU[+mm]} ${y.slice(2)}`; };
-
-/** Удержание кривыми: у каждой когорты своя линия — какая доля зарегистрировавшихся
- *  в этом месяце заходила через месяц, два, три. Линия, которая падает медленнее,
- *  — когорта, которая держится лучше. */
-function RetentionCurves({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) return <Skeleton height={300} rounded="lg" />;
-  const ret = growth?.retention;
-  // Когорты из одного-двух человек дают линии 0–100% и только путают.
-  const cohorts = (ret?.cohorts ?? []).filter(c => c.size >= 5 && c.cells.length > 0);
-  if (!ret || cohorts.length === 0) {
-    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока мало</p></Card>;
-  }
-  const maxN = Math.max(ret.max_n ?? 0, 1);
-  const W = 720, H = 260, L = 44, R = 16, T = 14, B = 34;
-  const X = (n: number) => L + (n / maxN) * (W - L - R);
-  const Y = (pct: number) => T + (1 - pct / 100) * (H - T - B);
-  const best = [...cohorts].filter(c => c.cells.length > 1)
-    .sort((a, b) => (b.cells[1]?.pct ?? 0) - (a.cells[1]?.pct ?? 0))[0];
-
-  return (
-    <Card padding="md" className="md:p-5">
-      <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-        Какая доля зарегистрировавшихся продолжает заходить через месяц, два, три.
-        {best && <> Лучше всех держится <b style={{ color: 'var(--text-primary)' }}>{cohortName(best.month)}</b>: через месяц заходили {best.cells[1].pct}%.</>}
-      </p>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} role="img" aria-label="Кривые удержания по когортам">
-        {[0, 25, 50, 75, 100].map(p => (
-          <g key={p}>
-            <line x1={L} y1={Y(p)} x2={W - R} y2={Y(p)} style={{ stroke: 'color-mix(in srgb, var(--border-color) 18%, transparent)' }} />
-            <text x={L - 8} y={Y(p) + 4} textAnchor="end" fontSize="11" style={{ fill: 'var(--text-muted)', ...{ fontFamily: "'IBM Plex Mono',monospace" } }}>{p}%</text>
-          </g>
-        ))}
-        {Array.from({ length: maxN + 1 }, (_, n) => (
-          <text key={n} x={X(n)} y={H - 10} textAnchor="middle" fontSize="11"
-                style={{ fill: 'var(--text-muted)', fontFamily: "'IBM Plex Mono',monospace" }}>
-            {n === 0 ? 'месяц регистрации' : `+${n} мес`}
-          </text>
-        ))}
-        {cohorts.map((c, i) => {
-          const color = COHORT_COLORS[i % COHORT_COLORS.length];
-          const pts = c.cells.map(cell => `${X(cell.n).toFixed(1)},${Y(cell.pct).toFixed(1)}`).join(' ');
-          return (
-            <g key={c.month}>
-              <polyline points={pts} fill="none" strokeWidth="2.2" strokeLinejoin="round" style={{ stroke: color }} />
-              {c.cells.map(cell => (
-                <circle key={cell.n} cx={X(cell.n)} cy={Y(cell.pct)} r="3.4" style={{ fill: color }}>
-                  <title>{`${cohortName(c.month)}, ${cell.n === 0 ? 'месяц регистрации' : `+${cell.n} мес`}: ${cell.pct}% (${cell.users} из ${c.size})`}</title>
-                </circle>
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-        {cohorts.map((c, i) => (
-          <span key={c.month} className="inline-flex items-center gap-1.5">
-            <i className="inline-block w-3 h-0.5" style={{ backgroundColor: COHORT_COLORS[i % COHORT_COLORS.length] }} />
-            {cohortName(c.month)} · {c.size} чел.
-          </span>
-        ))}
+/** Воронка: от посетителя до оплаты, у каждого шага — доля от предыдущего. */
+function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={116} rounded="lg" />)}
       </div>
-    </Card>
-  );
-}
-
-/** Наш же домен в реферере — это переход между страницами сайта, а не источник. */
-const OWN_HOSTS = new Set(['framedata.ru', 'www.framedata.ru', 'xn--80aklbnczmv.xn--p1ai', 'таймфрейм.рф']);
-const srcLabel = (s: string) =>
-  OWN_HOSTS.has(s) ? 'переход внутри сайта'
-  : s === 'oauth.yandex.ru' ? 'вход через Яндекс'
-  : s;
-
-/** Что стало с когортами — вложенными полосами: вся когорта → вернулись →
- *  активны за 30 дней → оплатили. Длина полосы — доля от когорты. */
-function CohortFunnels({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
-  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
-  const rows = (growth?.cohorts ?? []).filter(c => c.registered > 0);
-  if (rows.length === 0) {
-    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p></Card>;
+    );
   }
-  const maxSize = Math.max(...rows.map(r => r.registered), 1);
-  const layers = [
-    { key: 'registered' as const, label: 'зарегистрировались', color: 'color-mix(in srgb, var(--text-muted) 28%, transparent)' },
-    { key: 'returned' as const, label: 'вернулись после первых суток', color: 'color-mix(in srgb, var(--accent) 38%, transparent)' },
-    { key: 'active_30' as const, label: 'заходили за 30 дней', color: 'var(--accent)' },
-    { key: 'paid' as const, label: 'оплатили', color: 'var(--success)' },
+  if (!growth) {
+    return <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>Не удалось посчитать воронку.</p></Card>;
+  }
+  const f = growth.funnel;
+  const steps: { label: string; value: number | null; share: string | null; note: string }[] = [
+    { label: 'Посетители', value: f.visitors, share: null, note: f.visitors === null ? 'Метрика не подключена' : 'разные люди за период' },
+    { label: 'Зарегистрировались', value: f.registered, share: shareText(f.registered, f.visitors), note: 'от посетителей' },
+    {
+      label: 'Вернулись', value: f.returned, share: shareText(f.returned, f.can_return),
+      note: f.can_return === 0 ? 'сутки ещё не прошли'
+        : f.can_return < f.registered ? `из ${f.can_return}, у кого прошли сутки` : 'от зарегистрированных',
+    },
+    { label: 'Оплатили', value: f.paid, share: shareText(f.paid, f.registered), note: 'от зарегистрированных' },
   ];
   return (
-    <Card padding="md" className="md:p-5">
-      <div className="flex flex-col gap-3">
-        {rows.map(r => (
-          <div key={r.month} className="grid items-center" style={{ gridTemplateColumns: '92px 1fr', gap: 'var(--sp-3)' }}>
-            <div>
-              <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{cohortName(r.month)}</div>
-              <div className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: NUM_FONT }}>{r.registered} чел.</div>
+    <div className="space-y-2" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {steps.map((s) => (
+          <Card key={s.label} padding="md" className="md:p-5">
+            <div className="text-xs uppercase mb-2" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
+              {s.label}
             </div>
-            <div className="flex flex-col gap-0.5">
-              {layers.map(l => {
-                const v = r[l.key];
-                return (
-                  <div key={l.key} className="flex items-center gap-2" title={`${l.label}: ${v}`}>
-                    <div className="transition-[width] duration-500"
-                         style={{ height: 9, width: `${Math.max((v / maxSize) * 100, v > 0 ? 0.8 : 0)}%`, backgroundColor: l.color }} />
-                    <span className="text-[11px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{v}</span>
-                  </div>
-                );
-              })}
+            <div
+              className="font-bold"
+              style={{
+                color: 'var(--text-primary)', fontSize: 'clamp(1.5rem, 2.4vw, 2rem)', letterSpacing: '-0.02em',
+                fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {s.value === null ? '—' : <TweenedValue value={s.value} format={fmtInt} />}
             </div>
-          </div>
+            <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              {s.share && <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: NUM_FONT }}>{s.share} </span>}
+              {s.note}
+            </div>
+          </Card>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
-        {layers.map(l => (
-          <span key={l.key} className="inline-flex items-center gap-1.5">
-            <i className="inline-block w-3 h-2" style={{ backgroundColor: l.color }} />{l.label}
-          </span>
-        ))}
-      </div>
-    </Card>
+      {f.invite > 0 && (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Ещё {f.invite} из зарегистрированных за период получили Pro по инвайту — в «Оплатили» они не входят.
+        </p>
+      )}
+    </div>
   );
 }
 
-function AudienceBlock() {
-  const [data, setData] = useState<AudienceReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [mode, setMode] = usePersistedState<'people' | 'new' | 'reg'>('frame:admin:aud:mode', 'people');
-
-  useEffect(() => {
-    setLoading(true);
-    setFailed(false);
-    getAudience().then(setData).catch(() => setFailed(true)).finally(() => setLoading(false));
-  }, []);
-
-  if (loading && !data) return <Skeleton height={340} rounded="lg" />;
-  if (failed || !data) {
+/** Когорты: все, кто зарегистрировался в месяце, и что с ними сейчас. */
+function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
+  if (!growth || growth.cohorts.length === 0) {
     return (
       <Card padding="md">
-        <p className="text-center py-6 text-sm" style={{ color: 'var(--danger)' }}>Не удалось загрузить</p>
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Регистраций пока нет</p>
       </Card>
     );
   }
-  const d = data.days;
-  if (d.length < 2) {
-    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Данных пока мало</p></Card>;
-  }
-
-  const series = {
-    people: { main: d.map(x => x.people), mainLabel: 'Людей',
-              sec: d.map(x => x.with_account), secLabel: 'Из них с аккаунтом' },
-    new:    { main: d.map(x => x.newcomers), mainLabel: 'Впервые',
-              sec: d.map(x => x.returning), secLabel: 'Вернулись' },
-    reg:    { main: d.map(x => x.registrations), mainLabel: 'Регистраций',
-              sec: null, secLabel: '' },
-  }[mode];
-
-  const total = (k: 'people' | 'newcomers' | 'registrations') => d.reduce((a, x) => a + x[k], 0);
-  const last30 = d.slice(-30);
-  const avg = Math.round(last30.reduce((a, x) => a + x.people, 0) / Math.max(last30.length, 1));
-
-  return (
-    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard icon={<Users size={16} />} label="Людей за всё время" value={total('people')}
-                     sub={`с ${data.since ? fmtShortDay(data.since) : '—'}`} />
-        <SummaryCard icon={<Zap size={16} />} label="Впервые" value={total('newcomers')}
-                     sub="первый заход на сайт" />
-        <SummaryCard icon={<Activity size={16} />} label="В среднем за день" value={avg}
-                     sub="последние 30 дней" />
-        <SummaryCard icon={<Gift size={16} />} label="Регистраций" value={data.totals.registrations}
-                     sub="всего аккаунтов" />
-      </div>
-
-      <Card padding="md" className="md:p-5">
-        <div className="flex flex-wrap gap-2 mb-4">
-          <SegmentedControl<'people' | 'new' | 'reg'>
-            options={[
-              { key: 'people', label: 'Сколько пришло' },
-              { key: 'new', label: 'Впервые и вернулись' },
-              { key: 'reg', label: 'Регистрации' },
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-        </div>
-        <SimpleChart
-          key={mode}
-          data={d.map((x, i) => ({ time: x.date, value: series.main[i] }))}
-          secondaryData={series.sec ? d.map((x, i) => ({ time: x.date, value: series.sec![i] })) : undefined}
-          showSecondary={!!series.sec}
-          primaryColor="var(--accent)"
-          secondaryColor="var(--accent-secondary)"
-          primaryLabel={series.mainLabel}
-          secondaryLabel={series.secLabel}
-          formatValue={(v) => Math.round(v).toString()}
-          formatSecondaryAxis={(v) => Math.round(v).toString()}
-          showValueHeader={false}
-          legendPosition="top"
-          showDownloadButton={false}
-          showWatermark={false}
-          showNavigator={false}
-          hideTime
-          defaultHistogram={mode === 'reg'}
-          height={300}
-          chartPadding={{ right: 80 }}
-        />
-      </Card>
-
-      <TopList
-        title="Откуда приходят"
-        columns={['людей']}
-        items={data.sources.map(s => ({ label: srcLabel(s.source), value: s.people }))}
-        loading={false}
-        emptyText="Источники ещё не собраны"
-      />
-    </div>
+  const td: React.CSSProperties = { padding: '9px 8px', textAlign: 'right', fontFamily: NUM_FONT, whiteSpace: 'nowrap' };
+  const cell = (n: number, of: number) => (
+    <>
+      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{n}</span>
+      {of > 0 && <span className="text-xs" style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{shareText(n, of)}</span>}
+    </>
   );
-}
-
-/** Что смотрят: разделы с иконками. Клик ведёт на страницу раздела — у каждого
- *  своя глубина, и в выпадающий блок под списком она не помещалась. */
-function BehaviorBlock({ range, segment, device, onPickPair }: {
-  range: AdminRange; segment: string; device: string;
-  onPickPair: (a: string, b: string) => void;
-}) {
-  const navigate = useNavigate();
-  const [data, setData] = useState<BehaviorReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const dim = useDelayedFlag(loading && !!data);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    setFailed(false);
-    getBehavior({ ...range, segment, device })
-      .then(r => { if (alive) setData(r); })
-      .catch(() => { if (alive) setFailed(true); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [range, segment, device]);
-
-  if (loading && !data) return <Skeleton height={360} rounded="lg" />;
-  if (failed || !data) {
-    return <Card padding="md"><p className="text-center py-6 text-sm" style={{ color: 'var(--danger)' }}>Не удалось загрузить</p></Card>;
-  }
-  const max = Math.max(...data.indicators.map(i => i.people), 1);
-
+  const heads = ['Месяц регистрации', 'Людей', 'Вернулись после первых суток', 'Заходили за 30 дней', 'За 7 дней', 'Оплатили'];
   return (
-    <div className="space-y-6 md:space-y-8" style={dimStyle(dim)}>
-      <Card padding="md" className="md:p-5">
-        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-          Сколько людей открывало раздел. Клик — страница раздела: что смотрят внутри, откуда приходят и куда уходят.
-        </p>
-        <div className="flex flex-col">
-          {data.indicators.map(ind => (
-            <button
-              key={ind.path}
-              type="button"
-              onClick={() => navigate(`/admin/indicator/${indicatorKey(ind.path)}`)}
-              className="relative grid items-center text-left hover:bg-white/[0.03] transition-colors"
-              style={{
-                gridTemplateColumns: 'auto 1fr auto auto', gap: 'var(--sp-3)', padding: '9px 10px',
-                borderBottom: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)',
-              }}
-            >
-              <span aria-hidden className="absolute inset-y-px left-0 transition-[width] duration-500"
-                    style={{ width: `${(ind.people / max) * 100}%`, backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} />
-              <span className="relative"><IndicatorGlyph path={ind.path} /></span>
-              <span className="relative min-w-0">
-                <span className="block text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{ind.name}</span>
-                <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {ind.registered} с аккаунтом · {fmtNum(ind.views)} просмотров
-                </span>
-              </span>
-              <span className="relative text-right" style={{ fontFamily: NUM_FONT, fontVariantNumeric: 'tabular-nums' }}>
-                <span className="block text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtNum(ind.people)}</span>
-                <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>человек</span>
-              </span>
-              <ChevronRight size={16} className="relative" style={{ color: 'var(--text-muted)' }} />
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <OverlapMatrix data={data} onPickPair={onPickPair} />
-    </div>
-  );
-}
-
-/** Кто чем пользуется — инфографикой: для каждой пары разделов доля аудитории
- *  строки, которая смотрит и столбец. Заливка гуще там, где пересечение больше. */
-function OverlapMatrix({ data, onPickPair }: {
-  data: BehaviorReport; onPickPair: (a: string, b: string) => void;
-}) {
-  const inds = data.indicators;
-  const size = new Map(inds.map(i => [i.path, i.people]));
-  const pair = new Map(data.overlap.map(o => [`${o.a}|${o.b}`, o.people]));
-  const totalBreadth = data.breadth.reduce((a, b) => a + b.people, 0) || 1;
-  const maxBreadth = Math.max(...data.breadth.map(b => b.people), 1);
-  const short = (name: string) => name.replace('Индикатор ', '').replace('Открытый интерес', 'ОИ');
-
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 md:gap-4">
-      <Card padding="md" className="md:p-5 xl:col-span-2">
-        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-          Кто чем пользуется
-        </p>
-        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-          Строка — чья аудитория, столбец — что она смотрит ещё. «ОИ → Карта 46%» значит: 46% смотрящих ОИ открывают и карту. Клик по клетке — эти люди списком.
-        </p>
-        <div className="overflow-x-auto">
-          <table style={{ borderCollapse: 'collapse', minWidth: 620, width: '100%' }}>
-            <thead>
-              <tr>
-                <th />
-                {inds.map(c => (
-                  <th key={c.path} className="pb-1.5" style={{ fontWeight: 400 }}>
-                    <span className="flex justify-center" title={c.name}><IndicatorGlyph path={c.path} size={24} /></span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {inds.map(r => (
-                <tr key={r.path}>
-                  <td className="pr-2 py-0.5 whitespace-nowrap">
-                    <span className="flex items-center gap-2">
-                      <IndicatorGlyph path={r.path} size={22} />
-                      <span className="text-xs" style={{ color: 'var(--text-primary)' }}>{short(r.name)}</span>
-                    </span>
-                  </td>
-                  {inds.map(c => {
-                    const n = pair.get(`${r.path}|${c.path}`) ?? 0;
-                    const pct = Math.round((n / Math.max(size.get(r.path) ?? 1, 1)) * 100);
-                    const self = r.path === c.path;
-                    return (
-                      <td key={c.path} style={{ padding: 2 }}>
-                        <button
-                          type="button"
-                          disabled={self}
-                          onClick={() => onPickPair(r.path, c.path)}
-                          title={self ? `${r.name}: ${n} человек` : `${n} человек смотрят «${r.name}» и «${c.name}»`}
-                          className="w-full transition-transform hover:scale-[1.06]"
-                          style={{
-                            padding: '7px 2px',
-                            fontFamily: NUM_FONT, fontSize: 11.5, fontWeight: 600,
-                            cursor: self ? 'default' : 'pointer',
-                            color: self ? 'var(--text-muted)' : pct >= 55 ? 'var(--text-inverse)' : 'var(--text-primary)',
-                            backgroundColor: self
-                              ? 'color-mix(in srgb, var(--text-muted) 12%, transparent)'
-                              : `color-mix(in srgb, var(--accent) ${Math.round(pct * 0.9)}%, transparent)`,
-                          }}
-                        >
-                          {self ? fmtNum(n) : `${pct}%`}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
+    <Card padding="md" className="md:p-5">
+      <div className="overflow-x-auto" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+        <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
+          <thead>
+            <tr>
+              {heads.map((h, i) => (
+                <th
+                  key={h}
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em',
+                    textAlign: i ? 'right' : 'left', padding: '0 8px 8px', verticalAlign: 'bottom',
+                  }}
+                >
+                  {h}
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Card padding="md" className="md:p-5">
-        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-          Сколько разделов на человека
-        </p>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          {Math.round(((data.breadth.find(b => b.n === 1)?.people ?? 0) / totalBreadth) * 100)}% открывают ровно один раздел.
-        </p>
-        <div className="flex items-end gap-1.5" style={{ height: 150 }}>
-          {data.breadth.map(b => (
-            <div key={b.n} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${b.n}: ${b.people} человек`}>
-              <span className="text-[10px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{b.people}</span>
-              <div className="w-full transition-[height] duration-500"
-                   style={{
-                     height: `${Math.max(3, (b.people / maxBreadth) * 110)}px`,
-                     backgroundColor: b.n === 1 ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 45%, transparent)',
-                   }} />
-              <span className="text-xs" style={{ fontFamily: NUM_FONT, color: 'var(--text-secondary)' }}>{b.n}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
+            </tr>
+          </thead>
+          <tbody>
+            {[...growth.cohorts].reverse().map((c) => (
+              <tr key={c.month} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+                <td style={{ padding: '9px 8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{fmtMonth(c.month)}</td>
+                <td style={{ ...td, color: 'var(--text-primary)', fontWeight: 600 }}>{c.registered}</td>
+                <td style={td}>{cell(c.returned, c.can_return)}</td>
+                <td style={td}>{cell(c.active_30, c.registered)}</td>
+                <td style={td}>{cell(c.active_7, c.registered)}</td>
+                <td style={td}>{cell(c.paid, c.registered)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
+/** Постоянные гости: заходят в разные дни, но ни разу не входили в аккаунт. */
 function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
   if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
   if (!growth) return null;
   const g = growth.guests;
-  const hist = g.days_hist ?? [];
-  const maxHist = Math.max(...hist.map(h => h.guests), 1);
-  const returning = hist.filter(h => h.days >= 2).reduce((a, h) => a + h.guests, 0);
-  const growthPct = g.prev_total ? Math.round(((g.total - g.prev_total) / g.prev_total) * 100) : null;
-
+  const td: React.CSSProperties = { padding: '9px 8px', verticalAlign: 'top' };
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <SummaryCard icon={<Users size={16} />} label="Гостей за период" value={g.total} sub={`считаем с ${fmtShortDay(g.since)}`} />
+        <SummaryCard icon={<Repeat size={16} />} label="Заходили 2+ дня" value={g.days2} sub={shareText(g.days2, g.total) ? `${shareText(g.days2, g.total)} гостей` : undefined} />
+        <SummaryCard icon={<Repeat size={16} />} label="3+ дня" value={g.days3} />
+        <SummaryCard icon={<Repeat size={16} />} label="7+ дней" value={g.days7} />
+      </div>
       <Card padding="md" className="md:p-5">
-        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-          Гостей в день
-        </p>
-        <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-          <b style={{ color: 'var(--text-primary)', fontFamily: NUM_FONT }}>{fmtNum(g.total)}</b> за период
-          {growthPct !== null
-            ? <> · <span style={{ color: growthPct >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
-                {growthPct >= 0 ? '+' : '−'}{Math.abs(growthPct)}%</span> к прошлому ({fmtNum(g.prev_total)})</>
-            // ID браузера пишем с 11.09.2026 — раньше сравнивать не с чем.
-            : <> · сравнить пока не с чем: считаем с {fmtShortDay(g.since)}</>}
-        </p>
-        {(g.by_day?.length ?? 0) > 1 ? (
-          <SimpleChart
-            data={(g.by_day ?? []).map(d => ({ time: d.date, value: d.guests }))}
-            primaryColor="var(--accent)"
-            primaryLabel="Гостей в день"
-            formatValue={(v) => Math.round(v).toString()}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showWatermark={false}
-            showNavigator={false}
-            hideTime
-            defaultHistogram
-            height={200}
-          />
-        ) : <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Данных пока мало</p>}
-      </Card>
-
-      <Card padding="md" className="md:p-5">
-        <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-          Сколько дней заходил один гость
-        </p>
-        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-          <b style={{ color: 'var(--text-primary)', fontFamily: NUM_FONT }}>{fmtNum(returning)}</b> вернулись хотя бы раз
-          {g.total > 0 && <> — {Math.round((returning / g.total) * 100)}% гостей</>}
-        </p>
-        {hist.length === 0 ? (
-          <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>За период гостей не видно</p>
+        {g.top.length === 0 ? (
+          <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+            За период никто из гостей не заходил в разные дни. ID браузера пишем с {fmtShortDay(g.since)}, данные копятся.
+          </p>
         ) : (
-          <div className="flex items-end gap-1.5" style={{ height: 170 }}>
-            {hist.map(h => (
-              <div key={h.days} className="flex-1 flex flex-col items-center justify-end gap-1"
-                   title={`${h.days} дн.: ${h.guests} гостей`}>
-                <span className="text-[10px]" style={{ fontFamily: NUM_FONT, color: 'var(--text-muted)' }}>{h.guests}</span>
-                <div className="w-full transition-[height] duration-500"
-                     style={{
-                       height: `${Math.max(3, (h.guests / maxHist) * 125)}px`,
-                       backgroundColor: h.days === 1 ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'var(--accent)',
-                     }} />
-                <span className="text-xs" style={{ fontFamily: NUM_FONT, color: 'var(--text-secondary)' }}>{h.days}</span>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
+              <thead>
+                <tr>
+                  {['Дней', 'Просмотров', 'Устройство', 'Что смотрит', 'Заходил'].map((h, i) => (
+                    <th
+                      key={h}
+                      className="text-xs uppercase"
+                      style={{ color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em', textAlign: i < 2 ? 'right' : 'left', padding: '0 8px 8px' }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {g.top.map((r, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT, fontWeight: 600, color: 'var(--text-primary)' }}>{r.days}</td>
+                    <td style={{ ...td, textAlign: 'right', fontFamily: NUM_FONT }}>{r.pageviews}</td>
+                    <td style={td}>{DEVICE_NAMES[r.device] || r.device}</td>
+                    <td style={{ ...td, color: 'var(--text-primary)' }}>
+                      {[...r.assets, ...r.pages.map((p) => PAGE_NAMES[p] || p)].slice(0, 5).join(', ') || '—'}
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                      {r.first_seen === r.last_seen ? fmtShortDay(r.first_seen) : `${fmtShortDay(r.first_seen)} – ${fmtShortDay(r.last_seen)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-          По горизонтали — в скольких разных днях был гость. Бледный столбец — зашли один раз.
-        </p>
       </Card>
     </div>
   );
 }
 
+/** Откуда впервые пришли зарегистрированные и платящие — по Метрике. */
+function FirstSourcesBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={200} rounded="lg" />;
+  const src = growth?.sources;
+  if (!src) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>Нужна Яндекс Метрика: сейчас она не подключена.</p>
+      </Card>
+    );
+  }
+  const items = (rows: { label: string; value: number }[]) => rows.map((r) => ({ label: r.label, value: r.value }));
+  return (
+    <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+        Первый заход известен у {src.registered.seen} из {src.registered_total} зарегистрированных
+        {src.paying ? ` и у ${src.paying.seen} из ${src.paying_total} платящих` : ''}.
+        Число растёт само: человек попадает сюда, как только входит в аккаунт.
+      </p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+        <TopList
+          title="Зарегистрированные · первый источник" columns={['людей']}
+          items={items(src.registered.types)} loading={false} emptyText="Пока никого не видно"
+        />
+        <TopList
+          title="Платящие · первый источник" columns={['людей']} hintAlign="right"
+          items={src.paying ? items(src.paying.types) : []} loading={false} emptyText="Пока никого не видно"
+        />
+        {src.registered.sites.length > 0 && (
+          <TopList
+            title="Сайты, с которых пришли впервые" columns={['людей']}
+            items={items(src.registered.sites)} loading={false} emptyText="—"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Блок ждёт данных дольше 250 мс — чуть гасим, но оставляем читаемым. */
 function dimStyle(on: boolean): React.CSSProperties {
   return { opacity: on ? 0.6 : 1, transition: 'opacity 0.25s ease' };
 }
@@ -1325,10 +1038,11 @@ function metricaDelta(def: MetricaMetricDef, cur: number, prev: number | undefin
   return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%`, good, up: diff >= 0 };
 }
 
-/** Показатели Метрики переключателями, как на её сводке. */
-function MetricaTraffic({ cur, prev, error }: {
+/** Показатели Метрики переключателями, как на её сводке, и график выбранного по источникам. */
+function MetricaTraffic({ cur, prev, bySource, error }: {
   cur: MetricaSummary;
   prev: MetricaSummary | null;
+  bySource: MetricaBySource | null;
   error?: string;
 }) {
   const [picked, setPicked] = usePersistedState<MetricaMetric>('frame:admin-stats:metrica-metric', 'visits');
@@ -1398,8 +1112,20 @@ function MetricaTraffic({ cur, prev, error }: {
           );
         })}
       </div>
-      {error && (
-        <p className="text-sm" style={{ color: 'var(--danger)' }}>Данные не пришли: {error}</p>
+      {bySource && bySource.dates.length > 0 ? (
+        <MetricaSourcesChart
+          data={bySource}
+          metric={def.key}
+          label={def.label}
+          hint={METRIC_HINTS.metrica_chart}
+          totalValue={cur[def.key]}
+          format={def.format}
+          formatAxis={def.formatAxis}
+        />
+      ) : (
+        <p className="text-sm" style={{ color: error ? 'var(--danger)' : 'var(--text-muted)' }}>
+          {error ? `График не пришёл: ${error}` : 'Нет данных за период'}
+        </p>
       )}
     </Card>
   );
@@ -1464,10 +1190,27 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
 
   return (
     <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
-      
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={`https://metrika.yandex.ru/dashboard?id=${counter}`}
+          target="_blank" rel="noreferrer"
+          className="editorial-press rounded-full inline-flex items-center text-xs"
+          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
+        >
+          <ExternalLink size={12} /> Открыть Метрику
+        </a>
+        <a
+          href={`https://metrika.yandex.ru/stat/visor?id=${counter}`}
+          target="_blank" rel="noreferrer"
+          className="editorial-press rounded-full inline-flex items-center text-xs"
+          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 6 }}
+        >
+          <ExternalLink size={12} /> Вебвизор
+        </a>
+      </div>
 
       {cur ? (
-        <MetricaTraffic cur={cur} prev={prev ?? null} error={err.summary} />
+        <MetricaTraffic cur={cur} prev={prev ?? null} bySource={report.by_source ?? null} error={err.by_source} />
       ) : (
         <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
       )}
@@ -1550,6 +1293,33 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
         <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
       </div>
       {children}
+    </section>
+  );
+}
+
+/** Секция, свёрнутая по умолчанию: содержимое не монтируется, пока не раскрыли,
+ *  поэтому тяжёлый запрос не уходит на каждый заход на страницу. */
+function CollapsibleSection({ title, hint, storageKey, children }: {
+  title: string; hint?: string; storageKey: string; children: React.ReactNode;
+}) {
+  const [open, setOpen] = usePersistedState<boolean>(storageKey, false);
+  return (
+    <section className="mb-6 md:mb-8">
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          aria-expanded={open}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {title}
+        </button>
+        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} />}
+        <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+      </div>
+      {open && children}
     </section>
   );
 }
@@ -1815,16 +1585,9 @@ const USER_FILTERS: { key: string; label: string }[] = [
   { key: 'admin', label: 'Админы' },
 ];
 
-/** Сортировки, которые включаются кликом по шапке (и их обратные направления). */
-const HEADER_SORTS = new Set([
-  'visits', 'time', 'last_active', 'created', 'paid_at',
-  'visits_asc', 'time_asc', 'last_active_asc', 'created_asc', 'paid_at_asc',
-]);
-
 const USER_SORTS: { key: string; label: string }[] = [
   { key: 'last_active', label: 'По активности' },
   { key: 'tier', label: 'По тарифу: Pro, Basic, инвайт' },
-  { key: 'paid_at', label: 'Недавно оплатили' },
   { key: 'plan', label: 'Сначала купившие' },
   { key: 'expires', label: 'Скоро закончится подписка' },
   { key: 'visits', label: 'По визитам' },
@@ -1876,7 +1639,7 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
         ...range, sort: safeSort, minDays: safeMin,
         seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
       })
-        .then(r => { setData(r); restoreScrollOnce(); })
+        .then(setData)
         .catch(() => { setData(null); setError(true); })
         .finally(() => setLoading(false));
     }, 250);
@@ -1992,7 +1755,7 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
                   key={g.visitor_id}
                   className="hover:bg-white/[0.03] transition-colors cursor-pointer"
                   style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                  onClick={() => { rememberScroll(); navigate(`/admin/guests/${g.visitor_id}`); }}
+                  onClick={() => navigate(`/admin/guests/${g.visitor_id}`)}
                 >
                   <td style={{ ...td, fontFamily: NUM_FONT, color: 'var(--text-primary)' }} title={g.visitor_id}>
                     {g.visitor_id.slice(0, 8)}
@@ -2023,37 +1786,12 @@ function GuestsBlock({ range, segment }: { range: AdminRange; segment: SegmentSt
   );
 }
 
-/** Последний ответ списка людей по ключу запроса. Живёт, пока открыта вкладка:
- *  вернувшись из карточки, человек сразу видит прежнюю таблицу, а свежие данные
- *  подменяют её тихо — без скелета и второй «загрузки». */
-const usersCache = new Map<string, { users: AdminUser[]; counts: Record<string, number> | null }>();
-
-const SCROLL_KEY = 'frame:admin:stats:scrollY';
-/** Запомнить место перед уходом в карточку. */
-function rememberScroll() {
-  try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch { /* приватный режим */ }
-}
-/** Вернуть прокрутку один раз, когда таблица уже отрисована, — раньше высоты
- *  страницы не хватает, и браузер честно остаётся наверху. */
-function restoreScrollOnce() {
-  try {
-    const raw = sessionStorage.getItem(SCROLL_KEY);
-    if (raw === null) return;
-    sessionStorage.removeItem(SCROLL_KEY);
-    const y = Number(raw);
-    if (Number.isFinite(y) && y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
-  } catch { /* приватный режим */ }
-}
-
 function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentState }) {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
-  // Затемнение только когда человек сам что-то поменял. Тихое обновление
-  // поверх кэша его не показывает — иначе таблица «мигает» при каждом возврате.
-  const [quiet, setQuiet] = useState(false);
-  const dim = useDelayedFlag(loading && users.length > 0 && !quiet);
+  const dim = useDelayedFlag(loading && users.length > 0);
   // Всё сохраняется: после перехода в карточку пользователя и назад
   // фильтр, сортировка и поиск остаются как были.
   const [search, setSearch] = usePersistedState<string>('frame:admin:users:search', '');
@@ -2061,19 +1799,9 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
   const [filter, setFilter] = usePersistedState<string>('frame:admin:users:filter', 'all');
 
   const safeFilter = USER_FILTERS.some(f => f.key === filter) ? filter : 'all';
-  const safeSort = USER_SORTS.some(o => o.key === sort) || HEADER_SORTS.has(sort) ? sort : 'last_active';
+  const safeSort = USER_SORTS.some(o => o.key === sort) ? sort : 'last_active';
 
   useEffect(() => {
-    const key = JSON.stringify([range, safeSort, search.trim(), safeFilter, segment]);
-    const hit = usersCache.get(key);
-    if (hit) {
-      setUsers(hit.users);
-      setCounts(hit.counts);
-      restoreScrollOnce();
-    }
-    setQuiet(!!hit);
-    let alive = true;
-    // Пауза нужна только набору в поиске; из кэша и по клику грузим сразу.
     const t = window.setTimeout(() => {
       setLoading(true);
       listAdminUsers({
@@ -2081,22 +1809,16 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
         seen: segment.seen, notSeen: segment.notSeen, seenMode: segment.mode,
       })
         .then(r => {
-          if (!alive) return;
-          const c = r.counts ?? { all: r.total_count, paid: r.paid_count, invite: r.invite_count };
-          usersCache.set(key, { users: r.users, counts: c });
           setUsers(r.users);
-          setCounts(c);
-          if (!hit) restoreScrollOnce();
+          setCounts(r.counts ?? {
+            all: r.total_count, paid: r.paid_count, invite: r.invite_count,
+          });
         })
-        .catch(() => { if (alive && !hit) setUsers([]); })
-        .finally(() => { if (alive) setLoading(false); });
-    }, hit ? 0 : 250);
-    return () => { alive = false; clearTimeout(t); };
+        .catch(() => setUsers([]))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
   }, [range, safeSort, search, safeFilter, segment]);
-
-  /** Клик по шапке: первый раз — по убыванию, второй — по возрастанию. */
-  const sortBy = (k: string) => setSort(safeSort === k ? `${k}_asc` : k);
-  const arrow = (k: string) => (safeSort === k ? ' ↓' : safeSort === `${k}_asc` ? ' ↑' : '');
 
   const filterOptions = USER_FILTERS.map(f => ({
     key: f.key,
@@ -2143,7 +1865,6 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
         <Dropdown<string>
           options={USER_SORTS}
           value={safeSort}
-          placeholder="По возрастанию"
           onChange={setSort}
           menuMaxWidth={320}
         />
@@ -2171,26 +1892,25 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
             <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
               <UCol>Пользователь</UCol>
               <UCol align="left">Подписка</UCol>
-              <UCol align="left" hide="lg" onSort={() => sortBy('paid_at')}>Оплатил{arrow('paid_at')}</UCol>
               <UCol align="left" hide="md">Роль</UCol>
-              <UCol align="right" onSort={() => sortBy('visits')}>Визитов{arrow('visits')}</UCol>
-              <UCol align="right" hide="md" onSort={() => sortBy('time')}>Время{arrow('time')}</UCol>
-              <UCol align="right" hide="lg" onSort={() => sortBy('last_active')}>Послед. активность{arrow('last_active')}</UCol>
-              <UCol align="left" hide="lg" onSort={() => sortBy('created')}>Создан{arrow('created')}</UCol>
+              <UCol align="right">Визитов</UCol>
+              <UCol align="right" hide="md">Время</UCol>
+              <UCol align="right" hide="lg">Послед. активность</UCol>
+              <UCol align="left" hide="lg">Создан</UCol>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {loading && users.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-6">
+                <td colSpan={8} className="py-6">
                   <Skeleton height={24} rounded="md" />
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+                <td colSpan={8} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
                   Никого не нашли
                 </td>
               </tr>
@@ -2200,7 +1920,7 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
                 key={u.id}
                 className="hover:bg-white/[0.03] transition-colors cursor-pointer"
                 style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
-                onClick={() => { rememberScroll(); navigate(`/admin/users/${u.id}`); }}
+                onClick={() => navigate(`/admin/users/${u.id}`)}
               >
                 <td className="px-2 py-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -2242,11 +1962,6 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
                     inviteNote={u.invite_note}
                     lastPaid={u.last_paid_sub}
                   />
-                </td>
-
-                <td className="px-2 py-2 text-xs hidden lg:table-cell"
-                    style={{ color: u.paid_at ? 'var(--text-primary)' : 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                  {u.paid_at ? fmtShortDate(u.paid_at) : '—'}
                 </td>
 
                 <td className="px-2 py-2 hidden md:table-cell">
@@ -2317,24 +2032,16 @@ function UsersBlock({ range, segment }: { range: AdminRange; segment: SegmentSta
   );
 }
 
-function UCol({ children, align = 'left', hide, onSort }: {
+function UCol({ children, align = 'left', hide }: {
   children: React.ReactNode; align?: 'left' | 'right'; hide?: 'md' | 'lg';
-  /** Клик по заголовку сортирует таблицу по этой колонке. */
-  onSort?: () => void;
 }) {
-  const cls = `${align === 'right' ? 'text-right' : 'text-left'} px-2 py-2 text-xs uppercase whitespace-nowrap ${
+  const cls = `${align === 'right' ? 'text-right' : 'text-left'} px-2 py-2 text-xs uppercase ${
     hide === 'md' ? 'hidden md:table-cell' : hide === 'lg' ? 'hidden lg:table-cell' : ''
   }`;
   return (
     <th className={cls}
         style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
-      {onSort ? (
-        <button type="button" onClick={onSort} className="uppercase hover:opacity-70 transition-opacity"
-                style={{ letterSpacing: 'inherit', fontWeight: 'inherit', color: 'inherit' }}
-                title="Сортировать">
-          {children}
-        </button>
-      ) : children}
+      {children}
     </th>
   );
 }
@@ -2445,100 +2152,7 @@ function AlertsBlock({ range }: { range: AdminRange }) {
           emptyText="Нет активных уведомлений"
         />
       )}
-
-      <AlertsPeople stats={stats} />
     </div>
-  );
-}
-
-/** Кто и когда ставил уведомления. Без этого блок был обезличенным: счётчики
- *  есть, а людей за ними не видно. */
-function AlertsPeople({ stats }: { stats: AlertsStats }) {
-  const navigate = useNavigate();
-  const byUser = stats.by_user ?? [];
-  const recent = stats.recent ?? [];
-  const byDay = stats.by_day ?? [];
-  if (byUser.length === 0 && recent.length === 0) return null;
-  const maxU = Math.max(...byUser.map(u => u.alerts), 1);
-  const line: React.CSSProperties = { borderTop: '1px solid color-mix(in srgb, var(--border-color) 20%, transparent)' };
-
-  return (
-    <>
-      {byDay.length > 1 && (
-        <Card padding="md" className="md:p-5">
-          <SimpleChart
-            data={byDay.map(d => ({ time: d.date, value: d.created }))}
-            primaryColor="var(--accent)"
-            primaryLabel="Поставили уведомлений в день"
-            formatValue={(v) => Math.round(v).toString()}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showWatermark={false}
-            showNavigator={false}
-            hideTime
-            defaultHistogram
-            height={180}
-          />
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-        <Card padding="md" className="md:p-5">
-          <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-            Кто ставит
-          </p>
-          <div className="flex flex-col">
-            {byUser.map(u => (
-              <button key={u.user_id} type="button"
-                      onClick={() => { rememberScroll(); navigate(`/admin/users/${u.user_id}`); }}
-                      className="relative grid items-center text-left hover:bg-white/[0.03] transition-colors"
-                      style={{ gridTemplateColumns: '1fr auto', gap: 'var(--sp-3)', padding: '8px 6px', ...line }}>
-                <span aria-hidden className="absolute inset-y-px left-0"
-                      style={{ width: `${(u.alerts / maxU) * 100}%`, backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} />
-                <span className="relative min-w-0">
-                  <span className="block truncate text-sm" style={{ color: 'var(--text-primary)' }}>{u.user || `id ${u.user_id}`}</span>
-                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-                    первое {u.first_at ? fmtShortDate(u.first_at) : '—'} · последнее {u.last_at ? fmtShortDate(u.last_at) : '—'}
-                  </span>
-                </span>
-                <span className="relative text-right" style={{ fontFamily: NUM_FONT }}>
-                  <span className="block text-sm font-semibold">{u.alerts}</span>
-                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>{u.active} активных</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </Card>
-
-        <Card padding="md" className="md:p-5">
-          <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>
-            Последние поставленные
-          </p>
-          <div className="flex flex-col">
-            {recent.slice(0, 12).map(a => (
-              <button key={a.id} type="button"
-                      onClick={() => { rememberScroll(); navigate(`/admin/users/${a.user_id}`); }}
-                      className="grid items-center text-left hover:bg-white/[0.03] transition-colors"
-                      style={{ gridTemplateColumns: '1fr auto', gap: 'var(--sp-3)', padding: '8px 6px', ...line }}>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {a.asset || '—'} <span style={{ color: 'var(--text-muted)' }}>· {a.user || `id ${a.user_id}`}</span>
-                  </span>
-                  <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {a.status === 'active' ? 'активно' : a.status === 'paused' ? 'на паузе' : a.status}
-                    {a.fires > 0 && ` · срабатывало ${a.fires} раз`}
-                  </span>
-                </span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: NUM_FONT }}>
-                  {a.created_at ? fmtShortDate(a.created_at) : '—'}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </>
   );
 }
 
