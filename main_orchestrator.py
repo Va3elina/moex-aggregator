@@ -4,7 +4,7 @@
 
 Управляет всеми скриптами:
 === OI (Open Interest) ===
-1. OI/fetch_oi_5min_realtime.py — 5-минутные данные (Algopack, 69 тикеров)
+1. OI/fetch_oi_5min_realtime.py — 5-минутные данные (Algopack, 74 тикера)
 2. OI/aggregate_oi_hourly.py — агрегация 5м → 60м
 3. OI/fetch_oi_daily_realtime.py — дневные данные (Algopack FUTOI, обновляется каждые 5 мин)
 
