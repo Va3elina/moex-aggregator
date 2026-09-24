@@ -150,6 +150,9 @@ SCRIPTS = {
     # Free-float капитализация по бумагам (MOEXBMI analytics, помесячно) —
     # знаменатель режима «От капитализации» в «Потоках по компании»
     'freefloat_cap_daily': BASE_DIR / 'Macro' / 'fetch_freefloat_cap.py',
+    # Реестр сплитов акций (stock_splits) из справочника ISS — до breadth_daily,
+    # тот делит цены до сплита по этой таблице.
+    'stock_splits_daily': BASE_DIR / 'Candles' / 'sync_stock_splits.py',
     # Историческая база расчёта IMOEX (index_composition) — состав индекса на
     # каждый торговый день, знаменатель вселенной imoex у «Силы рынка».
     # ДОЛЖЕН идти перед breadth_daily: тот читает свежий состав из БД.
@@ -298,6 +301,7 @@ TIMEOUTS = {
     'ownership_scan': 900,   # 80 страниц акционеров, замер — 1,5 минуты
     'ownership_detect': 180,  # один запрос к news_archive по GIN, замер — секунды
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
+    'stock_splits_daily': 120,  # один ISS-запрос + upsert нескольких строк
     'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
@@ -457,7 +461,7 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 RETRYABLE_DAILY = {
     'oi_daily', 'funds_daily', 'indices_daily', 'contract_calendar',
     'index_candles_hourly', 'macro_daily', 'zcyc_daily', 'market_cap_daily',
-    'freefloat_cap_daily', 'index_composition_daily', 'breadth_daily',
+    'freefloat_cap_daily', 'stock_splits_daily', 'index_composition_daily', 'breadth_daily',
     'dividends_daily', 'commodity_daily',
     # ⚠️ company_cards в ретраях НЕТ намеренно. Если smart-lab попросил остановиться
     # (429/403), скрипт прекращает обход сам — и автоматический повтор через 30 секунд
@@ -672,6 +676,9 @@ class MainOrchestrator:
             # Free-float Cap
             'freefloat_cap_daily_runs': 0,
             'freefloat_cap_daily_success': 0,
+            # Сплиты акций (ISS)
+            'stock_splits_daily_runs': 0,
+            'stock_splits_daily_success': 0,
             # Index Composition
             'index_composition_daily_runs': 0,
             'index_composition_daily_success': 0,
@@ -1511,6 +1518,23 @@ class MainOrchestrator:
 
         return success
 
+    async def run_stock_splits_update(self) -> bool:
+        """Реестр сплитов акций из справочника ISS. Идемпотентен: upsert по secid,
+        ручные признаки (price_adjusted, note) не трогает."""
+        log.info("  📊 Сплиты акций...")
+        self.stats['stock_splits_daily_runs'] += 1
+
+        success, msg, dur = await run_script('stock_splits_daily', ['--once'])
+
+        if success:
+            self.stats['stock_splits_daily_success'] += 1
+            log.info(f"    ✓ Сплиты акций ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Сплиты акций: {msg}")
+
+        return success
+
     async def run_freefloat_cap_update(self) -> bool:
         """Free-float капитализация по бумагам (MOEXBMI). Скрипт идемпотентен:
         дозаполняет пропущенные месяцы и освежает текущий, --force не нужен."""
@@ -1630,6 +1654,7 @@ class MainOrchestrator:
             await self.run_zcyc_update()
             await self.run_market_cap_update()
             await self.run_freefloat_cap_update()
+            await self.run_stock_splits_update()
             await self.run_index_composition_update()
             await self.run_breadth_update()
             await self.run_dividends_update()
@@ -1847,6 +1872,7 @@ class MainOrchestrator:
                     await self.run_zcyc_update()
                     await self.run_market_cap_update()
                     await self.run_freefloat_cap_update()
+                    await self.run_stock_splits_update()
                     await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
