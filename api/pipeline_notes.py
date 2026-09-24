@@ -312,6 +312,13 @@ def _freefloat(d: dict):
     return f"Free-float: обновлено {n} {_склон(n, 'месяц', 'месяца', 'месяцев')}", False
 
 
+def _splits(d: dict):
+    n, u = _n(d, "новых"), _n(d, "обновлено")
+    if n == 0 and u == 0:
+        return "Сплиты: новых в справочнике ISS нет", False
+    return f"Сплиты: новых {n}, обновлено {u}", False
+
+
 def _commodity(d: dict):
     r, п = _n(d, "строк"), _n(d, "пустых")
     не = d.get("не_отдали") or []
@@ -380,6 +387,7 @@ _ПО_ИМЕНИ = {
     "brain_sync": ("dict", _brain),
     "brain_embed": ("dict", _brain_embed),
     "freefloat_cap_daily": ("dict", _freefloat),
+    "stock_splits_daily": ("dict", _splits),
     "commodity_daily": ("dict", _commodity),
     "futures_turnover": ("dict", _turnover),
     "dividends_daily": ("dict", _dividends),
