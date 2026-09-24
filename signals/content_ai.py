@@ -199,15 +199,28 @@ _GIVE_UP_INSIGHT = text("""
 # Один тикер — один пост за три дня (Вадим 15.09): #2133 Самолёт повторил #2100, #2117 Лукойл — #2104.
 # Считаем только более ранних кандидатов того же вида (данные / новость) с уже написанным черновиком.
 _RECENT_SAME_TICKER = text("""
-    SELECT o.id, o.created_at FROM content_candidates o
+    SELECT o.id, o.created_at, o.headline, c.source AS my_source, c.headline AS my_headline
+    FROM content_candidates o
     JOIN content_candidates c ON c.id = :id
     WHERE o.id <> c.id AND o.tickers && c.tickers AND o.draft_text IS NOT NULL
       AND o.created_at > c.created_at - interval '3 days' AND o.created_at <= c.created_at
       -- вид поста тот же: данные (находка, связка) или новость. «Самолёт −10%» (#2100) не повтор для
       -- рекорда лонга в Самолёте (#2124), а «головокружительное пике» (#2133) — повтор #2100
       AND (o.source IN ('insight', 'combo')) = (c.source IN ('insight', 'combo'))
-    ORDER BY o.created_at DESC LIMIT 1
+    ORDER BY o.created_at DESC
 """)
+
+# Рекорд сильнее прежнего по тому же тикеру — новое событие, а не повтор: #2490 (19.09) «отток из юаневых фондов —
+# рекорд за всё время» отсеяли как повтор #2271 (16.09, «рекорд с декабря 2024»), и канал написал то же 24.09 сам.
+# Ранг: 2 — за всё время / исторический, 1 — рекорд или максимум «с даты», 0 — не рекорд.
+_RECORD_ALL = re.compile(r"за вс[её] время|историческ\w* (?:максимум|минимум|рекорд)", re.I)
+_RECORD_SINCE = re.compile(r"рекорд|максимум|минимум", re.I)
+
+
+def _record_rank(headline: str | None) -> int:
+    h = headline or ""
+    return 2 if _RECORD_ALL.search(h) else (1 if _RECORD_SINCE.search(h) else 0)
+
 
 _DECLINE_REPEAT = text("""
     UPDATE content_candidates
@@ -314,9 +327,14 @@ def _not_newsworthy(db, row) -> str | None:
 
 
 def _repeat_of_ticker(db, candidate_id: int) -> str | None:
-    r = db.execute(_RECENT_SAME_TICKER, {"id": candidate_id}).first()
-    return (f"повтор: по тому же тикеру черновик #{r[0]} от {r[1]:%d.%m} - один тикер, один пост "
-            f"за три дня") if r else None
+    rows = db.execute(_RECENT_SAME_TICKER, {"id": candidate_id}).fetchall()
+    if not rows:
+        return None
+    last = rows[0]
+    if last.my_source == "insight" and all(_record_rank(last.my_headline) > _record_rank(r.headline) for r in rows):
+        return None
+    return (f"повтор: по тому же тикеру черновик #{last.id} от {last.created_at:%d.%m} - один тикер, один пост "
+            f"за три дня")
 
 
 # примеры канала для писателя находок — последние посты той же рубрики (хэштег)
