@@ -238,14 +238,14 @@ rules:
     regression: [2120]
 
   - id: R23
-    rule: "Не больше трёх абзацев"
-    source: {date: 2026-09-15, cases: [2128]}
+    rule: "От двух до четырёх абзацев — сколько просит тема; четвёртый только ради раскрытия, не ради объёма"
+    source: {date: 2026-09-15, cases: [2128], quote: "может быть два, может четыре — в зависимости от темы (Вадим 24.09)"}
     pipelines: [insight, combo]
     enforced_by:
-      - {kind: check, where: "api/services/insight_check.py: абзацев ◽️ > 3 (R23)"}
+      - {kind: check, where: "api/services/insight_check.py: абзацев ◽️ вне 2–4 (R23)"}
       - {kind: prompt, where: "prompt_insight_writer_routine.md: Голос и форма"}
     status: enforced
-    regression: [2128]
+    regression: []   # #2128 — четыре абзаца; с 24.09 это допустимо, если тема требует
 
   - id: R24
     rule: "Новость старше полутора суток — не пишем; сюжет и находка — только на последнем дне данных"

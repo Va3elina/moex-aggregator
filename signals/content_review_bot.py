@@ -330,7 +330,7 @@ def _log_feedback(db, cid: int, event: str, reason_code=None, reason_text=None,
 _JUDGE_MARK = {"годится": "✅", "спорно": "🟡", "брак": "⛔️"}
 
 
-def _judge_line(verdict, failed, defects) -> str:
+def _judge_line(verdict, failed, defects, fixed_at=None) -> str:
     """Вердикт Шага Г прямо в карточке — судья не блокирует ревью, его задача в том,
     чтобы дефект не прошёл НЕЗАМЕЧЕННЫМ. Провалы ворот и дефекты производства
     показываются РАЗДЕЛЬНО: первые определяют вердикт, вторые — нет (пункты
@@ -338,6 +338,8 @@ def _judge_line(verdict, failed, defects) -> str:
     if not verdict:
         return "\n\n🔍 судья ещё не смотрел"
     out = f"\n\n{_JUDGE_MARK.get(verdict, '')} судья: {html.escape(verdict)}"
+    if fixed_at and verdict != "годится":
+        out += " у писателя → поправил"
     if failed:
         out += "\nпровалены ворота: " + html.escape(", ".join(failed))
     if defects:
@@ -442,7 +444,7 @@ def _fold(title: str, body: str) -> str:
 
 
 def _judge_section(verdict, failed, defects, paragraphs, fixed_at, fix_note) -> str:
-    return (_judge_line(verdict, failed, defects) + _fix_line(fixed_at, fix_note)
+    return (_judge_line(verdict, failed, defects, fixed_at) + _fix_line(fixed_at, fix_note)
             + _doubts_line(paragraphs)).strip("\n")
 
 
@@ -566,7 +568,10 @@ def _judge_items(verdict, failed, defects, paragraphs, fixed_at, fix_note) -> tu
             items.append(_plain(f"Абз. {p.get('n', '?')} без опоры: {p.get('claim') or ''}"))
         elif (p.get("doubt") or "").strip():
             items.append(_plain(f"Абз. {p.get('n', '?')}: {p['doubt']}"))
-    return f"Судья: {verdict}", items
+    # Вердикт — по тексту писателя, а в карточке уже правленый текст: без пометки в заголовке раздела
+    # «брак» читался как оценка поста выше (Вадим 24.09: «сплошной брак» — у #2827 правка сняла всё).
+    return (f"Судья: {verdict} у писателя → поправил" if fixed_at and verdict != "годится"
+            else f"Судья: {verdict}"), items
 
 
 def _card_rich(row, db=None) -> str:

@@ -165,7 +165,7 @@ def test_rich_card_is_post_then_two_details():
     h = bot._card_rich(_row("Толпа против календаря\n\nТекст поста."))
     assert h.startswith("<p>Толпа против календаря</p>")
     assert "<details><summary>Новость</summary><ul>" in h
-    assert "<details><summary>Судья: брак</summary><ul>" in h
+    assert "<details><summary>Судья: брак у писателя → поправил</summary><ul>" in h
     assert h.index("Новость") < h.index("Судья")
     assert "<blockquote" not in h
     after_post = h[h.index("<details>"):]
@@ -175,10 +175,15 @@ def test_rich_card_is_post_then_two_details():
 def test_judge_items_are_short_points():
     title, items = bot._judge_items("брак", ["link_earned"], [], [{"n": 2, "doubt": "🙂 " + "д" * 500}],
                                     "2026-09-19", "заменил слово")
-    assert title == "Судья: брак"
+    assert title == "Судья: брак у писателя → поправил"
     assert items[0] == "Провалено: link_earned"
     assert all(len(x) <= bot._ITEM_LIMIT for x in items)
     assert not any(bot._EMOJI.search(x) for x in items)
+
+
+def test_judge_title_plain_without_fix():
+    title, _ = bot._judge_items("брак", ["link_earned"], [], [], None, None)
+    assert title == "Судья: брак"
 
 
 def test_rich_first_old_format_as_fallback():
