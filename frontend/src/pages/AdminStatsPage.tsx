@@ -36,6 +36,9 @@ import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
 import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
 import TopList from '../components/admin/TopList';
+import { sourceColorForLabel } from '../components/admin/MetricaSourcesChart';
+import { IndicatorGlyph, INDICATOR_ICONS } from '../components/admin/indicatorMeta';
+import InstrumentIcon from '../components/InstrumentIcon';
 import FeaturesBlock from '../components/admin/FeaturesBlock';
 import StatsInsights, { buildInsights } from '../components/admin/StatsInsights';
 import AvatarImg from '../components/AvatarImg';
@@ -253,13 +256,35 @@ const INDICATOR_NAMES: Record<string, string> = {
 type StatsTab = 'overview' | 'traffic' | 'people' | 'content' | 'features';
 
 /** Вкладки — по вопросу, на который отвечают. */
-const STATS_TABS: { key: StatsTab; label: string; question: string }[] = [
-  { key: 'overview', label: 'Обзор', question: 'Сколько людей и сколько из них дошли до оплаты' },
-  { key: 'traffic', label: 'Откуда приходят', question: 'Источники, поиск, города и устройства' },
-  { key: 'people', label: 'Пользователи и гости', question: 'Кто именно и возвращаются ли' },
-  { key: 'content', label: 'Что смотрят', question: 'Активы, поиск, скачивания, уведомления' },
-  { key: 'features', label: 'Фонды и терминал', question: 'Что делают внутри «Денег в фондах», «Сделок фондов» и терминала' },
+const STATS_TABS: { key: StatsTab; label: string }[] = [
+  { key: 'overview', label: 'Обзор' },
+  { key: 'traffic', label: 'Откуда приходят' },
+  { key: 'people', label: 'Пользователи и гости' },
+  { key: 'content', label: 'Что смотрят' },
+  { key: 'features', label: 'Фонды и терминал' },
 ];
+
+const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+/** «18–24 сен», «28 авг – 3 сен», «24 сен» — для кнопки периода. */
+function shortRange(a: string, b: string): string {
+  const [, ma, da] = a.split('-').map(Number);
+  const [, mb, db] = b.split('-').map(Number);
+  if (a === b) return `${db} ${MONTHS_SHORT[mb - 1]}`;
+  if (ma === mb) return `${da}–${db} ${MONTHS_SHORT[mb - 1]}`;
+  return `${da} ${MONTHS_SHORT[ma - 1]} – ${db} ${MONTHS_SHORT[mb - 1]}`;
+}
+
+/** Иконка раздела сайта для строки списка; служебным страницам — без иконки. */
+function pageIcon(path: string) {
+  return INDICATOR_ICONS[path] ? <IndicatorGlyph path={path} size={20} /> : undefined;
+}
+
+/** Цветная точка источника — та же, что у его линии на графике Метрики. */
+function sourceDot(label: string) {
+  const c = sourceColorForLabel(label);
+  return c ? <span aria-hidden className="rounded-full shrink-0" style={{ width: 10, height: 10, background: c }} /> : undefined;
+}
 
 
 export default function AdminStatsPage() {
@@ -438,37 +463,36 @@ export default function AdminStatsPage() {
   const ownTrafficVisible = !metricaOn || showOwn;
   const s = data?.summary;
   const p = data?.prev_summary;
-  const periodDays = Math.round((Date.parse(range.dateTo) - Date.parse(range.dateFrom)) / 86_400_000) + 1;
-  const insights = buildInsights({ metrica, growth, stats: data, features, days: periodDays });
-  const tabDef = STATS_TABS.find((t) => t.key === tab)!;
+  const insights = buildInsights({ metrica, growth, stats: data, features });
+  // Даты — прямо в кнопке периода: одна строка вместо отдельной подписи.
+  const periodOptions = PRESET_OPTIONS.map((o) => (o.key === preset
+    ? { ...o, label: `${o.label} · ${shortRange(range.dateFrom, range.dateTo)}` }
+    : o));
+  const periodHint = data
+    ? `Сравниваем с ${fmtRange(data.prev_date_from, data.prev_date_to)}. ${METRIC_HINTS.period}`
+    : METRIC_HINTS.period;
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-6 md:mb-8">
+      {/* Заголовок — прокручивается вместе со страницей */}
+      <div className="flex items-center gap-3 mb-4 md:mb-5">
         <div
           className="flex items-center justify-center flex-shrink-0"
           style={{
-            width: 44, height: 44,
+            width: 40, height: 40,
             borderRadius: 'var(--radius-md, 8px)',
             background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
             color: 'var(--accent)',
           }}
         >
-          <BarChart3 size={22} strokeWidth={1.8} />
+          <BarChart3 size={20} strokeWidth={1.8} />
         </div>
-        <div>
-          <h1
-            className="text-2xl md:text-3xl font-semibold"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
-          >
-            Статистика сайта
-          </h1>
-          <p className="text-sm mt-1 inline-flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-            Собственный трекер · почему не совпадает с Метрикой
-            <HelpTooltip icon="help" title="Сравнение с Яндекс Метрикой" content={METRIC_HINTS.metrica} size={14} />
-          </p>
-        </div>
+        <h1
+          className="text-2xl md:text-3xl font-semibold"
+          style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+        >
+          Статистика сайта
+        </h1>
         <Link
           to="/admin/dashboard"
           className="editorial-press rounded-full flex items-center ml-auto shrink-0"
@@ -478,94 +502,93 @@ export default function AdminStatsPage() {
         </Link>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-end mb-2" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<Preset>
-          options={PRESET_OPTIONS}
-          value={preset}
-          onChange={(v) => {
-            // При переходе на «Свой период» подставляем текущий диапазон,
-            // чтобы поля дат не открывались пустыми.
-            if (v === 'custom' && preset !== 'custom') {
-              setCustomFrom(range.dateFrom);
-              setCustomTo(range.dateTo);
-            }
-            setPreset(v);
-          }}
-          trailing={<HelpTooltip icon="help" title="Период" content={METRIC_HINTS.period} size={13} />}
-        />
-        {preset === 'custom' && (
-          <>
-            <DateField label="С" value={range.dateFrom} max={mskToday()} onChange={setCustomFrom} />
-            <DateField label="По" value={range.dateTo} max={mskToday()} onChange={setCustomTo} />
-          </>
-        )}
-        <Dropdown<string>
-          options={[
-            { key: 'all', label: 'Все без админов' },
-            { key: 'auth', label: 'Авторизованные' },
-            { key: 'guest', label: 'Гости' },
-            { key: 'admin', label: 'Только админы' },
-            { key: 'everyone', label: 'Все вместе с админами' },
-          ]}
-          value={segment}
-          onChange={setSegment}
-          trailing={<HelpTooltip icon="help" title="Кого считаем" content={METRIC_HINTS.segment} size={13} />}
-        />
-        <Dropdown<string>
-          options={[
-            { key: 'all', label: 'Все устройства' },
-            { key: 'desktop', label: 'Компьютер' },
-            { key: 'mobile', label: 'Телефон' },
-            { key: 'tablet', label: 'Планшет' },
-          ]}
-          value={device}
-          onChange={setDevice}
-        />
-        {refreshing && (
-          <span className="inline-flex items-center gap-1.5 text-xs self-center" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 size={13} className="animate-spin" />
-            обновление…
-          </span>
-        )}
-      </div>
-      <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-        {fmtRange(range.dateFrom, range.dateTo)}
-        {data && ` · сравнение с ${fmtRange(data.prev_date_from, data.prev_date_to)}`}
-      </p>
-
-      {/* Вкладки: фильтры шапки общие, содержимое — только активной вкладки */}
+      {/* Панель, прилипающая под шапкой сайта: разделы слева, период и срез справа.
+          На узком экране — фильтры строкой сверху, разделы под ними с прокруткой. */}
       <div
-        role="tablist"
-        aria-label="Разделы статистики"
-        className="flex overflow-x-auto"
-        style={{ gap: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)', scrollbarWidth: 'none' }}
+        className="sticky top-14 md:top-16 z-40 -mx-4 px-4 md:-mx-6 md:px-6 mb-6 md:mb-8"
+        style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)' }}
       >
-        {STATS_TABS.map((t) => {
-          const on = t.key === tab;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => setTab(t.key)}
-              className="text-sm whitespace-nowrap"
-              style={{
-                padding: '10px 14px',
-                marginBottom: -1,
-                color: on ? 'var(--text-primary)' : 'var(--text-muted)',
-                fontWeight: on ? 600 : 500,
-                borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
-                transition: 'color 0.2s cubic-bezier(.2,0,0,1), border-color 0.2s cubic-bezier(.2,0,0,1)',
+        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between" style={{ gap: 'var(--sp-2)' }}>
+          <div
+            role="tablist"
+            aria-label="Разделы статистики"
+            className="flex overflow-x-auto order-2 xl:order-1 min-w-0"
+            style={{ gap: 'var(--sp-1)', scrollbarWidth: 'none' }}
+          >
+            {STATS_TABS.map((t) => {
+              const on = t.key === tab;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setTab(t.key)}
+                  className="text-sm whitespace-nowrap"
+                  style={{
+                    padding: '12px 14px',
+                    marginBottom: -1,
+                    color: on ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontWeight: on ? 600 : 500,
+                    borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+                    transition: 'color 0.2s cubic-bezier(.2,0,0,1), border-color 0.2s cubic-bezier(.2,0,0,1)',
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center order-1 xl:order-2 pt-3 xl:pt-0 xl:pb-2" style={{ gap: 'var(--sp-2)' }}>
+            {refreshing && (
+              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} aria-label="обновление" />
+            )}
+            <Dropdown<Preset>
+              options={periodOptions}
+              value={preset}
+              onChange={(v) => {
+                // При переходе на «Свой период» подставляем текущий диапазон,
+                // чтобы поля дат не открывались пустыми.
+                if (v === 'custom' && preset !== 'custom') {
+                  setCustomFrom(range.dateFrom);
+                  setCustomTo(range.dateTo);
+                }
+                setPreset(v);
               }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+              trailing={<HelpTooltip icon="help" title="Период" content={periodHint} size={13} />}
+            />
+            {preset === 'custom' && (
+              <>
+                <DateField label="С" value={range.dateFrom} max={mskToday()} onChange={setCustomFrom} />
+                <DateField label="По" value={range.dateTo} max={mskToday()} onChange={setCustomTo} />
+              </>
+            )}
+            <Dropdown<string>
+              options={[
+                { key: 'all', label: 'Все без админов' },
+                { key: 'auth', label: 'Авторизованные' },
+                { key: 'guest', label: 'Гости' },
+                { key: 'admin', label: 'Только админы' },
+                { key: 'everyone', label: 'Все вместе с админами' },
+              ]}
+              value={segment}
+              onChange={setSegment}
+              trailing={<HelpTooltip icon="help" title="Кого считаем" content={METRIC_HINTS.segment} size={13} align="right" />}
+            />
+            <Dropdown<string>
+              options={[
+                { key: 'all', label: 'Все устройства' },
+                { key: 'desktop', label: 'Компьютер' },
+                { key: 'mobile', label: 'Телефон' },
+                { key: 'tablet', label: 'Планшет' },
+              ]}
+              value={device}
+              onChange={setDevice}
+            />
+          </div>
+        </div>
       </div>
-      <p className="text-xs mt-2 mb-6 md:mb-8" style={{ color: 'var(--text-muted)' }}>{tabDef.question}</p>
 
       {error && tab !== 'features' && (
         <Card padding="md" className="mb-6">
@@ -627,7 +650,7 @@ export default function AdminStatsPage() {
             title={metricaOn ? 'Трафик · наш трекер'
               : metrica?.token_error ? 'Трафик · наш трекер (токен Метрики не действует)'
               : 'Трафик · наш трекер (Метрика не подключена)'}
-            hint={METRIC_HINTS.own_section}
+            hint={`${METRIC_HINTS.own_section} ${METRIC_HINTS.metrica}`}
           >
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
@@ -745,6 +768,7 @@ export default function AdminStatsPage() {
                   note: PAGE_NAMES[r.path] ? r.path : undefined,
                   value: r.visitors,
                   value2: r.views,
+                  icon: pageIcon(r.path),
                 })) || null}
                 loading={loading}
                 emptyText="Нет просмотров страниц"
@@ -791,6 +815,7 @@ export default function AdminStatsPage() {
                 note: [r.name ? r.secid : null, r.indicators.map(i => INDICATOR_NAMES[i] || i).join(', ')].filter(Boolean).join(' · '),
                 value: r.visitors,
                 value2: r.views,
+                icon: <InstrumentIcon sectype={r.secid} size={20} />,
               })) || null}
               loading={loading}
               emptyText="Данные собираются с 11.09.2026"
@@ -805,6 +830,7 @@ export default function AdminStatsPage() {
                 note: r.name ? r.secid : undefined,
                 value: r.picks,
                 value2: r.visitors,
+                icon: <InstrumentIcon sectype={r.secid} size={20} />,
               })) || null}
               loading={loading}
               emptyText="Нет выборов в поиске"
@@ -813,7 +839,7 @@ export default function AdminStatsPage() {
               title="Экспорты PNG"
               hint={METRIC_HINTS.top_exports}
               columns={['скачивания', 'посетители']}
-              items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors })) || null}
+              items={data?.top_exports.map((r) => ({ label: INDICATOR_NAMES[r.indicator] || r.indicator, value: r.count, value2: r.visitors, icon: pageIcon(`/${r.indicator}`) })) || null}
               loading={loading}
               emptyText="Никто не экспортировал"
             />
@@ -1426,7 +1452,7 @@ function MetricaBlock({ report, loading, part }: {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
         <TopList title="Источники трафика" hint={METRIC_HINTS.metrica_sources} columns={['визиты', 'посетители']}
-          items={rows(report.sources)} loading={false} emptyText={empty('sources')} />
+          items={rows(report.sources)?.map((r) => ({ ...r, icon: sourceDot(r.label) })) ?? null} loading={false} emptyText={empty('sources')} />
         <TopList
           title={report.phrases_unsegmented ? 'Поисковые фразы · все посетители' : 'Поисковые фразы'}
           hint={report.phrases_unsegmented
@@ -1439,10 +1465,10 @@ function MetricaBlock({ report, loading, part }: {
         <TopList title="Сайты-источники" hint={METRIC_HINTS.metrica_referrers} hintAlign="right" columns={['визиты', 'посетители']}
           items={rows(report.referrers)} loading={false} emptyText={empty('referrers')} />
         <TopList title="Популярные страницы" hint={METRIC_HINTS.metrica_pages} columns={['посетители', 'просмотры']}
-          items={rows(report.pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined })) ?? null}
+          items={rows(report.pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined, icon: pageIcon(r.label) })) ?? null}
           loading={false} emptyText={empty('pages')} />
         <TopList title="Страницы входа" hint={METRIC_HINTS.metrica_entry} hintAlign="right" columns={['визиты', 'посетители']}
-          items={rows(report.entry_pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined })) ?? null}
+          items={rows(report.entry_pages)?.map(r => ({ ...r, label: PAGE_NAMES[r.label] || r.label, note: PAGE_NAMES[r.label] ? r.label : undefined, icon: pageIcon(r.label) })) ?? null}
           loading={false} emptyText={empty('entry_pages')} />
         <TopList title="Города" hint="География посетителей по IP, определяет Метрика." columns={['посетители', 'визиты']}
           items={rows(report.cities)} loading={false} emptyText={empty('cities')} />
