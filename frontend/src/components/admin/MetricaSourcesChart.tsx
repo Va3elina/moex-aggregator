@@ -51,6 +51,19 @@ function sourceColor(id: string): string {
   return slot ? `var(--viz-${slot}, ${FALLBACK[slot - 1]})` : 'var(--text-muted)';
 }
 
+// Метрика в списке источников отдаёт полные названия, а не id — узнаём по слову.
+const LABEL_TO_ID: [RegExp, string][] = [
+  [/поиск/i, 'organic'], [/прям/i, 'direct'], [/ссылк/i, 'referral'], [/соц/i, 'social'],
+  [/внутрен/i, 'internal'], [/мессенд/i, 'messenger'], [/рекоменд/i, 'recommend'], [/реклам/i, 'ad'],
+];
+
+/** Цвет источника по его названию в отчёте Метрики — тот же, что у линии на графике. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function sourceColorForLabel(label: string): string | null {
+  const hit = LABEL_TO_ID.find(([re]) => re.test(label));
+  return hit ? sourceColor(hit[1]) : null;
+}
+
 function parseDay(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);

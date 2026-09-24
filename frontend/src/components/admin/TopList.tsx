@@ -7,7 +7,14 @@ import Card from '../Card';
 import Skeleton from '../Skeleton';
 import HelpTooltip from '../HelpTooltip';
 
-export interface TopItem { label: string; note?: string; value: number; value2?: number }
+export interface TopItem {
+  label: string;
+  note?: string;
+  value: number;
+  value2?: number;
+  /** Лого или иконка слева: раздел, УК фонда, цвет источника. */
+  icon?: React.ReactNode;
+}
 
 interface TopListProps {
   title: string;
@@ -56,8 +63,9 @@ export default function TopList({ title, items, loading, emptyText, hint, hintAl
                 }}
               />
               <div className="relative flex items-center justify-between py-1.5 px-2 gap-2">
-                <span className="text-sm truncate min-w-0" style={{ color: 'var(--text-primary)' }} title={it.note ? `${it.label} · ${it.note}` : it.label}>
-                  {it.label || '—'}
+                <span className="text-sm truncate min-w-0 inline-flex items-center gap-2" style={{ color: 'var(--text-primary)' }} title={it.note ? `${it.label} · ${it.note}` : it.label}>
+                  {it.icon}
+                  <span className="truncate">{it.label || '—'}</span>
                   {it.note && (
                     <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>{it.note}</span>
                   )}

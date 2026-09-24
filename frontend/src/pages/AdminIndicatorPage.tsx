@@ -10,6 +10,7 @@
  * внутри выбирать нечего — и страница так и говорит, а не показывает чужое.
  */
 import { useEffect, useState } from 'react';
+import FundLogoChip from '../components/admin/FundLogoChip';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, ChevronRight } from 'lucide-react';
 import Card from '../components/Card';
@@ -20,7 +21,6 @@ import InstrumentIcon from '../components/InstrumentIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useDelayedFlag } from '../hooks/useDelayedFlag';
-import { resolveFundLogo } from '../config/fundConfig';
 import { IndicatorGlyph, indicatorKey, indicatorPath } from '../components/admin/indicatorMeta';
 import { PAGE_NAMES } from '../components/admin/ActivityBlocks';
 import { getIndicator } from '../services/api';
@@ -304,20 +304,6 @@ function Stat({ label, value }: { label: string; value: number }) {
       <div className="text-xl font-semibold" style={{ fontFamily: MONO, color: 'var(--text-primary)' }}>{ru(value)}</div>
       <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</div>
     </div>
-  );
-}
-
-function FundLogoChip({ ticker, ukId }: { ticker: string; ukId?: string | number | null }) {
-  const logo = resolveFundLogo(ticker, ukId ?? null);
-  if (!logo) return null;
-  return (
-    <span
-      className="flex items-center justify-center rounded-full overflow-hidden text-[10px] font-bold shrink-0"
-      style={{ width: 24, height: 24, backgroundColor: logo.bg, color: logo.color }}
-      title={logo.name}
-    >
-      {logo.img ? <img src={logo.img} alt="" className="w-full h-full object-cover" /> : logo.letter}
-    </span>
   );
 }
 

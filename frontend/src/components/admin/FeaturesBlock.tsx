@@ -11,6 +11,9 @@ import Card from '../Card';
 import Skeleton from '../Skeleton';
 import HelpTooltip from '../HelpTooltip';
 import TopList from './TopList';
+import FundLogoChip from './FundLogoChip';
+import InstrumentIcon from '../InstrumentIcon';
+import { IndicatorGlyph, INDICATOR_ICONS } from './indicatorMeta';
 import type { FeaturesReport, FeaturePick, FeatureFund } from '../../services/api';
 
 // Подписи — те же, что на самих страницах (FundsMoneyPage, FundTradesPage,
@@ -57,7 +60,15 @@ function named(rows: FeaturePick[], names: Record<string, string>) {
 }
 
 function fundItems(rows: FeatureFund[]) {
-  return rows.map((f) => ({ label: f.name || f.ticker, note: f.name ? f.ticker : undefined, value: f.people }));
+  return rows.map((f) => ({
+    label: f.name || f.ticker, note: f.name ? f.ticker : undefined, value: f.people,
+    icon: <FundLogoChip ticker={f.ticker} ukId={f.uk_id} size={20} />,
+  }));
+}
+
+/** Иконка индикатора окна терминала — та же, что у раздела на сайте. */
+function panelIcon(key: string) {
+  return INDICATOR_ICONS[`/${key}`] ? <IndicatorGlyph path={`/${key}`} size={20} /> : undefined;
 }
 
 function deltaText(cur: number, prev: number): { text: string; good: boolean } | null {
@@ -87,13 +98,16 @@ function PickLine({ label, rows, names }: { label: string; rows: FeaturePick[]; 
 }
 
 /** Шапка подраздела: сколько людей открывали, дельта, у скольких записаны настройки. */
-function Head({ title, people, prev, tracked, trackedLabel = 'настройки записаны у' }: {
-  title: string; people: number; prev: number; tracked: number; trackedLabel?: string;
+function Head({ path, title, people, prev, tracked, trackedLabel = 'настройки записаны у' }: {
+  path: string; title: string; people: number; prev: number; tracked: number; trackedLabel?: string;
 }) {
   const d = deltaText(people, prev);
   return (
-    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3">
-      <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
+      <h3 className="text-base font-semibold inline-flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+        <IndicatorGlyph path={path} size={28} />
+        {title}
+      </h3>
       <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
         открывали{' '}
         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: NUM_FONT }}>{people.toLocaleString('ru-RU')}</span>
@@ -161,7 +175,7 @@ export default function FeaturesBlock({ data, loading, error }: {
 
       {/* ── Терминал ── */}
       <section>
-        <Head title="Терминал" people={tm.people} prev={tm.prev_people} tracked={tm.with_panels} trackedLabel="собрали окна" />
+        <Head path="/sandbox" title="Терминал" people={tm.people} prev={tm.prev_people} tracked={tm.with_panels} trackedLabel="собрали окна" />
         <Card padding="md" className="md:p-5 mb-3 md:mb-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Stat label="Собрали терминал" value={tm.with_panels.toLocaleString('ru-RU')}
@@ -183,17 +197,17 @@ export default function FeaturesBlock({ data, loading, error }: {
             items={windows.map((w) => ({ label: w.key === '0' ? 'пустой терминал' : `${w.key} ${w.key === '1' ? 'окно' : w.key === '2–3' ? 'окна' : 'окон'}`, value: w.people }))}
             loading={false} emptyText="Раскладок за период нет" />
           <TopList title="Индикаторы в окнах" columns={['людей', 'окон']}
-            items={tm.types.map((t) => ({ label: TERMINAL_PANEL[t.key] ?? t.key, value: t.people, value2: t.panels }))}
+            items={tm.types.map((t) => ({ label: TERMINAL_PANEL[t.key] ?? t.key, value: t.people, value2: t.panels, icon: panelIcon(t.key) }))}
             loading={false} emptyText="Окон за период нет" />
           <TopList title="Активы в терминале" hint={HINTS.terminal_assets} hintAlign="right" columns={['людей']}
-            items={tm.assets.map((a) => ({ label: a.name, note: a.name !== a.key ? a.key : undefined, value: a.people }))}
+            items={tm.assets.map((a) => ({ label: a.name, note: a.name !== a.key ? a.key : undefined, value: a.people, icon: <InstrumentIcon sectype={a.key} size={20} /> }))}
             loading={false} emptyText="Активы в терминале не выбирали" />
         </div>
       </section>
 
       {/* ── Сделки фондов ── */}
       <section>
-        <Head title="Сделки фондов" people={ft.people} prev={ft.prev_people} tracked={ft.tracked} />
+        <Head path="/fund-trades" title="Сделки фондов" people={ft.people} prev={ft.prev_people} tracked={ft.tracked} />
         <Card padding="md" className="md:p-5 mb-3 md:mb-4">
           <PickLine label="Вкладки" rows={ft.tabs} names={TRADES_TAB} />
           <PickLine label="По бумаге" rows={ft.modes} names={TRADES_MODE} />
@@ -214,7 +228,7 @@ export default function FeaturesBlock({ data, loading, error }: {
 
       {/* ── Деньги в фондах ── */}
       <section>
-        <Head title="Деньги в фондах" people={fm.people} prev={fm.prev_people} tracked={fm.tracked} />
+        <Head path="/funds-money" title="Деньги в фондах" people={fm.people} prev={fm.prev_people} tracked={fm.tracked} />
         <Card padding="md" className="md:p-5 mb-3 md:mb-4">
           <PickLine label="Режим" rows={fm.views} names={FUNDS_VIEW} />
           <PickLine label="Период" rows={fm.periods} names={FUNDS_PERIOD} />
