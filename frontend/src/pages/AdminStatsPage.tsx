@@ -502,17 +502,19 @@ export default function AdminStatsPage() {
         </Link>
       </div>
 
-      {/* Панель, прилипающая под шапкой сайта: разделы слева, период и срез справа.
-          На узком экране — фильтры строкой сверху, разделы под ними с прокруткой. */}
+      {/* Панель, прилипающая под шапкой сайта: сверху период и срез, под ними
+          разделы. Двумя строками на любой ширине: вместе разделы и фильтры
+          занимают ~1700px и в контейнер 7xl не влезают — в одну строку фильтры
+          переносились и наезжали на разделы. */}
       <div
         className="sticky top-14 md:top-16 z-40 -mx-4 px-4 md:-mx-6 md:px-6 mb-6 md:mb-8"
         style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)' }}
       >
-        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between" style={{ gap: 'var(--sp-2)' }}>
+        <div className="flex flex-col" style={{ gap: 'var(--sp-1)' }}>
           <div
             role="tablist"
             aria-label="Разделы статистики"
-            className="flex overflow-x-auto order-2 xl:order-1 min-w-0"
+            className="flex overflow-x-auto order-2 min-w-0"
             style={{ gap: 'var(--sp-1)', scrollbarWidth: 'none' }}
           >
             {STATS_TABS.map((t) => {
@@ -540,7 +542,7 @@ export default function AdminStatsPage() {
             })}
           </div>
 
-          <div className="flex flex-wrap items-center order-1 xl:order-2 pt-3 xl:pt-0 xl:pb-2" style={{ gap: 'var(--sp-2)' }}>
+          <div className="flex flex-wrap items-center order-1 pt-3" style={{ gap: 'var(--sp-2)' }}>
             {refreshing && (
               <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} aria-label="обновление" />
             )}
