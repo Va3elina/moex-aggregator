@@ -19,7 +19,7 @@ import { dateLocale } from '../i18n';
 import {
   X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
-  CalendarDays, Banknote, LayoutGrid, Settings, CreditCard,
+  CalendarDays, Banknote, LayoutGrid, Settings, Loader2,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -768,6 +768,8 @@ function ConsentModal({
   // была одна кнопка, развилку вынесли на отдельный шаг.
   const [step, setStep] = useState<'consent' | 'method'>('consent');
   const hasMethodStep = !trialInfo && !!onConfirmSbp;
+  // Какой способ нажали: isLoading общий на оба, лоадер показываем только на нажатом.
+  const [picked, setPicked] = useState<'tpay' | 'sbp' | null>(null);
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
@@ -836,27 +838,29 @@ function ConsentModal({
         {step === 'method' ? (
           <>
             <button
-              onClick={onConfirm}
+              onClick={() => { setPicked('tpay'); onConfirm(); }}
               disabled={isLoading}
-              className="w-full flex items-center gap-3 rounded-xl border p-4 transition-colors disabled:opacity-50"
+              className={`w-full flex items-center gap-3 rounded-xl border p-4 transition-colors ${isLoading && picked === 'tpay' ? '' : 'disabled:opacity-50'}`}
               style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
             >
               <PayMark kind="tpay" />
               <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                {isLoading ? t('Создаём…') : t('Картой или T-Pay')}
+                {isLoading && picked === 'tpay' ? t('Создаём…') : t('Картой или T-Pay')}
               </span>
+              {isLoading && picked === 'tpay' && <PaySpinner />}
             </button>
 
             <button
-              onClick={onConfirmSbp}
+              onClick={() => { setPicked('sbp'); onConfirmSbp?.(); }}
               disabled={isLoading}
-              className="w-full flex items-center gap-3 rounded-xl border p-4 mt-3 transition-colors disabled:opacity-50"
+              className={`w-full flex items-center gap-3 rounded-xl border p-4 mt-3 transition-colors ${isLoading && picked === 'sbp' ? '' : 'disabled:opacity-50'}`}
               style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
             >
               <PayMark kind="sbp" />
               <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                {isLoading ? t('Создаём…') : t('Счёт по СБП')}
+                {isLoading && picked === 'sbp' ? t('Создаём…') : t('Счёт по СБП')}
               </span>
+              {isLoading && picked === 'sbp' && <PaySpinner />}
             </button>
           </>
         ) : (
@@ -964,32 +968,31 @@ function ConsentModal({
  *
  * СБП — официальный знак из медиакита НСПК (sbp.nspk.ru/file/logo.zip,
  * SBP_logo_RGB, уменьшен до 160px). Лежит в public/pay/sbp.png.
- * Карта/T-Pay — нейтральная иконка: официальную кнопку T-Pay банк отдаёт
- * своим JS-SDK, отдельного svg в открытом доступе нет. Будет файл из ЛК —
- * подставим <img> так же, как у СБП.
+ * Карта/T-Pay — плашка T-Pay в public/pay/tpay.png.
  */
 function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
-  if (kind === 'sbp') {
-    return (
-      <img
-        src="/pay/sbp.png"
-        alt=""
-        aria-hidden="true"
-        width={36}
-        height={26}
-        className="shrink-0"
-        style={{ width: 36, height: 26, objectFit: 'contain' }}
-      />
-    );
-  }
   return (
-    <span
+    <img
+      src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.png'}
+      alt=""
       aria-hidden="true"
-      className="inline-flex items-center justify-center shrink-0 rounded-md"
-      style={{ width: 36, height: 26, color: 'var(--text-secondary)' }}
-    >
-      <CreditCard size={22} />
-    </span>
+      width={36}
+      height={26}
+      className="shrink-0"
+      style={{ width: 36, height: 26, objectFit: 'contain' }}
+    />
+  );
+}
+
+/** Спиннер справа в кнопке способа оплаты, пока создаётся платёж. */
+function PaySpinner() {
+  return (
+    <Loader2
+      size={18}
+      aria-hidden="true"
+      className="ml-auto shrink-0 animate-spin"
+      style={{ color: 'var(--text-secondary)' }}
+    />
   );
 }
 
