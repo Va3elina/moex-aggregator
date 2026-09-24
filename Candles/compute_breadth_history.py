@@ -54,14 +54,16 @@ EXCLUDED = {
     'GLDRUBF', 'GAZPF', 'SBERF',
 }
 
-# Split-adjustment registry — должен совпадать с api/routers/breadth.py.
-# Каноничный способ — re-import через backfill_daily_history.py. Но ISS не
-# для всех splits делает retroactive adjustment. См. подробности в
-# api/routers/breadth.py — там же актуальный список тикеров.
-KNOWN_SPLITS: dict[str, tuple[date, float]] = {
-    'BELU': (date(2024, 8, 22), 8.0),  # НоваБев Групп — split 1:8 (ISS не adjusts)
-    'SFIN': (date(2025, 12, 25), 1.93),  # ЭсЭфАй — ISS не adjusts (пров. 10.06.2026)
-}
+# Сплиты — единый реестр stock_splits (db/migrations/104, api/services/splits.py).
+# Скрипт хостовый, api не импортирует — читает таблицу своим engine.
+def load_raw_price_splits(engine) -> dict[str, tuple[date, float]]:
+    """{secid: (split_date, ratio)} только для сплитов с СЫРЫМИ ценами в БД."""
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT secid, split_date, ratio FROM stock_splits WHERE NOT price_adjusted"
+        )).fetchall()
+    return {r[0]: (r[1], float(r[2])) for r in rows}
+
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
@@ -353,6 +355,7 @@ def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple
         """), {"tickers": tickers, "date_from": date_from}).fetchall()
 
     log.info(f"Загружено {len(rows):,} строк")
+    splits = load_raw_price_splits(engine)
 
     ticker_data: dict[str, tuple[list, list]] = {}
     for secid, d, close in rows:
@@ -360,9 +363,9 @@ def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple
             ticker_data[secid] = ([], [])
         ticker_data[secid][0].append(d)
         # Split-adjustment: pre-split цены делим на ratio. Иначе EMA
-        # пересекает разрыв сплита → bogus breadth для T/SFIN.
-        if secid in KNOWN_SPLITS:
-            split_date, ratio = KNOWN_SPLITS[secid]
+        # пересекает разрыв сплита → bogus breadth для BELU/SFIN.
+        if secid in splits:
+            split_date, ratio = splits[secid]
             adj_close = float(close) / ratio if d < split_date else float(close)
         else:
             adj_close = float(close)

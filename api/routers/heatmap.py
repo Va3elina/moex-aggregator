@@ -20,6 +20,7 @@ from api.services.market_delay import cutoff_for_interval
 from api.services.session_close import (is_live_viewer, view_tag, published_end,
                                         published_next_day)
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
+from api.services.splits import price_splits
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
@@ -155,11 +156,9 @@ def _mv_rows() -> list[dict]:
     } for row in rows]
 
 
-# Сплиты, по которым дневные свечи в БД остались сырыми (зеркало known_splits в
-# db/mv_heatmap_stocks.sql): опорные цены 1н/1м/1г до даты сплита делим на ratio.
-_KNOWN_SPLITS: dict[str, tuple[date, float]] = {
-    "SFIN": (date(2025, 12, 25), 1.93),
-}
+# Сплиты с сырыми дневными свечами — из общего реестра stock_splits
+# (api/services/splits.py, та же таблица, что в CTE db/mv_heatmap_stocks.sql):
+# опорные цены 1н/1м/1г до даты сплита делим на ratio.
 
 # Публичная версия карты: цена — закрытие последней опубликованной сессии
 # (последняя 5-минутка до 19:00, services/session_close), изменение за день —
@@ -261,9 +260,10 @@ def _public_rows() -> list[dict]:
         raise HTTPException(status_code=500, detail="Ошибка получения данных heatmap")
 
     out = []
+    raw_splits = price_splits()
     for r in rows:
         sec_id = r["sec_id"]
-        split = _KNOWN_SPLITS.get(sec_id)
+        split = raw_splits.get(sec_id)
 
         def ref(value, d):
             if value is None:
