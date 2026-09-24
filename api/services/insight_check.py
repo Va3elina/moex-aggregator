@@ -8,7 +8,7 @@
 Происхождение правил — research/content_pipeline_v2/insights (HANDOFF.md):
 • прогноз цены запрещён: forecast_backtest — с 2023 года сигналы угадывают направление в 51%
   случаев, прогнозы автора не лучше правила «всегда вниз»;
-• потолок 6 чисел: у канала 0,48 числа на 100 знаков, у первой версии завода было 2,66;
+• потолок 6 чисел (даты не в счёт): у канала 0,48 числа на 100 знаков, у первой версии завода было 2,66;
 • «Посмотрим-увидим», «покажет следующий месяц» проскочили в свежих постах 13.09.
 """
 import re
@@ -28,6 +28,10 @@ STYLE = ((re.compile(r"(?:^|[.!?◽️]\s*)(?:писали|сообщали),? �
          (re.compile(r"аналитик\w*", re.I), "мнение аналитиков брокеров - не повод и не аргумент (R18)"))
 CODES = re.compile(r"\b(?:MX|IMOEXF|USDRUBF|CNYRUBF|CR|Si)\b")
 TITLE_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]️?\s*$")
+# Даты не входят в потолок чисел: с ним писатель размывал даты аналогий («весной прошлого года»), и судья
+# ставил numbers_traceable всем девяти находкам 19–24.09. Точная дата прошлого случая — правило (#2124).
+DATE = re.compile(r"\b\d{1,2}\s+(?:январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)\w*"
+                  r"(?:\s+20\d\d)?(?:\s+года?)?|\b20\d\d\b(?:\s+года?)?", re.I)
 
 
 def numbers(text: str) -> list:
@@ -60,14 +64,14 @@ def check(draft: str, card: str) -> dict:
         defects.append("заготовка вместо вывода")
     defects += [msg for rx, msg in STYLE if rx.search(body)]
     paras = sum(1 for x in lines[1:] if x.lstrip().startswith("◽"))
-    if paras > 3:
-        defects.append(f"абзацев {paras} - не больше трёх (R23)")
+    if not 2 <= paras <= 4:
+        defects.append(f"абзацев {paras} - от двух до четырёх, по теме (R23)")
     n = len(re.sub(r"\s+", " ", body))
     if not 450 <= n <= 1000:
         defects.append(f"длина {n} знаков, цель 600-800")
-    nn = len(numbers(body))
+    nn = len(numbers(DATE.sub(" ", body)))
     if nn > 6:
-        defects.append(f"чисел {nn} - потолок 5, считая даты и годы")
+        defects.append(f"чисел {nn} - потолок 6, даты не в счёт")
     if len(tags) != 1 or not lines or not lines[-1].strip().startswith("#"):
         defects.append("нужен ровно один хэштег последней строкой")
     if re.search(r"\b(сегодня|вчера|завтра)\b", draft or "", re.I):
