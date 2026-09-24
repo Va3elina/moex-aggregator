@@ -13,8 +13,10 @@
  *   GET /api/admin/repaint/screener?tf             — метрики по всем акциям (таблица)
  *   GET /api/admin/repaint/series/{secid}?days&tf  — ряд ТФ: цена + CDV + метрики
  *
- * Каркас как у остальных индикаторов: PageHeader + editorial-frame, в нём ряд
- * контролов (актив / таймфрейм / период / CDV в % от free float) и графики.
+ * Каркас как у остальных индикаторов: PageHeader, папки-вкладки (как категории
+ * фондов в «Деньгах в фондах») и editorial-frame с рядом контролов (актив /
+ * таймфрейм / период / CDV в % от free float) и одним графиком на вкладку:
+ * «Цена и CDV» и «Перекраска».
  *
  * Пока индикатор экспериментальный: ссылка на него — только в admin-вкладке
  * навигации, обычным пользователям не показывается.
@@ -22,12 +24,13 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ChevronDown, Repeat2, Search } from 'lucide-react';
+import { ChevronDown, LineChart, Repeat2, Search } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import PageHeader from '../components/PageHeader';
 import SimpleChart from '../components/SimpleChart';
 import SegmentedControl from '../components/SegmentedControl';
+import ChartTabs from '../components/ChartTabs';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import InstrumentIcon from '../components/InstrumentIcon';
 import HelpTooltip from '../components/HelpTooltip';
@@ -70,7 +73,8 @@ const TF_OPTIONS: { key: RepaintTf; label: string; periods: Period[] }[] = [
 const tfPeriods = (tf: RepaintTf) => TF_OPTIONS.find((o) => o.key === tf)?.periods ?? PERIODS;
 
 const CHART_HEIGHT = 380;
-const METRIC_CHART_HEIGHT = 300;
+
+type Tab = 'cdv' | 'repaint';
 
 /** Штуки акций → компактно: 1.23 млрд / 45.6 млн / 789 тыс. */
 function fmtShares(v: number): string {
@@ -111,6 +115,7 @@ export default function RepaintPage() {
   const [tf, setTf] = usePersistedState<RepaintTf>('frame:repaint:tf', '4h');
   const [period, setPeriod] = usePersistedState<Period>('frame:repaint:period', '1y');
   const [cdvInFf, setCdvInFf] = usePersistedState<boolean>('frame:repaint:cdv-ff', false);
+  const [tab, setTab] = usePersistedState<Tab>('frame:repaint:tab', 'cdv');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -208,9 +213,21 @@ export default function RepaintPage() {
         subtitle="Сколько % free float сменило руки за месяц · эксперимент, только для администратора"
       />
 
-      <div className="editorial-frame">
+      {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
+          [вкладки + панель], как на «Деньгах в фондах». */}
+      <div className="tabbed-card">
+      <ChartTabs<Tab>
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: 'cdv', label: 'Цена и CDV', Icon: LineChart },
+          { key: 'repaint', label: 'Перекраска', Icon: Repeat2 },
+        ]}
+      />
+
+      <div className="editorial-frame has-tabs">
         {/* Контролы как на остальных индикаторах: актив + таймфрейм + период,
-            последним — тумблер «CDV в % от free float» для верхнего графика. */}
+            на вкладке «Цена и CDV» ещё тумблер «CDV в % от free float». */}
         <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
           {/* Пикер бумаги — общий InstrumentSearchModal (как на ОИ и Сезонности). */}
           <button
@@ -250,9 +267,11 @@ export default function RepaintPage() {
             value={period}
             onChange={changePeriod}
           />
-          <TogglePill active={cdvInFf} onClick={() => setCdvInFf(!cdvInFf)} title={HINTS.cdvFf}>
-            CDV в % от free float
-          </TogglePill>
+          {tab === 'cdv' && (
+            <TogglePill active={cdvInFf} onClick={() => setCdvInFf(!cdvInFf)} title={HINTS.cdvFf}>
+              CDV в % от free float
+            </TogglePill>
+          )}
         </div>
 
         {error ? (
@@ -271,75 +290,61 @@ export default function RepaintPage() {
               <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.8 }}>{error}</div>
             </div>
           </div>
+        ) : !series ? (
+          <Skeleton height={CHART_HEIGHT} rounded="lg" />
+        ) : tab === 'cdv' ? (
+          /* Цена + CDV (в штуках или в % от free float) */
+          <SimpleChart
+            data={priceData}
+            secondaryData={cdvData}
+            showSecondary={true}
+            primaryColor="var(--accent)"
+            secondaryColor="var(--accent-secondary)"
+            primaryLabel="Цена"
+            secondaryLabel={cdvInFf ? 'CDV, % от free float' : 'CDV, шт'}
+            formatValue={fmtRub}
+            formatSecondaryValue={cdvInFf ? fmtChartPct : fmtSignedShares}
+            formatSecondaryAxis={cdvInFf ? fmtAxisPct : fmtShares}
+            niceTicks={true}
+            niceTicksSecondary={true}
+            loading={loading}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showNavigator={false}
+            height={CHART_HEIGHT}
+          />
+        ) : metricPoints.length > 0 ? (
+          /* Метрики перекраски, % от free float */
+          <SimpleChart
+            data={repaintData}
+            secondaryData={devData}
+            showSecondary={true}
+            primaryColor="var(--accent)"
+            secondaryColor="var(--accent-secondary)"
+            primaryLabel="Перекраска за 30д"
+            secondaryLabel="Отклонение от среднего 30д"
+            formatValue={fmtChartPct}
+            formatPrimaryAxis={fmtAxisPct}
+            formatSecondaryValue={fmtChartPct}
+            formatSecondaryAxis={fmtAxisPct}
+            niceTicks={true}
+            niceTicksSecondary={true}
+            loading={loading}
+            showValueHeader={false}
+            legendPosition="top"
+            showDownloadButton={false}
+            showNavigator={false}
+            height={CHART_HEIGHT}
+          />
         ) : (
-          <>
-            {/* Цена + CDV (в штуках или в % от free float) */}
-            <SectionTitle
-              title={cdvInFf ? 'Цена и CDV, % от free float' : 'Цена и CDV'}
-              hint={cdvInFf ? HINTS.cdvFf : HINTS.cdv}
-            />
-            <div className="mb-6 md:mb-8">
-              {series ? (
-                <SimpleChart
-                  data={priceData}
-                  secondaryData={cdvData}
-                  showSecondary={true}
-                  primaryColor="var(--accent)"
-                  secondaryColor="var(--accent-secondary)"
-                  primaryLabel="Цена"
-                  secondaryLabel={cdvInFf ? 'CDV, % от free float' : 'CDV, шт'}
-                  formatValue={fmtRub}
-                  formatSecondaryValue={cdvInFf ? fmtChartPct : fmtSignedShares}
-                  formatSecondaryAxis={cdvInFf ? fmtAxisPct : fmtShares}
-                  niceTicks={true}
-                  niceTicksSecondary={true}
-                  loading={loading}
-                  showValueHeader={false}
-                  legendPosition="top"
-                  showDownloadButton={false}
-                  showNavigator={false}
-                  height={CHART_HEIGHT}
-                />
-              ) : (
-                <Skeleton height={CHART_HEIGHT} rounded="lg" />
-              )}
-            </div>
-
-            {/* Метрики перекраски */}
-            <SectionTitle title="Перекраска и отклонение от среднего, % от free float" hint={HINTS.repaint} />
-            {!series ? (
-              <Skeleton height={METRIC_CHART_HEIGHT} rounded="lg" />
-            ) : metricPoints.length > 0 ? (
-              <SimpleChart
-                data={repaintData}
-                secondaryData={devData}
-                showSecondary={true}
-                primaryColor="var(--accent)"
-                secondaryColor="var(--accent-secondary)"
-                primaryLabel="Перекраска за 30д"
-                secondaryLabel="Отклонение от среднего 30д"
-                formatValue={fmtChartPct}
-                formatPrimaryAxis={fmtAxisPct}
-                formatSecondaryValue={fmtChartPct}
-                formatSecondaryAxis={fmtAxisPct}
-                niceTicks={true}
-                niceTicksSecondary={true}
-                loading={loading}
-                showValueHeader={false}
-                legendPosition="top"
-                showDownloadButton={false}
-                showNavigator={false}
-                height={METRIC_CHART_HEIGHT}
-              />
-            ) : (
-              <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>
-                Недостаточно истории для месячного окна — метрики появятся, когда истории
-                будет больше 30 дней.
-              </p>
-            )}
-          </>
+          <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+            Недостаточно истории для месячного окна — метрики появятся, когда истории
+            будет больше 30 дней.
+          </p>
         )}
       </div>{/* /editorial-frame */}
+      </div>{/* /tabbed-card */}
 
       {/* Скринер по всем акциям */}
       <div className="mt-6 md:mt-8">
