@@ -17,6 +17,7 @@ from api.cache import get_or_set
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_guest_limits, enforce_tier_limits
+from api.services.splits import adjust_prices
 from api.services.session_close import (is_live_viewer, view_tag, published_end,
                                         published_next_day, last_published_date)
 
@@ -39,40 +40,12 @@ router = APIRouter(prefix="/api/breadth", tags=["breadth"])
 # Добавлять новые сплиты при появлении (детектировать по аномальному
 # day-over-day change в daily candles).
 # ════════════════════════════════════════════════════════════════════════════
-from datetime import date as _date_cls
-
-KNOWN_SPLITS: dict[str, tuple[_date_cls, float]] = {
-    # secid : (split_date, ratio).  Сколько новых акций на 1 старую.
-    # Применяется ТОЛЬКО к close < split_date (retroactive adjustment):
-    #   adjusted_close = raw_close / ratio
-    #
-    # Каноничный способ — re-import через backfill_daily_history.py.
-    # Но ISS не для всех splits делает retroactive adjustment. Эмпирически:
-    #   T (1:10, апр 2026) — ISS adjusts ✓
-    #   SFIN (1.93, дек 2025) — ISS НЕ adjusts (проверено 10.06.2026: разрыв
-    #     1828→947 на 2025-12-25 есть и в ISS-ответе) — реестр обязателен.
-    #     Ratio 1.93 = как в mv_heatmap_stocks.sql (единый источник правды).
-    #   BELU (1:8, авг 2024) — ISS НЕ adjusts (сырая серия) — реестр обязателен.
-    # При появлении нового сплита: запустить backfill, проверить ISS-ответ,
-    # если pre-split цены не пересчитаны — добавить сюда.
-    'BELU': (_date_cls(2024, 8, 22), 8.0),  # НоваБев Групп — split 1:8
-    'SFIN': (_date_cls(2025, 12, 25), 1.93),  # ЭсЭфАй — без него EMA на смеси цен
-}
-
-
+# Сплиты — общий реестр stock_splits (api/services/splits.py). Здесь только
+# обёртка, которую импортирует repo_volume.
 def _adjust_for_split(ticker: str, dated_prices: list[tuple]) -> list[tuple]:
-    """
-    Если ticker в KNOWN_SPLITS — делит pre-split цены на ratio. Иначе no-op.
-    dated_prices: [(date, price), ...] в хронологическом порядке.
-    """
-    info = KNOWN_SPLITS.get(ticker)
-    if not info:
-        return dated_prices
-    split_date, ratio = info
-    return [
-        (d, p / ratio) if (d if isinstance(d, _date_cls) else _date_cls.fromisoformat(str(d))) < split_date else (d, p)
-        for d, p in dated_prices
-    ]
+    """Цены до сплита с сырыми свечами делятся на ratio. Иначе no-op."""
+    return adjust_prices(ticker, dated_prices)
+
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 

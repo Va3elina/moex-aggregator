@@ -48,7 +48,7 @@ from api.database import get_db
 from api.logger import get_logger
 from api.models import User
 from api.routers.auth import require_admin
-from api.routers.breadth import KNOWN_SPLITS
+from api.services.splits import price_divisor, volume_multiplier
 
 log = get_logger()
 
@@ -90,31 +90,9 @@ def _candle_delta(o: float, h: float, l: float, c: float, v: float) -> float:
     return v * rate if c >= o else -v * rate
 
 
-# Сплиты, по которым ISS задним числом пересчитал ЦЕНЫ, но не объём: до даты
-# сплита volume лежит в старых акциях. В KNOWN_SPLITS (breadth) их нет —
-# там реестр для НЕпересчитанных цен, и цену T он бы поделил второй раз.
-# T: 1:10, первый день торгов новыми акциями 2026-04-17 (проверено по БД
-# 2026-09-24: TCSG 2024-11 close 2339 = T 233.96 при одинаковом volume,
-# объём после 2026-04-17 вырос ~10×).
-VOLUME_ONLY_SPLITS: dict[str, tuple[date, float]] = {
-    "T": (date(2026, 4, 17), 10.0),
-}
-
-
-def _split_volume_ratio(sec_id: str, day: date) -> float:
-    """Множитель объёма для дат ДО сплита: 1 старая акция = ratio новых."""
-    split = KNOWN_SPLITS.get(sec_id) or VOLUME_ONLY_SPLITS.get(sec_id)
-    if split and day < split[0]:
-        return split[1]
-    return 1.0
-
-
-def _split_price_ratio(sec_id: str, day: date) -> float:
-    """Делитель цены для дат ДО сплита — только там, где ISS цену не пересчитал."""
-    split = KNOWN_SPLITS.get(sec_id)
-    if split and day < split[0]:
-        return split[1]
-    return 1.0
+# Сплиты — общий реестр stock_splits (api/services/splits.py): цена делится
+# только там, где свечи сырые; объём умножается всегда (биржа его не
+# пересчитывает, у T до 2026-04-17 объём в старых акциях, в 10 раз меньше).
 
 
 def _tf_bars(sec_id: str, rows, tf: str) -> list[dict]:
@@ -129,9 +107,9 @@ def _tf_bars(sec_id: str, rows, tf: str) -> list[dict]:
                          float(c or 0), float(v or 0))
         if h <= 0 or v < 0:
             continue
-        pr = _split_price_ratio(sec_id, bt.date())
+        pr = price_divisor(sec_id, bt.date())
         o, h, l, c = o / pr, h / pr, l / pr, c / pr
-        v *= _split_volume_ratio(sec_id, bt.date())
+        v *= volume_multiplier(sec_id, bt.date())
         key = bucket_of(bt)
         b = buckets.get(key)
         if b is None:

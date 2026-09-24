@@ -23,14 +23,12 @@ DROP MATERIALIZED VIEW IF EXISTS mv_heatmap_stocks;
 
 CREATE MATERIALIZED VIEW mv_heatmap_stocks AS
 WITH known_splits AS (
-    -- secid, split_date, ratio (сколько новых акций на 1 старую).
-    -- Применяется ТОЛЬКО к close < split_date (retroactive adjustment).
-    -- ⚠️ ТОЛЬКО для секций, чьи дневные свечи ЕЩЁ СЫРЫЕ (не переимпортированы
-    -- ISS-адъюстнутыми). Если свечи уже адъюстнуты — сюда НЕ добавлять, иначе
-    -- ДВОЙНАЯ коррекция: T (1:10, 2026-04) был тут ПРИ адъюстнутых свечах →
-    -- change_1y давал +811% вместо −9% (close делился на 10 дважды). Убран 2026-06.
-    -- SFIN остаётся: его свечи СЫРЫЕ (разрыв 1828→947 на 2025-12-25 виден в БД).
-    SELECT 'SFIN'::varchar AS secid, '2025-12-25'::date AS split_date, 1.93::numeric AS ratio
+    -- Единый реестр сплитов (миграция 104, api/services/splits.py). Сюда идут
+    -- только сплиты с СЫРЫМИ дневными свечами: если ISS уже пересчитал цены
+    -- (price_adjusted), делить нельзя — двойная коррекция (T давал +811%/год).
+    SELECT secid::varchar AS secid, split_date, ratio
+    FROM stock_splits
+    WHERE NOT price_adjusted
 ),
 -- ⚠️ ПОСЛЕДНЯЯ СВЕЧА — через LATERAL … LIMIT 1 по индексу (type, interval, secid,
 -- begin_time DESC), по одному заходу на бумагу. Раньше ROW_NUMBER() считался по
