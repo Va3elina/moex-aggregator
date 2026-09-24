@@ -142,11 +142,11 @@ rules:
     regression: []
 
   - id: R14
-    rule: "Один тикер — один пост за три дня (внутри вида: данные / новость)"
+    rule: "Один тикер — один пост за три дня (внутри вида: данные / новость); находка с рекордом сильнее прежнего — не повтор"
     source: {date: 2026-09-15, cases: [2117, 2133, 2375], quote: "делать это сразу вторым постом не имеет места"}
     pipelines: [news, insight, combo]
     enforced_by:
-      - {kind: filter, where: "signals/content_ai.py: _repeat_of_ticker (цикл Шага В и находок)"}
+      - {kind: filter, where: "signals/content_ai.py: _repeat_of_ticker (цикл Шага В и находок); _record_rank — исключение для рекорда (#2490)"}
       - {kind: filter, where: "signals/content_match.py: тот же отсев (второй путь запуска)"}
       - {kind: filter, where: "signals/combo_scan.py: по инструменту"}
     status: enforced
@@ -253,7 +253,7 @@ rules:
     pipelines: [news, insight, combo]
     enforced_by:
       - {kind: filter, where: "content_ai._stale_news (+ content_match)"}
-      - {kind: filter, where: "combo_scan: день данных сюжета = последний день ОИ до запуска; главная нога ≤ 4 дней в обоих режимах; новость сюжета ≤ 36 ч"}
+      - {kind: filter, where: "combo_scan: день данных сюжета = последний день ОИ до запуска; главная нога ≤ 4 дней в обоих режимах; новость сюжета ≤ 36 ч (утром устаревшая новость отпадает от сюжета, without_news)"}
       - {kind: filter, where: "insight_scan.pick: позиции и сезонность — последний день данных, фонды ≤ 4 дней"}
     status: enforced
     regression: [2242]

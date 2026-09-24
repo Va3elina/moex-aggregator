@@ -75,6 +75,14 @@ def channel_wrote(story: dict, now: pd.Timestamp) -> str | None:
     return None
 
 
+def without_news(story: dict) -> dict | None:
+    """Сюжет без ноги-новости — если и без неё в нём два семейства данных."""
+    fams = [f for f in story["families"] if f != "новость"]
+    if len(fams) < 2:
+        return None
+    return {**story, "is_news": False, "news": [], "families": fams, "score": round(story["score"] - 2.0, 2)}
+
+
 def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
     now = pd.Timestamp(at) if at else pd.Timestamp(datetime.now(timezone.utc))
     now = now.tz_localize("UTC") if now.tzinfo is None else now
@@ -130,9 +138,15 @@ def run_once(mode: str, dry_run: bool = False, at: str | None = None) -> dict:
                 newest = max(pd.Timestamp(n["t"]) for n in s["news"])
                 newest = newest.tz_localize("UTC") if newest.tzinfo is None else newest
                 if now - newest > pd.Timedelta(hours=NEWS_FRESH_HOURS):
-                    print(f"[combo_scan] пропуск, новость сюжета от {newest:%d.%m %H:%M} старше "
-                          f"{NEWS_FRESH_HOURS} ч: {lead['title'][:70]}")
-                    continue
+                    # утром сюжет стоит на данных: устаревшая новость отпадает, а не тянет его за собой
+                    # (21.09 так пропал «шорт по доллару, евро и юаню» — канал написал его сам 22.09)
+                    plain = without_news(s) if mode == "data" else None
+                    if plain is None:
+                        print(f"[combo_scan] пропуск, новость сюжета от {newest:%d.%m %H:%M} старше "
+                              f"{NEWS_FRESH_HOURS} ч: {lead['title'][:70]}")
+                        continue
+                    print(f"[combo_scan] новость от {newest:%d.%m %H:%M} устарела - сюжет без неё: {lead['title'][:70]}")
+                    s = plain
             if s["theme"] in themes:
                 print(f"[combo_scan] пропуск, тема «{s['theme']}» у завода была за {REPEAT_DAYS} дня: {lead['title'][:70]}")
                 continue
