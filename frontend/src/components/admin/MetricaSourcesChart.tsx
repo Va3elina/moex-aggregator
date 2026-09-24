@@ -4,6 +4,10 @@
  * по неделям), линия «Всего» и по линии на каждый источник. Легенда включает
  * и выключает линии и показывает итог за период, есть вид таблицей.
  *
+ * Разбивка по источникам по умолчанию выключена: семь цветных линий поверх
+ * «Всего» — шум, когда нужен просто ответ «сколько». Включается кнопкой
+ * «По источникам», выбор запоминается.
+ *
  * Цвет закреплён за источником (SOURCE_SLOT), а не за местом в списке:
  * выключенная линия не перекрашивает остальные. Палитра --viz-1…8 задана в
  * index.css для обеих editorial-тем и проверена на различимость при
@@ -18,6 +22,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import HelpTooltip from '../HelpTooltip';
 import { useElementWidth } from '../../hooks/useElementWidth';
 import { easeOut, prefersReducedMotion } from '../../hooks/useTweened';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import type { MetricaBySource, MetricaMetric } from '../../services/api';
 
 // Порядок слотов — часть проверки палитры на дальтонизм, не переставлять.
@@ -96,10 +101,11 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [hover, setHover] = useState<number | null>(null);
   const [asTable, setAsTable] = useState(false);
+  const [split, setSplit] = usePersistedState<boolean>('frame:admin:stats:metrica-split', false);
 
   const lines = useMemo<Line[]>(() => [
     { id: TOTAL, name: 'Всего', full: 'Всего по сайту', color: 'var(--text-primary)', values: data.total[metric] ?? [], period: totalValue },
-    ...data.series.map((s) => ({
+    ...(split ? data.series : []).map((s) => ({
       id: s.id,
       name: SHORT_NAME[s.id] ?? s.name,
       full: s.name,
@@ -107,9 +113,9 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
       values: s.values[metric] ?? [],
       period: s.period[metric] ?? 0,
     })),
-  ], [data, metric, totalValue]);
+  ], [data, metric, totalValue, split]);
 
-  const shown = lines.filter((l) => !hidden.has(l.id));
+  const shown = split ? lines.filter((l) => !hidden.has(l.id)) : lines;
   const n = data.dates.length;
   const week = data.group === 'week';
   const kind = metric === 'avg_visit_sec' ? 'time' : metric === 'page_depth' || metric === 'bounce_pct' ? 'float' : 'int';
@@ -137,7 +143,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [data, metric, hidden, top]);
+  }, [data, metric, hidden, top, split]);
 
   const e = easeOut(p);
   const from = p < 1 ? fromRef.current : null;
@@ -203,14 +209,25 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
           <span>{label} · по {week ? 'неделям' : 'дням'}</span>
           <HelpTooltip icon="help" title="По источникам трафика" content={hint} size={12} />
         </div>
-        <button
-          type="button"
-          onClick={() => setAsTable(!asTable)}
-          className="editorial-press rounded-full text-xs"
-          style={{ padding: 'var(--sp-1) var(--sp-3)' }}
-        >
-          {asTable ? 'Графиком' : 'Таблицей'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={split}
+            onClick={() => setSplit(!split)}
+            className="editorial-press rounded-full text-xs"
+            style={{ padding: 'var(--sp-1) var(--sp-3)' }}
+          >
+            {split ? 'Только всего' : 'По источникам'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAsTable(!asTable)}
+            className="editorial-press rounded-full text-xs"
+            style={{ padding: 'var(--sp-1) var(--sp-3)' }}
+          >
+            {asTable ? 'Графиком' : 'Таблицей'}
+          </button>
+        </div>
       </div>
 
       {asTable ? (
@@ -331,6 +348,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
         </div>
       )}
 
+      {split && (
       <div className="flex flex-wrap gap-2 mt-3">
         {lines.map((l) => {
           const off = hidden.has(l.id);
@@ -354,6 +372,7 @@ export default function MetricaSourcesChart({ data, metric, label, hint, totalVa
           );
         })}
       </div>
+      )}
     </div>
   );
 }

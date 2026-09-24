@@ -5,6 +5,7 @@ Endpoints:
 - POST /api/usage/log         — batch insert events (любой user, в т.ч. гость)
 - POST /api/analytics/event   — тот же приём, легаси-путь (см. ingest_router)
 - GET  /api/analytics/stats   — aggregated metrics (admin only)
+- GET  /api/analytics/features — фонды и терминал изнутри: категории, вкладки, окна (admin only)
 
 Принципы:
 - Никаких PII в логах (event payload не должен содержать email/name/etc.)
@@ -1260,6 +1261,269 @@ def _fund_meta(conn, tickers: list[str]) -> dict[str, dict]:
     except Exception:
         return {}
     return {r[0]: {"name": r[1], "uk_id": r[2]} for r in rows}
+
+
+def _ident_events_cte(segment: str, device: str, params: dict[str, Any]) -> str:
+    """CTE `ev`: события за [:start, :end) с человеком `ident` и фильтрами шапки.
+
+    Человек склеивается так же, как в сводке: аккаунт, иначе ID браузера (с
+    подклейкой к аккаунту, если в этом браузере потом входили), иначе вкладка.
+    Параметр device дописывается в params.
+    """
+    ev_where = []
+    if segment == "all":
+        ev_where.append("(a.user_id IS NULL OR a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin'))")
+    elif segment == "auth":
+        ev_where.append("a.user_id IS NOT NULL AND a.user_id NOT IN (SELECT id FROM users WHERE role = 'admin')")
+    elif segment == "guest":
+        ev_where.append("a.user_id IS NULL AND vu.uid IS NULL")
+    elif segment == "admin":
+        ev_where.append("a.user_id IN (SELECT id FROM users WHERE role = 'admin')")
+    if device in ("mobile", "desktop", "tablet"):
+        ev_where.append("a.device = :device")
+        params["device"] = device
+    ev_sql = (" AND " + " AND ".join(ev_where)) if ev_where else ""
+    return f"""
+        WITH vis_user AS (
+            SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL GROUP BY visitor_id
+        ),
+        ev AS (
+            SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
+                            'v' || a.visitor_id, 's' || a.session_id) AS ident,
+                   COALESCE(a.user_id, vu.uid) AS uid,
+                   a.session_id, a.event_path, a.event_type, a.payload, a.server_ts,
+                   ((a.server_ts AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date AS day
+            FROM analytics_events a
+            LEFT JOIN vis_user vu ON vu.visitor_id = a.visitor_id
+            WHERE a.server_ts >= :start AND a.server_ts < :end{ev_sql}
+        )
+    """
+
+
+@router.get("/features")
+def get_features(
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    segment: str = Query("all"),
+    device: str = Query("all"),
+    user=Depends(require_admin),
+):
+    """Что делают внутри «Денег в фондах», «Сделок фондов» и терминала.
+
+    Настройки этих разделов пишутся снимками (funds_view, fund_trades_view,
+    terminal_layout — с 21.09.2026), поэтому всё считается в людях: сколько
+    разных людей хоть раз смотрели категорию, вкладку, бумагу. Снимков у
+    одного человека десятки, и в штуках они бы мерили усидчивость, а не
+    интерес. Раскладка терминала — по ПОСЛЕДНЕМУ снимку человека за период:
+    это то, с чем он в итоге остался.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    key = f"admin:features:v1:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    return get_or_compute(key, lambda: _compute_features(rng, segment, device), ttl=180)
+
+
+_FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox")
+
+
+def _compute_features(rng: dict, segment: str, device: str) -> dict:
+    params: dict[str, Any] = {"start": rng["start"], "end": rng["end"], "paths": list(_FEATURE_PATHS)}
+    base = _ident_events_cte(segment, device, params)
+    prev_params: dict[str, Any] = {"start": rng["pstart"], "end": rng["pend"], "paths": list(_FEATURE_PATHS)}
+    prev_base = _ident_events_cte(segment, device, prev_params)
+
+    def pairs(rows) -> list[dict]:
+        return [{"key": r[0], "people": int(r[1])} for r in rows if r[0] is not None]
+
+    with get_engine().connect() as conn:
+        def q(sql: str):
+            return conn.execute(text(f"{base} {sql}"), params).fetchall()
+
+        # Кто открывал раздел — сейчас и за такой же прошлый период.
+        reach = {r[0]: int(r[1]) for r in q("""
+            SELECT event_path, COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'pageview' AND event_path = ANY(:paths) GROUP BY 1
+        """)}
+        reach_prev = {r[0]: int(r[1]) for r in conn.execute(text(f"""
+            {prev_base}
+            SELECT event_path, COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'pageview' AND event_path = ANY(:paths) GROUP BY 1
+        """), prev_params).fetchall()}
+
+        # ── Деньги в фондах ────────────────────────────────────────────────
+        fm_people = q("SELECT COUNT(DISTINCT ident) FROM ev WHERE event_type = 'funds_view'")[0][0]
+        fm_cats = q("""
+            SELECT payload->>'category', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'funds_view' GROUP BY 1 ORDER BY 2 DESC
+        """)
+        fm_views = q("""
+            SELECT payload->>'view', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'funds_view' GROUP BY 1 ORDER BY 2 DESC
+        """)
+        fm_periods = q("""
+            SELECT payload->>'period', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'funds_view' GROUP BY 1 ORDER BY 2 DESC
+        """)
+        fm_tf = q("""
+            SELECT payload->>'timeframe', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'funds_view' AND payload->>'view' = 'flows'
+              AND payload->>'timeframe' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC
+        """)
+        # Пустой funds = «все фонды категории». Непустой — человек сам сузил
+        # выбор, и это интереснее всего: какие фонды он оставил.
+        fm_narrow = q("""
+            SELECT COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'funds_view' AND jsonb_typeof(payload->'funds') = 'array'
+              AND jsonb_array_length(payload->'funds') > 0
+        """)[0][0]
+        fm_funds = q("""
+            SELECT f.t, COUNT(DISTINCT ident) FROM ev,
+                LATERAL jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(payload->'funds') = 'array'
+                         THEN payload->'funds' ELSE '[]'::jsonb END) AS f(t)
+            WHERE event_type = 'funds_view'
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+        """)
+
+        # ── Сделки фондов ──────────────────────────────────────────────────
+        ft_people = q("SELECT COUNT(DISTINCT ident) FROM ev WHERE event_type = 'fund_trades_view'")[0][0]
+        ft_tabs = q("""
+            SELECT payload->>'tab', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_trades_view' GROUP BY 1 ORDER BY 2 DESC
+        """)
+        ft_assets = q("""
+            SELECT payload->>'asset', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_trades_view' AND payload->>'tab' = 'company'
+              AND payload->>'asset' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+        """)
+        ft_modes = q("""
+            SELECT payload->>'mode', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_trades_view' AND payload->>'tab' = 'company'
+              AND payload->>'mode' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC
+        """)
+        ft_periods = q("""
+            SELECT payload->>'period', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_trades_view' AND payload->>'tab' = 'company'
+              AND payload->>'period' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC
+        """)
+        ft_pmodes = q("""
+            SELECT payload->>'mode', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_trades_view' AND payload->>'tab' = 'portfolio'
+              AND payload->>'mode' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC
+        """)
+        ft_opened = q("""
+            SELECT payload->>'ticker', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'fund_open' AND payload->>'ticker' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+        """)
+
+        # ── Терминал ───────────────────────────────────────────────────────
+        last = """
+            , last AS (
+                SELECT DISTINCT ON (ident) ident, payload FROM ev
+                WHERE event_type = 'terminal_layout' ORDER BY ident, server_ts DESC
+            )
+        """
+        t_size = q(f"""
+            {last}
+            SELECT COUNT(*),
+                   COUNT(*) FILTER (WHERE COALESCE((payload->>'total_panels')::int, 0) > 0),
+                   COALESCE(AVG((payload->>'total_panels')::numeric)
+                            FILTER (WHERE (payload->>'total_panels')::int > 0), 0),
+                   COALESCE(MAX((payload->>'total_panels')::int), 0)
+            FROM last
+        """)[0]
+        t_windows = q(f"""
+            {last}
+            SELECT CASE WHEN n = 0 THEN '0' WHEN n = 1 THEN '1' WHEN n <= 3 THEN '2–3'
+                        WHEN n <= 6 THEN '4–6' ELSE '7+' END, COUNT(*)
+            FROM (SELECT COALESCE((payload->>'total_panels')::int, 0) AS n FROM last) s
+            GROUP BY 1
+        """)
+        t_sheets = q(f"""
+            {last}
+            SELECT CASE WHEN n <= 1 THEN '1' WHEN n = 2 THEN '2' ELSE '3+' END, COUNT(*)
+            FROM (SELECT COALESCE((payload->>'sheets')::int, 1) AS n FROM last
+                  WHERE COALESCE((payload->>'total_panels')::int, 0) > 0) s
+            GROUP BY 1
+        """)
+        t_types = q(f"""
+            {last}
+            SELECT t.key, COUNT(DISTINCT l.ident), SUM((t.value)::int)
+            FROM last l, LATERAL jsonb_each_text(
+                CASE WHEN jsonb_typeof(l.payload->'types') = 'object'
+                     THEN l.payload->'types' ELSE '{{}}'::jsonb END) AS t(key, value)
+            GROUP BY 1 ORDER BY 2 DESC, 3 DESC
+        """)
+        t_added = q("""
+            SELECT payload->>'type', COUNT(DISTINCT ident), COUNT(*) FROM ev
+            WHERE event_type = 'terminal_panel_add' AND payload->>'type' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC, 3 DESC
+        """)
+        t_theme = q(f"""
+            {last}
+            SELECT payload->>'theme', COUNT(*) FROM last
+            WHERE payload->>'theme' IS NOT NULL GROUP BY 1 ORDER BY 2 DESC
+        """)
+        t_assets = q("""
+            SELECT payload->>'secid', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type IN ('instrument_select', 'asset_view') AND event_path = '/sandbox'
+              AND payload->>'secid' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 12
+        """)
+
+        fund_meta = _fund_meta(conn, [r[0] for r in fm_funds] + [r[0] for r in ft_opened])
+        asset_names = _asset_names(conn, [r[0] for r in t_assets])
+
+    def funds(rows) -> list[dict]:
+        return [{"ticker": r[0], "people": int(r[1]), **fund_meta.get(r[0], {})} for r in rows]
+
+    def section(path: str) -> dict:
+        return {"people": reach.get(path, 0), "prev_people": reach_prev.get(path, 0)}
+
+    return {
+        "date_from": rng["d0"].isoformat(),
+        "date_to": rng["d1"].isoformat(),
+        "funds_money": {
+            **section("/funds-money"),
+            "tracked": int(fm_people or 0),
+            "categories": pairs(fm_cats),
+            "views": pairs(fm_views),
+            "periods": pairs(fm_periods),
+            "timeframes": pairs(fm_tf),
+            "narrowed": int(fm_narrow or 0),
+            "funds": funds(fm_funds),
+        },
+        "fund_trades": {
+            **section("/fund-trades"),
+            "tracked": int(ft_people or 0),
+            "tabs": pairs(ft_tabs),
+            "assets": pairs(ft_assets),
+            "modes": pairs(ft_modes),
+            "periods": pairs(ft_periods),
+            "portfolio_modes": pairs(ft_pmodes),
+            "opened": funds(ft_opened),
+        },
+        "terminal": {
+            **section("/sandbox"),
+            "tracked": int(t_size[0] or 0),
+            "with_panels": int(t_size[1] or 0),
+            "avg_panels": round(float(t_size[2] or 0), 1),
+            "max_panels": int(t_size[3] or 0),
+            "windows": pairs(t_windows),
+            "sheets": pairs(t_sheets),
+            "types": [{"key": r[0], "people": int(r[1]), "panels": int(r[2] or 0)} for r in t_types],
+            "added": [{"key": r[0], "people": int(r[1]), "count": int(r[2])} for r in t_added],
+            "themes": pairs(t_theme),
+            "assets": [{"key": r[0], "name": asset_names.get(r[0], r[0]), "people": int(r[1])} for r in t_assets],
+        },
+    }
 
 
 def _compute_indicator(path: str, rng: dict, segment: str, device: str) -> dict:
