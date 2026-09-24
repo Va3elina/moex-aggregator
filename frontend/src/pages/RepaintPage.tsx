@@ -311,7 +311,8 @@ export default function RepaintPage() {
             showValueHeader={false}
             legendPosition="top"
             showDownloadButton={false}
-            showNavigator={false}
+            showNavigator={true}
+            chartPadding={{ left: 120, right: 120 }}
             height={CHART_HEIGHT}
           />
         ) : metricPoints.length > 0 ? (
@@ -334,7 +335,8 @@ export default function RepaintPage() {
             showValueHeader={false}
             legendPosition="top"
             showDownloadButton={false}
-            showNavigator={false}
+            showNavigator={true}
+            chartPadding={{ left: 120, right: 120 }}
             height={CHART_HEIGHT}
           />
         ) : (
