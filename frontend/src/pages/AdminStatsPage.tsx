@@ -20,15 +20,24 @@
  *
  * При переключении периода старые данные не сбрасываются в скелетоны:
  * контент приглушается до прихода свежих. Бэкенд кэширует /stats на 3 минуты.
+ *
+ * Страница разложена по вкладкам (STATS_TABS), фильтры шапки общие для всех.
+ * Блоки внутри вкладок — те же, что были в одной ленте; тяжёлые запросы
+ * (сегмент, гости, пользователи, фонды и терминал) уходят только со своей
+ * вкладки. Второстепенное скрыто по умолчанию: у Метрики на виду три
+ * показателя из семи, график — одной линией «Всего», источники — по кнопке.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, ChevronDown, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
 import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
+import TopList from '../components/admin/TopList';
+import FeaturesBlock from '../components/admin/FeaturesBlock';
+import StatsInsights, { buildInsights } from '../components/admin/StatsInsights';
 import AvatarImg from '../components/AvatarImg';
 import HelpTooltip from '../components/HelpTooltip';
 import { PAGE_NAMES, DEVICE_NAMES } from '../components/admin/ActivityBlocks';
@@ -46,6 +55,7 @@ import {
   getAlertsStats,
   getMetrica,
   getGrowth,
+  getFeatures,
 } from '../services/api';
 import type {
   GrowthReport,
@@ -59,6 +69,7 @@ import type {
   MetricaMetric,
   MetricaSummary,
   MetricaBySource,
+  FeaturesReport,
 } from '../services/api';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -239,6 +250,17 @@ const INDICATOR_NAMES: Record<string, string> = {
   funds: 'Фонды',
 };
 
+type StatsTab = 'overview' | 'traffic' | 'people' | 'content' | 'features';
+
+/** Вкладки — по вопросу, на который отвечают. */
+const STATS_TABS: { key: StatsTab; label: string; question: string }[] = [
+  { key: 'overview', label: 'Обзор', question: 'Сколько людей и сколько из них дошли до оплаты' },
+  { key: 'traffic', label: 'Откуда приходят', question: 'Источники, поиск, города и устройства' },
+  { key: 'people', label: 'Пользователи и гости', question: 'Кто именно и возвращаются ли' },
+  { key: 'content', label: 'Что смотрят', question: 'Активы, поиск, скачивания, уведомления' },
+  { key: 'features', label: 'Фонды и терминал', question: 'Что делают внутри «Денег в фондах», «Сделок фондов» и терминала' },
+];
+
 
 export default function AdminStatsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -249,6 +271,9 @@ export default function AdminStatsPage() {
   const [customTo, setCustomTo] = usePersistedState<string>('frame:admin:stats:to', '');
   const [segment, setSegment] = usePersistedState<string>('frame:admin:stats:segment', 'all');
   const [device, setDevice] = usePersistedState<string>('frame:admin:stats:device', 'all');
+  const [tabRaw, setTab] = usePersistedState<StatsTab>('frame:admin:stats:tab', 'overview');
+  const tab: StatsTab = STATS_TABS.some((t) => t.key === tabRaw) ? tabRaw : 'overview';
+  const [peopleView, setPeopleView] = usePersistedState<'users' | 'guests'>('frame:admin:stats:people-view', 'users');
   const [data, setData] = useState<AnalyticsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -338,12 +363,42 @@ export default function AdminStatsPage() {
   const [growthLoading, setGrowthLoading] = useState(true);
 
   useEffect(() => {
+    // Сегмент нужен только вкладке «Пользователи и гости» — запрос тяжёлый.
+    if (tab !== 'people') return;
     setSegLoading(true);
     getSegment({ ...range, seen: indSegment.seen, notSeen: indSegment.notSeen, seenMode: indSegment.mode })
       .then(setSegReport)
       .catch(() => setSegReport(null))
       .finally(() => setSegLoading(false));
-  }, [range, indSegment]);
+  }, [range, indSegment, tab]);
+
+  // Фонды и терминал: нужны своей вкладке и «Коротко» на обзоре.
+  const [features, setFeatures] = useState<FeaturesReport | null>(null);
+  const [featuresLoading, setFeaturesLoading] = useState(true);
+  const [featuresError, setFeaturesError] = useState<string | null>(null);
+  const featuresCache = useRef(new Map<string, FeaturesReport>());
+  const featuresNeeded = tab === 'features' || tab === 'overview';
+  useEffect(() => {
+    if (!user || user.role !== 'admin' || !featuresNeeded) return;
+    const key = `${JSON.stringify(range)}|${segment}|${device}`;
+    const hit = featuresCache.current.get(key);
+    let alive = true;
+    if (hit) setFeatures(hit);
+    setFeaturesLoading(!hit);
+    setFeaturesError(null);
+    getFeatures({ ...range, segment, device })
+      .then((r) => {
+        featuresCache.current.set(key, r);
+        if (alive) setFeatures(r);
+      })
+      .catch((e: Error) => {
+        if (alive && !hit) { setFeatures(null); setFeaturesError(e.message || null); }
+      })
+      .finally(() => {
+        if (alive) setFeaturesLoading(false);
+      });
+    return () => { alive = false; };
+  }, [user, range, segment, device, tick, featuresNeeded]);
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -371,17 +426,21 @@ export default function AdminStatsPage() {
   const ownDim = useDelayedFlag(loading && data !== null);
   const metricaDim = useDelayedFlag(metricaLoading && metrica !== null);
   const growthDim = useDelayedFlag(growthLoading && growth !== null);
+  const featuresDim = useDelayedFlag(featuresLoading && features !== null);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
-  const refreshing = ownDim || metricaDim || growthDim;
+  const refreshing = ownDim || metricaDim || growthDim || featuresDim;
   const metricaOn = !!metrica?.connected;
   // Свой трафик показываем, если Метрика не подключена или админ сам попросил сверку.
   const ownTrafficVisible = !metricaOn || showOwn;
   const s = data?.summary;
   const p = data?.prev_summary;
+  const periodDays = Math.round((Date.parse(range.dateTo) - Date.parse(range.dateFrom)) / 86_400_000) + 1;
+  const insights = buildInsights({ metrica, growth, stats: data, features, days: periodDays });
+  const tabDef = STATS_TABS.find((t) => t.key === tab)!;
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
@@ -470,31 +529,86 @@ export default function AdminStatsPage() {
           </span>
         )}
       </div>
-      <p className="text-xs mb-6 md:mb-8" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
         {fmtRange(range.dateFrom, range.dateTo)}
         {data && ` · сравнение с ${fmtRange(data.prev_date_from, data.prev_date_to)}`}
       </p>
 
-      {error && (
+      {/* Вкладки: фильтры шапки общие, содержимое — только активной вкладки */}
+      <div
+        role="tablist"
+        aria-label="Разделы статистики"
+        className="flex overflow-x-auto"
+        style={{ gap: 'var(--sp-1)', borderBottom: '1px solid var(--border-color)', scrollbarWidth: 'none' }}
+      >
+        {STATS_TABS.map((t) => {
+          const on = t.key === tab;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setTab(t.key)}
+              className="text-sm whitespace-nowrap"
+              style={{
+                padding: '10px 14px',
+                marginBottom: -1,
+                color: on ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontWeight: on ? 600 : 500,
+                borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+                transition: 'color 0.2s cubic-bezier(.2,0,0,1), border-color 0.2s cubic-bezier(.2,0,0,1)',
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs mt-2 mb-6 md:mb-8" style={{ color: 'var(--text-muted)' }}>{tabDef.question}</p>
+
+      {error && tab !== 'features' && (
         <Card padding="md" className="mb-6">
           <p style={{ color: 'var(--danger)' }}>Ошибка: {error}</p>
         </Card>
       )}
 
-      <div>
-        {/* ═══ Воронка ═══ */}
-        <Section title="Воронка" hint={METRIC_HINTS.funnel}>
-          <div style={dimStyle(growthDim)}>
-            <FunnelBlock growth={growth} loading={growthLoading} />
+      <div key={tab} role="tabpanel" style={{ animation: 'fadeIn 0.2s cubic-bezier(.2,0,0,1)' }}>
+      {tab === 'overview' && (
+        <>
+          <div className="mb-6 md:mb-8">
+            <StatsInsights items={insights} loading={loading || metricaLoading || growthLoading || featuresLoading} />
           </div>
-        </Section>
 
-        {/* ═══ Трафик из Яндекс Метрики ═══ */}
-        <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
-          <div style={dimStyle(metricaDim)}>
-            <MetricaBlock report={metrica} loading={metricaLoading} />
+          {/* ═══ Воронка ═══ */}
+          <Section title="Воронка" hint={METRIC_HINTS.funnel}>
+            <div style={dimStyle(growthDim)}>
+              <FunnelBlock growth={growth} loading={growthLoading} />
+            </div>
+          </Section>
+
+          {/* ═══ Трафик из Яндекс Метрики ═══ */}
+          <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
+            <div style={dimStyle(metricaDim)}>
+              <MetricaBlock report={metrica} loading={metricaLoading} part="summary" />
+            </div>
+          </Section>
+        </>
+      )}
+
+      {tab === 'traffic' && (
+        <>
+          <Section title="Откуда приходят · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
+            <div style={dimStyle(metricaDim)}>
+              <MetricaBlock report={metrica} loading={metricaLoading} part="lists" />
+            </div>
+          </Section>
+
+          <div style={dimStyle(growthDim)}>
+            <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
+              <FirstSourcesBlock growth={growth} loading={growthLoading} />
+            </Section>
           </div>
-        </Section>
 
         {metricaOn && (
           <button
@@ -659,6 +773,11 @@ export default function AdminStatsPage() {
           </div>
         )}
 
+        </>
+      )}
+
+      {tab === 'content' && (
+        <>
         {/* ═══ Чего нет в Метрике ═══ */}
         <div style={dimStyle(ownDim)}>
         <Section title="Что смотрят внутри сайта" hint={METRIC_HINTS.inside_section}>
@@ -710,42 +829,83 @@ export default function AdminStatsPage() {
           </div>
         </Section>
         </div>
+
+          <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
+            <AlertsBlock range={range} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'people' && (
+        <>
+          <div role="radiogroup" aria-label="Кого показать" className="inline-flex rounded-full mb-6 md:mb-8" style={{ padding: 3, background: 'var(--bg-tertiary)' }}>
+            {([['users', 'Пользователи'], ['guests', 'Гости']] as const).map(([k, label]) => {
+              const on = peopleView === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setPeopleView(k)}
+                  className="rounded-full text-sm"
+                  style={{
+                    padding: '6px 16px',
+                    background: on ? 'var(--bg-secondary)' : 'transparent',
+                    color: on ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontWeight: on ? 600 : 500,
+                    boxShadow: on ? '0 1px 2px rgba(0,0,0,.08)' : 'none',
+                    transition: 'background-color 0.2s ease, color 0.2s ease',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
+            <IndicatorSegment
+              indicators={segReport?.all_indicators ?? []}
+              value={indSegment}
+              onChange={setIndSegment}
+              summary={segReport}
+              loading={segLoading}
+            />
+          </Section>
+
+          {peopleView === 'users' ? (
+            <>
+              <div style={dimStyle(growthDim)}>
+                <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
+                  <CohortsBlock growth={growth} loading={growthLoading} />
+                </Section>
+              </div>
+              <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
+                <UsersBlock range={range} segment={indSegment} />
+              </Section>
+            </>
+          ) : (
+            <>
+              <div style={dimStyle(growthDim)}>
+                <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
+                  <LoyalGuestsBlock growth={growth} loading={growthLoading} cardsOnly />
+                </Section>
+              </div>
+              <Section title="Гости" hint={METRIC_HINTS.guests_section}>
+                <GuestsBlock range={range} segment={indSegment} />
+              </Section>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === 'features' && (
+        <div style={dimStyle(featuresDim)}>
+          <FeaturesBlock data={features} loading={featuresLoading} error={featuresError} />
+        </div>
+      )}
       </div>
-
-      {/* ═══ Удержание, постоянные гости, первые источники ═══ */}
-      <div style={dimStyle(growthDim)}>
-        <Section title="Удержание по месяцам регистрации" hint={METRIC_HINTS.cohorts}>
-          <CohortsBlock growth={growth} loading={growthLoading} />
-        </Section>
-        <Section title="Постоянные гости" hint={METRIC_HINTS.guests}>
-          <LoyalGuestsBlock growth={growth} loading={growthLoading} />
-        </Section>
-        <Section title="Откуда пришли зарегистрированные" hint={METRIC_HINTS.first_sources}>
-          <FirstSourcesBlock growth={growth} loading={growthLoading} />
-        </Section>
-      </div>
-
-      <Section title="Уведомления" hint={METRIC_HINTS.alerts_section}>
-        <AlertsBlock range={range} />
-      </Section>
-
-      <Section title="Сегмент по индикаторам" hint={SEGMENT_HINT}>
-        <IndicatorSegment
-          indicators={segReport?.all_indicators ?? []}
-          value={indSegment}
-          onChange={setIndSegment}
-          summary={segReport}
-          loading={segLoading}
-        />
-      </Section>
-
-      <CollapsibleSection title="Гости" hint={METRIC_HINTS.guests_section} storageKey="frame:admin:guests:open">
-        <GuestsBlock range={range} segment={indSegment} />
-      </CollapsibleSection>
-
-      <Section title="Пользователи" hint={METRIC_HINTS.users_section}>
-        <UsersBlock range={range} segment={indSegment} />
-      </Section>
     </div>
   );
 }
@@ -882,7 +1042,12 @@ function CohortsBlock({ growth, loading }: { growth: GrowthReport | null; loadin
 }
 
 /** Постоянные гости: заходят в разные дни, но ни разу не входили в аккаунт. */
-function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+function LoyalGuestsBlock({ growth, loading, cardsOnly }: {
+  growth: GrowthReport | null;
+  loading: boolean;
+  /** Только цифры: на вкладке гостей ниже и так их полная таблица. */
+  cardsOnly?: boolean;
+}) {
   if (loading && !growth) return <Skeleton height={240} rounded="lg" />;
   if (!growth) return null;
   const g = growth.guests;
@@ -895,7 +1060,7 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
         <SummaryCard icon={<Repeat size={16} />} label="3+ дня" value={g.days3} />
         <SummaryCard icon={<Repeat size={16} />} label="7+ дней" value={g.days7} />
       </div>
-      <Card padding="md" className="md:p-5">
+      {!cardsOnly && <Card padding="md" className="md:p-5">
         {g.top.length === 0 ? (
           <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
             За период никто из гостей не заходил в разные дни. ID браузера пишем с {fmtShortDay(g.since)}, данные копятся.
@@ -934,7 +1099,7 @@ function LoyalGuestsBlock({ growth, loading }: { growth: GrowthReport | null; lo
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -1006,24 +1171,27 @@ interface MetricaMetricDef {
   /** Отказы сравниваем в процентных пунктах, остальное — в процентах. */
   points?: boolean;
   lowerIsBetter?: boolean;
+  /** Второстепенный: скрыт под «ещё показатели». Просмотры и визиты почти
+   *  повторяют посетителей, глубина и отказы без контекста мало что говорят. */
+  extra?: boolean;
 }
 
 const fmtInt = (v: number) => Math.round(v).toLocaleString('ru-RU');
 
-/** Показатели в порядке сводки Метрики. */
+/** Показатели: сначала главные, потом второстепенные. */
 const METRICA_METRICS: MetricaMetricDef[] = [
-  { key: 'pageviews', label: 'Просмотры', hint: METRIC_HINTS.metrica_pageviews, format: fmtInt },
-  { key: 'visits', label: 'Визиты', hint: METRIC_HINTS.metrica_visits, format: fmtInt },
   { key: 'users', label: 'Посетители', hint: METRIC_HINTS.metrica_users, format: fmtInt },
   { key: 'new_users', label: 'Новые', hint: METRIC_HINTS.metrica_new, format: fmtInt },
   {
     key: 'avg_visit_sec', label: 'Время на сайте', hint: METRIC_HINTS.metrica_time, format: formatDuration,
     formatAxis: (v) => (v > 0 && v % 60 === 0 ? `${v / 60}м` : formatDuration(v)),
   },
-  { key: 'page_depth', label: 'Глубина', hint: METRIC_HINTS.metrica_depth, format: fmtNum },
+  { key: 'visits', label: 'Визиты', hint: METRIC_HINTS.metrica_visits, format: fmtInt, extra: true },
+  { key: 'pageviews', label: 'Просмотры', hint: METRIC_HINTS.metrica_pageviews, format: fmtInt, extra: true },
+  { key: 'page_depth', label: 'Глубина', hint: METRIC_HINTS.metrica_depth, format: fmtNum, extra: true },
   {
     key: 'bounce_pct', label: 'Отказы', hint: METRIC_HINTS.metrica_bounce, format: (v) => `${fmtNum(v)}%`,
-    points: true, lowerIsBetter: true,
+    points: true, lowerIsBetter: true, extra: true,
   },
 ];
 
@@ -1045,12 +1213,21 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
   bySource: MetricaBySource | null;
   error?: string;
 }) {
-  const [picked, setPicked] = usePersistedState<MetricaMetric>('frame:admin-stats:metrica-metric', 'visits');
-  const def = METRICA_METRICS.find((m) => m.key === picked) ?? METRICA_METRICS[1];
+  const [picked, setPicked] = usePersistedState<MetricaMetric>('frame:admin-stats:metrica-metric:v2', 'users');
+  const [extrasOn, setExtrasOn] = usePersistedState<boolean>('frame:admin-stats:metrica-extras', false);
+  const def = METRICA_METRICS.find((m) => m.key === picked) ?? METRICA_METRICS[0];
+  // Выбранный второстепенный показатель не прячем, даже если список свёрнут.
+  const showExtras = extrasOn || !!def.extra;
+  const metrics = METRICA_METRICS.filter((m) => showExtras || !m.extra);
+  const extraCount = METRICA_METRICS.filter((m) => m.extra).length;
   return (
     <Card padding="md" className="md:p-5">
-      <div role="radiogroup" aria-label="Показатель на графике" className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 mb-4 md:mb-5">
-        {METRICA_METRICS.map((m, i) => {
+      <div
+        role="radiogroup"
+        aria-label="Показатель на графике"
+        className={`grid grid-cols-2 gap-2 mb-2 ${showExtras ? 'sm:grid-cols-4 xl:grid-cols-7' : 'sm:grid-cols-3'}`}
+      >
+        {metrics.map((m, i) => {
           const on = m.key === def.key;
           const d = metricaDelta(m, cur[m.key], prev?.[m.key]);
           return (
@@ -1112,6 +1289,18 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
           );
         })}
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          // Сворачиваем — и график возвращается на главный показатель.
+          if (showExtras && def.extra) setPicked('users');
+          setExtrasOn(!showExtras);
+        }}
+        className="text-xs mb-4 md:mb-5"
+        style={{ color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3 }}
+      >
+        {showExtras ? 'Скрыть второстепенные показатели' : `Ещё ${extraCount} показателя: визиты, просмотры, глубина, отказы`}
+      </button>
       {bySource && bySource.dates.length > 0 ? (
         <MetricaSourcesChart
           data={bySource}
@@ -1132,7 +1321,12 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
 }
 
 /** Трафик из Яндекс Метрики. Токена нет или он не действует — инструкция, как выдать новый. */
-function MetricaBlock({ report, loading }: { report: MetricaReport | null; loading: boolean }) {
+function MetricaBlock({ report, loading, part }: {
+  report: MetricaReport | null;
+  loading: boolean;
+  /** summary — показатели и график (обзор), lists — источники, фразы, страницы (вкладка «Откуда приходят»). */
+  part: 'summary' | 'lists';
+}) {
   if (loading && !report) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
@@ -1148,6 +1342,15 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
     );
   }
   if (!report.connected) {
+    if (part === 'lists') {
+      return (
+        <Card padding="md">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Метрика не подключена, как её подключить — на вкладке «Обзор». Ниже — источники по нашему трекеру.
+          </p>
+        </Card>
+      );
+    }
     return (
       <Card padding="md" className="md:p-5">
         {report.token_error ? (
@@ -1174,7 +1377,7 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
           <li>Тем же токеном обновить scripts/seo/.env: им пользуется SEO-скрипт.</li>
         </ol>
         <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-          Пока ниже показан трафик по нашему трекеру.
+          Пока трафик по нашему трекеру — на вкладке «Откуда приходят».
         </p>
       </Card>
     );
@@ -1187,6 +1390,18 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
     list ? list.map((r) => ({ label: r.label, value: r.value, value2: r.value2 ?? undefined })) : null;
   const empty = (key: string) => (err[key] ? `Отчёт не пришёл: ${err[key]}` : 'Нет данных за период');
   const counter = report.counter;
+
+  if (part === 'summary') {
+    return (
+      <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+        {cur ? (
+          <MetricaTraffic cur={cur} prev={prev ?? null} bySource={report.by_source ?? null} error={err.by_source} />
+        ) : (
+          <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 md:space-y-4" style={{ animation: 'fadeIn 0.35s ease-out' }}>
@@ -1208,12 +1423,6 @@ function MetricaBlock({ report, loading }: { report: MetricaReport | null; loadi
           <ExternalLink size={12} /> Вебвизор
         </a>
       </div>
-
-      {cur ? (
-        <MetricaTraffic cur={cur} prev={prev ?? null} bySource={report.by_source ?? null} error={err.by_source} />
-      ) : (
-        <Card padding="md"><p className="text-sm" style={{ color: 'var(--danger)' }}>{empty('summary')}</p></Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
         <TopList title="Источники трафика" hint={METRIC_HINTS.metrica_sources} columns={['визиты', 'посетители']}
@@ -1297,33 +1506,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-/** Секция, свёрнутая по умолчанию: содержимое не монтируется, пока не раскрыли,
- *  поэтому тяжёлый запрос не уходит на каждый заход на страницу. */
-function CollapsibleSection({ title, hint, storageKey, children }: {
-  title: string; hint?: string; storageKey: string; children: React.ReactNode;
-}) {
-  const [open, setOpen] = usePersistedState<boolean>(storageKey, false);
-  return (
-    <section className="mb-6 md:mb-8">
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 text-xs uppercase"
-          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-          aria-expanded={open}
-        >
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          {title}
-        </button>
-        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} />}
-        <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-      </div>
-      {open && children}
-    </section>
-  );
-}
-
 type Delta = { text: string; good: boolean } | null;
 
 function pctDelta(v: number | null | undefined): Delta {
@@ -1396,82 +1578,6 @@ function SummaryCard({ icon, label, value, sub, delta, prev, hint, hintAlign = '
           {prev && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>было {prev}</span>
           )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-interface TopItem { label: string; note?: string; value: number; value2?: number }
-
-interface TopListProps {
-  title: string;
-  items: TopItem[] | null;
-  loading: boolean;
-  emptyText: string;
-  hint?: string;
-  hintAlign?: 'left' | 'right';
-  /** Подписи колонок: главная цифра и (опц.) серая вторая. */
-  columns?: [string] | [string, string];
-}
-function TopList({ title, items, loading, emptyText, hint, hintAlign = 'left', columns }: TopListProps) {
-  if (loading && !items) return <Skeleton height={240} rounded="lg" />;
-  const max = items && items.length > 0 ? Math.max(...items.map(i => i.value)) || 1 : 1;
-  return (
-    <Card padding="md" className="md:p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span
-          className="text-xs uppercase"
-          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
-        >
-          {title}
-        </span>
-        {hint && <HelpTooltip icon="help" title={title} content={hint} size={13} align={hintAlign} />}
-        {columns && items && items.length > 0 && (
-          <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
-            {columns[0]}{columns[1] ? ` · ${columns[1]}` : ''}
-          </span>
-        )}
-      </div>
-      {!items || items.length === 0 ? (
-        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-          {emptyText}
-        </p>
-      ) : (
-        <div className="space-y-1.5" style={{ animation: 'fadeIn 0.3s ease-out' }}>
-          {items.map((it, i) => (
-            <div key={`${it.label}-${i}`} className="relative">
-              <div
-                className="absolute inset-y-0 left-0 rounded"
-                style={{
-                  width: `${(it.value / max) * 100}%`,
-                  backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-                  transition: 'width 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-                }}
-              />
-              <div className="relative flex items-center justify-between py-1.5 px-2 gap-2">
-                <span className="text-sm truncate min-w-0" style={{ color: 'var(--text-primary)' }} title={it.note ? `${it.label} · ${it.note}` : it.label}>
-                  {it.label || '—'}
-                  {it.note && (
-                    <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>{it.note}</span>
-                  )}
-                </span>
-                <span
-                  className="text-sm flex-shrink-0 whitespace-nowrap"
-                  style={{ fontFamily: "'IBM Plex Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
-                >
-                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {it.value.toLocaleString('ru-RU')}
-                  </span>
-                  {it.value2 !== undefined && (
-                    <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>
-                      · {it.value2.toLocaleString('ru-RU')}
-                    </span>
-                  )}
-                </span>
-              </div>
-            </div>
-          ))}
         </div>
       )}
     </Card>

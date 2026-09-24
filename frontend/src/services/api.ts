@@ -1520,6 +1520,51 @@ export interface IndicatorReport {
   top_people: { ident: string; user_id: number | null; days: number; views: number; last_day: string; name: string | null }[];
 }
 
+/** Ключ настройки и сколько разных людей её хоть раз выбрали. */
+export interface FeaturePick { key: string; people: number }
+export interface FeatureFund { ticker: string; people: number; name?: string; uk_id?: string | number | null }
+
+/** Фонды и терминал изнутри — всё в людях, не в снимках. */
+export interface FeaturesReport {
+  date_from: string;
+  date_to: string;
+  funds_money: {
+    people: number; prev_people: number; tracked: number;
+    categories: FeaturePick[]; views: FeaturePick[]; periods: FeaturePick[]; timeframes: FeaturePick[];
+    /** Сколько людей сами сузили набор фондов на графике. */
+    narrowed: number;
+    funds: FeatureFund[];
+  };
+  fund_trades: {
+    people: number; prev_people: number; tracked: number;
+    tabs: FeaturePick[]; assets: FeaturePick[]; modes: FeaturePick[]; periods: FeaturePick[];
+    portfolio_modes: FeaturePick[];
+    opened: FeatureFund[];
+  };
+  terminal: {
+    people: number; prev_people: number; tracked: number;
+    with_panels: number; avg_panels: number; max_panels: number;
+    windows: FeaturePick[]; sheets: FeaturePick[];
+    types: { key: string; people: number; panels: number }[];
+    added: { key: string; people: number; count: number }[];
+    themes: FeaturePick[];
+    assets: { key: string; name: string; people: number }[];
+  };
+}
+
+export async function getFeatures(opts: AdminRange & { segment?: string; device?: string }): Promise<FeaturesReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, opts);
+  if (opts.segment) params.set('segment', opts.segment);
+  if (opts.device) params.set('device', opts.device);
+  const response = await apiFetch(`${API_BASE}/api/analytics/features?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error(t('Доступ только для администратора'));
+    throw new Error('Failed to fetch features');
+  }
+  return response.json();
+}
+
 export async function getIndicator(path: string, opts: AdminRange & {
   segment?: string; device?: string;
 }): Promise<IndicatorReport> {
