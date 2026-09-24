@@ -968,12 +968,13 @@ function ConsentModal({
  *
  * СБП — официальный знак из медиакита НСПК (sbp.nspk.ru/file/logo.zip,
  * SBP_logo_RGB, уменьшен до 160px). Лежит в public/pay/sbp.png.
- * Карта/T-Pay — плашка T-Pay в public/pay/tpay.png.
+ * Карта/T-Pay — плашка T-Pay в public/pay/tpay.svg (2.4:1). В том же боксе
+ * 36×26 она встаёт в 36×15 — по высоте как видимый знак СБП (~15px).
  */
 function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
   return (
     <img
-      src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.png'}
+      src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
       alt=""
       aria-hidden="true"
       width={36}
