@@ -40,6 +40,7 @@ class Bars:
         last_close = np.r_[np.nan, self.close[first[1:] - 1]] if n else self.close
         self.prev_close = np.repeat(last_close, np.diff(np.r_[first, n])) if n else self.close
         self.adj = np.zeros(n)            # сдвиг цены из-за смен контракта (set_adj): close − adj — непрерывный ряд
+        self.hist = None                  # длинная история базового актива: Series[дата → закрытие] (attach_hist)
 
     def __len__(self): return len(self.close)
 
@@ -67,11 +68,14 @@ class Bars:
         return pd.Series(tr).ewm(alpha=1 / n, adjust=False, min_periods=n).mean().values
 
     def head(self, k):
-        """Копия первых k свечей — для проверки на заглядывание вперёд."""
+        """Копия первых k свечей — для проверки на заглядывание вперёд. Длинная история b.hist обрезается строго ДО дня
+        последней свечи: стратегия, которая берёт закрытие базового актива в тот же день, получит другие индикаторы."""
         b = object.__new__(Bars)
         for a, v in self.__dict__.items():
             if a in _STD: setattr(b, a, v[:k].copy())                       # только штатные поля: индикаторы пересчитает init
         b.last_of_contract = b.last_of_contract.copy(); b.last_of_contract[-1] = True
+        h = getattr(self, 'hist', None)
+        b.hist = h[h.index < pd.Timestamp(b.date[-1])] if h is not None and len(b.date) else h
         return b
 
 
@@ -115,9 +119,36 @@ def set_adj(b, rolls):
     return rolls
 
 
+_H = {}
+
+
+def attach_hist(st, b):
+    """b.hist — дневные закрытия базового актива за много лет (data/underlying.csv.gz: акции с 2013, индексы, валюты,
+    золото), продолженные непрерывным рядом самого фьючерса после конца файла (стык — по отношению цен). Нет базового
+    актива в файле (нефть, платина, какао) — непрерывный ряд фьючерса. Брать можно только даты ДО текущего дня."""
+    if 'u' not in _H:
+        f = store.REF / 'underlying.csv.gz'
+        _H['u'] = {k: g.set_index('d').close.sort_index() for k, g in pd.read_csv(f, parse_dates=['d']).groupby('st')} if f.exists() else {}
+    last = np.r_[b.new_day[1:], True] if len(b) else np.zeros(0, bool)
+    own = pd.Series((b.close - b.adj)[last], index=pd.to_datetime(b.date[last]))
+    u = _H['u'].get(st)
+    if u is None or not len(u):
+        b.hist = own
+    else:
+        tail = own[own.index > u.index[-1]]
+        if len(tail):
+            prev = own[own.index <= u.index[-1]]
+            k = u.iloc[-1] / prev.iloc[-1] if len(prev) and prev.iloc[-1] else 1.0
+            u = pd.concat([u, tail * k])
+        b.hist = u
+    return b.hist
+
+
 def prepare(st, b):
-    """Разницы контрактов для переноса позиции + непрерывный ряд для индикаторов."""
-    return set_adj(b, roll_gaps(st, b))
+    """Разницы контрактов для переноса позиции + непрерывный ряд и длинная история для индикаторов."""
+    rolls = set_adj(b, roll_gaps(st, b))
+    attach_hist(st, b)
+    return rolls
 
 
 def load(code):
@@ -181,6 +212,7 @@ def lookahead_check(code, b, params, st, acct=None):
     if n < 3000: return None
     std = _STD
     ns = load(code); base = Bars.__new__(Bars); base.__dict__.update({k: v for k, v in b.__dict__.items() if k in std})
+    base.hist = getattr(b, 'hist', None)                     # длинная история: у полной копии — целиком
     if callable(ns.get('init')): ns['init'](base, params)
     user = {k: v for k, v in base.__dict__.items() if k not in std and isinstance(v, np.ndarray) and v.shape[:1] == (n,)}
     for frac in (0.35, 0.6, 0.85):
@@ -212,6 +244,46 @@ def lookahead_check(code, b, params, st, acct=None):
     return out
 
 
+def run_orders_portfolio(code, p, uni, since, until, progress, account):
+    """Режим заявок по одной или нескольким бумагам. Несколько — портфель «корзинами»: каждой бумаге равная доля
+    капитала и свой счёт (стратегия видит s.equity своей доли), кривая капитала — сумма долей по дням."""
+    acct = dict(account or {}); cap = float(acct.get('capital') or 1_000_000)
+    papers = [st for st in uni if st in store.UNIVERSE_ALL]
+    share = cap / len(papers)
+    trades, curves, summ_all, look = [], {}, {}, []
+    for k, st in enumerate(papers):
+        b = Bars(chain_bars(st, since, until))
+        if len(b) < 500:
+            summ_all.setdefault('мало_данных', []).append(st); continue
+        rolls = prepare(st, b)
+        ns = load(code)                                        # свой словарь на бумагу: у стратегии может быть состояние
+        rows, eq, summ = orders.run(ns, b, p, st, {**acct, 'capital': share}, rolls=rolls)
+        trades += rows
+        curves[st] = pd.DataFrame(eq).set_index('d')
+        for key, v in summ.items():
+            if isinstance(v, (int, float)) and key != 'капитал': summ_all[key] = summ_all.get(key, 0) + v
+            elif isinstance(v, dict):
+                for r, c in v.items(): summ_all.setdefault(key, {})[r] = summ_all.setdefault(key, {}).get(r, 0) + c
+        if not look:
+            lc = lookahead_check(code, b, p, st, {**acct, 'capital': share})
+            if lc: look.append(lc)
+        if progress: progress(k + 1, len(papers))
+    if not curves: raise ValueError('по выбранным бумагам за период меньше 500 свечей')
+    days = sorted(set().union(*[c.index for c in curves.values()]))
+    E = None
+    for st, c in curves.items():
+        c = c.reindex(days)
+        start = c.equity.first_valid_index()
+        c.loc[:start, 'equity'] = c.loc[:start, 'equity'].fillna(share)      # до начала данных доля лежит деньгами
+        c = c.ffill().fillna(0)
+        E = c if E is None else E.add(c, fill_value=0)
+    E['margin_call'] = (E.margin_call > 0).astype(int)
+    eq = [{'d': d, **{k: (int(v) if k in ('positions', 'margin_call') else float(v)) for k, v in r.items()}} for d, r in E.iterrows()]
+    summ_all['капитал'] = cap
+    if len(papers) > 1: summ_all['бумаг'] = len(curves)
+    return {'trades': trades, 'params': p, 'lookahead': look, 'orders': {'equity': eq, 'summary': summ_all}}
+
+
 def run_code(code, params=None, universe=None, since=None, until=None, progress=None, account=None):
     """→ {'trades': [...], 'params': {...}, 'lookahead': [...]} либо {'error': текст}.
     Режим заявок: ещё 'orders': {'equity': [...], 'summary': {...}} — счёт посчитан здесь же, по одной бумаге."""
@@ -220,16 +292,7 @@ def run_code(code, params=None, universe=None, since=None, until=None, progress=
         p = {**(ns.get('PARAMS') or {}), **(params or {})}
         uni = universe or store.UNIVERSE_ALL; trades, look = [], []
         if is_orders(ns):
-            st = uni[0]
-            b = Bars(chain_bars(st, since, until))
-            if len(b) < 500: raise ValueError(f'по {st} за выбранный период меньше 500 свечей')
-            rolls = prepare(st, b)
-            rows, eq, summ = orders.run(ns, b, p, st, account, rolls=rolls)
-            if progress: progress(1, 2)
-            lc = lookahead_check(code, b, p, st, account)
-            if progress: progress(2, 2)
-            if len(uni) > 1: summ['только_первая_бумага'] = st
-            return {'trades': rows, 'params': p, 'lookahead': [lc] if lc else [], 'orders': {'equity': eq, 'summary': summ}}
+            return run_orders_portfolio(code, p, uni, since, until, progress, account)
         for k, st in enumerate(uni):
             b = Bars(chain_bars(st, since, until))
             if len(b) < 500: continue

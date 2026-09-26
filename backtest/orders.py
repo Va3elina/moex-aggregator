@@ -119,9 +119,13 @@ class Strategy:
         self._e.orders[('X', str(id))] = {'kind': 'X', 'id': str(id), 'from': None if from_entry is None else str(from_entry),
                                           'limit': self._e.rt(limit), 'stop': self._e.rt(stop), 'seq': self._e.seq()}
 
-    def close(self, from_entry):
-        """Закрыть сделки входа from_entry по рынку — по открытию следующей свечи."""
-        self._e.orders[('C', str(from_entry))] = {'kind': 'C', 'id': str(from_entry), 'from': str(from_entry), 'seq': self._e.seq()}
+    def close(self, from_entry=None, qty=None):
+        """Закрыть по рынку (открытие следующей свечи) сделки входа from_entry (None — всю позицию); qty — только столько
+        контрактов, старые сделки первыми (уменьшить позицию)."""
+        f = None if from_entry is None else str(from_entry)
+        q = None if qty is None else int(qty)
+        if q is not None and q < 1: return
+        self._e.orders[('C', f)] = {'kind': 'C', 'id': f, 'from': f, 'qty': q, 'seq': self._e.seq()}
 
     def close_all(self):
         self._e.orders[('C', None)] = {'kind': 'C', 'id': None, 'from': None, 'seq': self._e.seq()}
@@ -257,7 +261,7 @@ class Engine:
             self.fill_entry(od, px, market)
         else:
             tr = [t for t in self.open if od['from'] is None or t.id == od['from']]
-            if tr: self.close_trades(tr, px, od['id'] if od['kind'] == 'X' else 'по рынку', market)
+            if tr: self.close_trades(tr, px, od['id'] if od['kind'] == 'X' else 'по рынку', market, qty=od.get('qty'))
 
     def at_open(self, o):
         for key in sorted([k for k, od in self.orders.items() if od['kind'] == 'C' or
@@ -578,4 +582,55 @@ def on_bar(i, b, s, p):
     q = int(s.equity * p["lev"] / (b.close[i] * s.point_value))
     if want and q >= 1:
         s.entry("T", LONG if want > 0 else SHORT, q)
+'''
+
+
+TREND_VOL_TEMPLATE = '''# Тренд по среднему нескольких EMA, объём под волатильность — кандидат в стратегию (исследование 27.09.2026).
+# Сигнал: среднее знаков «цена выше/ниже EMA» по длинам lens на ДЛИННОЙ истории базового актива (b.hist: акции с 2013,
+# индексы, валюты, золото; у сырья — сам фьючерс), только по закрытиям ДО сегодняшнего дня: +1, ±1/3, −1.
+# Объём: сигнал × капитал × min(max_lev, target_vol / волатильность за vol_days дней). Решение — раз в день на первой
+# свече, заявка — по открытию следующей; объём подстраивается, если ушёл от цели дальше band. Несколько бумаг в прогоне
+# = портфель: каждой равная доля капитала. sides = "long" — без шортов.
+MODE = "orders"
+PARAMS = {"lens": "50,100,200", "sides": "both", "target_vol": 0.15, "max_lev": 2.0, "band": 0.25, "vol_days": 60,
+          "trade_from": ""}
+
+
+def init(b, p):
+    lens = [int(x) for x in str(p["lens"]).split(",")]
+    last = np.r_[b.new_day[1:], True]                        # последняя свеча каждого дня
+    days = pd.to_datetime(b.date[last])
+    h = b.hist if getattr(b, "hist", None) is not None and len(b.hist) else pd.Series((b.close - b.adj)[last], index=days)
+    sig_h = sum(np.sign(h - h.ewm(span=n, adjust=False, min_periods=n).mean()) for n in lens) / len(lens)
+    k = np.searchsorted(h.index.values, days.values, side="left") - 1      # последняя дата истории строго ДО дня
+    sig_d = np.where(k >= 0, sig_h.values[np.clip(k, 0, None)], np.nan)
+    dc, raw = (b.close - b.adj)[last], b.close[last]
+    r = np.r_[np.nan, np.diff(dc) / raw[:-1]]                # дневные изменения непрерывного ряда самого фьючерса
+    vol = pd.Series(r).rolling(int(p["vol_days"]), min_periods=min(40, int(p["vol_days"]))).std().values * np.sqrt(252)
+    day = np.cumsum(b.new_day) - 1
+    b.sig = np.nan_to_num(sig_d)[day]
+    b.vol_a = np.r_[np.nan, vol[:-1]][day]                   # на день d — по дням до d−1
+
+
+def on_bar(i, b, s, p):
+    if not b.new_day[i] or (p["trade_from"] and str(b.date[i]) < p["trade_from"]):
+        return
+    sig = b.sig[i] if p["sides"] == "both" else max(b.sig[i], 0.0)
+    v = b.vol_a[i]
+    pos = s.position_size
+    target = 0
+    if v > 0 and sig != 0:
+        lev = min(p["max_lev"], p["target_vol"] / v)
+        target = int(s.equity * lev * abs(sig) / (b.close[i] * s.point_value)) * (1 if sig > 0 else -1)
+    if target == pos:
+        return
+    if target == 0:
+        s.close_all()
+    elif pos == 0 or (target > 0) != (pos > 0):
+        s.entry("T", LONG if target > 0 else SHORT, abs(target))          # вход или разворот
+    elif abs(target - pos) > p["band"] * abs(pos):
+        if abs(target) > abs(pos):
+            s.entry("T", LONG if pos > 0 else SHORT, abs(target) - abs(pos))
+        else:
+            s.close(qty=abs(pos) - abs(target))
 '''
