@@ -25,7 +25,9 @@ router = APIRouter(prefix="/api/admin/bt", tags=["admin-backtest"])
 NAMES = {'AF': 'Аэрофлот', 'AK': 'АФК Система', 'BR': 'Brent', 'CC': 'Какао', 'CR': 'Юань', 'Eu': 'Евро', 'GK': 'ГМК',
          'GZ': 'Газпром', 'LK': 'ЛУКОЙЛ', 'MN': 'Магнит', 'MX': 'Индекс МосБиржи', 'NM': 'НЛМК', 'PI': 'ПИК',
          'PT': 'Платина', 'RI': 'Индекс РТС', 'SN': 'Сургутнефтегаз', 'SR': 'Сбербанк', 'SS': 'Самолёт',
-         'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ', 'CNYRUBF': 'Юань вечный'}
+         'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ', 'CNYRUBF': 'Юань вечный',
+         'USDRUBF': 'Доллар вечный', 'EURRUBF': 'Евро вечный', 'GLDRUBF': 'Золото вечное', 'IMOEXF': 'Индекс МосБиржи вечный',
+         'SBERF': 'Сбербанк вечный', 'GAZPF': 'Газпром вечный'}
 TF = {5, 15, 60, 1440}
 MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диапазона на запрос, чтобы не отдать 300 тыс. свечей
 
@@ -81,7 +83,8 @@ def _py_template() -> str:
 def _py_examples() -> list[dict]:
     from backtest import pyengine, orders
     return [{'name': 'Пример: пересечение двух EMA', 'code': pyengine.TEMPLATE},
-            {'name': 'Пример: DCA-мартингейл (заявки, как в Pine)', 'code': orders.DCA_TEMPLATE}]
+            {'name': 'Пример: DCA-мартингейл (заявки, как в Pine)', 'code': orders.DCA_TEMPLATE},
+            {'name': 'Пример: DCA-сетка под волатильность бумаги', 'code': orders.DCA_VOL_TEMPLATE}]
 
 
 def _inspect(code: str) -> dict:

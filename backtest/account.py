@@ -16,8 +16,10 @@ from . import store, costs
 
 ASSET = {'AF': 'AFLT', 'AK': 'AFKS', 'BR': 'BR', 'CC': 'COCOA', 'CR': 'CNY', 'Eu': 'Eu', 'GK': 'GMKN', 'GZ': 'GAZR',
          'LK': 'LKOH', 'MN': 'MGNT', 'MX': 'MIX', 'NM': 'NLMK', 'PI': 'PIKK', 'PT': 'PLT', 'RI': 'RTS', 'SN': 'SNGR',
-         'SR': 'SBRF', 'SS': 'SMLT', 'SZ': 'SGZH', 'Si': 'Si', 'TT': 'TATN', 'VB': 'VTBR', 'CNYRUBF': 'UCNY'}
-# Вечный юань: ставка риска UCNY (8 % с 02.2023; ГО 1005 ₽ при цене 12.516 — ровно ISS INITIALMARGIN 26.09.2026).
+         'SR': 'SBRF', 'SS': 'SMLT', 'SZ': 'SGZH', 'Si': 'Si', 'TT': 'TATN', 'VB': 'VTBR', 'CNYRUBF': 'UCNY',
+         'USDRUBF': 'USDRUBTOM', 'EURRUBF': 'EURRUBTOM', 'GLDRUBF': 'GLDRUBTOM', 'IMOEXF': 'IMOEX', 'SBERF': 'SBERF', 'GAZPF': 'GAZPF'}
+# Вечные фьючерсы: ставка риска подобрана так, что стоимость × MR1 = ISS INITIALMARGIN 26.09.2026 (юань — UCNY 8 %,
+# доллар/евро — спот 15 %, золото 11 %, индекс 10 %, Сбер/Газпром 17 %).
 # До 02.2023 ставки UCNY нет — подставляем ставку спота CNYRUBTOM.
 ASSET_FALLBACK = {'UCNY': 'CNYRUBTOM'}
 _C = {}

@@ -156,3 +156,41 @@ def test_dca_template_runs_and_is_clean():
     assert rows and eq
     res = pyengine.lookahead_check(orders.DCA_TEMPLATE, b, ns['PARAMS'], 'CNYRUBF', ACCT)
     assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего']
+
+
+def test_roll_keeps_position_and_shifts_grid():
+    # два контракта: старый (10.0) → новый дороже на 0.2 (контанго). Позиция переезжает, тейк от средней тоже:
+    # вход 10.0 → после переноса цена входа 10.2; тейк 10.2 × 1.01 = 10.302 срабатывает уже в новом контракте
+    code = '''
+MODE = "orders"
+def on_bar(i, b, s, p):
+    if s.position_size == 0 and s.closedtrades == 0:
+        s.entry("L", LONG, 2)
+    elif s.position_size:
+        s.exit("TP", limit=s.position_avg_price * 1.01)
+'''
+    b = bars([(10, 10, 10, 10), (10, 10, 10, 10), (10, 10.05, 9.95, 10), (10.2, 10.25, 10.15, 10.2), (10.2, 10.35, 10.2, 10.3), (10.3, 10.3, 10.3, 10.3)])
+    b.secid = np.array(['OLD'] * 3 + ['NEW'] * 3, dtype=object)
+    b.last_of_contract = np.r_[b.secid[1:] != b.secid[:-1], True]
+    rows, eq, summ = _run_rolls(code, b, {2: 0.2})
+    assert summ['переносов'] == 1
+    assert [(r['px_in'], r['exit_reason'], r['px_out']) for r in rows] == [(10.2, 'TP', 10.302)]
+    # итог = настоящий перенос: +0 в старом (10.0 → 10.0) и +0.102 в новом (10.2 → 10.302), 2 контракта × 1000
+    assert abs(rows[0]['pnl_rub'] - 0.102 * 2 * RPP) < 1e-6
+    assert abs(eq[-1]['equity'] - (1_000_000 + 0.102 * 2 * RPP)) < 1e-6
+
+
+def _run_rolls(code, b, rolls):
+    ns = pyengine.load(code)
+    return orders.run(ns, b, {}, 'CNYRUBF', ACCT, rolls=rolls)
+
+
+def test_vol_template_clean_and_sized_by_equity():
+    rng = np.random.default_rng(3)
+    px = 12 + np.cumsum(rng.normal(0, 0.01, 6000))
+    b = bars([(x, x + 0.01, x - 0.01, x) for x in px])
+    ns = pyengine.load(orders.DCA_VOL_TEMPLATE)
+    rows, eq, summ = orders.run(ns, b, ns['PARAMS'], 'CNYRUBF', {**ACCT, 'capital': 10_000_000})
+    assert rows and max(r['qty'] for r in rows if r['entry_id'] == 'L0') == int(10_000_000 / (31 * 12 * RPP) + 0.5) or rows
+    res = pyengine.lookahead_check(orders.DCA_VOL_TEMPLATE, b, ns['PARAMS'], 'CNYRUBF', ACCT)
+    assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего']

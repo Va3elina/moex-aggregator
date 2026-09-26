@@ -12,7 +12,8 @@ REF = PKG / 'data'                                   # справочники в
 DATA = pathlib.Path(os.environ.get('BT_DATA', PKG.parent / 'bt_data'))
 BARS = DATA / 'bars'
 UNIVERSE_ALL = ['AF', 'AK', 'BR', 'CC', 'CR', 'Eu', 'GK', 'GZ', 'LK', 'MN', 'MX', 'NM', 'PI', 'PT', 'RI', 'SN', 'SR',
-                'SS', 'SZ', 'Si', 'TT', 'VB', 'CNYRUBF']          # CNYRUBF — вечный юань (один контракт, lsttrade 2100-01-01)
+                'SS', 'SZ', 'Si', 'TT', 'VB',
+                'CNYRUBF', 'USDRUBF', 'EURRUBF', 'GLDRUBF', 'IMOEXF', 'SBERF', 'GAZPF']   # вечные: один контракт, lsttrade 2100-01-01
 SSH = ["ssh", "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "ConnectTimeout=30",
        "-i", str(pathlib.Path.home() / ".ssh/id_ed25519"), "root@103.88.243.232"]
 COLS = ['secid', 'lsttrade', 't', 'open', 'high', 'low', 'close', 'volume']

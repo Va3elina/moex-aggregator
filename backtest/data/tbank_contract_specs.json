@@ -205,5 +205,59 @@
   "go_buy": 1005,
   "go_sell": 1005,
   "value_rub": 12516
+ },
+ "USDRUBF": {
+  "ticker": "USDRUBF",
+  "price_step": 0.01,
+  "step_cost_rub": 10.0,
+  "lot": 1,
+  "go_buy": 12667,
+  "go_sell": 12667,
+  "value_rub": 84340
+ },
+ "EURRUBF": {
+  "ticker": "EURRUBF",
+  "price_step": 0.01,
+  "step_cost_rub": 10.0,
+  "lot": 1,
+  "go_buy": 14399,
+  "go_sell": 14399,
+  "value_rub": 95870
+ },
+ "GLDRUBF": {
+  "ticker": "GLDRUBF",
+  "price_step": 0.1,
+  "step_cost_rub": 0.1,
+  "lot": 1,
+  "go_buy": 1275,
+  "go_sell": 1275,
+  "value_rub": 11545
+ },
+ "IMOEXF": {
+  "ticker": "IMOEXF",
+  "price_step": 0.5,
+  "step_cost_rub": 5.0,
+  "lot": 1,
+  "go_buy": 2281,
+  "go_sell": 2281,
+  "value_rub": 22740
+ },
+ "SBERF": {
+  "ticker": "SBERF",
+  "price_step": 0.01,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 4704,
+  "go_sell": 4704,
+  "value_rub": 27620
+ },
+ "GAZPF": {
+  "ticker": "GAZPF",
+  "price_step": 0.01,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1678,
+  "go_sell": 1678,
+  "value_rub": 9852
  }
 }

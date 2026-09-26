@@ -16,6 +16,11 @@
 - путь внутри свечи: open→high→low→close, если high ближе к open, чем low; иначе open→low→high→close;
 - заявка с тем же id заменяет прежнюю; exit(from_entry=X) закрывает сделки входа X и живёт, пока они открыты.
 
+Квартальные фьючерсы: на смене контракта позиция ПЕРЕНОСИТСЯ (ROLL = True по умолчанию), как у живого трейдера:
+старый закрыт, новый открыт в ту же минуту, цены входа и заявок сдвинуты на разницу контрактов (календарный спред),
+поэтому средняя, сетка и тейк стратегии не ломаются; перенос стоит две комиссии и два полуспреда. Разница контрактов
+(контанго) — это и есть плата за удержание квартального фьючерса, как фандинг у вечного. ROLL = False — закрывать.
+
 Счёт считается здесь же, свеча за свечой (а не в account.simulate): объём задаёт стратегия, поэтому слоты не нужны.
 Комиссия — тариф прогона; спред (половина круга) — только у рыночных и стоп-заявок, лимитная его не платит.
 ГО: 'mr1' / 'snapshot' — вход без свободного ГО не исполняется, капитал < MM × ГО позиции → брокер закрывает всё;
@@ -93,6 +98,11 @@ class Strategy:
     def netprofit(self):
         return self._e.realized
 
+    @property
+    def point_value(self):
+        """₽ за 1.0 цены на один контракт сегодня: стоимость контракта = цена × point_value."""
+        return self._e.rpp
+
     # — заявки
     def entry(self, id, direction, qty, limit=None, stop=None):
         """Вход (или добор) direction = LONG | SHORT на qty контрактов. Без limit/stop — по рынку.
@@ -126,7 +136,7 @@ class Strategy:
 class Engine:
     def __init__(self, b, st, acct):
         self.b, self.st = b, st
-        self.O, self.H, self.L, self.C = (np.asarray(x, float) for x in (b.open, b.high, b.low, b.close))
+        self.O, self.H, self.L, self.C = (np.array(x, float) for x in (b.open, b.high, b.low, b.close))   # копии: перенос правит C
         self.D, self.M = np.asarray(b.date), np.asarray(b.minute)
         a = acct or {}
         self.capital = float(a.get('capital') or 1_000_000)
@@ -138,7 +148,7 @@ class Engine:
         self.realized, self.funding_paid, self.margin_calls, self.liquidated = 0.0, 0.0, 0, 0
         self.i, self._seq, self.day = 0, 0, None
         self.fund = funding_series(st)
-        self.eq_rows, self._mc_day = [], 0
+        self.eq_rows, self._mc_day, self.rolls = [], 0, 0
 
     def seq(self):
         self._seq += 1
@@ -298,6 +308,20 @@ class Engine:
             self.close_trades(list(self.open), px, 'принудительное закрытие', True)
             self.orders.clear()
 
+    def roll(self, gap):
+        """Смена контракта: позиция переезжает в новый (цены входа, экстремумы и заявки — на разницу контрактов gap)."""
+        old = self.C[self.i]; new = old + gap
+        for t in self.open:
+            cm = self.comm(old, t.qty) + self.comm(new, t.qty)
+            sp = self.half_spread * t.qty * (old + new) * self.rpp
+            self.realized -= cm + sp; t.comm += cm; t.spread += sp
+            t.price += gap; t.hi += gap; t.lo += gap
+        for od in self.orders.values():
+            for k in ('limit', 'stop'):
+                if od.get(k) is not None: od[k] = self.rt(od[k] + gap)
+        self.C[self.i] = new                  # до конца свечи позиция оценивается уже по цене нового контракта
+        self.rolls += 1
+
     def charge_funding(self, d):
         if self.fund is None or not self.open: return
         x = self.fund.get(pd.Timestamp(d))
@@ -319,9 +343,13 @@ class Engine:
             if t.i < i: t.hi = max(t.hi, h); t.lo = min(t.lo, l)
 
 
-def run(ns, b, p, st, acct=None, guard=None):
-    """Прогон стратегии заявками по одной бумаге → (сделки, дневная кривая капитала, сводка счёта)."""
+def run(ns, b, p, st, acct=None, guard=None, rolls=None, call_init=True):
+    """Прогон стратегии заявками по одной бумаге → (сделки, дневная кривая капитала, сводка счёта).
+    rolls — {индекс последней свечи контракта: цена нового − цена старого в ту же минуту} (pyengine.roll_gaps).
+    call_init=False — init() уже вызван (проверка на заглядывание сама считает индикаторы и охраняет массивы)."""
+    if call_init and callable(ns.get('init')): ns['init'](b, p)
     eng = Engine(b, st, {**(acct or {}), 'pyramiding': ns.get('PYRAMIDING')})
+    do_roll = bool(ns.get('ROLL', True)) and rolls is not None
     S = Strategy(eng)
     on_bar, n = ns['on_bar'], len(b)
     last = np.asarray(b.last_of_contract)
@@ -335,7 +363,11 @@ def run(ns, b, p, st, acct=None, guard=None):
         if eng.M[i] >= CLEARING_MIN and charged != d:                 # позиция дожила до вечернего клиринга
             eng.charge_funding(d); charged = d
         eng.bar(i)
-        if last[i]:                                                   # смена контракта: позицию закрыть, заявки снять
+        if last[i] and do_roll and i < n - 1 and i in rolls:        # смена контракта: позиция и заявки переезжают
+            eng.roll(rolls[i])
+            if guard is None or guard(i):
+                on_bar(i, b, S, p)
+        elif last[i]:                                                 # конец данных (или ROLL = False): закрыть, снять
             if eng.open: eng.close_trades(list(eng.open), eng.C[i], 'смена контракта' if i < n - 1 else 'конец данных', True)
             eng.orders.clear()
         elif guard is None or guard(i):
@@ -357,7 +389,7 @@ def run(ns, b, p, st, acct=None, guard=None):
                      'qty': r['qty'], 'notional': r['notional'], 'go': r['go'], 'equity_in': r['equity_in'],
                      'comm_rub': r['comm_rub'], 'spread_rub': r['spread_rub'], 'funding_rub': r['funding_rub'], 'pnl_rub': r['pnl_rub'],
                      'entry_id': r['entry_id']})
-    summary = {'фандинг_руб': round(eng.funding_paid), 'принудительных_закрытий': eng.liquidated,
+    summary = {'фандинг_руб': round(eng.funding_paid), 'принудительных_закрытий': eng.liquidated, 'переносов': eng.rolls,
                'маржин_коллов_TV': eng.margin_calls, 'пропущено': eng.skips, 'капитал': eng.capital}
     return rows, eng.eq_rows, summary
 
@@ -412,4 +444,45 @@ def on_bar(i, b, s, p):
     else:
         for k in range(n):
             s.exit(f"TP{k}", f"L{k}", limit=tp)
+'''
+
+
+DCA_VOL_TEMPLATE = '''# DCA-сетка под волатильность бумаги — чтобы сравнивать разные бумаги одной меркой.
+# Шаг сетки и тейк — в долях дневной волатильности за прошлые 20 дней (у юаня 1.5 × 0.67 % ≈ 1 % и 0.45 × ≈ 0.3 %,
+# как в Pine). Объём — от капитала: вся сетка (1 + 2 + 4 + 8 + 16 = 31 часть) = капитал × lev. Один тейк на всю
+# позицию, стопа нет. side = 1 — усреднение покупками, -1 — продажами (шорт). Квартальные фьючерсы переносятся.
+MODE = "orders"
+PYRAMIDING = 20
+PARAMS = {"side": 1, "levels": 5, "mult": 2.0, "step_vol": 1.5, "tp_vol": 0.45, "lev": 1.0, "vol_days": 20}
+ST = {}
+
+
+def init(b, p):
+    last = np.r_[b.new_day[1:], True]                        # последняя свеча каждого дня
+    dc, ds = b.close[last], b.secid[last]
+    r = np.r_[np.nan, np.diff(np.log(dc))]
+    r[1:][ds[1:] != ds[:-1]] = np.nan                         # через смену контракта доходность не считаем
+    vol = pd.Series(r).rolling(int(p["vol_days"]), min_periods=10).std().values
+    day = np.cumsum(b.new_day) - 1                            # номер дня у каждой свечи
+    b.vol = np.r_[np.nan, vol[:-1]][day]                      # внутри дня — волатильность только по прошлым дням
+
+
+def on_bar(i, b, s, p):
+    side = LONG if p["side"] > 0 else SHORT
+    if s.position_size == 0:
+        s.cancel_all()
+        v = b.vol[i]
+        if not v > 0:
+            return
+        units = sum(p["mult"] ** k for k in range(int(p["levels"])))
+        base = int(s.equity * p["lev"] / (units * b.close[i] * s.point_value))
+        if base < 1:
+            return
+        ST.update(base=base, step=p["step_vol"] * v, tp=p["tp_vol"] * v)
+        s.entry("L0", side, base)
+        return
+    first = s.open_trades[0].price
+    for k in range(s.opentrades, int(p["levels"])):
+        s.entry(f"L{k}", side, max(1, int(ST["base"] * p["mult"] ** k + 0.5)), limit=first * (1 - side * ST["step"] * k))
+    s.exit("TP", limit=s.position_avg_price * (1 + side * ST["tp"]))
 '''
