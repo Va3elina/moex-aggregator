@@ -194,3 +194,28 @@ def test_vol_template_clean_and_sized_by_equity():
     assert rows and max(r['qty'] for r in rows if r['entry_id'] == 'L0') == int(10_000_000 / (31 * 12 * RPP) + 0.5) or rows
     res = pyengine.lookahead_check(orders.DCA_VOL_TEMPLATE, b, ns['PARAMS'], 'CNYRUBF', ACCT)
     assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего']
+
+
+def test_set_adj_makes_continuous_series():
+    b = bars([(10, 10, 10, 10), (10, 10, 10, 10.1), (10.3, 10.3, 10.3, 10.3), (10.4, 10.4, 10.4, 10.4)])
+    pyengine.set_adj(b, {1: 0.2})                            # после свечи 1 новый контракт дороже на 0.2
+    assert list(np.round(b.close - b.adj, 6)) == [10.0, 10.1, 10.1, 10.2]
+
+
+def test_regime_templates_clean():
+    rng = np.random.default_rng(5)
+    px = 12 * np.exp(np.cumsum(rng.normal(0.0002, 0.002, 80 * 60)))
+    rows = [(x, x * 1.001, x * 0.999, x) for x in px]
+    t0 = pd.Timestamp('2025-01-01 10:00')
+    df = pd.DataFrame(rows, columns=['open', 'high', 'low', 'close'])
+    df['t'] = [t0 + pd.Timedelta(days=k // 60, minutes=5 * (k % 60)) for k in range(len(df))]   # 60 свечей в день, 80 дней
+    df['volume'] = 1.0; df['secid'] = 'CNYRUBF'; df['lsttrade'] = pd.Timestamp('2100-01-01')
+    df['d'] = df.t.dt.normalize(); df['m'] = (df.t.dt.hour * 60 + df.t.dt.minute).astype('int16')
+    b = pyengine.Bars(df)
+    for code in (orders.DCA_REGIME_TEMPLATE, orders.TREND_TEMPLATE):
+        ns = pyengine.load(code)
+        p = {**ns['PARAMS'], 'ema': 20}
+        orders.run(ns, b, p, 'CNYRUBF', ACCT)
+        assert np.isin(b.regime, [-1, 0, 1]).all()
+        res = pyengine.lookahead_check(code, b, p, 'CNYRUBF', ACCT)
+        assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего'], res

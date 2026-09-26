@@ -486,3 +486,96 @@ def on_bar(i, b, s, p):
         s.entry(f"L{k}", side, max(1, int(ST["base"] * p["mult"] ** k + 0.5)), limit=first * (1 - side * ST["step"] * k))
     s.exit("TP", limit=s.position_avg_price * (1 + side * ST["tp"]))
 '''
+
+
+_REGIME_INIT = '''
+def init(b, p):
+    """Режим и волатильность по ДНЕВНЫМ закрытиям непрерывного ряда (close − adj: без скачков на смене контракта).
+    Всё считается по прошлым дням и действует со следующего дня (недельный режим — со следующей недели)."""
+    last = np.r_[b.new_day[1:], True]                        # последняя свеча каждого дня
+    dc = (b.close - b.adj)[last]
+    dd = pd.to_datetime(b.date[last])
+    r = np.r_[np.nan, np.diff(np.log(b.close[last]))]
+    sec = b.secid[last]
+    r[1:][sec[1:] != sec[:-1]] = np.nan                       # доходность через смену контракта не считаем
+    vol = pd.Series(r).rolling(int(p["vol_days"]), min_periods=10).std()
+    calm = (vol <= vol.rolling(250, min_periods=120).median()).astype(float).values
+    n = int(p["ema"])
+    if p["ema_tf"] == "W":                                    # EMA по недельным закрытиям
+        wk = pd.Series(dc, index=dd).groupby(dd.to_period("W")).last()
+        reg = np.sign(wk - wk.ewm(span=n, adjust=False, min_periods=n).mean()).shift(1)
+        reg = reg.reindex(dd.to_period("W")).values
+    else:                                                     # EMA по дневным закрытиям
+        s = pd.Series(dc)
+        reg = np.sign(s - s.ewm(span=n, adjust=False, min_periods=n).mean()).shift(1).values
+    day = np.cumsum(b.new_day) - 1
+    b.vol = np.r_[np.nan, vol.values[:-1]][day]
+    b.calm = np.r_[np.nan, calm[:-1]][day]
+    b.regime = np.nan_to_num(np.asarray(reg, float))[day]
+
+
+def _want(i, b, p):
+    """Куда можно торговать сегодня: +1 / −1 / 0."""
+    if p["trade_from"] and str(b.date[i]) < p["trade_from"]:
+        return 0
+    reg = int(b.regime[i])
+    return reg if p["sides"] == "both" else max(reg, 0)
+'''
+
+DCA_REGIME_TEMPLATE = '''# DCA-сетка по режиму рынка: сетка работает только по тренду. Режим — цена выше / ниже EMA по дневным (ema_tf = "D")
+# или недельным ("W") закрытиям. sides = "both": выше EMA — сетка покупками, ниже — продажами; "long" — ниже не торгуем.
+# on_flip = "close": режим сменился — открытая сетка закрывается по рынку; "wait": дожидается своего тейка.
+# calm = 1: новые сетки только в спокойном рынке (волатильность за 20 дней не выше медианы за год).
+# Шаг и тейк — в долях дневной волатильности, вся сетка (31 часть) = капитал × lev. trade_from — начать торговать с даты.
+MODE = "orders"
+PYRAMIDING = 20
+PARAMS = {"ema": 200, "ema_tf": "D", "sides": "both", "on_flip": "close", "calm": 0,
+          "levels": 5, "mult": 2.0, "step_vol": 1.5, "tp_vol": 0.45, "lev": 1.0, "vol_days": 20, "trade_from": ""}
+ST = {}
+''' + _REGIME_INIT + '''
+
+def on_bar(i, b, s, p):
+    want = _want(i, b, p)
+    pos = s.position_size
+    if pos and (1 if pos > 0 else -1) != want and p["on_flip"] == "close":
+        s.cancel_all()
+        s.close_all()
+        return
+    if pos == 0:
+        s.cancel_all()
+        v = b.vol[i]
+        if want == 0 or not v > 0 or (p["calm"] and b.calm[i] != 1):
+            return
+        units = sum(p["mult"] ** k for k in range(int(p["levels"])))
+        base = int(s.equity * p["lev"] / (units * b.close[i] * s.point_value))
+        if base < 1:
+            return
+        ST.update(side=want, base=base, step=p["step_vol"] * v, tp=p["tp_vol"] * v)
+        s.entry("L0", LONG if want > 0 else SHORT, base)
+        return
+    side = ST["side"]
+    first = s.open_trades[0].price
+    for k in range(s.opentrades, int(p["levels"])):
+        s.entry(f"L{k}", LONG if side > 0 else SHORT, max(1, int(ST["base"] * p["mult"] ** k + 0.5)),
+                limit=first * (1 - side * ST["step"] * k))
+    s.exit("TP", limit=s.position_avg_price * (1 + side * ST["tp"]))
+'''
+
+TREND_TEMPLATE = '''# Позиция по режиму рынка БЕЗ сетки — «купить и вовремя продать»: выше EMA держим лонг на весь капитал × lev,
+# ниже — шорт (sides = "both") или ничего (sides = "long"). Меняется только при смене режима. Для сравнения с сеткой.
+MODE = "orders"
+PARAMS = {"ema": 200, "ema_tf": "D", "sides": "both", "lev": 1.0, "vol_days": 20, "trade_from": ""}
+''' + _REGIME_INIT + '''
+
+def on_bar(i, b, s, p):
+    want = _want(i, b, p)
+    pos = s.position_size
+    if (pos > 0) - (pos < 0) == want:
+        return
+    if pos:
+        s.close_all()
+        return
+    q = int(s.equity * p["lev"] / (b.close[i] * s.point_value))
+    if want and q >= 1:
+        s.entry("T", LONG if want > 0 else SHORT, q)
+'''

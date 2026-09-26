@@ -23,7 +23,7 @@ import numpy as np, pandas as pd
 from . import store, orders
 
 MAX_TRADES = 200_000
-_STD = {'open', 'high', 'low', 'close', 'volume', 'minute', 't', 'date', 'secid', 'new_day', 'last_of_contract', 'day_open', 'prev_close'}
+_STD = {'open', 'high', 'low', 'close', 'volume', 'minute', 't', 'date', 'secid', 'new_day', 'last_of_contract', 'day_open', 'prev_close', 'adj'}
 
 
 class Bars:
@@ -39,6 +39,7 @@ class Bars:
         self.day_open = np.repeat(self.open[first], np.diff(np.r_[first, n])) if n else self.open
         last_close = np.r_[np.nan, self.close[first[1:] - 1]] if n else self.close
         self.prev_close = np.repeat(last_close, np.diff(np.r_[first, n])) if n else self.close
+        self.adj = np.zeros(n)            # сдвиг цены из-за смен контракта (set_adj): close − adj — непрерывный ряд
 
     def __len__(self): return len(self.close)
 
@@ -104,6 +105,19 @@ def roll_gaps(st, b):
         px = float(g.close.iloc[-1]) if len(g) else float(b.open[i + 1])
         out[int(i)] = px - float(b.close[i])
     return out
+
+
+def set_adj(b, rolls):
+    """b.adj[j] = сумма разниц контрактов по сменам ДО свечи j → b.close − b.adj без скачков (только прошлое: заглядывания нет)."""
+    adj = np.zeros(len(b))
+    for i, g in rolls.items(): adj[i + 1:] += g
+    b.adj = adj
+    return rolls
+
+
+def prepare(st, b):
+    """Разницы контрактов для переноса позиции + непрерывный ряд для индикаторов."""
+    return set_adj(b, roll_gaps(st, b))
 
 
 def load(code):
@@ -209,7 +223,7 @@ def run_code(code, params=None, universe=None, since=None, until=None, progress=
             st = uni[0]
             b = Bars(chain_bars(st, since, until))
             if len(b) < 500: raise ValueError(f'по {st} за выбранный период меньше 500 свечей')
-            rolls = roll_gaps(st, b)
+            rolls = prepare(st, b)
             rows, eq, summ = orders.run(ns, b, p, st, account, rolls=rolls)
             if progress: progress(1, 2)
             lc = lookahead_check(code, b, p, st, account)
@@ -219,6 +233,7 @@ def run_code(code, params=None, universe=None, since=None, until=None, progress=
         for k, st in enumerate(uni):
             b = Bars(chain_bars(st, since, until))
             if len(b) < 500: continue
+            prepare(st, b)
             rows = run_one(ns, b, p, st); trades += rows
             if not look:
                 lc = lookahead_check(code, b, p, st)
