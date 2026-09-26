@@ -237,7 +237,8 @@ def repaint_screener(
             "close": bars[-1]["close"],
             "ff_shares": ff_list[-1][1],
         })
-    out.sort(key=lambda r: abs(r["repaint_pct"]), reverse=True)
+    # Таблица и график показывают отклонение от среднего — сортируем по нему.
+    out.sort(key=lambda r: abs(r["dev_pct"]), reverse=True)
     return {"window_days": WINDOW_DAYS, "tf": tf, "rows": out}
 
 
