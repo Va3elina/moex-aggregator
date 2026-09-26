@@ -857,7 +857,43 @@ def process_callback(cb: dict) -> None:
         db.close()
 
 
+def _is_member(cm: dict) -> bool:
+    st = cm.get("status")
+    return st in ("member", "administrator", "creator") or (st == "restricted" and bool(cm.get("is_member")))
+
+
+def record_chat_member(upd: dict) -> None:
+    """chat_member → tg_channel_joins. Тот же токен поллит tg_bot.py, и Telegram
+    раздаёт апдейты тому, кто успел, поэтому пишем из обоих (логика как в tg_bot.py)."""
+    was, now = _is_member(upd["old_chat_member"]), _is_member(upd["new_chat_member"])
+    if was == now:
+        return
+    link = upd.get("invite_link") or {}
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "INSERT INTO tg_channel_joins (chat_id, chat_title, user_id, event, invite_link,"
+            " invite_name, via_folder, event_at)"
+            " VALUES (:chat_id, :title, :uid, :event, :link, :name, :folder, to_timestamp(:ts))"
+        ), {
+            "chat_id": upd["chat"]["id"],
+            "title": upd["chat"].get("title"),
+            "uid": upd["new_chat_member"]["user"]["id"],
+            "event": "join" if now else "leave",
+            "link": link.get("invite_link") if now else None,
+            "name": link.get("name") if now else None,
+            "folder": bool(upd.get("via_chat_folder_invite_link")) if now else False,
+            "ts": upd["date"],
+        })
+        db.commit()
+    finally:
+        db.close()
+
+
 def process_update(update: dict) -> None:
+    if update.get("chat_member"):
+        record_chat_member(update["chat_member"])
+        return
     if update.get("callback_query"):
         process_callback(update["callback_query"])
         return
@@ -929,7 +965,7 @@ def main() -> None:
             # отдаёт ответ впритык к нашему requests-таймауту и edge-лимитам
             # relay — ловили ~900 polling-ошибок/день (Read timed out + не-JSON).
             params = {"timeout": 20,
-                      "allowed_updates": json.dumps(["message", "callback_query"])}
+                      "allowed_updates": json.dumps(["message", "callback_query", "chat_member"])}
             if offset:
                 params["offset"] = offset
             resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=30)
