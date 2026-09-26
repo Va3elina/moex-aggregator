@@ -63,7 +63,7 @@ if "@db:" in _db:
 
 from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402
-from signals import config  # noqa: E402
+from signals import config, tg_joins  # noqa: E402
 from signals.publish.telegram import (  # noqa: E402
     send_text_post, apply_custom_emoji, with_frame_signature,
 )
@@ -857,42 +857,35 @@ def process_callback(cb: dict) -> None:
         db.close()
 
 
-def _is_member(cm: dict) -> bool:
-    st = cm.get("status")
-    return st in ("member", "administrator", "creator") or (st == "restricted" and bool(cm.get("is_member")))
-
-
-def record_chat_member(upd: dict) -> None:
-    """chat_member → tg_channel_joins. Тот же токен поллит tg_bot.py, и Telegram
-    раздаёт апдейты тому, кто успел, поэтому пишем из обоих (логика как в tg_bot.py)."""
-    was, now = _is_member(upd["old_chat_member"]), _is_member(upd["new_chat_member"])
-    if was == now:
-        return
-    link = upd.get("invite_link") or {}
+def _with_db(fn) -> None:
+    """Одна транзакция на операцию модуля tg_joins; ошибка — в лог, поллинг живёт."""
     db = SessionLocal()
     try:
-        db.execute(text(
-            "INSERT INTO tg_channel_joins (chat_id, chat_title, user_id, event, invite_link,"
-            " invite_name, via_folder, event_at)"
-            " VALUES (:chat_id, :title, :uid, :event, :link, :name, :folder, to_timestamp(:ts))"
-        ), {
-            "chat_id": upd["chat"]["id"],
-            "title": upd["chat"].get("title"),
-            "uid": upd["new_chat_member"]["user"]["id"],
-            "event": "join" if now else "leave",
-            "link": link.get("invite_link") if now else None,
-            "name": link.get("name") if now else None,
-            "folder": bool(upd.get("via_chat_folder_invite_link")) if now else False,
-            "ts": upd["date"],
-        })
+        fn(db)
         db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[content_review_bot] tg_joins error: {_redact(e)}")
     finally:
         db.close()
 
 
+_last_tick = 0.0
+
+
+def _tg_joins_tick() -> None:
+    """Раз в TICK_SEC: снимок подписчиков канала и проверка всплесков (tg_joins)."""
+    global _last_tick
+    if time.monotonic() - _last_tick < tg_joins.TICK_SEC:
+        return
+    _last_tick = time.monotonic()
+    _with_db(lambda db: tg_joins.hourly_tick(db, API_BASE, config.ADMIN_USER_ID))
+
+
 def process_update(update: dict) -> None:
     if update.get("chat_member"):
-        record_chat_member(update["chat_member"])
+        # Бот — админ канала, Telegram шлёт каждое вступление и выход с инвайт-ссылкой.
+        _with_db(lambda db: tg_joins.record_chat_member(db, update["chat_member"]))
         return
     if update.get("callback_query"):
         process_callback(update["callback_query"])
@@ -950,17 +943,24 @@ def process_update(update: dict) -> None:
             db.close()
         return
 
-    if txt.split()[0].lower() == "/start":
+    cmd = txt.split()[0].lower()
+    if cmd == "/start":
         send(chat_id, "👋 Review-бот content-пайплайна Frame. Сюда приходят только "
-                       "карточки новых черновиков.")
+                       "карточки новых черновиков. /joins [дней] — вступления в канал по ссылкам.")
+    elif cmd == "/joins":
+        arg = txt.split()[1] if len(txt.split()) > 1 else ""
+        days = int(arg) if arg.isdigit() else 30
+        _with_db(lambda db: tg_joins.send_html(API_BASE, chat_id, tg_joins.joins_report(db, days)))
 
 
 def main() -> None:
     print(f"[{datetime.now(timezone.utc)}] content_review_bot started")
+    _with_db(tg_joins.ensure_tables)
     offset = None
     while True:
         try:
             _notify_new_drafts()
+            _tg_joins_tick()
             # long-poll 20с (не 30): ходим через CF-worker relay, на 30с Telegram
             # отдаёт ответ впритык к нашему requests-таймауту и edge-лимитам
             # relay — ловили ~900 polling-ошибок/день (Read timed out + не-JSON).
