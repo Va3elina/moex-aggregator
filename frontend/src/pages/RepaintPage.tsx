@@ -42,8 +42,8 @@ import { getRepaintScreener, getRepaintSeries } from '../services/api';
 import type { RepaintSeries, RepaintTf } from '../services/api';
 
 const HINTS = {
-  repaint:
-    'Изменение CDV за последние 30 дней, делённое на количество акций в свободном обращении (free float). Показывает, какая доля free float нетто сменила руки за месяц: кто-то продал — кто-то новый купил. Знак — в какую сторону: + напокупали, − напродавали. Вторая линия — отклонение текущего CDV от его среднего за 30 дней, тоже в % от free float: насколько напокупали или напродавали относительно накопленной базы (спекулятивный спрос). Окно — 30 календарных дней на любом таймфрейме, CDV — по свечам выбранного таймфрейма. CDV — аппроксимация по свечам (формула из OHLCV, как CDV в TradingView), биржевого разреза покупок/продаж в данных нет.',
+  dev:
+    'Отклонение текущего CDV от его среднего за последние 30 дней, в % от количества акций в свободном обращении (free float). Показывает, насколько сейчас напокупали или напродавали относительно обычного уровня месяца: если покупки шли ровно весь месяц, отклонение около нуля; если всё пришло за последние дни, отклонение большое (спекулятивный перегрев). Знак: + напокупали, − напродавали. CDV — аппроксимация по свечам выбранного таймфрейма (формула скрипта CDV в TradingView), биржевого разреза покупок/продаж в данных нет.',
   cdv:
     'Кумулятивный дельта-объём в штуках акций: сумма дельт свечей выбранного таймфрейма с начала периода (смысл несут изменения, не уровень). Дельта свечи = объём × (тело + тени/2)/(тело + тени) со знаком закрытия: тело целиком идёт в сторону закрытия, тени делятся пополам (формула скрипта CDV в TradingView). Как в TradingView, считается по самой свече таймфрейма, поэтому CDV меняется вместе с ТФ, на крупном ТФ оценка грубее. 1ч и 4ч строятся из часовых свечей, 1д и 1н — из дневных.',
   cdvFf:
@@ -164,8 +164,9 @@ export default function RepaintPage() {
     () => (series?.points ?? []).filter((p) => p.repaint_pct != null),
     [series],
   );
-  const repaintData = useMemo(
-    () => metricPoints.map((p) => ({ time: p.time, value: p.repaint_pct as number })),
+  // Цена только на точках с готовой метрикой — обе линии на одном ряду дат.
+  const metricPriceData = useMemo(
+    () => metricPoints.map((p) => ({ time: p.time, value: p.close, open: p.open, high: p.high, low: p.low })),
     [metricPoints],
   );
   const devData = useMemo(
@@ -316,17 +317,17 @@ export default function RepaintPage() {
             height={CHART_HEIGHT}
           />
         ) : metricPoints.length > 0 ? (
-          /* Метрики перекраски, % от free float */
+          /* Цена + отклонение CDV от среднего за 30 дней, % от free float.
+             Отклонение — акцентная (оранжевая) линия, цена — вторым цветом. */
           <SimpleChart
-            data={repaintData}
+            data={metricPriceData}
             secondaryData={devData}
             showSecondary={true}
-            primaryColor="var(--accent)"
-            secondaryColor="var(--accent-secondary)"
-            primaryLabel="Перекраска за 30д"
-            secondaryLabel="Отклонение от среднего 30д"
-            formatValue={fmtChartPct}
-            formatPrimaryAxis={fmtAxisPct}
+            primaryColor="var(--accent-secondary)"
+            secondaryColor="var(--accent)"
+            primaryLabel="Цена"
+            secondaryLabel="Отклонение от среднего 30д, % FF"
+            formatValue={fmtRub}
             formatSecondaryValue={fmtChartPct}
             formatSecondaryAxis={fmtAxisPct}
             niceTicks={true}
@@ -341,7 +342,7 @@ export default function RepaintPage() {
           />
         ) : (
           <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>
-            Недостаточно истории для месячного окна — метрики появятся, когда истории
+            Недостаточно истории для месячного окна — отклонение появится, когда истории
             будет больше 30 дней.
           </p>
         )}
@@ -350,7 +351,7 @@ export default function RepaintPage() {
 
       {/* Скринер по всем акциям */}
       <div className="mt-6 md:mt-8">
-        <SectionTitle title={`Все акции — текущая перекраска, ${tfLabel}`} hint={HINTS.repaint} />
+        <SectionTitle title={`Все акции — отклонение от среднего за 30 дней, ${tfLabel}`} hint={HINTS.dev} />
         {rowsError && (
           <Card padding="md" className="mb-6">
             <p style={{ color: 'var(--danger)' }}>Ошибка скринера: {rowsError}</p>
@@ -388,7 +389,6 @@ export default function RepaintPage() {
                     style={{ color: 'var(--text-muted)', letterSpacing: '0.06em' }}
                   >
                     <th className="py-2 pr-3 font-semibold">Бумага</th>
-                    <th className="py-2 px-3 font-semibold text-right">Перекраска 30д</th>
                     <th className="py-2 px-3 font-semibold text-right">Отклонение 30д</th>
                     <th className="py-2 px-3 font-semibold text-right">Free float</th>
                     <th className="py-2 pl-3 font-semibold text-right">Цена</th>
@@ -411,10 +411,7 @@ export default function RepaintPage() {
                         <span className="font-medium">{r.name}</span>
                         <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>{r.sec_id}</span>
                       </td>
-                      <td className="py-2 px-3 text-right font-medium" style={{ color: pctColor(r.repaint_pct) }}>
-                        {fmtPct(r.repaint_pct)}
-                      </td>
-                      <td className="py-2 px-3 text-right" style={{ color: pctColor(r.dev_pct) }}>
+                      <td className="py-2 px-3 text-right font-medium" style={{ color: pctColor(r.dev_pct) }}>
                         {fmtPct(r.dev_pct)}
                       </td>
                       <td className="py-2 px-3 text-right" style={{ color: 'var(--text-muted)' }}>
