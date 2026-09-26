@@ -90,6 +90,22 @@ def chain_bars(st, since=None, until=None):
     return B.merge(cnt[['secid', 'd']], on=['secid', 'd']).sort_values('t').reset_index(drop=True)
 
 
+def roll_gaps(st, b):
+    """{i: gap} для последних свечей контрактов склеенного ряда: цена следующего контракта минус цена текущего
+    в ту же минуту (последняя сделка нового контракта не позже этой свечи, в тот же день). Нет цены — открытие
+    следующей свечи ряда минус закрытие этой (тогда в разницу попадает и ход цены за ночь; бывает редко)."""
+    last = np.where(b.last_of_contract[:-1])[0]
+    if not len(last): return {}
+    B = store.bars(st)
+    out = {}
+    for i in last:
+        new = str(b.secid[i + 1]); t = b.t[i]
+        g = B[(B.secid == new) & (B.t <= pd.Timestamp(t)) & (B.t >= pd.Timestamp(t).normalize())]
+        px = float(g.close.iloc[-1]) if len(g) else float(b.open[i + 1])
+        out[int(i)] = px - float(b.close[i])
+    return out
+
+
 def load(code):
     ns = {'__name__': 'strategy', 'np': np, 'pd': pd, 'LONG': orders.LONG, 'SHORT': orders.SHORT}
     exec(compile(code, 'strategy.py', 'exec'), ns)
@@ -171,7 +187,8 @@ def lookahead_check(code, b, params, st, acct=None):
         def guard(i):
             _Guard.now = i
             return True
-        orders.run(ns2, g, params, st, acct, guard=guard)
+        orders.run(ns2, g, params, st, acct, guard=guard, rolls={i: x for i, x in roll_gaps(st, b).items() if i < m - 1},
+                   call_init=False)
     else:
         for i in range(m - 1):
             _Guard.now = i
@@ -192,7 +209,8 @@ def run_code(code, params=None, universe=None, since=None, until=None, progress=
             st = uni[0]
             b = Bars(chain_bars(st, since, until))
             if len(b) < 500: raise ValueError(f'по {st} за выбранный период меньше 500 свечей')
-            rows, eq, summ = orders.run(ns, b, p, st, account)
+            rolls = roll_gaps(st, b)
+            rows, eq, summ = orders.run(ns, b, p, st, account, rolls=rolls)
             if progress: progress(1, 2)
             lc = lookahead_check(code, b, p, st, account)
             if progress: progress(2, 2)

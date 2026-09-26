@@ -9,7 +9,7 @@ import json, pathlib, time, urllib.request
 import pandas as pd
 
 OUT = pathlib.Path(__file__).parent / 'funding.csv.gz'
-PERPETUAL = ['CNYRUBF', 'USDRUBF', 'EURRUBF', 'GLDRUBF']
+PERPETUAL = ['CNYRUBF', 'USDRUBF', 'EURRUBF', 'GLDRUBF', 'IMOEXF', 'SBERF', 'GAZPF']
 URL = ('https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{sec}.json?iss.meta=off&iss.only=history'
        '&history.columns=TRADEDATE,SWAPRATE&start={start}')
 rows = []
