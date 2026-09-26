@@ -219,3 +219,82 @@ def test_regime_templates_clean():
         assert np.isin(b.regime, [-1, 0, 1]).all()
         res = pyengine.lookahead_check(code, b, p, 'CNYRUBF', ACCT)
         assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего'], res
+
+
+def test_partial_close_fifo():
+    code = '''
+MODE = "orders"
+def on_bar(i, b, s, p):
+    if i == 0: s.entry("A", LONG, 5)
+    if i == 1: s.entry("A", LONG, 3)
+    if i == 2: s.close(qty=6)
+'''
+    b = bars([(10, 10, 10, 10)] * 3 + [(11, 11, 11, 11)] * 3)
+    rows, eq, summ = run(code, b)
+    by = [(r['qty'], r['px_in'], r['exit_reason']) for r in rows]
+    assert by[:2] == [(5, 10.0, 'по рынку'), (1, 10.0, 'по рынку')]   # старая сделка первой, от второй — 1 контракт
+    assert by[2] == (2, 10.0, 'конец данных')
+
+
+def _hist_bars(n_days=60, per_day=60):
+    rng = np.random.default_rng(9)
+    px = 10 * np.exp(np.cumsum(rng.normal(0, 0.002, n_days * per_day)))
+    t0 = pd.Timestamp('2025-03-03 10:00')
+    df = pd.DataFrame({'open': px, 'high': px * 1.001, 'low': px * 0.999, 'close': px})
+    df['t'] = [t0 + pd.Timedelta(days=k // per_day, minutes=5 * (k % per_day)) for k in range(len(df))]
+    df['volume'] = 1.0; df['secid'] = 'CNYRUBF'; df['lsttrade'] = pd.Timestamp('2100-01-01')
+    df['d'] = df.t.dt.normalize(); df['m'] = (df.t.dt.hour * 60 + df.t.dt.minute).astype('int16')
+    b = pyengine.Bars(df)
+    days = pd.date_range('2023-01-02', '2025-06-30', freq='D')
+    b.hist = pd.Series(10 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days)))), index=days)   # история базового актива
+    return b
+
+
+def test_hist_same_day_close_is_lookahead():
+    good = '''
+MODE = "orders"
+def init(b, p):
+    days = pd.to_datetime(b.date)
+    k = np.searchsorted(b.hist.index.values, days.values, side="left") - 1     # строго до дня свечи
+    b.x = b.hist.values[np.clip(k, 0, None)]
+def on_bar(i, b, s, p): return
+'''
+    bad = good.replace('side="left") - 1', 'side="right") - 1')                    # берёт закрытие того же дня
+    for code, cheat in ((good, False), (bad, True)):
+        b = _hist_bars()
+        res = pyengine.lookahead_check(code, b, {}, 'CNYRUBF', ACCT)
+        assert bool(res['индикаторы_из_будущего']) == cheat, (cheat, res)
+
+
+def test_trend_vol_template_clean():
+    b = _hist_bars()
+    ns = pyengine.load(orders.TREND_VOL_TEMPLATE)
+    p = {**ns['PARAMS'], 'lens': '20,40', 'vol_days': 20}
+    rows, eq, summ = orders.run(ns, b, p, 'CNYRUBF', {**ACCT, 'capital': 10_000_000})
+    assert eq and set(np.unique(b.sig)) <= {-1.0, 0.0, 1.0}
+    res = pyengine.lookahead_check(orders.TREND_VOL_TEMPLATE, b, p, 'CNYRUBF', ACCT)
+    assert res['обращений_к_будущим_свечам'] == 0 and not res['индикаторы_из_будущего'], res
+
+
+def test_portfolio_sleeves_sum(monkeypatch):
+    b1 = _hist_bars(); b2 = _hist_bars()
+    frames = {}
+    def fake_chain(st, since=None, until=None):
+        return 'X' + st
+    class FakeBars:
+        def __new__(cls, key):
+            return b1 if key == 'XCNYRUBF' else b2
+    monkeypatch.setattr(pyengine, 'chain_bars', fake_chain)
+    monkeypatch.setattr(pyengine, 'Bars', FakeBars)
+    monkeypatch.setattr(pyengine, 'prepare', lambda st, b: {})
+    monkeypatch.setattr(pyengine.store, 'UNIVERSE_ALL', ['CNYRUBF', 'USDRUBF'])
+    monkeypatch.setattr(pyengine, 'lookahead_check', lambda *a, **k: None)
+    code = '''
+MODE = "orders"
+def on_bar(i, b, s, p):
+    if i == 0: s.entry("L", LONG, int(s.equity / (b.close[i] * s.point_value)))
+'''
+    r = pyengine.run_orders_portfolio(code, {}, ['CNYRUBF', 'USDRUBF'], None, None, None, {**ACCT, 'capital': 2_000_000})
+    E = pd.DataFrame(r['orders']['equity'])
+    assert abs(E.equity.iloc[0] - 2_000_000) < 30_000                      # две доли по 1 млн
+    assert {t['st'] for t in r['trades']} == {'CNYRUBF', 'USDRUBF'}

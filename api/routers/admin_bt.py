@@ -86,7 +86,8 @@ def _py_examples() -> list[dict]:
             {'name': 'Пример: DCA-мартингейл (заявки, как в Pine)', 'code': orders.DCA_TEMPLATE},
             {'name': 'Пример: DCA-сетка под волатильность бумаги', 'code': orders.DCA_VOL_TEMPLATE},
             {'name': 'Пример: DCA-сетка по режиму рынка (EMA 200)', 'code': orders.DCA_REGIME_TEMPLATE},
-            {'name': 'Пример: позиция по режиму рынка без сетки (EMA 200)', 'code': orders.TREND_TEMPLATE}]
+            {'name': 'Пример: позиция по режиму рынка без сетки (EMA 200)', 'code': orders.TREND_TEMPLATE},
+            {'name': 'Кандидат: тренд по EMA 50/100/200, объём под волатильность (портфель)', 'code': orders.TREND_VOL_TEMPLATE}]
 
 
 def _inspect(code: str) -> dict:
