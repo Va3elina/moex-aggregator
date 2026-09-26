@@ -588,6 +588,12 @@ def is_synthetic_oauth_email(email: str) -> bool:
     return email.endswith("@oauth.local")
 
 
+def _early_access(user: User) -> list[str]:
+    """Фичи раннего доступа для профиля. Импорт внутри: сервис сам зависит от auth."""
+    from api.services.early_access import features_for
+    return features_for(user)
+
+
 @router.get(
     "/me",
     response_model=UserResponse,
@@ -611,6 +617,7 @@ async def get_me(user: User = Depends(get_current_user), db: Session = Depends(g
         oauth_providers=oauth_providers,
         created_at=user.created_at,
         requires_email_setup=is_synthetic_oauth_email(user.email),
+        early_access=_early_access(user),
     )
 
 
@@ -742,6 +749,7 @@ async def verify_email(
         oauth_providers=oauth_providers,
         created_at=user.created_at,
         requires_email_setup=is_synthetic_oauth_email(user.email),
+        early_access=_early_access(user),
     )
 
 

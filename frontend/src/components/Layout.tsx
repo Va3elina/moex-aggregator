@@ -47,7 +47,7 @@ const PAGE_TOUR_KEYS: Record<string, string> = {
 
 // Порядок задан Вадимом (04.07.2026): частые/продуктовые впереди,
 // Баффетт в конце. Мобильный rail (MobileBottomRail) — отдельный список.
-const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string; adminOnly?: boolean }[] = [
+const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string; adminOnly?: boolean; feature?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   // NEW — внутри появилась вкладка «Скринер сигналов» (04.07.2026).
   { path: '/oi', label: 'Открытые позиции', badge: 'New' },
@@ -64,7 +64,8 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/repo', label: 'Репо в акциях', badge: 'Тест', adminOnly: true },
   // «Перекраска» — % free float, сменивший руки за месяц (CDV 4Ч / free float).
   // adminOnly-обкатка, как и «Репо»: страница и API под role=admin.
-  { path: '/admin/repaint', label: 'Перекраска', badge: 'Тест', adminOnly: true },
+  // feature: ключ раннего доступа — пункт видят и юзеры из user.early_access.
+  { path: '/admin/repaint', label: 'Перекраска', badge: 'Тест', adminOnly: true, feature: 'repaint' },
 ];
 
 export default function Layout() {
@@ -87,9 +88,11 @@ export default function Layout() {
   // Номер аккаунта в Метрику — чтобы находить записи Вебвизора по пользователю.
   useYandexMetricaUser(user?.id);
 
-  // adminOnly-вкладки видны только роли admin (оба места рендера: desktop и
-  // мобильное меню используют этот список, не NAV_ITEMS напрямую).
-  const navItems = NAV_ITEMS.filter((i) => !i.adminOnly || user?.role === 'admin');
+  // adminOnly-вкладки видны роли admin и пользователям с ранним доступом к
+  // фиче (user.early_access с бэка). Оба места рендера — desktop и мобильное
+  // меню — используют этот список, не NAV_ITEMS напрямую.
+  const navItems = NAV_ITEMS.filter((i) =>
+    !i.adminOnly || user?.role === 'admin' || (!!i.feature && !!user?.early_access?.includes(i.feature)));
   // На десктопе тестовые (adminOnly) индикаторы не стоят в общем ряду, а
   // собраны под кнопкой «+» с выпадающим списком: ряд остаётся тем, что видят
   // пользователи, а тесты не теснят пункты навигации.
