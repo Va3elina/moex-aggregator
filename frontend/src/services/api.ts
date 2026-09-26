@@ -1233,6 +1233,39 @@ export interface MetricaReport {
   pages?: MetricaRow[] | null;
 }
 
+/** Вступления в Telegram-каналы по дням и инвайт-ссылкам (GET /api/analytics/tg-joins).
+ *  members — снимок числа подписчиков на день, null, если снимка за день нет. */
+export interface TgJoinsReport {
+  dates: string[];
+  joins: number[];
+  leaves: number[];
+  members: (number | null)[];
+  /** По ссылке: name — её название, period — вступило за период, stayed — из них ещё в канале. */
+  series: { name: string; values: number[]; period: number; stayed: number }[];
+  totals: {
+    joins: number;
+    leaves: number;
+    net: number;
+    prev_joins: number;
+    prev_leaves: number;
+    members_now: number | null;
+    members_delta: number | null;
+  };
+  /** Первый день, с которого есть записи; null — записей ещё нет. */
+  since: string | null;
+  chats: { id: number; title: string | null }[];
+  date_from: string;
+  date_to: string;
+}
+
+export async function getTgJoins(range: AdminRange): Promise<TgJoinsReport> {
+  const params = new URLSearchParams();
+  rangeParams(params, range);
+  const response = await apiFetch(`${API_BASE}/api/analytics/tg-joins?${params}`);
+  if (!response.ok) throw new Error('Не удалось получить данные Telegram-канала');
+  return response.json();
+}
+
 /** segment и device — те же, что у getAnalyticsStats: фильтры из шапки действуют и на Метрику. */
 export async function getMetrica(range: AdminRange, segment = 'all', device = 'all'): Promise<MetricaReport> {
   const params = new URLSearchParams();

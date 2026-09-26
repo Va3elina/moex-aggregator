@@ -29,12 +29,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, Eye, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap, Loader2, Gift, LogOut, Repeat, ExternalLink, Globe, Send, UserPlus, UserMinus } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
 import MetricaSourcesChart from '../components/admin/MetricaSourcesChart';
+import TgJoinsChart from '../components/admin/TgJoinsChart';
 import TopList from '../components/admin/TopList';
 import { sourceColorForLabel } from '../components/admin/MetricaSourcesChart';
 import { IndicatorGlyph, INDICATOR_ICONS } from '../components/admin/indicatorMeta';
@@ -59,8 +60,10 @@ import {
   getMetrica,
   getGrowth,
   getFeatures,
+  getTgJoins,
 } from '../services/api';
 import type {
+  TgJoinsReport,
   GrowthReport,
   AnalyticsStats,
   AdminUser,
@@ -116,6 +119,17 @@ const METRIC_HINTS = {
     + 'Источник считается по последнему значимому переходу, как в Метрике по умолчанию: визит по закладке после прихода из поиска засчитывается поиску. '
     + 'Выходные подсвечены. В легенде линии включаются и выключаются, там же итог за период.',
   metrica_sources: 'Тип источника последнего значимого перехода: поиск, прямые заходы, ссылки на сайтах, соцсети, мессенджеры.',
+  tg_section:
+    'Подписчики Telegram-канала по нашему боту: он админ канала и видит каждое вступление вместе с инвайт-ссылкой, по которой человек пришёл. '
+    + 'Ссылки менять не нужно, подходят любые уже созданные. Записи ведутся с 26.09.2026, раньше вступления не учитывались. '
+    + 'Число подписчиков бот снимает раз в час. От сегмента и устройства из шапки блок не зависит.',
+  tg_chart:
+    'Столбик вверх — сколько вступило за день, цвет — по инвайт-ссылке. Столбик вниз — отписки; по какой ссылке пришёл отписавшийся, если он вступил до 26.09.2026, неизвестно. '
+    + 'В легенде итог по ссылке за период и доля тех, кто ещё в канале: по ней видно, где подписчики случайные. Ссылки в легенде включаются и выключаются. Выходные подсвечены.',
+  tg_joins: 'Вступлений в канал за период. Дельта — к такому же периоду перед выбранным.',
+  tg_leaves: 'Выходов из канала за период, в том числе тех, кто вступил до 26.09.2026. Рост — плохо, цвета перевёрнуты.',
+  tg_net: 'Вступления минус отписки за период.',
+  tg_members: 'Подписчиков в канале по последнему часовому снимку бота. Ниже — на сколько изменилось с начала периода.',
   metrica_phrases: 'Поисковые запросы, по которым пришли из Яндекса и других поисковиков. Google почти все фразы скрывает.',
   metrica_phrases_unsegmented:
     'Сегмент из шапки к фразам не применяется: Метрика скрывает поисковые фразы, если фильтровать по аккаунту. Фильтр устройства действует.',
@@ -424,6 +438,33 @@ export default function AdminStatsPage() {
       });
     return () => { alive = false; };
   }, [user, range, segment, device, tick, featuresNeeded]);
+  // Telegram-канал: только период, нужен обзору.
+  const [tg, setTg] = useState<TgJoinsReport | null>(null);
+  const [tgLoading, setTgLoading] = useState(true);
+  const [tgError, setTgError] = useState<string | null>(null);
+  const tgCache = useRef(new Map<string, TgJoinsReport>());
+  useEffect(() => {
+    if (!user || user.role !== 'admin' || tab !== 'overview') return;
+    const key = JSON.stringify(range);
+    const hit = tgCache.current.get(key);
+    let alive = true;
+    if (hit) setTg(hit);
+    setTgLoading(!hit);
+    setTgError(null);
+    getTgJoins(range)
+      .then((r) => {
+        tgCache.current.set(key, r);
+        if (alive) setTg(r);
+      })
+      .catch((e: Error) => {
+        if (alive && !hit) { setTg(null); setTgError(e.message || null); }
+      })
+      .finally(() => {
+        if (alive) setTgLoading(false);
+      });
+    return () => { alive = false; };
+  }, [user, range, tick, tab]);
+
   const growthCache = useRef(new Map<string, GrowthReport>());
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -452,12 +493,13 @@ export default function AdminStatsPage() {
   const metricaDim = useDelayedFlag(metricaLoading && metrica !== null);
   const growthDim = useDelayedFlag(growthLoading && growth !== null);
   const featuresDim = useDelayedFlag(featuresLoading && features !== null);
+  const tgDim = useDelayedFlag(tgLoading && tg !== null);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
   }
 
-  const refreshing = ownDim || metricaDim || growthDim || featuresDim;
+  const refreshing = ownDim || metricaDim || growthDim || featuresDim || tgDim;
   const metricaOn = !!metrica?.connected;
   // Свой трафик показываем, если Метрика не подключена или админ сам попросил сверку.
   const ownTrafficVisible = !metricaOn || showOwn;
@@ -616,6 +658,13 @@ export default function AdminStatsPage() {
           <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
             <div style={dimStyle(metricaDim)}>
               <MetricaBlock report={metrica} loading={metricaLoading} part="summary" />
+            </div>
+          </Section>
+
+          {/* ═══ Telegram-канал ═══ */}
+          <Section title="Подписчики Telegram-канала" hint={METRIC_HINTS.tg_section}>
+            <div style={dimStyle(tgDim)}>
+              <TgBlock report={tg} loading={tgLoading} error={tgError} />
             </div>
           </Section>
         </>
@@ -1345,6 +1394,85 @@ function MetricaTraffic({ cur, prev, bySource, error }: {
         </p>
       )}
     </Card>
+  );
+}
+
+/** Прирост к прошлому периоду в процентах; от нуля процент не считается. */
+function growthPct(cur: number, prev: number): number | null {
+  return prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+}
+
+/** Подписчики Telegram-канала: четыре карточки и график по дням и ссылкам. */
+function TgBlock({ report, loading, error }: { report: TgJoinsReport | null; loading: boolean; error: string | null }) {
+  if (loading && !report) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={128} rounded="lg" />)}
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <Card padding="md">
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>{error ? `Данные не пришли: ${error}` : 'Данные не пришли.'}</p>
+      </Card>
+    );
+  }
+  const t = report.totals;
+  const leavesDelta = growthPct(t.leaves, t.prev_leaves);
+  const chatTitle = report.chats.map((c) => c.title).filter(Boolean).join(', ');
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-3 md:mb-4">
+        <SummaryCard
+          icon={<UserPlus size={16} />}
+          label="Вступили"
+          hint={METRIC_HINTS.tg_joins}
+          value={t.joins}
+          delta={pctDelta(growthPct(t.joins, t.prev_joins))}
+          prev={t.prev_joins.toLocaleString('ru-RU')}
+        />
+        <SummaryCard
+          icon={<UserMinus size={16} />}
+          label="Отписались"
+          hint={METRIC_HINTS.tg_leaves}
+          value={t.leaves}
+          delta={leavesDelta === null ? null : { text: `${leavesDelta >= 0 ? '+' : '−'}${Math.abs(leavesDelta)}%`, good: leavesDelta <= 0 }}
+          prev={t.prev_leaves.toLocaleString('ru-RU')}
+        />
+        <SummaryCard
+          icon={<TrendingUp size={16} />}
+          label="Прирост"
+          hint={METRIC_HINTS.tg_net}
+          value={`${t.net > 0 ? '+' : ''}${t.net.toLocaleString('ru-RU')}`}
+        />
+        <SummaryCard
+          icon={<Send size={16} />}
+          label="Подписчиков"
+          hint={METRIC_HINTS.tg_members}
+          hintAlign="right"
+          value={t.members_now === null ? '—' : t.members_now}
+          sub={chatTitle || undefined}
+          delta={t.members_delta === null || t.members_delta === 0 ? null : {
+            text: `${t.members_delta > 0 ? '+' : '−'}${Math.abs(t.members_delta).toLocaleString('ru-RU')}`,
+            good: t.members_delta > 0,
+          }}
+        />
+      </div>
+      <Card padding="md" className="md:p-5">
+        <div className="flex items-center gap-1.5 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+          <span>Вступления и отписки · по дням</span>
+          <HelpTooltip icon="help" title="Подписчики по дням" content={METRIC_HINTS.tg_chart} size={12} />
+        </div>
+        {report.since ? (
+          <TgJoinsChart data={report} />
+        ) : (
+          <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            Бот ещё не записал ни одного вступления. Учёт идёт с 26.09.2026.
+          </p>
+        )}
+      </Card>
+    </>
   );
 }
 
