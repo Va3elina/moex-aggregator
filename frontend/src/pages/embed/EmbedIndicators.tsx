@@ -25,7 +25,7 @@ import type { LwSeries } from '../../components/chart/lwTypes';
 import type { VolumeProfileSpec } from '../../components/LwChartPanes';
 import { VP_DEFAULTS } from '../../components/chart/volumeProfilePrimitive';
 import {
-  sma, ema, bollinger, rsi, atr, trueRange, volumeBars, volumeMa, wma, rma, withSource,
+  sma, ema, bollinger, rsi, atr, trueRange, volumeBars, volumeMa, wma, rma, withSource, changeOver,
   SOURCE_LABELS, VOLUME_UP, VOLUME_DOWN, type IndCandle, type IndPoint, type IndSource,
 } from '../../utils/indicators';
 import { useEmbedPersist } from './embedPersist';
@@ -34,7 +34,7 @@ import { ToolbarMenuButton, CTL_FS, CTL_FW } from './EmbedToolbar';
 import { ColorButton, type ElStyle } from './ColorPicker';
 
 /** Имя нарочно НЕ IndKind: так уже называется вид панели в SandboxPage. */
-export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp';
+export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp' | 'flow';
 
 /**
  * От какого РЯДА считается индикатор. 'price' — свечи цены (единственный вариант
@@ -199,7 +199,31 @@ export const KINDS: Record<IndicatorKind, KindDef> = {
     shortName: 'Профиль', defaultPane: 0, overlayOk: true, ownPaneOk: false, needsVolume: true, lengthLabel: 'Уровней',
     hiddenFromMenu: true,
   },
+  // Поток за период — изменение ряда за окно, столбцами (как «Сумма за 3 месяца»
+  // в «Деньгах в фондах»). length здесь — окно в КАЛЕНДАРНЫХ днях, не в барах:
+  // см. changeOver. Дефолт 91 день = 3 месяца, как у фондов.
+  flow: {
+    label: 'Поток за период', shortName: 'Поток',
+    title: (i) => (i.statusArgs === false ? 'Поток' : `Поток ${windowLabel(i.length)}`),
+    defLength: 91, defaultPane: 1, overlayOk: false, lengthLabel: 'Окно, дней', oiOk: true,
+  },
 };
+
+/** Пресеты окна потока. Дни календарные: 1 мес = 30, 3 мес = 91 и т.д. */
+const FLOW_WINDOWS: { days: number; label: string }[] = [
+  { days: 7, label: '1 нед' },
+  { days: 14, label: '2 нед' },
+  { days: 30, label: '1 мес' },
+  { days: 61, label: '2 мес' },
+  { days: 91, label: '3 мес' },
+  { days: 182, label: '6 мес' },
+  { days: 365, label: '1 год' },
+];
+
+/** «3 мес» для пресета, «45 дн» для своего значения. */
+function windowLabel(days: number): string {
+  return FLOW_WINDOWS.find((w) => w.days === days)?.label ?? `${days} дн`;
+}
 
 /** Базис экземпляра с учётом дефолта. Отдельной функцией, потому что читается он
  *  из десятка мест, и `i.basis ?? 'price'` россыпью легко разъезжается. */
@@ -292,6 +316,7 @@ const KIND_TINTS: Record<IndicatorKind, string[]> = {
   atr:    ['#EF6F6F', '#CE4B4B', '#F79A9A'],   // красный
   volume: ['#5DA3E9', '#3B7FC7', '#8DC1F0'],   // синий
   vp:     ['#8E9BB3', '#6C7A94', '#AEB9CC'],   // серо-синий
+  flow:   ['#5DA3E9', '#3B7FC7', '#8DC1F0'],   // столбцы красятся по знаку, это цвет строки
 };
 
 const uid = () => 'ind_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36);
@@ -693,6 +718,28 @@ export function indicatorSeriesByPane(
       const sm = i.smooth ?? 'rma';
       const pts = sm === 'rma' ? atr(cnd, i.length) : smoothOf(trueRange(cnd), sm, i.length);
       if (pts.length) put(pane, [{ ...base, id: i.id, label: indTitle(i), data: conv(pts), ...axisOpts(i) }]);
+    } else if (i.kind === 'flow') {
+      // Цена — в процентах (иначе 3 месяца SBER и Si несравнимы), позиции — в
+      // контрактах: чистая позиция проходит через ноль, процент от неё бессмыслен.
+      const pct = basis === 'price';
+      const pts = changeOver(src, i.length, toSec, pct);
+      if (pts.length) {
+        const upC = styleColor(elStyle('flowUp'), VOLUME_UP);
+        const dnC = styleColor(elStyle('flowDown'), VOLUME_DOWN);
+        const p = i.precision;
+        const fmt = (v: number) => {
+          if (p != null) return v.toFixed(p) + (pct ? '%' : '');
+          if (pct) return (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+          const a = Math.abs(v);
+          const s = a >= 1e6 ? (a / 1e6).toFixed(1) + 'М' : a >= 1e4 ? Math.round(a / 1e3) + 'т' : String(Math.round(a));
+          return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
+        };
+        put(pane, [{
+          ...base, type: 'histogram', id: i.id, label: indTitle(i), base: 0,
+          data: conv(pts.map((q) => ({ ...q, color: q.value >= 0 ? upC : dnC }))),
+          lastValueVisible: i.axisLabel !== false, axisFmt: fmt, tipFmt: fmt,
+        }]);
+      }
     } else if (i.kind === 'volume') {
       // Цвета столбцов раздельные (TV: «Растущий»/«Нисходящий»); дефолт — наши
       // токены зелёного/красного.
@@ -1558,6 +1605,18 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
           {tab === 'args' ? (
             <>
               <Section label={`Настройки ${indShortName(inst)}`}>
+                {inst.kind === 'flow' && (
+                  <Field label="Окно">
+                    <Select
+                      value={FLOW_WINDOWS.some((w) => w.days === inst.length) ? String(inst.length) : 'custom'}
+                      options={[
+                        ...FLOW_WINDOWS.map((w) => ({ id: String(w.days), label: w.label })),
+                        { id: 'custom', label: 'Своё' },
+                      ]}
+                      onChange={(v) => { if (v !== 'custom') set({ length: Number(v) }); }}
+                    />
+                  </Field>
+                )}
                 <Field label={d.lengthLabel ?? 'Длина'}>
                   <NumField value={inst.length} min={2} max={500} width={78} onCommit={(v) => set({ length: v })} />
                 </Field>
@@ -1589,6 +1648,13 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                 )}
                 {/* Почему у ATR по ОИ другое имя — объясняем прямо здесь, иначе
                     расхождение с привычным «ATR» выглядит как ошибка. */}
+                {inst.kind === 'flow' && (
+                  <Note>
+                    {basis === 'oi'
+                      ? 'Столбец — насколько изменилась позиция за окно, в контрактах. Это то же, что сумма дневных изменений за период: шум отдельных дней гасится, видны волны набора и сброса.'
+                      : 'Столбец — изменение цены за окно, в процентах.'}
+                  </Note>
+                )}
                 {inst.kind === 'atr' && basis === 'oi' && (
                   <Note>
                     У ряда позиций нет максимума и минимума внутри бара, поэтому истинный
@@ -1680,6 +1746,23 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                       onStyle={(p) => api.patchStyle(inst.id, 'volMa', p)}
                     />
                   )}
+                </>
+              ) : inst.kind === 'flow' ? (
+                <>
+                  <StyleRow
+                    label="Рост"
+                    on
+                    style={inst.styles?.flowUp ?? { color: '#5BD49C' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'flowUp', p)}
+                    noLine
+                  />
+                  <StyleRow
+                    label="Снижение"
+                    on
+                    style={inst.styles?.flowDown ?? { color: '#EF6F6F' }}
+                    onStyle={(p) => api.patchStyle(inst.id, 'flowDown', p)}
+                    noLine
+                  />
                 </>
               ) : (
                 <StyleRow
