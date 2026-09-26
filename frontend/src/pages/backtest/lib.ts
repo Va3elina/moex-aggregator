@@ -7,12 +7,12 @@ export const tfLabel = (tf: number) => TFS.find(x => x[0] === tf)?.[1] ?? String
 export const LOGO: Record<string, string> = {
   AF: 'AFLT', AK: 'AFKS', BR: 'BRENT', CC: 'COCOA', CR: 'CNY', Eu: 'EUR', GK: 'GMKN', GZ: 'GAZP', LK: 'LKOH', MN: 'MGNT',
   MX: 'MOEX_IDX', NM: 'NLMK', PI: 'PIKK', PT: 'PLATINUM', RI: 'RTS_IDX', SN: 'SNGS', SR: 'SBER', SS: 'SMLT', SZ: 'SGZH',
-  Si: 'USD', TT: 'TATN', VB: 'VTBR',
+  Si: 'USD', TT: 'TATN', VB: 'VTBR', CNYRUBF: 'CNY',
 };
 export const GROUP: Record<string, string> = {
   AF: 'Акции', AK: 'Акции', GK: 'Акции', GZ: 'Акции', LK: 'Акции', MN: 'Акции', NM: 'Акции', PI: 'Акции', SN: 'Акции',
   SR: 'Акции', SS: 'Акции', SZ: 'Акции', TT: 'Акции', VB: 'Акции', MX: 'Индексы', RI: 'Индексы', Si: 'Валюты', Eu: 'Валюты',
-  CR: 'Валюты', BR: 'Товары', PT: 'Товары', CC: 'Товары',
+  CR: 'Валюты', CNYRUBF: 'Валюты', BR: 'Товары', PT: 'Товары', CC: 'Товары',
 };
 
 export const iso = (d: Date) => d.toISOString().slice(0, 10);

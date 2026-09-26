@@ -11,6 +11,7 @@ export interface BtMeta {
   tariffs: Record<string, number>; tariff_labels?: Record<string, string>;
   spread_daily?: boolean;
   python_template?: string;
+  python_examples?: { name: string; code: string }[];
   exec: Record<string, string>;
   go: Record<string, string>;
 }
@@ -60,7 +61,7 @@ export const btApi = {
   equity: (id: number) => j<BtEquity[]>(`/runs/${id}/equity`),
   signals: (id: number, st: string) => j<BtSignal[]>(`/runs/${id}/signals?st=${st}`),
   live: () => j<BtLiveTrade[]>('/live/trades'),
-  inspect: (code: string) => j<{ error: string | null; params: Record<string, any>; has_on_bar: boolean }>('/python/inspect', json('POST', { code })),
+  inspect: (code: string) => j<{ error: string | null; params: Record<string, any>; has_on_bar: boolean; mode?: 'orders' | 'signals' }>('/python/inspect', json('POST', { code })),
   realism: (st: string) => j<BtRealism>(`/realism?st=${st}`),
   workspace: (name: string) => j<{ name: string; data: any }>(`/workspaces/${encodeURIComponent(name)}`),
   saveWorkspace: (name: string, data: any) => j<{ ok: boolean }>(`/workspaces/${encodeURIComponent(name)}`, json('PUT', { data })),

@@ -196,5 +196,14 @@
   "go_buy": 905,
   "go_sell": 907,
   "value_rub": 5175
+ },
+ "CNYRUBF": {
+  "ticker": "CNYRUBF",
+  "price_step": 0.001,
+  "step_cost_rub": 1.0,
+  "lot": 1,
+  "go_buy": 1005,
+  "go_sell": 1005,
+  "value_rub": 12516
  }
 }

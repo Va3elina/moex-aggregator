@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/admin/bt", tags=["admin-backtest"])
 NAMES = {'AF': 'Аэрофлот', 'AK': 'АФК Система', 'BR': 'Brent', 'CC': 'Какао', 'CR': 'Юань', 'Eu': 'Евро', 'GK': 'ГМК',
          'GZ': 'Газпром', 'LK': 'ЛУКОЙЛ', 'MN': 'Магнит', 'MX': 'Индекс МосБиржи', 'NM': 'НЛМК', 'PI': 'ПИК',
          'PT': 'Платина', 'RI': 'Индекс РТС', 'SN': 'Сургутнефтегаз', 'SR': 'Сбербанк', 'SS': 'Самолёт',
-         'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ'}
+         'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ', 'CNYRUBF': 'Юань вечный'}
 TF = {5, 15, 60, 1440}
 MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диапазона на запрос, чтобы не отдать 300 тыс. свечей
 
@@ -78,6 +78,12 @@ def _py_template() -> str:
     return pyengine.TEMPLATE
 
 
+def _py_examples() -> list[dict]:
+    from backtest import pyengine, orders
+    return [{'name': 'Пример: пересечение двух EMA', 'code': pyengine.TEMPLATE},
+            {'name': 'Пример: DCA-мартингейл (заявки, как в Pine)', 'code': orders.DCA_TEMPLATE}]
+
+
 def _inspect(code: str) -> dict:
     """Синтаксис и PARAMS стратегии — через ast, БЕЗ исполнения кода (API-процесс чужой код не запускает никогда)."""
     import ast
@@ -91,8 +97,10 @@ def _inspect(code: str) -> dict:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'PARAMS' for t in node.targets):
             try: params = ast.literal_eval(node.value)
             except Exception: return {'error': 'PARAMS должен быть словарём из чисел и строк', 'params': {}, 'has_on_bar': 'on_bar' in fns}
-    return {'error': None if 'on_bar' in fns else 'в коде нет функции on_bar(i, b, pos, p)', 'params': params if isinstance(params, dict) else {},
-            'has_on_bar': 'on_bar' in fns}
+    from backtest import orders
+    mode = 'orders' if orders.is_orders_code(code) else 'signals'
+    return {'error': None if 'on_bar' in fns else ('в коде нет функции on_bar(i, b, s, p)' if mode == 'orders' else 'в коде нет функции on_bar(i, b, pos, p)'),
+            'params': params if isinstance(params, dict) else {}, 'has_on_bar': 'on_bar' in fns, 'mode': mode}
 
 
 class CodeIn(BaseModel):
@@ -112,12 +120,13 @@ def meta(_admin: User = Depends(require_admin)):
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
             'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()}, 'tariff_labels': bt_costs.TARIFF_LABELS,
             'spread_daily': bool(bt_costs.spread_daily()),
-            'python_template': _py_template(),
+            'python_template': _py_template(), 'python_examples': _py_examples(),
             'exec': {'close': 'как в замороженной спецификации: цена закрытия свечи 17:00 / 11:00',
                      'next_open': 'как OsEngine и TradingView: открытие следующей свечи (17:05 / 11:05)',
                      'robot': 'как робот на сервере: вход ~17:15, выход ~11:10'},
             'go': {'mr1': 'историческое: стоимость контракта × ставка риска МосБиржи на дату',
-                   'snapshot': 'снимок T-Invest 15.09.2026', 'none': 'не проверять'}}
+                   'snapshot': 'снимок T-Invest 15.09.2026', 'tv100': 'как TradingView по умолчанию: 100 % стоимости позиции',
+                   'none': 'не проверять'}}
 
 
 @router.post("/runs")
@@ -133,7 +142,7 @@ def create_run(body: RunIn, db: Session = Depends(get_db), admin: User = Depends
         except Exception as e:
             raise HTTPException(422, f'правило: {type(e).__name__}: {e}')
     if body.exec not in ('close', 'next_open', 'robot') or body.tariff not in bt_costs.TARIFFS \
-            or body.go not in ('mr1', 'snapshot', 'none') or body.spread not in ('daily', 'c3', 'c5', 'none'):
+            or body.go not in ('mr1', 'snapshot', 'tv100', 'none') or body.spread not in ('daily', 'c3', 'c5', 'none'):
         raise HTTPException(422, 'exec / tariff / go / spread: недопустимое значение')
     rid = db.execute(text("""INSERT INTO bt_runs (name, created_by, spec) VALUES (:n, :u, CAST(:s AS JSONB))
                              RETURNING id"""),

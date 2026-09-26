@@ -1,7 +1,8 @@
 """Счёт в рублях: капитал, слоты, целые контракты, ГО, комиссия и спред в рублях. Последовательная модель —
 как торгует робот: утром закрываем вчерашнее, вечером входим по сигналам в порядке бумаг правила.
 
-ГО: 'mr1'  — историческое: стоимость контракта × ставка рыночного риска MR1 МосБиржи на дату (data/risk_rates.csv.gz)
+ГО: 'tv100' — как TradingView v6 по умолчанию (margin_long/short = 100): вся стоимость контракта, без плеча;
+    'mr1'  — историческое: стоимость контракта × ставка рыночного риска MR1 МосБиржи на дату (data/risk_rates.csv.gz)
              × надбавка брокера (ГО T-Bank / ГО биржи по снимку 15.09.2026: у ликвидных ≈ 1.0–1.05, у Самолёта ≈ 1.2);
     'snapshot' — константа из снимка T-Invest 15.09.2026 (так считал OsEngine);  'none' — не проверять.
 Стоимость пункта в рублях у контрактов в валюте (BR, PT, RI) — по дням, из данных самой биржи
@@ -15,7 +16,10 @@ from . import store, costs
 
 ASSET = {'AF': 'AFLT', 'AK': 'AFKS', 'BR': 'BR', 'CC': 'COCOA', 'CR': 'CNY', 'Eu': 'Eu', 'GK': 'GMKN', 'GZ': 'GAZR',
          'LK': 'LKOH', 'MN': 'MGNT', 'MX': 'MIX', 'NM': 'NLMK', 'PI': 'PIKK', 'PT': 'PLT', 'RI': 'RTS', 'SN': 'SNGR',
-         'SR': 'SBRF', 'SS': 'SMLT', 'SZ': 'SGZH', 'Si': 'Si', 'TT': 'TATN', 'VB': 'VTBR'}
+         'SR': 'SBRF', 'SS': 'SMLT', 'SZ': 'SGZH', 'Si': 'Si', 'TT': 'TATN', 'VB': 'VTBR', 'CNYRUBF': 'UCNY'}
+# Вечный юань: ставка риска UCNY (8 % с 02.2023; ГО 1005 ₽ при цене 12.516 — ровно ISS INITIALMARGIN 26.09.2026).
+# До 02.2023 ставки UCNY нет — подставляем ставку спота CNYRUBTOM.
+ASSET_FALLBACK = {'UCNY': 'CNYRUBTOM'}
 _C = {}
 
 
@@ -30,7 +34,10 @@ def risk_rates():
     if 'mr1' not in _C:
         f = store.REF / 'risk_rates.csv.gz'
         df = pd.read_csv(f, usecols=['tradedate', 'assetcode', 'mr1'], parse_dates=['tradedate'])
-        _C['mr1'] = df.pivot_table(index='tradedate', columns='assetcode', values='mr1', aggfunc='last').sort_index().ffill()
+        rr = df.pivot_table(index='tradedate', columns='assetcode', values='mr1', aggfunc='last').sort_index().ffill()
+        for a, b in ASSET_FALLBACK.items():
+            if a in rr.columns and b in rr.columns: rr[a] = rr[a].fillna(rr[b])
+        _C['mr1'] = rr
     return _C['mr1']
 
 
@@ -72,6 +79,7 @@ def broker_coef(st):
 
 def go_per_contract(st, d, price, side, mode, step_d='same'):
     if mode == 'none': return 0.0
+    if mode == 'tv100': return contract_value(st, price, d)      # как TradingView v6 по умолчанию: маржа 100 %
     if mode == 'snapshot':
         s = specs()[st]; return s['go_buy'] if side > 0 else s['go_sell']
     rr = risk_rates(); a = ASSET[st]

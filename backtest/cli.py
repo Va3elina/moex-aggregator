@@ -2,6 +2,7 @@
 
 На сервере (прогон попадёт в общий список и будет виден на странице):
     docker compose exec bt-worker python -m backtest.cli submit --rule hybrid7c --exec robot --name "гибрид как робот"
+    docker compose exec -T bt-worker python -m backtest.cli submit --code - --universe CNYRUBF < strategy.py   # код на Python
     docker compose exec bt-worker python -m backtest.cli runs
     docker compose exec bt-worker python -m backtest.cli show 12 [--trades SS] [--last 10]
     docker compose exec bt-worker python -m backtest.cli data status | pull
@@ -17,10 +18,15 @@ pd.set_option('display.width', 220); pd.set_option('display.max_columns', 40)
 
 
 def _spec(a):
-    rule = a.rule if a.rule in R.PRESETS else json.load(open(a.rule, encoding='utf-8'))
-    return {'rule': rule, 'name': a.name, 'exec': a.exec, 'universe': a.universe.split(',') if a.universe else None,
+    base = {'name': a.name, 'exec': a.exec, 'universe': a.universe.split(',') if a.universe else None,
             'since': a.since, 'until': a.until, 'tariff': a.tariff, 'spread': a.spread, 'capital': a.capital,
             'slots': a.slots, 'go': a.go, 'go_limit': a.go_limit}
+    if a.code:                                   # стратегия на Python: код из файла или из stdin («-»)
+        code = sys.stdin.read() if a.code == '-' else open(a.code, encoding='utf-8').read()
+        return {**base, 'code': code, 'params': json.loads(a.params) if a.params else {}, 'name': a.name or 'Стратегия на Python'}
+    if not a.rule: raise SystemExit('нужен --rule или --code')
+    rule = a.rule if a.rule in R.PRESETS else json.load(open(a.rule, encoding='utf-8'))
+    return {**base, 'rule': rule}
 
 
 def _db():
@@ -35,12 +41,13 @@ def main():
     p = sp.add_parser('data'); p.add_argument('what', choices=['status', 'pull'])
     sp.add_parser('rules'); sp.add_parser('runs')
     for c in ('run', 'submit'):
-        p = sp.add_parser(c); p.add_argument('--rule', required=True, help='пресет или путь к JSON правила')
+        p = sp.add_parser(c); p.add_argument('--rule', help='пресет или путь к JSON правила')
+        p.add_argument('--code', help='стратегия на Python: путь к файлу или «-» (stdin)'); p.add_argument('--params', help='PARAMS JSON')
         p.add_argument('--exec', default='close', choices=list(runner.EXEC))
         p.add_argument('--universe'); p.add_argument('--from', dest='since'); p.add_argument('--to', dest='until')
         p.add_argument('--tariff', default='trader', choices=list(costs.TARIFFS)); p.add_argument('--spread', default='c3')
         p.add_argument('--capital', type=float, default=1_000_000); p.add_argument('--slots', type=int, default=6)
-        p.add_argument('--go', default='mr1', choices=['mr1', 'snapshot', 'none'])
+        p.add_argument('--go', default='mr1', choices=['mr1', 'snapshot', 'tv100', 'none'])
         p.add_argument('--go-limit', type=float, default=1.0); p.add_argument('--name')
         if c == 'submit': p.add_argument('--no-wait', action='store_true')
     p = sp.add_parser('show'); p.add_argument('id', type=int); p.add_argument('--trades'); p.add_argument('--last', type=int, default=15)
@@ -51,10 +58,21 @@ def main():
     elif a.cmd == 'rules':
         for k, r in R.PRESETS.items(): print(f"{k:14} {r['name']}")
     elif a.cmd == 'run':
-        s, res, S, T, A, K, E = runner.execute(_spec(a))
+        spec = _spec(a); py = None
+        if spec.get('code'):                     # локально код исполняется в этом процессе — только для разработчика
+            from . import pyengine, pybridge
+            s0 = runner.normalize(spec)
+            r = pyengine.run_code(spec['code'], spec['params'], s0['universe'], s0['since'], s0['until'],
+                                  account={k: s0.get(k) for k in ('capital', 'tariff', 'spread', 'go', 'go_mult')})
+            if r.get('error'): raise SystemExit(r['error'])
+            info = {'params': r.get('params'), 'lookahead': r.get('lookahead')}
+            if r.get('orders'): info['orders'] = r['orders']
+            py = (pybridge.to_frame(r['trades']), info)
+        s, res, S, T, A, K, E = runner.execute(spec, py_trades=py)
         name = a.name or f"{s['rule']['id']}_{a.exec}_{dt.datetime.now():%m%d_%H%M%S}"
         out = store.DATA / 'runs' / name; out.mkdir(parents=True, exist_ok=True)
-        S.to_csv(out / 'signals.csv', index=False); T.to_csv(out / 'trades.csv', index=False)
+        if S is not None: S.to_csv(out / 'signals.csv', index=False)
+        T.to_csv(out / 'trades.csv', index=False)
         if A is not None:
             A.to_csv(out / 'account_trades.csv', index=False); K.to_csv(out / 'skipped.csv', index=False); E.to_csv(out / 'equity.csv')
         (out / 'run.json').write_text(json.dumps({'spec': s, 'result': res}, ensure_ascii=False, indent=1, default=str))
