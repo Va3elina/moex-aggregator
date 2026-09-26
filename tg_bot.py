@@ -41,6 +41,7 @@ def main_keyboard():
                 {"text": "📊 Статистика БД", "callback_data": "stats"},
             ],
             [
+                {"text": "🔗 Инвайт-ссылки", "callback_data": "joins"},
                 {"text": "💾 Бэкап сейчас", "callback_data": "backup"},
             ],
         ]
@@ -106,9 +107,101 @@ def cmd_backup():
         return "❌ Бэкап завис (timeout 10 мин)"
 
 
+# ─── Инвайт-ссылки каналов ─────────────────────────────────────────────────
+
+_MEMBER_STATUSES = {"member", "administrator", "creator"}
+
+
+def _is_member(cm):
+    st = cm.get("status")
+    return st in _MEMBER_STATUSES or (st == "restricted" and cm.get("is_member"))
+
+
+def ensure_joins_table():
+    """Копия db/migrations/105_tg_channel_joins.sql: бот стартует и без ручной миграции."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tg_channel_joins (
+                id BIGSERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
+                chat_title TEXT,
+                user_id BIGINT NOT NULL,
+                event TEXT NOT NULL CHECK (event IN ('join', 'leave')),
+                invite_link TEXT,
+                invite_name TEXT,
+                via_folder BOOLEAN NOT NULL DEFAULT FALSE,
+                event_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS tg_channel_joins_chat_time_idx"
+                          " ON tg_channel_joins (chat_id, event_at)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS tg_channel_joins_user_idx"
+                          " ON tg_channel_joins (chat_id, user_id, event_at)"))
+
+
+def record_chat_member(upd):
+    """Апдейт chat_member → строка join/leave. Прочие переходы (смена прав) пропускаем."""
+    was, now = _is_member(upd["old_chat_member"]), _is_member(upd["new_chat_member"])
+    if was == now:
+        return
+    link = upd.get("invite_link") or {}
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO tg_channel_joins (chat_id, chat_title, user_id, event, invite_link,"
+            " invite_name, via_folder, event_at)"
+            " VALUES (:chat_id, :title, :uid, :event, :link, :name, :folder, to_timestamp(:ts))"
+        ), {
+            "chat_id": upd["chat"]["id"],
+            "title": upd["chat"].get("title"),
+            "uid": upd["new_chat_member"]["user"]["id"],
+            "event": "join" if now else "leave",
+            "link": link.get("invite_link") if now else None,
+            "name": link.get("name") if now else None,
+            "folder": bool(upd.get("via_chat_folder_invite_link")) if now else False,
+            "ts": upd["date"],
+        })
+
+
+def cmd_joins(days=30):
+    """Вступления по ссылкам за N дней и сколько из них ещё в канале."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH j AS (
+                SELECT chat_id, chat_title, user_id, event_at,
+                       COALESCE(invite_name, invite_link,
+                                CASE WHEN via_folder THEN 'папка' ELSE 'без ссылки' END) AS src
+                FROM tg_channel_joins
+                WHERE event = 'join' AND event_at >= now() - make_interval(days => :days)
+            )
+            SELECT j.chat_title, j.src,
+                   COUNT(*) AS joined,
+                   COUNT(*) FILTER (WHERE NOT EXISTS (
+                       SELECT 1 FROM tg_channel_joins l
+                       WHERE l.chat_id = j.chat_id AND l.user_id = j.user_id
+                         AND l.event = 'leave' AND l.event_at > j.event_at)) AS stayed,
+                   COUNT(*) FILTER (WHERE j.event_at >= now() - interval '7 days') AS joined_7d
+            FROM j
+            GROUP BY j.chat_title, j.src
+            ORDER BY j.chat_title, joined DESC
+        """), {"days": days}).fetchall()
+    if not rows:
+        return f"<b>🔗 Инвайт-ссылки</b>\n\nЗа {days} дн. вступлений не записано."
+    lines = [f"<b>🔗 Инвайт-ссылки за {days} дн.</b>\nвсего / за 7 дн. / остались"]
+    title = None
+    for chat_title, src, joined, stayed, j7 in rows:
+        if chat_title != title:
+            title = chat_title
+            lines.append(f"\n<b>{chat_title}</b>")
+        lines.append(f"<code>{src}</code>: {joined} / {j7} / {stayed}")
+    return "\n".join(lines)
+
+
 # ─── Main loop ─────────────────────────────────────────────────────────────
 
 def process_update(update):
+    if "chat_member" in update:
+        record_chat_member(update["chat_member"])
+        return
+
     # Сообщение
     if "message" in update:
         msg = update["message"]
@@ -125,6 +218,9 @@ def process_update(update):
             send(chat_id, cmd_stats())
         elif text == "/backup":
             send(chat_id, cmd_backup())
+        elif text.startswith("/joins"):
+            arg = text.split()[1] if len(text.split()) > 1 else ""
+            send(chat_id, cmd_joins(int(arg) if arg.isdigit() else 30))
 
     # Кнопка
     elif "callback_query" in update:
@@ -142,14 +238,19 @@ def process_update(update):
             send(chat_id, cmd_stats(), main_keyboard())
         elif data == "backup":
             send(chat_id, cmd_backup(), main_keyboard())
+        elif data == "joins":
+            send(chat_id, cmd_joins(), main_keyboard())
 
 
 def main():
     print(f"[{datetime.now()}] Bot started, admin={ADMIN_CHAT_ID}")
+    ensure_joins_table()
     offset = None
     while True:
         try:
-            params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
+            # allowed_updates — JSON-массив; chat_member Телеграм не шлёт, пока его не попросить явно.
+            params = {"timeout": 30,
+                      "allowed_updates": json.dumps(["message", "callback_query", "chat_member"])}
             if offset:
                 params["offset"] = offset
             resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=35)
