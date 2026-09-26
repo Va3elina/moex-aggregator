@@ -115,6 +115,7 @@ export default function RepaintPage() {
   const [tf, setTf] = usePersistedState<RepaintTf>('frame:repaint:tf', '4h');
   const [period, setPeriod] = usePersistedState<Period>('frame:repaint:period', '1y');
   const [cdvInFf, setCdvInFf] = usePersistedState<boolean>('frame:repaint:cdv-ff', false);
+  const [devInFf, setDevInFf] = usePersistedState<boolean>('frame:repaint:dev-ff', false);
   const [tab, setTab] = usePersistedState<Tab>('frame:repaint:tab', 'cdv');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -170,8 +171,8 @@ export default function RepaintPage() {
     [metricPoints],
   );
   const devData = useMemo(
-    () => metricPoints.map((p) => ({ time: p.time, value: p.dev_pct as number })),
-    [metricPoints],
+    () => metricPoints.map((p) => ({ time: p.time, value: (devInFf ? p.dev_pct : p.dev_shares) as number })),
+    [metricPoints, devInFf],
   );
 
   // Период вне диапазона текущего ТФ → самый детальный ТФ, который его держит (как на ОИ).
@@ -273,6 +274,11 @@ export default function RepaintPage() {
               CDV в % от free float
             </TogglePill>
           )}
+          {tab === 'repaint' && (
+            <TogglePill active={devInFf} onClick={() => setDevInFf(!devInFf)} title={HINTS.dev}>
+              В % от free float
+            </TogglePill>
+          )}
         </div>
 
         {error ? (
@@ -317,8 +323,9 @@ export default function RepaintPage() {
             height={CHART_HEIGHT}
           />
         ) : metricPoints.length > 0 ? (
-          /* Цена + отклонение CDV от среднего за 30 дней, % от free float.
-             Отклонение — акцентная (оранжевая) линия, цена — вторым цветом. */
+          /* Цена + отклонение CDV от среднего за 30 дней: в штуках акций,
+             по тумблеру — в % от free float. Отклонение — акцентная (оранжевая)
+             линия, цена — вторым цветом. */
           <SimpleChart
             data={metricPriceData}
             secondaryData={devData}
@@ -326,10 +333,10 @@ export default function RepaintPage() {
             primaryColor="var(--accent-secondary)"
             secondaryColor="var(--accent)"
             primaryLabel="Цена"
-            secondaryLabel="Отклонение от среднего 30д, % FF"
+            secondaryLabel={devInFf ? 'Отклонение от среднего 30д, % FF' : 'Отклонение от среднего 30д, шт'}
             formatValue={fmtRub}
-            formatSecondaryValue={fmtChartPct}
-            formatSecondaryAxis={fmtAxisPct}
+            formatSecondaryValue={devInFf ? fmtChartPct : fmtSignedShares}
+            formatSecondaryAxis={devInFf ? fmtAxisPct : fmtShares}
             niceTicks={true}
             niceTicksSecondary={true}
             loading={loading}
