@@ -107,7 +107,8 @@ function pctColor(v: number | null | undefined): string {
 
 export default function RepaintPage() {
   const { user, loading: authLoading } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  // Админ или ранний доступ по email (early_access с бэка, см. api/services/early_access.py).
+  const isAdmin = user?.role === 'admin' || !!user?.early_access?.includes('repaint');
 
   const [ticker, setTicker] = usePersistedState<string>('frame:repaint:ticker', DEFAULT_TICKER);
   // Имя держим отдельно, чтобы кнопка актива была подписана до ответа API.

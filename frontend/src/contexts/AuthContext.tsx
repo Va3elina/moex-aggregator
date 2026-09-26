@@ -19,6 +19,9 @@ interface User {
    *  email). Такого юзера App редиректит на /add-email до тех пор пока не
    *  введёт реальный адрес — иначе T-Bank не выдаст чек по 54-ФЗ. */
   requires_email_setup?: boolean;
+  /** Тестовые индикаторы, открытые пользователю до релиза (ранний доступ по
+   *  списку email на бэке). Админам не нужен — их пускают по роли. */
+  early_access?: string[];
 }
 
 interface AuthContextType {

@@ -40,7 +40,8 @@ Free float в акциях = ffcap (freefloat_cap, помесячно) / дне�
 (canonical_isin), как в /fund-trades/price-weekly: цены старой серии делятся
 на коэффициент обмена, объём умножается (REDOMICILE_RATIO там же).
 
-Всё под require_admin: индикатор экспериментальный, наружу не торчит.
+Доступ: админы и email из REPAINT_EARLY_ACCESS (api/services/early_access.py) —
+индикатор экспериментальный, наружу не торчит.
 """
 from bisect import bisect_right
 from collections import defaultdict
@@ -53,7 +54,7 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.logger import get_logger
 from api.models import User
-from api.routers.auth import require_admin
+from api.services.early_access import require_feature
 from api.routers.fund_trades import REDOMICILE_RATIO
 from api.services.splits import price_divisor, volume_multiplier
 
@@ -199,7 +200,7 @@ def _rolling_metrics(times: list[date], cdv: list[float],
 def repaint_screener(
     tf: str = Query("4h", pattern=_TF_PATTERN),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature("repaint")),
 ):
     """Текущие метрики перекраски по всем акциям со свечами и free float — на свечах ТФ."""
     since = date.today() - timedelta(days=SCREENER_LOOKBACK_DAYS)
@@ -292,7 +293,7 @@ def repaint_series(
     days: int = Query(365, ge=7, le=MAX_DAYS),
     tf: str = Query("4h", pattern=_TF_PATTERN),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature("repaint")),
 ):
     """Ряд выбранного ТФ: цена + CDV + обе метрики перекраски по одной акции."""
     sec_id = sec_id.upper()

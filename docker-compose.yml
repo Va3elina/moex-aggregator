@@ -276,6 +276,9 @@ services:
       # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).
       - TRIAL_ENABLED=${TRIAL_ENABLED:-0}
       - TRIAL_HASH_SALT=${TRIAL_HASH_SALT:-}
+      # Ранний доступ к тестовому индикатору «Перекраска» по email, через запятую
+      # (api/services/early_access.py). Админы проходят без списка.
+      - REPAINT_EARLY_ACCESS=${REPAINT_EARLY_ACCESS:-}
       # Способ привязки карты для триала: init (1₽+возврат, рабочий по умолчанию)
       # или addcard (0₽, без чеков). addcard включать ТОЛЬКО после настройки
       # Success/Fail Add Card URL на терминале поддержкой T-Bank.

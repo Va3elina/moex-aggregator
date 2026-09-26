@@ -133,6 +133,9 @@ class UserResponse(BaseModel):
     has_password: bool = True
     oauth_providers: list[str] = []
     created_at: datetime
+    # Тестовые индикаторы, открытые этому пользователю до релиза
+    # (api/services/early_access.py). У админов пусто — их пускают по роли.
+    early_access: list[str] = []
     # True если email — synthetic placeholder вроде telegram_123@oauth.local
     # (OAuth-провайдер не дал email и был создан fallback). Frontend
     # редиректит таких юзеров на /add-email до тех пор пока не введут реальный
