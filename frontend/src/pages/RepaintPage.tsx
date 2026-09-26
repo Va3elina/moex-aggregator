@@ -10,7 +10,7 @@
  * спекулятивный спрос).
  *
  * Source endpoints (оба role=admin, api/routers/repaint.py):
- *   GET /api/admin/repaint/screener?tf             — метрики по всем акциям (таблица)
+ *   GET /api/admin/repaint/screener?tf             — бумаги с данными (список для пикера)
  *   GET /api/admin/repaint/series/{secid}?days&tf  — ряд ТФ: цена + CDV + метрики
  *
  * Каркас как у остальных индикаторов: PageHeader, папки-вкладки (как категории
@@ -24,8 +24,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ChevronDown, LineChart, Repeat2, Search } from 'lucide-react';
-import Card from '../components/Card';
+import { ChevronDown, LineChart, Repeat2 } from 'lucide-react';
 import Skeleton from '../components/Skeleton';
 import PageHeader from '../components/PageHeader';
 import SimpleChart from '../components/SimpleChart';
@@ -33,7 +32,6 @@ import SegmentedControl from '../components/SegmentedControl';
 import ChartTabs from '../components/ChartTabs';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import InstrumentIcon from '../components/InstrumentIcon';
-import HelpTooltip from '../components/HelpTooltip';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
@@ -85,11 +83,6 @@ function fmtShares(v: number): string {
   return v.toFixed(0);
 }
 
-function fmtPct(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return '—';
-  return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
-}
-
 // Проценты на графиках: у малых значений (CDV в % FF за месяц — сотые доли
 // процента) третий знак, иначе подписи оси и бейдж слипаются в «0.01%».
 const pctDigits = (v: number) => (Math.abs(v) < 0.1 ? 3 : 2);
@@ -99,11 +92,6 @@ const fmtAxisPct = (v: number) => `${Number(v.toFixed(pctDigits(v)))}%`;
 const fmtChartPct = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(pctDigits(v))}%`;
 const fmtRub = (v: number) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 const fmtSignedShares = (v: number) => `${v >= 0 ? '+' : ''}${fmtShares(v)} шт`;
-
-function pctColor(v: number | null | undefined): string {
-  if (v == null) return 'var(--text-muted)';
-  return v >= 0 ? 'var(--success)' : 'var(--danger)';
-}
 
 export default function RepaintPage() {
   const { user, loading: authLoading } = useAuth();
@@ -119,7 +107,6 @@ export default function RepaintPage() {
   const [devInFf, setDevInFf] = usePersistedState<boolean>('frame:repaint:dev-ff', false);
   const [tab, setTab] = usePersistedState<Tab>('frame:repaint:tab', 'cdv');
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [query, setQuery] = useState('');
 
   // Прежний ряд не сбрасываем на время загрузки — SimpleChart приглушает его сам.
   const { data: series, loading, error } = useIndicatorData<RepaintSeries>({
@@ -130,7 +117,7 @@ export default function RepaintPage() {
   });
   // Скринер считается на свечах того же ТФ, что и график, — иначе цифры в
   // таблице расходились бы с последней точкой метрик.
-  const { data: screener, error: rowsError } = useIndicatorData({
+  const { data: screener } = useIndicatorData({
     fetcher: () => getRepaintScreener(tf),
     deps: [isAdmin, tf],
     enabled: isAdmin,
@@ -138,17 +125,10 @@ export default function RepaintPage() {
   });
 
   const rows = useMemo(() => screener?.rows ?? [], [screener]);
-  // В пикере — только бумаги из скринера (есть свечи и free float),
+  // Скринер здесь нужен только пикеру: в нём — бумаги, по которым есть свечи и
+  // free float (таблица под графиком убрана 2026-09-26 по просьбе юзера),
   // иначе выбор упирается в «нет данных». Пока скринер не пришёл — все акции.
   const pickerIds = useMemo(() => (rows.length > 0 ? rows.map((r) => r.sec_id) : undefined), [rows]);
-
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      r => r.sec_id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q),
-    );
-  }, [rows, query]);
 
   const priceData = useMemo(
     () => (series?.points ?? []).map((p) => ({
@@ -206,7 +186,6 @@ export default function RepaintPage() {
 
   // Пока грузится новый актив, series ещё от прежнего — подпись берём из state.
   const assetName = series && series.sec_id === ticker ? series.name : tickerName;
-  const tfLabel = TF_OPTIONS.find((o) => o.key === tf)?.label ?? tf;
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -357,91 +336,6 @@ export default function RepaintPage() {
       </div>{/* /editorial-frame */}
       </div>{/* /tabbed-card */}
 
-      {/* Скринер по всем акциям */}
-      <div className="mt-6 md:mt-8">
-        <SectionTitle title={`Все акции — отклонение от среднего за 30 дней, ${tfLabel}`} hint={HINTS.dev} />
-        {rowsError && (
-          <Card padding="md" className="mb-6">
-            <p style={{ color: 'var(--danger)' }}>Ошибка скринера: {rowsError}</p>
-          </Card>
-        )}
-        <Card padding="md" className="md:p-5">
-          <div className="relative mb-3" style={{ maxWidth: 320 }}>
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2"
-              style={{ color: 'var(--text-muted)' }}
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Тикер или название…"
-              className="w-full pl-9 pr-3 py-2 text-sm outline-none border"
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                borderColor: 'var(--border-color)',
-                borderRadius: 'var(--radius-md, 8px)',
-                color: 'var(--text-primary)',
-              }}
-            />
-          </div>
-          {!screener && !rowsError ? (
-            <Skeleton height={300} rounded="lg" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ color: 'var(--text-primary)' }}>
-                <thead>
-                  <tr
-                    className="text-xs uppercase text-left"
-                    style={{ color: 'var(--text-muted)', letterSpacing: '0.06em' }}
-                  >
-                    <th className="py-2 pr-3 font-semibold">Бумага</th>
-                    <th className="py-2 px-3 font-semibold text-right">Отклонение 30д</th>
-                    <th className="py-2 px-3 font-semibold text-right">Free float</th>
-                    <th className="py-2 pl-3 font-semibold text-right">Цена</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map(r => (
-                    <tr
-                      key={r.sec_id}
-                      onClick={() => { selectTicker(r.sec_id, r.name); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                      className="cursor-pointer transition-colors"
-                      style={{
-                        borderTop: '1px solid var(--border-color)',
-                        backgroundColor: r.sec_id === ticker
-                          ? 'color-mix(in srgb, var(--accent) 8%, transparent)'
-                          : undefined,
-                      }}
-                    >
-                      <td className="py-2 pr-3">
-                        <span className="font-medium">{r.name}</span>
-                        <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>{r.sec_id}</span>
-                      </td>
-                      <td className="py-2 px-3 text-right font-medium" style={{ color: pctColor(r.dev_pct) }}>
-                        {fmtPct(r.dev_pct)}
-                      </td>
-                      <td className="py-2 px-3 text-right" style={{ color: 'var(--text-muted)' }}>
-                        {fmtShares(r.ff_shares)} шт
-                      </td>
-                      <td className="py-2 pl-3 text-right">
-                        {r.close.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredRows.length === 0 && (
-                <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>
-                  Ничего не найдено
-                </p>
-              )}
-            </div>
-          )}
-        </Card>
-      </div>
-
       {pickerOpen && (
         <InstrumentSearchModal
           filterType="stock"
@@ -454,21 +348,6 @@ export default function RepaintPage() {
           onClose={() => setPickerOpen(false)}
         />
       )}
-    </div>
-  );
-}
-
-function SectionTitle({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <p
-        className="text-xs uppercase"
-        style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-      >
-        {title}
-      </p>
-      <HelpTooltip content={hint} icon="info" />
-      <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
     </div>
   );
 }
