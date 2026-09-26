@@ -618,6 +618,109 @@ def get_growth(
     return {**db, "sources": sources, "date_from": rng["d0"].isoformat(), "date_to": rng["d1"].isoformat()}
 
 
+@router.get("/tg-joins")
+def get_tg_joins(
+    days: int = Query(7, ge=1, le=MAX_RANGE_DAYS),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    user=Depends(require_admin),
+):
+    """Вступления и выходы из Telegram-каналов по дням и по инвайт-ссылкам.
+
+    Пишет tg_bot.py из апдейтов chat_member (таблица tg_channel_joins, с
+    26.09.2026), число подписчиков — его же часовой снимок (tg_channel_members).
+    От сегмента и устройства не зависит. Кэш 2 минуты.
+    """
+    rng = _resolve_range(days, date_from, date_to)
+    return get_or_compute(f"admin:tg-joins:v1:{rng['d0']}:{rng['d1']}", lambda: _compute_tg_joins(rng), ttl=120)
+
+
+# Имя ссылки; чужие ссылки Telegram отдаёт обрезанными (https://t.me/+AbCd...),
+# тогда ключом служит сам обрезок. То же выражение в tg_bot.py.
+_TG_SRC_SQL = "COALESCE(invite_name, invite_link, CASE WHEN via_folder THEN 'папка' ELSE 'без ссылки' END)"
+_TG_DAY_SQL = "(event_at AT TIME ZONE 'Europe/Moscow')::date"
+
+
+def _compute_tg_joins(rng: dict) -> dict:
+    d0, d1, n = rng["d0"], rng["d1"], rng["n"]
+    dates = [d0 + timedelta(days=i) for i in range(n)]
+    idx = {d: i for i, d in enumerate(dates)}
+    p0, p1 = d0 - timedelta(days=n), d0 - timedelta(days=1)
+    with get_engine().connect() as conn:
+        joined = conn.execute(text(f"""
+            WITH j AS (
+                SELECT chat_id, user_id, event_at, {_TG_DAY_SQL} AS day, {_TG_SRC_SQL} AS src
+                FROM tg_channel_joins
+                WHERE event = 'join' AND {_TG_DAY_SQL} BETWEEN :d0 AND :d1
+            )
+            SELECT day, src, COUNT(*) AS joined,
+                   COUNT(*) FILTER (WHERE NOT EXISTS (
+                       SELECT 1 FROM tg_channel_joins l
+                       WHERE l.chat_id = j.chat_id AND l.user_id = j.user_id
+                         AND l.event = 'leave' AND l.event_at > j.event_at)) AS stayed
+            FROM j GROUP BY day, src
+        """), {"d0": d0, "d1": d1}).fetchall()
+        left = conn.execute(text(f"""
+            SELECT {_TG_DAY_SQL} AS day, COUNT(*) FROM tg_channel_joins
+            WHERE event = 'leave' AND {_TG_DAY_SQL} BETWEEN :d0 AND :d1 GROUP BY 1
+        """), {"d0": d0, "d1": d1}).fetchall()
+        prev = dict(conn.execute(text(f"""
+            SELECT event, COUNT(*) FROM tg_channel_joins
+            WHERE {_TG_DAY_SQL} BETWEEN :p0 AND :p1 GROUP BY event
+        """), {"p0": p0, "p1": p1}).fetchall())
+        members = dict(conn.execute(text(
+            "SELECT day, SUM(members) FROM tg_channel_members WHERE day BETWEEN :d0 AND :d1 GROUP BY day"
+        ), {"d0": d0, "d1": d1}).fetchall())
+        members_now = conn.execute(text("""
+            SELECT SUM(members) FROM (
+                SELECT DISTINCT ON (chat_id) members FROM tg_channel_members ORDER BY chat_id, day DESC) t
+        """)).scalar()
+        members_before = conn.execute(text("""
+            SELECT SUM(members) FROM (
+                SELECT DISTINCT ON (chat_id) members FROM tg_channel_members
+                WHERE day < :d0 ORDER BY chat_id, day DESC) t
+        """), {"d0": d0}).scalar()
+        since = conn.execute(text(f"SELECT MIN({_TG_DAY_SQL}) FROM tg_channel_joins")).scalar()
+        chats = conn.execute(text("""
+            SELECT DISTINCT ON (chat_id) chat_id, chat_title FROM tg_channel_joins
+            ORDER BY chat_id, event_at DESC
+        """)).fetchall()
+
+    series: dict[str, dict] = {}
+    joins = [0] * n
+    for day, src, cnt, stayed in joined:
+        s = series.setdefault(src, {"name": src, "values": [0] * n, "period": 0, "stayed": 0})
+        s["values"][idx[day]] += cnt
+        s["period"] += cnt
+        s["stayed"] += stayed
+        joins[idx[day]] += cnt
+    leaves = [0] * n
+    for day, cnt in left:
+        leaves[idx[day]] += cnt
+    total_joins, total_leaves = sum(joins), sum(leaves)
+    return {
+        "dates": [d.isoformat() for d in dates],
+        "joins": joins,
+        "leaves": leaves,
+        "members": [int(members[d]) if d in members else None for d in dates],
+        "series": sorted(series.values(), key=lambda s: -s["period"]),
+        "totals": {
+            "joins": total_joins,
+            "leaves": total_leaves,
+            "net": total_joins - total_leaves,
+            "prev_joins": int(prev.get("join", 0)),
+            "prev_leaves": int(prev.get("leave", 0)),
+            "members_now": int(members_now) if members_now is not None else None,
+            "members_delta": (int(members_now) - int(members_before))
+                if members_now is not None and members_before is not None else None,
+        },
+        "since": since.isoformat() if since else None,
+        "chats": [{"id": c, "title": t} for c, t in chats],
+        "date_from": d0.isoformat(),
+        "date_to": d1.isoformat(),
+    }
+
+
 # Зарегистрированные без админов: когда в последний раз были на сайте (события,
 # продление входа, вход), платили ли хоть раз (без подарочного Pro и триала) и
 # получали ли подарочный Pro. Вернулся — был на сайте позже первых суток.
