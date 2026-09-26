@@ -221,7 +221,7 @@ export default function RepaintPage() {
         onChange={setTab}
         items={[
           { key: 'cdv', label: 'Цена и CDV', Icon: LineChart },
-          { key: 'repaint', label: 'Перекраска', Icon: Repeat2 },
+          { key: 'repaint', label: 'Отклонение от среднего', Icon: Repeat2 },
         ]}
       />
 
