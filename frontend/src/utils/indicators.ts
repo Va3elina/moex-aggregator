@@ -272,3 +272,43 @@ export function volumeMa<T>(candles: IndCandle<T>[], length: number): IndPoint<T
   const vols = volumeBars(candles).map((p) => ({ time: p.time, value: p.value }));
   return sma(vols as IndPoint<T>[], length);
 }
+
+/**
+ * Изменение ряда за окно В КАЛЕНДАРНЫХ ДНЯХ — «поток за период».
+ *
+ * Для чистой позиции это ровно скользящая сумма дневных потоков за окно:
+ * Σ(x_i − x_{i−1}) телескопируется в x(t) − x(t − окно). Та же идея, что у
+ * слоя «Сумма за 3 месяца» в «Деньгах в фондах», только поток здесь — изменение
+ * позиции, а не приток денег.
+ *
+ * Окно в днях, а не в барах: «3 месяца» должны значить три месяца и на дневном,
+ * и на часовом графике. Точка отсчёта — последний бар НЕ ПОЗЖЕ t − окно; пока
+ * такого нет (начало истории), точку не выдаём — прогрев обрезаем, как везде.
+ *
+ * `pct` — относительное изменение в процентах (для цены). Для позиций проценты
+ * бессмысленны: чистая позиция проходит через ноль.
+ */
+export function changeOver<T>(
+  pts: IndPoint<T>[],
+  windowDays: number,
+  toSec: (t: T) => number,
+  pct = false,
+): IndPoint<T>[] {
+  const win = Math.max(1, windowDays) * 86400;
+  const out: IndPoint<T>[] = [];
+  let j = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const cut = toSec(pts[i].time) - win;
+    while (j + 1 < i && toSec(pts[j + 1].time) <= cut) j++;
+    if (j < 0) continue;
+    const a = pts[j].value;
+    const b = pts[i].value;
+    if (pct) {
+      if (!a) continue;
+      out.push({ time: pts[i].time, value: (b / a - 1) * 100 });
+    } else {
+      out.push({ time: pts[i].time, value: b - a });
+    }
+  }
+  return out;
+}
