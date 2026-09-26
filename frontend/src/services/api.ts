@@ -3038,7 +3038,10 @@ export interface RepaintPoint {
   /** То же в % от free float: дельта каждой свечи делится на FF на её дату. */
   cdv_ff_pct: number;
   repaint_pct: number | null;
+  /** Отклонение CDV от среднего за 30 дней, % от free float. */
   dev_pct: number | null;
+  /** То же в штуках акций. */
+  dev_shares: number | null;
 }
 
 export interface RepaintSeries {

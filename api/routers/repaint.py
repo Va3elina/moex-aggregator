@@ -167,10 +167,12 @@ def _ff_at(ff_list: list[tuple[date, float]], day: date) -> tuple[date, float] |
 
 def _rolling_metrics(times: list[date], cdv: list[float],
                      ff_list: list[tuple[date, float]]):
-    """repaint_pct / dev_pct для каждой точки. None пока окно неполное."""
+    """repaint_pct / dev_pct (% от FF) и dev_shares (штуки) для каждой точки.
+    None пока окно неполное."""
     n = len(cdv)
     repaint = [None] * n
     dev = [None] * n
+    dev_sh = [None] * n
     prefix = [0.0]
     for v in cdv:
         prefix.append(prefix[-1] + v)
@@ -188,8 +190,9 @@ def _rolling_metrics(times: list[date], cdv: list[float],
         base = cdv[j - 1] if j > 0 else 0.0
         mean = (prefix[i + 1] - prefix[j]) / (i - j + 1)
         repaint[i] = (cdv[i] - base) / ff[1] * 100.0
-        dev[i] = (cdv[i] - mean) / ff[1] * 100.0
-    return repaint, dev
+        dev_sh[i] = cdv[i] - mean
+        dev[i] = dev_sh[i] / ff[1] * 100.0
+    return repaint, dev, dev_sh
 
 
 @router.get("/screener")
@@ -226,7 +229,7 @@ def repaint_screener(
         if len(bars) < 5:
             continue
         times = [b["time"].date() for b in bars]
-        repaint, dev = _rolling_metrics(times, [b["cdv"] for b in bars], ff_list)
+        repaint, dev, _ = _rolling_metrics(times, [b["cdv"] for b in bars], ff_list)
         if repaint[-1] is None:
             continue
         out.append({
@@ -305,7 +308,7 @@ def repaint_series(
     pts = _tf_bars(sec_id, rows, tf)
     times = [p["time"].date() for p in pts]
     cdv = [p["cdv"] for p in pts]
-    repaint, dev = _rolling_metrics(times, cdv, ff_list)
+    repaint, dev, dev_sh = _rolling_metrics(times, cdv, ff_list)
 
     cut = date.today() - timedelta(days=days)
     first = next((i for i, d in enumerate(times) if d >= cut), None)
@@ -319,7 +322,7 @@ def repaint_series(
     # а не итог на текущий FF — помесячные ступеньки FF не ломают историю.
     cdv_ff = 0.0
     points = []
-    for p, r, dv in zip(pts[first:], repaint[first:], dev[first:]):
+    for p, r, dv, ds in zip(pts[first:], repaint[first:], dev[first:], dev_sh[first:]):
         cdv_ff += p["delta"] / _ff_at(ff_list, p["time"].date())[1] * 100.0
         points.append({
             "time": (p["time"].isoformat() if tf in _TF_INTRADAY
@@ -332,6 +335,7 @@ def repaint_series(
             "cdv_ff_pct": round(cdv_ff, 4),
             "repaint_pct": None if r is None else round(r, 3),
             "dev_pct": None if dv is None else round(dv, 3),
+            "dev_shares": None if ds is None else round(ds, 2),
         })
 
     name = db.execute(text(
