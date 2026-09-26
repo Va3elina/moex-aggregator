@@ -5,7 +5,7 @@ spec = {"rule": "hybrid7c" | {...правило...}, "exec": "close"|"next_open"
         "capital": 1000000|null, "slots": 6, "go": "mr1"|"snapshot"|"none", "go_limit": 1.0, "name": "...",
         "leverage": 1.0 (капитал × плечо / слоты на сделку), "go_mult": 1.0 (стресс: ГО выросло в k раз)}"""
 import pandas as pd
-from . import store, rules as R, engine, costs, account, metrics
+from . import store, rules as R, engine, costs, account, metrics, orders
 
 DEFAULTS = {'exec': 'close', 'universe': None, 'since': None, 'until': None, 'tariff': 'trader', 'spread': 'c3',
             'capital': 1_000_000, 'slots': 6, 'go': 'mr1', 'go_limit': 1.0, 'leverage': 1.0, 'go_mult': 1.0, 'checks': False}
@@ -16,6 +16,8 @@ def normalize(spec):
     s = {**DEFAULTS, **{k: v for k, v in spec.items() if v is not None}}
     if spec.get('code'):                                    # стратегия кодом: правила нет, бумаги — из запроса
         s['rule'] = {'id': 'python', 'name': spec.get('name') or 'Стратегия на Python', 'universe': R.UNIVERSE_21, 'python': True}
+        if orders.is_orders_code(spec['code']):             # заявки: счёт нужен всегда, бумага одна
+            s['rule']['orders'] = True; s['capital'] = s['capital'] or 1_000_000
         rule = s['rule']
     else:
         rule = R.load(s['rule'])
@@ -30,6 +32,8 @@ def normalize(spec):
 def execute(spec, progress=None, py_trades=None):
     """py_trades — (сделки, сведения) стратегии на Python, уже посчитанные песочницей (см. pybridge / pyengine)."""
     s = normalize(spec)
+    if spec.get('code') and isinstance(py_trades[1], dict) and py_trades[1].get('orders'):
+        return _execute_orders(s, *py_trades)
     if spec.get('code'):
         T0, info = py_trades
         T = costs.apply(T0, s['tariff'], s['spread']) if len(T0) else T0.assign(comm=[], spread=[], net=[])
@@ -65,6 +69,36 @@ def execute(spec, progress=None, py_trades=None):
                                    order=s['universe'], leverage=float(s['leverage']), go_mult=float(s['go_mult']))
         res['account'] = _account_block(A, K, E, s)
     return s, res, S, T, A, K, E
+
+
+ACC_ORDERS = ['qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub']
+
+
+def _execute_orders(s, T0, info):
+    """Стратегия заявками (backtest/orders.py): объём, издержки, ГО и фандинг песочница посчитала сама — свеча за
+    свечой, поэтому account.simulate не нужен. Здесь только собираем те же таблицы, что у остальных прогонов."""
+    info = dict(info); od = info.pop('orders'); summ = od.get('summary') or {}
+    T = T0.copy()
+    if len(T):
+        T['comm'] = T.comm_rub / T.notional; T['spread'] = T.spread_rub / T.notional; T['net'] = T.pnl_rub / T.notional
+    else:
+        for c in ACC_ORDERS + ['comm', 'spread', 'net', 'funding_rub']: T[c] = pd.Series(dtype=float)
+    T['n'] = range(len(T))
+    A = T[['n', 'd', 'st'] + ACC_ORDERS].assign(go_cut=False)
+    T = T.drop(columns=ACC_ORDERS + ['funding_rub', 'entry_id'], errors='ignore')
+    K = pd.DataFrame(columns=['n', 'd', 'st', 'side', 'reason'])        # отказы по ГО — счётчиком в сводке, сделок у них нет
+    E = pd.DataFrame(od['equity'])
+    E['d'] = pd.to_datetime(E.d); E = E.set_index('d')
+    res = {'kind': 'python', 'orders': True, 'period': [str(T.d.min().date()), str(T.d_out.max().date())] if len(T) else None,
+           'signals': int(len(T)), 'per_trade': metrics.per_trade(T) if len(T) else {'сделок': 0}, 'python': info,
+           'by_instrument': metrics.by_instrument(T).reset_index().to_dict('records') if len(T) else [],
+           'data_until': store.data_until(s['universe'])}
+    if len(E):
+        res['account'] = {**_account_block(A, K, E, s), 'пропущено': summ.get('пропущено') or {},
+                          'фандинг_руб': summ.get('фандинг_руб'), 'принудительных_закрытий': summ.get('принудительных_закрытий'),
+                          'маржин_коллов': int(E.margin_call.sum()), 'маржин_коллов_TV': summ.get('маржин_коллов_TV')}
+        if summ.get('только_первая_бумага'): res['account']['только_первая_бумага'] = summ['только_первая_бумага']
+    return s, res, None, T, A, K, E
 
 
 def _account_block(A, K, E, s):

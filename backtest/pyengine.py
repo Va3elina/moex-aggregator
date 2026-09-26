@@ -12,12 +12,15 @@ b — свечи одной бумаги (склеенный ряд ближни
 Заявка исполняется по ОТКРЫТИЮ СЛЕДУЮЩЕЙ свечи. Позиция по бумаге одна. Перед сменой контракта позиция закрывается
 по закрытию последней свечи (склейка цен через ролл не торгуется). Объём считает счёт (слоты, ГО) — как у правил.
 
+Режим заявок (MODE = "orders", backtest/orders.py): on_bar(i, b, s, p) ставит заявки как strategy.entry / strategy.exit
+в Pine — объём в контрактах, лимитки, стопы, доборы; счёт (ГО, фандинг, комиссии) считается там же, по одной бумаге.
+
 ⚠️ Модуль рассчитан на запуск ТОЛЬКО в изолированном контейнере bt-sandbox (без сети и секретов) или локально
 разработчиком: код исполняется как есть, без ограничений языка.
 """
 import traceback
 import numpy as np, pandas as pd
-from . import store
+from . import store, orders
 
 MAX_TRADES = 200_000
 _STD = {'open', 'high', 'low', 'close', 'volume', 'minute', 't', 'date', 'secid', 'new_day', 'last_of_contract', 'day_open', 'prev_close'}
@@ -88,7 +91,7 @@ def chain_bars(st, since=None, until=None):
 
 
 def load(code):
-    ns = {'__name__': 'strategy', 'np': np, 'pd': pd}
+    ns = {'__name__': 'strategy', 'np': np, 'pd': pd, 'LONG': orders.LONG, 'SHORT': orders.SHORT}
     exec(compile(code, 'strategy.py', 'exec'), ns)
     if not callable(ns.get('on_bar')): raise ValueError('в коде нет функции on_bar(i, b, pos, p)')
     return ns
@@ -134,7 +137,11 @@ class _Guard(np.ndarray):
         return np.asarray(self).__getitem__(key) if not isinstance(key, (int, np.integer)) else super().__getitem__(key)
 
 
-def lookahead_check(code, b, params, st):
+def is_orders(ns):
+    return str(ns.get('MODE', '')).lower() == 'orders'
+
+
+def lookahead_check(code, b, params, st, acct=None):
     """Две проверки на заглядывание вперёд (на первой бумаге прогона).
     1. Индикаторы из init(), посчитанные на обрезанной истории, обязаны совпасть с посчитанными на полной —
        иначе расчёт использует будущие данные (сдвиг назад, нормировка по всей истории, центрированное окно).
@@ -160,20 +167,37 @@ def lookahead_check(code, b, params, st):
     for name, v in list(g.__dict__.items()):
         if isinstance(v, np.ndarray) and v.shape[:1] == (m,) and v.dtype.kind in 'fiub': setattr(g, name, v.view(_Guard))
     _Guard.hits = 0; pos = 0
-    for i in range(m - 1):
-        _Guard.now = i
-        t = ns2['on_bar'](i, g, pos, params)
-        if t is not None: pos = int(np.sign(t))
+    if is_orders(ns2):                    # заявки: движок исполняет их по «сырым» массивам, охраняется только on_bar
+        def guard(i):
+            _Guard.now = i
+            return True
+        orders.run(ns2, g, params, st, acct, guard=guard)
+    else:
+        for i in range(m - 1):
+            _Guard.now = i
+            t = ns2['on_bar'](i, g, pos, params)
+            if t is not None: pos = int(np.sign(t))
     out['обращений_к_будущим_свечам'] = int(_Guard.hits); _Guard.now = 10 ** 12
     return out
 
 
-def run_code(code, params=None, universe=None, since=None, until=None, progress=None):
-    """→ {'trades': [...], 'params': {...}, 'lookahead': [...]} либо {'error': текст}."""
+def run_code(code, params=None, universe=None, since=None, until=None, progress=None, account=None):
+    """→ {'trades': [...], 'params': {...}, 'lookahead': [...]} либо {'error': текст}.
+    Режим заявок: ещё 'orders': {'equity': [...], 'summary': {...}} — счёт посчитан здесь же, по одной бумаге."""
     try:
         ns = load(code)
         p = {**(ns.get('PARAMS') or {}), **(params or {})}
         uni = universe or store.UNIVERSE_ALL; trades, look = [], []
+        if is_orders(ns):
+            st = uni[0]
+            b = Bars(chain_bars(st, since, until))
+            if len(b) < 500: raise ValueError(f'по {st} за выбранный период меньше 500 свечей')
+            rows, eq, summ = orders.run(ns, b, p, st, account)
+            if progress: progress(1, 2)
+            lc = lookahead_check(code, b, p, st, account)
+            if progress: progress(2, 2)
+            if len(uni) > 1: summ['только_первая_бумага'] = st
+            return {'trades': rows, 'params': p, 'lookahead': [lc] if lc else [], 'orders': {'equity': eq, 'summary': summ}}
         for k, st in enumerate(uni):
             b = Bars(chain_bars(st, since, until))
             if len(b) < 500: continue

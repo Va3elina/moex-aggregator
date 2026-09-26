@@ -34,7 +34,8 @@ def run_job(job_file):
     job = json.loads(job_file.read_text()); rid = job['id']
 
     def progress(i, n): _write(JOBS / f'{rid}.progress.json', {'p': int(100 * i / n)})
-    res = pyengine.run_code(job['code'], job.get('params'), job.get('universe'), job.get('since'), job.get('until'), progress)
+    res = pyengine.run_code(job['code'], job.get('params'), job.get('universe'), job.get('since'), job.get('until'), progress,
+                            account=job.get('account'))
     _write(JOBS / f'{rid}.result.json', res)
 
 
