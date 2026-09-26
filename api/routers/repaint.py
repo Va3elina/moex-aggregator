@@ -34,6 +34,12 @@ Free float в акциях = ffcap (freefloat_cap, помесячно) / дне�
 дату среза as_of. Объём свечей MOEX — в штуках (проверено против ISS value/close
 2026-08-30), так что деление даёт сопоставимые единицы.
 
+Свечи читаем по колонке secid, не sec_id: у части акций дневки до марта
+2025 лежат без sec_id (OZON терял 4 года истории). История переехавших бумаг
+(YDEX ← YNDX, X5 ← FIVE, RAGR ← AGRO…) склеивается по securities_ref
+(canonical_isin), как в /fund-trades/price-weekly: цены старой серии делятся
+на коэффициент обмена, объём умножается (REDOMICILE_RATIO там же).
+
 Всё под require_admin: индикатор экспериментальный, наружу не торчит.
 """
 from bisect import bisect_right
@@ -48,6 +54,7 @@ from api.database import get_db
 from api.logger import get_logger
 from api.models import User
 from api.routers.auth import require_admin
+from api.routers.fund_trades import REDOMICILE_RATIO
 from api.services.splits import price_divisor, volume_multiplier
 
 log = get_logger()
@@ -135,7 +142,7 @@ def _ff_shares_by_month(db: Session, sec_ids: list[str]) -> dict[str, list[tuple
     rows = db.execute(text("""
         SELECT f.sec_id, f.month, f.ffcap, c.close
         FROM freefloat_cap f
-        JOIN candles c ON c.sec_id = f.sec_id AND c.type = 'stock' AND c.interval = 24
+        JOIN candles c ON c.secid = f.sec_id AND c.type = 'stock' AND c.interval = 24
                       -- диапазон, а не begin_time::date = as_of: так идёт по индексу
                       AND c.begin_time >= f.as_of AND c.begin_time < f.as_of + 1
         WHERE f.sec_id = ANY(:ids) AND f.ffcap > 0 AND c.close > 0
@@ -194,11 +201,11 @@ def repaint_screener(
     """Текущие метрики перекраски по всем акциям со свечами и free float — на свечах ТФ."""
     since = date.today() - timedelta(days=SCREENER_LOOKBACK_DAYS)
     rows = db.execute(text("""
-        SELECT sec_id, begin_time, open, high, low, close, volume
+        SELECT secid, begin_time, open, high, low, close, volume
         FROM candles
         WHERE type = 'stock' AND interval = :iv AND begin_time >= :since
-          AND sec_id IN (SELECT DISTINCT sec_id FROM freefloat_cap)
-        ORDER BY sec_id, begin_time
+          AND secid IN (SELECT DISTINCT sec_id FROM freefloat_cap)
+        ORDER BY secid, begin_time
     """), {"iv": _TF_SOURCE[tf], "since": since}).fetchall()
 
     by_sec: dict[str, list] = defaultdict(list)
@@ -234,6 +241,47 @@ def repaint_screener(
     return {"window_days": WINDOW_DAYS, "tf": tf, "rows": out}
 
 
+def _legacy_secids(db: Session, secid: str) -> list[str]:
+    """Старые secid той же бумаги (расписка до редомициляции) по securities_ref."""
+    return [r[0] for r in db.execute(text("""
+        SELECT DISTINCT sr.secid
+        FROM securities_ref sr
+        WHERE sr.canonical_isin = (
+                SELECT canonical_isin FROM securities_ref
+                WHERE secid = :t AND canonical_isin IS NOT NULL LIMIT 1
+              )
+          AND sr.secid IS NOT NULL AND sr.secid <> :t
+    """), {"t": secid}).all()]
+
+
+def _load_candles(db: Session, secid: str, interval: int, since: date) -> list:
+    """Свечи бумаги + история её предшественников до редомициляции.
+
+    Старая серия (ГДР) приводится к масштабу новой акции: цена / k, объём × k,
+    k = REDOMICILE_RATIO (1.0, если обмен 1:1). На стыке выигрывает новая
+    бумага: строки старой с даты первой свечи новой отбрасываются."""
+    q = text("""
+        SELECT begin_time, open, high, low, close, volume
+        FROM candles
+        WHERE secid = :s AND type = 'stock' AND interval = :iv
+          AND begin_time >= :since
+        ORDER BY begin_time
+    """)
+    rows = [tuple(r) for r in db.execute(q, {"s": secid, "iv": interval, "since": since})]
+    first_new = rows[0][0] if rows else None
+    legacy: list = []
+    for old in _legacy_secids(db, secid):
+        k = REDOMICILE_RATIO.get(old, 1.0)
+        for bt, o, h, l, c, v in db.execute(q, {"s": old, "iv": interval, "since": since}):
+            if first_new is not None and bt >= first_new:
+                continue
+            legacy.append((bt, float(o or 0) / k, float(h or 0) / k, float(l or 0) / k,
+                           float(c or 0) / k, float(v or 0) * k))
+    if not legacy:
+        return rows
+    return sorted(legacy + rows, key=lambda r: r[0])
+
+
 @router.get("/series/{sec_id}")
 def repaint_series(
     sec_id: str,
@@ -245,13 +293,7 @@ def repaint_series(
     """Ряд выбранного ТФ: цена + CDV + обе метрики перекраски по одной акции."""
     sec_id = sec_id.upper()
     since = date.today() - timedelta(days=days + WARMUP_DAYS)
-    rows = db.execute(text("""
-        SELECT begin_time, open, high, low, close, volume
-        FROM candles
-        WHERE sec_id = :s AND type = 'stock' AND interval = :iv
-          AND begin_time >= :since
-        ORDER BY begin_time
-    """), {"s": sec_id, "iv": _TF_SOURCE[tf], "since": since}).fetchall()
+    rows = _load_candles(db, sec_id, _TF_SOURCE[tf], since)
     if not rows:
         raise HTTPException(404, f"Нет свечей по {sec_id}")
 
