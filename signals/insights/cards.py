@@ -977,7 +977,7 @@ def brief_text(card: dict, focus: bool = False, context: dict | None = None) -> 
     if focus:
         out += ["ГЛАВНОЕ - строй пост вокруг этого:"] + [f"- {x}" for x in focus_lines(card)] + [""]
     if context:
-        out.append("КОНТЕКСТ - что было в мире до поста; опора для позиции канала, но не причина движения:")
+        out.append("КОНТЕКСТ - что было в мире до поста; повод, а не доказанная причина: «на фоне», «в те же дни» - можно, «из-за» - нельзя:")
         for name, lines in context.items():
             if lines:
                 out += [f"{name}:"] + [f"- {x}" for x in lines]

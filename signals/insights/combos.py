@@ -634,7 +634,7 @@ def brief(story: dict) -> tuple:
         lines += [f"ряд: {x}" for x in (card.get("history") or [])[:2]]
         out += [f"- {x}" for x in lines] + [""]
         limits = [x for x in card.get("limits") or [] if x and x != cards.NO_FORECAST]
-    out.append("КОНТЕКСТ - что было в мире до поста; опора для позиции канала, но не причина движения:")
+    out.append("КОНТЕКСТ - что было в мире до поста; повод, а не доказанная причина: «на фоне», «в те же дни» - можно, «из-за» - нельзя:")
     out += ["срез рынка по данным сервиса:"] + [f"- {x}" for x in cards.market_lines(t)]
     own = [(d, x.strip().splitlines()[0][:90]) for d, x in channel_posts(t) if x.strip()
            and buckets(x) & set(story["buckets"])][-2:]
