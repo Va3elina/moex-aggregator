@@ -443,6 +443,142 @@ def похожие(
     return out
 
 
+# ── Единый поиск для завода (Вадим 27.09: «переводи завод на единый поиск мозга») ─────────────────────────────
+# Завод искал сам: «что было в отрасли» — по тикерам компаний отрасли и своему списку хэштегов (у СмартЛаба хэштегов
+# нет), отрасль новости для R30 — по тем же хэштегам, похожих прошлых событий не видел вовсе. Теперь всё — из единой
+# разметки мозга (Brain/vocab.py): компания — по хэштегу, имени, бирже, раскрытию; отрасль — через главную компанию
+# события или у новости без компании по теме, хэштегу, словам; похожее — вектор среди событий того же типа.
+_РЁБРА_КОМПАНИИ_СОБЫТИЙ = ("упоминает", "раскрытие_о", "объявление_о", "отчёт_о")
+
+
+def _словарь():
+    """Brain/vocab.py — словарь разметки (типы, отрасли). Он же у синка; в образе /app/Brain, на хосте /opt/frame/Brain."""
+    import sys
+    путь = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Brain")
+    if путь not in sys.path:
+        sys.path.insert(0, путь)
+    import news_types  # noqa: PLC0415
+    import vocab  # noqa: PLC0415
+    return vocab, news_types
+
+
+def события_вокруг(db, компания: Optional[str], отрасль: Optional[str], с: datetime, по: datetime,
+                   виды: tuple = ("news",), лимит: int = 400) -> list[dict]:
+    """События компании, связанных с ней владением и её отрасли в окне [с, по]. По времени: id, вид, время, текст
+    (чистая суть узла), тикеры (как у автора), тип, как (компания | владение | отрасль), уровень и способ связи.
+
+    Владение (прогон на постах 27.09): у холдинга главное — что происходит с его компаниями. Пост про АФК Систему
+    держался на Озоне и Сегеже, а «отрасль» из справочника давала М.Видео и Русагро. Берутся компании, которыми наша
+    владеет, и те, кто владеет ею, — по рёбрам «владеет» уровней A/B (раскрытия, акционеры), не догадки."""
+    rows = db.execute(text("""
+        WITH связанные AS (
+            SELECT e.dst AS c FROM brain_edges e
+             WHERE e.src = CAST(:c AS text) AND e.kind = 'владеет' AND e.level IN ('A', 'B') AND starts_with(e.dst, 'company:')
+            UNION
+            SELECT e.src FROM brain_edges e
+             WHERE e.dst = CAST(:c AS text) AND e.kind = 'владеет' AND e.level IN ('A', 'B') AND starts_with(e.src, 'company:')),
+        hit AS (
+            SELECT e.src AS id, 0 AS пр, 'компания' AS как, e.level, e.method FROM brain_edges e
+             WHERE e.dst = CAST(:c AS text) AND e.kind = ANY(:рк) AND e.ts BETWEEN :с AND :по
+            UNION ALL
+            SELECT e.src, 1, 'владение', e.level, e.method FROM brain_edges e
+             WHERE e.dst IN (SELECT c FROM связанные) AND e.kind = ANY(:рк) AND e.ts BETWEEN :с AND :по
+               AND (e.kind <> 'упоминает' OR coalesce(e.role, 'главная') = 'главная')
+            UNION ALL
+            SELECT e.src, 2, 'отрасль', e.level, e.method FROM brain_edges e
+             WHERE e.dst = CAST(:s AS text) AND e.kind = 'отрасль' AND e.ts BETWEEN :с AND :по)
+        SELECT DISTINCT ON (n.id) n.id, n.kind, n.ts, coalesce(n.summary, n.title) AS текст, n.payload,
+               h.как, h.level, h.method,
+               (SELECT t.title FROM brain_edges x JOIN brain_nodes t ON t.id = x.dst
+                 WHERE x.src = n.id AND x.kind = 'тип' LIMIT 1) AS тип
+          FROM hit h JOIN brain_nodes n ON n.id = h.id
+         WHERE n.kind = ANY(:виды)
+         ORDER BY n.id, h.пр
+    """), {"c": компания or "-", "s": отрасль or "-", "рк": list(_РЁБРА_КОМПАНИИ_СОБЫТИЙ), "с": с, "по": по,
+           "виды": list(виды)}).mappings().all()
+    out = [{"id": r["id"], "вид": r["kind"], "время": r["ts"], "текст": r["текст"] or "",
+            "тикеры": list((r["payload"] or {}).get("tickers") or []), "тип": r["тип"], "как": r["как"],
+            "уровень": r["level"], "способ": r["method"]} for r in rows]
+    out.sort(key=lambda x: x["время"])
+    return out[:лимит]
+
+
+def похожие_события(db, образец: Optional[str] = None, текст: Optional[str] = None, тип: Optional[str] = None,
+                    до: Optional[datetime] = None, дней_отступ: int = 3, виды: tuple = ("news",), k: int = 3,
+                    мин_сходство: float = 0.62, компания: Optional[str] = None,
+                    отрасль: Optional[str] = None) -> list[dict]:
+    """Прошлые события того же типа, похожие по смыслу, — «в прошлый раз, когда…».
+
+    образец — id узла (берётся его вектор) или текст (вектор модели). тип — название типа единой разметки: тогда
+    поиск идёт только среди событий этого типа, перебором (их сотни-тысячи — доли секунды), иначе — по индексу.
+    до — время события: берутся события раньше него на дней_отступ (тот же сюжет в соседние дни — не «прошлое»).
+    Одно событие два канала пишут в один день — берётся одно (самое похожее).
+
+    компания — только события этой компании и события без компании (из её отрасли, если она дана). Прогон на
+    вышедших постах 27.09: без этого к понижению рейтинга АФК Системы пришли понижения Магнита и КАМАЗа, а к ним — ход
+    акций АФК после чужого события: ложная связь, которую писатель мог повторить."""
+    if образец:
+        вектор, п = "(SELECT embedding FROM brain_embeddings WHERE node_id = :образец)", {"образец": образец}
+    elif текст:
+        вектор, п = "CAST(:v AS vector)", {"v": _вектор(" ".join(текст.split())[:600])}
+    else:
+        return []
+    п.update({"виды": list(виды), "до": (до or datetime.now(timezone.utc)) - timedelta(days=дней_отступ),
+              "лим": k * 8, "тег": f"tag:тип/{тип.replace(',', '').replace(' ', '_')}" if тип else None,
+              "c": компания, "s": отрасль, "рк": list(_РЁБРА_КОМПАНИИ_СОБЫТИЙ)})
+    # своя компания или событие без компании (из её отрасли, если она известна) — чужих компаний не берём
+    свои = """(CAST(:c AS text) IS NULL
+               OR EXISTS (SELECT 1 FROM brain_edges x WHERE x.src = n.id AND x.dst = CAST(:c AS text) AND x.kind = ANY(:рк))
+               OR (coalesce(CAST(n.payload ->> 'без_компании' AS boolean), FALSE)
+                   AND (CAST(:s AS text) IS NULL OR EXISTS (SELECT 1 FROM brain_edges y WHERE y.src = n.id
+                                                                AND y.dst = CAST(:s AS text) AND y.kind = 'отрасль'))))"""
+    if тип:
+        # ⚠️ Перебором, а не по индексу: HNSW с фильтром отдаёт меньше, чем просили (ef_search) — у редкого типа пусто.
+        sql = f"""
+            WITH к AS MATERIALIZED (
+                SELECT n.id, n.kind, n.ts, coalesce(n.summary, n.title) AS текст FROM brain_edges t
+                  JOIN brain_nodes n ON n.id = t.src
+                 WHERE t.dst = CAST(:тег AS text) AND t.kind = 'тип' AND n.kind = ANY(:виды) AND n.ts < :до AND {свои})
+            SELECT к.*, 1 - (e.embedding <=> {вектор}) AS сходство
+              FROM к JOIN brain_embeddings e ON e.node_id = к.id
+             ORDER BY сходство DESC LIMIT :лим"""
+    else:
+        db.execute(text("SET LOCAL hnsw.ef_search = 200"))
+        sql = f"""
+            SELECT n.id, n.kind, n.ts, coalesce(n.summary, n.title) AS текст, 1 - (e.embedding <=> {вектор}) AS сходство
+              FROM brain_embeddings e JOIN brain_nodes n ON n.id = e.node_id
+             WHERE n.kind = ANY(:виды) AND n.ts < :до AND {свои}
+             ORDER BY e.embedding <=> {вектор} LIMIT :лим"""
+    out, дни = [], set()
+    for r in db.execute(text(sql), п).mappings().all():
+        if float(r["сходство"]) < мин_сходство:
+            break
+        день = r["ts"].date()
+        # Строка календаря («27 августа — Полюс — МСФО 1п 2025г», «22.05 — СД решит») — анонс, а не событие.
+        if день in дни or re.match(r"^\W*\d{1,2}[\s.]", r["текст"] or ""):
+            continue
+        дни.add(день)
+        out.append({"id": r["id"], "вид": r["kind"], "время": r["ts"], "текст": r["текст"] or "",
+                    "сходство": round(float(r["сходство"]), 3), "тип": тип})
+        if len(out) >= k:
+            break
+    return out
+
+
+def отрасли_текста(db, текст: str, хэштеги: list, канал: str = "") -> list[tuple[str, str]]:
+    """Отрасли новости по словарю отраслей (хэштег или слова, с проверкой «про наш рынок») — тем же SQL, что у синка.
+    Для новости, которой в мозге ещё нет (синк раз в 15 минут), и для кандидата. → [(отрасль, способ)]."""
+    vocab, nt = _словарь()
+    п: dict = {"t": текст or "", "h": list(хэштеги or []), "ch": канал or ""}
+    по_тегам, по_словам = vocab.sql_отрасли(vocab.sql_теги("a.hashtags"), "a.text", nt._про_нас("a", п, "нп"), п)
+    r = db.execute(text(f"""
+        SELECT {по_тегам}, {по_словам}
+          FROM (SELECT CAST(:t AS text) AS text, CAST(:h AS text[]) AS hashtags, CAST(:ch AS text) AS channel) a
+    """), п).first()
+    out = [(x, "хэштег") for x in (r[0] or [])]
+    return out + [(x, "слова") for x in (r[1] or []) if x not in {o for o, _ in out}]
+
+
 def контекст(
     ticker: str = Query(..., min_length=1, max_length=20, description="тикер бумаги или код фьючерса"),
     days: int = Query(14, ge=1, le=365),

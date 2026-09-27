@@ -107,6 +107,9 @@ _ROW = {
     "asset_name": "Газпром", "anomaly_clgroup": "FIZ", "severity_value": 4.69,
     "signal_date": _dt.date(2026, 7, 30), "created_at": None,
     "thread_key": "GAZP:earnings", "draft_text": "Черновик",
+    # reasoning — в строке: иначе сборщик идёт за ним в базу (R30, #1624), а в тестах базы нет. Семь тестов паритета
+    # падали так с 27.09 незамеченными — тесты завода в CI не гонялись.
+    "reasoning": "",
 }
 
 
@@ -127,6 +130,8 @@ def _stub_brief_sources(monkeypatch):
         "после_новости": "9 сентября: чистый лонг вырос на 1,5%"})
     monkeypatch.setattr(CA, "_news_around", lambda *a, **k: [
         "9 сентября, 17:17 МСК — пожар в Новом Уренгое → за 2 часа акция подешевела на 1,4%"])
+    monkeypatch.setattr(CA, "_похожие_в_прошлом", lambda *a, **k: [
+        "14 марта 2026, 09:10 МСК — удар по НПЗ в Краснодарском крае → NVTK: -1,2% за два дня после"])
     monkeypatch.setattr(CA, "_prior_post_line", lambda *a: "(нет)")
     # ⚠️ Каждый НОВЫЙ источник данных брифа обязан попасть в эту заглушку. Именно
     # так тест паритета и поймал добавление _related_context: без подмены он полез
@@ -276,22 +281,34 @@ def test_events_block_is_in_both_briefs(monkeypatch):
         assert "события_вокруг_новости" in payload, name
 
 
-def test_sector_tags_come_from_the_archive_minus_geography():
-    """Цифры — реальный подсчёт по архиву за два года (10.09.2026)."""
-    rows = [("Нефть и газ", "#газ", 169, 169), ("Нефть и газ", "#китай", 85, 108),
-            ("Нефть и газ", "#сп", 62, 62), ("Здравоохранение", "#фарма", 4, 5),
-            ("Транспорт", "#каршеринг", 4, 4), ("Финансы", "#крипто", 65, 83),
-            ("IT", "#редкий", 3, 3), ("Металлы", "#общий", 10, 20)]
-    assert CA._pick_sector_tags(rows) == {
-        "Нефть и газ": ["#газ"], "Здравоохранение": ["#фарма"], "Транспорт": ["#каршеринг"]}
+def test_similar_past_events_block_is_in_both_briefs(monkeypatch):
+    """Единый поиск мозга (27.09): «похожие события в прошлом» — у писателя и у судьи один и тот же блок."""
+    _stub_brief_sources(monkeypatch)
+    for name, payload in (("писатель", CA._step_c_payload(None, _ROW, "tok")),
+                          ("судья", CA._step_g_payload(None, _ROW, "tok"))):
+        assert "похожие_события_в_прошлом" in payload, name
 
 
-def test_every_sector_has_base_tags_and_none_is_stoplisted():
+def test_factory_sectors_come_from_the_brain_vocabulary():
+    """Один словарь отраслей на мозг и завод (Brain/vocab.py: ОТРАСЛИ); у завода своего списка больше нет."""
+    import inspect
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Brain"))
+    import vocab
     for sector in ("Энергетика", "Финансы", "Потреб. сектор", "Металлы", "IT", "Нефть и газ",
-                   "Транспорт", "Химия", "Застройщики", "Здравоохранение", "Машиностроение",
-                   "Телеком"):
-        assert CA._SECTOR_TAGS.get(sector), sector
-    assert not set(sum(CA._SECTOR_TAGS.values(), [])) & CA._TAG_STOP
+                   "Транспорт", "Химия", "Застройщики", "Здравоохранение", "Машиностроение", "Телеком"):
+        assert vocab.ОТРАСЛИ.get(sector), sector
+    assert not hasattr(CA, "_SECTOR_TAGS") and not hasattr(CA, "_sector_tags")
+    assert "_отрасли_новости(db, row)" in inspect.getsource(CA._sector_check)
+    around = inspect.getsource(CA._news_around)
+    assert "_brain_events_around(" in around and "_SELECT_BRAIN_NEWS_MARK" in around, "мозг + хвост из архива"
+
+
+def test_similar_events_are_strict_and_dated():
+    import inspect
+    assert CA._ПОХОЖИЕ_K <= 3 and CA._ПОХОЖИЕ_МИН >= 0.6, "поле в брифе модель считает обязанной израсходовать"
+    src = inspect.getsource(CA._похожие_в_прошлом)
+    assert "тип=тип" in src and "{t.year}" in src, "того же типа и с годом"
 
 
 def test_position_block_has_no_long_horizon_numbers(monkeypatch):

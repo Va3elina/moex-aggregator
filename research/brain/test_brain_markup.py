@@ -176,3 +176,11 @@ def test_documents_are_typed_by_source_and_get_sector_via_company():
     assert vocab.ТИП_ВИДА["doc"] == "отчётность" and "doc" in vocab.ИСТОЧНИК_ГЛАВНЕЕ
     assert "doc" in vocab.ВИДЫ_С_ОТРАСЛЬЮ and "отчитался" in vocab.РЁБРА_К_КОМПАНИИ
     assert "b.kind = 'doc' AND NOT EXISTS" in inspect.getsource(_sync()._итог_разметки), "старые документы — один раз"
+
+
+def test_sync_takes_no_exclusive_locks_every_run():
+    """ALTER/TRUNCATE в каждом прогоне держали исключительную блокировку до конца синка — чтение мозга стояло."""
+    s = _sync()
+    assert 'text("TRUNCATE' not in inspect.getsource(s.карта_тикеров)
+    src = inspect.getsource(s.таблицы_аудита)
+    assert src.index("if есть ==") < src.index('conn.execute(text(f"ALTER TABLE'), "схема — только если чего-то нет"
