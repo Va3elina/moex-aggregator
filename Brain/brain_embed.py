@@ -9,9 +9,14 @@
 на numpy, без torch и GPU, тысячи текстов в секунду. Веса — 512 МБ float32 на
 диске (/opt/frame/models), в память грузятся int8 (~130 МБ). Путь — EMBED_MODEL_DIR.
 
-Что эмбеддим: заголовок + краткое содержание узла; у компании — название, сектор,
-полное имя и тикеры. Документы («Отчёт · 2022») не эмбеддим — в заголовке нет
-смысла. Пересчёт — только когда текст изменился (text_hash).
+Что эмбеддим — единый формат для всех источников (Вадим 27.09: «машиночитаемо, под
+векторную базу»): «тип события · компании · отрасль · суть». Тип и отрасль — из единой
+разметки (Brain/vocab.py, рёбра «тип»/«отрасль»), суть — чистый текст узла (без хэштегов,
+эмодзи, ссылок). Новость про дивиденды Сбера и раскрытие FinanceMarker о них ложатся рядом,
+хотя пришли из разных источников и разными словами. У компании — название, сектор, полное
+имя и тикеры. Документы («Отчёт · 2022») не эмбеддим — в заголовке нет смысла.
+Пересчёт — только когда текст изменился (text_hash): сменился тег — синк сдвигает
+updated_at узла, текст для вектора другой, вектор пересчитывается.
 
 Запуск: python Brain/brain_embed.py [--full] [--limit N]
 Итог — JSON последней строкой для оркестратора.
@@ -25,6 +30,9 @@ import time
 
 import numpy as np
 from sqlalchemy import create_engine, text
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import vocab  # noqa: E402 — рёбра от события к компании
 
 DB_URL = os.getenv("DB_URL")
 MODEL_DIR = os.getenv("EMBED_MODEL_DIR", "/app/models/potion-multilingual-128M-int8")
@@ -46,14 +54,21 @@ def модель():
     return _модель
 
 
-def текст_узла(kind: str, title: str, summary, payload) -> str:
-    части = [title or ""]
-    if kind == "company" and payload:
-        части += [str(payload.get("sector") or ""), str(payload.get("name_full") or ""),
-                  " ".join(payload.get("secids") or [])]
-    elif summary:
-        части.append(str(summary)[:600])
-    return " · ".join(x for x in части if x).strip()
+def текст_узла(kind: str, title: str, summary, payload, тип=None, компании=None, отрасль=None) -> str:
+    if kind == "company":
+        части = [title or ""]
+        if payload:
+            части += [str(payload.get("sector") or ""), str(payload.get("name_full") or ""),
+                      " ".join(payload.get("secids") or [])]
+        return " · ".join(x for x in части if x).strip()
+    суть = [title or ""]
+    if summary:
+        # У новости суть — весь чистый текст, заголовок — его начало: второй раз не повторяем.
+        if str(summary).startswith((title or "").rstrip("…")[:60]):
+            суть = [str(summary)[:600]]
+        else:
+            суть.append(str(summary)[:600])
+    return " · ".join(x for x in [тип, компании, отрасль, *суть] if x).strip()
 
 
 def main() -> int:
@@ -65,17 +80,23 @@ def main() -> int:
     eng = create_engine(DB_URL)
     with eng.connect() as conn:
         строки = conn.execute(text(f"""
-            SELECT n.id, n.kind, n.title, n.summary, n.payload, e.text_hash
+            SELECT n.id, n.kind, n.title, n.summary, n.payload, e.text_hash,
+                   (SELECT string_agg(t.title, ', ') FROM brain_edges x JOIN brain_nodes t ON t.id = x.dst
+                     WHERE x.src = n.id AND x.kind = 'тип') AS тип,
+                   (SELECT string_agg(DISTINCT c.title, ', ') FROM brain_edges x JOIN brain_nodes c ON c.id = x.dst
+                     WHERE x.src = n.id AND x.kind = ANY(:рёбра) AND starts_with(x.dst, 'company:')) AS компании,
+                   (SELECT string_agg(s.title, ', ') FROM brain_edges x JOIN brain_nodes s ON s.id = x.dst
+                     WHERE x.src = n.id AND x.kind = 'отрасль') AS отрасль
               FROM brain_nodes n
               LEFT JOIN brain_embeddings e ON e.node_id = n.id
              WHERE n.kind = ANY(string_to_array(:kinds, ','))
                AND ({'TRUE' if args.full else 'e.node_id IS NULL OR e.updated_at < n.updated_at'})
              ORDER BY n.ts DESC NULLS LAST
              LIMIT :lim
-        """), {"kinds": ",".join(ВИДЫ), "lim": args.limit}).all()
+        """), {"kinds": ",".join(ВИДЫ), "lim": args.limit, "рёбра": list(vocab.РЁБРА_К_КОМПАНИИ)}).all()
     задачи = []
-    for id_, kind, title, summary, payload, старый_хэш in строки:
-        т = текст_узла(kind, title, summary, payload)
+    for id_, kind, title, summary, payload, старый_хэш, тип, компании, отрасль in строки:
+        т = текст_узла(kind, title, summary, payload, тип, компании, отрасль)
         if not т:
             continue
         h = hashlib.md5(т.encode()).hexdigest()

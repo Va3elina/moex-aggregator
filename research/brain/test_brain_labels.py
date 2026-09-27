@@ -43,8 +43,12 @@ def test_labels_run_every_sync_only_for_90_days_and_only_once():
     src = inspect.getsource(s.ярлыки_новостей)
     assert "NOT EXISTS (SELECT 1 FROM brain_news_labels" in src, "по одному разу на новость"
     assert "b.ts > :с" in src
+    # тип — тем же правилом, что у единой разметки (Brain/vocab.py): ярлык и тег-ребро не расходятся
+    assert "vocab.sql_тип(" in src and "vocab.sql_правило(" in src
     # регэкспы и теги — параметрами, без «%» и экранирования в тексте запроса
-    assert "CAST(:h{i} AS text[])" in src and "~* :r{i}" in src
+    import vocab
+    vsrc = inspect.getsource(vocab.sql_тип)
+    assert "CAST(:{prefix}h{i} AS text[])" in vsrc and "~* :{prefix}r{i}" in vsrc
 
 
 def test_labels_table_survives_news_rebuild():
