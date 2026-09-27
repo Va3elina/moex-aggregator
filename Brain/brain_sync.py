@@ -33,6 +33,7 @@ from sqlalchemy import create_engine, text
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vocab  # noqa: E402 — единый словарь разметки: типы, чистка текста, шум
+import news_types as nt  # noqa: E402 — отбор новостей без компании и их темы (с проверкой «про наш рынок»)
 
 DB_URL = os.getenv("DB_URL")
 НОВОСТИ_ДНЕЙ = 730
@@ -924,6 +925,68 @@ def объявления_биржи(conn, full: bool) -> int:
     return n
 
 
+def новости_без_компании(conn, full: bool) -> dict:
+    """Новости без нашей компании — за год, только с темой рынка и «про наш рынок» (Brain/news_types.py: удары по
+    инфраструктуре, налоги, ставка, сырьё, санкции…). Вадим 27.09: «давай, начинай с новостей без тикера за год». По
+    ним завод найдёт похожие события — прошлые удары по НПЗ, налоги, решения ЦБ, — а у отрасли видно, что с ней было.
+    Отбор — тот же, что проверен прогоном research/brain/eval_brain.py (часть 1).
+
+    Узел — тот же вид news с меткой payload.без_компании: чистка «новостей без связей» его не трогает, разметка берёт
+    тип по темам с той же проверкой «про наш рынок», отрасль — по теме. Тема перестала находиться или старше года —
+    узел уходит.
+
+    ⚠️ Первая заливка — окнами по vocab.БЕЗ_КОМПАНИИ_ОКНО дней от свежих к старым, одно окно за синк: год за раз
+    (≈57 тыс. новостей через регэкспы тем плюс разметка) упёрся бы в лимит оркестратора (10 минут) и откатывался бы
+    целиком каждый прогон. Свежие новости идут по водяному знаку импорта, как у остальных источников."""
+    п: dict = {"дней": vocab.БЕЗ_КОМПАНИИ_ДНЕЙ}
+    чисто = vocab.sql_чисто("n.text", п)
+    заголовок, суть, теги, шум = _текст_новости_sql(п)
+    тема = nt.sql_type("n", п, "нк")
+    годна = nt.sql_relevant("n", п, "нк")
+    сейчас = conn.execute(text("SELECT NOW()")).scalar()
+    год_назад = сейчас - timedelta(days=vocab.БЕЗ_КОМПАНИИ_ДНЕЙ)
+    далеко = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    if full:
+        вод, лево, право, окно = далеко, далеко, далеко, "весь год"
+    else:
+        вод = _водяной(conn, "news_tickerless") or сейчас   # первый прогон: свежее придёт первым окном заливки
+        граница = _водяной(conn, "news_tickerless_back") or сейчас
+        if граница > год_назад:
+            право, лево = граница, max(год_назад, граница - timedelta(days=vocab.БЕЗ_КОМПАНИИ_ОКНО))
+            окно = f"{лево:%d.%m.%Y}–{право:%d.%m.%Y}"
+        else:
+            право = лево = далеко
+            окно = "заливка года закончена"
+    п.update({"вод": вод, "лево": лево, "право": право})
+    r = conn.execute(text(f"""
+        INSERT INTO brain_nodes (id, kind, key, title, summary, ts, payload, updated_at)
+        SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
+               {заголовок}, {суть}, posted_at,
+               jsonb_build_object('channel', {_КАНАЛ}, 'views', views, 'tickers', to_jsonb(tickers),
+                                  'hashtags', to_jsonb({теги}), 'url', {_URL}, 'без_компании', TRUE), NOW()
+          FROM news_archive n
+          CROSS JOIN LATERAL (SELECT {чисто} AS ч) x
+         WHERE n.posted_at > NOW() - make_interval(days => :дней)
+           AND (n.imported_at > :вод OR (n.posted_at >= :лево AND n.posted_at < :право))
+           AND NOT EXISTS (SELECT 1 FROM brain_ticker_map m WHERE m.ticker = ANY(n.tickers))
+           AND NOT {шум} AND {годна} AND ({тема}) IS NOT NULL
+         ORDER BY 1, n.imported_at DESC
+        ON CONFLICT (id) DO NOTHING
+    """), п)
+    n = r.rowcount
+    _отметить(conn, "news_tickerless", conn.execute(text("SELECT MAX(imported_at) FROM news_archive")).scalar(), n)
+    if full:
+        _отметить(conn, "news_tickerless_back", год_назад, n)
+    elif право != далеко:
+        _отметить(conn, "news_tickerless_back", лево, n)
+    # Старше года — уходит (окно «за год»). Сначала связи: и ярлыки, и «из_новости» кандидатов.
+    старые = ("SELECT id FROM brain_nodes WHERE kind = 'news' AND coalesce(CAST(payload ->> 'без_компании' AS boolean), FALSE)"
+              " AND ts < NOW() - make_interval(days => :дней)")
+    conn.execute(text(f"DELETE FROM brain_edges WHERE src IN ({старые}) OR dst IN ({старые})"), п)
+    устарело = conn.execute(text(f"DELETE FROM brain_nodes WHERE id IN ({старые})"), п).rowcount
+    return {"добавлено": n, "окно": окно, "устарело": устарело}
+
+
 def новости_по_имени(conn, full: bool) -> int:
     """Новости без хэштега тикера: разметка по имени компании полнотекстом (русская
     морфология: «Сбербанка», «Полюсом»). Уровень C, способ «имя». Только правила
@@ -989,14 +1052,17 @@ def новости_по_имени(conn, full: bool) -> int:
     # Узлы новостей, оставшиеся без единой связи, карте не нужны. ⚠️ Рёбра разметки («тип», «отрасль») — ярлыки,
     # а не связь: без этой оговорки новость, у которой аудит снял последнюю компанию, жила бы вечно с одним «типом»
     # (27.09, после единой разметки). Сначала уходят её ярлыки, потом она сама.
+    # Новость без компании (payload.без_компании, новости_без_компании()) сиротой не считается: она в мозге ради темы.
     conn.execute(text("""
         DELETE FROM brain_edges WHERE kind IN ('тип', 'отрасль') AND src IN (
             SELECT n.id FROM brain_nodes n WHERE n.kind = 'news'
+               AND NOT coalesce(CAST(n.payload ->> 'без_компании' AS boolean), FALSE)
                AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE (e.src = n.id OR e.dst = n.id)
                                                             AND e.kind NOT IN ('тип', 'отрасль')))
     """))
     conn.execute(text("""
         DELETE FROM brain_nodes n WHERE n.kind = 'news'
+           AND NOT coalesce(CAST(n.payload ->> 'без_компании' AS boolean), FALSE)
            AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = n.id OR e.dst = n.id)
     """))
     _отметить(conn, "news_names", conn.execute(text("SELECT MAX(imported_at) FROM news_archive")).scalar(), n)
@@ -1345,7 +1411,11 @@ def _итог_разметки(conn, в_работе: str, п: dict, с_аген
     conn.execute(text(f"""
         CREATE TEMP TABLE _разм AS
         (SELECT DISTINCT ON (b.id) b.id, b.kind, a.text AS текст, {vocab.sql_теги('a.hashtags')} AS теги,
-                CAST(NULL AS text) AS от_источника
+                CAST(NULL AS text) AS от_источника,
+                -- новость без компании: тип — по темам с проверкой «про наш рынок» (тот же отбор, что пустил её в мозг)
+                CASE WHEN coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
+                          AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = b.id AND e.kind = 'упоминает')
+                     THEN {nt.sql_type('a', п, 'нт')} END AS тип_темы
            FROM brain_nodes b JOIN news_archive a ON {_НОВОСТЬ_АРХИВ}
           WHERE b.kind = 'news' AND {в_работе}
           ORDER BY b.id)
@@ -1359,18 +1429,18 @@ def _итог_разметки(conn, в_работе: str, п: dict, с_аген
                     THEN concat_ws(' ', c.headline, c.annotation, left(c.raw_text, 1500)) END,
                CASE WHEN left(concat_ws(' ', c.headline, c.raw_text), 160) !~* :шум_к
                          AND c.source NOT IN ('insight', 'combo') THEN {теги_к}
-                    ELSE CAST(ARRAY[] AS text[]) END, {шаг_а}
+                    ELSE CAST(ARRAY[] AS text[]) END, {шаг_а}, CAST(NULL AS text)
           FROM brain_nodes b JOIN content_candidates c ON b.id = 'candidate:' || c.id
          WHERE b.kind IN ('candidate', 'post') AND {в_работе}
         UNION ALL
-        SELECT b.id, b.kind, concat_ws(' ', s.snippet, b.summary), {теги_с}, CAST(NULL AS text)
+        SELECT b.id, b.kind, concat_ws(' ', s.snippet, b.summary), {теги_с}, CAST(NULL AS text), CAST(NULL AS text)
           FROM brain_nodes b JOIN ownership_signals s ON b.id = 'signal:' || s.id
          WHERE b.kind = 'signal' AND {в_работе}
         UNION ALL
         -- У раскрытия слова — только по заголовку: там тип сообщения FinanceMarker («Проведение заседания совета
         -- директоров»), а в повестке — всё подряд («бюджет», «инсайдер»), и тип по ней выходил случайным.
         SELECT b.id, b.kind, CASE WHEN b.kind = 'disclosure' THEN b.title ELSE concat_ws(' ', b.title, b.summary) END,
-               CAST(ARRAY[] AS text[]), {от_вида}
+               CAST(ARRAY[] AS text[]), {от_вида}, CAST(NULL AS text)
           FROM brain_nodes b
          WHERE b.kind IN ('exchange', 'disclosure', 'report', 'index_event') AND {в_работе}
     """), п)
@@ -1378,19 +1448,26 @@ def _итог_разметки(conn, в_работе: str, п: dict, с_аген
     по_тегам, по_словам = vocab.sql_тип("r0.теги", "r0.текст", п)
     слова_за = vocab.sql_слова_за("r.по_тегам", "r.текст", п)
     правило = vocab.sql_правило("r1.по_тегам", "r1.по_словам", п)
+    теги_темы = vocab.sql_теги_за("r.тип_темы", "r.теги", п)
+    слова_темы = vocab.sql_слова_за("r.тип_темы", "r.текст", п)
     conn.execute(text("DROP TABLE IF EXISTS _итог"))
     conn.execute(text(f"""
         CREATE TEMP TABLE _итог AS
-        WITH r1 AS (SELECT r0.id, r0.kind, r0.текст, r0.от_источника, {по_тегам} AS по_тегам, {по_словам} AS по_словам
+        WITH r1 AS (SELECT r0.id, r0.kind, r0.текст, r0.от_источника, r0.тип_темы, r0.теги,
+                           {по_тегам} AS по_тегам, {по_словам} AS по_словам
                       FROM _разм r0),
              r AS (SELECT r1.*, {правило} AS правило FROM r1),
              аг AS (SELECT node_id, тип FROM brain_news_labels
                      WHERE CAST(:с_агентом AS boolean) AND тип = ANY(CAST(:типы AS text[]))
                        AND тип_источник IS NOT NULL AND тип_источник <> 'правило')
-        SELECT r.id, r.kind,
-               CASE WHEN r.kind = ANY(CAST(:главнее AS text[])) AND r.от_источника IS NOT NULL THEN r.от_источника
+        SELECT r.id, r.kind, r.тип_темы,
+               CASE WHEN r.тип_темы IS NOT NULL THEN r.тип_темы
+                    WHEN r.kind = ANY(CAST(:главнее AS text[])) AND r.от_источника IS NOT NULL THEN r.от_источника
                     ELSE COALESCE(r.правило, аг.тип, r.от_источника) END AS тип,
-               CASE WHEN r.kind = ANY(CAST(:главнее AS text[])) AND r.от_источника IS NOT NULL THEN 'источник'
+               CASE WHEN r.тип_темы IS NOT NULL
+                         THEN CASE WHEN {теги_темы} THEN CASE WHEN {слова_темы} THEN 'хэштег+слова' ELSE 'хэштег' END
+                                   ELSE 'слова' END
+                    WHEN r.kind = ANY(CAST(:главнее AS text[])) AND r.от_источника IS NOT NULL THEN 'источник'
                     WHEN r.правило IS NOT NULL AND r.правило = r.по_тегам
                          THEN CASE WHEN {слова_за} THEN 'хэштег+слова' ELSE 'хэштег' END
                     WHEN r.правило IS NOT NULL THEN 'слова'
@@ -1438,6 +1515,19 @@ def разметка(conn, полный: bool) -> dict:
     в_работе = ("(CAST(:полный AS boolean) OR b.updated_at > :вод OR EXISTS (SELECT 1 FROM brain_news_labels l"
                 " WHERE l.node_id = b.id AND l.updated_at > :вод))")
     _итог_разметки(conn, в_работе, п)
+    # Новость без компании, у которой тема больше не находится (правила поменялись), в мозге не нужна.
+    conn.execute(text("DROP TABLE IF EXISTS _без_темы"))
+    conn.execute(text("""
+        CREATE TEMP TABLE _без_темы AS
+        SELECT t.id FROM _итог t JOIN brain_nodes b ON b.id = t.id
+         WHERE t.kind = 'news' AND t.тип_темы IS NULL AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
+           AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = t.id AND e.kind = 'упоминает')
+    """))
+    без_темы = conn.execute(text("SELECT COUNT(*) FROM _без_темы")).scalar() or 0
+    if без_темы:
+        conn.execute(text("DELETE FROM brain_edges WHERE src IN (SELECT id FROM _без_темы) OR dst IN (SELECT id FROM _без_темы)"))
+        conn.execute(text("DELETE FROM brain_nodes WHERE id IN (SELECT id FROM _без_темы)"))
+        conn.execute(text("DELETE FROM _итог WHERE id IN (SELECT id FROM _без_темы)"))
     conn.execute(text("DROP TABLE IF EXISTS _тип"))
     conn.execute(text(f"""
         CREATE TEMP TABLE _тип AS SELECT id, kind, 'tag:тип/' || {vocab.sql_ключ_тега('тип')} AS dst, способ
@@ -1472,13 +1562,29 @@ def разметка(conn, полный: bool) -> dict:
           LEFT JOIN cnt ON cnt.src = e.src
          WHERE e.kind = ANY(CAST(:рёбра AS text[])) AND starts_with(e.dst, 'company:')
            AND (e.kind <> 'упоминает' OR e.role = 'главная' OR (e.role IS NULL AND cnt.n <= 2))
-    """), {"виды": list(vocab.ВИДЫ_С_ОТРАСЛЬЮ), "рёбра": list(vocab.РЁБРА_К_КОМПАНИИ)})
-    отр_убрано, отр_поставлено = _разница(conn, "отрасль", "_отр", "TRUE", {}, "'B'", "j.способ", "CAST(NULL AS text)")
+        UNION
+        -- новость без компании — отрасль по теме, где она однозначна (vocab.ТЕМА_ОТРАСЛЬ; удобрения — «Химия»)
+        SELECT x.id, x.dst, 'тема' FROM (
+            SELECT t.src AS id,
+                   'sector:' || md5(CASE WHEN t.dst = :тег_металлы AND concat_ws(' ', b.title, b.summary) ~* :удобрения
+                                          THEN :химия ELSE m.отрасль END) AS dst
+              FROM brain_edges t
+              JOIN unnest(CAST(:теги_отр AS text[]), CAST(:отрасли AS text[])) AS m(tag, отрасль) ON m.tag = t.dst
+              JOIN brain_nodes b ON b.id = t.src
+             WHERE t.kind = 'тип' AND b.kind = 'news' AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
+        ) x JOIN brain_nodes s ON s.id = x.dst
+    """), {"виды": list(vocab.ВИДЫ_С_ОТРАСЛЬЮ), "рёбра": list(vocab.РЁБРА_К_КОМПАНИИ),
+           "теги_отр": ["tag:тип/" + vocab.ключ_тега(t) for t in vocab.ТЕМА_ОТРАСЛЬ],
+           "отрасли": list(vocab.ТЕМА_ОТРАСЛЬ.values()),
+           "тег_металлы": "tag:тип/" + vocab.ключ_тега("металлы и удобрения"),
+           "удобрения": vocab.УДОБРЕНИЯ[1], "химия": vocab.УДОБРЕНИЯ[0]})
+    отр_убрано, отр_поставлено = _разница(conn, "отрасль", "_отр", "TRUE", {}, "CASE j.способ WHEN 'тема' THEN 'C' ELSE 'B' END",
+                                          "j.способ", "CAST(NULL AS text)")
     всего, с_типом = conn.execute(text("SELECT COUNT(*), COUNT(тип) FROM _итог")).first()
     # Водяной знак — с запасом в 10 минут: ответ агента, записанный, пока шёл синк, не потеряется.
     _отметить(conn, vocab.ВЕРСИЯ, conn.execute(text("SELECT NOW() - INTERVAL '10 minutes'")).scalar(), int(всего))
     return {"в_работе": int(всего), "с_типом": int(с_типом), "тип_убрано": тип_убрано, "тип_поставлено": тип_поставлено,
-            "отрасль_убрано": отр_убрано, "отрасль_поставлено": отр_поставлено}
+            "отрасль_убрано": отр_убрано, "отрасль_поставлено": отр_поставлено, "без_темы_убрано": int(без_темы)}
 
 
 def классифицировать(conn, ids: list, с_агентом: bool = False) -> dict:
@@ -1541,6 +1647,11 @@ def main() -> int:
     итог = {}
     with eng.begin() as conn:
         conn.execute(text("SET LOCAL statement_timeout = '600s'"))
+        # Один синк за раз: ручной прогон и прогон оркестратора, пошедшие вместе, блокировали бы друг друга на тех же
+        # строках до таймаута. Второй просто пропускает — через 15 минут будет следующий.
+        if not conn.execute(text("SELECT pg_try_advisory_xact_lock(hashtext('brain_sync'))")).scalar():
+            print(json.dumps({"пропуск": "синк мозга уже идёт"}, ensure_ascii=False))
+            return 0
         таблицы_аудита(conn)
         # Новая версия словаря (или первый запуск разметки): одна чистка уже лежащих узлов и полная переразметка.
         новая_версия = _водяной(conn, vocab.ВЕРСИЯ) is None
@@ -1563,6 +1674,7 @@ def main() -> int:
         итог["правил_имён"] = правила_имён(conn)
         итог["новостей_по_имени"] = новости_по_имени(conn, args.full)
         итог["объявлений_биржи"] = объявления_биржи(conn, args.full)
+        итог["новости_без_компании"] = новости_без_компании(conn, args.full)
         if новая_версия:
             итог["чистка"] = чистка_однократно(conn)
         итог["ярлыков_новостей"] = ярлыки_новостей(conn, args.full, сброс=новая_версия)
