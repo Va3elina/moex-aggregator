@@ -36,10 +36,13 @@ def test_rule_types_and_agent_types_are_the_same_list():
     assert tuple(правила) + ("прочее",) == core._ТИПЫ_НОВОСТЕЙ
 
 
-def test_labels_run_every_sync_only_for_90_days_and_only_once():
+def test_labels_run_every_sync_for_two_years_in_portions_and_only_once():
+    """С 27.09 — все новости мозга (два года), а не 90 дней: у старых типа не было ≈30% («закрыть тему второго мозга»).
+    Первая досылка — порциями, свежие первыми."""
     s = _sync()
     assert "ярлыки_новостей(conn" in inspect.getsource(s.main)
-    assert s._ЯРЛЫКИ_ДНЕЙ == 90
+    assert s._ЯРЛЫКИ_ДНЕЙ == 730 and s._ЯРЛЫКИ_ЗА_ПРОГОН <= 20000
+    assert "LIMIT :за_прогон" in inspect.getsource(s.ярлыки_новостей) and "ORDER BY b.ts DESC" in inspect.getsource(s.ярлыки_новостей)
     src = inspect.getsource(s.ярлыки_новостей)
     assert "NOT EXISTS (SELECT 1 FROM brain_news_labels" in src, "по одному разу на новость"
     assert "b.ts > :с" in src
@@ -116,3 +119,23 @@ def test_agent_labels_are_validated_and_written_once():
 def test_agent_label_for_already_labelled_news_is_dropped():
     out = core.ярлыки_решения({"ярлыки": [{"id": "news:markettwits/1", "тип": "прочее"}]}, db=_DB(rowcount=0))
     assert out == {"принято": 0, "отброшено": 1}
+
+
+def test_history_labels_only_in_two_night_windows_and_fresh_first():
+    """История без типа идёт агенту в остаточном порядке: свежих мало, аудит свободен, окна 02:20 и 03:20."""
+    many = F.LABELS_MIN + 10
+    from datetime import datetime as _d
+    at = lambda h: _d(2026, 9, 10, h, 20, tzinfo=MSK)
+    assert F.решение(at(2), 10, 0, None, None, 0, None, 0, None, many) == (None, 0, "labels")
+    assert F.решение(at(3), 10, 0, None, None, 0, None, 0, None, many) == (None, 0, "labels")
+    assert F.решение(at(1), 10, 0, None, None, 0, None, 0, None, many)[0], "01:20 — не для истории"
+    assert F.решение(at(4), 10, 0, None, None, 0, None, 0, None, many)[0], "04:20 — не для истории"
+    assert F.решение(at(2), 3000, 0, None, None, 0, None, 0, None, many)[2] == "main", "первый проход аудита важнее истории"
+    assert "730 days" in core._БЕЗ_ТИПА
+
+
+def test_agent_catch_all_operational_labels_go_back_once():
+    s = _sync()
+    src = inspect.getsource(s.ярлыки_операционные_однократно)
+    assert "labels_ops_v1" in src and "тип = 'операционные'" in src and "updated_at < '2026-09-27'" in src
+    assert "ярлыки_операционные_однократно(conn)" in inspect.getsource(s.main)

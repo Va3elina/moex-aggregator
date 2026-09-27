@@ -16,9 +16,27 @@ from sqlalchemy import text
 
 from api.database import SessionLocal
 
+def _news_recent() -> tuple[str, dict]:
+    """Связки (signals/insights/combos.py): новости за 25 дней — ноги-новости и «обычный день темы» для всплеска
+    (медиана за 20 дней). Темы — единым словарём второго мозга (Brain/news_types.py), шум — его же фильтром
+    (vocab.sql_шум): своего классификатора тем у связок нет (Вадим 27.09: «надо закрыть тему второго мозга»)."""
+    from api.brain_core import _словарь  # noqa: PLC0415 — Brain/ ищется от корня репо, в образе и на хосте
+    vocab, nt = _словарь()
+    p: dict = {}
+    чисто = vocab.sql_чисто("na.text", p)
+    return f"""
+        SELECT na.channel, na.posted_at, coalesce(na.views, 0) AS views,
+               coalesce(array_to_string(na.hashtags, ','), '') AS hashtags, left(na.text, 2000) AS text,
+               CASE WHEN NOT {vocab.sql_шум("na.text", "x.ч", p, канал="na.channel", теги="na.hashtags")}
+                    THEN {nt.sql_topics("na", p)} ELSE CAST(ARRAY[] AS text[]) END AS темы
+        FROM news_archive na
+        CROSS JOIN LATERAL (SELECT {чисто} AS ч) x
+        WHERE na.posted_at >= now() - interval '25 days'""", p
+
+
 # Новости и события мозга — окно, достаточное для контекста карточки (неделя до поста и
 # полтора месяца событий); позиции, фонды, цены — вся история: рекорд «с 2012 года»
-# считается по всему ряду.
+# считается по всему ряду. Запрос с параметрами — функция, возвращающая (SQL, параметры).
 QUERIES = {
     # последняя 5-минутная запись физлиц за самый свежий день — сверка находки с утром (Вадим 18.09:
     # Мечел — шорт 70,7 тыс. на закрытии 17.09, к 09:10 МСК 38,8 тыс.: позиции «полетели вниз»)
@@ -67,13 +85,7 @@ QUERIES = {
     "channel_posts": """SELECT post_id, posted_at, text FROM channel_posts
                         WHERE channel = 'FrameTool' AND posted_at >= now() - interval '45 days'
                         ORDER BY posted_at DESC""",
-    # связки (signals/insights/combos.py): новости с хэштегами за 25 дней — классификатор типа
-    # события и «обычный день темы» для всплеска (медиана за 20 дней)
-    "news_recent": """
-        SELECT channel, posted_at, coalesce(views, 0) AS views,
-               coalesce(array_to_string(hashtags, ','), '') AS hashtags, left(text, 2000) AS text
-        FROM news_archive
-        WHERE posted_at >= now() - interval '25 days'""",
+    "news_recent": _news_recent,
     "cbr_flows": """SELECT instrument_type, period_kind, period_end_date, category, value, updated_at
                     FROM cbr_flows""",
 }
@@ -83,7 +95,9 @@ QUERIES = {
 def _frame(name: str) -> pd.DataFrame:
     db = SessionLocal()
     try:
-        res = db.execute(text(QUERIES[name]))
+        q = QUERIES[name]
+        sql, p = q() if callable(q) else (q, {})
+        res = db.execute(text(sql), p)
         df = pd.DataFrame(res.fetchall(), columns=list(res.keys()))
     finally:
         db.close()

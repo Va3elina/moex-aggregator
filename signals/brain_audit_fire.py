@@ -28,10 +28,12 @@ OVERLAP = timedelta(minutes=90)
 SECOND_MIN = 20              # столько «неверно» ждут второго мнения — стреляем им в любую ночь
 LABELS_MIN = 50              # новостей без типа — стреляем режимом labels (ярлыки новостей)
 LABELS_HOUR = 4              # пока идёт первый проход аудита, ярлыкам — последнее окно ночи (04:20)
+HISTORY_HOURS = (2, 3)       # история (старше 90 дней) — не больше двух запусков за ночь: квота общая с писателем
 
 
 def решение(now_msk: datetime, backlog: int, busy: int, last_main, last_review,
-            pending_second: int = 0, last_second=None, labels_backlog: int = 0, last_labels=None):
+            pending_second: int = 0, last_second=None, labels_backlog: int = 0, last_labels=None,
+            labels_history: int = 0):
     """(почему не стреляем | None, сколько старых перепроверить, режим main|second|labels).
     Чистая — под тесты.
 
@@ -53,6 +55,10 @@ def решение(now_msk: datetime, backlog: int, busy: int, last_main, last_r
     # Ярлыки новостей (Вадим 10.09): пока аудит в первом проходе — одно окно за ночь,
     # потом — каждую ночь, пока есть что размечать.
     if labels_backlog >= LABELS_MIN and (backlog <= FIRST_PASS_MIN or now_msk.hour == LABELS_HOUR):
+        return None, 0, "labels"
+    # История без типа (старше 90 дней, Вадим 27.09: «закрыть тему второго мозга») — в остаточном порядке: свежих мало,
+    # аудит свободен, и только в двух окнах ночи. Партия всё равно берёт свежие первыми.
+    if labels_history >= LABELS_MIN and backlog <= FIRST_PASS_MIN and now_msk.hour in HISTORY_HOURS:
         return None, 0, "labels"
     if backlog > FIRST_PASS_MIN:
         return None, 0, "main"
@@ -104,16 +110,20 @@ def main() -> int:
             SELECT COUNT(*) FROM brain_news_labels l JOIN brain_nodes b ON b.id = l.node_id
              WHERE l.тип IS NULL AND b.ts > NOW() - INTERVAL '90 days'
         """)).scalar() or 0
+        labels_history = db.execute(text("""
+            SELECT COUNT(*) FROM brain_news_labels l JOIN brain_nodes b ON b.id = l.node_id
+             WHERE l.тип IS NULL AND b.ts <= NOW() - INTERVAL '90 days' AND b.ts > NOW() - INTERVAL '730 days'
+        """)).scalar() or 0
         why, resample, mode = решение(now, int(backlog), int(busy), состояние.get("audit_fire"), last_review,
                                       int(pending_second), состояние.get("audit_fire_second"),
-                                      int(labels_backlog), состояние.get("audit_fire_labels"))
+                                      int(labels_backlog), состояние.get("audit_fire_labels"), int(labels_history))
         if why:
             print(f"[{now:%Y-%m-%d %H:%M}] аудит пропущен: {why}; непроверенных {backlog}, "
                   f"ждут второго мнения {pending_second}, новостей без типа {labels_backlog}")
             return 0
         # Второе мнение: подозрительные плюс столько же «верно» вслепую — отсюда ×2.
         лимит = (min(PARTY, 2 * int(pending_second)) if mode == "second"
-                 else min(PARTY, int(labels_backlog)) if mode == "labels" else PARTY)
+                 else min(PARTY, int(labels_backlog) + int(labels_history)) if mode == "labels" else PARTY)
         payload = (f"Аудит разметки второго мозга.\n"
                    f"режим: {mode}\nлимит: {лимит}\nперепроверка: {resample}\n"
                    f"internal_token: {internal}\napi_host: {INTERNAL_API_HOST}")
