@@ -103,3 +103,10 @@ def test_gold_sets_use_vocabulary_types():
             assert set(exp.split("|")) <= set(ИМЕНА) | {"—"}, (name, nid, exp)
             assert src in {"MT", "SL", "EX", "FM", "CAND", "SIG"}
         assert строк >= 130
+
+
+def test_markup_edges_do_not_keep_orphan_news_alive():
+    """Новость без компании уходит из мозга, даже если у неё есть «тип» и «отрасль» — это ярлыки, не связь."""
+    src = inspect.getsource(_sync().новости_по_имени)
+    assert "e.kind NOT IN ('тип', 'отрасль')" in src
+    assert src.index("DELETE FROM brain_edges WHERE kind IN ('тип', 'отрасль')") < src.index("DELETE FROM brain_nodes n WHERE n.kind = 'news'")
