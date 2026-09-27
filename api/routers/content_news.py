@@ -906,7 +906,13 @@ def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get
     # (он ставил бы «годится» себе). Оригинал писателя остаётся в draft_text_ai, обе
     # версии уходят в журнал content_feedback. Одна попытка, без цикла.
     fix = (body.fixed_draft or "").strip()
-    apply_fix = bool(fix) and verdict != "годится" and fix != (row["draft_text"] or "")
+    # Находка / связка (Вадим 27.09: «нравилось, что было 14–18.09»): текст правится, только если провалены ворота A —
+    # числа, выдуманные факты, противоречия, стрела времени. Вкус и смысл — короткие фразы, плотность чисел, связь с
+    # новостью, итог — остаются замечаниями в боте. С 19.09 судья переписал 13 находок из 13 (в среднем −18% текста) и
+    # вырезал «на этом фоне» — связь с новостью, которую промпт писателя разрешает (#2952: Норникель и налог Минфина).
+    facts_failed = any(items.get(k) is False for k in _JUDGE_GATES_A)
+    apply_fix = (bool(fix) and verdict != "годится" and fix != (row["draft_text"] or "")
+                 and (row["source"] not in ("insight", "combo") or facts_failed))
     if apply_fix:
         db.execute(text("""
             INSERT INTO content_feedback (candidate_id, event, draft_ai, draft_human,

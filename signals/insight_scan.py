@@ -225,11 +225,52 @@ def own_posts(spec, as_of, k=2) -> list:
     return [f"{cards.d_ru(d, as_of)}: «{t.strip().splitlines()[0][:90]}»" for d, t in rows[:k]]
 
 
+def related_lines(spec, as_of) -> list:
+    """Связанные компании из второго мозга — тот же блок, что в брифе новостей (content_ai._related_context): граф
+    владения, сила связи по совместным новостям за 30 дней, что о компании писали. Вадим 27.09 про #1638: «часть про
+    Сегежу и Озон мы получили только за счёт второго мозга» — у находок этого блока не было. Прямые связи — фактурой,
+    слабые (одна отрасль: Русал владеет 27,8% Норникеля) — вопросом с ответом «нет» по умолчанию, связь из одного
+    графа владения до писателя не доходит — как в новостях."""
+    if spec["kind"] != "positions":
+        return []
+    stock = cards.data()[3].get(spec.get("sec"))
+    if not stock:
+        return []
+    from signals.content_ai import _related_context   # тяжёлый импорт — только когда есть бумага
+    db = SessionLocal()
+    try:
+        strong, _weak = _related_context(db, {"tickers": [stock], "headline": None, "raw_text": None},
+                                         pd.Timestamp(as_of).date())
+    except Exception as e:  # noqa: BLE001 — без блока карточка работает как раньше
+        print(f"[insight_scan] связанные компании {stock}: {type(e).__name__}: {e}")
+        return []
+    finally:
+        db.close()
+    lines = []
+    for tk, item in strong.items():
+        if not isinstance(item, dict):
+            continue
+        parts = [item.get("связь") or tk]
+        if item.get("из_архива"):
+            parts.append("что писали: " + "; ".join(item["из_архива"]))
+        if item.get("цена_за_месяц"):
+            parts.append(f"цена за месяц: {item['цена_за_месяц']}")
+        lines.append(" · ".join(parts))
+    weak = [item for item in _weak.values() if isinstance(item, dict)]
+    for item in weak:
+        lines.append(f"под вопросом: {item.get('связь')} ({'; '.join(item.get('почему_она_здесь') or [])})")
+    if lines:
+        lines.append("бери, только если связь помогает понять находку, иначе не упоминай; «под вопросом» - по умолчанию "
+                     "НЕ упоминай; долю владения - с датой снимка; причину не утверждай, показывай последовательность")
+    return lines
+
+
 def build(job: dict, now_iso: str) -> dict:
     spec, date = job["spec"], job["date"]
     card = cards.build_card(spec, date)
     ctx = cards.context_for(card, spec, now_iso)
     ctx["что канал уже писал по этому ряду"] = own_posts(spec, card["as_of"])
+    ctx["связанные компании (второй мозг)"] = related_lines(spec, card["as_of"])
     if job["repeat"]:
         r = job["repeat"]
         ctx["повтор темы - подай как продолжение"] = [

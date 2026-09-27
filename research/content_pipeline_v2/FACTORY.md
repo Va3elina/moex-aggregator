@@ -13,7 +13,7 @@
 | Отбор | Шаг А (Routine) → `apply_step_a`; Шаг Б `content_match.py` (*/5): новость ↔ аномалия позиций; новость про отрасль без компании → компания отрасли, ответившая данными (R30, `promote_sector_news`) | `detect_window` → `drop_low_activity` → `drop_expiry_days` → `pick` | те же отсевы → `combos.Engine` (темы, ноги, главная нога) |
 | Карточка писателю | `_build_brief` (`signals/content_ai.py`), JSON | `cards.build_card` + `brief_text` (`signals/insights/cards.py`) | `combos.brief` (`signals/insights/combos.py`) |
 | Писатель (Routine) | «Шаг В: писатель по новости» `trig_01KPtMNbEYNfqewKvwhdo4rj` → `prompt_step_c_v2_routine.md` | «Шаг В: писатель по находке» `trig_0117KQ5EwUUpb35LLEsAq2Dc` → `prompt_insight_writer_routine.md` | тот же писатель по находке, раздел «ЖАНР СВЯЗКА» |
-| Проверка | style-check (сам писатель) + судья Шаг Г (`TRIGGER_ID_STEP_G`, `prompt_step_g_routine.md`) — может править текст | `insight_check.py` при приёмке + с 18.09 судья Шаг Г по карточке (`_SELECT_JUDGE_PENDING_CARD`); бот ждёт судью до 45 мин | как у находок |
+| Проверка | style-check (сам писатель) + судья Шаг Г (`TRIGGER_ID_STEP_G`, `prompt_step_g_routine.md`) — может править текст | `insight_check.py` при приёмке + с 18.09 судья Шаг Г по карточке (`_SELECT_JUDGE_PENDING_CARD`); с 27.09 текст правит, только если провалены ворота A (числа, выдумки, противоречия, время), остальное — замечания; бот ждёт судью до 45 мин | как у находок |
 | Кто запускает писателя | `content_match.py` (сразу при совпадении) и `content_ai.py` (*/15, бэкстоп) | `content_ai.py` | `content_ai.py` |
 
 ⚠️ У новостей ДВА пути запуска писателя: `content_match` и `content_ai`. Любой отсев ставить в оба
@@ -108,9 +108,12 @@ TRIGGER_ID_STEP_C_INSIGHT, token, _insight_payload(...))`. Скрипт запу
 - Сканер находок / связок «молчит» — в логе `пропуск: ждём дневные позиции за …` или `уже прогнан`. Прогнать
   вручную, не дожидаясь: `insight_scan.sh --force`, `combo_scan.sh --mode data --force`.
 - `channel_posts` — только @FrameTool.
-- Подсказку мозга Шагу А (`_brain_hint_for_step_a`) строит процесс, который запускает Шаг А (`tg_hype_scan.sh`,
-  бэкстоп `content_ai.sh`): обёртке на хосте нужен `EMBED_MODEL_DIR=/opt/frame/models/…`, путь по умолчанию —
-  контейнерный. Проверка: `agent_trace` с question = 'подсказка Шагу А' без «недоступен».
+- Подсказка мозга Шагу А (`_brain_hint_for_step_a`) — хэштеги автора [B] и имена компаний в тексте [C]; слоя «похоже по
+  смыслу» с 27.09 нет (шум). Смысловой вызов с хоста требует `EMBED_MODEL_DIR=/opt/frame/models/…` — путь по умолчанию
+  контейнерный (с 08.09 из-за этого падал поиск). Эмбеддинги мозга считает `Brain/brain_embed.py` в оркестраторе раз в
+  15 мин; новости без тикеров в мозг не попадают (≈⅔ архива).
+- Карточка находки по акции: блок «связанные компании (второй мозг)» — `insight_scan.related_lines` ←
+  `content_ai._related_context` (как в брифе новостей: прямые связи с новостями, слабые — вопросом).
 - pytest не установлен ни локально, ни на сервере, ни в api-контейнере: тесты `research/content_pipeline_v2/test_*.py`
   запускать функциями внутри api-контейнера (там есть FastAPI), копию кода — в `/tmp` контейнера.
 - У находок/связок `judge_verdict` сначала ставит проверка кодом; признак «живой судья разобрал» — `judge_items`.

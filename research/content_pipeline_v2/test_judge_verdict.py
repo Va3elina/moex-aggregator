@@ -383,3 +383,17 @@ def test_new_draft_resets_everything_the_judge_said():
                  "judge_gave_up_at = NULL", "judge_fixed_at = NULL", "judge_fix_note = NULL",
                  "judge_dispatch_attempts = 0", "reviewer_notified_at = NULL"):
         assert поле in src, поле
+
+
+def test_data_post_is_fixed_only_for_facts():
+    """Вадим 27.09 («нравилось, что было 14–18.09»): у находки и связки судья меняет текст, только если провалены
+    ворота A — числа, выдумки, противоречия, стрела времени. С 19.09 он переписывал все находки и вырезал «на этом
+    фоне» (#2952). Вкусовое — замечаниями, текст писателя остаётся."""
+    import inspect
+    from pathlib import Path
+    from api.routers import content_news as CN
+    src = inspect.getsource(CN.apply_step_g)
+    assert "facts_failed" in src and "_JUDGE_GATES_A" in src
+    md = Path("research/content_pipeline_v2/prompt_step_g_routine.md").read_text("utf-8")
+    assert "ТОЛЬКО если провалены ворота A" in md
+    assert "«на фоне», «в те же дни», «пока» — это разрешено писателю" in md
