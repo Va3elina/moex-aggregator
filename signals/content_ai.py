@@ -342,6 +342,23 @@ def _not_newsworthy(db, row) -> str | None:
     return _div_no_surprise(db, row) or _weak_reaction(db, row)
 
 
+# Один отсев перед писателем новостей — для обоих путей: сразу из Шага Б (content_match) и бэкстопа раз в 15 минут.
+# До 27.09 отсевы стояли в двух местах и расходились: быстрый путь не ждал срез позиций после новости (черновик уходил
+# без блока реакции), а повтор Самолёта #2375 проскочил, когда отсев был только в одном месте.
+WAIT_REACTION = "ждём срез позиций после новости"
+
+
+def _news_writer_gate(db, row) -> str | None:
+    """Причина снять кандидата, WAIT_REACTION (оставить до следующего прогона) или None — можно звать писателя.
+    row — строка кандидата с полями аномалии (asset_id, anomaly_clgroup, signal_date) и source."""
+    rep = _repeat_of_ticker(db, row["id"]) or _stale_news(row.get("created_at")) or _not_newsworthy(db, row)
+    if rep:
+        return rep
+    if _waiting_for_reaction(db, row):
+        return WAIT_REACTION
+    return None
+
+
 def _repeat_of_ticker(db, candidate_id: int) -> str | None:
     rows = db.execute(_RECENT_SAME_TICKER, {"id": candidate_id}).fetchall()
     if not rows:
@@ -2600,15 +2617,14 @@ def run_once() -> dict:
                 summary["step_c_gave_up"] += 1
                 step_c_gave_up.append((row["id"], give_up_reason))
                 continue
-            rep = (_repeat_of_ticker(db, row["id"]) or _stale_news(row.get("created_at"))
-                   or _not_newsworthy(db, row))
-            if rep:
-                db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
-                summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
-                continue
-            # Пост — о том, как новость сказалась: ждём срез позиций после неё.
-            if _waiting_for_reaction(db, row):
+            # Пост — о том, как новость сказалась: без среза позиций после неё писать рано.
+            gate = _news_writer_gate(db, row)
+            if gate == WAIT_REACTION:
                 summary["step_c_waiting"] = summary.get("step_c_waiting", 0) + 1
+                continue
+            if gate:
+                db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": gate})
+                summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
                 continue
             try:
                 _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token))

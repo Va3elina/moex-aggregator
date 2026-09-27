@@ -59,7 +59,7 @@ from api.database import SessionLocal      # noqa: E402
 from signals import config                 # noqa: E402
 from signals.db import has_intraday_oi     # noqa: E402
 from signals.content_ai import (           # noqa: E402
-    _fire, _step_c_payload, TRIGGER_ID_STEP_C, _repeat_of_ticker, _stale_news, _not_newsworthy, _DECLINE_REPEAT,
+    _fire, _step_c_payload, TRIGGER_ID_STEP_C, _news_writer_gate, WAIT_REACTION, _DECLINE_REPEAT, _MARK_DISPATCHED,
     _sector_check, SECTOR_MARK,
 )
 
@@ -269,12 +269,26 @@ def run_once() -> dict:
                     ).mappings().first()
 
                 if match:
-                    # Тот же отсев, что в content_ai: сюда писатель уходит напрямую — #2375 (Самолёт) прошёл
-                    # третьим черновиком за три дня, #2242 — через двое суток после новости
-                    rep = (_repeat_of_ticker(db, row["id"]) or _stale_news(row["created_at"])
-                           or _not_newsworthy(db, row))
-                    if rep:
-                        db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": rep})
+                    payload_row = {
+                        "id": row["id"], "source": row["source"], "headline": row["headline"],
+                        "raw_text": row["raw_text"],
+                        "tickers": row["tickers"], "event_type": row["event_type"],
+                        "reasoning": row["reasoning"],
+                        "forwards_count": row["forwards_count"],
+                        "thread_key": row["thread_key"], "created_at": row["created_at"],
+                        "anomaly_id": match["id"],
+                        "asset_id": match["asset_id"], "asset_name": match["asset_name"],
+                        "anomaly_type": match["type"], "direction": match["direction"],
+                        "anomaly_clgroup": match["clgroup"],
+                        "severity_value": match["severity_value"],
+                        "signal_date": match["signal_date"],
+                        "anomaly_headline": match["headline"],
+                    }
+                    # Отсев — тот же, что у бэкстопа content_ai (одна функция): повтор, возраст, реакция цены,
+                    # дивиденд, срез позиций после новости.
+                    gate = _news_writer_gate(db, payload_row)
+                    if gate and gate != WAIT_REACTION:
+                        db.execute(_DECLINE_REPEAT, {"id": row["id"], "reason": gate})
                         db.commit()
                         summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
                         continue
@@ -283,26 +297,18 @@ def run_once() -> dict:
                     })
                     db.commit()  # ДО fire — Routine PATCH'ит через отдельное соединение (API)
                     summary["matched"] += 1
+                    if gate == WAIT_REACTION:
+                        # среза позиций после новости ещё нет — писателя позовёт бэкстоп, когда он придёт
+                        summary["waiting_reaction"] = summary.get("waiting_reaction", 0) + 1
+                        continue
 
                     if can_fire:
                         try:
-                            payload_row = {
-                                "id": row["id"], "headline": row["headline"],
-                                "raw_text": row["raw_text"],
-                                "tickers": row["tickers"], "event_type": row["event_type"],
-                                "reasoning": row["reasoning"],
-                                "forwards_count": row["forwards_count"],
-                                "thread_key": row["thread_key"], "created_at": row["created_at"],
-                                "anomaly_id": match["id"],
-                                "asset_id": match["asset_id"], "asset_name": match["asset_name"],
-                                "anomaly_type": match["type"], "direction": match["direction"],
-                                "anomaly_clgroup": match["clgroup"],
-                                "severity_value": match["severity_value"],
-                                "signal_date": match["signal_date"],
-                                "anomaly_headline": match["headline"],
-                            }
                             _fire(TRIGGER_ID_STEP_C, token_c,
                                   _step_c_payload(db, payload_row, internal_token))
+                            # отметка «отправлено»: без неё бэкстоп через 15 минут звал писателя второй раз
+                            db.execute(_MARK_DISPATCHED, {"id": row["id"]})
+                            db.commit()
                             summary["step_c_fired"] += 1
                             time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
                         except Exception as e:
