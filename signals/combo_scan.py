@@ -6,7 +6,8 @@
 чисел кодом при приёмке (api/services/insight_check.py), бот ревью с графиком.
 
 Два режима:
-    python3 -m signals.combo_scan --mode data   # утром: сюжеты вечера последнего торгового дня
+    python3 -m signals.combo_scan --mode data   # утром: сюжеты вечера последнего торгового дня (крон каждый час,
+                                                #   прогон один раз, когда день в базе — signals/insights/fresh.py)
     python3 -m signals.combo_scan --mode news   # днём, каждые 20 минут: сюжет в момент новости
     ... --dry-run                               # что создал бы — без записи
     ... --mode news --at 2026-06-19T15:00Z      # как выглядел бы момент в прошлом (только с --dry-run)
@@ -30,7 +31,7 @@ from sqlalchemy import text  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
 from signals.insight_scan import detect_window, drop_expiry_days, drop_low_activity  # noqa: E402
-from signals.insights import cards, combos, data  # noqa: E402
+from signals.insights import cards, combos, data, fresh  # noqa: E402
 
 MAX_DATA = 2            # утром — не больше двух связок
 MAX_NEWS_DAY = 3        # днём — не больше трёх новостных связок за сутки
@@ -187,7 +188,18 @@ if __name__ == "__main__":
     ap.add_argument("--mode", choices=["data", "news"], required=True)
     ap.add_argument("--dry-run", action="store_true", help="показать сюжеты и карточки, ничего не писать")
     ap.add_argument("--at", help="момент для режима news в прошлом (ISO, UTC); только с --dry-run")
+    ap.add_argument("--force", action="store_true", help="режим data сейчас: не ждать свежий день и не смотреть отметку")
     a = ap.parse_args()
     if a.at and not a.dry_run:
         ap.error("--at только вместе с --dry-run")
-    print(f"[combo_scan] {run_once(a.mode, dry_run=a.dry_run, at=a.at)}")
+    # утренний режим — раз на торговый день, когда его позиции в базе (пятница приходит в субботу); лимит MAX_DATA —
+    # на прогон, так что без отметки каждый часовой прогон добавлял бы по две связки
+    gated = a.mode == "data" and not (a.dry_run or a.force)
+    why = fresh.wait_reason("combo_scan_data") if gated else None
+    if why:
+        print(f"[combo_scan] пропуск: {why}")
+    else:
+        summary = run_once(a.mode, dry_run=a.dry_run, at=a.at)
+        if gated:
+            fresh.mark_done("combo_scan_data", summary["data_until"])
+        print(f"[combo_scan] {summary}")

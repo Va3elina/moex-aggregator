@@ -1,6 +1,7 @@
 """Находки движка → кандидаты завода постов: жанр «пост от наших данных», без новости.
 
-Раз в день по будням (cron 30 7 * * 2-6 UTC — данные прошлого торгового дня): детекторы
+Раз на торговый день, как только его дневные позиции в базе (cron 30 7-17 * * * UTC, сканер ждёт день и не
+повторяется — signals/insights/fresh.py; пятница приходит в субботу): детекторы
 signals/insights/detect.py по рядам базы → рейтинг → лучшие находки трёх типов (позиции физлиц,
 потоки в фонды, сезонность) → фильтры повторов и значимости → карточка находки и график
 (signals/insights/cards.py) → content_candidates: source='insight', status='draft_ready' сразу —
@@ -31,7 +32,7 @@ import pandas as pd  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
-from signals.insights import cards, data  # noqa: E402
+from signals.insights import cards, data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
 
 PER = {"positions": 3, "funds": 1, "seasonality": 1}     # сколько находок каждого типа в день
@@ -287,5 +288,13 @@ def run_once(dry_run: bool = False) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="показать находки и карточки, ничего не писать")
+    ap.add_argument("--force", action="store_true", help="прогнать сейчас: не ждать свежий день и не смотреть отметку")
     a = ap.parse_args()
-    print(f"[insight_scan] {run_once(dry_run=a.dry_run)}")
+    why = None if (a.dry_run or a.force) else fresh.wait_reason("insight_scan")
+    if why:
+        print(f"[insight_scan] пропуск: {why}")
+    else:
+        summary = run_once(dry_run=a.dry_run)
+        if not a.dry_run:
+            fresh.mark_done("insight_scan", summary["data_until"])
+        print(f"[insight_scan] {summary}")
