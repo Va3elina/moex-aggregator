@@ -178,7 +178,7 @@ def pick(items: list, log=print, until=None) -> list:
         pool = [x for x in items if x["family"] == fam]
         if kind == "positions":
             pool = [x for x in pool if x["type"] in ("рекорд_или_экстремум", "уровень_к_истории")
-                    and (x.get("facts") or {}).get("leg") in ("long", "short", "nl", "ns", "net")
+                    and (x.get("facts") or {}).get("leg") in ("long", "short", "nl", "ns", "net", "long_low", "nl_low")
                     and (x.get("facts") or {}).get("sec")]
         if kind == "funds":
             pool = [x for x in pool if (x.get("facts") or {}).get("cat")]
