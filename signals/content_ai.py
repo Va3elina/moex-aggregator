@@ -79,6 +79,10 @@ from api.database import SessionLocal      # noqa: E402
 # подсказке Шага А и грузится лениво (int8-копия, ~3,5 с).
 os.environ.setdefault("BRAIN_WARMUP", "0")
 from api.brain_core import контекст as _brain_context  # noqa: E402
+# Единый поиск мозга (Вадим 27.09: «переводи завод на единый поиск мозга»): события вокруг, похожие в прошлом, отрасли.
+from api.brain_core import отрасли_текста as _brain_text_sectors  # noqa: E402
+from api.brain_core import похожие_события as _brain_similar  # noqa: E402
+from api.brain_core import события_вокруг as _brain_events_around  # noqa: E402
 
 # CLAUDE_ROUTINE_API_ROOT — релей (Cloudflare Worker) для обхода гео-блока
 # api.anthropic.com. Дефолт = прямой Anthropic (не работает с прод-сервера,
@@ -1147,86 +1151,10 @@ def _waiting_for_reaction(db, row) -> bool:
 # что ещё писали про компанию и отрасль в эти дни и как цена шла два часа после
 # каждого события, — и сам решает, к чему относится движение.
 #
-# Отраслевые хэштеги — для новостей без тикеров: пост MarketTwits про Уренгой шёл
-# только с «#газ». Ключи — как в issuers.sector.
-#
-# База — руками на каждую отрасль: пол, чтобы теги были и у редких отраслей. Сверху —
-# автоматика из архива (_sector_tags): хэштег, который за два года почти всегда стоит
-# рядом с тикерами ОДНОЙ отрасли, считается её тегом. Архив растёт — список пополняется
-# сам, пересчёт раз в сутки.
-_SECTOR_TAGS = {
-    "Нефть и газ": ["#нефть", "#газ", "#спг", "#бензин", "#опек", "#ормуз"],
-    "Металлы": ["#металлы", "#золото", "#сталь", "#никель", "#алюминий", "#алмазы", "#уголь"],
-    "Финансы": ["#банки", "#дкп", "#биржи", "#брокеры"],
-    "Энергетика": ["#электроэнергия", "#энергетика"],
-    "Застройщики": ["#ипотека", "#недвижимость", "#девелопмент"],
-    "Потреб. сектор": ["#ритейл", "#продукты", "#аптеки"],
-    "IT": ["#маркетплейсы", "#мессенджеры", "#ecommerce", "#it"],
-    "Транспорт": ["#авиа", "#жд", "#контейнеры", "#логистика"],
-    "Химия": ["#удобрения", "#лпк"],
-    "Здравоохранение": ["#фарма", "#медицина"],
-    "Машиностроение": ["#авто", "#авиа"],
-    "Телеком": ["#связь", "#телеком", "#цод"],
-}
-# Автоматика путает отрасль с географией и рубриками: у нефтегаза за два года «#китай»
-# 85/108, «#европа» 64/73, «#сп» 62/62 — это про экспорт и сокращения канала, а не про
-# отрасль. Такие теги всплывают у разных отраслей, поэтому стоп-лист, а не порог.
-_TAG_STOP = {"#россия", "#сша", "#китай", "#европа", "#украина", "#иран", "#германия",
-             "#турция", "#сербия", "#венгрия", "#индия", "#япония", "#казахстан",
-             "#геополитика", "#санкции", "#макро", "#экономика", "#прогноз", "#акции",
-             "#событие", "#обзор", "#отчетность", "#облигации", "#дивиденды", "#инсайдер",
-             "#делистинг", "#делиcтинг", "#сп", "#сс", "#тп", "#торги", "#рынки",
-             "#инструменты", "#физики", "#крипто", "#telegram", "#игры", "#сделановсбере"}
-_TAG_MIN_N = 4          # упоминаний рядом с отраслью за два года
-_TAG_MIN_SHARE = 0.75   # доля этих упоминаний среди всех упоминаний тега с тикерами
-_TAGS_TTL_SEC = 24 * 3600
-_tags_cache: dict = {"at": None, "map": {}}
-
-# Посты с 1–3 тикерами: дайджесты с десятком тикеров приписали бы тег всем отраслям.
-# Тикер строчными («#smlt») — не тема, его отсекаем.
-_SELECT_TAG_SECTORS = text("""
-    WITH p AS (
-        SELECT row_number() OVER () AS id, hashtags, tickers FROM news_archive
-        WHERE posted_at >= now() - interval '2 years'
-          AND coalesce(array_length(tickers, 1), 0) BETWEEN 1 AND 3
-    ), ps AS (
-        SELECT DISTINCT p.id, i.sector FROM p, unnest(p.tickers) tk
-        JOIN issuer_securities s ON s.secid = tk JOIN issuers i USING (issuer_id)
-        WHERE coalesce(i.sector, '') <> ''
-    ), hs AS (
-        SELECT DISTINCT p.id, lower(h) AS h FROM p, unnest(p.hashtags) h
-        WHERE h !~ '^#[A-Z0-9]+$'
-          AND upper(substr(h, 2)) NOT IN (SELECT secid FROM issuer_securities)
-    ), c AS (SELECT ps.sector, hs.h, count(*) AS n FROM ps JOIN hs USING (id) GROUP BY 1, 2)
-    SELECT c.sector, c.h, c.n, sum(c.n) OVER (PARTITION BY c.h) AS nh FROM c
-""")
-
-
-def _pick_sector_tags(rows) -> dict:
-    """(отрасль, тег, упоминаний рядом с отраслью, всего) → {отрасль: [теги]}."""
-    out: dict = {}
-    for sector, tag, n, total in rows:
-        if tag in _TAG_STOP or n < _TAG_MIN_N or not total or n / total < _TAG_MIN_SHARE:
-            continue
-        out.setdefault(sector, []).append(tag)
-    return out
-
-
-def _sector_tags(sector: str) -> list:
-    """База + автоматика из архива. Своя сессия: сбой запроса не должен откатить то,
-    что сборщик брифа уже записал в своей транзакции. Упал — остаётся база."""
-    if _tags_cache["at"] is None or time.monotonic() - _tags_cache["at"] > _TAGS_TTL_SEC:
-        s = SessionLocal()
-        try:
-            _tags_cache["map"] = _pick_sector_tags(s.execute(_SELECT_TAG_SECTORS).fetchall())
-        except Exception as e:  # noqa: BLE001 — автоматика необязательна, база есть всегда
-            print(f"[content_ai] автотеги отраслей не посчитались: {type(e).__name__}: {e}")
-        finally:
-            s.close()
-        _tags_cache["at"] = time.monotonic()
-    tags = list(dict.fromkeys(_SECTOR_TAGS.get(sector, []) + _tags_cache["map"].get(sector, [])))
-    # Пустой массив pg8000 не типизирует — подставляем тег, которого не бывает.
-    return tags or ["#-"]
+# Отрасли новостей — в едином словаре мозга (Brain/vocab.py: ОТРАСЛИ — хэштеги завода и выученные им из архива плюс
+# горячие слова для СмартЛаба, с проверкой «про наш рынок»). Здесь был свой список завода (_SECTOR_TAGS) и его
+# пополнение из архива — с 27.09 один словарь на мозг и завод (Вадим: «переводи завод на единый поиск мозга»):
+# «что было в отрасли» (_news_around) и отрасль новости для R30 (_отрасли_новости) берутся из разметки мозга.
 
 
 # ── R30: отраслевая новость → компания отрасли ────────────────────────────────
@@ -1242,7 +1170,6 @@ SECTOR_MARK = "[отрасль → "
 SECTOR_EVENING_HOUR = 19      # новость после вечернего клиринга: позиции после неё — в срезе следующего дня
 SECTOR_MAX_CHECK = 25         # компаний на одну новость: в «Финансах» — десятки бумаг
 
-_SELECT_SECTOR_LIST = text("SELECT DISTINCT sector FROM issuers WHERE coalesce(sector, '') <> ''")
 _SELECT_SECTOR_MEMBERS = text("""
     SELECT s.secid FROM issuers i JOIN issuer_securities s USING (issuer_id) WHERE i.sector = :sector
 """)
@@ -1270,8 +1197,7 @@ def _sector_check(db, row, full: bool = False) -> dict:
     until = created + timedelta(hours=STALE_NEWS_HOURS)
     fut = {r[0]: r[1] for r in db.execute(_SELECT_FUTURES_MAP).fetchall()}
     named = [t for t in dict.fromkeys(re.findall(r"\b[A-Z]{4,5}P?\b", row.get("reasoning") or "")) if t in fut]
-    tags = set(re.findall(r"#\w+", f"{row.get('headline') or ''} {row.get('raw_text') or ''}".lower()))
-    sectors = [s for (s,) in db.execute(_SELECT_SECTOR_LIST).fetchall() if tags & set(_sector_tags(s))]
+    sectors = _отрасли_новости(db, row)
     members = [sec for s in sectors for (sec,) in db.execute(_SELECT_SECTOR_MEMBERS, {"sector": s}).fetchall()
                if sec in fut]
     checked = []
@@ -1328,14 +1254,59 @@ _SELECT_SECTOR_PEERS = text("""
     WHERE i.sector = (SELECT i2.sector FROM issuers i2 JOIN issuer_securities s2 USING (issuer_id)
                       WHERE s2.secid = :secid LIMIT 1)
 """)
+# Хвост из архива: новости, которых синк мозга ещё не видел (он раз в 15 минут), — по тикерам отрасли и имени
+# компании. Компании нет в карте мозга — весь архив по тем же признакам (вод = давно).
 _SELECT_NEWS_AROUND = text("""
     SELECT posted_at, text, coalesce(tickers, '{}') AS tickers
     FROM news_archive
-    WHERE posted_at BETWEEN :since AND :until
-      AND (tickers && CAST(:peers AS text[]) OR hashtags && CAST(:tags AS text[]))
+    WHERE posted_at BETWEEN :since AND :until AND imported_at > :вод
+      AND (tickers && CAST(:peers AS text[]) OR (CAST(:имя AS text) <> '' AND position(lower(:имя) in lower(text)) > 0))
     ORDER BY posted_at
     LIMIT 400
 """)
+_SELECT_BRAIN_COMPANY = text("""
+    SELECT m.company_id, (SELECT e.dst FROM brain_edges e WHERE e.src = m.company_id AND e.kind = 'в_секторе' LIMIT 1)
+      FROM brain_ticker_map m WHERE m.ticker = :secid LIMIT 1
+""")
+_SELECT_BRAIN_NEWS_MARK = text("SELECT watermark FROM brain_sync_state WHERE source = 'news'")
+_SELECT_SOURCE_URL = text("SELECT source_url FROM content_candidates WHERE id = :id")
+_SELECT_NODE_EXISTS = text("SELECT EXISTS (SELECT 1 FROM brain_nodes WHERE id = :id)")
+_SELECT_NODE_SECTORS = text("""
+    SELECT s.title FROM brain_edges e JOIN brain_nodes s ON s.id = e.dst WHERE e.src = :id AND e.kind = 'отрасль'
+""")
+_SELECT_NODE_TYPE = text("""
+    SELECT t.title FROM brain_edges e JOIN brain_nodes t ON t.id = e.dst WHERE e.src = :id AND e.kind = 'тип' LIMIT 1
+""")
+_SELECT_HAS_VECTOR = text("SELECT EXISTS (SELECT 1 FROM brain_embeddings WHERE node_id = :id)")
+# «Похожие в прошлом»: столько строк и не слабее такого сходства — поле в брифе модель считает обязанной
+# израсходовать, поэтому слабые параллели не везём совсем.
+_ПОХОЖИЕ_K = 3
+_ПОХОЖИЕ_МИН = 0.62
+
+
+def _news_node_id(db, row) -> str | None:
+    """Узел новости кандидата во втором мозге: t.me/<канал>/<id> → news:<канал>/<id> (как у brain_sync: из_новости)."""
+    url = row.get("source_url") if "source_url" in row else None
+    if url is None and row.get("id"):
+        url = db.execute(_SELECT_SOURCE_URL, {"id": row["id"]}).scalar()
+    m = re.search(r"t\.me/(?:s/)?([A-Za-z0-9_]+)/(\d+)", url or "")
+    return f"news:{m.group(1).lower()}/{m.group(2)}" if m else None
+
+
+def _отрасли_новости(db, row) -> list:
+    """Отрасли новости — из единой разметки мозга: рёбра «отрасль» её узла, если синк её уже видел; иначе тем же
+    словарём (Brain/vocab.py: хэштег или слова, с проверкой «про наш рынок») по тексту кандидата. Раньше — только
+    хэштеги завода: у СмартЛаба их нет, и отрасль его новости не находилась."""
+    nid = _news_node_id(db, row)
+    if nid and db.execute(_SELECT_NODE_EXISTS, {"id": nid}).scalar():
+        return list(dict.fromkeys(r[0] for r in db.execute(_SELECT_NODE_SECTORS, {"id": nid}).fetchall()))
+    текст = f"{row.get('headline') or ''} {row.get('raw_text') or ''}"
+    теги = list(dict.fromkeys(t.lower() for t in re.findall(r"#[0-9A-Za-zА-Яа-яЁё_]+", текст)))
+    try:
+        return [o for o, _ in _brain_text_sectors(db, текст, теги, row.get("source") or "")]
+    except Exception as e:  # noqa: BLE001 — без отраслей R30 просто не сработает, остальное важнее
+        print(f"[content_ai] отрасли по словарю мозга не посчитались: {type(e).__name__}: {e}")
+        return []
 _SELECT_HOURLY = text("""
     SELECT begin_time, close FROM candles
     WHERE secid = :secid AND interval = 60 AND type = 'stock'
@@ -1385,29 +1356,68 @@ def _events_from(news, bars, secid: str, name: str, our_at) -> list:
     return [x[4] for x in sorted(items[:_AROUND_MAX], key=lambda x: x[0])]
 
 
-def _news_around(db, row, news_date) -> list:
-    """Новости компании и её отрасли от двух дней до новости до пяти дней после."""
+def _news_around(db, row, news_date, as_of=None) -> list:
+    """Новости компании и её отрасли от двух дней до новости до пяти дней после — из второго мозга (Вадим 27.09:
+    «переводи завод на единый поиск мозга»). Компания — по хэштегу и имени, отрасль — через главную компанию события и
+    у новости без компании по теме, хэштегу, словам (раньше — тикеры отрасли и свой список хэштегов завода, СмартЛаб
+    мимо). Хвост, которого синк мозга ещё не видел, — из архива: наша новость не должна пропасть из брифа.
+    as_of — «сейчас» для прогона на прошлых постах: позже него событий не берём."""
     secid = (row["tickers"] or [None])[0] or db.execute(
         _SELECT_STOCK_FOR_FUTURES, {"f": row["asset_id"]}).scalar()
     if not secid:
         return []
+    now = _msk_naive(as_of) if as_of else datetime.now(_MSK).replace(tzinfo=None)
     since = datetime.combine(news_date - timedelta(days=_AROUND_BEFORE_DAYS), datetime.min.time())
-    until = min(datetime.now(_MSK).replace(tzinfo=None),
-                datetime.combine(news_date + timedelta(days=_AROUND_AFTER_DAYS), datetime.max.time()))
+    until = min(now, datetime.combine(news_date + timedelta(days=_AROUND_AFTER_DAYS), datetime.max.time()))
+    с, по = since.replace(tzinfo=_MSK), until.replace(tzinfo=_MSK)
     peers = [r[0] for r in db.execute(_SELECT_SECTOR_PEERS, {"secid": secid}).fetchall()]
     if secid not in peers:
         peers.append(secid)
-    sector = db.execute(_SELECT_SECTOR, {"secid": secid}).scalar() or ""
-    tags = _sector_tags(sector)
-    news = db.execute(_SELECT_NEWS_AROUND, {
-        "since": since.replace(tzinfo=_MSK), "until": until.replace(tzinfo=_MSK),
-        "peers": peers, "tags": tags,
-    }).fetchall()
+    name = re.sub(r"\s*\(.*?\)", "", row.get("asset_name") or "").strip()
+    comp = db.execute(_SELECT_BRAIN_COMPANY, {"secid": secid}).first()
+    news, вод = [], datetime(2000, 1, 1, tzinfo=timezone.utc)
+    if comp:
+        news = [(e["время"], e["текст"], e["тикеры"]) for e in _brain_events_around(db, comp[0], comp[1], с, по)]
+        вод = db.execute(_SELECT_BRAIN_NEWS_MARK).scalar() or вод
+    news += [tuple(r) for r in db.execute(_SELECT_NEWS_AROUND, {
+        "since": с, "until": по, "вод": вод, "peers": peers, "имя": name}).fetchall()]
+    news.sort(key=lambda x: x[0])
     bars = db.execute(_SELECT_HOURLY, {
         "secid": secid, "since": since, "until": until + timedelta(hours=3),
     }).fetchall()
-    name = re.sub(r"\s*\(.*?\)", "", row.get("asset_name") or "").strip()
     return _events_from(news, bars, secid, name, row.get("created_at"))
+
+
+def _похожие_в_прошлом(db, row) -> list:
+    """«В прошлый раз, когда…» (Вадим 27.09: единый поиск мозга) — прошлые события того же типа, похожие по смыслу
+    (удар по НПЗ — среди прошлых ударов, налог — среди налогов), и как тогда шла наша бумага: самое большое отклонение
+    за два дня после события против обычного дневного хода. Нет узла новости (находка, связка) — блока нет."""
+    nid = _news_node_id(db, row)
+    if not nid:
+        return []
+    secid = (row.get("tickers") or [None])[0]
+    try:
+        тип = db.execute(_SELECT_NODE_TYPE, {"id": nid}).scalar()
+        есть_вектор = db.execute(_SELECT_HAS_VECTOR, {"id": nid}).scalar()
+        текст = f"{row.get('headline') or ''} {row.get('raw_text') or ''}"
+        # Только события нашей компании и события без компании из её отрасли: ход нашей бумаги после чужого события —
+        # ложная связь (прогон на постах 27.09: к рейтингу АФК шли рейтинги Магнита и КАМАЗа).
+        comp = db.execute(_SELECT_BRAIN_COMPANY, {"secid": secid}).first() if secid else None
+        found = _brain_similar(db, образец=nid if есть_вектор else None, текст=None if есть_вектор else текст,
+                               тип=тип, до=row.get("created_at"), k=_ПОХОЖИЕ_K, мин_сходство=_ПОХОЖИЕ_МИН,
+                               компания=comp[0] if comp else None, отрасль=comp[1] if comp else None)
+    except Exception as e:  # noqa: BLE001 — модель векторов на хосте может быть недоступна: блок необязательный
+        print(f"[content_ai] похожие события не нашлись: {type(e).__name__}: {e}")
+        return []
+    lines = []
+    for e in found:
+        t = _msk_naive(e["время"])
+        r = _reaction_after_news(db, secid, e["время"]) if secid else None
+        snippet = re.sub(r"\s*Читать далее.*$", "", " ".join((e["текст"] or "").split()))[:170]
+        # Хода нет (индекс, ОФЗ, свечей не хватает) — строка без него: «не посчитан» модель тоже считает фактом.
+        реакция = f" → {secid}: {r['move']:+.1%} за два дня после при обычном дневном ходе {r['usual']:.1%}" if r else ""
+        lines.append(f"{_day_ru(t.date())} {t.year}, {t:%H:%M} МСК — {snippet}{реакция}")
+    return lines
 
 
 # ⚠️ ВОЗРАСТ ФАКТА ЕДЕТ ВМЕСТЕ С ФАКТОМ. Раньше выбирался только текст, и связь,
@@ -2324,6 +2334,7 @@ def _build_brief(db, row) -> dict:
         "реакция_на_новость": _news_reaction(db, row["asset_id"], row["anomaly_clgroup"],
                                              row["tickers"], news_date, row["signal_date"]),
         "события_вокруг_новости": _news_around(db, row, news_date),
+        "похожие_события_в_прошлом": _похожие_в_прошлом(db, row),
         "позиции_физлиц": pos,
         "история_рейтинга": _rating_history(db, row["headline"], row["raw_text"],
                                              row["tickers"], row["signal_date"]),
@@ -2358,7 +2369,7 @@ def _build_brief(db, row) -> dict:
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
     for empty in ("связанные_компании", "связи_под_вопросом", "история_рейтинга",
                   "второй_мозг", "фундамент_компании", "реакция_на_новость",
-                  "события_вокруг_новости"):
+                  "события_вокруг_новости", "похожие_события_в_прошлом"):
         if not brief.get(empty):
             brief.pop(empty, None)
     return brief

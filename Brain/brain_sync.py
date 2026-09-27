@@ -55,7 +55,10 @@ def _отметить(conn, source: str, watermark, rows: int):
 
 
 def карта_тикеров(conn) -> int:
-    conn.execute(text("TRUNCATE brain_ticker_map"))
+    # ⚠️ DELETE, а не TRUNCATE: TRUNCATE берёт исключительную блокировку до конца транзакции синка, и всё, что читает
+    # карту (бриф писателя, подсказка Шагу А, ручки мозга), ждало его минутами, а однажды поймало взаимную блокировку
+    # (прогон на постах 27.09). DELETE читателям не мешает: до коммита они видят прежнюю карту.
+    conn.execute(text("DELETE FROM brain_ticker_map"))
     r = conn.execute(text("""
         INSERT INTO brain_ticker_map (ticker, company_id)
         SELECT t, 'company:' || i.smartlab_ticker
@@ -1654,7 +1657,21 @@ def классифицировать(conn, ids: list, с_агентом: bool = 
 
 def таблицы_аудита(conn) -> None:
     """Таблицы аудита разметки по имени — зеркало db/migrations/090 (идемпотентно):
-    синк создаёт их сам, миграции на проде руками не применяются."""
+    синк создаёт их сам, миграции на проде руками не применяются.
+
+    ⚠️ Схема трогается, только если чего-то нет. «ALTER TABLE … ADD COLUMN IF NOT EXISTS» берёт исключительную блокировку
+    таблицы, даже когда колонка уже есть, и держит её до конца транзакции синка (минута, при полной переразметке —
+    пять): всё это время чтение brain_edges — бриф писателя, подсказка Шагу А, ручки мозга — стояло. Найдено 27.09."""
+    есть = conn.execute(text("""
+        SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'brain_edges' AND column_name = 'role')
+             + (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'brain_edge_reviews'
+                  AND column_name IN ('second_verdict', 'second_reason', 'second_at', 'human_decision', 'human_at'))
+             + (SELECT COUNT(*) FROM information_schema.tables
+                 WHERE table_name IN ('brain_edge_reviews', 'brain_rule_proposals', 'brain_news_labels'))
+             + (SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'idx_brain_edge_reviews_when')
+    """)).scalar()
+    if есть == 1 + 5 + 3 + 1:
+        return
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS brain_edge_reviews (
             src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'упоминает',

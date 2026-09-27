@@ -53,3 +53,21 @@ jobs:
         run: npm run build
       # SW bump check удалён (2026-07-02): CACHE_NAME давно бампается АВТОМАТИЧЕСКИ
       # на postbuild (prerender-meta подставляет content-hash) — варнинг был мёртвый.
+
+  # Тесты второго мозга и завода постов (Вадим 27.09: «и ты делаешь тесты?»). До сих пор их гонял только автор
+  # перед пушем, и семь тестов брифа молча падали с 27.09 (R30) — никто не видел. Базы в CI нет: тесты проверяют код
+  # и контракты брифа; SQL проверяется сухими прогонами на проде и эталонами research/brain/eval_brain.py.
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install deps
+        run: pip install -r requirements.txt pytest pyyaml ijson
+      - name: Brain and content factory tests
+        env:
+          DB_URL: postgresql+pg8000://ci:ci@127.0.0.1:1/ci
+        run: python -m pytest -q research/brain research/content_pipeline_v2
