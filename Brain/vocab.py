@@ -20,7 +20,7 @@ research/brain/eval_brain.py до и после (эталон по источн�
 Регэкспы — синтаксиса Postgres (`\\m`/`\\M` — границы слова): правила исполняются в базе, одним SQL.
 """
 from news_types import ПЕРЕБИВАЮТ_СЫРЬЁ as _ПЕРЕБИВАЮТ_СЫРЬЁ_ТЕМЫ
-from news_types import СЫРЬЁ_ТИПЫ, ШУМ
+from news_types import С_ХЭШТЕГАМИ, СЫРЬЁ_ТИПЫ, ШУМ
 from news_types import ТИПЫ as ТЕМЫ
 
 ВЕРСИЯ = "разметка:1"
@@ -111,6 +111,19 @@ def _слить(события, темы) -> tuple:
                  "INSIDER_TRANSACTION": "сделки инсайдеров"}
 ТИП_ШАГА_А = {"earnings": "отчётность", "dividend": "дивиденды", "register_closing": "дивиденды",
               "sanctions": "санкции", "regulatory": "регулирование"}
+# Единый тип → код события завода (content_candidates.event_type). Тип решает словарь (Вадим 27.09: «закрыть тему
+# второго мозга» — у Шага А было своё определение типа); старые коды остаются только как производные — по ним завод
+# выбирает цифры фундамента (_FUND_NUMERIC_EVENTS) и строит ключ треда. Мнение Шага А — только если словарь молчит.
+ТИП_В_КОД_ЗАВОДА = {
+    "отчётность": "earnings", "дивиденды": "dividend", "выкуп акций": "corporate_action",
+    "индексы": "corporate_action", "размещение акций": "corporate_action", "облигации": "corporate_action",
+    "листинг и делистинг": "corporate_action", "санкции": "sanctions", "суд": "regulatory",
+    "мнение аналитиков": "other", "рейтинг": "regulatory", "сделки инсайдеров": "corporate_action",
+    "сделка": "corporate_action", "управление": "corporate_action", "операционные": "other",
+    "удары по инфраструктуре": "other", "рубль и валюта": "macro", "налоги и бюджет": "macro",
+    "банки и кредит": "macro", "ставка и инфляция": "macro", "нефть, газ и топливо": "macro",
+    "металлы и удобрения": "macro", "регулирование": "regulatory", "геополитика и переговоры": "macro",
+}
 # Уровень доверия типа по способу. Источник: отчёт и биржа — A (пишет сама компания/биржа), FinanceMarker — B
 # (пересказывает официальное сообщение), Шаг А у кандидата — C (решение модели).
 УРОВЕНЬ = {"хэштег": "B", "хэштег+слова": "B", "слова": "C", "агент": "C"}
@@ -242,11 +255,18 @@ def sql_обрезать(expr: str, n: int, p: dict, prefix: str = "об") -> st
             f"ELSE regexp_replace(left({expr}, {n}), :{prefix}хвост, '') || '…' END")
 
 
-def sql_шум(raw: str, clean: str, p: dict, prefix: str = "шм") -> str:
-    """TRUE — не событие: дайджест, календарь, ежедневные курсы ЦБ (news_types.ШУМ) или котировка без слов."""
+def sql_шум(raw: str, clean: str, p: dict, prefix: str = "шм", канал: str | None = None,
+            теги: str | None = None) -> str:
+    """TRUE — не событие: дайджест, календарь, ежедневные курсы ЦБ (news_types.ШУМ), котировка без слов, а с канал/теги —
+    ещё и пост без хэштегов у канала, где они стоят у каждой новости (news_types.С_ХЭШТЕГАМИ: реклама, «ВПЕРЕДИ»)."""
     p[f"{prefix}шум"], p[f"{prefix}буквы"], p[f"{prefix}мин"] = ШУМ, r"[^А-Яа-яЁёA-Za-z]", МИН_БУКВ
+    без_тегов = ""
+    if канал and теги:
+        p[f"{prefix}ст"] = С_ХЭШТЕГАМИ
+        без_тегов = (f" OR (lower({канал}) = ANY(CAST(:{prefix}ст AS text[]))"
+                     f" AND cardinality(coalesce({теги}, '{{}}')) = 0)")
     return (f"(left({raw}, 160) ~* :{prefix}шум"
-            f" OR length(regexp_replace({clean}, :{prefix}буквы, '', 'g')) < :{prefix}мин)")
+            f" OR length(regexp_replace({clean}, :{prefix}буквы, '', 'g')) < :{prefix}мин{без_тегов})")
 
 
 def sql_теги_из_текста(expr: str, p: dict, prefix: str = "тт") -> str:

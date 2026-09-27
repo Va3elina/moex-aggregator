@@ -113,7 +113,8 @@ def _текст_новости_sql(п: dict) -> tuple[str, str, str, str]:
     Ожидает LATERAL (SELECT <чистый текст> AS ч) x рядом с news_archive n."""
     заголовок = vocab.sql_обрезать("x.ч", vocab.ЗАГОЛОВОК, п)
     суть = f"CASE WHEN length(x.ч) > {vocab.ЗАГОЛОВОК} THEN {vocab.sql_обрезать('x.ч', vocab.СУТЬ, п)} END"
-    return заголовок, суть, vocab.sql_теги("n.hashtags"), vocab.sql_шум("n.text", "x.ч", п)
+    return заголовок, суть, vocab.sql_теги("n.hashtags"), vocab.sql_шум("n.text", "x.ч", п, канал="n.channel",
+                                                                         теги="n.hashtags")
 
 
 def новости(conn, full: bool) -> tuple[int, datetime | None]:
@@ -1254,7 +1255,8 @@ def вместе(conn) -> int:
 #
 # ⚠️ Ярлыки — в своей таблице, а не в payload узла: новости() перезаписывает payload при
 # повторном импорте, и разметка агента пропала бы. Порядок правил — первое совпадение.
-_ЯРЛЫКИ_ДНЕЙ = 90
+_ЯРЛЫКИ_ДНЕЙ = 730          # все новости мозга (Вадим 27.09: «закрыть тему второго мозга» — старые без типа ≈30%)
+_ЯРЛЫКИ_ЗА_ПРОГОН = 15000    # первая досылка по двум годам — порциями: синк не должен упираться в лимит 10 минут
 # Типы — из единого словаря (Brain/vocab.py): события компании, затем темы рынка (список Вадима 27.09). Тот же
 # список у агента (api/brain_core.py) и у разметки всех видов узлов (разметка()).
 _ТИПЫ_НОВОСТЕЙ = vocab.ТИПЫ
@@ -1276,6 +1278,49 @@ def ярлыки_темы_однократно(conn) -> int:
     """))
     _отметить(conn, "labels_topics_v1", datetime.now(timezone.utc), r.rowcount)
     return r.rowcount
+
+
+def ярлыки_операционные_однократно(conn) -> int:
+    """Один раз (27.09, «закрыть тему второго мозга»): «операционные», которые ночной агент ставил до 27.09 — пока в его
+    списке не было тем рынка, — возвращаются ему на разметку. У агента было 63% «операционных» (1 141): корзина для всего,
+    что не событие компании. В эталоне оба таких ярлыка оказались темами («стальная заготовка» — металлы, «атаки БПЛА на
+    склады» — удары). Отметка в brain_sync_state — повторно не сработает."""
+    if _водяной(conn, "labels_ops_v1") is not None:
+        return 0
+    r = conn.execute(text("""
+        UPDATE brain_news_labels SET тип = NULL, тип_источник = NULL, updated_at = NOW()
+         WHERE тип_источник = 'агент' AND тип = 'операционные' AND updated_at < '2026-09-27'
+    """))
+    _отметить(conn, "labels_ops_v1", datetime.now(timezone.utc), r.rowcount)
+    return r.rowcount
+
+
+_ЗАНОВО_ЗА_ПРОГОН = 7000
+_ЗАНОВО_ГОТОВО = datetime(2000, 1, 1, tzinfo=timezone.utc)
+
+
+def без_компании_заново(conn) -> int:
+    """Правила тем поменялись (27.09, прогон связок: Украина «про наш рынок» только у войны и переговоров, «аналог» — не
+    налог, «криптовалютный» — не валюта) — новости без компании, которые уже в мозге, переразмечаются по новым правилам:
+    тип и отрасль заново, а тема пропала и отрасли нет — узел уходит (разметка, _без_темы). Способ — сдвиг updated_at:
+    разметка того же синка берёт такие узлы в работу, вектор пересчитает brain_embed.
+
+    Порциями по _ЗАНОВО_ЗА_ПРОГОН от свежих к старым: 20 тыс. узлов разом — лишние минуты первого синка после выкатки
+    (там же чистка шума и досылка ярлыков) при лимите оркестратора 10 минут. Граница — в brain_sync_state
+    (tickerless_retype_v1); дошли до конца — шаг молчит."""
+    граница = _водяной(conn, "tickerless_retype_v1")
+    if граница is not None and граница <= _ЗАНОВО_ГОТОВО:
+        return 0
+    строки = conn.execute(text("""
+        WITH порция AS (
+            SELECT id, ts FROM brain_nodes
+             WHERE kind = 'news' AND coalesce(CAST(payload ->> 'без_компании' AS boolean), FALSE)
+               AND ts < :граница
+             ORDER BY ts DESC LIMIT :n)
+        UPDATE brain_nodes b SET updated_at = NOW() FROM порция WHERE b.id = порция.id RETURNING порция.ts
+    """), {"граница": граница or datetime.now(timezone.utc) + timedelta(days=1), "n": _ЗАНОВО_ЗА_ПРОГОН}).all()
+    _отметить(conn, "tickerless_retype_v1", min(r[0] for r in строки) if строки else _ЗАНОВО_ГОТОВО, len(строки))
+    return len(строки)
 
 
 def ярлыки_новостей(conn, full: bool, сброс: bool = False) -> int:
@@ -1319,8 +1364,10 @@ def ярлыки_новостей(conn, full: bool, сброс: bool = False) ->
                        WHERE e.src = b.id AND e.kind = 'упоминает') AS роли) x
          WHERE b.kind = 'news' AND b.ts > :с
            AND NOT EXISTS (SELECT 1 FROM brain_news_labels l WHERE l.node_id = b.id)
+         ORDER BY b.ts DESC
+         LIMIT :за_прогон
         ON CONFLICT (node_id) DO NOTHING
-    """), п)
+    """), {**п, "за_прогон": _ЯРЛЫКИ_ЗА_ПРОГОН})
     # Роль — на связь «упоминает» (источник истины — таблица ярлыков).
     conn.execute(text("""
         UPDATE brain_edges e SET role = l.роли ->> e.dst
@@ -1346,18 +1393,13 @@ _НОВОСТЬ_АРХИВ = """a.message_id = CAST(NULLIF(split_part(b.id, '/',
                                       WHEN 'newssmartlab' THEN 'СМАРТЛАБ НОВОСТИ' END)"""
 
 
-def чистка_однократно(conn) -> dict:
-    """Сменилась версия словаря: уже лежащие узлы — в новый вид. У новостей, кандидатов и сигналов — чистый заголовок
-    и суть (без хэштегов, эмодзи, ссылок; хэштеги — в payload и теги-рёбра). Шум — дайджесты, календари, котировки
-    без слов — уходит из мозга вместе со связями (вектора — каскадом, ярлыки чистит ярлыки_новостей). Новые узлы
-    такими рождаются сами (новости(), новости_по_имени(), кандидаты(), сигналы())."""
-    п: dict = {}
+def _убрать_шум(conn) -> tuple[int, int]:
+    """Шум, уже лежащий в мозге, — вон вместе со связями (вектора — каскадом, ярлыки чистит ярлыки_новостей): новости,
+    которые по нынешнему vocab.sql_шум в мозг бы не попали, и служебное биржи. → (узлов, рёбер)."""
+    п: dict = {"бшум": _БИРЖА_ШУМ}
     чисто = vocab.sql_чисто("a.text", п)
-    заголовок = vocab.sql_обрезать("x.ч", vocab.ЗАГОЛОВОК, п)
-    суть = f"CASE WHEN length(x.ч) > {vocab.ЗАГОЛОВОК} THEN {vocab.sql_обрезать('x.ч', vocab.СУТЬ, п)} END"
-    шум = vocab.sql_шум("a.text", "x.ч", п)
+    шум = vocab.sql_шум("a.text", "x.ч", п, канал="a.channel", теги="a.hashtags")
     conn.execute(text("DROP TABLE IF EXISTS _шум"))
-    п["бшум"] = _БИРЖА_ШУМ
     conn.execute(text(f"""
         CREATE TEMP TABLE _шум AS
         SELECT DISTINCT b.id FROM brain_nodes b
@@ -1369,7 +1411,31 @@ def чистка_однократно(conn) -> dict:
     """), п)
     рёбер = conn.execute(text("DELETE FROM brain_edges WHERE src IN (SELECT id FROM _шум)")).rowcount
     рёбер += conn.execute(text("DELETE FROM brain_edges WHERE dst IN (SELECT id FROM _шум)")).rowcount
-    шума = conn.execute(text("DELETE FROM brain_nodes WHERE id IN (SELECT id FROM _шум)")).rowcount
+    return conn.execute(text("DELETE FROM brain_nodes WHERE id IN (SELECT id FROM _шум)")).rowcount, рёбер
+
+
+def шум_однократно(conn) -> int:
+    """Один раз (27.09): новое правило шума (реклама и календари MarketTwits без хэштегов — news_types.С_ХЭШТЕГАМИ) — и
+    к узлам, которые уже в мозге: «Сбер оплатит мобильную связь зарплатным клиентам» лежала новостью Сбера. Полная
+    чистка (чистка_однократно) заодно переписывает заголовки всех узлов и идёт только со сменой версии словаря — ради
+    одного правила она не нужна. Отметка в brain_sync_state — повторно не сработает."""
+    if _водяной(conn, "noise_v2") is not None:
+        return 0
+    шума, _ = _убрать_шум(conn)
+    _отметить(conn, "noise_v2", datetime.now(timezone.utc), шума)
+    return шума
+
+
+def чистка_однократно(conn) -> dict:
+    """Сменилась версия словаря: уже лежащие узлы — в новый вид. У новостей, кандидатов и сигналов — чистый заголовок
+    и суть (без хэштегов, эмодзи, ссылок; хэштеги — в payload и теги-рёбра). Шум — дайджесты, календари, котировки
+    без слов — уходит из мозга вместе со связями (вектора — каскадом, ярлыки чистит ярлыки_новостей). Новые узлы
+    такими рождаются сами (новости(), новости_по_имени(), кандидаты(), сигналы())."""
+    п: dict = {}
+    чисто = vocab.sql_чисто("a.text", п)
+    заголовок = vocab.sql_обрезать("x.ч", vocab.ЗАГОЛОВОК, п)
+    суть = f"CASE WHEN length(x.ч) > {vocab.ЗАГОЛОВОК} THEN {vocab.sql_обрезать('x.ч', vocab.СУТЬ, п)} END"
+    шума, рёбер = _убрать_шум(conn)
     новостей = conn.execute(text(f"""
         UPDATE brain_nodes b SET title = {заголовок}, summary = {суть},
                payload = COALESCE(b.payload, jsonb_build_object()) || jsonb_build_object('hashtags', to_jsonb({vocab.sql_теги('a.hashtags')})),
@@ -1648,7 +1714,8 @@ def классифицировать(conn, ids: list, с_агентом: bool = 
     шум = {r[0] for r in conn.execute(text(f"""
         SELECT b.id FROM brain_nodes b JOIN news_archive a ON {_НОВОСТЬ_АРХИВ}
           CROSS JOIN LATERAL (SELECT {чисто} AS ч) x
-         WHERE b.id = ANY(CAST(:ids AS text[])) AND b.kind = 'news' AND {vocab.sql_шум("a.text", "x.ч", пш)}
+         WHERE b.id = ANY(CAST(:ids AS text[])) AND b.kind = 'news'
+           AND {vocab.sql_шум("a.text", "x.ч", пш, канал="a.channel", теги="a.hashtags")}
         UNION
         SELECT id FROM brain_nodes WHERE id = ANY(CAST(:ids AS text[])) AND kind = 'exchange' AND title ~* :бшум
     """), пш).all()}
@@ -1741,11 +1808,13 @@ def main() -> int:
         итог["новости_без_компании"] = новости_без_компании(conn, args.full)
         if новая_версия:
             итог["чистка"] = чистка_однократно(conn)
+        итог["шума_убрано"] = шум_однократно(conn)
         итог["ярлыков_новостей"] = ярлыки_новостей(conn, args.full, сброс=новая_версия)
-        итог["ярлыков_агенту_заново"] = ярлыки_темы_однократно(conn)
+        итог["ярлыков_агенту_заново"] = ярлыки_темы_однократно(conn) + ярлыки_операционные_однократно(conn)
         итог["держатели"] = держатели_резолв(conn)
         итог["секторов_рёбер"] = секторы(conn)
         итог["вместе_рёбер"] = вместе(conn)
+        итог["без_компании_заново"] = без_компании_заново(conn)
         итог["разметка"] = разметка(conn, args.full or новая_версия)
         итог["уровней_проставлено"] = уровни(conn)
         итог["узлов"] = conn.execute(text("SELECT COUNT(*) FROM brain_nodes")).scalar()

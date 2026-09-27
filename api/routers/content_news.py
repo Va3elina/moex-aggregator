@@ -532,6 +532,29 @@ def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = D
     return {"notified": body.is_news}
 
 
+def _единый_тип(db, row, body) -> None:
+    """Тип события — из единого словаря мозга (Brain/vocab.py), а не своё мнение Шага А (Вадим 27.09: «закрыть тему
+    второго мозга»). Код завода (event_type) — производный от типа (vocab.ТИП_В_КОД_ЗАВОДА); словарь молчит — остаётся
+    код Шага А. Тип по словарю пишется в reasoning, чтобы было видно, откуда он. Сбой словаря приёмку не роняет."""
+    import re as _re
+    текст = f"{row.get('headline') or ''} {row.get('raw_text') or ''}"
+    try:
+        from api.brain_core import _словарь, тип_текста
+        vocab, _ = _словарь()
+        тип = тип_текста(db, текст, [t.lower() for t in _re.findall(r"#[0-9A-Za-zА-Яа-яЁё_]+", текст)],
+                         без_компании=not body.tickers, канал=row.get("source") or "")
+    except Exception as e:  # noqa: BLE001
+        print(f"[content_news] тип по словарю не посчитался: {type(e).__name__}: {e}")
+        return
+    if тип and vocab.ТИП_В_КОД_ЗАВОДА.get(тип):
+        код = vocab.ТИП_В_КОД_ЗАВОДА[тип]
+        if код != body.event_type:
+            body.reasoning = (body.reasoning or "") + f" [тип по словарю: {тип} → {код}, Шаг А предлагал {body.event_type}]"
+        else:
+            body.reasoning = (body.reasoning or "") + f" [тип по словарю: {тип}]"
+        body.event_type = код
+
+
 @internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token)])
 def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага А (извлечение). Тут же — Шаг А2 (маппинг тикера,
@@ -541,13 +564,14 @@ def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get
     без единого шанса когда-либо подтвердиться (content_match.py требует
     futures_ticker IS NOT NULL)."""
     row = db.execute(
-        text("SELECT status, headline FROM content_candidates WHERE id = :id"),
+        text("SELECT status, headline, raw_text, source FROM content_candidates WHERE id = :id"),
         {"id": candidate_id},
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Кандидат не найден")
     if row["status"] != "candidate":
         raise HTTPException(status_code=409, detail=f"Ожидался статус 'candidate', сейчас '{row['status']}'")
+    _единый_тип(db, row, body)
 
     if not body.relevant:
         db.execute(text("""

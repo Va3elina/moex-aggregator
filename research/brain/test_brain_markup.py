@@ -184,3 +184,101 @@ def test_sync_takes_no_exclusive_locks_every_run():
     assert 'text("TRUNCATE' not in inspect.getsource(s.карта_тикеров)
     src = inspect.getsource(s.таблицы_аудита)
     assert src.index("if есть ==") < src.index('conn.execute(text(f"ALTER TABLE'), "схема — только если чего-то нет"
+
+
+# ── закрытие темы (27.09): у завода нет своих классификаторов, правки словаря — по прогону связок ─────────────────
+def _py(rx: str) -> str:
+    """Регэксп Postgres → Python для проверки на примерах: \\m / \\M — границы слова."""
+    return rx.replace(r"\m", r"\b").replace(r"\M", r"\b")
+
+
+def _тема(имя: str) -> tuple:
+    import news_types as nt
+    return {т: (теги, rx, где) for т, теги, rx, где in nt.ТИПЫ}[имя]
+
+
+def test_topic_roots_do_not_match_inside_other_words():
+    import re
+    _, налоги, _ = _тема("налоги и бюджет")
+    assert not re.search(_py(налоги), "Россия испытала аналог Starlink «Рассвет»", re.I)
+    assert re.search(_py(налоги), "налог на сверхприбыль банков", re.I)
+    теги, валюта, _ = _тема("рубль и валюта")
+    assert not re.search(_py(валюта), "Криптовалютный рынок столкнулся с ростом хакерских атак", re.I)
+    for t in ("Эксперт РА ожидает курс в районе 85-90 рублей за доллар", "спрос на валютном рынке", "курс доллара вырос",
+              "Пара доллар/рубль на Forex ушла ниже 85 руб"):
+        assert re.search(_py(валюта), t, re.I), t
+    assert "#fx" not in теги, "у новости с компанией нет проверки «про наш рынок» — #fx тянул японскую иену"
+
+
+def test_ukraine_is_our_market_only_for_war_and_talks():
+    import re
+
+    import news_types as nt
+    assert not re.search(_py(nt.РОССИЯ), "Украина рассматривает легализацию порноиндустрии для военного бюджета", re.I)
+    assert re.search(_py(nt.ВОЙНА), "ВСУ атаковали НПЗ", re.I) and re.search(_py(nt.ВОЙНА), "Зеленский", re.I)
+    где = {т: г for т, _, _, г in nt.ТИПЫ}
+    assert где["удары по инфраструктуре"] == где["геополитика и переговоры"] == "россия_и_война"
+    assert где["налоги и бюджет"] == где["ставка и инфляция"] == где["рубль и валюта"] == "россия"
+    p: dict = {}
+    assert "россия_и_война" in nt._про_нас("a", p, "x") and p["xwar"] == nt.ВОЙНА
+
+
+def test_markettwits_post_without_hashtags_is_noise_everywhere():
+    """Реклама, «ВПЕРЕДИ», болтовня: у MarketTwits хэштеги есть у каждой новости (90 дней — 152 поста без них из
+    10 411, новость среди них одна). Правило — в общем фильтре шума, у всех, кто берёт новости из архива."""
+    import re
+
+    import news_types as nt
+    assert "cardinality" not in vocab.sql_шум("a.text", "x.ч", {}), "без канала и хэштегов — прежний фильтр"
+    sql = vocab.sql_шум("a.text", "x.ч", {}, канал="a.channel", теги="a.hashtags")
+    assert "lower(a.channel)" in sql and "cardinality(coalesce(a.hashtags" in sql
+    assert nt.С_ХЭШТЕГАМИ == ["markettwits"]
+    s = _sync()
+    assert 'канал="n.channel"' in inspect.getsource(s._текст_новости_sql), "новости, по имени, без компании"
+    assert 'канал="a.channel"' in inspect.getsource(s._убрать_шум)
+    assert 'канал="a.channel"' in inspect.getsource(s.классифицировать), "эталон проверяет тот же фильтр"
+    assert 'канал="a.channel"' in inspect.getsource(core.тип_текста), "и Шаг А"
+    assert re.search(nt.ШУМ, "Достойных ресурсов по инвест.тематике мало, поэтому данный канал стоит отдельного внимания",
+                     re.I)
+
+
+def test_noise_rule_reaches_nodes_already_in_the_brain_once():
+    s = _sync()
+    src = inspect.getsource(s.шум_однократно)
+    assert "noise_v2" in src and "_убрать_шум(conn)" in src and "_отметить(conn, \"noise_v2\"" in src
+    assert "шум_однократно(conn)" in inspect.getsource(s.main)
+    assert "_убрать_шум(conn)" in inspect.getsource(s.чистка_однократно), "одна чистка шума на оба случая"
+
+
+def test_tickerless_nodes_already_in_brain_get_new_topic_rules_in_portions():
+    s = _sync()
+    src = inspect.getsource(s.без_компании_заново)
+    assert "tickerless_retype_v1" in src and "ORDER BY ts DESC LIMIT :n" in src and "updated_at = NOW()" in src
+    assert s._ЗАНОВО_ЗА_ПРОГОН <= 10000, "порция — не весь год разом: лимит оркестратора 10 минут"
+    main = inspect.getsource(s.main)
+    assert main.index("без_компании_заново(conn)") < main.index("разметка(conn,"), "та же разметка берёт их в работу"
+
+    class _Conn:
+        def __init__(self, граница, строки):
+            self.граница, self.строки, self.отмечено = граница, строки, None
+
+        def execute(self, q, p=None):
+            q = str(q)
+            conn = self
+
+            class R:
+                def scalar(self):
+                    return conn.граница
+
+                def all(self):
+                    return conn.строки
+            if "INSERT INTO brain_sync_state" in q:
+                self.отмечено = p
+            return R()
+    from datetime import datetime, timezone
+    c = _Conn(None, [(datetime(2026, 9, 1, tzinfo=timezone.utc),), (datetime(2026, 8, 1, tzinfo=timezone.utc),)])
+    assert s.без_компании_заново(c) == 2 and c.отмечено["w"] == datetime(2026, 8, 1, tzinfo=timezone.utc)
+    c = _Conn(datetime(2025, 9, 1, tzinfo=timezone.utc), [])
+    assert s.без_компании_заново(c) == 0 and c.отмечено["w"] == s._ЗАНОВО_ГОТОВО, "дошли до конца — отметка «готово»"
+    c = _Conn(s._ЗАНОВО_ГОТОВО, [])
+    assert s.без_компании_заново(c) == 0 and c.отмечено is None, "после «готово» шаг молчит"
