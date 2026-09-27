@@ -265,11 +265,56 @@ def related_lines(spec, as_of) -> list:
     return lines
 
 
+# Досье мозга в карточку: кто компания и где она в мире. Внутренние поля завода (прошлые кандидаты, аномалии) и
+# события, которые уже есть в brain_lines (раскрытия, отчёты, фонды, индексы), сюда не идут.
+_DOSSIER = (("компания", "компания"), ("сектор", "отрасль"), ("владельцы_по_снимку", "владельцы"),
+            ("владеет", "владеет"), ("фонды_держатели", "фонды"), ("в_индексах", "в индексах"),
+            ("о_компании_писали", "о компании писали"), ("часто_рядом_в_новостях", "рядом в новостях"))
+
+
+def company_lines(spec, as_of) -> dict:
+    """Кто эта компания и что вокруг неё — тот же второй мозг и архив, что в брифе новостей (content_ai._brain_block,
+    _news_around). Вадим 27.09: «здесь больше речь про компании и контекст: что это за компания — строительный сектор,
+    IT — и как это может косвенно повлиять; мы сделали второй мозг, чтобы был контекст понимания того, что произошло».
+    До 27.09 у находок этого не было: карточка знала ряд позиций, но не компанию."""
+    if spec["kind"] != "positions":
+        return {}
+    P, names, groups, to_stock, *_ = cards.data()
+    stock = to_stock.get(spec.get("sec"))
+    if not stock:
+        return {}
+    from signals.content_ai import _brain_block, _news_around   # тяжёлый импорт — только когда есть бумага
+    row = {"id": None, "tickers": [stock], "asset_id": spec.get("sec"), "created_at": None,
+           "asset_name": str(names.get(spec.get("sec"), "")).replace(" (вечн)", ""), "headline": None, "raw_text": None}
+    db = SessionLocal()
+    try:
+        блок = (_brain_block(db, row) or {}).get(stock) or {}
+        around = _news_around(db, row, pd.Timestamp(as_of).date())
+    except Exception as e:  # noqa: BLE001 — без контекста карточка работает как раньше
+        print(f"[insight_scan] контекст компании {stock}: {type(e).__name__}: {e}")
+        return {}
+    finally:
+        db.close()
+    dossier = []
+    for key, label in _DOSSIER:
+        val = next((v for k, v in блок.items() if k.startswith(key)), None)
+        if val:
+            dossier.append(f"{label}: " + ("; ".join(val) if isinstance(val, list) else str(val)))
+    if dossier:
+        dossier.append("[A]/[B] — утверждать с датой; [C] — «по нашей разметке»; [D] — не утверждать. "
+                       "Бери один факт, если он помогает понять находку")
+    out = {"о компании (второй мозг)": dossier}
+    if around:
+        out["что было у компании и в отрасли в эти дни (цена за 2 часа после)"] = around
+    return out
+
+
 def build(job: dict, now_iso: str) -> dict:
     spec, date = job["spec"], job["date"]
     card = cards.build_card(spec, date)
     ctx = cards.context_for(card, spec, now_iso)
     ctx["что канал уже писал по этому ряду"] = own_posts(spec, card["as_of"])
+    ctx.update(company_lines(spec, card["as_of"]))
     ctx["связанные компании (второй мозг)"] = related_lines(spec, card["as_of"])
     if job["repeat"]:
         r = job["repeat"]
