@@ -925,6 +925,26 @@ def объявления_биржи(conn, full: bool) -> int:
     return n
 
 
+def отрасли_однократно(conn) -> int:
+    """Один раз (27.09, перевод завода на мозг): уже залитым новостям без компании — отрасли по словарю отраслей
+    (хэштеги и слова), и заливка года заново — теперь пускает и отраслевые новости без темы («#авиа», «#ипотека»).
+    Отметка в brain_sync_state — повторно не сработает."""
+    if _водяной(conn, "отрасли_v1") is not None:
+        return 0
+    п: dict = {}
+    отр_теги, отр_слова = vocab.sql_отрасли(vocab.sql_теги("a.hashtags"), "a.text", nt._про_нас("a", п, "нп"), п)
+    r = conn.execute(text(f"""
+        -- updated_at не трогаем: тип от отрасли не зависит, а узлы с новыми рёбрами «отрасль» сдвинет _разница
+        UPDATE brain_nodes b SET payload = b.payload || jsonb_build_object('отрасли_хэштег', to_jsonb({отр_теги}),
+                                                                         'отрасли_слова', to_jsonb({отр_слова}))
+          FROM news_archive a
+         WHERE b.kind = 'news' AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE) AND {_НОВОСТЬ_АРХИВ}
+    """), п)
+    conn.execute(text("DELETE FROM brain_sync_state WHERE source = 'news_tickerless_back'"))
+    _отметить(conn, "отрасли_v1", datetime.now(timezone.utc), r.rowcount)
+    return r.rowcount
+
+
 def новости_без_компании(conn, full: bool) -> dict:
     """Новости без нашей компании — за год, только с темой рынка и «про наш рынок» (Brain/news_types.py: удары по
     инфраструктуре, налоги, ставка, сырьё, санкции…). Вадим 27.09: «давай, начинай с новостей без тикера за год». По
@@ -943,6 +963,8 @@ def новости_без_компании(conn, full: bool) -> dict:
     заголовок, суть, теги, шум = _текст_новости_sql(п)
     тема = nt.sql_type("n", п, "нк")
     годна = nt.sql_relevant("n", п, "нк")
+    отр_теги, отр_слова = vocab.sql_отрасли(vocab.sql_теги("n.hashtags"), "n.text", nt._про_нас("n", п, "нп"), п)
+    отрасли_однократно(conn)
     сейчас = conn.execute(text("SELECT NOW()")).scalar()
     год_назад = сейчас - timedelta(days=vocab.БЕЗ_КОМПАНИИ_ДНЕЙ)
     далеко = datetime(2000, 1, 1, tzinfo=timezone.utc)
@@ -963,13 +985,17 @@ def новости_без_компании(conn, full: bool) -> dict:
         SELECT DISTINCT ON (1) 'news:' || {_КАНАЛ} || '/' || message_id, 'news', {_КАНАЛ} || '/' || message_id,
                {заголовок}, {суть}, posted_at,
                jsonb_build_object('channel', {_КАНАЛ}, 'views', views, 'tickers', to_jsonb(tickers),
-                                  'hashtags', to_jsonb({теги}), 'url', {_URL}, 'без_компании', TRUE), NOW()
+                                  'hashtags', to_jsonb({теги}), 'url', {_URL}, 'без_компании', TRUE,
+                                  'отрасли_хэштег', to_jsonb(g.от_т), 'отрасли_слова', to_jsonb(g.от_с)), NOW()
           FROM news_archive n
           CROSS JOIN LATERAL (SELECT {чисто} AS ч) x
+          CROSS JOIN LATERAL (SELECT {тема} AS тема, {отр_теги} AS от_т, {отр_слова} AS от_с) g
          WHERE n.posted_at > NOW() - make_interval(days => :дней)
            AND (n.imported_at > :вод OR (n.posted_at >= :лево AND n.posted_at < :право))
            AND NOT EXISTS (SELECT 1 FROM brain_ticker_map m WHERE m.ticker = ANY(n.tickers))
-           AND NOT {шум} AND {годна} AND ({тема}) IS NOT NULL
+           AND NOT {шум} AND {годна}
+           -- тема рынка ИЛИ отрасль (хэштег или слова): «#авиа», «#ипотека» без темы — всё равно новость отрасли
+           AND (g.тема IS NOT NULL OR cardinality(g.от_т) > 0 OR cardinality(g.от_с) > 0)
          ORDER BY 1, n.imported_at DESC
         ON CONFLICT (id) DO NOTHING
     """), п)
@@ -1442,7 +1468,8 @@ def _итог_разметки(conn, в_работе: str, п: dict, с_аген
         SELECT b.id, b.kind, CASE WHEN b.kind = 'disclosure' THEN b.title ELSE concat_ws(' ', b.title, b.summary) END,
                CAST(ARRAY[] AS text[]), {от_вида}, CAST(NULL AS text)
           FROM brain_nodes b
-         WHERE b.kind IN ('exchange', 'disclosure', 'report', 'index_event') AND {в_работе}
+         WHERE b.kind IN ('exchange', 'disclosure', 'report', 'index_event', 'doc')
+           AND ({в_работе} OR (b.kind = 'doc' AND NOT EXISTS (SELECT 1 FROM brain_edges t WHERE t.src = b.id AND t.kind = 'тип')))
     """), п)
     # тип: источник (где он главнее) → хэштеги → слова → агент → тип Шага А
     по_тегам, по_словам = vocab.sql_тип("r0.теги", "r0.текст", п)
@@ -1522,6 +1549,8 @@ def разметка(conn, полный: bool) -> dict:
         SELECT t.id FROM _итог t JOIN brain_nodes b ON b.id = t.id
          WHERE t.kind = 'news' AND t.тип_темы IS NULL AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
            AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = t.id AND e.kind = 'упоминает')
+           AND coalesce(jsonb_array_length(b.payload -> 'отрасли_хэштег'), 0)
+               + coalesce(jsonb_array_length(b.payload -> 'отрасли_слова'), 0) = 0
     """))
     без_темы = conn.execute(text("SELECT COUNT(*) FROM _без_темы")).scalar() or 0
     if без_темы:
@@ -1554,7 +1583,8 @@ def разметка(conn, полный: bool) -> dict:
     conn.execute(text("DROP TABLE IF EXISTS _отр"))
     conn.execute(text("""
         CREATE TEMP TABLE _отр AS
-        WITH cnt AS (SELECT src, COUNT(*) AS n FROM brain_edges WHERE kind = 'упоминает' GROUP BY src)
+        WITH cnt AS (SELECT src, COUNT(*) AS n FROM brain_edges WHERE kind = 'упоминает' GROUP BY src),
+        все AS (
         SELECT DISTINCT e.src AS id, s.dst AS dst, 'компания' AS способ
           FROM brain_edges e
           JOIN brain_nodes b ON b.id = e.src AND b.kind = ANY(CAST(:виды AS text[]))
@@ -1573,12 +1603,29 @@ def разметка(conn, полный: bool) -> dict:
               JOIN brain_nodes b ON b.id = t.src
              WHERE t.kind = 'тип' AND b.kind = 'news' AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
         ) x JOIN brain_nodes s ON s.id = x.dst
+        UNION
+        -- новость без компании — отрасль по словарю отраслей (хэштег или слова), записана в узел при заливке
+        SELECT y.id, y.dst, y.способ FROM (
+            SELECT b.id, 'sector:' || md5(o.v) AS dst, o.способ
+              FROM brain_nodes b
+              CROSS JOIN LATERAL (
+                  SELECT jsonb_array_elements_text(coalesce(b.payload -> 'отрасли_хэштег', jsonb_build_array())) AS v,
+                         'хэштег' AS способ
+                  UNION ALL
+                  SELECT jsonb_array_elements_text(coalesce(b.payload -> 'отрасли_слова', jsonb_build_array())), 'слова') o
+             WHERE b.kind = 'news' AND coalesce(CAST(b.payload ->> 'без_компании' AS boolean), FALSE)
+        ) y JOIN brain_nodes s ON s.id = y.dst
+        )
+        -- одна отрасль у узла — одно ребро: способ по надёжности (компания, хэштег, тема, слова)
+        SELECT DISTINCT ON (id, dst) id, dst, способ FROM все
+         ORDER BY id, dst, CASE способ WHEN 'компания' THEN 0 WHEN 'хэштег' THEN 1 WHEN 'тема' THEN 2 ELSE 3 END
     """), {"виды": list(vocab.ВИДЫ_С_ОТРАСЛЬЮ), "рёбра": list(vocab.РЁБРА_К_КОМПАНИИ),
            "теги_отр": ["tag:тип/" + vocab.ключ_тега(t) for t in vocab.ТЕМА_ОТРАСЛЬ],
            "отрасли": list(vocab.ТЕМА_ОТРАСЛЬ.values()),
            "тег_металлы": "tag:тип/" + vocab.ключ_тега("металлы и удобрения"),
            "удобрения": vocab.УДОБРЕНИЯ[1], "химия": vocab.УДОБРЕНИЯ[0]})
-    отр_убрано, отр_поставлено = _разница(conn, "отрасль", "_отр", "TRUE", {}, "CASE j.способ WHEN 'тема' THEN 'C' ELSE 'B' END",
+    отр_убрано, отр_поставлено = _разница(conn, "отрасль", "_отр", "TRUE", {},
+                                          "CASE j.способ WHEN 'компания' THEN 'B' WHEN 'хэштег' THEN 'B' ELSE 'C' END",
                                           "j.способ", "CAST(NULL AS text)")
     всего, с_типом = conn.execute(text("SELECT COUNT(*), COUNT(тип) FROM _итог")).first()
     # Водяной знак — с запасом в 10 минут: ответ агента, записанный, пока шёл синк, не потеряется.
