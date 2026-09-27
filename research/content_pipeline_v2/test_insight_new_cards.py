@@ -103,7 +103,7 @@ def test_fund_trades_card_names_leader_change_and_oil(monkeypatch):
     c = cards.fund_trades_card("2026-09-22")
     text = cards.brief_text(c, focus=True)
     assert "больше всего купили Лукойл" in text and "больше всего продали X5 Group" in text, "имена компаний, не «КЦ ИКС 5»"
-    assert "на первом месте Лукойл" in text and "Сбербанк опустился на второе место" in text
-    assert "был первым 3 месяца подряд" in text, "прежний лидер держался июль, июнь и май"
+    assert "на первом месте Лукойл" in text and "впервые за 3 месяца" in text, "«впервые» — только со сроком"
+    assert "Сбербанк был первым 3 месяца подряд и опустился на второе место" in text, "июль, июнь и май"
     assert "3 компании нефти и газа" in text and "#сделкифондов" in text
     assert "«в августе»" in text and "ДАТА ДАННЫХ: 31 августа" in text

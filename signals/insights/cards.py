@@ -998,10 +998,12 @@ def fund_trades_card(as_of, month=None) -> dict:
             if not lead or lead[0].get("akey") != before[0].get("akey"):
                 break
             streak += 1
+        span = f"{streak} {plural(streak, ('месяц', 'месяца', 'месяцев'))}"
         focus.append(f"смена лидера в портфеле фондов: на первом месте {nm(now[0])} "
-                     f"({rub_ru(now[0].get('value_rub') or 0)}), {nm(before[0])} опустился на второе "
-                     f"место; до этого он был первым {streak} {plural(streak, ('месяц', 'месяца', 'месяцев'))} подряд"
-                     + (" - все месяцы наших срезов" if streak >= 19 else ""))
+                     f"({rub_ru(now[0].get('value_rub') or 0)}) - "
+                     + ("впервые за все месяцы наших срезов" if streak >= 19 else f"впервые за {span}")
+                     + f"; {nm(before[0])} был первым {span} подряд и опустился на второе место; «впервые» без срока "
+                       f"не пиши - раньше лидер мог быть тем же")
     oil = [h for h in now[:4] if "нефт" in (sector.get(isin_of(h)) or "").lower()]
     if len(oil) >= 2:
         focus.append(f"в первой четвёрке портфеля {len(oil)} компании нефти и газа: " + ", ".join(nm(h) for h in oil))
