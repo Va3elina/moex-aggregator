@@ -60,6 +60,7 @@ from signals import config                 # noqa: E402
 from signals.db import has_intraday_oi     # noqa: E402
 from signals.content_ai import (           # noqa: E402
     _fire, _step_c_payload, TRIGGER_ID_STEP_C, _repeat_of_ticker, _stale_news, _not_newsworthy, _DECLINE_REPEAT,
+    _sector_check, SECTOR_MARK,
 )
 
 # Найдено 2026-07-14 (session 3) — пауза между _fire() подряд
@@ -133,6 +134,74 @@ _MARK_NO_DATA = text("""
     WHERE id = :id
 """)
 
+# R30 — отраслевая новость → компания отрасли (отбор и мотивы — content_ai._sector_check). Шаг А отбросил новость:
+# компания не названа, тикер не резолвился. Если за 36 ч компания отрасли ответила данными (всплеск позиций физлиц +
+# ход цены ×1,9), кандидат становится её черновиком. Писателя зовёт бэкстоп content_ai — с теми же отсевами (повтор,
+# возраст новости, R16, ждём срез позиций). Одна компания на новость; по тикеру уже есть кандидат — пропуск (та же
+# новость из второго канала, #2841 и #2846).
+_SELECT_SECTOR_NEWS = text("""
+    SELECT id, source, headline, raw_text, reasoning, created_at, event_type
+    FROM content_candidates
+    WHERE status = 'discarded' AND source IN ('markettwits', 'newssmartlab')
+      AND coalesce(array_length(tickers, 1), 0) = 0 AND importance_1_5 >= 3
+      AND position('тикер не резолвился' in coalesce(reasoning, '')) > 0
+      AND position('[отрасль' in coalesce(reasoning, '')) = 0
+      AND created_at > now() - interval '36 hours'
+    ORDER BY id
+""")
+
+_SECTOR_BUSY = text("""
+    SELECT id FROM content_candidates
+    WHERE id <> :id AND tickers && CAST(:tickers AS text[]) AND created_at > now() - interval '3 days'
+      AND status IN ('pending', 'draft_ready', 'in_review', 'published')
+    ORDER BY id DESC
+    LIMIT 1
+""")
+
+_PROMOTE_SECTOR = text("""
+    UPDATE content_candidates
+    SET status = 'draft_ready', tickers = CAST(:tickers AS text[]), futures_ticker = :futures,
+        matched_anomaly_id = :anomaly_id, thread_key = :thread_key,
+        reasoning = coalesce(reasoning, '') || :mark,
+        pending_expires_at = created_at + make_interval(days => :days),
+        dispatch_attempts = 0, last_checked_at = NULL, step_b_checked_at = now(), updated_at = now()
+    WHERE id = :id AND status = 'discarded'
+""")
+
+_MARK_SECTOR_SKIP = text("""
+    UPDATE content_candidates SET reasoning = coalesce(reasoning, '') || :mark WHERE id = :id
+""")
+
+
+def promote_sector_news(db, summary: dict) -> None:
+    for row in db.execute(_SELECT_SECTOR_NEWS).mappings().all():
+        try:
+            pick = _sector_check(db, dict(row))["выбор"]
+            if not pick:
+                continue          # данных ещё нет — следующий прогон, пока новости нет 36 ч
+            tk = pick["тикер"]
+            busy = db.execute(_SECTOR_BUSY, {"id": row["id"], "tickers": [tk]}).scalar()
+            if busy:
+                db.execute(_MARK_SECTOR_SKIP, {"id": row["id"],
+                                               "mark": f" [отрасль: {tk} — уже есть кандидат #{busy}]"})
+                db.commit()
+                summary["sector_busy"] = summary.get("sector_busy", 0) + 1
+                continue
+            r, s = pick["реакция"], pick["всплеск"]
+            mark = (f" {SECTOR_MARK}{tk} ({pick['отрасль'] or 'отрасль неизвестна'}): позиции физлиц "
+                    f"×{float(s.severity_value):.1f} на {s.signal_date:%d.%m}, цена {r['move']:+.1%} "
+                    f"(×{r['ratio']:.1f} обычного дня) — механизм проверит писатель]")
+            db.execute(_PROMOTE_SECTOR, {"id": row["id"], "tickers": [tk], "futures": pick["фьючерс"],
+                                         "anomaly_id": s.id, "thread_key": f"ticker:{tk}", "mark": mark,
+                                         "days": config.CONTENT_PENDING_DAYS})
+            db.commit()
+            summary["sector_promoted"] = summary.get("sector_promoted", 0) + 1
+            print(f"[content_match] отраслевая новость #{row['id']} → {tk}:{mark}")
+        except Exception as e:
+            db.rollback()
+            summary["errors"] += 1
+            print(f"[content_match] отраслевая новость #{row['id']} упала: {type(e).__name__}: {e}")
+
 
 def run_once() -> dict:
     summary = {"checked": 0, "skipped_daily_already_checked": 0,
@@ -149,6 +218,7 @@ def run_once() -> dict:
 
     db = SessionLocal()
     try:
+        promote_sector_news(db, summary)
         pending = db.execute(_SELECT_PENDING).mappings().all()
         now = datetime.now(timezone.utc)
 

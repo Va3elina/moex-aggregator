@@ -275,13 +275,9 @@ def _msk_naive(ts):
     return (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)).astimezone(_MSK).replace(tzinfo=None)
 
 
-def _weak_reaction(db, row) -> str | None:
-    """R16: новость, на которую цена не отреагировала сильнее обычного дня, — не повод."""
-    if row.get("source") == "moex_calendar":      # событие из календаря ещё не случилось — реакции нет
-        return None
-    secid, created = (row.get("tickers") or [None])[0], row.get("created_at")
-    if not secid or not created:
-        return None
+def _reaction_after_news(db, secid: str, created) -> dict | None:
+    """Ход цены акции после новости против обычного дня: move — самое большое отклонение со знаком, usual — медиана
+    дневного хода за 100 дней, ratio = |move| / usual. None — свечей не хватает, судить рано."""
     t = _msk_naive(created)
     bars = db.execute(_SELECT_HOURLY, {"secid": secid, "since": t - timedelta(days=4),
                                        "until": t + timedelta(days=3)}).fetchall()
@@ -293,16 +289,29 @@ def _weak_reaction(db, row) -> str | None:
     if not before or len(after) < NEWS_MOVE_MIN_BARS:
         return None
     base = float(before[-1])
-    move = max(abs(float(c) / base - 1) for c in after)
+    move = max((float(c) / base - 1 for c in after), key=abs)
     closes = [float(r[0]) for r in db.execute(_SELECT_DAILY_CLOSES, {"s": secid, "a": t - timedelta(days=100),
                                                                       "b": t}).fetchall() if r[0]]
     if len(closes) < 20:
         return None
     usual = sorted(abs(closes[i] / closes[i - 1] - 1) for i in range(1, len(closes)))[(len(closes) - 1) // 2]
-    if usual <= 0 or move / usual >= NEWS_MOVE_MIN_RATIO:
+    if usual <= 0:
         return None
-    return (f"новость не стоит поста: цена после неё прошла максимум {move:.1%} при обычном дневном ходе "
-            f"{usual:.1%} (×{move / usual:.1f} < ×{NEWS_MOVE_MIN_RATIO}) - R16")
+    return {"move": move, "usual": usual, "ratio": abs(move) / usual}
+
+
+def _weak_reaction(db, row) -> str | None:
+    """R16: новость, на которую цена не отреагировала сильнее обычного дня, — не повод."""
+    if row.get("source") == "moex_calendar":      # событие из календаря ещё не случилось — реакции нет
+        return None
+    secid, created = (row.get("tickers") or [None])[0], row.get("created_at")
+    if not secid or not created:
+        return None
+    r = _reaction_after_news(db, secid, created)
+    if r is None or r["ratio"] >= NEWS_MOVE_MIN_RATIO:
+        return None
+    return (f"новость не стоит поста: цена после неё прошла максимум {abs(r['move']):.1%} при обычном дневном ходе "
+            f"{r['usual']:.1%} (×{r['ratio']:.1f} < ×{NEWS_MOVE_MIN_RATIO}) - R16")
 
 
 def _div_no_surprise(db, row) -> str | None:
@@ -1214,6 +1223,92 @@ def _sector_tags(sector: str) -> list:
     tags = list(dict.fromkeys(_SECTOR_TAGS.get(sector, []) + _tags_cache["map"].get(sector, [])))
     # Пустой массив pg8000 не типизирует — подставляем тег, которого не бывает.
     return tags or ["#-"]
+
+
+# ── R30: отраслевая новость → компания отрасли ────────────────────────────────
+# Вадим 27.09: «мягкий вариант по отраслям, но без натягивания совы на глобус — чтобы он точно связал отрасль и
+# компанию; подумать, что за компания и повлияло ли: блокировка Ормуза влияет на цены, но есть компании, на которые
+# это не повлияло». Шаг А отбрасывает новость без названной компании: «налог 30% на сверхдоход цветмета» (24.09,
+# #2841) не дошла до поста, хотя Русал за час −4,7%, а физлица за два дня набрали лонг.
+# Новость про отрасль становится новостью про компанию, только если (1) компанию назвал сам Шаг А в разборе или она
+# из отрасли хэштега новости; (2) после новости у неё всплеск позиций физлиц; (3) цена сходила сильнее обычного
+# (×1,9, как R16). Из прошедших — одна, с самой сильной реакцией цены. Механизм и направление проверяет писатель:
+# бриф даёт ему гипотезу и отрасль целиком (кто ответил, кто нет) и требует отказа, если связь непрямая.
+SECTOR_MARK = "[отрасль → "
+SECTOR_EVENING_HOUR = 19      # новость после вечернего клиринга: позиции после неё — в срезе следующего дня
+SECTOR_MAX_CHECK = 25         # компаний на одну новость: в «Финансах» — десятки бумаг
+
+_SELECT_SECTOR_LIST = text("SELECT DISTINCT sector FROM issuers WHERE coalesce(sector, '') <> ''")
+_SELECT_SECTOR_MEMBERS = text("""
+    SELECT s.secid FROM issuers i JOIN issuer_securities s USING (issuer_id) WHERE i.sector = :sector
+""")
+_SELECT_FUTURES_MAP = text("SELECT stock_ticker, futures_sectype FROM ticker_futures_map")
+_SELECT_FIZ_SURGE = text("""
+    SELECT id, severity_value, signal_date FROM anomalies
+    WHERE scope = 'public' AND clgroup = 'FIZ' AND asset_id = :f
+      AND signal_date >= :first_day AND created_at <= :until
+    ORDER BY severity_value DESC, id
+    LIMIT 1
+""")
+_SELECT_REASONING = text("SELECT reasoning FROM content_candidates WHERE id = :id")
+
+
+def _sector_check(db, row, full: bool = False) -> dict:
+    """Кто из отрасли ответил данными на новость без названной компании.
+
+    Кандидаты — тикеры из разбора Шага А (он сам пишет «касается GMKN/RUAL/PHOR/PLZL») и компании отрасли, чей
+    хэштег стоит в новости. Сначала дешёвое — всплеск позиций физлиц после новости; ход цены — у тех, у кого всплеск
+    есть (full=True — у всех: бриф показывает писателю отрасль целиком).
+    → {"отрасли": [...], "проверено": [{тикер, фьючерс, отрасль, назвал_шаг_а, всплеск, реакция}], "выбор": … | None}"""
+    created = row["created_at"]
+    msk = _msk_naive(created)
+    first_day = msk.date() if msk.hour < SECTOR_EVENING_HOUR else msk.date() + timedelta(days=1)
+    until = created + timedelta(hours=STALE_NEWS_HOURS)
+    fut = {r[0]: r[1] for r in db.execute(_SELECT_FUTURES_MAP).fetchall()}
+    named = [t for t in dict.fromkeys(re.findall(r"\b[A-Z]{4,5}P?\b", row.get("reasoning") or "")) if t in fut]
+    tags = set(re.findall(r"#\w+", f"{row.get('headline') or ''} {row.get('raw_text') or ''}".lower()))
+    sectors = [s for (s,) in db.execute(_SELECT_SECTOR_LIST).fetchall() if tags & set(_sector_tags(s))]
+    members = [sec for s in sectors for (sec,) in db.execute(_SELECT_SECTOR_MEMBERS, {"sector": s}).fetchall()
+               if sec in fut]
+    checked = []
+    for sec in list(dict.fromkeys(named + members))[:SECTOR_MAX_CHECK]:
+        surge = db.execute(_SELECT_FIZ_SURGE, {"f": fut[sec], "first_day": first_day, "until": until}).first()
+        checked.append({"тикер": sec, "фьючерс": fut[sec], "назвал_шаг_а": sec in named, "всплеск": surge,
+                        "отрасль": db.execute(_SELECT_SECTOR, {"secid": sec}).scalar() or "",
+                        "реакция": _reaction_after_news(db, sec, created) if (surge or full) else None})
+    ok = [c for c in checked if c["всплеск"] and c["реакция"] and c["реакция"]["ratio"] >= NEWS_MOVE_MIN_RATIO]
+    return {"отрасли": sectors, "проверено": checked,
+            "выбор": max(ok, key=lambda c: c["реакция"]["ratio"]) if ok else None}
+
+
+def _sector_line(c: dict) -> str:
+    r, s = c["реакция"], c["всплеск"]
+    pos = f"всплеск позиций физлиц ×{float(s.severity_value):.1f} (срез {s.signal_date:%d.%m})" if s else \
+        "позиции физлиц без всплеска"
+    price = (f"цена после новости {r['move']:+.1%} при обычном дневном ходе {r['usual']:.1%} (×{r['ratio']:.1f})"
+             if r else "ход цены не посчитан")
+    return f"{c['тикер']} ({c['отрасль'] or 'отрасль неизвестна'}): {pos}; {price}"
+
+
+def _sector_brief(db, row) -> dict | None:
+    """Блок брифа «отраслевая_новость» (R30) — один и тот же у писателя и судьи. Компания — та, к которой кандидат
+    уже привязан (tickers[0]): пересчёт мог бы выбрать другую, если с тех пор пришли новые всплески."""
+    own = (row.get("tickers") or [None])[0]
+    chk = _sector_check(db, row, full=True)
+    me = next((c for c in chk["проверено"] if c["тикер"] == own), None)
+    if not me:
+        return None
+    return {
+        "компания": f"{own} — в тексте новости не названа, связь предположил завод по данным",
+        "почему_завод_её_выбрал": _sector_line(me),
+        "отрасль_целиком": [_sector_line(c) for c in chk["проверено"] if c is not me][:6],
+        "что_сделать": (
+            "Прежде чем писать, реши сам, задевает ли новость именно эту компанию: через что (налог, экспорт, сырьё, "
+            "спрос, регулирование) и в какую сторону, и сходится ли это с ходом цены. Сверь с отраслью целиком: если "
+            "механизм должен был задеть и других так же, а ответила одна она, найди, чем она отличается; не нашёл — "
+            "связь не доказана. Связь непрямая или направление не сходится — не пиши, верни declined_reason и "
+            "объясни. Пишешь — назови механизм одной фразой; о других компаниях отрасли не пиши."),
+    }
 _AROUND_BEFORE_DAYS = 2
 _AROUND_AFTER_DAYS = 5
 # Чужая новость попадает в бриф, только если после неё наша бумага за два часа
@@ -2248,6 +2343,13 @@ def _build_brief(db, row) -> dict:
             " ⚠️ ПОЗИЦИИ ФИЗЛИЦ В ЭТИ ДНИ ИСКАЖЕНЫ ЭКСПИРАЦИЕЙ: изменение позиций в пост не пиши вообще"
     elif expiry_note(row["signal_date"]):
         brief["экспирация"] = expiry_note(row["signal_date"])
+    # R30: новость про отрасль без названной компании. Отметку берём из базы, если её нет в строке: у очереди судьи
+    # reasoning в выборке нет, а бриф у писателя и судьи обязан быть один (см. докстроку выше).
+    reasoning = row["reasoning"] if "reasoning" in row else db.execute(_SELECT_REASONING, {"id": row["id"]}).scalar()
+    if SECTOR_MARK in (reasoning or ""):
+        блок = _sector_brief(db, {**row, "reasoning": reasoning})
+        if блок:
+            brief["отраслевая_новость"] = блок
     # Пустые блоки убираем: поле, попавшее в бриф, модель считает обязанной
     # израсходовать — пустое «связанные_компании: {}» провоцирует придумать связь.
     for empty in ("связанные_компании", "связи_под_вопросом", "история_рейтинга",

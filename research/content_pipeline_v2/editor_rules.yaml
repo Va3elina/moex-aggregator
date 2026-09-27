@@ -304,3 +304,14 @@ rules:
       - {kind: data, where: "api/services/fund_reorg.py: FLOW_REORG_CORRECTIONS (общая с сайтом)"}
     status: enforced
     regression: [2084]
+
+  - id: R30
+    rule: "Новость про отрасль без названной компании — пост только про компанию, которая сама ответила данными; механизм (через что и в какую сторону новость её задевает) назван и сходится с ходом цены, иначе отказ; о других компаниях отрасли не писать"
+    source: {date: 2026-09-27, cases: [2841], quote: "мягкий вариант по отраслям, но без натягивания совы на глобус"}
+    pipelines: [news]
+    enforced_by:
+      - {kind: filter, where: "signals/content_match.py: promote_sector_news ← content_ai._sector_check — компанию назвал Шаг А или хэштег отрасли; всплеск позиций физлиц после новости; цена ×1,9 (R16); одна компания на новость"}
+      - {kind: card, where: "signals/content_ai.py: _build_brief — блок «отраслевая_новость»: гипотеза, отрасль целиком, что проверить"}
+      - {kind: prompt, where: "блок «ПРАВИЛА РЕДАКТОРА» писателя новостей и судьи"}
+    status: enforced
+    regression_pass: [2841]

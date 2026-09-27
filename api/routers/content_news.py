@@ -1084,8 +1084,11 @@ def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get
     db.execute(text("""
         UPDATE content_candidates
         -- находка без черновика — в discarded: в pending её с тикером фьючерса подобрал бы
-        -- Шаг Б и отдал новостному писателю
-        SET status = CASE WHEN source IN ('insight', 'combo') THEN 'discarded' ELSE 'pending' END,
+        -- Шаг Б и отдал новостному писателю. Отраслевая новость (R30) — тоже: отказ писателя значит
+        -- «связь с компанией не доказана», повтор с новым срезом позиций её не докажет
+        SET status = CASE WHEN source IN ('insight', 'combo')
+                            OR position('[отрасль → ' in coalesce(reasoning, '')) > 0
+                          THEN 'discarded' ELSE 'pending' END,
             synth_declined_reason = :reason, updated_at = now()
         WHERE id = :id
     """), {"id": candidate_id, "reason": _reason})

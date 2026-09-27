@@ -10,7 +10,7 @@
 | Источник | MarketTwits, newssmartlab (хайп по репостам), календарь MOEX, раскрытия FinanceMarker | детекторы по нашим рядам | новость + несколько наших рядов, или только ряды |
 | `source` в `content_candidates` | markettwits, newssmartlab, moex_calendar, fm_disclosure | insight | combo |
 | Кто создаёт | `signals/tg_hype_scan.py` (*/2), `moex_calendar_scan.py` (06:00), `fm_disclosure_scan.py` | `signals/insight_scan.py` (`30 7-17 * * *` UTC, прогон раз на торговый день — `insights/fresh.py`) | `signals/combo_scan.py` (`--mode data` 40 7-17 * * * — так же, `--mode news` */20 6-17 * * 1-5) |
-| Отбор | Шаг А (Routine) → `apply_step_a`; Шаг Б `content_match.py` (*/5): новость ↔ аномалия позиций | `detect_window` → `drop_low_activity` → `drop_expiry_days` → `pick` | те же отсевы → `combos.Engine` (темы, ноги, главная нога) |
+| Отбор | Шаг А (Routine) → `apply_step_a`; Шаг Б `content_match.py` (*/5): новость ↔ аномалия позиций; новость про отрасль без компании → компания отрасли, ответившая данными (R30, `promote_sector_news`) | `detect_window` → `drop_low_activity` → `drop_expiry_days` → `pick` | те же отсевы → `combos.Engine` (темы, ноги, главная нога) |
 | Карточка писателю | `_build_brief` (`signals/content_ai.py`), JSON | `cards.build_card` + `brief_text` (`signals/insights/cards.py`) | `combos.brief` (`signals/insights/combos.py`) |
 | Писатель (Routine) | «Шаг В: писатель по новости» `trig_01KPtMNbEYNfqewKvwhdo4rj` → `prompt_step_c_v2_routine.md` | «Шаг В: писатель по находке» `trig_0117KQ5EwUUpb35LLEsAq2Dc` → `prompt_insight_writer_routine.md` | тот же писатель по находке, раздел «ЖАНР СВЯЗКА» |
 | Проверка | style-check (сам писатель) + судья Шаг Г (`TRIGGER_ID_STEP_G`, `prompt_step_g_routine.md`) — может править текст | `insight_check.py` при приёмке + с 18.09 судья Шаг Г по карточке (`_SELECT_JUDGE_PENDING_CARD`); бот ждёт судью до 45 мин | как у находок |
@@ -31,6 +31,7 @@
 | Новость старше 36 ч | `content_ai._stale_news` (+ `content_match`) | новости |
 | Сюжет / находка не на последнем дне данных (после экспирации «последний день» откатывался, #2491) | `combo_scan.run_once` (день данных, нога ≤ 4 дн., новость ≤ 36 ч), `insight_scan.pick` | находки, связки |
 | Цена не отреагировала: ход после новости / обычный дневной < ×1,9 (R16); цена «до» — свеча, закрытая к выходу новости | `content_ai._weak_reaction` (+ `content_match`) | новости |
+| Отраслевая новость → компания: её назвал Шаг А или хэштег отрасли, после новости всплеск позиций физлиц и цена ×1,9 (R30); одна компания, отказ писателя окончательный | `content_match.promote_sector_news` ← `content_ai._sector_check`, бриф — `_sector_brief` | новости |
 | Дивиденд без сюрприза: доходность < 6% (R17) | `content_ai._div_no_surprise` (+ `content_match`) | новости (календарь, раскрытия) |
 | Малоактивные контракты (как на сайте) | `insight_scan.drop_low_activity` ← `api/services/oi_screener.low_activity_set` | находки, связки |
 | Экспирация: день ±1 торговый | `signals/insights/expiry.near_expiry`; `drop_expiry_days`; в новостном брифе — запрет | все |
