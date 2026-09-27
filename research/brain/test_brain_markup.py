@@ -110,3 +110,42 @@ def test_markup_edges_do_not_keep_orphan_news_alive():
     src = inspect.getsource(_sync().новости_по_имени)
     assert "e.kind NOT IN ('тип', 'отрасль')" in src
     assert src.index("DELETE FROM brain_edges WHERE kind IN ('тип', 'отрасль')") < src.index("DELETE FROM brain_nodes n WHERE n.kind = 'news'")
+
+
+# ── новости без компании (Вадим 27.09: «давай, начинай с новостей без тикера за год») ───────────────────────────
+def test_tickerless_step_runs_every_sync_windowed_and_bounded_by_a_year():
+    s = _sync()
+    assert "новости_без_компании(conn, args.full)" in inspect.getsource(s.main)
+    src = inspect.getsource(s.новости_без_компании)
+    assert "nt.sql_type(" in src and "nt.sql_relevant(" in src, "отбор — тот же, что проверен прогоном (часть 1)"
+    assert "vocab.БЕЗ_КОМПАНИИ_ОКНО" in src, "первая заливка — окнами, иначе синк упрётся в лимит оркестратора"
+    assert "'без_компании', TRUE" in src and "ON CONFLICT (id) DO NOTHING" in src
+    assert "make_interval(days => :дней)" in src and "DELETE FROM brain_nodes WHERE id IN" in src, "старше года уходит"
+    assert vocab.БЕЗ_КОМПАНИИ_ДНЕЙ == 365
+
+
+def test_tickerless_news_are_not_orphans_and_get_topic_type_and_sector():
+    s = _sync()
+    assert "без_компании" in inspect.getsource(s.новости_по_имени), "чистка сирот не трогает новость без компании"
+    итог = inspect.getsource(s._итог_разметки)
+    assert "nt.sql_type('a', п, 'нт')" in итог and "r.тип_темы IS NOT NULL THEN r.тип_темы" in итог
+    разм = inspect.getsource(s.разметка)
+    assert "'тема'" in разм and "_без_темы" in разм
+    assert set(vocab.ТЕМА_ОТРАСЛЬ) <= set(ИМЕНА) and vocab.УДОБРЕНИЯ[0] == "Химия"
+
+
+def test_one_sync_at_a_time():
+    assert "pg_try_advisory_xact_lock(hashtext('brain_sync'))" in inspect.getsource(_sync().main)
+
+
+def test_relevance_catches_foreign_rates_but_not_ukraine_talks():
+    import news_types as nt
+    assert "#таиланд" in nt.ЧУЖИЕ_ТЕГИ and "#юар" in nt.ЧУЖИЕ_ТЕГИ
+    assert "#украина" not in nt.ЧУЖИЕ_ТЕГИ, "#украина стоит и на новостях о наших переговорах"
+    assert "минфин(?!" in nt.РОССИЯ, "«Минфин США» — не наш"
+    assert "немецк" in nt.ЗАРУБЕЖЬЕ
+
+
+def test_unauthorized_is_not_sanctions():
+    rx = dict((t, r) for t, _, r in vocab.ТИПЫ)["санкции"]
+    assert rx.startswith("(?<!не)санкци"), "«несанкционированные переводы» — не санкции"
