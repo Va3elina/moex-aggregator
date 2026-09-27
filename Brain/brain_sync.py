@@ -986,7 +986,15 @@ def новости_по_имени(conn, full: bool) -> int:
            AND (r.human_decision = 'убрать'
                 OR (r.human_decision IS NULL AND r.verdict = 'неверно' AND r.second_verdict = 'неверно'))
     """))
-    # Узлы новостей, оставшиеся без единой связи, карте не нужны.
+    # Узлы новостей, оставшиеся без единой связи, карте не нужны. ⚠️ Рёбра разметки («тип», «отрасль») — ярлыки,
+    # а не связь: без этой оговорки новость, у которой аудит снял последнюю компанию, жила бы вечно с одним «типом»
+    # (27.09, после единой разметки). Сначала уходят её ярлыки, потом она сама.
+    conn.execute(text("""
+        DELETE FROM brain_edges WHERE kind IN ('тип', 'отрасль') AND src IN (
+            SELECT n.id FROM brain_nodes n WHERE n.kind = 'news'
+               AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE (e.src = n.id OR e.dst = n.id)
+                                                            AND e.kind NOT IN ('тип', 'отрасль')))
+    """))
     conn.execute(text("""
         DELETE FROM brain_nodes n WHERE n.kind = 'news'
            AND NOT EXISTS (SELECT 1 FROM brain_edges e WHERE e.src = n.id OR e.dst = n.id)
