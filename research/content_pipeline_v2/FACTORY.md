@@ -9,7 +9,7 @@
 |---|---|---|---|
 | Источник | MarketTwits, newssmartlab (хайп по репостам), календарь MOEX, раскрытия FinanceMarker | детекторы по нашим рядам | новость + несколько наших рядов, или только ряды |
 | `source` в `content_candidates` | markettwits, newssmartlab, moex_calendar, fm_disclosure | insight | combo |
-| Кто создаёт | `signals/tg_hype_scan.py` (*/2), `moex_calendar_scan.py` (06:00), `fm_disclosure_scan.py` | `signals/insight_scan.py` (`30 7 * * 2-6` UTC) | `signals/combo_scan.py` (`--mode data` 40 7 * * 2-6, `--mode news` */20 6-17 * * 1-5) |
+| Кто создаёт | `signals/tg_hype_scan.py` (*/2), `moex_calendar_scan.py` (06:00), `fm_disclosure_scan.py` | `signals/insight_scan.py` (`30 7-17 * * *` UTC, прогон раз на торговый день — `insights/fresh.py`) | `signals/combo_scan.py` (`--mode data` 40 7-17 * * * — так же, `--mode news` */20 6-17 * * 1-5) |
 | Отбор | Шаг А (Routine) → `apply_step_a`; Шаг Б `content_match.py` (*/5): новость ↔ аномалия позиций | `detect_window` → `drop_low_activity` → `drop_expiry_days` → `pick` | те же отсевы → `combos.Engine` (темы, ноги, главная нога) |
 | Карточка писателю | `_build_brief` (`signals/content_ai.py`), JSON | `cards.build_card` + `brief_text` (`signals/insights/cards.py`) | `combos.brief` (`signals/insights/combos.py`) |
 | Писатель (Routine) | «Шаг В: писатель по новости» `trig_01KPtMNbEYNfqewKvwhdo4rj` → `prompt_step_c_v2_routine.md` | «Шаг В: писатель по находке» `trig_0117KQ5EwUUpb35LLEsAq2Dc` → `prompt_insight_writer_routine.md` | тот же писатель по находке, раздел «ЖАНР СВЯЗКА» |
@@ -30,7 +30,7 @@
 | Повтор по тикеру за 3 дня (внутри вида: данные / новость) | `content_ai._repeat_of_ticker` (+ `content_match`), `combo_scan` (по инструменту) | все |
 | Новость старше 36 ч | `content_ai._stale_news` (+ `content_match`) | новости |
 | Сюжет / находка не на последнем дне данных (после экспирации «последний день» откатывался, #2491) | `combo_scan.run_once` (день данных, нога ≤ 4 дн., новость ≤ 36 ч), `insight_scan.pick` | находки, связки |
-| Цена не отреагировала: ход за 2 торг. дня / обычный дневной < ×1,9 (R16) | `content_ai._weak_reaction` (+ `content_match`) | новости |
+| Цена не отреагировала: ход после новости / обычный дневной < ×1,9 (R16); цена «до» — свеча, закрытая к выходу новости | `content_ai._weak_reaction` (+ `content_match`) | новости |
 | Дивиденд без сюрприза: доходность < 6% (R17) | `content_ai._div_no_surprise` (+ `content_match`) | новости (календарь, раскрытия) |
 | Малоактивные контракты (как на сайте) | `insight_scan.drop_low_activity` ← `api/services/oi_screener.low_activity_set` | находки, связки |
 | Экспирация: день ±1 торговый | `signals/insights/expiry.near_expiry`; `drop_expiry_days`; в новостном брифе — запрет | все |
@@ -68,7 +68,9 @@
 ## Данные
 
 - Позиции дневные: `open_interest` interval=24 (ночной прогон D+1, окно «по вчера МСК»); 5-минутные —
-  interval=5, Algopack (ключ до ~10.09.2027).
+  interval=5, Algopack (ключ до ~10.09.2027). Пятницу МосБиржа выкладывает в субботу утром: оркестратор в
+  выходной догружает её раз в час (`run_weekend_daily_oi`), сканеры находок и связок ждут последний торговый
+  день и прогоняются на нём один раз (`signals/insights/fresh.py`, отметки `/opt/frame/data/scan_state/*.done`).
 - Потоки фондов — с `api/services/fund_reorg.py` (как на сайте); ставки — `index_data` RUSFAR3M, RUSFARCNY.
 - Отчёт ЦБ — `cbr_flows` (ручной ингест, скилл moex-cbr-flows); ноги физлиц, ДУ, СЗКО.
 - Посты канала — `channel_posts` (только @FrameTool; Пульс Т-Банка не виден).
@@ -101,7 +103,9 @@ TRIGGER_ID_STEP_C_INSIGHT, token, _insight_payload(...))`. Скрипт запу
 - Импорт `content_ai` вне `/opt/frame` падает на `pipeline_heartbeat` — запускать из `/opt/frame`.
 - `oi_daily` в `signals/insights/data.py` — имя запроса, а не таблица (`open_interest` interval=24).
 - Дневной ОИ за день D грузится ночным прогоном D+1; если прогон пропал — `fetch_oi_daily_realtime.py --once`
-  в `frame-orchestrator-1`.
+  в `frame-orchestrator-1`. До 27.09 пятница доезжала только в полночь на воскресенье, и завод её не видел.
+- Сканер находок / связок «молчит» — в логе `пропуск: ждём дневные позиции за …` или `уже прогнан`. Прогнать
+  вручную, не дожидаясь: `insight_scan.sh --force`, `combo_scan.sh --mode data --force`.
 - `channel_posts` — только @FrameTool.
 - pytest не установлен ни локально, ни на сервере, ни в api-контейнере: тесты `research/content_pipeline_v2/test_*.py`
   запускать функциями внутри api-контейнера (там есть FastAPI), копию кода — в `/tmp` контейнера.

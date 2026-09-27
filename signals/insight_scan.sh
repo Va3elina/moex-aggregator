@@ -1,8 +1,9 @@
 #!/bin/bash
 # Wrapper: движок находок → кандидаты завода постов (signals/insight_scan.py).
-# Раз в день по будням, на данных прошлого торгового дня:
-#   30 7 * * 2-6 /bin/bash /opt/frame/signals/insight_scan.sh >> /opt/frame/logs/insight_scan.log 2>&1
-# Ручной прогон без записи: /opt/frame/signals/insight_scan.sh --dry-run
+# Крон каждый час; сканер работает раз на торговый день, как только его дневные позиции в базе
+# (пятница приходит в субботу, signals/insights/fresh.py):
+#   30 7-17 * * * /bin/bash /opt/frame/signals/insight_scan.sh >> /opt/frame/logs/insight_scan.log 2>&1
+# Ручной прогон без записи: /opt/frame/signals/insight_scan.sh --dry-run; с записью, не дожидаясь: --force
 set -eu
 
 cd /opt/frame

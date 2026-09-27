@@ -1130,6 +1130,49 @@ class MainOrchestrator:
 
         return success
 
+    def _daily_oi_last_date(self):
+        """Последний день дневных позиций в базе (open_interest interval=24) или None."""
+        try:
+            engine = create_engine(DB_URL, connect_args={"ssl_context": False})
+            with engine.connect() as conn:
+                last_date = conn.execute(text(
+                    "SELECT MAX(tradedate) FROM open_interest WHERE interval = 24"
+                )).scalar()
+            engine.dispose()
+            return last_date
+        except Exception as e:
+            log.warning(f"  ⚠️ Не удалось прочитать последний день дневных позиций: {e}")
+            return None
+
+    async def run_weekend_daily_oi(self, today) -> None:
+        """Дневные позиции за последний торговый день в выходной/праздник — пока не придут.
+
+        Докачка выходного (run_weekend_catchup) идёт раз в сутки, в полночь, а позиции за пятницу
+        МосБиржа выкладывает позже, утром субботы. Без повтора пятница доезжала в полночь на
+        воскресенье или при перезапуске на деплое: скринер и лента аномалий всю субботу показывали
+        четверг, а завод постов (сканеры в субботу в 10:30 МСК) не видел ни одной пятницы —
+        Русал 25.09, лонг физлиц +42 тыс. контрактов за день, прошёл мимо.
+        """
+        if getattr(self, '_weekend_daily_oi_day', None) == today:
+            return
+        need = today - timedelta(days=1)
+        for _ in range(30):
+            if is_trading_day(need)[0]:
+                break
+            need -= timedelta(days=1)
+        have = self._daily_oi_last_date()
+        if have is not None and have >= need:
+            self._weekend_daily_oi_day = today
+            return
+        log.info(f"⏰ Выходной — дневных позиций за {need:%d.%m} ещё нет (в базе по {have}), загрузка...")
+        await self.run_daily_update()
+        have = self._daily_oi_last_date()
+        if have is not None and have >= need:
+            self._weekend_daily_oi_day = today
+            refresh_materialized_views(['mv_oi_daily_stats'])
+            send_data_notify("daily", ["open_interest"])
+            log.info(f"    ✓ Дневные позиции за {need:%d.%m} в базе")
+
     async def run_contract_calendar_update(self) -> bool:
         """Обновляет календарь экспираций фьючерсов (futures_contracts из ISS).
 
@@ -1476,6 +1519,7 @@ class MainOrchestrator:
         refresh_materialized_views()
 
         self.last_weekend_catchup = get_moscow_time().date()
+        self._last_weekend_oi_hour = self._get_hour_slot()   # OI Daily только что был — повтор со следующего часа
         log.info("✅ Докачка пропущенных данных завершена")
         log.info("=" * 60)
         return any_success
@@ -1775,6 +1819,12 @@ class MainOrchestrator:
                         await self.run_weekend_catchup()
                     else:
                         log.debug(f"Выходной, докачка уже выполнена сегодня")
+
+                    # Дневные позиции за последний торговый день — раз в час, пока не придут:
+                    # пятницу МосБиржа выкладывает позже полуночной докачки (run_weekend_daily_oi).
+                    if slot_hour != getattr(self, '_last_weekend_oi_hour', None):
+                        self._last_weekend_oi_hour = slot_hour
+                        await self.run_weekend_daily_oi(today)
 
                     # === ТОРГИ ВЫХОДНОГО ДНЯ: фьючерсы+OI+спот 5-мин цикл в часы сессии ===
                     # Спот собираем и в выходные (карта рынка показывает живой ход
