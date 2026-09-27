@@ -55,8 +55,13 @@ class Ошибка(Exception):
 def Query(default=None, **kw):  # noqa: N802 — имя как у FastAPI: сигнатуры ядра совпадают с роутером
     return None if default is ... else default
 
-_ID = re.compile(r"^[a-z]+:[A-Za-z0-9_./\-]{1,120}$")
-_ВИДЫ_УЗЛОВ = ("company", "news", "candidate", "post", "doc", "fund", "index", "fact", "anomaly", "signal", "holder")
+# Кириллица — у узлов-тегов единой разметки: tag:тип/нефть_газ_и_топливо (Brain/vocab.py).
+_ID = re.compile(r"^[a-z_]+:[A-Za-zА-Яа-яЁё0-9_./\-]{1,120}$")
+_ВИДЫ_УЗЛОВ = ("company", "news", "candidate", "post", "doc", "fund", "index", "fact", "anomaly", "signal", "holder",
+               "disclosure", "exchange", "report", "index_event", "fund_event", "sector", "tag")
+# Рёбра единой разметки (тип события, отрасль) — ярлыки, а не отношения: через узел-тег «санкции» путь от одной
+# новости к другой ничего не объясняет, поэтому поиск пути по ним не ходит.
+_РЁБРА_РАЗМЕТКИ = ("тип", "отрасль")
 # Порядок расширения при поиске пути: сначала структурные связи, новости — последними.
 _ПРИОРИТЕТ = {"владеет": 0, "владеет_долей": 1, "держит": 2, "включает": 3, "факт_о": 4, "о": 5,
               "из_новости": 6, "сигнал_о": 7, "аномалия_по": 8, "отчитался": 9, "упоминает": 10,
@@ -368,6 +373,26 @@ def поиск(
         """), {"t": qq}).mappings().first()
         if r and (not kind or kind == "company"):
             найдено.append({**_узел(r), "почему": "тикер"})
+    # Теги единой разметки (Brain/vocab.py): запрос совпал с типом события или отраслью — сначала узлы с этим тегом.
+    # Тег ставится по хэштегу автора, горячим словам или ночным агентом — так поиск идёт по хэштегам и по словам
+    # одновременно, а не только по заголовку. «нефть» находит тег «нефть, газ и топливо», «металлы» — и тип, и отрасль.
+    if len(qq) >= 4:
+        теги = db.execute(text("""
+            SELECT id, title FROM brain_nodes
+             WHERE kind IN ('tag', 'sector') AND replace(lower(title), 'ё', 'е') LIKE :like
+             ORDER BY length(title) LIMIT 3
+        """), {"like": f"%{qq.lower().replace('ё', 'е')}%"}).all()
+        ids = {x["id"] for x in найдено}
+        for тег, имя in теги:
+            for r in db.execute(text("""
+                SELECT n.id, n.kind, n.title, n.summary, n.ts, n.payload, e.method
+                  FROM brain_edges e JOIN brain_nodes n ON n.id = e.src
+                 WHERE e.dst = :тег AND e.kind = ANY(:разм) AND (CAST(:kind AS text) IS NULL OR n.kind = CAST(:kind AS text))
+                 ORDER BY e.ts DESC NULLS LAST LIMIT :limit
+            """), {"тег": тег, "разм": list(_РЁБРА_РАЗМЕТКИ), "kind": kind, "limit": limit}).mappings().all():
+                if r["id"] not in ids:
+                    ids.add(r["id"])
+                    найдено.append({**_узел(r), "почему": f"тег «{имя}» ({r['method']})"})
     строки = db.execute(text("""
         SELECT id, kind, title, summary, ts, payload, similarity(title, :q) AS sim
           FROM brain_nodes
@@ -472,6 +497,18 @@ def контекст(
         "фонды_события": {"уровень": "A", "источник": "раскрытия УК — между месячными срезами, не сделки", "всего": всего("событие_фонда", с), "элементы": кольцо("событие_фонда", 5, с)},
         "правило_для_агента": _УРОВНИ_ОПИСАНИЕ,
     }
+    # Тип события у элементов — из единой разметки (Brain/vocab.py): «[дивиденды] …», а не только заголовок.
+    с_типом = ("новости", "раскрытия", "объявления_биржи", "кандидаты")
+    ids_типа = [e["id"] for k in с_типом for e in блоки[k]["элементы"]]
+    if ids_типа:
+        типы = dict(db.execute(text("""
+            SELECT e.src, t.title FROM brain_edges e JOIN brain_nodes t ON t.id = e.dst
+             WHERE e.kind = 'тип' AND e.src = ANY(:ids)
+        """), {"ids": ids_типа}).all())
+        for k in с_типом:
+            for e in блоки[k]["элементы"]:
+                if e["id"] in типы:
+                    e["тип"] = типы[e["id"]]
     # Для отчёта заголовок пуст без цифр: сводка узла — то, что извлёк агент-читатель.
     if блоки["отчёты"]["элементы"]:
         сводки = dict(db.execute(text("SELECT id, summary FROM brain_nodes WHERE id = ANY(:ids)"),
@@ -610,11 +647,12 @@ _СПОРНО = "((r.verdict = 'неверно') <> (r.second_verdict = 'нев�
 
 def _текст_новости(alias: str) -> str:
     """Полный текст новости из архива по id узла `news:<канал>/<id>` (узел хранит 160 симв.).
-    Исторический экспорт лежит под старыми именами каналов — отсюда второй вариант."""
+    Исторический экспорт лежит под старыми именами каналов — отсюда второй вариант. У узла другого
+    вида (exchange:…, disclosure:…) ключ без «/» — NULLIF, а не ошибка приведения."""
     return f"""
         LEFT JOIN LATERAL (
             SELECT x.text FROM news_archive x
-             WHERE x.message_id = CAST(split_part({alias}.src, '/', 2) AS bigint)
+             WHERE x.message_id = CAST(NULLIF(split_part({alias}.src, '/', 2), '') AS bigint)
                AND x.channel IN (split_part(substr({alias}.src, 6), '/', 1),
                                  CASE split_part(substr({alias}.src, 6), '/', 1)
                                       WHEN 'markettwits' THEN 'MarketTwits'
@@ -861,12 +899,16 @@ def решить_предложение(pid: int, decision: str = Query(..., des
 # Правила синка (Brain/brain_sync.py:ярлыки_новостей) размечают ~47 % новостей за 90 дней;
 # остаток — ночной агент. Список типов — тот же, что в правилах синка (тест сверяет),
 # плюс «прочее» для агента: натянутый тип хуже честного «прочее».
-_ТИПЫ_НОВОСТЕЙ = ("отчётность", "дивиденды", "выкуп акций", "размещение акций", "облигации", "санкции",
-                  "суд", "рейтинг", "мнение аналитиков", "сделка", "управление", "операционные",
+_ТИПЫ_НОВОСТЕЙ = ("отчётность", "дивиденды", "выкуп акций", "индексы", "размещение акций", "облигации",
+                  "листинг и делистинг", "санкции", "суд", "мнение аналитиков", "рейтинг", "сделки инсайдеров",
+                  "сделка", "управление", "операционные",
                   # темы рынка (27.09, Brain/news_types.py): для новостей без события компании
                   "удары по инфраструктуре", "рубль и валюта", "налоги и бюджет", "банки и кредит",
                   "ставка и инфляция", "нефть, газ и топливо", "металлы и удобрения", "регулирование",
                   "геополитика и переговоры", "прочее")
+# Что размечает агент (Brain/vocab.py:ВИДЫ_АГЕНТУ): новости, объявления биржи, раскрытия, сигналы — единая разметка.
+_ВИДЫ_ЯРЛЫКОВ = ("news", "exchange", "disclosure", "signal")
+_РЁБРА_КОМПАНИИ_ЯРЛЫКОВ = ("упоминает", "объявление_о", "раскрытие_о", "сигнал_о")
 _РОЛИ = ("главная", "упоминание")
 _БЕЗ_ТИПА = """
     FROM brain_news_labels l JOIN brain_nodes b ON b.id = l.node_id
@@ -875,22 +917,23 @@ _БЕЗ_ТИПА = """
 
 
 def ярлыки_партия(limit: int = Query(40, ge=1, le=200), db: Session = None, _who: str = "agent"):
-    """Новости за 90 дней, которым правила не нашли тип: свежие вперёд — их первыми
-    увидит писатель. У каждой — компании и роль, которую поставили правила."""
+    """Узлы за 90 дней, которым правила не нашли тип: новости, объявления биржи, раскрытия, сигналы —
+    единая разметка (Brain/vocab.py). Свежие вперёд — их первыми увидит писатель. У каждого — вид, компании
+    и роль, которую поставили правила (роль — только у новостей)."""
     rows = db.execute(text(f"""
         WITH p AS (SELECT l.node_id AS src, b.ts, l.роли {_БЕЗ_ТИПА} ORDER BY b.ts DESC LIMIT :lim)
-        SELECT p.src, p.ts, COALESCE(a.text, nn.title) AS текст,
+        SELECT p.src, p.ts, nn.kind, COALESCE(a.text, concat_ws(' · ', nn.title, nn.summary)) AS текст,
                (SELECT jsonb_agg(jsonb_build_object('company_id', e.dst, 'название', c.title,
                                                     'роль_по_правилу', p.роли ->> e.dst))
                   FROM brain_edges e JOIN brain_nodes c ON c.id = e.dst
-                 WHERE e.src = p.src AND e.kind = 'упоминает') AS компании
+                 WHERE e.src = p.src AND e.kind = ANY(:рёбра) AND starts_with(e.dst, 'company:')) AS компании
           FROM p LEFT JOIN brain_nodes nn ON nn.id = p.src
           {_текст_новости("p")}
-    """), {"lim": limit}).mappings().all()
+    """), {"lim": limit, "рёбра": list(_РЁБРА_КОМПАНИИ_ЯРЛЫКОВ)}).mappings().all()
     осталось = db.execute(text(f"SELECT COUNT(*) {_БЕЗ_ТИПА}")).scalar()
     return {"партия": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M"), "режим": "labels",
             "осталось": int(осталось or 0), "типы": list(_ТИПЫ_НОВОСТЕЙ),
-            "новости": [{"id": r["src"], "дата": str(r["ts"])[:10], "компании": r["компании"] or [],
+            "новости": [{"id": r["src"], "вид": r["kind"], "дата": str(r["ts"])[:10], "компании": r["компании"] or [],
                          "текст": " ".join((r["текст"] or "").split())[:600]} for r in rows]}
 
 
@@ -902,7 +945,7 @@ def ярлыки_решения(body: dict, db: Session = None, _who: str = "age
     принято = отброшено = 0
     for d in body.get("ярлыки") or []:
         id_, тип, роли = str(d.get("id") or ""), d.get("тип"), d.get("роли") or {}
-        if (not id_.startswith("news:") or тип not in _ТИПЫ_НОВОСТЕЙ or not isinstance(роли, dict)
+        if (id_.split(":", 1)[0] not in _ВИДЫ_ЯРЛЫКОВ or тип not in _ТИПЫ_НОВОСТЕЙ or not isinstance(роли, dict)
                 or any(not str(k).startswith("company:") or v not in _РОЛИ for k, v in роли.items())):
             отброшено += 1
             continue
@@ -927,11 +970,11 @@ def _соседи_для_пути(db: Session, id_: str) -> list[tuple[str, str,
     """(сосед, связь, направление), структурные связи первыми, не больше лимита."""
     строки = db.execute(text("""
         SELECT other, kind, напр FROM (
-            SELECT dst AS other, kind, 'исх' AS напр, ts FROM brain_edges WHERE src = :id
+            SELECT dst AS other, kind, 'исх' AS напр, ts FROM brain_edges WHERE src = :id AND NOT (kind = ANY(:разм))
             UNION ALL
-            SELECT src, kind, 'вх', ts FROM brain_edges WHERE dst = :id
+            SELECT src, kind, 'вх', ts FROM brain_edges WHERE dst = :id AND NOT (kind = ANY(:разм))
         ) x ORDER BY ts DESC NULLS LAST LIMIT 3000
-    """), {"id": id_}).all()
+    """), {"id": id_, "разм": list(_РЁБРА_РАЗМЕТКИ)}).all()
     строки.sort(key=lambda r: _ПРИОРИТЕТ.get(r[1], 99))
     return [(r[0], r[1], r[2]) for r in строки[:_ЛИМИТ_СОСЕДЕЙ_В_ПУТИ]]
 

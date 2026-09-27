@@ -2,7 +2,9 @@
 
 Часть 1 — типы новостей без компании (правила Brain/news_types.py) против ручной разметки research/brain/eval/types_gold.tsv:
 по каждому типу — взято верно / лишнее / пропущено, отдельно по каналам (у СмартЛаба хэштегов нет — держится на словах).
-Классификация — тем же SQL, что в синке мозга, прямо в базе. Только чтение.
+Часть 2 — единая разметка узлов мозга (Brain/vocab.py, brain_sync.классифицировать) против research/brain/eval/markup_*.tsv:
+по источникам — MarketTwits, СмартЛаб, биржа, FinanceMarker, кандидаты, сигналы. Шум (узел не попадёт в мозг) = «—».
+Классификация — тем же SQL, что в синке мозга, прямо в базе. Пишутся только temp-таблицы, в конце откат.
 
 Запуск на сервере (окружение как у content_ai.sh):
     cd /opt/frame && DB_URL=... signals/.venv/bin/python research/brain/eval_brain.py
@@ -95,11 +97,60 @@ def report(conn, name: str, title: str) -> tuple:
     return line
 
 
+def gold_markup(name: str) -> list:
+    """id, допустимые ответы (множество; «—» → None), источник, начало текста."""
+    out = []
+    for line in (HERE / "eval" / name).read_text("utf-8").splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        nid, exp, src, snippet = (line.split("\t") + ["", "", ""])[:4]
+        out.append((nid, {None if x == "—" else x for x in exp.split("|")}, src, snippet))
+    return out
+
+
+def report_markup(conn, name: str, title: str) -> str:
+    import brain_sync  # noqa: PLC0415 — Brain/ в sys.path; тянет sqlalchemy, как и весь прогон
+    g = gold_markup(name)
+    try:
+        got = brain_sync.классифицировать(conn, [x[0] for x in g])
+    finally:
+        conn.rollback()   # temp-таблицы классификации уходят вместе с транзакцией
+    by_src = defaultdict(Counter)
+    errors = []
+    for nid, ok, src, snippet in g:
+        pred = got.get(nid)
+        if pred in ok:
+            verdict = "верно"
+        elif pred is None:
+            verdict = "пропущено"
+        elif ok == {None}:
+            verdict = "лишнее"
+        else:
+            verdict = "не тот тип"
+        by_src[src][verdict] += 1
+        if verdict != "верно":
+            errors.append((src, verdict, nid, "|".join(sorted(x or "—" for x in ok)), pred or "—", snippet))
+    print(f"===== разметка: {title} ({name}, {len(g)} узлов)")
+    for src, c in sorted(by_src.items()):
+        n = sum(c.values())
+        print(f"  {src:<5} {c['верно']:>3} из {n:<3} · " + " · ".join(f"{k} {v}" for k, v in c.most_common() if k != "верно"))
+    for src, verdict, nid, exp, pred, snippet in sorted(errors):
+        print(f"  {src:<5} {verdict:<10} {nid:<26} ждали «{exp}», правила «{pred}» | {snippet[:70]}")
+    total = Counter(e[1] for e in errors)
+    line = (f"ИТОГ разметка {title}: {len(g) - len(errors)} из {len(g)} верно; лишнее {total['лишнее']}, "
+            f"пропущено {total['пропущено']}, не тот тип {total['не тот тип']}")
+    print(line + "\n")
+    return line
+
+
 def main() -> int:
     url = os.environ["DB_URL"].replace("@db:", "@127.0.0.1:")
     with create_engine(url).connect() as conn:
         lines = [report(conn, "types_gold.tsv", "подгонка"), report(conn, "types_holdout.tsv", "отложенная-1"),
                  report(conn, "types_holdout2.tsv", "отложенная-2")]
+        for name, title in (("markup_gold.tsv", "подгонка"), ("markup_holdout.tsv", "отложенная")):
+            if (HERE / "eval" / name).exists():
+                lines.append(report_markup(conn, name, title))
     print("\n".join(lines))
     return 0
 
