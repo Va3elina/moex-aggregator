@@ -32,7 +32,7 @@ TEXT_MARK = {"R02": "контракт", "R03": "объяснение индик�
 
 _ROW = text("""
     SELECT c.id, c.source, c.event_type, c.headline, c.tickers, c.futures_ticker, c.created_at, c.updated_at,
-           c.raw_text,
+           c.raw_text, c.reasoning,
            coalesce(c.draft_text_ai, c.draft_text) AS draft_ai, a.signal_date
     FROM content_candidates c LEFT JOIN anomalies a ON a.id = c.matched_anomaly_id
     WHERE c.id = :id
@@ -78,6 +78,9 @@ def main() -> int:
                 elif r["id"] == "R16":
                     how.append("реакция цены" + ("" if must_catch else " (должен пройти)"))
                     hit = bool(ca._weak_reaction(db, dict(row)))
+                elif r["id"] == "R30":
+                    how.append("отрасль: компания ответила данными" + ("" if must_catch else " (должен пройти)"))
+                    hit = not ca._sector_check(db, dict(row))["выбор"]
                 elif r["id"] == "R17":
                     how.append("доходность дивиденда" + ("" if must_catch else " (должен пройти)"))
                     hit = bool(ca._div_no_surprise(db, dict(row)))
