@@ -113,6 +113,17 @@ def since_date(arr, dates, i, higher=True):
     return dates[idx[-1]] if len(idx) else None
 
 
+DAY_RECORD_MIN = 250    # истории меньше года торговых дней — «рекорд дня» ничего не значит
+
+
+def day_record(dv, i) -> bool:
+    """Поток дня i — больше любого дня до него (приток) или меньше любого (отток), при истории от года."""
+    if i < DAY_RECORD_MIN or not dv[i]:
+        return False
+    past = dv[:i]
+    return bool(dv[i] < past.min()) if dv[i] < 0 else bool(dv[i] > past.max())
+
+
 def record(out, t, family, code, arr, dates, i, higher, w, what, unit="", persist=True,
            fmt=num, word=None, **facts) -> float:
     """Рекорд «с даты» + «рядом с рекордом» (держится несколько дней после).
@@ -436,6 +447,15 @@ def detect_funds(out):
                 out.add(t, "фонды", f"funds:{c}", "разворот", 6.5,
                         f"{label[c].capitalize()}: первый день — {word} {bn(dv[i])} после двух недель в обратную сторону",
                         leg="1d")
+        # рекорд одного дня: 17.09 из фондов облигаций за день ушло 11 млрд ₽ — рекорд за всё время; пяти- и
+        # двадцатидневная сумма его не видела, и пост канала «Рекордный отток из облигаций» завод пропустил (27.09)
+        for t in dd.index[(dd.index >= out.since) & (dd.index <= out.until)]:
+            i = dd.index.get_loc(t)
+            if day_record(dv, i):
+                word = "отток" if dv[i] < 0 else "приток"
+                out.add(t, "фонды", f"funds:{c}", "рекорд_или_экстремум", 8,
+                        f"{label[c].capitalize()}: {word} за день {bn(dv[i])} — рекорд за всё время наших данных",
+                        leg="1d", value=float(dv[i]), hi=bool(dv[i] > 0))
         # 20 дней — «отток идёт с начала июля»: пятидневка такой волны не видит
         for n in (5, 20):
             s = daily[c].rolling(n).sum().dropna()

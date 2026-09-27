@@ -563,7 +563,9 @@ def funds_card(cat, as_of) -> dict:
     past = mo[mo.index < t.to_period("M").start_time]
     era = past[past.index >= ERA_START]     # рекорды и аналогии — в рынке после 2022 года
     dv = d.values
-    facts = [f"{d_ru(t, t)} {nom}: {word(dv[-1])} {n_ru(abs(dv[-1]))} ₽ за день"]
+    day_rec = det.day_record(dv, len(dv) - 1)
+    facts = [f"{d_ru(t, t)} {nom}: {word(dv[-1])} {n_ru(abs(dv[-1]))} ₽ за день"
+             + ("; это рекорд одного дня за всё время наших данных" if day_rec else "")]
     # разворот: «бегство из облигаций» автор увидел по первым дням оттока после притока —
     # 24.06 был уже второй день, и счётчик «первого дня» его пропускал
     sg, run = np.sign(dv[-1]), 1
@@ -594,7 +596,8 @@ def funds_card(cat, as_of) -> dict:
     if mtd_rec:
         line += "; это уже больше, чем в любой полный месяц за всю историю наблюдений - с 2022 года"
     facts.append(line)
-    head = f"{nom.capitalize()}: " + (line if mtd_rec else (reversal or rec or line))
+    day_line = f"{word(dv[-1])} за один день - {n_ru(abs(dv[-1]))} ₽, рекорд за всё время наших данных"
+    head = f"{nom.capitalize()}: " + (day_line if day_rec else line if mtd_rec else (reversal or rec or line))
     signs = np.sign(past.values)
     k = 0
     for sg in signs[::-1]:

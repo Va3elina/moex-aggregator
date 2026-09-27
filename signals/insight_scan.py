@@ -35,13 +35,22 @@ from api.database import SessionLocal  # noqa: E402
 from signals.insights import cards, data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
 
-PER = {"positions": 3, "funds": 1, "seasonality": 1}     # сколько находок каждого типа в день
+# сколько находок каждого типа в день; фондов — две: у канала за 14–25.09 треть постов про потоки в фонды (золото, юань
+# дважды, денежный рынок, облигации), а один слот отдавал рекорд оттока из золота рекорду юаня (реплей 27.09)
+PER = {"positions": 3, "funds": 2, "seasonality": 1}
 FAMILY = {"positions": "позиции", "funds": "фонды", "seasonality": "сезонность"}
 HASHTAG = {"positions": r"#открыт\w+", "funds": r"#деньгивфондах", "seasonality": r"#сезонность"}
+# Хэштеги рубрик канала. Пост другой рубрики — не повтор находки: «Покупки/продажи фондов» (#сделкифондов, ребаланс
+# индекса с Газпромом) 23–24.09 отсекал рекорд шорта физлиц по Газпрому и позиции по индексу, «Толпа охладела к юаню»
+# (#деньгивфондах) — рекордный шорт по фьючерсу на юань (реплей завода 27.09).
+RUBRICS = r"#открыт\w+|#деньгивфондах|#сезонность|#\w*делкифондов|#потоккапитала|#силарынка|#индикаторбаффетта"
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
 REPEAT_DAYS, SKIP_DAYS = 14, 3
 FUNDS_LAG_DAYS = 4        # потоки фондов приходят с опозданием: день-два плюс выходные
-TOPIC = {"positions": r"шорт|лонг|позици|покупк|продаж|физлиц|физик|толп",
+# «Про позиции» — только слова срочного рынка: в channel_posts текст обрезан (~500 знаков), хэштег рубрики в конце
+# поста туда не доходит, и по «покупки/продажи», «толпа» посты о ребалансе индекса («Покупки/продажи фондов») и о
+# юаневых фондах («Толпа охладела к юаню») 23–24.09 отсекали рекорды шорта по Газпрому, индексу и юаню (реплей 27.09).
+TOPIC = {"positions": r"шорт|лонг|позици|фьючерс|контракт",
          "funds": r"фонд|приток|отток|БПИФ", "seasonality": r"сезонн"}
 FUND_INST = {"bonds": r"облигац|ОФЗ", "stocks": r"фонд\w* акци", "money_market": r"денежн\w* рынк|ликвидност",
              "gold": r"золот", "yuan": r"юан", "all": r"фонд"}
@@ -109,9 +118,19 @@ def repeat_of(spec, as_of):
             inst = "|".join(x for x in (re.escape(nm) if nm else "", to_stock.get(spec["sec"]) or "") if x)
             case = True
     for d, txt in channel_posts(as_of):
-        if inst and re.search(inst, txt, 0 if case else re.I) and re.search(TOPIC[kind], txt, re.I):
+        if not (inst and re.search(inst, txt, 0 if case else re.I)):
+            continue
+        своя = re.search(HASHTAG[kind], txt, re.I)
+        чужая = not своя and re.search(RUBRICS, txt, re.I)
+        if своя or (not чужая and re.search(TOPIC[kind], txt, re.I)):
             return {"date": d, "title": txt.strip().splitlines()[0][:90] if txt.strip() else ""}
     return None
+
+
+def all_time_record(x) -> bool:
+    """Рекорд за всё время наших данных — пост и при скромной сумме: «Рекордные продажи золота» (700 млн ₽, первый
+    месяц оттока за год) — эталонный пост канала 14.09, а порог «мало для читателя» его отсекал (реплей 27.09)."""
+    return x.get("type") == "рекорд_или_экстремум" and "за всё время" in (x.get("title") or "")
 
 
 def fund_significant(cat, as_of) -> bool:
@@ -184,7 +203,7 @@ def pick(items: list, log=print, until=None) -> list:
             spec = {"positions": {"kind": "positions", "sec": f.get("sec"), "leg": f.get("leg")},
                     "funds": {"kind": "funds", "cat": f.get("cat")},
                     "seasonality": {"kind": "seasonality", "code": x["instrument"]}}[kind]
-            if kind == "funds" and not fund_significant(spec["cat"], last):
+            if kind == "funds" and not all_time_record(x) and not fund_significant(spec["cat"], last):
                 log(f"пропуск, мало для читателя: {x['title'][:90]}")
                 continue
             rep = repeat_of(spec, last)
