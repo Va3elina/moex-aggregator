@@ -107,6 +107,9 @@ TRIGGER_ID_STEP_C_INSIGHT, token, _insight_payload(...))`. Скрипт запу
 - Сканер находок / связок «молчит» — в логе `пропуск: ждём дневные позиции за …` или `уже прогнан`. Прогнать
   вручную, не дожидаясь: `insight_scan.sh --force`, `combo_scan.sh --mode data --force`.
 - `channel_posts` — только @FrameTool.
+- Подсказку мозга Шагу А (`_brain_hint_for_step_a`) строит процесс, который запускает Шаг А (`tg_hype_scan.sh`,
+  бэкстоп `content_ai.sh`): обёртке на хосте нужен `EMBED_MODEL_DIR=/opt/frame/models/…`, путь по умолчанию —
+  контейнерный. Проверка: `agent_trace` с question = 'подсказка Шагу А' без «недоступен».
 - pytest не установлен ни локально, ни на сервере, ни в api-контейнере: тесты `research/content_pipeline_v2/test_*.py`
   запускать функциями внутри api-контейнера (там есть FastAPI), копию кода — в `/tmp` контейнера.
 - У находок/связок `judge_verdict` сначала ставит проверка кодом; признак «живой судья разобрал» — `judge_items`.
