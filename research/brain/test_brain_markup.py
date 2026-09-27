@@ -149,3 +149,30 @@ def test_relevance_catches_foreign_rates_but_not_ukraine_talks():
 def test_unauthorized_is_not_sanctions():
     rx = dict((t, r) for t, _, r in vocab.ТИПЫ)["санкции"]
     assert rx.startswith("(?<!не)санкци"), "«несанкционированные переводы» — не санкции"
+
+
+# ── отрасли: один словарь на мозг и завод (Вадим 27.09: «переводи завод на единый поиск мозга») ─────────────────
+def test_sector_vocabulary_covers_every_factory_sector_and_is_tag_normalized():
+    заводские = {"Нефть и газ", "Металлы", "Финансы", "Энергетика", "Застройщики", "Потреб. сектор", "IT", "Транспорт",
+                 "Химия", "Здравоохранение", "Машиностроение", "Телеком"}
+    assert заводские <= set(vocab.ОТРАСЛИ), "мозг не должен знать отраслей меньше, чем завод"
+    for отрасль, (теги, rx, где) in vocab.ОТРАСЛИ.items():
+        assert теги and rx and где in ("россия", "россия_или_мир"), отрасль
+        assert "#выборы" not in теги and "#молдавия" not in теги, "география — не отрасль"
+    assert vocab.ОТРАСЛИ["IT"][2] == "россия", "в «IT» не должна идти каждая новость про OpenAI"
+
+
+def test_tickerless_gate_takes_sector_news_without_topic_and_keeps_them():
+    s = _sync()
+    src = inspect.getsource(s.новости_без_компании)
+    assert "vocab.sql_отрасли(" in src and "cardinality(g.от_т) > 0 OR cardinality(g.от_с) > 0" in src
+    assert "'отрасли_хэштег'" in src and "'отрасли_слова'" in src
+    разм = inspect.getsource(s.разметка)
+    assert "отрасли_хэштег" in разм and "DISTINCT ON (id, dst)" in разм, "одна отрасль у узла — одно ребро"
+    assert "отрасли_однократно" in inspect.getsource(s.отрасли_однократно)
+
+
+def test_documents_are_typed_by_source_and_get_sector_via_company():
+    assert vocab.ТИП_ВИДА["doc"] == "отчётность" and "doc" in vocab.ИСТОЧНИК_ГЛАВНЕЕ
+    assert "doc" in vocab.ВИДЫ_С_ОТРАСЛЬЮ and "отчитался" in vocab.РЁБРА_К_КОМПАНИИ
+    assert "b.kind = 'doc' AND NOT EXISTS" in inspect.getsource(_sync()._итог_разметки), "старые документы — один раз"
