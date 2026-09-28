@@ -178,7 +178,7 @@ def pick(items: list, log=print, until=None) -> list:
         pool = [x for x in items if x["family"] == fam]
         if kind == "positions":
             pool = [x for x in pool if x["type"] in ("рекорд_или_экстремум", "уровень_к_истории")
-                    and (x.get("facts") or {}).get("leg") in ("long", "short", "nl", "ns", "net")
+                    and (x.get("facts") or {}).get("leg") in ("long", "short", "nl", "ns", "net", "long_low", "nl_low")
                     and (x.get("facts") or {}).get("sec")]
         if kind == "funds":
             pool = [x for x in pool if (x.get("facts") or {}).get("cat")]
@@ -195,9 +195,11 @@ def pick(items: list, log=print, until=None) -> list:
             if lag > (FUNDS_LAG_DAYS if kind == "funds" else 0):
                 log(f"пропуск {kind}: последняя находка от {last}, данные по {pd.Timestamp(until):%Y-%m-%d}")
                 continue
-        seen = set()
+        seen, cands = set(), []
+        # позиции: кандидатов больше тройки — из них посты новых типов (angle_jobs), тренду остаются три бумаги
+        cap = max(PER[kind], ANGLE_POOL) if kind == "positions" else PER[kind]
         for x in sorted((x for x in pool if x["date"] == last), key=lambda z: -z["score"]):
-            if x["instrument"] in seen or len(seen) >= PER[kind]:
+            if x["instrument"] in seen or len(seen) >= cap:
                 continue
             f = x.get("facts") or {}
             spec = {"positions": {"kind": "positions", "sec": f.get("sec"), "leg": f.get("leg")},
@@ -211,9 +213,43 @@ def pick(items: list, log=print, until=None) -> list:
                 log(f"пропуск, канал писал {rep['date']:%d.%m} «{rep['title'][:50]}»: {x['title'][:70]}")
                 continue
             seen.add(x["instrument"])
-            res.append({"kind": kind, "spec": spec, "date": last, "title": x["title"], "repeat": rep,
-                        "instrument": x["instrument"], "score": x["score"]})
+            job = {"kind": kind, "spec": spec, "date": last, "title": x["title"], "repeat": rep,
+                   "instrument": x["instrument"], "score": x["score"]}
+            (cands if kind == "positions" else res).append(job)
+        if kind == "positions":
+            ang = angle_jobs(cands, log)
+            used = {j["instrument"] for j in ang}
+            res += [j for j in cands if j["instrument"] not in used][:PER["positions"]] + ang
     return res
+
+
+# Посты новых типов по позициям (Вадим 28.09: «трендовые посты нужны, новыми типами разбавить»): концентрация, повод
+# дня, доля — cards.position_angles. Сверху трёх трендовых, не больше двух в день; одна бумага — один пост в день.
+ANGLE_PER_DAY = 2
+ANGLE_POOL = 12      # сколько лучших находок по позициям проверять на поворот
+
+
+def angle_jobs(cands: list, log=print) -> list:
+    found = []
+    for j in cands[:ANGLE_POOL]:
+        if str(j["spec"].get("leg", "")).endswith("_low"):
+            continue
+        try:
+            card = cards.build_card(j["spec"], j["date"])
+        except Exception as e:  # noqa: BLE001 — без поворота находка остаётся трендовой
+            log(f"поворот не посчитан: {j['title'][:70]}: {type(e).__name__}: {e}")
+            continue
+        for a in card.get("angles") or []:
+            if a["strength"] >= cards.ANGLE_MIN[a["type"]]:
+                found.append((a["strength"] / cards.ANGLE_MIN[a["type"]], j, a))
+    out, used = [], set()
+    for _, j, a in sorted(found, key=lambda z: (cards.ANGLE_PRIORITY[z[2]["type"]], -z[0])):
+        if len(out) >= ANGLE_PER_DAY or j["instrument"] in used:
+            continue
+        used.add(j["instrument"])
+        out.append({**j, "spec": {**j["spec"], "angle": a["type"]}, "title": f"{a['type']}: {j['title']}"})
+        log(f"пост нового типа «{a['type']}»: {j['title'][:80]}")
+    return out
 
 
 def _inst_rx(spec):

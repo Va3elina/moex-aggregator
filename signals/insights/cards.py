@@ -54,7 +54,8 @@ FUND = {"bonds": ("фонды облигаций", "фондах облигац�
         "gold": ("фонды золота", "фондах золота", "фондов золота"),
         "yuan": ("юаневые фонды", "юаневых фондах", "юаневых фондов"),
         "all": ("все биржевые фонды", "биржевых фондах", "биржевых фондов")}
-HASHTAG = {"positions": "#открытыепозиции", "funds": "#деньгивфондах", "seasonality": "#сезонность"}
+HASHTAG = {"positions": "#открытыепозиции", "funds": "#деньгивфондах", "seasonality": "#сезонность",
+           "fund_trades": "#сделкифондов", "macro": "#открытыепозиции"}
 # forecast_backtest.py, 13.09: 2646 эпизодов в 72 фьючерсах — с 2023 года рекорды позиций угадывают
 # направление цены в 51% случаев, сезонность индекса хуже «всегда вверх». Вадим: прогнозы цены не делать.
 # «Исторический» у нас — после 2022 года (Вадим, 14.09): до этого другой рынок, с нерезидентами.
@@ -129,7 +130,11 @@ def p_ru(x, sign=True) -> str:
 
 def x_ru(r) -> str:
     s = f"{r:.1f}".replace(".", ",")
-    return f"в {s[:-2] if s.endswith(',0') else s} раза"
+    if not s.endswith(",0"):
+        return f"в {s} раза"                     # дробное: «в 2,5 раза»
+    n = int(round(r))                            # целое: «в 2 раза», но «в 5 раз», «в 21 раз»
+    word = "раза" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "раз"
+    return f"в {n} {word}"
 
 
 def span_ru(years) -> str:
@@ -348,6 +353,209 @@ def intraday_now(sec, leg, as_of):
     return None if val is None or pd.isna(val) else (float(val), r.tradedate, r.tradetime)
 
 
+def price_lines(pser, t, plabel) -> list:
+    """Цена бумаги к находке: уровень, неделя и месяц, многолетний максимум или минимум."""
+    if pser is None or len(pser) <= 25:
+        return []
+    pa, pdts = pser.values, pser.index
+    pl = [f"{plabel} - {px_ru(pa[-1], plabel)} на {d_ru(pdts[-1], t)}",
+          f"за неделю {p_ru(pa[-1] / pa[-6] - 1)}, за месяц {p_ru(pa[-1] / pa[-21] - 1)}"]
+    for hi in (False, True):
+        pu, py = since(pa, pdts, len(pa) - 1, hi)
+        s = status_ru(pu, py, pdts, hi, t)
+        if s and py >= 0.5:
+            pl.append(f"{plabel} на {s}".replace("на максимум", "на максимуме").replace("на минимум", "на минимуме"))
+    return ["; ".join(pl[:2])] + pl[2:]
+
+
+def other_legs(P, sec, leg, t) -> list:
+    """Другие стороны позиции физлиц по тому же фьючерсу: многолетний уровень или сдвиг за месяц от 15%."""
+    context = []
+    for L in ("long", "short", "nl", "ns", "net"):
+        if L == leg:
+            continue
+        s2 = upto(P[L][sec], t)
+        if len(s2) < 260:
+            continue
+        a2, d2 = s2.values.astype(float), s2.index
+        l2, u2 = LEG[L]
+        if L == "net":
+            l2 = "чистый лонг физлиц" if a2[-1] >= 0 else "чистый шорт физлиц"
+            a2 = a2 if a2[-1] >= 0 else -a2
+        best_s = None
+        for hi in (True, False):
+            uu, yy = since(a2, d2, len(a2) - 1, hi)
+            if yy >= 0.5:
+                best_s = era_status(uu, yy, d2, hi, t)
+                break
+        if best_s:
+            context.append(f"{l2} - {q_ru(a2[-1], u2)}, {best_s}")
+        elif L != "net" and a2[-21] > 0 and abs(a2[-1] / a2[-21] - 1) >= 0.15:
+            context.append(f"{l2} - {q_ru(a2[-1], u2)}, за месяц {p_ru(a2[-1] / a2[-21] - 1)}")
+    return context
+
+
+# ── повороты: новые типы постов по позициям ─────────────────────────────────────
+# Вадим 28.09: трендовые посты нужны как есть, новыми типами — разбавить. Поворот — то, с чего автор канала начинает
+# пост, а завод пропускал (реплей 27.09, слепая оценка: «идёт по шаблону рекорд → тренд → эпизод → 3 из 4 и пропускает
+# повод и поворот»). Карточка тренда поворот не показывает; пост нового типа — отдельная находка дня (insight_scan.pick,
+# spec["angle"]), у его карточки своё ГЛАВНОЕ. Число контрактов не называется (R02) — только кратности и доли.
+ANGLE_MIN = {"концентрация": 3.0, "повод": 4.0, "доля": 0.15}
+# порядок важности для канала: повод дня и узкий круг — сильнее доли (28.09: две «доли», одна по какао, обошли повод
+# Самолёта −18% за два дня); доля — только у индекса и валют, как в посте «Шортистов больше, чем когда-либо»
+ANGLE_PRIORITY = {"повод": 0, "концентрация": 1, "доля": 2}
+SHARE_CODES = ("MIX", "RI", "Si", "CNY", "Eu")
+
+
+def crowd_result(gross, pser, leg, plabel) -> str | None:
+    """Итог толпы по валовой стороне за месяц: цена в дни прироста позиции против нынешней (как в positions_card)."""
+    arr, dates = gross.values.astype(float), gross.index
+    i = len(arr) - 1
+    if pser is None or i < 21:
+        return None
+    pw = pser.reindex(dates[i - 20:i + 1]).ffill().values
+    add = np.clip(np.diff(arr[i - 21:i + 1]), 0, None)
+    ok = ~np.isnan(pw) & (add > 0)
+    if ok.sum() < 3 or add[ok].sum() < 0.2 * arr[i]:
+        return None
+    vw, now = float((add[ok] * pw[ok]).sum() / add[ok].sum()), float(pser.iloc[-1])
+    res = (now / vw - 1) * (-1 if leg == "short" else 1)
+    if abs(res) < 0.03:
+        return None
+    bet = "ставка на падение" if leg == "short" else "ставка на рост"
+    return (f"{bet} {'в плюсе' if res > 0 else 'в минусе'} примерно на {p_ru(abs(res), False)}: набирали в среднем по "
+            f"{px_ru(vw, plabel)}, сейчас {px_ru(now, plabel)}")
+
+
+def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) -> list:
+    """[{type, strength, line}] по силе:
+      • концентрация — объём позиции за месяц растёт, а людей в ней меньше: «Магнит шортов» (23.09) — объём шорта ×6,7
+        при числе шортистов −15%, «кто-то один крупный». Проверяется и вторая сторона: если покупки тоже на максимуме, а
+        чистая позиция мала, узкий круг может держать спред, а не ставку против (слепая оценка 28.09);
+      • повод — резкий ход цены за день-два против обычного хода за тот же срок, а толпа на рекорде: «Самолёт падает,
+        толпа докупает» (15.09); с итогом толпы и экспирацией как усилителем («лонг растёт за два дня до экспирации,
+        когда его обычно режут» — приём канала);
+      • доля — число физлиц в шорте (лонге) как доля всех с позицией: за месяц (толпа переходит из лонга в шорт) или
+        против прошлого пика; посылка «трейдеров больше» — только если их правда больше (евро 28.09: было наоборот)."""
+    out = []
+    i, v = len(arr) - 1, float(arr[-1])
+    col = lambda name: upto(P[name][sec], t).reindex(dates).ffill()  # noqa: E731
+    cnt_leg = {"long": "nl", "short": "ns"}.get(leg)
+    if cnt_leg and i >= 20 and arr[i - 20] > 0:
+        cs = col(cnt_leg)
+        c_now, c_20 = float(cs.iloc[-1]), float(cs.iloc[-21])
+        if c_now > 0 and c_20 > 0 and np.isfinite(c_now) and np.isfinite(c_20):
+            k = (v / c_now) / (arr[i - 20] / c_20)
+            if k >= 2 and v / arr[i - 20] >= 1.5:
+                who = "шорте" if leg == "short" else "лонге"
+                line = (f"поворот - концентрация: {lab} по {dat} за месяц вырос {x_ru(v / arr[i - 20])}, а число "
+                        f"физлиц в {who} {p_ru(c_now / c_20 - 1)}; на одного в среднем {x_ru(k)} больше, чем месяц назад - "
+                        f"позицию набирает узкий круг, а не толпа; кто именно - данные не говорят")
+                opp = "long" if leg == "short" else "short"
+                u_o, y_o, net = None, 0.0, None
+                if opp in P and sec in P[opp]:
+                    u_o, y_o = since(col(opp).abs().values.astype(float), dates, i, True)
+                if "net" in P and sec in P["net"]:
+                    net = float(col("net").iloc[-1])
+                if y_o >= 0.5 or (net is not None and abs(net) < 0.3 * v):
+                    other = "покупки физлиц" if opp == "long" else "шорт физлиц"
+                    line += (f"; ВТОРАЯ СТОРОНА: {other} тоже " + (f"на {era_status(u_o, y_o, dates, True, t)}"
+                                                                    if y_o >= 0.5 else "велики")
+                             + (f", чистая позиция - всего {p_ru(abs(net) / v, False)} от объёма" if net is not None else "")
+                             + " - узкий круг может держать обе стороны (спред), а не ставку против: «ставят против» "
+                               "не утверждай, «шортят единицы» - перебор")
+                out.append({"type": "концентрация", "strength": float(k), "line": line})
+    if pser is not None and len(pser) > 62 and leg in ("long", "short", "net"):
+        pa, pd_ = pser.values.astype(float), pser.index
+        typ1 = float(np.median(np.abs(pa[-60:] / pa[-61:-1] - 1)))
+        typ2 = float(np.median(np.abs(pa[-60:] / pa[-62:-2] - 1)))
+        cand = [(pa[-1] / pa[-2] - 1, "за день", typ1), (pa[-1] / pa[-3] - 1, "за два дня", typ2)]
+        mv, span, typ = max(cand, key=lambda z: abs(z[0]) / z[2] if z[2] > 0 else 0)
+        if typ > 0 and abs(mv) >= max(0.05, 3 * typ):
+            move = "падает" if mv < 0 else "растёт"
+            side = {"long": "покупки физлиц", "short": "шорт физлиц", "net": "чистая позиция физлиц"}[leg]
+            line = (f"повод дня: {plabel} {span} {p_ru(mv)} (к {d_ru(pd_[-1], t)}) - {x_ru(abs(mv) / typ)} больше "
+                    f"обычного хода {'за день' if span == 'за день' else 'за два дня'}; бумага {move}, а {side} - на "
+                    f"рекорде; объяснение хода - в КОНТЕКСТЕ («что было у компании»): «на рынке связывают», «на фоне», "
+                    f"не «из-за»")
+            gleg = leg if leg in ("long", "short") else ("long" if v >= 0 else "short")
+            if gleg in P:
+                cr = crowd_result(col(gleg).abs(), pser, gleg, plabel)
+                if cr:
+                    line += f"; итог толпы: {cr} - оценка по средней цене в дни прироста позиции"
+            from signals.insights.expiry import next_expiry
+            ex = pd.Timestamp(next_expiry(t))
+            left = (ex - pd.Timestamp(t).normalize()).days
+            if 0 < left <= 5 and i >= 2 and arr[i] > arr[i - 2] and "вечн" not in dat:
+                line += (f"; и это за {left} {plural(left, ('день', 'дня', 'дней'))} до квартальной экспирации "
+                         f"{d_ru(ex, t)}, когда позиции обычно сокращают - толпа идёт против привычки")
+            out.append({"type": "повод", "strength": abs(mv) / typ, "line": line})
+    other = {"ns": "nl", "nl": "ns"}.get(leg)
+    if other and i >= 20 and det.CODE.get(sec) in SHARE_CODES:
+        os_ = col(other)
+        n_now, o_now = v, float(os_.iloc[-1])
+        n_20, o_20 = float(arr[i - 20]), float(os_.iloc[-21])
+        if n_now + o_now > 0 and n_20 + o_20 > 0:
+            sh, sh20 = n_now / (n_now + o_now), n_20 / (n_20 + o_20)
+            who, opp_who = ("шорте", "лонге") if leg == "ns" else ("лонге", "шорте")
+            best = None
+            if abs(sh - sh20) >= 0.10:
+                ch_n = p_ru(n_now / n_20 - 1) if n_20 else "н/д"
+                ch_o = p_ru(o_now / o_20 - 1) if o_20 else "н/д"
+                shift = ""
+                if sh > sh20:
+                    shift = " - толпа переходит из лонга в шорт" if leg == "ns" else " - толпа переходит из шорта в лонг"
+                best = (abs(sh - sh20), f"поворот - доля: за месяц доля физлиц в {who} среди всех с позицией по {dat} "
+                                        f"{'выросла' if sh > sh20 else 'снизилась'} с {p_ru(sh20, False)} до "
+                                        f"{p_ru(sh, False)}: число в {who} {ch_n}, в {opp_who} {ch_o}{shift}")
+            if past:
+                j = past[-1]["top"]
+                n0, o0 = float(arr[j]), float(os_.iloc[j])
+                if n0 + o0 > 0 and np.isfinite(o0) and best is not None:
+                    # сдвиг за месяц — главное, прошлый пик — фоном (евро 16.09: 15% → 35% за месяц важнее пика 2023)
+                    best = (best[0], best[1] + f"; на прошлом пике {d_ru(dates[j], t)} доля была {p_ru(n0 / (n0 + o0), False)}"
+                                     + ("" if (n_now + o_now) > (n0 + o0) else ", но трейдеров с позицией тогда было "
+                                        "больше - «их стало больше» не пиши"))
+                elif n0 + o0 > 0 and np.isfinite(o0):
+                    sh0 = n0 / (n0 + o0)
+                    if abs(sh - sh0) >= 0.10:
+                        more = (n_now + o_now) > (n0 + o0)
+                        best = (abs(sh - sh0), f"поворот - доля: в {who} {p_ru(sh, False)} всех физлиц с позицией по "
+                                               f"{dat}; на прошлом пике {d_ru(dates[j], t)} было {p_ru(sh0, False)}; "
+                                               + ("трейдеров с позицией теперь больше - число людей растёт вместе с рынком, "
+                                                  "сравнивай долю" if more else
+                                                  "трейдеров с позицией теперь меньше, чем тогда - «их стало больше» не пиши"))
+            if best:
+                out.append({"type": "доля", "strength": best[0], "line": best[1]})
+    return sorted(out, key=lambda a: (ANGLE_PRIORITY[a["type"]], -a["strength"] / ANGLE_MIN[a["type"]]))
+
+ANGLE_NOTE = {
+    "концентрация": "ТИП ПОСТА: КОНЦЕНТРАЦИЯ - не трендовый пост. Мысль одна: позицию набирает узкий круг, а не толпа. "
+                    "Тренд, прошлые эпизоды и «в скольких случаях из скольких» - не нужны или одной фразой.",
+    "повод": "ТИП ПОСТА: ПОВОД ДНЯ - не трендовый пост. Начни с хода цены этих дней и с того, что толпа стоит на другой "
+             "стороне (или удваивает ставку); что говорят о причине - из КОНТЕКСТА, «на рынке связывают». Тренд и "
+             "статистика прошлых разворотов - не нужны или одной фразой.",
+    "доля": "ТИП ПОСТА: ДОЛЯ - не трендовый пост. Не число людей, а доля в шорте (лонге) среди всех с позицией - за "
+            "месяц или против прошлого пика, как в строке поворота; скажи, что из этого следует. Тренд и статистика "
+            "разворотов - не нужны или одной фразой.",
+}
+
+
+def angle_card(card: dict, angle: str) -> dict:
+    """Карточка поста нового типа из карточки позиций: своё ГЛАВНОЕ (поворот, находка, итог толпы, цена) и пометка типа
+    для писателя. Цифры те же — карточка тренда остаётся нетронутой."""
+    a = next((x for x in card.get("angles") or [] if x["type"] == angle), None)
+    if a is None:
+        raise ValueError(f"у находки нет поворота «{angle}»")
+    crowd = next((f for f in card.get("facts") or [] if f.startswith("итог толпы")), None)
+    focus = [ANGLE_NOTE[angle], a["line"], f"находка: {card['headline']}"] + \
+        [crowd] * bool(crowd and "итог толпы" not in a["line"]) + [f"цена: {card['price'][0]}"] * bool(card.get("price"))
+    # тренд и «N из M» у поста нового типа не нужны: карточка сама тянула писателя обратно в шаблон (слепая оценка 28.09)
+    limits = [x for x in card.get("limits") or [] if not x.startswith("пост строится на блоке ТРЕНД")]
+    return {**card, "focus": focus, "trend": [], "after": [], "analogy": [], "limits": limits,
+            "spec": {**card["spec"], "angle": angle}}
+
+
 # ── карточка: рекорд позиций ─────────────────────────────────────────────────────
 def positions_card(sec, leg, as_of) -> dict:
     P, *_ = data()
@@ -397,9 +605,15 @@ def positions_card(sec, leg, as_of) -> dict:
         iv, iday, itime = now
         iv *= sign
         intraday_chg = iv / v - 1
+        from signals.insights.expiry import next_expiry
+        ex = next_expiry(t)
+        # реплей 27.09: «−38% к утру» через экспирацию 17.09 черновики объявили разворотом (шортисты по индексу)
+        crossed = pd.Timestamp(ex) <= pd.Timestamp(iday) and "вечн" not in nom
         facts.append(f"утром {d_ru(iday, t)} к {str(itime)[:5]} МСК {lab} - {q_ru(iv, unit)} "
                      f"({p_ru(intraday_chg)} к закрытию {d_ru(t, t)})"
-                     + (" - картина к утру уже развернулась: без этой оговорки пост писать нельзя"
+                     + (f" - между ними квартальная экспирация {d_ru(ex, t)}: изменение механическое, это НЕ разворот "
+                        f"и не тема поста" if crossed else
+                        " - картина к утру уже развернулась: без этой оговорки пост писать нельзя"
                         if intraday_chg <= INTRADAY_NOTE else ""))
     if leg != "net" and st and i >= 5 and arr[i - 5] > 0 and v > arr[i - 5]:
         # #2124 SMLT: писатель объявил «пик пройден», а позиция ещё росла
@@ -456,40 +670,9 @@ def positions_card(sec, leg, as_of) -> dict:
                            f"за следующий месяц {plabel} {p_ru(best['r20'])}"
                            + (f", за три - {p_ru(best['r60'])}" if best["r60"] is not None else ""))
 
-    price = []
-    if pser is not None and len(pser) > 25:
-        pa, pdts = pser.values, pser.index
-        pl = [f"{plabel} - {px_ru(pa[-1], plabel)} на {d_ru(pdts[-1], t)}",
-              f"за неделю {p_ru(pa[-1] / pa[-6] - 1)}, за месяц {p_ru(pa[-1] / pa[-21] - 1)}"]
-        for hi in (False, True):
-            pu, py = since(pa, pdts, len(pa) - 1, hi)
-            s = status_ru(pu, py, pdts, hi, t)
-            if s and py >= 0.5:
-                pl.append(f"{plabel} на {s}".replace("на максимум", "на максимуме").replace("на минимум", "на минимуме"))
-        price = ["; ".join(pl[:2])] + pl[2:]
-
-    context = []
-    for L in ("long", "short", "nl", "ns", "net"):
-        if L == leg:
-            continue
-        s2 = upto(P[L][sec], t)
-        if len(s2) < 260:
-            continue
-        a2, d2 = s2.values.astype(float), s2.index
-        l2, u2 = LEG[L]
-        if L == "net":
-            l2 = "чистый лонг физлиц" if a2[-1] >= 0 else "чистый шорт физлиц"
-            a2 = a2 if a2[-1] >= 0 else -a2
-        best_s = None
-        for hi in (True, False):
-            uu, yy = since(a2, d2, len(a2) - 1, hi)
-            if yy >= 0.5:
-                best_s = era_status(uu, yy, d2, hi, t)
-                break
-        if best_s:
-            context.append(f"{l2} - {q_ru(a2[-1], u2)}, {best_s}")
-        elif L != "net" and a2[-21] > 0 and abs(a2[-1] / a2[-21] - 1) >= 0.15:
-            context.append(f"{l2} - {q_ru(a2[-1], u2)}, за месяц {p_ru(a2[-1] / a2[-21] - 1)}")
+    price = price_lines(pser, t, plabel)
+    context = other_legs(P, sec, leg, t)
+    angles = position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t)
 
     limits = [f"данные дневные, на закрытие торгов {d_ru(t, t)}; что было внутри дня, не видно",
               f"данные по {dat} начинаются в {dates[0].year} году",
@@ -517,7 +700,7 @@ def positions_card(sec, leg, as_of) -> dict:
     return {"kind": "positions", "spec": {"sec": sec, "leg": leg}, "as_of": t,
             "headline": f"{lab.capitalize()} по {dat} - {q_ru(v, unit)}" + (f", {st}" if st else ""),
             "facts": [f for f in facts if f], "trend": trend, "after": after, "analogy": analogy, "price": price,
-            "intraday_change": intraday_chg,
+            "intraday_change": intraday_chg, "angles": angles,
             "context": context, "limits": limits, "chart": chart,
             "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} "
                            f"(серая); точками отмечены прошлые пики и текущее значение"],
@@ -549,6 +732,89 @@ def stall_episodes(past, me, t) -> list:
         out.append({"months": e, "flow": float(past[e].sum()), "r_in": float(me.iloc[j1] / me.iloc[j0 - 1] - 1),
                     "r3": None if r3 is None else float(r3)})
     return out
+
+
+# ── карточка: позиция на минимуме ────────────────────────────────────────────────
+def positions_low_card(sec, base, as_of) -> dict:
+    """Позиция на минимуме — зеркало positions_card: «покупки физлиц по доллару — минимум с апреля 2025» (пост канала
+    22.09 «Спекулянты уходят из валюты»). Детектор такие находки давал (нога *_low), а карточки не было — KeyError
+    long_low, и завод их не писал (реплей 27.09). Дно вместо пика, «ещё снижается» вместо «ещё растёт», что было после
+    прошлых минимумов — пиков зеркального ряда."""
+    P, *_ = data()
+    ser = upto(P[base][sec], as_of)
+    lab, unit = LEG[base]
+    arr, dates = ser.values.astype(float), ser.index
+    i, t, v = len(arr) - 1, dates[-1], float(arr[-1])
+    nom, dat = human_name(sec)
+    plabel, pfull = price_for(sec)
+    pser = upto(pfull, t) if pfull is not None else None
+    were = "были" if (plabel or "").startswith("акции") else "был"
+    u, years = since(arr, dates, i, False)
+    st = era_status(u, years, dates, False, t)
+    facts = [f"{lab} по {dat} - {q_ru(v, unit)} на закрытие {d_ru(t, t)}"]
+    if st:
+        facts.append(f"это {st}")
+    lo = max(0, i - 250)
+    j = lo + int(np.argmax(arr[lo:i + 1]))
+    if arr[j] > 0 and v < arr[j]:
+        facts.append(f"максимум за год - {q_ru(arr[j], unit)} {d_ru(dates[j], t)}; с тех пор {p_ru(v / arr[j] - 1)}")
+    ch = [f"{w} {p_ru(v / arr[i - k] - 1)}" for k, w in ((1, "за день"), (5, "за неделю"), (20, "за месяц"))
+          if i >= k and arr[i - k] > 0]
+    if ch:
+        facts.append("изменение: " + ", ".join(ch))
+    intraday_chg = None
+    now = intraday_now(sec, base, t)
+    if now and v > 0:
+        iv, iday, itime = now
+        intraday_chg = iv / v - 1
+        facts.append(f"утром {d_ru(iday, t)} к {str(itime)[:5]} МСК {lab} - {q_ru(iv, unit)} "
+                     f"({p_ru(intraday_chg)} к закрытию {d_ru(t, t)})")
+    if st and i >= 5 and v < arr[i - 5]:
+        facts.append("позиция всё ещё снижается: дно не пройдено - «разворот» и «дно пройдено» не пиши")
+    eps = episodes(-arr, i)
+    cur = eps[-1] if eps and i - eps[-1]["end"] <= 40 else None
+    start = cur["start"] if cur else i
+    past = [e for e in eps if e is not cur and e["end"] < start and dates[e["top"]] >= ERA_START]
+    after, r20s, marks = [], [], []
+    for e in past[-6:]:
+        td, tv = dates[e["top"]], float(arr[e["top"]])
+        marks.append((td, tv))
+        r20 = fwd(pser, td, 20) if pser is not None else None
+        r60 = fwd(pser, td, 60) if pser is not None else None
+        if r20 is not None:
+            r20s.append(r20)
+        tail = ([f"через месяц {plabel} {p_ru(r20)}"] if r20 is not None else []) + \
+               ([f"через три месяца {p_ru(r60)}"] if r60 is not None else [])
+        after.append(f"дно {d_ru(td, t)}: {q_ru(tv, unit)}" + (" - " + ", ".join(tail) if tail else ""))
+    if len(r20s) >= 2:
+        k = sum(r > 0 for r in r20s)
+        after.append(f"итого после {len(r20s)} прошлых минимумов {plabel} через месяц {were} выше в {k} "
+                     f"{plural(k, ('случае', 'случаях', 'случаях'))} из {len(r20s)}")
+    trend = trend_lines(arr, dates, pser, t, lab, plabel, were)
+    limits = [f"данные дневные, на закрытие торгов {d_ru(t, t)}; что было внутри дня, не видно",
+              f"данные по {dat} начинаются в {dates[0].year} году", NO_FORECAST,
+              "минимум позиции - не прогноз цены: «толпа ушла» не значит, что цена развернётся"]
+    from signals.insights.expiry import expiry_note
+    # у вечного фьючерса экспирации нет: оговорка «перед экспирацией позиции снижаются сами» к нему не относится
+    if expiry_note(t) and "вечн" not in nom:
+        limits.append(expiry_note(t))
+    if 0 < len(r20s) < 4:
+        limits.append(f"прошлых минимумов с известным продолжением всего {len(r20s)} - это история, "
+                      f"а не закономерность: не обобщай")
+    win = ser[ser.index >= t - pd.Timedelta(days=3 * 365)]
+    chart = {"type": "line2", "title": f"{lab.capitalize()}, {nom}", "x": win.index, "y": win.values,
+             "y_label": unit, "marks": [m for m in marks if m[0] >= win.index[0]] + [(t, v)]}
+    if pser is not None:
+        pw = pser[pser.index >= win.index[0]]
+        chart.update({"x2": pw.index, "y2": pw.values, "y2_label": plabel})
+    return {"kind": "positions", "spec": {"sec": sec, "leg": base + "_low"}, "as_of": t,
+            "headline": f"{lab.capitalize()} по {dat} - {q_ru(v, unit)}" + (f", {st}" if st else ""),
+            "facts": facts, "trend": trend, "after": after, "analogy": [], "price": price_lines(pser, t, plabel),
+            "intraday_change": intraday_chg, "context": other_legs(P, sec, base, t), "limits": limits,
+            "chart": chart,
+            "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} (серая); точками "
+                           f"отмечены прошлые минимумы и текущее значение"] if plabel else [],
+            "hashtag": HASHTAG["positions"]}
 
 
 def funds_card(cat, as_of) -> dict:
@@ -813,12 +1079,263 @@ def seasonality_card(code, as_of) -> dict:
             "hashtag": HASHTAG["seasonality"]}
 
 
+def _sql(query: str, params: dict) -> pd.DataFrame:
+    """Разовый запрос с параметрами (у data.read — только именованные выгрузки без параметров)."""
+    from sqlalchemy import text
+    from api.database import SessionLocal
+    db = SessionLocal()
+    try:
+        r = db.execute(text(query), params)
+        return pd.DataFrame(r.fetchall(), columns=list(r.keys()))
+    finally:
+        db.close()
+
+
+def rub_ru(v) -> str:
+    v = abs(float(v))
+    return (f"{v / 1e9:.1f}".replace(".", ",") + " млрд ₽") if v >= 1e9 else f"{v / 1e6:.0f} млн ₽"
+
+
+# ── карточка: сделки фондов за месяц ─────────────────────────────────────────────
+# Посты канала 22.09 «Фокус смещается на сырьё» (Лукойл обошёл Сбербанк в портфеле фондов) и 25.09 «Кого фонды
+# продают в убыток?». Движок находил «Сделки фондов за август» (detect_fund_trades), но карточки не было — завод их
+# не писал (реплей 27.09). Цифры — те же, что на странице «Что покупают фонды»: её API, срез без задержки.
+FUND_TRADES_API = os.environ.get("FUND_TRADES_API", "https://framedata.ru/api/fund-trades")
+_SECTORS = """
+    SELECT DISTINCT ON (sr.isin) sr.isin, sr.secid, s.title AS sector, c.title AS company
+      FROM securities_ref sr
+      JOIN brain_ticker_map m ON m.ticker = sr.secid
+      JOIN brain_nodes c ON c.id = m.company_id
+      LEFT JOIN brain_edges e ON e.src = m.company_id AND e.kind = 'в_секторе'
+      LEFT JOIN brain_nodes s ON s.id = e.dst
+     WHERE sr.isin = ANY(CAST(:isins AS text[]))"""
+
+
+def _ft_get(path: str, **params) -> dict:
+    import json
+    import urllib.parse
+    import urllib.request
+    q = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+    with urllib.request.urlopen(f"{FUND_TRADES_API}/{path}?{q}", timeout=180) as r:
+        return json.load(r)
+
+
+def fund_trades_card(as_of, month=None) -> dict:
+    t = pd.Timestamp(as_of)
+    mv = _ft_get("movers", period="1m", sort="amount", limit=8, scope="portfolio",
+                 as_of=str((pd.Timestamp(month) + pd.offsets.MonthEnd(0)).date()) if month else None)
+    m0 = pd.Timestamp(mv["resolved_month"])
+    end, prev_end = (m0 + pd.offsets.MonthEnd(0)).date(), (m0 - pd.Timedelta(days=1)).date()
+    mname = det.MONTHS[m0.month - 1]
+    pf = _ft_get("portfolio", as_of=str(end))
+    pp = _ft_get("portfolio", as_of=str(prev_end))
+    rank = lambda p: sorted(p.get("holdings") or [], key=lambda h: -(h.get("value_rub") or 0))  # noqa: E731
+    now, before = rank(pf), rank(pp)
+    pos_before = {h.get("akey"): k for k, h in enumerate(before, 1)}
+    isin_of = lambda h: h.get("isin") or h.get("akey")   # noqa: E731 — у строк покупок ISIN лежит в akey
+    isins = [isin_of(h) for h in now[:6] + mv["top_accumulated"][:5] + mv["top_reduced"][:5] if isin_of(h)]
+    sec = _sql(_SECTORS, {"isins": isins}) if isins else pd.DataFrame(columns=["isin", "secid", "sector", "company"])
+    sector = {k: v for k, v in zip(sec["isin"], sec["sector"]) if v}   # sec.isin — метод DataFrame, не колонка
+    secid = dict(zip(sec["isin"], sec["secid"]))
+    company = {k: v for k, v in zip(sec["isin"], sec["company"]) if v}
+    # «КЦ ИКС 5», «Татнфт 3ао» — биржевые сокращения; в пост — имя компании из мозга, у привилегированных — «-п»
+    nm = lambda h: (company.get(isin_of(h), h["asset_name"]) +  # noqa: E731
+                    ("-п" if company.get(isin_of(h)) and re.search(r"\bап\b|-п\b|прив", h["asset_name"]) else ""))
+    total = pf.get("total_value_rub") or sum(h.get("value_rub") or 0 for h in now)
+    buys = [f"{nm(i)}: купили на {rub_ru(i['total_delta_amount'])} (покупали {i['funds_buying']} фондов, "
+            f"продавали {i['funds_selling']})" for i in mv["top_accumulated"][:5]]
+    sells = [f"{nm(i)}: продали на {rub_ru(i['total_delta_amount'])} (продавали {i['funds_selling']} фондов, "
+             f"покупали {i['funds_buying']})" for i in mv["top_reduced"][:5]]
+    top = []
+    for k, h in enumerate(now[:5], 1):
+        was = pos_before.get(h.get("akey"))
+        sh = f" ({sector[isin_of(h)]})" if isin_of(h) in sector else ""
+        top.append(f"{k}. {nm(h)}{sh} - {rub_ru(h.get('value_rub') or 0)}, "
+                   f"{p_ru((h.get('value_rub') or 0) / total, False) if total else ''} портфеля"
+                   + (f"; месяцем раньше - {was}-е место" if was and was != k else "; месяцем раньше - то же место"
+                      if was else "; месяцем раньше не было в портфеле"))
+    focus = ["ТИП ПОСТА: СДЕЛКИ ФОНДОВ - что покупали и продавали фонды акций за месяц и что из этого следует; одна "
+             "мысль, не список бумаг",
+             f"находка: сделки фондов акций за {mname}: больше всего купили {nm(mv['top_accumulated'][0])} "
+             f"(+{rub_ru(mv['top_accumulated'][0]['total_delta_amount'])}), больше всего продали "
+             f"{nm(mv['top_reduced'][0])} (-{rub_ru(mv['top_reduced'][0]['total_delta_amount'])})"]
+    leader_changed = now and before and now[0].get("akey") != before[0].get("akey")
+    if leader_changed:
+        # как давно прежний лидер держал первое место — по срезам назад, пока лидер не другой
+        streak, d = 1, prev_end
+        for _ in range(18):
+            d = (pd.Timestamp(d).replace(day=1) - pd.Timedelta(days=1)).date()
+            try:
+                lead = rank(_ft_get("portfolio", as_of=str(d)))
+            except Exception:  # noqa: BLE001 — нет среза: считаем по тому, что есть
+                break
+            if not lead or lead[0].get("akey") != before[0].get("akey"):
+                break
+            streak += 1
+        span = f"{streak} {plural(streak, ('месяц', 'месяца', 'месяцев'))}"
+        focus.append(f"смена лидера в портфеле фондов: на первом месте {nm(now[0])} "
+                     f"({rub_ru(now[0].get('value_rub') or 0)}) - "
+                     + ("впервые за все месяцы наших срезов" if streak >= 19 else f"впервые за {span}")
+                     + f"; {nm(before[0])} был первым {span} подряд и опустился на второе место; «впервые» без срока "
+                       f"не пиши - раньше лидер мог быть тем же")
+    oil = [h for h in now[:4] if "нефт" in (sector.get(isin_of(h)) or "").lower()]
+    if len(oil) >= 2:
+        focus.append(f"в первой четвёрке портфеля {len(oil)} компании нефти и газа: " + ", ".join(nm(h) for h in oil))
+    P, names, groups, to_stock, idx, stk, perp, usd = data()
+    price = []
+    for i in (mv["top_accumulated"][:2] + mv["top_reduced"][:2]):
+        tk = secid.get(isin_of(i))
+        if tk in stk.columns:
+            ps = upto(stk[tk].dropna(), t)
+            pm = ps[ps.index <= pd.Timestamp(end)]
+            pb = ps[ps.index <= pd.Timestamp(prev_end)]
+            if len(pm) and len(pb) and len(ps) > 60:
+                price.append(f"{nm(i)}: за {mname} {p_ru(pm.iloc[-1] / pb.iloc[-1] - 1)}, за три месяца до "
+                             f"{d_ru(ps.index[-1], t)} {p_ru(ps.iloc[-1] / ps.iloc[-61] - 1)}")
+    return {"kind": "fund_trades", "spec": {"month": str(m0.date())}, "as_of": pd.Timestamp(end),
+            "headline": (lambda h: h[:1].upper() + h[1:])(focus[1].replace("находка: ", "")),
+            "focus": focus, "facts": ["больше всего купили: " + "; ".join(buys[:3]),
+                                      "больше всего продали: " + "; ".join(sells[:3])] + buys[3:] + sells[3:],
+            "history": [f"портфель фондов на конец {GEN[m0.month - 1]}: " + (f"{rub_ru(total)}, " if total else "")
+                        + f"{pf.get('num_funds')} фондов акций"] + top,
+            "price": price, "context": [], "after": [], "analogy": [], "trend": [],
+            "limits": ["сделки фондов - из ежемесячных отчётов о составе (СЧА): сделки внутри месяца не видны, только "
+                       "итог к концу месяца; сумма - оценка по изменению числа бумаг и их цене, сплиты учтены",
+                       f"отчёты выходят с задержкой: это данные на конец {GEN[m0.month - 1]} - пиши "
+                       f"«в {MONTHS_IN[m0.month - 1]}», не «сейчас»", "мотив фондов не утверждать: «фиксируют убыток», «ставят на нефть» - только "
+                       "«похоже»; цены покупки фондов у нас нет", NO_FORECAST],
+            "chart": None, "chart_note": [], "hashtag": HASHTAG["fund_trades"]}
+
+
+MONTHS_IN = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре",
+             "декабре"]
+
+
+# ── карточка: макро-новость — как отреагировали наши данные ─────────────────────
+# Новость важности 5 без компании («адские санкции», перемирие) Шаг А отбрасывал: у завода не было пути для макро
+# (реплей 27.09: 13 таких новостей за две недели — ни одного поста). Здесь пост — не пересказ новости, а реакция наших
+# данных: цена фьючерсов и 5-минутные позиции физлиц за два часа после новости и к концу дня, против обычного хода.
+_CANDLES5 = """SELECT begin_time AS t, close FROM candles
+                WHERE secid = :s AND type = :ty AND interval = 5 AND begin_time >= :a AND begin_time <= :b
+                ORDER BY begin_time"""
+_OI5 = """SELECT tradedate + tradetime AS t, pos_long + pos_short AS net, pos_long, pos_short, pos_long_num AS nl,
+                 pos_short_num AS ns
+            FROM open_interest WHERE interval = 5 AND clgroup = 'FIZ' AND sectype = :s
+             AND tradedate BETWEEN :a AND :b ORDER BY tradedate, tradetime"""
+MACRO_INSTR = {"IMOEXF": ("фьючерс на индекс Мосбиржи", "futures"), "USDRUBF": ("фьючерс на доллар", "futures"),
+               "LKOH": ("акции Лукойла", "stock"), "ROSN": ("акции Роснефти", "stock"), "SBER": ("акции Сбербанка", "stock")}
+MACRO_EXTRA = {"санкции": ("LKOH", "ROSN"), "нефть_газ": ("LKOH", "ROSN"), "геополитика": ("SBER",)}
+
+
+def _window(df, e, col, hours=2):
+    """Значение до новости, через hours часов торгов после неё и в конце её дня. До — последний снимок раньше новости
+    (ночная новость — закрытие прошлого вечера, и разрыв на открытии тоже реакция)."""
+    before, after = df[df.t < e], df[df.t >= e]
+    if before.empty or after.empty:
+        return None
+    t0 = after.t.iloc[0]
+    v0 = float(before[col].iloc[-1])
+    in2 = after[after.t <= t0 + pd.Timedelta(hours=hours)]
+    day = after[after.t.dt.normalize() == t0.normalize()]
+    return {"t0": t0, "v0": v0, "v2": float(in2[col].iloc[-1]), "t2": in2.t.iloc[-1],
+            "vd": float(day[col].iloc[-1]), "td": day.t.iloc[-1]}
+
+
+def _typical(df, col, hours=2, pct=True):
+    """Обычный ход за hours часов: медиана модуля изменения внутри дня за прошлые 60 торговых дней."""
+    s = df.set_index("t")[col].resample("1h").last().dropna()
+    ch = (s / s.shift(hours) - 1) if pct else (s - s.shift(hours))
+    same_day = s.index.normalize() == s.index.to_series().shift(hours).dt.normalize()
+    ch = ch[same_day].abs().dropna()
+    return float(ch.median()) if len(ch) >= 50 else None
+
+
+def macro_card(event, headline, theme, as_of) -> dict:
+    e = pd.Timestamp(event)                      # время новости, МСК без пояса
+    t = pd.Timestamp(as_of)
+    a, b = e - pd.Timedelta(days=90), min(t, e.normalize() + pd.Timedelta(days=1, hours=23, minutes=59))
+    facts, context = [], []
+    focus = ["ТИП ПОСТА: РЕАКЦИЯ НА МАКРО-НОВОСТЬ - не пересказ новости, а что в первые часы сделали цена и толпа "
+             "(физлица) и насколько это сильнее обычного дня; саму новость - одной фразой",
+             f"новость: {d_ru(e, t)} в {e:%H:%M} МСК - «{headline}»"]
+    for sid in ("IMOEXF", "USDRUBF") + MACRO_EXTRA.get(theme, ()):
+        name, ty = MACRO_INSTR[sid]
+        df = _sql(_CANDLES5, {"s": sid, "ty": ty, "a": a, "b": b})
+        if df.empty:
+            continue
+        df["t"] = pd.to_datetime(df.t)
+        df["close"] = df.close.astype(float)
+        w = _window(df, e, "close")
+        if not w:
+            continue
+        typ = _typical(df[df.t < e], "close")
+        r2, rd = w["v2"] / w["v0"] - 1, w["vd"] / w["v0"] - 1
+        k = abs(r2) / typ if typ else None
+        line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), к концу торгов {d_ru(w['td'], t)} "
+                f"{p_ru(rd)}" + (f"; обычный двухчасовой ход - {p_ru(typ, False)}, сейчас в "
+                                 f"{f'{k:.1f}'.replace('.', ',')} раза больше" if k and k >= 1.5 else ""))
+        facts.append(line)
+        if sid == "IMOEXF":
+            focus.append(f"цена: {line}")
+    for sid, name in (("IMOEXF", "вечном фьючерсе на индекс Мосбиржи"), ("USDRUBF", "вечном фьючерсе на доллар")):
+        oi = _sql(_OI5, {"s": sid, "a": a.date(), "b": b.date()})
+        if oi.empty:
+            continue
+        oi["t"] = pd.to_datetime(oi.t)
+        for c in ("net", "pos_long", "pos_short", "nl", "ns"):
+            oi[c] = oi[c].astype(float)
+        w = _window(oi, e, "net")
+        if not w:
+            continue
+        typ = _typical(oi[oi.t < e], "net", pct=False)
+        d2, dd = w["v2"] - w["v0"], w["vd"] - w["v0"]
+        side = "чистый лонг" if w["v2"] >= 0 else "чистый шорт"
+        line = (f"физлица в {name}: {side} за два часа после новости {'+' if d2 >= 0 else '-'}{q_ru(abs(d2), 'контрактов')}"
+                f" (было {q_ru(abs(w['v0']), 'контрактов')}), к концу дня {'+' if dd >= 0 else '-'}"
+                f"{q_ru(abs(dd), 'контрактов')}" + (f"; обычно за два часа меняется на {q_ru(typ, 'контрактов')}, "
+                                                     f"сейчас в {f'{abs(d2) / typ:.1f}'.replace('.', ',')} раза больше"
+                                                     if typ and abs(d2) >= 1.5 * typ else ""))
+        ns = _window(oi, e, "ns")
+        if ns and ns["v0"] > 0 and abs(ns["vd"] / ns["v0"] - 1) >= 0.03:
+            line += f"; число физлиц в шорте к концу дня {p_ru(ns['vd'] / ns['v0'] - 1)}"
+        context.append(line)
+        if sid == "IMOEXF":
+            focus.append(f"толпа: {line}")
+    ix = _sql("SELECT trade_date, close FROM index_data WHERE secid = 'IMOEX' AND trade_date BETWEEN :a AND :b "
+              "ORDER BY trade_date", {"a": (e - pd.Timedelta(days=10)).date(), "b": b.date()})
+    if len(ix) >= 2:
+        ix["close"] = ix.close.astype(float)
+        day = ix[pd.to_datetime(ix.trade_date) >= e.normalize()]
+        prev = ix[pd.to_datetime(ix.trade_date) < e.normalize()]
+        if len(day) and len(prev):
+            close = f"{day.close.iloc[0]:,.0f}".replace(",", " ")
+            facts.append(f"индекс Мосбиржи за {d_ru(pd.Timestamp(day.trade_date.iloc[0]), t)}: "
+                         f"{p_ru(day.close.iloc[0] / prev.close.iloc[-1] - 1)} (закрытие {close})")
+    return {"kind": "macro", "spec": {"event": str(e), "theme": theme}, "as_of": t,
+            "headline": f"Реакция наших данных на новость {d_ru(e, t)} в {e:%H:%M} МСК: «"
+                        + (headline if len(headline) <= 110 else re.sub(r"\s+\S*$", "", headline[:110]) + "…") + "»",
+            "focus": focus, "facts": facts, "context": context, "history": [], "price": [], "after": [], "analogy": [],
+            "trend": [],
+            "limits": ["совпадение по времени, а не доказанная причина: в эти часы выходили и другие новости - «на "
+                       "фоне», «в первые часы после», но не «из-за»",
+                       "позиции физлиц - 5-минутные снимки биржи по группе «физлица»; это не число людей и не деньги",
+                       "пост - о реакции наших данных, а не пересказ новости: саму новость - одной фразой", NO_FORECAST],
+            "chart": None, "chart_note": [], "hashtag": HASHTAG["macro"]}
+
+
 def build_card(spec: dict, as_of) -> dict:
     kind = spec["kind"]
     if kind == "positions":
-        return positions_card(spec["sec"], spec["leg"], as_of)
+        if str(spec["leg"]).endswith("_low"):
+            return positions_low_card(spec["sec"], spec["leg"][:-4], as_of)
+        card = positions_card(spec["sec"], spec["leg"], as_of)
+        return angle_card(card, spec["angle"]) if spec.get("angle") else card
     if kind == "funds":
         return funds_card(spec["cat"], as_of)
+    if kind == "fund_trades":
+        return fund_trades_card(as_of, spec.get("month"))
+    if kind == "macro":
+        return macro_card(spec["event"], spec["headline"], spec.get("theme", ""), as_of)
     return seasonality_card(spec["code"], as_of)
 
 
@@ -831,6 +1348,8 @@ def focus_lines(card: dict) -> list:
     """Итерация 2: одна история вместо всей карточки — находка, одна аналогия и опора для
     вывода. В первой итерации писатель пересказывал карточку целиком (2,66 числа на 100
     знаков против 0,48 у автора), и автор был интереснее в 13 парах из 15."""
+    if card.get("focus"):       # новые виды карточек (сделки фондов, макро) задают «главное» сами
+        return list(card["focus"])
     k = card["kind"]
     after, analogy, facts = card.get("after") or [], card.get("analogy") or [], card.get("facts") or []
     weak = any("не аналогия по масштабу" in x for x in card.get("limits") or [])
