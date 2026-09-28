@@ -7,6 +7,12 @@
 
 Апсертит последние посты каждого канала (ON CONFLICT channel+post_id). Ничего не
 шлёт; фронт тянет их в /api/anomalies/feed (поле channel_posts).
+
+Текст — ЦЕЛИКОМ (28.09.2026): раньше резался до 600 знаков, и хэштег рубрики в конце поста
+(#открытыепозиции, #деньгивфондах, #cделкифондов) до базы не доходил — завод постов по нему
+ищет повторы (insight_scan.repeat_of) и берёт примеры голоса (content_ai), и 23–24.09 фильтр
+повторов ошибался. Сниппет для колокола режет API (anomalies.py, left(text, 600)) — сайт
+видит то же, что раньше. Дозалить старые посты: channel_scan.sh --backfill
 """
 import os
 import re
@@ -33,6 +39,7 @@ CHANNELS = [
     # посты вычищены из channel_posts. НЕ возвращать без явной просьбы.
 ]
 MAX_POSTS_PER_CHANNEL = 12
+BACKFILL_PAGES = 30          # страниц t.me/s по ~20 постов при дозаливе (--backfill)
 HTTP_TIMEOUT = 20
 _UA = "Mozilla/5.0 (compatible; FrameBot/1.0; +https://framedata.ru)"
 
@@ -104,9 +111,9 @@ def _channel_title(page: str, fallback: str) -> str:
     return _clean_text(m.group(1)) if m else fallback
 
 
-def _parse_posts(page: str, channel: str) -> list:
+def _parse_posts(page: str, channel: str, limit: int | None = MAX_POSTS_PER_CHANNEL) -> list:
     """Последние посты канала из HTML t.me/s. Разбиваем по data-post-якорям —
-    первый text/date/photo в чанке принадлежит этому посту."""
+    первый text/date/photo в чанке принадлежит этому посту. Текст — целиком."""
     posts = []
     for chunk in page.split('data-post="')[1:]:
         m = re.match(r'([^/"]+)/(\d+)"', chunk)
@@ -134,11 +141,11 @@ def _parse_posts(page: str, channel: str) -> list:
         if not textval and not photo:
             continue   # сервисное/пустое сообщение
         posts.append({
-            "post_id": post_id, "text": textval[:600], "photo_url": photo,
+            "post_id": post_id, "text": textval, "photo_url": photo,
             "link": f"https://t.me/{channel}/{post_id}", "posted_at": posted_at,
         })
     posts.sort(key=lambda p: p["post_id"])      # post_id монотонно растёт
-    return posts[-MAX_POSTS_PER_CHANNEL:]
+    return posts[-limit:] if limit else posts
 
 
 _UPSERT = text("""
@@ -217,7 +224,57 @@ def run_once() -> dict:
     return summary
 
 
+# Дозалив полного текста уже лежащих постов: только text и только если в базе он короче (обрезан до 600
+# знаков старым ридером); post_id, posted_at, ссылка и фото не трогаются, новых строк не создаёт.
+_FILL_TEXT = text("""
+  UPDATE channel_posts SET text = CAST(:text AS text)
+   WHERE channel = :channel AND post_id = :post_id
+     AND coalesce(length(text), 0) < length(CAST(:text AS text))
+""")
+
+
+def backfill(channel: str = "FrameTool", pages: int = BACKFILL_PAGES, get=requests.get, sleep=None) -> dict:
+    """Листает t.me/s/<channel>?before=N от свежих постов к старым до самого старого поста в базе и
+    дописывает полный текст там, где он был обрезан."""
+    import time
+    sleep = sleep or time.sleep
+    db = SessionLocal()
+    summary = {"pages": 0, "seen": 0, "filled": 0}
+    try:
+        oldest = db.execute(text("SELECT min(post_id) FROM channel_posts WHERE channel = :c"),
+                            {"c": channel}).scalar()
+        if oldest is None:
+            return summary
+        before = None
+        for _ in range(pages):
+            url = f"https://t.me/s/{channel}" + (f"?before={before}" if before else "")
+            r = get(url, headers={"User-Agent": _UA}, timeout=HTTP_TIMEOUT)
+            r.raise_for_status()
+            posts = _parse_posts(r.text, channel, limit=None)
+            summary["pages"] += 1
+            if not posts:
+                break
+            for p in posts:
+                if p["text"]:
+                    summary["seen"] += 1
+                    summary["filled"] += db.execute(_FILL_TEXT, {"text": p["text"], "channel": channel,
+                                                                "post_id": p["post_id"]}).rowcount or 0
+            db.commit()
+            low = min(p["post_id"] for p in posts)
+            if low <= oldest or (before is not None and low >= before):
+                break
+            before = low
+            sleep(1)
+    finally:
+        db.close()
+    return summary
+
+
 def main():
+    import sys
+    if "--backfill" in sys.argv:
+        print(f"[{datetime.now(timezone.utc)}] channel_scan backfill: {backfill()}")
+        return
     s = run_once()
     if s.pop("quiet", False):
         return          # тихий режим: переход в офлайн уже залогирован один раз

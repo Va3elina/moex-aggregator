@@ -140,8 +140,10 @@ _FEED_SQL = text("""
   LIMIT :limit
 """)
 
+# text в channel_posts теперь целиком (завод постов ищет по нему хэштег рубрики); колоколу и виджету — прежний
+# сниппет в 600 знаков, как резал раньше сам ридер (signals/channel_scan.py)
 _CHANNEL_POSTS_SQL = text("""
-  SELECT id, channel, channel_name, text, photo_url, link, posted_at
+  SELECT id, channel, channel_name, left(text, 600) AS text, photo_url, link, posted_at
   FROM channel_posts
   ORDER BY posted_at DESC NULLS LAST, post_id DESC
   LIMIT 12
@@ -208,7 +210,7 @@ def channel_posts_feed(limit: int = Query(12, ge=1, le=40), db: Session = Depend
     без auth. try/except — пустой список если миграция 016 не применена."""
     try:
         rows = db.execute(text("""
-            SELECT id, channel, channel_name, text, photo_url, link, posted_at
+            SELECT id, channel, channel_name, left(text, 600) AS text, photo_url, link, posted_at
             FROM channel_posts ORDER BY posted_at DESC NULLS LAST, post_id DESC LIMIT :lim
         """), {"lim": limit}).mappings().all()
     except Exception:
