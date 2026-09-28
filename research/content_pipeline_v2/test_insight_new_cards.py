@@ -107,3 +107,75 @@ def test_fund_trades_card_names_leader_change_and_oil(monkeypatch):
     assert "Сбербанк был первым 3 месяца подряд и опустился на второе место" in text, "июль, июнь и май"
     assert "3 компании нефти и газа" in text and "#сделкифондов" in text
     assert "«в августе»" in text and "ДАТА ДАННЫХ: 31 августа" in text
+
+
+# ── посты новых типов по позициям (Вадим 28.09: «трендовые посты нужны, новыми типами разбавить») ─────────────
+def _pos_card(angles=()):
+    return {"kind": "positions", "spec": {"sec": "MG", "leg": "short"}, "as_of": pd.Timestamp("2026-09-22"),
+            "headline": "Шорт физлиц по фьючерсу на акции «Магнит» - 265 тыс. контрактов, исторический максимум",
+            "facts": ["шорт физлиц по фьючерсу на акции «Магнит» - 265 тыс. контрактов на закрытие 22 сентября",
+                      "итог толпы: ставка на падение в плюсе примерно на 5%"],
+            "trend": ["главное - тренд, а не прошлый пик: за последние два месяца шорт физлиц растёт, а акции -15%",
+                      "итого: когда такой тренд позиции разворачивался, акции через месяц были выше в 2 случаях из 4"],
+            "after": [], "analogy": [], "price": ["акции «Магнит» - 1 600 ₽ на 22 сентября; за неделю -1%, за месяц -1%"],
+            "context": ["число физлиц в шорте - 296 человек, за месяц -15%"], "limits": [], "chart_note": [],
+            "hashtag": "#открытыепозиции", "angles": list(angles)}
+
+
+CONC = {"type": "концентрация", "strength": 7.9, "line": "поворот - концентрация: шорт физлиц за месяц вырос в 6,7 раза, "
+        "а число физлиц в шорте -15%; на одного в среднем в 7,9 раза больше"}
+
+
+def test_trend_card_text_does_not_change():
+    plain, with_angles = _pos_card(), _pos_card([CONC])
+    assert cards.brief_text(plain, focus=True) == cards.brief_text(with_angles, focus=True), \
+        "трендовый пост — как был: поворот в его карточку не выводится"
+
+
+def test_angle_card_has_its_own_main_block():
+    c = cards.angle_card(_pos_card([CONC]), "концентрация")
+    text = cards.brief_text(c, focus=True)
+    main = text.split("ГЛАВНОЕ - строй пост вокруг этого:")[1].split("\n\n")[0]
+    assert "ТИП ПОСТА: КОНЦЕНТРАЦИЯ" in main and "узкий круг" in main and "итог толпы" in main
+    assert "главное - тренд" not in main, "тренд — не главное у поста нового типа"
+    assert c["spec"]["angle"] == "концентрация"
+
+
+def test_day_pick_adds_new_types_on_top_of_three_trend_posts(monkeypatch):
+    day = pd.Timestamp("2026-09-22")
+    names = ["Магнит", "VK", "Газпром", "Норникель", "Сбер"]
+    items = [{"date": day, "family": "позиции", "type": "рекорд_или_экстремум", "score": 10 - k, "instrument": n,
+              "facts": {"sec": n, "leg": "short"}, "title": f"{n}: шорт физлиц — максимум"} for k, n in enumerate(names)]
+    ang = {"Магнит": [CONC], "Сбер": [{"type": "повод", "strength": 9.0, "line": "повод дня: …"}],
+           "VK": [{"type": "повод", "strength": 3.0, "line": "слабый повод"}]}
+    monkeypatch.setattr(ins, "repeat_of", lambda spec, as_of: None)
+    monkeypatch.setattr(ins.cards, "build_card", lambda spec, d: {"angles": ang.get(spec["sec"], [])})
+    got = ins.pick(items, log=lambda *a: None, until=day)
+    trend = [j["instrument"] for j in got if not j["spec"].get("angle")]
+    new = {j["instrument"]: j["spec"]["angle"] for j in got if j["spec"].get("angle")}
+    assert new == {"Магнит": "концентрация", "Сбер": "повод"}, "слабый повод VK (3× обычного) — не пост"
+    assert trend == ["VK", "Газпром", "Норникель"], "три трендовых остаются, одна бумага — один пост"
+
+
+def test_position_angles_on_synthetic_series():
+    dates = pd.bdate_range("2025-01-01", periods=300)
+    short = pd.Series(np.r_[np.full(279, 40_000.0), np.linspace(40_000, 265_000, 21)], index=dates)
+    ns = pd.Series(np.r_[np.full(279, 350.0), np.linspace(350, 296, 21)], index=dates)
+    nl = pd.Series(np.full(300, 700.0), index=dates)
+    rng = np.random.RandomState(1)
+    base = 2000 * np.cumprod(1 + rng.normal(0, 0.01, 298))       # обычный дневной ход ~1%
+    price = pd.Series(np.r_[base, base[-1] * 0.99, base[-1] * 0.87], index=dates)
+    P = {"short": {"MG": short}, "ns": {"MG": ns}, "nl": {"MG": nl}}
+    got = cards.position_angles(P, "MG", "short", "шорт физлиц", "фьючерсу на акции «Магнит»", "акции «Магнит»",
+                                short.values, dates, price, [], dates[-1])
+    types = [a["type"] for a in got]
+    assert "концентрация" in types and "повод" in types
+    conc = next(a for a in got if a["type"] == "концентрация")
+    assert "узкий круг" in conc["line"] and "тыс." not in conc["line"], "без числа контрактов (R02)"
+    # доля: число шортистов против лонгистов, прошлый пик — индекс 150 (доля тогда выше)
+    ns2 = pd.Series(np.r_[np.full(150, 300.0), [900.0], np.full(149, 300.0)], index=dates)
+    ns2.iloc[-1] = 800.0
+    nl2 = pd.Series(np.r_[np.full(150, 700.0), [100.0], np.full(149, 700.0)], index=dates)
+    got2 = cards.position_angles({"ns": {"MX": ns2}, "nl": {"MX": nl2}}, "MX", "ns", "число физлиц в шорте",
+                                 "фьючерсу на индекс", None, ns2.values, dates, None, [{"top": 150}], dates[-1])
+    assert got2 and got2[0]["type"] == "доля" and "было 90%" in got2[0]["line"]
