@@ -1246,6 +1246,12 @@ def _window(df, e, col, hours=2):
             "vd": float(day[col].iloc[-1]), "td": day.t.iloc[-1]}
 
 
+def _end_label(w, t) -> str:
+    """«к концу торгов 17 сентября», если день закончился, иначе «к 09:25»: пост посреди дня не должен звать утро
+    концом торгов (холостой прогон 17.09 в 09:30)."""
+    return f"к концу торгов {d_ru(w['td'], t)}" if w["td"].hour >= 23 else f"к {w['td']:%H:%M}"
+
+
 def _typical(df, col, hours=2, pct=True):
     """Обычный ход за hours часов: медиана модуля изменения внутри дня за прошлые 60 торговых дней."""
     s = df.set_index("t")[col].resample("1h").last().dropna()
@@ -1259,7 +1265,7 @@ def macro_card(event, headline, theme, as_of) -> dict:
     e = pd.Timestamp(event)                      # время новости, МСК без пояса
     t = pd.Timestamp(as_of)
     a, b = e - pd.Timedelta(days=90), min(t, e.normalize() + pd.Timedelta(days=1, hours=23, minutes=59))
-    facts, context = [], []
+    facts, context, ratios, chart = [], [], [], None
     focus = ["ТИП ПОСТА: РЕАКЦИЯ НА МАКРО-НОВОСТЬ - не пересказ новости, а что в первые часы сделали цена и толпа "
              "(физлица) и насколько это сильнее обычного дня; саму новость - одной фразой",
              f"новость: {d_ru(e, t)} в {e:%H:%M} МСК - «{headline}»"]
@@ -1276,7 +1282,12 @@ def macro_card(event, headline, theme, as_of) -> dict:
         typ = _typical(df[df.t < e], "close")
         r2, rd = w["v2"] / w["v0"] - 1, w["vd"] / w["v0"] - 1
         k = abs(r2) / typ if typ else None
-        line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), к концу торгов {d_ru(w['td'], t)} "
+        if k and sid == "IMOEXF":
+            ratios.append(k)
+            day = df[(df.t >= e - pd.Timedelta(hours=3)) & (df.t <= w["td"])]
+            chart = {"type": "intraday", "title": f"Фьючерс на индекс Мосбиржи и позиции физлиц, {d_ru(e, t)}",
+                     "x": day.t.values, "y": day.close.values, "y_label": "фьючерс на индекс", "event": e}
+        line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), {_end_label(w, t)} "
                 f"{p_ru(rd)}" + (f"; обычный двухчасовой ход - {p_ru(typ, False)}, сейчас в "
                                  f"{f'{k:.1f}'.replace('.', ',')} раза больше" if k and k >= 1.5 else ""))
         facts.append(line)
@@ -1294,12 +1305,19 @@ def macro_card(event, headline, theme, as_of) -> dict:
             continue
         typ = _typical(oi[oi.t < e], "net", pct=False)
         d2, dd = w["v2"] - w["v0"], w["vd"] - w["v0"]
-        side = "чистый лонг" if w["v2"] >= 0 else "чистый шорт"
-        line = (f"физлица в {name}: {side} за два часа после новости {'+' if d2 >= 0 else '-'}{q_ru(abs(d2), 'контрактов')}"
-                f" (было {q_ru(abs(w['v0']), 'контрактов')}), к концу дня {'+' if dd >= 0 else '-'}"
-                f"{q_ru(abs(dd), 'контрактов')}" + (f"; обычно за два часа меняется на {q_ru(typ, 'контрактов')}, "
-                                                     f"сейчас в {f'{abs(d2) / typ:.1f}'.replace('.', ',')} раза больше"
-                                                     if typ and abs(d2) >= 1.5 * typ else ""))
+        side = "чистый лонг" if w["v0"] >= 0 else "чистый шорт"
+        base = abs(w["v0"]) or 1.0
+        # число контрактов не называем (R02) — доля позиции и кратность против обычного
+        line = (f"физлица в {name}: {side} за два часа после новости {p_ru(d2 / base * (1 if w['v0'] >= 0 else -1))}, "
+                f"{_end_label(w, t).replace('к концу торгов', 'к концу дня')} "
+                f"{p_ru(dd / base * (1 if w['v0'] >= 0 else -1))}"
+                + (f"; обычно за два часа позиция меняется на {p_ru(typ / base, False)}, сейчас {x_ru(abs(d2) / typ)} "
+                   f"сильнее" if typ and abs(d2) >= 1.5 * typ else ""))
+        if typ and sid == "IMOEXF":
+            ratios.append(abs(d2) / typ)
+            if chart is not None:
+                day = oi[(oi.t >= e - pd.Timedelta(hours=3)) & (oi.t <= w["td"])]
+                chart.update({"x2": day.t.values, "y2": day.net.values, "y2_label": "чистая позиция физлиц"})
         ns = _window(oi, e, "ns")
         if ns and ns["v0"] > 0 and abs(ns["vd"] / ns["v0"] - 1) >= 0.03:
             line += f"; число физлиц в шорте к концу дня {p_ru(ns['vd'] / ns['v0'] - 1)}"
@@ -1325,7 +1343,10 @@ def macro_card(event, headline, theme, as_of) -> dict:
                        "фоне», «в первые часы после», но не «из-за»",
                        "позиции физлиц - 5-минутные снимки биржи по группе «физлица»; это не число людей и не деньги",
                        "пост - о реакции наших данных, а не пересказ новости: саму новость - одной фразой", NO_FORECAST],
-            "chart": None, "chart_note": [], "hashtag": HASHTAG["macro"]}
+            "chart": chart, "strength": max(ratios) if ratios else 0.0,
+            "chart_note": ["на графике - фьючерс на индекс Мосбиржи (оранжевая линия) и чистая позиция физлиц (серая) по "
+                           "5 минутам; вертикальная черта - время новости"] if chart else [],
+            "hashtag": HASHTAG["macro"]}
 
 
 def build_card(spec: dict, as_of) -> dict:
@@ -1529,7 +1550,20 @@ def draw_chart(card: dict, path: str):
     fig, ax = plt.subplots(figsize=(10, 5.6), dpi=130)
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
-    if ch["type"] == "hbars":
+    if ch["type"] == "intraday":
+        # макро: цена фьючерса и чистая позиция физлиц по 5 минутам, черта — время новости
+        ax.plot(ch["x"], ch["y"], color=ACC, lw=2.0)
+        ax.set_ylabel(ch.get("y_label", ""))
+        ax.axvline(pd.Timestamp(ch["event"]), color=INK, lw=1.0, ls="--")
+        ax.annotate("новость", (pd.Timestamp(ch["event"]), float(np.nanmax(ch["y"]))), textcoords="offset points",
+                    xytext=(4, -10), fontsize=9, color=INK)
+        if "x2" in ch:
+            ax2 = ax.twinx()
+            ax2.plot(ch["x2"], ch["y2"], color=GREY, lw=1.3)
+            ax2.set_ylabel(ch.get("y2_label", ""), color=GREY)
+            ax2.spines["top"].set_visible(False)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    elif ch["type"] == "hbars":
         # сделки фондов: покупки (зелёные) и продажи (оранжевые) месяца, млрд ₽
         labels, vals = ch["labels"][::-1], ch["values"][::-1]
         ax.barh(range(len(vals)), vals, color=[ACC if v < 0 else "#2f7d6d" for v in vals], alpha=0.85)
