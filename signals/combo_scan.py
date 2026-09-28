@@ -203,3 +203,11 @@ if __name__ == "__main__":
         if gated:
             fresh.mark_done("combo_scan_data", summary["data_until"])
         print(f"[combo_scan] {summary}")
+    if a.mode == "news":
+        # макро (шаг 3, 28.09): новость важности 5 без компании → «как отреагировали наши данные»; своего крона нет —
+        # тот же проход каждые 20 минут. Сбой макро связки не роняет.
+        try:
+            from signals import macro_scan
+            print(f"[macro_scan] {macro_scan.run_once(dry_run=a.dry_run, at=a.at)}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[macro_scan] сбой: {type(e).__name__}: {e}")

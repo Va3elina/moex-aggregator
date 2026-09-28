@@ -382,6 +382,7 @@ _SELECT_RUBRIC_POSTS = text("""
     LIMIT 3
 """)
 _INSIGHT_TAG = {"insight_positions": "#открыт", "insight_funds": "#деньгивфондах", "insight_fund_trades": "делкифондов",
+                "insight_macro": "#открыт",
                 "insight_seasonality": "#сезонность"}
 
 

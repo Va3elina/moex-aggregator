@@ -233,3 +233,72 @@ def test_fund_trades_chart_draws(tmp_path):
     out = tmp_path / "ft.png"
     cards.draw_chart(card, str(out))
     assert out.exists() and out.stat().st_size > 5000
+
+
+# ── макро (шаг 3, 28.09): новость важности 5 без компании → «как отреагировали наши данные» ─────────────────
+from signals import macro_scan  # noqa: E402
+
+
+def test_macro_one_post_a_day_and_theme_once_in_three_days():
+    now = pd.Timestamp("2026-09-18 12:00", tz=macro_scan.MSK)
+    rows = [{"id": 1}, {"id": 2}]
+    themes = {1: "санкции", 2: "геополитика"}
+    done_today = [("insight:macro:санкции:10", pd.Timestamp("2026-09-18 07:00", tz="UTC"))]
+    assert macro_scan.pick_event(rows, done_today, now, themes) == [], "сегодня макро уже был"
+    done_yday = [("insight:macro:санкции:10", pd.Timestamp("2026-09-17 07:00", tz="UTC"))]
+    assert macro_scan.pick_event(rows, done_yday, now, themes) == [{"id": 2}], "санкции были вчера — тема ждёт три дня"
+
+
+def test_macro_weekend_news_is_read_on_monday_morning():
+    assert macro_scan.lookback_hours(pd.Timestamp("2026-09-21 09:00", tz=macro_scan.MSK)) == 74
+    assert macro_scan.lookback_hours(pd.Timestamp("2026-09-22 09:00", tz=macro_scan.MSK)) == 26
+
+
+def test_macro_headline_is_clean():
+    raw = "🔥⚠️🇺🇸🇷🇺#санкции #россия ТРАМП ПОДПИСАЛ ЗАКОНОПРОЕКТ ОБ **\"АДСКИХ САНКЦИЯХ\" **ПРОТИВ РОССИИ. Подробнее…"
+    h = macro_scan.headline_of(raw)
+    assert h.startswith("ТРАМП ПОДПИСАЛ") and "#" not in h and "**" not in h and "Подробнее" not in h
+
+
+def test_macro_runs_inside_the_daytime_combo_pass():
+    import inspect
+
+    from signals import combo_scan
+    src = inspect.getsource(combo_scan)
+    assert "macro_scan.run_once(dry_run=a.dry_run, at=a.at)" in src and 'if a.mode == "news":' in src
+
+
+def test_macro_card_has_strength_and_no_contract_counts(monkeypatch):
+    days = pd.bdate_range("2026-06-01", "2026-09-17")
+    rows, oi = [], []
+    for d in days:
+        for k, t in enumerate(pd.date_range(d + pd.Timedelta(hours=7), d + pd.Timedelta(hours=23, minutes=45),
+                                            freq="5min")):
+            jump = t >= pd.Timestamp("2026-09-17 07:00")
+            rows.append((t, 2300 * (1 + 0.0005 * np.sin(k / 9)) * (0.99 if jump else 1)))
+            oi.append((t, 226_000 * (1 + 0.001 * np.sin(k / 9)) * (0.87 if jump else 1), 0, 0, 0, 0))
+
+    def sql(q, p):
+        if "FROM candles" in q:
+            return pd.DataFrame(rows if p["s"] == "IMOEXF" else [], columns=["t", "close"])
+        if "FROM open_interest" in q:
+            return pd.DataFrame(oi if p["s"] == "IMOEXF" else [],
+                                columns=["t", "net", "pos_long", "pos_short", "nl", "ns"])
+        return pd.DataFrame(columns=["trade_date", "close"])
+    monkeypatch.setattr(cards, "_sql", sql)
+    c = cards.macro_card("2026-09-17 06:16", "Палата представителей США проголосовала за законопроект", "",
+                         "2026-09-17 23:55")
+    text = cards.brief_text(c, focus=True)
+    assert c["strength"] >= 2, "цена и толпа ушли сильнее обычного — черновик пройдёт порог"
+    assert "контракт" not in text, "число контрактов не называем (R02) — доли и кратности"
+    assert "ТИП ПОСТА: РЕАКЦИЯ НА МАКРО-НОВОСТЬ" in text and c["chart"]["type"] == "intraday"
+
+
+def test_macro_chart_draws(tmp_path):
+    x = pd.date_range("2026-09-17 06:00", periods=60, freq="5min")
+    card = {"kind": "macro", "chart": {"type": "intraday", "title": "Фьючерс на индекс и позиции физлиц", "x": x.values,
+                                       "y": np.linspace(2300, 2280, 60), "x2": x.values, "y2": np.linspace(226e3, 197e3, 60),
+                                       "y_label": "фьючерс", "y2_label": "чистая позиция", "event": x[3]}}
+    out = tmp_path / "m.png"
+    cards.draw_chart(card, str(out))
+    assert out.exists() and out.stat().st_size > 5000
