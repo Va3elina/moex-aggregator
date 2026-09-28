@@ -274,6 +274,8 @@ def _inst_rx(spec):
 def own_posts(spec, as_of, k=2) -> list:
     """«Что канал уже писал по этому ряду» — посты той же рубрики И о том же инструменте. Одной
     рубрики мало: в карточке «АФК Системы» стояли посты про шорт по индексу и по валюте."""
+    if spec["kind"] not in HASHTAG:     # сделки фондов и макро: свой отбор повторов (fund_trades_job)
+        return []
     inst, case = _inst_rx(spec)
     rows = [(d, t) for d, t in channel_posts(as_of, days=45)
             if re.search(HASHTAG[spec["kind"]], t) and inst and re.search(inst, t, 0 if case else re.I)]
@@ -380,12 +382,52 @@ def build(job: dict, now_iso: str) -> dict:
     return {"card": card, "brief": brief}
 
 
+# Сделки фондов за месяц (Вадим 28.09: «вводи в эксплуатацию», шаг 2): раз в месяц, когда вышел новый срез составов
+# фондов (август виден в сентябре), — один черновик. Месяц уже был у завода или канал уже писал о сделках фондов после
+# конца месяца (август: посты 22.09 и 25.09) — пропуск; срез старше FT_MAX_AGE_DAYS — не новость.
+FT_MAX_AGE_DAYS = 50
+FT_CHANNEL_RX = r"делкифондов|сделк\w* фондов|фонды (продали|купили|продадут|докупят)"
+_FT_EXISTS = text("SELECT 1 FROM content_candidates WHERE thread_key = :k LIMIT 1")
+
+
+def fund_trades_job(now, db, log=print) -> dict | None:
+    try:
+        mv = cards._ft_get("movers", period="1m", sort="amount", limit=1, scope="portfolio")
+    except Exception as e:  # noqa: BLE001 — страница недоступна: сделок фондов сегодня нет, остальное идёт
+        log(f"сделки фондов: API недоступно: {type(e).__name__}: {e}")
+        return None
+    if not mv.get("resolved_month") or not mv.get("top_accumulated") or not mv.get("top_reduced"):
+        return None
+    month = pd.Timestamp(mv["resolved_month"])
+    end = month + pd.offsets.MonthEnd(0)
+    now = pd.Timestamp(now).tz_localize(None) if pd.Timestamp(now).tzinfo else pd.Timestamp(now)
+    if (now - end).days > FT_MAX_AGE_DAYS:
+        log(f"сделки фондов: последний срез за {month:%m.%Y} — старше {FT_MAX_AGE_DAYS} дней, не новость")
+        return None
+    thread = f"insight:fund_trades:{month:%Y-%m}"
+    if db.execute(_FT_EXISTS, {"k": thread}).first():
+        return None
+    for d, txt in channel_posts(now, days=45):
+        if d > end and re.search(FT_CHANNEL_RX, txt, re.I):
+            log(f"сделки фондов за {month:%m.%Y}: канал уже писал {d:%d.%m} «{txt.strip().splitlines()[0][:50]}»")
+            return None
+    return {"kind": "fund_trades", "spec": {"kind": "fund_trades", "month": str(month.date())}, "date": now,
+            "title": f"Сделки фондов за {month:%m.%Y}", "repeat": None, "instrument": "FUNDS", "score": 0,
+            "thread_key": thread}
+
 def run_once(dry_run: bool = False) -> dict:
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
     items = drop_expiry_days(drop_low_activity(detect_window(until)))
     jobs = pick(items, until=until)
     now_iso = datetime.now(timezone.utc).isoformat()
+    _db = SessionLocal()
+    try:
+        ft = fund_trades_job(datetime.now(timezone.utc), _db)
+    finally:
+        _db.close()
+    if ft:
+        jobs.append(ft)
     summary = {"data_until": str(until.date()), "found": len(items), "picked": len(jobs), "created": 0,
                "skipped_exists": 0}
     db = SessionLocal()
@@ -416,7 +458,8 @@ def run_once(dry_run: bool = False) -> dict:
                 "headline": head, "raw_text": b["brief"], "tickers": [str(tick)],
                 "futures_ticker": sec, "event_type": f"insight_{spec['kind']}",
                 "reasoning": f"движок находок: {job['title'][:200]} (балл {job['score']})",
-                "media_filename": media, "thread_key": f"insight:{spec['kind']}:{job['instrument'] or tick}",
+                "media_filename": media,
+                "thread_key": job.get("thread_key") or f"insight:{spec['kind']}:{job['instrument'] or tick}",
             }).first()
             db.commit()
             summary["created"] += 1

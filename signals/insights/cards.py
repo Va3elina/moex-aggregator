@@ -1204,7 +1204,12 @@ def fund_trades_card(as_of, month=None) -> dict:
                        f"отчёты выходят с задержкой: это данные на конец {GEN[m0.month - 1]} - пиши "
                        f"«в {MONTHS_IN[m0.month - 1]}», не «сейчас»", "мотив фондов не утверждать: «фиксируют убыток», «ставят на нефть» - только "
                        "«похоже»; цены покупки фондов у нас нет", NO_FORECAST],
-            "chart": None, "chart_note": [], "hashtag": HASHTAG["fund_trades"]}
+            "chart": {"type": "hbars", "title": f"Сделки фондов акций за {mname}, млрд ₽",
+                      "labels": [nm(i) for i in mv["top_accumulated"][:5] + mv["top_reduced"][:5]],
+                      "values": [round(i["total_delta_amount"] / 1e9, 2)
+                                 for i in mv["top_accumulated"][:5] + mv["top_reduced"][:5]]},
+            "chart_note": [f"на графике - пять самых крупных покупок и продаж фондов акций за {mname}, млрд ₽"],
+            "hashtag": HASHTAG["fund_trades"]}
 
 
 MONTHS_IN = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре",
@@ -1524,7 +1529,17 @@ def draw_chart(card: dict, path: str):
     fig, ax = plt.subplots(figsize=(10, 5.6), dpi=130)
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
-    if ch["type"] == "bars":
+    if ch["type"] == "hbars":
+        # сделки фондов: покупки (зелёные) и продажи (оранжевые) месяца, млрд ₽
+        labels, vals = ch["labels"][::-1], ch["values"][::-1]
+        ax.barh(range(len(vals)), vals, color=[ACC if v < 0 else "#2f7d6d" for v in vals], alpha=0.85)
+        ax.set_yticks(range(len(vals)), labels)
+        ax.axvline(0, color=INK, lw=0.8)
+        ax.set_xlabel("млрд ₽")
+        for k, v in enumerate(vals):
+            ax.annotate(f"{v:+.1f}".replace(".", ","), (v, k), textcoords="offset points",
+                        xytext=(6 if v >= 0 else -6, -3), ha="left" if v >= 0 else "right", fontsize=9, color=INK)
+    elif ch["type"] == "bars":
         x, y = ch["x"], ch["y"]
         cols = [ACC if v < 0 else "#2f7d6d" for v in y]
         bars = ax.bar(x, y, width=20, color=cols, alpha=0.85)
@@ -1554,7 +1569,9 @@ def draw_chart(card: dict, path: str):
         else:
             ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: n_ru(v)))
     ax.set_title(ch["title"], loc="left", fontsize=13, color=INK)
-    src = "Данные: раскрытие управляющих компаний" if card["kind"] == "funds" else "Данные: Мосбиржа"
+    src = ("Данные: раскрытие управляющих компаний" if card["kind"] == "funds" else
+           "Данные: отчёты фондов о составе (СЧА), страница «Что покупают фонды»" if card["kind"] == "fund_trades" else
+           "Данные: Мосбиржа")
     fig.text(0.01, 0.005, src, fontsize=8, color=GREY)
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)

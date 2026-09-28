@@ -381,7 +381,7 @@ _SELECT_RUBRIC_POSTS = text("""
     ORDER BY posted_at DESC
     LIMIT 3
 """)
-_INSIGHT_TAG = {"insight_positions": "#открыт", "insight_funds": "#деньгивфондах",
+_INSIGHT_TAG = {"insight_positions": "#открыт", "insight_funds": "#деньгивфондах", "insight_fund_trades": "делкифондов",
                 "insight_seasonality": "#сезонность"}
 
 
