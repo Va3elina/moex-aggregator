@@ -1246,6 +1246,12 @@ def _window(df, e, col, hours=2):
             "vd": float(day[col].iloc[-1]), "td": day.t.iloc[-1]}
 
 
+def _end_label(w, t) -> str:
+    """«к концу торгов 17 сентября», если день закончился, иначе «к 09:25»: пост посреди дня не должен звать утро
+    концом торгов (холостой прогон 17.09 в 09:30)."""
+    return f"к концу торгов {d_ru(w['td'], t)}" if w["td"].hour >= 23 else f"к {w['td']:%H:%M}"
+
+
 def _typical(df, col, hours=2, pct=True):
     """Обычный ход за hours часов: медиана модуля изменения внутри дня за прошлые 60 торговых дней."""
     s = df.set_index("t")[col].resample("1h").last().dropna()
@@ -1281,7 +1287,7 @@ def macro_card(event, headline, theme, as_of) -> dict:
             day = df[(df.t >= e - pd.Timedelta(hours=3)) & (df.t <= w["td"])]
             chart = {"type": "intraday", "title": f"Фьючерс на индекс Мосбиржи и позиции физлиц, {d_ru(e, t)}",
                      "x": day.t.values, "y": day.close.values, "y_label": "фьючерс на индекс", "event": e}
-        line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), к концу торгов {d_ru(w['td'], t)} "
+        line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), {_end_label(w, t)} "
                 f"{p_ru(rd)}" + (f"; обычный двухчасовой ход - {p_ru(typ, False)}, сейчас в "
                                  f"{f'{k:.1f}'.replace('.', ',')} раза больше" if k and k >= 1.5 else ""))
         facts.append(line)
@@ -1303,7 +1309,8 @@ def macro_card(event, headline, theme, as_of) -> dict:
         base = abs(w["v0"]) or 1.0
         # число контрактов не называем (R02) — доля позиции и кратность против обычного
         line = (f"физлица в {name}: {side} за два часа после новости {p_ru(d2 / base * (1 if w['v0'] >= 0 else -1))}, "
-                f"к концу дня {p_ru(dd / base * (1 if w['v0'] >= 0 else -1))}"
+                f"{_end_label(w, t).replace('к концу торгов', 'к концу дня')} "
+                f"{p_ru(dd / base * (1 if w['v0'] >= 0 else -1))}"
                 + (f"; обычно за два часа позиция меняется на {p_ru(typ / base, False)}, сейчас {x_ru(abs(d2) / typ)} "
                    f"сильнее" if typ and abs(d2) >= 1.5 * typ else ""))
         if typ and sid == "IMOEXF":
