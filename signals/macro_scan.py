@@ -167,7 +167,9 @@ def run_once(dry_run: bool = False, at: str | None = None) -> dict:
                 media = f"insight_{ev:%Y%m%d_%H%M}_macro_{r['id']}.png"
                 cards.draw_chart(card, os.path.join(MEDIA_DIR, media))
             row = db.execute(_INSERT, {
-                "headline": card["headline"][:300], "raw_text": brief, "tickers": ["MIX"],
+                # свой псевдотикер по теме: правило «один тикер — один пост за три дня» (content_ai._repeat_of_ticker)
+                # с «MIX» сравнивало бы макро с ежедневной сезонностью индекса и почти всегда снимало бы его как повтор
+                "headline": card["headline"][:300], "raw_text": brief, "tickers": [f"MACRO:{themes[r['id']]}"],
                 "reasoning": f"макро: новость #{r['id']} (важность 5, Шаг А отбросил — нет компании) → реакция наших "
                              f"данных {k:.1f}× обычного", "media_filename": media, "thread_key": thread,
             }).first()
