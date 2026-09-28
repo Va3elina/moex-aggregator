@@ -310,3 +310,60 @@ def test_macro_draft_has_own_ticker_so_seasonality_does_not_block_it():
     src = inspect.getsource(macro_scan.run_once)
     assert '"tickers": [f"MACRO:{themes[r[\'id\']]}"]' in src and '"tickers": ["MIX"]' not in src, \
         "с «MIX» правило повторов по тикеру сравнивало бы макро с ежедневной сезонностью индекса"
+
+
+# ── повод дня тем же вечером (28.09): бумага сегодня ушла резко, а у толпы рекорд ────────────────────────────
+from signals import trigger_scan  # noqa: E402
+
+
+def test_trigger_window_is_weekday_evening():
+    msk = trigger_scan.MSK
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 21:00", tz=msk)) is False
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 20:40", tz=msk))
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 12:00", tz=msk)) is False
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-19 19:00", tz=msk)) is False, "суббота"
+
+
+def test_trigger_pool_is_stock_position_records_once_per_stock():
+    d = pd.Timestamp("2026-09-14")
+    items = [{"date": d, "family": "позиции", "type": "рекорд_или_экстремум", "score": 9, "instrument": "SS",
+              "facts": {"sec": "SS", "leg": "long"}, "title": "Самолет: покупки физлиц — максимум"},
+             {"date": d, "family": "позиции", "type": "рекорд_или_экстремум", "score": 8, "instrument": "SS",
+              "facts": {"sec": "SS", "leg": "net"}, "title": "Самолет: чистый лонг — максимум"},
+             {"date": d, "family": "позиции", "type": "рекорд_или_экстремум", "score": 7, "instrument": "Si",
+              "facts": {"sec": "Si", "leg": "short"}, "title": "USD/RUB: шорт — максимум"},
+             {"date": d - pd.Timedelta(days=1), "family": "позиции", "type": "рекорд_или_экстремум", "score": 20,
+              "instrument": "GZ", "facts": {"sec": "GZ", "leg": "short"}, "title": "Газпром: вчерашний рекорд"}]
+    pool = trigger_scan.pool_of(items, {"SS": "SMLT", "GZ": "GAZP"})
+    assert [x["facts"]["leg"] for x in pool] == ["long"], "одна бумага — один раз; доллар не акция; вчерашнее — мимо"
+
+
+def test_trigger_takes_strongest_live_move_only():
+    d = pd.Timestamp("2026-09-14")
+    pool = [{"date": d, "title": "Самолет", "facts": {"sec": "SS", "leg": "long"}},
+            {"date": d, "title": "Магнит", "facts": {"sec": "MN", "leg": "short"}},
+            {"date": d, "title": "VK", "facts": {"sec": "VK", "leg": "long"}}]
+    angles = {"SS": [{"type": "повод", "strength": 6.0, "live": True, "line": "сегодня −13%"}],
+              "MN": [{"type": "повод", "strength": 9.0, "live": False, "line": "вчера"}],
+              "VK": [{"type": "повод", "strength": 3.0, "live": True, "line": "сегодня −4%"}]}
+    x, spec, a = trigger_scan.best_trigger(pool, build=lambda spec, dt: {"angles": angles[spec["sec"]]})
+    assert x["title"] == "Самолет" and a["live"], "вчерашний ход — дело утреннего сканера; слабый сегодняшний — мимо"
+
+
+def test_live_price_respects_now_override(monkeypatch):
+    got = {}
+
+    def sql(q, p):
+        got.update(p)
+        return pd.DataFrame([(pd.Timestamp("2026-09-15 20:55"), 270.0)], columns=["t", "close"])
+    monkeypatch.setattr(cards, "_sql", sql)
+    monkeypatch.setattr(cards, "NOW", pd.Timestamp("2026-09-15 21:00"))
+    price, t = cards.live_price("SMLT", pd.Timestamp("2026-09-14"))
+    assert price == 270.0 and got["now"] == pd.Timestamp("2026-09-15 21:00") and got["d"] == pd.Timestamp("2026-09-15")
+
+
+def test_trigger_runs_inside_the_daytime_combo_pass():
+    import inspect
+
+    from signals import combo_scan
+    assert "trigger_scan.run_once(dry_run=a.dry_run, at=a.at)" in inspect.getsource(combo_scan)
