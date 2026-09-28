@@ -302,3 +302,11 @@ def test_macro_chart_draws(tmp_path):
     out = tmp_path / "m.png"
     cards.draw_chart(card, str(out))
     assert out.exists() and out.stat().st_size > 5000
+
+
+
+def test_macro_draft_has_own_ticker_so_seasonality_does_not_block_it():
+    import inspect
+    src = inspect.getsource(macro_scan.run_once)
+    assert '"tickers": [f"MACRO:{themes[r[\'id\']]}"]' in src and '"tickers": ["MIX"]' not in src, \
+        "с «MIX» правило повторов по тикеру сравнивало бы макро с ежедневной сезонностью индекса"
