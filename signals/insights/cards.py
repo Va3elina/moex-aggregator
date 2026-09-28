@@ -343,6 +343,26 @@ _OI5_ASOF = """SELECT sectype, tradedate, tradetime, pos_long, pos_short, pos_lo
                 ORDER BY tradetime DESC LIMIT 1"""
 
 
+_OI5_ALL = """SELECT DISTINCT ON (sectype) sectype, tradedate, tradetime, pos_long, pos_short, pos_long_num,
+                     pos_short_num
+                FROM open_interest WHERE interval = 5 AND clgroup = 'FIZ' AND tradedate = :d AND tradetime <= :t
+               ORDER BY sectype, tradetime DESC"""
+
+
+def intraday_snapshots(now=None) -> pd.DataFrame:
+    """Последний 5-минутный срез позиций физлиц по каждому фьючерсу за сегодня, не позже «сейчас» (индекс — код
+    фьючерса; long/short — объём сторон, шорт со знаком плюс; nl/ns — люди)."""
+    now = pd.Timestamp(now if now is not None else NOW if NOW is not None
+                       else pd.Timestamp.now(tz="Europe/Moscow").tz_localize(None))
+    df = _sql(_OI5_ALL, {"d": now.date(), "t": now.time()})
+    if df.empty:
+        return df
+    df["tradedate"] = pd.to_datetime(df.tradedate)
+    df["long"], df["short"] = df.pos_long.astype(float), -df.pos_short.astype(float)
+    df["nl"], df["ns"] = df.pos_long_num.astype(float), df.pos_short_num.astype(float)
+    return df.set_index("sectype")
+
+
 def intraday_now(sec, leg, as_of):
     """Последнее утреннее значение позиции (5-минутные данные, время МСК), если оно новее закрытия as_of."""
     try:
@@ -409,10 +429,17 @@ def other_legs(P, sec, leg, t) -> list:
 # пост, а завод пропускал (реплей 27.09, слепая оценка: «идёт по шаблону рекорд → тренд → эпизод → 3 из 4 и пропускает
 # повод и поворот»). Карточка тренда поворот не показывает; пост нового типа — отдельная находка дня (insight_scan.pick,
 # spec["angle"]), у его карточки своё ГЛАВНОЕ. Число контрактов не называется (R02) — только кратности и доли.
-ANGLE_MIN = {"концентрация": 3.0, "повод": 4.0, "доля": 0.15}
+ANGLE_MIN = {"концентрация": 3.0, "повод": 4.0, "доля": 0.15, "рывок": 8.0}
 # порядок важности для канала: повод дня и узкий круг — сильнее доли (28.09: две «доли», одна по какао, обошли повод
-# Самолёта −18% за два дня); доля — только у индекса и валют, как в посте «Шортистов больше, чем когда-либо»
-ANGLE_PRIORITY = {"повод": 0, "концентрация": 1, "доля": 2}
+# Самолёта −18% за два дня); доля — только у индекса и валют, как в посте «Шортистов больше, чем когда-либо»;
+# рывок по ходу дня — живое событие, он первым
+ANGLE_PRIORITY = {"рывок": 0, "повод": 1, "концентрация": 2, "доля": 3}
+# Рывок по ходу дня (Вадим 28.09: «сканер находок — на интрадей, хотя бы каждый час»): 5-минутный срез позиции против
+# закрытия — не меньше ANGLE_MIN["рывок"] обычных дневных ходов (медиана модуля дневного изменения за 60 дней) и не
+# меньше 10%. Калибровка на 42 днях (28.09): 1–2 бумаги в день, в 24 днях из 39 — хоть одна; среди них посты канала
+# «Магнит шортов» (22.09: шорт +106% к 20:00) и «Самолёт падает, толпа докупает» (15.09: лонг +41% уже к 12:00), Русал
+# 25.09 (+77%, крупнейший прирост покупок с 2012 года) и 28.09 (+19% к 12:00 при +4 покупателях).
+SURGE_MIN_PCT = 0.10
 SHARE_CODES = ("MIX", "RI", "Si", "CNY", "Eu")
 
 
@@ -474,6 +501,10 @@ def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) ->
     i, v = len(arr) - 1, float(arr[-1])
     col = lambda name: upto(P[name][sec], t).reindex(dates).ffill()  # noqa: E731
     cnt_leg = {"long": "nl", "short": "ns"}.get(leg)
+    if cnt_leg and i >= 61 and v > 0:
+        a = surge_angle(sec, leg, lab, dat, plabel, arr, dates, pser, t, col)
+        if a:
+            out.append(a)
     if cnt_leg and i >= 20 and arr[i - 20] > 0:
         cs = col(cnt_leg)
         c_now, c_20 = float(cs.iloc[-1]), float(cs.iloc[-21])
@@ -573,7 +604,62 @@ def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) ->
                 out.append({"type": "доля", "strength": best[0], "line": best[1]})
     return sorted(out, key=lambda a: (ANGLE_PRIORITY[a["type"]], -a["strength"] / ANGLE_MIN[a["type"]]))
 
+def surge_angle(sec, leg, lab, dat, plabel, arr, dates, pser, t, col) -> dict | None:
+    """Рывок по ходу дня: срез позиции (5 минут) против закрытия t в долях обычного дневного хода; люди той же стороны
+    (те же добирают — узкий круг, пришли новые — толпа), рекорд по срезу, живая цена акции. Экспирация между закрытием
+    и срезом или день экспирации — переход в следующий контракт, а не рывок."""
+    now_ = intraday_now(sec, leg, t)
+    if not now_:
+        return None
+    iv, iday, itime = now_
+    from signals.insights.expiry import near_expiry, next_expiry
+    if near_expiry(iday) or (pd.Timestamp(next_expiry(t)) <= pd.Timestamp(iday) and "вечн" not in dat):
+        return None
+    v = float(arr[-1])
+    typ = float(np.median(np.abs(np.diff(arr[-61:]))))
+    if typ <= 0 or v <= 0 or not np.isfinite(iv):
+        return None
+    k, pct = abs(iv - v) / typ, iv / v - 1
+    if k < ANGLE_MIN["рывок"] or abs(pct) < SURGE_MIN_PCT:
+        return None
+    hm = str(itime)[:5]
+    line = (f"рывок по ходу дня: {lab} по {dat} к {hm} {d_ru(iday, t)} {p_ru(pct)} к закрытию {d_ru(t, t)} - "
+            f"{x_ru(k)} больше обычного дневного хода")
+    cnt = {"long": "nl", "short": "ns"}[leg]
+    c_now, c0 = intraday_now(sec, cnt, t), float(col(cnt).iloc[-1])
+    if c_now and c0 > 0 and np.isfinite(c0) and c_now[0] > 0:
+        c1 = float(c_now[0])
+        dn, cp = c1 - c0, c1 / c0 - 1
+        line += (f"; число физлиц в {'лонге' if leg == 'long' else 'шорте'} {p_ru(cp)} "
+                 f"({'+' if dn >= 0 else '-'}{abs(dn):.0f} {plural(dn, ('человек', 'человека', 'человек'))})")
+        if pct > 0 and cp < pct / 3:
+            line += (f" - позицию добирают те же люди: на одного в среднем {p_ru((iv / c1) / (v / c0) - 1)}, это узкий "
+                     f"круг, а не толпа")
+        elif pct > 0 and cp >= pct / 2:
+            line += " - пришли новые люди: это толпа, а не узкий круг"
+    d2 = dates.append(pd.DatetimeIndex([pd.Timestamp(iday)]))
+    u, yrs = since(np.append(arr, iv), d2, len(arr), pct > 0)
+    st = era_status(u, yrs, d2, pct > 0, t)
+    if st and (u is None or yrs >= 1):
+        line += f"; по срезу это {st} (дневные данные за {d_ru(iday, t)} будут вечером)"
+    try:
+        stock = data()[3].get(sec)
+    except Exception:  # noqa: BLE001 — нет справочника (тест без базы): без живой цены
+        stock = None
+    live = live_price(stock, t) if stock else None
+    if live and pser is not None and len(pser):
+        line += f"; {plabel} к {live[1]:%H:%M} {p_ru(live[0] / float(pser.iloc[-1]) - 1)} к закрытию"
+    line += (f"; день не закончен: пиши «к {hm}», а не «за день» и не «на закрытие»; причина - только из КОНТЕКСТА, "
+             f"«на фоне», не «из-за»")
+    return {"type": "рывок", "strength": float(k), "line": line, "live": True,
+            "point": (pd.Timestamp(iday), float(iv), hm)}
+
+
 ANGLE_NOTE = {
+    "рывок": "ТИП ПОСТА: РЫВОК ПО ХОДУ ДНЯ - не трендовый пост, событие идёт прямо сейчас. Начни с того, что случилось "
+             "с позицией физлиц к указанному времени: на сколько и во сколько раз сильнее обычного дня, те же люди "
+             "добирают или пришли новые, что с ценой. Рекорд - если он есть в строке. Тренд и статистика прошлых "
+             "разворотов - не нужны или одной фразой.",
     "концентрация": "ТИП ПОСТА: КОНЦЕНТРАЦИЯ - не трендовый пост. Мысль одна: позицию набирает узкий круг, а не толпа. "
                     "Тренд, прошлые эпизоды и «в скольких случаях из скольких» - не нужны или одной фразой.",
     "повод": "ТИП ПОСТА: ПОВОД ДНЯ - не трендовый пост. Начни с хода цены этих дней и с того, что толпа стоит на другой "
@@ -593,11 +679,26 @@ def angle_card(card: dict, angle: str) -> dict:
         raise ValueError(f"у находки нет поворота «{angle}»")
     crowd = next((f for f in card.get("facts") or [] if f.startswith("итог толпы")), None)
     focus = [ANGLE_NOTE[angle], a["line"], f"находка: {card['headline']}"] + \
-        [crowd] * bool(crowd and "итог толпы" not in a["line"]) + [f"цена: {card['price'][0]}"] * bool(card.get("price"))
+        [crowd] * bool(crowd and "итог толпы" not in a["line"]) + ([f"цена: {card['price'][0]}"] if card.get("price") else [])
     # тренд и «N из M» у поста нового типа не нужны: карточка сама тянула писателя обратно в шаблон (слепая оценка 28.09)
     limits = [x for x in card.get("limits") or [] if not x.startswith("пост строится на блоке ТРЕНД")]
-    return {**card, "focus": focus, "trend": [], "after": [], "analogy": [], "limits": limits,
-            "spec": {**card["spec"], "angle": angle}}
+    chart, note = card.get("chart"), list(card.get("chart_note") or [])
+    if angle == "рывок" and a.get("point") and chart and chart.get("type") == "line2":
+        # последняя точка графика — срез по ходу дня, иначе рывок на картинке не виден
+        d1, v1, hm = a["point"]
+        chart = {**chart, "x": pd.DatetimeIndex(chart["x"]).append(pd.DatetimeIndex([d1])),
+                 "y": np.append(np.asarray(chart["y"], dtype=float), v1), "marks": list(chart.get("marks") or []) + [(d1, v1)]}
+        note.append(f"последняя точка - срез {d_ru(d1, card['as_of'])} к {hm} МСК")
+        limits = [x for x in limits if not x.startswith("данные дневные")] + \
+            [f"дневные данные - на закрытие {d_ru(card['as_of'], card['as_of'])}; последняя точка - 5-минутный срез "
+             f"{d_ru(d1, card['as_of'])} к {hm}, торги ещё идут"]
+    head = card["headline"]
+    if angle == "рывок":
+        # свой заголовок: у трендовой карточки он тот же, что у вчерашнего черновика по бумаге (Русал 28.09 снимался
+        # проверкой «такой заголовок уже был» — #3049 от 27.09)
+        head = "Рывок по ходу дня: " + a["line"].split(";")[0].replace("рывок по ходу дня: ", "")
+    return {**card, "headline": head, "focus": focus, "trend": [], "after": [], "analogy": [], "limits": limits,
+            "chart": chart, "chart_note": note, "spec": {**card["spec"], "angle": angle}}
 
 
 # ── карточка: рекорд позиций ─────────────────────────────────────────────────────

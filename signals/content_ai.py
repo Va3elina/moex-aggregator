@@ -203,7 +203,8 @@ _GIVE_UP_INSIGHT = text("""
 # Один тикер — один пост за три дня (Вадим 15.09): #2133 Самолёт повторил #2100, #2117 Лукойл — #2104.
 # Считаем только более ранних кандидатов того же вида (данные / новость) с уже написанным черновиком.
 _RECENT_SAME_TICKER = text("""
-    SELECT o.id, o.created_at, o.headline, c.source AS my_source, c.headline AS my_headline
+    SELECT o.id, o.created_at, o.headline, o.status, o.thread_key, c.source AS my_source, c.headline AS my_headline,
+           c.thread_key AS my_thread
     FROM content_candidates o
     JOIN content_candidates c ON c.id = :id
     WHERE o.id <> c.id AND o.tickers && c.tickers AND o.draft_text IS NOT NULL
@@ -369,6 +370,12 @@ def _repeat_of_ticker(db, candidate_id: int) -> str | None:
         return None
     last = rows[0]
     if last.my_source == "insight" and all(_record_rank(last.my_headline) > _record_rank(r.headline) for r in rows):
+        return None
+    # Событие по ходу дня (повод или рывок позиции, signals/trigger_scan.py) — не повтор НЕопубликованного черновика
+    # другого вида по тому же тикеру: трендовый Русала 27.09 (#3049, не вышел) снял бы рывок 28.09 — покупки физлиц +19%
+    # за первый час сессии. Вышедший пост или другое событие дня по тикеру за три дня — по-прежнему повтор.
+    if str(last.my_thread or "").startswith("insight:trigger:") and not any(
+            r.status == "published" or str(r.thread_key or "").startswith("insight:trigger:") for r in rows):
         return None
     return (f"повтор: по тому же тикеру черновик #{last.id} от {last.created_at:%d.%m} - один тикер, один пост "
             f"за три дня")
