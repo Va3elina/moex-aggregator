@@ -384,3 +384,113 @@ def test_detections_are_computed_once_per_data_day(monkeypatch, tmp_path):
     from signals import combo_scan
     assert combo_scan.detections is ins.detections, "связки и повод дня берут тот же файл"
     assert "detections(until)" in inspect.getsource(ins.run_once), "утренний сканер — тоже"
+
+
+# ── рывок позиции по ходу дня (28.09, Вадим: «сканер находок — на интрадей, хотя бы каждый час») ─────────────
+def _rusal_like(n=80, base=40000.0, step=500.0):
+    """Ряд покупок с обычным дневным ходом около step и последним закрытием 25.09 (пятница)."""
+    dates = pd.bdate_range(end="2026-09-25", periods=n)
+    rng = np.random.default_rng(1)
+    arr = base + np.cumsum(rng.choice([-step, step], size=n))
+    return arr.astype(float), dates
+
+
+def test_surge_angle_reads_the_intraday_jump(monkeypatch):
+    arr, dates = _rusal_like()
+    v = float(arr[-1])
+    people = pd.Series(591.0, index=dates)
+    snap = {"long": (v * 1.2, pd.Timestamp("2026-09-28"), "12:05"), "nl": (595.0, pd.Timestamp("2026-09-28"), "12:05")}
+    monkeypatch.setattr(cards, "intraday_now", lambda sec, leg, t: snap.get(leg))
+    monkeypatch.setattr(cards, "live_price", lambda *a, **k: None)
+    monkeypatch.setattr(cards, "data", lambda: (_ for _ in ()).throw(RuntimeError("без базы")))
+    a = cards.surge_angle("RL", "long", "покупки физлиц", "фьючерсу на акции «Русал»", "акции «Русал»", arr, dates,
+                          None, dates[-1], lambda name: people)
+    assert a and a["type"] == "рывок" and a["live"]
+    assert a["strength"] >= cards.ANGLE_MIN["рывок"]
+    assert "к 12:05" in a["line"] and "+20%" in a["line"]
+    assert "+4 человека" in a["line"] and "те же люди" in a["line"], "объём +20% при людях +0,7% — узкий круг"
+    assert "максимум" in a["line"], "срез выше всей истории ряда — рекорд по срезу"
+    assert a["point"][0] == pd.Timestamp("2026-09-28")
+
+
+def test_surge_angle_ignores_small_moves_and_expiry(monkeypatch):
+    arr, dates = _rusal_like()
+    v = float(arr[-1])
+    people = pd.Series(591.0, index=dates)
+    monkeypatch.setattr(cards, "live_price", lambda *a, **k: None)
+    monkeypatch.setattr(cards, "data", lambda: (_ for _ in ()).throw(RuntimeError("без базы")))
+    args = ("RL", "long", "покупки физлиц", "фьючерсу на акции «Русал»", "акции «Русал»", arr, dates, None, dates[-1],
+            lambda name: people)
+    monkeypatch.setattr(cards, "intraday_now", lambda sec, leg, t: (v + 900, pd.Timestamp("2026-09-28"), "12:05"))
+    assert cards.surge_angle(*args) is None, "обычный дневной ход — не рывок"
+    monkeypatch.setattr(cards, "intraday_now", lambda sec, leg, t: (v * 1.5, pd.Timestamp("2026-09-17"), "12:05"))
+    assert cards.surge_angle(*args[:5], arr[:-6], dates[:-6], None, dates[-7], lambda name: people) is None, \
+        "день экспирации — переход в следующий контракт, а не рывок"
+
+
+def test_surge_candidates_rank_jumps_and_skip_low_activity():
+    arr, dates = _rusal_like()
+    P = {"long": pd.DataFrame({"RL": arr, "XX": arr}, index=dates),
+         "short": pd.DataFrame({"RL": arr / 4, "XX": arr / 4}, index=dates)}
+    d = pd.Timestamp("2026-09-28")
+    snap = pd.DataFrame({"tradedate": [d, d], "tradetime": ["12:05:00", "12:05:00"],
+                         "long": [arr[-1] * 1.2, arr[-1] * 1.3], "short": [arr[-1] / 4, arr[-1] / 4]},
+                        index=pd.Index(["RL", "XX"], name="sectype"))
+    got = trigger_scan.surge_candidates(snap, P, low={"XX"}, day=d)
+    assert [(c["sec"], c["leg"]) for c in got] == [("RL", "long")], "малоактивный XX — мимо, шорт без хода — мимо"
+    assert got[0]["date"] == dates[-1] and got[0]["t"] == "12:05"
+    assert trigger_scan.surge_candidates(snap, P, day=pd.Timestamp("2026-09-17")) == [], "день экспирации"
+    groups = {"RL": "Акции", "XX": "Сырьё"}
+    assert [c["sec"] for c in trigger_scan.surge_candidates(snap, P, day=d, groups=groups)] == ["RL"], \
+        "медь, какао и S&P — не наш рынок (реплей 15.09: медь обошла бы Самолёт)"
+    assert trigger_scan.surge_allowed("Si", {}) and not trigger_scan.surge_allowed("CE", {"CE": "Сырьё"})
+
+
+def test_trigger_picks_surge_and_skips_taken_stock():
+    d = pd.Timestamp("2026-09-25")
+    pool = [{"date": d, "title": "Самолет", "facts": {"sec": "SS", "leg": "long"}}]
+    surges = [{"sec": "RL", "leg": "long", "k": 12.0, "pct": 0.2, "date": d, "t": "12:05"},
+              {"sec": "MN", "leg": "short", "k": 20.0, "pct": 0.5, "date": d, "t": "12:05"}]
+    angles = {"SS": [{"type": "повод", "strength": 4.4, "live": True, "line": "сегодня −9%"}],
+              "RL": [{"type": "рывок", "strength": 12.0, "live": True, "line": "рывок по ходу дня: покупки +20%; люди"}],
+              "MN": [{"type": "рывок", "strength": 20.0, "live": True, "line": "рывок по ходу дня: шорт +50%"}]}
+    build = lambda spec, dt: {"angles": angles[spec["sec"]]}  # noqa: E731
+    x, spec, a = trigger_scan.best_trigger(pool, surges, build=build, taken={"MN"})
+    assert spec["sec"] == "RL" and a["type"] == "рывок", "12/8 сильнее 4,4/4; по Магниту сегодня уже был черновик"
+    assert x["title"] == "покупки +20%" and x["instrument"] == "RL"
+
+
+def test_intraday_event_is_not_a_repeat_of_unpublished_trend_draft():
+    from types import SimpleNamespace
+
+    from signals.content_ai import _repeat_of_ticker
+
+    def db_with(*rows):
+        return SimpleNamespace(execute=lambda q, p: SimpleNamespace(fetchall=lambda: list(rows)))
+
+    def row(**kw):
+        base = {"id": 3049, "created_at": pd.Timestamp("2026-09-27 08:55"), "headline": "Покупки … максимум с 26 января",
+                "status": "draft_ready", "thread_key": "insight:positions:RL", "my_source": "insight",
+                "my_headline": "Покупки … максимум с 26 января", "my_thread": "insight:trigger:RL:20260928"}
+        return SimpleNamespace(**{**base, **kw})
+    assert _repeat_of_ticker(db_with(row()), 1) is None, "рывок дня — не повтор невышедшего трендового"
+    assert _repeat_of_ticker(db_with(row(status="published")), 1), "вышедший пост за три дня — повтор"
+    assert _repeat_of_ticker(db_with(row(thread_key="insight:trigger:RL:20260927")), 1), "второе событие дня — повтор"
+    assert _repeat_of_ticker(db_with(row(my_thread="insight:positions:RL")), 1), "обычная находка — как раньше"
+
+
+def test_surge_card_has_its_own_headline_and_chart_point():
+    card = {"headline": "Покупки физлиц по фьючерсу на акции «Русал» - 96 тыс. контрактов, максимум с 26 января",
+            "as_of": pd.Timestamp("2026-09-25"), "spec": {"kind": "positions", "sec": "RL", "leg": "long"},
+            "angles": [{"type": "рывок", "strength": 8.4, "live": True,
+                        "line": "рывок по ходу дня: покупки физлиц по фьючерсу на акции «Русал» к 12:05 28 сентября +20% "
+                                "к закрытию 25 сентября - в 8,4 раза больше обычного дневного хода; люди",
+                        "point": (pd.Timestamp("2026-09-28"), 115651.0, "12:05")}],
+            "facts": [], "price": [], "limits": ["данные дневные, на закрытие торгов 25 сентября; что было внутри дня, не видно"],
+            "chart": {"type": "line2", "x": pd.DatetimeIndex(["2026-09-24", "2026-09-25"]), "y": np.array([54114.0, 96499.0]),
+                      "marks": []}, "chart_note": ["на графике"]}
+    c = cards.angle_card(card, "рывок")
+    assert c["headline"].startswith("Рывок по ходу дня: покупки физлиц") and "к 12:05" in c["headline"]
+    assert c["headline"] != card["headline"], "иначе проверка «такой заголовок уже был» снимает рывок"
+    assert list(c["chart"]["y"])[-1] == 115651.0 and c["chart"]["x"][-1] == pd.Timestamp("2026-09-28")
+    assert any("к 12:05" in x for x in c["limits"]) and not any(x.startswith("данные дневные") for x in c["limits"])

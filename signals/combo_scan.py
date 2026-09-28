@@ -197,7 +197,8 @@ if __name__ == "__main__":
             print(f"[macro_scan] {macro_scan.run_once(dry_run=a.dry_run, at=a.at)}")
         except Exception as e:  # noqa: BLE001
             print(f"[macro_scan] сбой: {type(e).__name__}: {e}")
-        # повод дня (28.09): бумага сегодня ушла резко, а у толпы рекорд — весь торговый день, 12–21 МСК, раз в день
+        # по ходу дня (28.09), 12–21 МСК, до двух черновиков в день: повод (бумага сегодня ушла резко, а у толпы рекорд)
+        # и рывок позиции физлиц по 5-минутному срезу (сканер находок на интрадей)
         try:
             from signals import trigger_scan
             print(f"[trigger_scan] {trigger_scan.run_once(dry_run=a.dry_run, at=a.at)}")
