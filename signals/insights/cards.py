@@ -461,7 +461,7 @@ def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) ->
                     other = "покупки физлиц" if opp == "long" else "шорт физлиц"
                     line += (f"; ВТОРАЯ СТОРОНА: {other} тоже " + (f"на {era_status(u_o, y_o, dates, True, t)}"
                                                                     if y_o >= 0.5 else "велики")
-                             + (f", чистая позиция - всего {q_ru(abs(net), 'контрактов')}" if net is not None else "")
+                             + (f", чистая позиция - всего {p_ru(abs(net) / v, False)} от объёма" if net is not None else "")
                              + " - узкий круг может держать обе стороны (спред), а не ставку против: «ставят против» "
                                "не утверждай, «шортят единицы» - перебор")
                 out.append({"type": "концентрация", "strength": float(k), "line": line})
