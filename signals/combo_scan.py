@@ -211,3 +211,9 @@ if __name__ == "__main__":
             print(f"[macro_scan] {macro_scan.run_once(dry_run=a.dry_run, at=a.at)}")
         except Exception as e:  # noqa: BLE001
             print(f"[macro_scan] сбой: {type(e).__name__}: {e}")
+        # повод дня тем же вечером (28.09): бумага сегодня ушла резко, а у толпы рекорд — окно 18–21 МСК, раз в день
+        try:
+            from signals import trigger_scan
+            print(f"[trigger_scan] {trigger_scan.run_once(dry_run=a.dry_run, at=a.at)}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[trigger_scan] сбой: {type(e).__name__}: {e}")

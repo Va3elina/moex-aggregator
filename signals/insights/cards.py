@@ -338,10 +338,19 @@ def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> li
 INTRADAY_NOTE, INTRADAY_SKIP = -0.10, -0.20   # откат к утру: оговорка / находка не идёт в пост
 
 
+_OI5_ASOF = """SELECT sectype, tradedate, tradetime, pos_long, pos_short, pos_long_num, pos_short_num FROM open_interest
+                WHERE interval = 5 AND clgroup = 'FIZ' AND sectype = :s AND tradedate = :d AND tradetime <= :t
+                ORDER BY tradetime DESC LIMIT 1"""
+
+
 def intraday_now(sec, leg, as_of):
     """Последнее утреннее значение позиции (5-минутные данные, время МСК), если оно новее закрытия as_of."""
     try:
-        df = dbdata.read("oi_intraday_last", parse_dates=["tradedate"])
+        if NOW is not None:        # прогон на прошлом: срез того дня, не позже «сейчас»
+            df = _sql(_OI5_ASOF, {"s": sec, "d": pd.Timestamp(NOW).date(), "t": pd.Timestamp(NOW).time()})
+            df["tradedate"] = pd.to_datetime(df["tradedate"])
+        else:
+            df = dbdata.read("oi_intraday_last", parse_dates=["tradedate"])
     except Exception:  # noqa: BLE001 — без интрадея карточка та же, что раньше
         return None
     r = df[df.sectype == sec]
@@ -407,6 +416,30 @@ ANGLE_PRIORITY = {"повод": 0, "концентрация": 1, "доля": 2}
 SHARE_CODES = ("MIX", "RI", "Si", "CNY", "Eu")
 
 
+_LIVE = """SELECT begin_time AS t, close FROM candles
+             WHERE secid = :s AND type = 'stock' AND interval = 5 AND begin_time >= :d AND begin_time <= :now
+             ORDER BY begin_time DESC LIMIT 1"""
+
+
+NOW = None      # «сейчас» для прогона на прошлом (trigger_scan --at): живая цена и утренний срез — не позже него
+
+
+def live_price(ticker, after, now=None):
+    """Последняя 5-минутная цена акции за день ПОСЛЕ `after` (сегодня), не позже now: «повод дня» тем же вечером —
+    пост канала «Самолёт падает, толпа докупает» (15.09, 21:27) про −12% «сегодня». → (цена, время МСК) или None."""
+    if not ticker:
+        return None
+    now = pd.Timestamp(now if now is not None else NOW if NOW is not None
+                       else pd.Timestamp.now(tz="Europe/Moscow").tz_localize(None))
+    try:
+        df = _sql(_LIVE, {"s": ticker, "d": pd.Timestamp(after).normalize() + pd.Timedelta(days=1), "now": now})
+    except Exception:  # noqa: BLE001 — без живой цены повод считается по закрытиям
+        return None
+    if df.empty:
+        return None
+    return float(df.close.iloc[0]), pd.Timestamp(df.t.iloc[0])
+
+
 def crowd_result(gross, pser, leg, plabel) -> str | None:
     """Итог толпы по валовой стороне за месяц: цена в дни прироста позиции против нынешней (как в positions_card)."""
     arr, dates = gross.values.astype(float), gross.index
@@ -470,14 +503,25 @@ def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) ->
         typ1 = float(np.median(np.abs(pa[-60:] / pa[-61:-1] - 1)))
         typ2 = float(np.median(np.abs(pa[-60:] / pa[-62:-2] - 1)))
         cand = [(pa[-1] / pa[-2] - 1, "за день", typ1), (pa[-1] / pa[-3] - 1, "за два дня", typ2)]
+        try:
+            stock = data()[3].get(sec)
+        except Exception:  # noqa: BLE001 — нет справочника (тест без базы): повод по закрытиям
+            stock = None
+        live = live_price(stock, pd_[-1])
+        if live:
+            # сегодня, по 5-минутной цене: вечерний проход (signals/trigger_scan.py) ловит повод в тот же день
+            lp, lt = live
+            cand += [(lp / pa[-1] - 1, f"сегодня к {lt:%H:%M}", typ1), (lp / pa[-2] - 1, "за два дня с сегодняшним", typ2)]
         mv, span, typ = max(cand, key=lambda z: abs(z[0]) / z[2] if z[2] > 0 else 0)
         if typ > 0 and abs(mv) >= max(0.05, 3 * typ):
             move = "падает" if mv < 0 else "растёт"
             side = {"long": "покупки физлиц", "short": "шорт физлиц", "net": "чистая позиция физлиц"}[leg]
-            line = (f"повод дня: {plabel} {span} {p_ru(mv)} (к {d_ru(pd_[-1], t)}) - {x_ru(abs(mv) / typ)} больше "
-                    f"обычного хода {'за день' if span == 'за день' else 'за два дня'}; бумага {move}, а {side} - на "
-                    f"рекорде; объяснение хода - в КОНТЕКСТЕ («что было у компании»): «на рынке связывают», «на фоне», "
-                    f"не «из-за»")
+            today = span.startswith("сегодня") or span.endswith("с сегодняшним")
+            when = f"{span} (торги ещё идут)" if today else f"{span} (к {d_ru(pd_[-1], t)})"
+            line = (f"повод дня: {plabel} {when} {p_ru(mv)} - {x_ru(abs(mv) / typ)} больше обычного хода "
+                    f"{'за два дня' if 'два дня' in span else 'за день'}; бумага {move}, а {side} - на рекорде (на "
+                    f"закрытие {d_ru(t, t)}); объяснение хода - в КОНТЕКСТЕ («что было у компании»): «на рынке "
+                    f"связывают», «на фоне», не «из-за»")
             gleg = leg if leg in ("long", "short") else ("long" if v >= 0 else "short")
             if gleg in P:
                 cr = crowd_result(col(gleg).abs(), pser, gleg, plabel)
@@ -489,7 +533,7 @@ def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) ->
             if 0 < left <= 5 and i >= 2 and arr[i] > arr[i - 2] and "вечн" not in dat:
                 line += (f"; и это за {left} {plural(left, ('день', 'дня', 'дней'))} до квартальной экспирации "
                          f"{d_ru(ex, t)}, когда позиции обычно сокращают - толпа идёт против привычки")
-            out.append({"type": "повод", "strength": abs(mv) / typ, "line": line})
+            out.append({"type": "повод", "strength": abs(mv) / typ, "line": line, "live": today})
     other = {"ns": "nl", "nl": "ns"}.get(leg)
     if other and i >= 20 and det.CODE.get(sec) in SHARE_CODES:
         os_ = col(other)

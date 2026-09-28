@@ -440,33 +440,41 @@ def run_once(dry_run: bool = False) -> dict:
                 print(f"[insight_scan] пропуск, к утру позиция уже {chg:+.0%} к закрытию: {card['headline'][:80]}")
                 summary["skipped_intraday"] = summary.get("skipped_intraday", 0) + 1
                 continue
-            head = card["headline"][:300]
-            if db.execute(_EXISTS, {"headline": head}).first():
-                summary["skipped_exists"] += 1
-                continue
-            spec = job["spec"]
-            sec = spec.get("sec")
-            tick = (cards.data()[3].get(sec) if sec else None) or job["instrument"] or spec.get("code") or "MIX"
-            media = f"insight_{card['as_of']:%Y%m%d}_{spec['kind']}_{n}.png"
-            print(f"[insight_scan] {spec['kind']}: {head}" + (" (продолжение темы)" if job["repeat"] else ""))
-            if dry_run:
-                print(b["brief"][:1500] + "\n")
-                continue
-            os.makedirs(MEDIA_DIR, exist_ok=True)
-            cards.draw_chart(card, os.path.join(MEDIA_DIR, media))
-            row = db.execute(_INSERT, {
-                "headline": head, "raw_text": b["brief"], "tickers": [str(tick)],
-                "futures_ticker": sec, "event_type": f"insight_{spec['kind']}",
-                "reasoning": f"движок находок: {job['title'][:200]} (балл {job['score']})",
-                "media_filename": media,
-                "thread_key": job.get("thread_key") or f"insight:{spec['kind']}:{job['instrument'] or tick}",
-            }).first()
-            db.commit()
-            summary["created"] += 1
-            print(f"[insight_scan] кандидат {row[0]} создан")
+            save_job(db, job, b, n, dry_run, summary)
     finally:
         db.close()
     return summary
+
+
+def save_job(db, job: dict, b: dict, n: int, dry_run: bool, summary: dict, tag: str = "insight_scan") -> int | None:
+    """Кандидат из собранной карточки — общий для утреннего сканера и вечернего повода дня (trigger_scan)."""
+    card = b["card"]
+    head = card["headline"][:300]
+    if db.execute(_EXISTS, {"headline": head}).first():
+        summary["skipped_exists"] = summary.get("skipped_exists", 0) + 1
+        return None
+    spec = job["spec"]
+    sec = spec.get("sec")
+    tick = (cards.data()[3].get(sec) if sec else None) or job["instrument"] or spec.get("code") or "MIX"
+    media = f"insight_{card['as_of']:%Y%m%d}_{spec['kind']}_{spec.get('angle') and 'a' or ''}{n}.png"
+    print(f"[{tag}] {spec['kind']}{' / ' + spec['angle'] if spec.get('angle') else ''}: {head}"
+          + (" (продолжение темы)" if job.get("repeat") else ""))
+    if dry_run:
+        print(b["brief"][:1500] + "\n")
+        return None
+    os.makedirs(MEDIA_DIR, exist_ok=True)
+    cards.draw_chart(card, os.path.join(MEDIA_DIR, media))
+    row = db.execute(_INSERT, {
+        "headline": head, "raw_text": b["brief"], "tickers": [str(tick)],
+        "futures_ticker": sec, "event_type": f"insight_{spec['kind']}",
+        "reasoning": f"движок находок: {job['title'][:200]} (балл {job['score']})",
+        "media_filename": media,
+        "thread_key": job.get("thread_key") or f"insight:{spec['kind']}:{job['instrument'] or tick}",
+    }).first()
+    db.commit()
+    summary["created"] = summary.get("created", 0) + 1
+    print(f"[{tag}] кандидат {row[0]} создан")
+    return row[0]
 
 
 if __name__ == "__main__":
