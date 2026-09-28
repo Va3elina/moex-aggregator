@@ -165,17 +165,25 @@ def test_position_angles_on_synthetic_series():
     rng = np.random.RandomState(1)
     base = 2000 * np.cumprod(1 + rng.normal(0, 0.01, 298))       # обычный дневной ход ~1%
     price = pd.Series(np.r_[base, base[-1] * 0.99, base[-1] * 0.87], index=dates)
-    P = {"short": {"MG": short}, "ns": {"MG": ns}, "nl": {"MG": nl}}
+    long_ = pd.Series(np.r_[np.full(279, 100_000.0), np.linspace(100_000, 241_000, 21)], index=dates)  # тоже рекорд
+    net = long_ - short                                                                           # чистый шорт мал
+    P = {"short": {"MG": short}, "ns": {"MG": ns}, "nl": {"MG": nl}, "long": {"MG": long_}, "net": {"MG": net}}
     got = cards.position_angles(P, "MG", "short", "шорт физлиц", "фьючерсу на акции «Магнит»", "акции «Магнит»",
                                 short.values, dates, price, [], dates[-1])
     types = [a["type"] for a in got]
     assert "концентрация" in types and "повод" in types
     conc = next(a for a in got if a["type"] == "концентрация")
-    assert "узкий круг" in conc["line"] and "тыс." not in conc["line"], "без числа контрактов (R02)"
+    assert "узкий круг" in conc["line"] and "ВТОРАЯ СТОРОНА" in conc["line"] and "спред" in conc["line"], \
+        "покупки тоже на рекорде, чистая позиция мала — узкий круг может держать обе стороны"
     # доля: число шортистов против лонгистов, прошлый пик — индекс 150 (доля тогда выше)
     ns2 = pd.Series(np.r_[np.full(150, 300.0), [900.0], np.full(149, 300.0)], index=dates)
     ns2.iloc[-1] = 800.0
     nl2 = pd.Series(np.r_[np.full(150, 700.0), [100.0], np.full(149, 700.0)], index=dates)
     got2 = cards.position_angles({"ns": {"MX": ns2}, "nl": {"MX": nl2}}, "MX", "ns", "число физлиц в шорте",
                                  "фьючерсу на индекс", None, ns2.values, dates, None, [{"top": 150}], dates[-1])
-    assert got2 and got2[0]["type"] == "доля" and "было 90%" in got2[0]["line"]
+    assert got2 and got2[0]["type"] == "доля"
+    assert "с 30% до 53%" in got2[0]["line"] and "толпа переходит из лонга в шорт" in got2[0]["line"], "сдвиг за месяц — главное"
+    assert "доля была 90%" in got2[0]["line"], "прошлый пик — фоном"
+    none = cards.position_angles({"ns": {"CC": ns2}, "nl": {"CC": nl2}}, "CC", "ns", "число физлиц в шорте", "фьючерсу на какао",
+                                 None, ns2.values, dates, None, [{"top": 150}], dates[-1])
+    assert none == [], "доля — только у индекса и валют"

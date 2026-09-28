@@ -130,7 +130,11 @@ def p_ru(x, sign=True) -> str:
 
 def x_ru(r) -> str:
     s = f"{r:.1f}".replace(".", ",")
-    return f"в {s[:-2] if s.endswith(',0') else s} раза"
+    if not s.endswith(",0"):
+        return f"в {s} раза"                     # дробное: «в 2,5 раза»
+    n = int(round(r))                            # целое: «в 2 раза», но «в 5 раз», «в 21 раз»
+    word = "раза" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "раз"
+    return f"в {n} {word}"
 
 
 def span_ru(years) -> str:
@@ -397,56 +401,133 @@ def other_legs(P, sec, leg, t) -> list:
 # повод и поворот»). Карточка тренда поворот не показывает; пост нового типа — отдельная находка дня (insight_scan.pick,
 # spec["angle"]), у его карточки своё ГЛАВНОЕ. Число контрактов не называется (R02) — только кратности и доли.
 ANGLE_MIN = {"концентрация": 3.0, "повод": 4.0, "доля": 0.15}
+# порядок важности для канала: повод дня и узкий круг — сильнее доли (28.09: две «доли», одна по какао, обошли повод
+# Самолёта −18% за два дня); доля — только у индекса и валют, как в посте «Шортистов больше, чем когда-либо»
+ANGLE_PRIORITY = {"повод": 0, "концентрация": 1, "доля": 2}
+SHARE_CODES = ("MIX", "RI", "Si", "CNY", "Eu")
+
+
+def crowd_result(gross, pser, leg, plabel) -> str | None:
+    """Итог толпы по валовой стороне за месяц: цена в дни прироста позиции против нынешней (как в positions_card)."""
+    arr, dates = gross.values.astype(float), gross.index
+    i = len(arr) - 1
+    if pser is None or i < 21:
+        return None
+    pw = pser.reindex(dates[i - 20:i + 1]).ffill().values
+    add = np.clip(np.diff(arr[i - 21:i + 1]), 0, None)
+    ok = ~np.isnan(pw) & (add > 0)
+    if ok.sum() < 3 or add[ok].sum() < 0.2 * arr[i]:
+        return None
+    vw, now = float((add[ok] * pw[ok]).sum() / add[ok].sum()), float(pser.iloc[-1])
+    res = (now / vw - 1) * (-1 if leg == "short" else 1)
+    if abs(res) < 0.03:
+        return None
+    bet = "ставка на падение" if leg == "short" else "ставка на рост"
+    return (f"{bet} {'в плюсе' if res > 0 else 'в минусе'} примерно на {p_ru(abs(res), False)}: набирали в среднем по "
+            f"{px_ru(vw, plabel)}, сейчас {px_ru(now, plabel)}")
 
 
 def position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t) -> list:
     """[{type, strength, line}] по силе:
       • концентрация — объём позиции за месяц растёт, а людей в ней меньше: «Магнит шортов» (23.09) — объём шорта ×6,7
-        при числе шортистов −15%, «кто-то один крупный»; цифра была в карточке фоном, ни один черновик её не увидел;
-      • повод — резкий ход цены за день-два против обычного, а толпа на рекорде: «Самолёт падает, толпа докупает» (15.09);
-      • доля — число физлиц в шорте (лонге) как доля всех с позицией против прошлого пика: «Шортистов больше, чем
-        когда-либо» (22.09) — 51% против 87% в 2022-м; число само растёт вместе с рынком."""
+        при числе шортистов −15%, «кто-то один крупный». Проверяется и вторая сторона: если покупки тоже на максимуме, а
+        чистая позиция мала, узкий круг может держать спред, а не ставку против (слепая оценка 28.09);
+      • повод — резкий ход цены за день-два против обычного хода за тот же срок, а толпа на рекорде: «Самолёт падает,
+        толпа докупает» (15.09); с итогом толпы и экспирацией как усилителем («лонг растёт за два дня до экспирации,
+        когда его обычно режут» — приём канала);
+      • доля — число физлиц в шорте (лонге) как доля всех с позицией: за месяц (толпа переходит из лонга в шорт) или
+        против прошлого пика; посылка «трейдеров больше» — только если их правда больше (евро 28.09: было наоборот)."""
     out = []
     i, v = len(arr) - 1, float(arr[-1])
+    col = lambda name: upto(P[name][sec], t).reindex(dates).ffill()  # noqa: E731
     cnt_leg = {"long": "nl", "short": "ns"}.get(leg)
     if cnt_leg and i >= 20 and arr[i - 20] > 0:
-        cs = upto(P[cnt_leg][sec], t).reindex(dates).ffill()
+        cs = col(cnt_leg)
         c_now, c_20 = float(cs.iloc[-1]), float(cs.iloc[-21])
         if c_now > 0 and c_20 > 0 and np.isfinite(c_now) and np.isfinite(c_20):
             k = (v / c_now) / (arr[i - 20] / c_20)
             if k >= 2 and v / arr[i - 20] >= 1.5:
                 who = "шорте" if leg == "short" else "лонге"
-                out.append({"type": "концентрация", "strength": float(k),
-                            "line": f"поворот - концентрация: {lab} по {dat} за месяц вырос {x_ru(v / arr[i - 20])}, а "
-                                    f"число физлиц в {who} {p_ru(c_now / c_20 - 1)}; на одного в среднем {x_ru(k)} "
-                                    f"больше, чем месяц назад - позицию набирает узкий круг, а не толпа; кто именно - "
-                                    f"данные не говорят"})
+                line = (f"поворот - концентрация: {lab} по {dat} за месяц вырос {x_ru(v / arr[i - 20])}, а число "
+                        f"физлиц в {who} {p_ru(c_now / c_20 - 1)}; на одного в среднем {x_ru(k)} больше, чем месяц назад - "
+                        f"позицию набирает узкий круг, а не толпа; кто именно - данные не говорят")
+                opp = "long" if leg == "short" else "short"
+                u_o, y_o, net = None, 0.0, None
+                if opp in P and sec in P[opp]:
+                    u_o, y_o = since(col(opp).abs().values.astype(float), dates, i, True)
+                if "net" in P and sec in P["net"]:
+                    net = float(col("net").iloc[-1])
+                if y_o >= 0.5 or (net is not None and abs(net) < 0.3 * v):
+                    other = "покупки физлиц" if opp == "long" else "шорт физлиц"
+                    line += (f"; ВТОРАЯ СТОРОНА: {other} тоже " + (f"на {era_status(u_o, y_o, dates, True, t)}"
+                                                                    if y_o >= 0.5 else "велики")
+                             + (f", чистая позиция - всего {q_ru(abs(net), 'контрактов')}" if net is not None else "")
+                             + " - узкий круг может держать обе стороны (спред), а не ставку против: «ставят против» "
+                               "не утверждай, «шортят единицы» - перебор")
+                out.append({"type": "концентрация", "strength": float(k), "line": line})
     if pser is not None and len(pser) > 62 and leg in ("long", "short", "net"):
         pa, pd_ = pser.values.astype(float), pser.index
-        typ = float(np.median(np.abs(np.diff(pa[-61:]) / pa[-61:-1])))
-        best = max(((pa[-1] / pa[-2] - 1, "за день"), (pa[-1] / pa[-3] - 1, "за два дня")), key=lambda z: abs(z[0]))
-        if typ > 0 and abs(best[0]) >= max(0.05, 3 * typ):
-            move = "падает" if best[0] < 0 else "растёт"
+        typ1 = float(np.median(np.abs(pa[-60:] / pa[-61:-1] - 1)))
+        typ2 = float(np.median(np.abs(pa[-60:] / pa[-62:-2] - 1)))
+        cand = [(pa[-1] / pa[-2] - 1, "за день", typ1), (pa[-1] / pa[-3] - 1, "за два дня", typ2)]
+        mv, span, typ = max(cand, key=lambda z: abs(z[0]) / z[2] if z[2] > 0 else 0)
+        if typ > 0 and abs(mv) >= max(0.05, 3 * typ):
+            move = "падает" if mv < 0 else "растёт"
             side = {"long": "покупки физлиц", "short": "шорт физлиц", "net": "чистая позиция физлиц"}[leg]
-            out.append({"type": "повод", "strength": abs(best[0]) / typ,
-                        "line": f"повод дня: {plabel} {best[1]} {p_ru(best[0])} (к {d_ru(pd_[-1], t)}) - "
-                                f"{x_ru(abs(best[0]) / typ)} больше обычного дневного хода; бумага {move}, а {side} - "
-                                f"на рекорде; объяснение хода - в КОНТЕКСТЕ («что было у компании»): «на рынке "
-                                f"связывают», «на фоне», не «из-за»"})
+            line = (f"повод дня: {plabel} {span} {p_ru(mv)} (к {d_ru(pd_[-1], t)}) - {x_ru(abs(mv) / typ)} больше "
+                    f"обычного хода {'за день' if span == 'за день' else 'за два дня'}; бумага {move}, а {side} - на "
+                    f"рекорде; объяснение хода - в КОНТЕКСТЕ («что было у компании»): «на рынке связывают», «на фоне», "
+                    f"не «из-за»")
+            gleg = leg if leg in ("long", "short") else ("long" if v >= 0 else "short")
+            if gleg in P:
+                cr = crowd_result(col(gleg).abs(), pser, gleg, plabel)
+                if cr:
+                    line += f"; итог толпы: {cr} - оценка по средней цене в дни прироста позиции"
+            from signals.insights.expiry import next_expiry
+            ex = pd.Timestamp(next_expiry(t))
+            left = (ex - pd.Timestamp(t).normalize()).days
+            if 0 < left <= 5 and i >= 2 and arr[i] > arr[i - 2] and "вечн" not in dat:
+                line += (f"; и это за {left} {plural(left, ('день', 'дня', 'дней'))} до квартальной экспирации "
+                         f"{d_ru(ex, t)}, когда позиции обычно сокращают - толпа идёт против привычки")
+            out.append({"type": "повод", "strength": abs(mv) / typ, "line": line})
     other = {"ns": "nl", "nl": "ns"}.get(leg)
-    if other and past:
-        os_ = upto(P[other][sec], t).reindex(dates).ffill()
-        j = past[-1]["top"]
-        if float(os_.iloc[-1]) > 0 and np.isfinite(os_.iloc[j]) and os_.iloc[j] > 0:
-            sh, sh0 = v / (v + float(os_.iloc[-1])), float(arr[j] / (arr[j] + os_.iloc[j]))
-            if abs(sh - sh0) >= 0.10:
-                who = "шорте" if leg == "ns" else "лонге"
-                out.append({"type": "доля", "strength": abs(sh - sh0),
-                            "line": f"поворот - доля: в {who} {p_ru(sh, False)} всех физлиц с позицией по {dat}; на "
-                                    f"прошлом пике {d_ru(dates[j], t)} было {p_ru(sh0, False)} - сравнивай долю, а не "
-                                    f"число: трейдеров во фьючерсе теперь больше, и число людей растёт вместе с рынком"})
-    return sorted(out, key=lambda a: -a["strength"] / ANGLE_MIN[a["type"]])
-
+    if other and i >= 20 and det.CODE.get(sec) in SHARE_CODES:
+        os_ = col(other)
+        n_now, o_now = v, float(os_.iloc[-1])
+        n_20, o_20 = float(arr[i - 20]), float(os_.iloc[-21])
+        if n_now + o_now > 0 and n_20 + o_20 > 0:
+            sh, sh20 = n_now / (n_now + o_now), n_20 / (n_20 + o_20)
+            who, opp_who = ("шорте", "лонге") if leg == "ns" else ("лонге", "шорте")
+            best = None
+            if abs(sh - sh20) >= 0.10:
+                ch_n = p_ru(n_now / n_20 - 1) if n_20 else "н/д"
+                ch_o = p_ru(o_now / o_20 - 1) if o_20 else "н/д"
+                shift = ""
+                if sh > sh20:
+                    shift = " - толпа переходит из лонга в шорт" if leg == "ns" else " - толпа переходит из шорта в лонг"
+                best = (abs(sh - sh20), f"поворот - доля: за месяц доля физлиц в {who} среди всех с позицией по {dat} "
+                                        f"{'выросла' if sh > sh20 else 'снизилась'} с {p_ru(sh20, False)} до "
+                                        f"{p_ru(sh, False)}: число в {who} {ch_n}, в {opp_who} {ch_o}{shift}")
+            if past:
+                j = past[-1]["top"]
+                n0, o0 = float(arr[j]), float(os_.iloc[j])
+                if n0 + o0 > 0 and np.isfinite(o0) and best is not None:
+                    # сдвиг за месяц — главное, прошлый пик — фоном (евро 16.09: 15% → 35% за месяц важнее пика 2023)
+                    best = (best[0], best[1] + f"; на прошлом пике {d_ru(dates[j], t)} доля была {p_ru(n0 / (n0 + o0), False)}"
+                                     + ("" if (n_now + o_now) > (n0 + o0) else ", но трейдеров с позицией тогда было "
+                                        "больше - «их стало больше» не пиши"))
+                elif n0 + o0 > 0 and np.isfinite(o0):
+                    sh0 = n0 / (n0 + o0)
+                    if abs(sh - sh0) >= 0.10:
+                        more = (n_now + o_now) > (n0 + o0)
+                        best = (abs(sh - sh0), f"поворот - доля: в {who} {p_ru(sh, False)} всех физлиц с позицией по "
+                                               f"{dat}; на прошлом пике {d_ru(dates[j], t)} было {p_ru(sh0, False)}; "
+                                               + ("трейдеров с позицией теперь больше - число людей растёт вместе с рынком, "
+                                                  "сравнивай долю" if more else
+                                                  "трейдеров с позицией теперь меньше, чем тогда - «их стало больше» не пиши"))
+            if best:
+                out.append({"type": "доля", "strength": best[0], "line": best[1]})
+    return sorted(out, key=lambda a: (ANGLE_PRIORITY[a["type"]], -a["strength"] / ANGLE_MIN[a["type"]]))
 
 ANGLE_NOTE = {
     "концентрация": "ТИП ПОСТА: КОНЦЕНТРАЦИЯ - не трендовый пост. Мысль одна: позицию набирает узкий круг, а не толпа. "
@@ -454,8 +535,9 @@ ANGLE_NOTE = {
     "повод": "ТИП ПОСТА: ПОВОД ДНЯ - не трендовый пост. Начни с хода цены этих дней и с того, что толпа стоит на другой "
              "стороне (или удваивает ставку); что говорят о причине - из КОНТЕКСТА, «на рынке связывают». Тренд и "
              "статистика прошлых разворотов - не нужны или одной фразой.",
-    "доля": "ТИП ПОСТА: ДОЛЯ - не трендовый пост. Число людей растёт вместе с рынком; сравни долю в шорте (лонге) с "
-            "прошлым пиком и скажи, что из этого следует. Тренд и статистика разворотов - не нужны или одной фразой.",
+    "доля": "ТИП ПОСТА: ДОЛЯ - не трендовый пост. Не число людей, а доля в шорте (лонге) среди всех с позицией - за "
+            "месяц или против прошлого пика, как в строке поворота; скажи, что из этого следует. Тренд и статистика "
+            "разворотов - не нужны или одной фразой.",
 }
 
 
@@ -466,9 +548,12 @@ def angle_card(card: dict, angle: str) -> dict:
     if a is None:
         raise ValueError(f"у находки нет поворота «{angle}»")
     crowd = next((f for f in card.get("facts") or [] if f.startswith("итог толпы")), None)
-    focus = [ANGLE_NOTE[angle], a["line"], f"находка: {card['headline']}"] + [crowd] * bool(crowd) \
-        + [f"цена: {card['price'][0]}"] * bool(card.get("price"))
-    return {**card, "focus": focus, "spec": {**card["spec"], "angle": angle}}
+    focus = [ANGLE_NOTE[angle], a["line"], f"находка: {card['headline']}"] + \
+        [crowd] * bool(crowd and "итог толпы" not in a["line"]) + [f"цена: {card['price'][0]}"] * bool(card.get("price"))
+    # тренд и «N из M» у поста нового типа не нужны: карточка сама тянула писателя обратно в шаблон (слепая оценка 28.09)
+    limits = [x for x in card.get("limits") or [] if not x.startswith("пост строится на блоке ТРЕНД")]
+    return {**card, "focus": focus, "trend": [], "after": [], "analogy": [], "limits": limits,
+            "spec": {**card["spec"], "angle": angle}}
 
 
 # ── карточка: рекорд позиций ─────────────────────────────────────────────────────

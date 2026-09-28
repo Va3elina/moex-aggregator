@@ -243,7 +243,7 @@ def angle_jobs(cands: list, log=print) -> list:
             if a["strength"] >= cards.ANGLE_MIN[a["type"]]:
                 found.append((a["strength"] / cards.ANGLE_MIN[a["type"]], j, a))
     out, used = [], set()
-    for _, j, a in sorted(found, key=lambda z: -z[0]):
+    for _, j, a in sorted(found, key=lambda z: (cards.ANGLE_PRIORITY[z[2]["type"]], -z[0])):
         if len(out) >= ANGLE_PER_DAY or j["instrument"] in used:
             continue
         used.add(j["instrument"])
