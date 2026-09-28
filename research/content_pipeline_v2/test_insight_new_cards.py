@@ -187,3 +187,49 @@ def test_position_angles_on_synthetic_series():
     none = cards.position_angles({"ns": {"CC": ns2}, "nl": {"CC": nl2}}, "CC", "ns", "число физлиц в шорте", "фьючерсу на какао",
                                  None, ns2.values, dates, None, [{"top": 150}], dates[-1])
     assert none == [], "доля — только у индекса и валют"
+
+
+
+# ── запуск сделок фондов (шаг 2, 28.09): раз в месяц на новый срез ──────────────────────────────────────────
+class _DB:
+    def __init__(self, exists=False):
+        self.exists = exists
+
+    def execute(self, q, p=None):
+        ex = self.exists
+
+        class R:
+            def first(self):
+                return (1,) if ex else None
+        return R()
+
+
+def _ft_api(monkeypatch, month="2026-08-01"):
+    monkeypatch.setattr(cards, "_ft_get", lambda path, **p: {
+        "resolved_month": month, "top_accumulated": [{"asset_name": "ЛУКОЙЛ"}], "top_reduced": [{"asset_name": "X5"}]})
+
+
+def test_fund_trades_month_once_and_not_after_channel_post(monkeypatch):
+    _ft_api(monkeypatch)
+    monkeypatch.setattr(ins, "channel_posts", lambda as_of, days=ins.REPEAT_DAYS: [])
+    job = ins.fund_trades_job(pd.Timestamp("2026-09-20"), _DB())
+    assert job and job["thread_key"] == "insight:fund_trades:2026-08" and job["spec"]["kind"] == "fund_trades"
+    assert ins.fund_trades_job(pd.Timestamp("2026-09-20"), _DB(exists=True)) is None, "месяц уже был у завода"
+    post = (pd.Timestamp("2026-09-22 12:00"), "Фокус смещается на сырьё 🔍 ◽️ Лукойл обошёл Сбербанк… #cделкифондов")
+    monkeypatch.setattr(ins, "channel_posts", lambda as_of, days=ins.REPEAT_DAYS: [post])
+    assert ins.fund_trades_job(pd.Timestamp("2026-09-25"), _DB()) is None, "канал уже писал о сделках фондов за август"
+
+
+def test_fund_trades_old_month_is_not_news(monkeypatch):
+    _ft_api(monkeypatch, month="2026-06-01")
+    monkeypatch.setattr(ins, "channel_posts", lambda as_of, days=ins.REPEAT_DAYS: [])
+    assert ins.fund_trades_job(pd.Timestamp("2026-09-20"), _DB()) is None
+
+
+def test_fund_trades_chart_draws(tmp_path):
+    card = {"kind": "fund_trades", "chart": {"type": "hbars", "title": "Сделки фондов акций за август, млрд ₽",
+                                             "labels": ["Лукойл", "Татнефть", "X5 Group", "Полюс"],
+                                             "values": [1.56, 0.5, -0.93, -0.46]}}
+    out = tmp_path / "ft.png"
+    cards.draw_chart(card, str(out))
+    assert out.exists() and out.stat().st_size > 5000
