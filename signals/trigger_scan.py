@@ -1,11 +1,14 @@
-"""Повод дня тем же вечером (Вадим 28.09: «продолжай» — после запуска новых типов).
+"""Повод дня в тот же день (Вадим 28.09: «продолжай» — после запуска новых типов; «я бы делал всё постоянно — каждый
+час или каждый день», поэтому не только вечером, а весь торговый день).
 
 Пост канала «Самолёт падает, толпа докупает» вышел 15.09 в 21:27 — про −12% «сегодня» и рекордный лонг физлиц. Утренний
-сканер находок (insight_scan) видит только закрытия по вчерашний день и ловил такой повод наутро. Здесь — вечерний
-проход: бумага СЕГОДНЯ ушла резко (5-минутная цена против вчерашнего закрытия — cards.live_price), а по ней у толпы
-рекорд позиции на последнем закрытии → один черновик «повод дня» (тот же angle_card, что у утренних постов нового типа).
+сканер находок (insight_scan) видит только закрытия по вчерашний день и ловил такой повод наутро. Здесь — проход
+по ходу дня: бумага СЕГОДНЯ ушла резко (5-минутная цена против вчерашнего закрытия — cards.live_price), а по ней у
+толпы рекорд позиции на последнем закрытии → один черновик «повод дня» (тот же angle_card, что у утренних постов
+нового типа).
 
-Раз в день, в окне TRIGGER_FROM–TRIGGER_TO МСК, не больше одного черновика; повтор темы — теми же фильтрами, что у
+Раз в день, с TRIGGER_FROM до TRIGGER_TO МСК (первые два часа основной сессии цена ещё не устоялась), не больше одного
+черновика; повтор темы — теми же фильтрами, что у
 утреннего сканера (канал уже писал, та же находка уже была). Запуск — из дневного прохода связок (combo_scan --mode news,
 каждые 20 минут), своего крона нет.
 
@@ -27,7 +30,7 @@ from api.database import SessionLocal  # noqa: E402
 from signals import insight_scan as ins  # noqa: E402
 from signals.insights import cards, data  # noqa: E402
 
-TRIGGER_FROM, TRIGGER_TO = 18, 21      # часы МСК: основная сессия закрылась, вечерняя идёт
+TRIGGER_FROM, TRIGGER_TO = 12, 21      # часы МСК: весь торговый день после первых двух часов основной сессии
 TRIGGER_POOL = 25                      # сколько лучших рекордов позиций по акциям проверять
 MSK = timezone(timedelta(hours=3))
 _TODAY = text("""SELECT 1 FROM content_candidates
@@ -77,7 +80,7 @@ def run_once(dry_run: bool = False, at: str | None = None) -> dict:
     now = now.tz_localize("UTC") if now.tzinfo is None else now
     now_msk = now.tz_convert(MSK)
     if not in_window(now_msk):
-        return {"skipped": "не вечер торгового дня"}
+        return {"skipped": "вне торговых часов"}
     if at:      # прогон на прошлом: «сейчас» — этот момент; посты канала — только до него
         cards.NOW = now_msk.tz_localize(None)
         _cp = ins.channel_posts
@@ -104,7 +107,7 @@ def run_once(dry_run: bool = False, at: str | None = None) -> dict:
             print(f"[trigger_scan] пропуск, канал писал {rep['date']:%d.%m} «{rep['title'][:50]}»: {x['title'][:70]}")
             return summary
         job = {"kind": "positions", "spec": {**spec, "angle": "повод"}, "date": x["date"],
-               "title": f"повод дня (вечер): {x['title']}", "repeat": rep, "instrument": x["instrument"],
+               "title": f"повод дня: {x['title']}", "repeat": rep, "instrument": x["instrument"],
                "score": round(a["strength"], 1), "thread_key": f"insight:trigger:{x['instrument']}:{now_msk:%Y%m%d}"}
         b = ins.build(job, now.isoformat())
         ins.save_job(db, job, b, 1, dry_run, summary, tag="trigger_scan")

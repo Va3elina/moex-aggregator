@@ -23,14 +23,14 @@ if "@db:" in _url:
     os.environ["DB_URL"] = _url.replace("@db:", "@127.0.0.1:")
 
 import argparse  # noqa: E402
-import json  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 
 import pandas as pd  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
-from signals.insight_scan import detect_window, drop_expiry_days, drop_low_activity  # noqa: E402
+# находки дня — общий файл на день данных (insight_scan.detections): его же берут утренний сканер и повод дня
+from signals.insight_scan import detections, drop_expiry_days, drop_low_activity  # noqa: E402
 from signals.insights import cards, combos, data, fresh  # noqa: E402
 
 MAX_DATA = 2            # утром — не больше двух связок
@@ -40,7 +40,6 @@ CHANNEL_DAYS = 2        # канал писал о том же за двое с�
 STALE_DAYS = 4          # главная нога не старше четырёх календарных дней (и утром, и днём)
 NEWS_FRESH_HOURS = 36   # новость сюжета не старше 36 часов — как у новостного конвейера (_stale_news)
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
-CACHE_DIR = os.environ.get("COMBO_CACHE_DIR", "/opt/frame/data/combo_cache")
 
 _RECENT = text("""
     SELECT thread_key, reasoning, created_at, raw_text, tickers FROM content_candidates
@@ -54,19 +53,6 @@ _INSERT = text("""
             :event_type, 3, :reasoning, :media_filename, :thread_key)
     RETURNING id
 """)
-
-
-def detections(until: pd.Timestamp) -> list:
-    """Находки детекторов за 30 дней — раз в торговый день: дневной режим зовётся каждые 20
-    минут, а данные по вчерашний день за это время не меняются."""
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    p = os.path.join(CACHE_DIR, f"detections_{until:%Y%m%d}.json")
-    if os.path.exists(p):
-        return json.load(open(p, encoding="utf-8"))
-    items = detect_window(until)
-    json.dump(items, open(p, "w", encoding="utf-8"), ensure_ascii=False,
-              default=lambda o: o.item() if hasattr(o, "item") else str(o))
-    return items
 
 
 def channel_wrote(story: dict, now: pd.Timestamp) -> str | None:
@@ -211,7 +197,7 @@ if __name__ == "__main__":
             print(f"[macro_scan] {macro_scan.run_once(dry_run=a.dry_run, at=a.at)}")
         except Exception as e:  # noqa: BLE001
             print(f"[macro_scan] сбой: {type(e).__name__}: {e}")
-        # повод дня тем же вечером (28.09): бумага сегодня ушла резко, а у толпы рекорд — окно 18–21 МСК, раз в день
+        # повод дня (28.09): бумага сегодня ушла резко, а у толпы рекорд — весь торговый день, 12–21 МСК, раз в день
         try:
             from signals import trigger_scan
             print(f"[trigger_scan] {trigger_scan.run_once(dry_run=a.dry_run, at=a.at)}")

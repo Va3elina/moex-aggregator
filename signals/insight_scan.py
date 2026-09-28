@@ -25,6 +25,7 @@ if "@db:" in _url:
     os.environ["DB_URL"] = _url.replace("@db:", "@127.0.0.1:")
 
 import argparse  # noqa: E402
+import json  # noqa: E402
 import re  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 
@@ -45,6 +46,7 @@ HASHTAG = {"positions": r"#открыт\w+", "funds": r"#деньгивфонд�
 # (#деньгивфондах) — рекордный шорт по фьючерсу на юань (реплей завода 27.09).
 RUBRICS = r"#открыт\w+|#деньгивфондах|#сезонность|#\w*делкифондов|#потоккапитала|#силарынка|#индикаторбаффетта"
 MEDIA_DIR = os.environ.get("CONTENT_MEDIA_DIR", "/opt/frame/data/content_media")
+CACHE_DIR = os.environ.get("COMBO_CACHE_DIR", "/opt/frame/data/combo_cache")
 REPEAT_DAYS, SKIP_DAYS = 14, 3
 FUNDS_LAG_DAYS = 4        # потоки фондов приходят с опозданием: день-два плюс выходные
 # «Про позиции» — только слова срочного рынка: в channel_posts текст обрезан (~500 знаков), хэштег рубрики в конце
@@ -89,6 +91,20 @@ def detect_window(until: pd.Timestamp) -> list:
     return det.rank(out.items)
 
 
+def detections(until: pd.Timestamp) -> list:
+    """Находки детекторов за 30 дней — один файл на день данных, общий для всех сканеров: утреннего (здесь), связок
+    (combo_scan, каждые 20 минут) и повода дня (trigger_scan). Данные по вчерашний день за день не меняются —
+    считать их заново в каждом проходе незачем (Вадим 28.09: «чтобы агенты не грузили всё каждый раз заново»)."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    p = os.path.join(CACHE_DIR, f"detections_{until:%Y%m%d}.json")
+    if os.path.exists(p):
+        return json.load(open(p, encoding="utf-8"))
+    items = detect_window(until)
+    json.dump(items, open(p, "w", encoding="utf-8"), ensure_ascii=False,
+              default=lambda o: o.item() if hasattr(o, "item") else str(o))
+    return items
+
+
 def channel_posts(as_of, days=REPEAT_DAYS) -> list:
     t = pd.Timestamp(as_of)
     df = data.read("channel_posts")
@@ -102,21 +118,7 @@ def channel_posts(as_of, days=REPEAT_DAYS) -> list:
 def repeat_of(spec, as_of):
     """Писал ли канал о той же теме недавно: тот же инструмент + тот же тип находки."""
     kind = spec["kind"]
-    if kind == "funds":
-        inst, case = FUND_INST.get(spec["cat"], r"фонд"), False
-    elif kind == "seasonality":
-        inst, case = (r"доллар|валют" if spec["code"] == "Si" else r"индекс\w* мосбирж|IMOEX|акци"), False
-    else:
-        code = det.CODE.get(spec["sec"])
-        if code in ("MIX", "RI"):
-            inst, case = r"индекс\w* мосбирж|IMOEX|индекс\w* РТС", False
-        elif code in ("Si", "CNY", "Eu"):
-            inst, case = r"доллар|валют|юан|евро", False
-        else:   # акция: имя с заглавной или тикер — «Самолет» не должен ловить «самолетов Boeing»
-            P, names, groups, to_stock, *_ = cards.data()
-            nm = str(names.get(spec["sec"], "")).replace(" (вечн)", "").split(" ")[0]
-            inst = "|".join(x for x in (re.escape(nm) if nm else "", to_stock.get(spec["sec"]) or "") if x)
-            case = True
+    inst, case = _inst_rx(spec)
     for d, txt in channel_posts(as_of):
         if not (inst and re.search(inst, txt, 0 if case else re.I)):
             continue
@@ -267,8 +269,20 @@ def _inst_rx(spec):
         return r"доллар|валют|юан|евро", False
     # акция: имя с заглавной или тикер — «Самолет» не должен ловить «самолетов Boeing»
     P, names, groups, to_stock, *_ = cards.data()
-    nm = str(names.get(spec["sec"], "")).replace(" (вечн)", "").split(" ")[0]
-    return "|".join(x for x in (re.escape(nm) if nm else "", to_stock.get(spec["sec"]) or "") if x), True
+    return name_rx(names.get(spec["sec"], ""), to_stock.get(spec["sec"])), True
+
+
+# Имя — слово целиком, с падежным окончанием: «Газ TTF» (первое слово «Газ») ловил пост «На фьючерсе Газпрома» — находка
+# по TTF 25.09 ушла бы писателю как «продолжение темы» поста о шорте Газпрома (разбор идей за 22–28.09).
+_ENDING = r"(?:а|я|у|ю|ом|ем|ём|е|и|ы|ов|ев|ам|ям|ами|ями|ах|ях|ой|ей)?(?![А-Яа-яЁёA-Za-z])"
+
+
+def name_rx(name, ticker=None) -> str:
+    nm = str(name or "").replace(" (вечн)", "").split(" ")[0]
+    parts = [r"(?<![А-Яа-яЁёA-Za-z])" + re.escape(nm) + _ENDING] if nm else []
+    if ticker:
+        parts.append(rf"\b{re.escape(ticker)}\b")
+    return "|".join(parts)
 
 
 def own_posts(spec, as_of, k=2) -> list:
@@ -418,7 +432,7 @@ def fund_trades_job(now, db, log=print) -> dict | None:
 def run_once(dry_run: bool = False) -> dict:
     oi = data.read("oi_daily", parse_dates=["tradedate"])
     until = oi.tradedate.max()
-    items = drop_expiry_days(drop_low_activity(detect_window(until)))
+    items = drop_expiry_days(drop_low_activity(detections(until)))
     jobs = pick(items, until=until)
     now_iso = datetime.now(timezone.utc).isoformat()
     _db = SessionLocal()
