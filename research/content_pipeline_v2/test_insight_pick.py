@@ -5,6 +5,7 @@ python3 -m pytest research/content_pipeline_v2/test_insight_pick.py -q
 """
 import inspect
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -73,3 +74,15 @@ def test_one_day_fund_flow_record():
     assert det.day_record(np.r_[dv[:-1], 12e9], len(dv) - 1), "и приток"
     assert "day_record(dv, i)" in inspect.getsource(det.detect_funds)
     assert "det.day_record(dv, len(dv) - 1)" in inspect.getsource(cards.funds_card), "карточка называет рекорд дня"
+
+
+def test_instrument_name_is_a_whole_word_with_case_endings():
+    """«Газ TTF» (первое слово «Газ») ловил пост «На фьючерсе Газпрома» — находка по TTF 25.09 ушла бы писателю
+    «продолжением темы» поста о шорте Газпрома (разбор идей 28.09)."""
+    rx = ins.name_rx("Газ TTF")
+    assert not re.search(rx, "Максимум шортов за 1,5 года. На фьючерсе Газпрома продолжается рост")
+    assert re.search(rx, "Физлица в фьючерсе на Газ: покупки на максимуме")
+    rx = ins.name_rx("Магнит", "MGNT")
+    assert re.search(rx, "Магнит шортов") and re.search(rx, "шорт по Магниту") and re.search(rx, "#MGNT")
+    assert not re.search(rx, "акции Магнитогорского комбината")
+    assert not re.search(ins.name_rx("Самолет", "SMLT"), "поставки самолетов Boeing")

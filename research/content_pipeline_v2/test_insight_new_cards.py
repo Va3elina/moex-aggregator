@@ -312,16 +312,18 @@ def test_macro_draft_has_own_ticker_so_seasonality_does_not_block_it():
         "с «MIX» правило повторов по тикеру сравнивало бы макро с ежедневной сезонностью индекса"
 
 
-# ── повод дня тем же вечером (28.09): бумага сегодня ушла резко, а у толпы рекорд ────────────────────────────
+# ── повод дня в тот же день (28.09): бумага сегодня ушла резко, а у толпы рекорд ─────────────────────────────
 from signals import trigger_scan  # noqa: E402
 
 
-def test_trigger_window_is_weekday_evening():
+def test_trigger_window_is_the_whole_trading_day():
+    """Вадим 28.09: «я бы делал всё постоянно — каждый час или каждый день» — не только вечером."""
     msk = trigger_scan.MSK
     assert trigger_scan.in_window(pd.Timestamp("2026-09-15 21:00", tz=msk)) is False
     assert trigger_scan.in_window(pd.Timestamp("2026-09-15 20:40", tz=msk))
-    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 12:00", tz=msk)) is False
-    assert trigger_scan.in_window(pd.Timestamp("2026-09-19 19:00", tz=msk)) is False, "суббота"
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 12:00", tz=msk)), "с полудня, а не с 18:00"
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-15 11:40", tz=msk)) is False, "первые два часа сессии"
+    assert trigger_scan.in_window(pd.Timestamp("2026-09-19 14:00", tz=msk)) is False, "суббота"
 
 
 def test_trigger_pool_is_stock_position_records_once_per_stock():
@@ -367,3 +369,18 @@ def test_trigger_runs_inside_the_daytime_combo_pass():
 
     from signals import combo_scan
     assert "trigger_scan.run_once(dry_run=a.dry_run, at=a.at)" in inspect.getsource(combo_scan)
+
+
+# ── общий файл находок дня (28.09): утренний сканер, связки и повод дня считают находки один раз ──────────────
+def test_detections_are_computed_once_per_data_day(monkeypatch, tmp_path):
+    import inspect
+    calls = []
+    monkeypatch.setattr(ins, "CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(ins, "detect_window", lambda until: calls.append(until) or [{"title": "x", "score": 1.5}])
+    until = pd.Timestamp("2026-09-25")
+    assert ins.detections(until) == [{"title": "x", "score": 1.5}]
+    assert ins.detections(until) == [{"title": "x", "score": 1.5}]
+    assert len(calls) == 1, "второй раз — из файла"
+    from signals import combo_scan
+    assert combo_scan.detections is ins.detections, "связки и повод дня берут тот же файл"
+    assert "detections(until)" in inspect.getsource(ins.run_once), "утренний сканер — тоже"
