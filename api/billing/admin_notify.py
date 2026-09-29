@@ -7,8 +7,6 @@
   dispatch_pending  — забрать неотправленные события и отправить в чат.
                       Зовут: NOTIFY-листенер API (сразу после коммита) и
                       оркестратор каждые 15 мин (страховка, если листенер лежал).
-  send_daily_digest — утренняя сводка: деньги за вчера и месяц, активные
-                      подписки, MRR, ожидаемые продления. Раз в сутки из оркестратора.
 
 Строки забираются FOR UPDATE SKIP LOCKED: три воркера API и оркестратор могут
 звать одновременно, одно событие уйдёт один раз. Если Телеграм не ответил,
@@ -17,7 +15,7 @@ notified_at не ставится и событие уйдёт следующи�
 import html
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import requests
@@ -40,8 +38,6 @@ MAX_EVENT_AGE_HOURS = 48
 # Продление ретраится кроном каждый час до суток: о провале сообщаем один раз,
 # дальше молчим до истечения подписки (придёт «закончилась, не продлена»).
 RENEW_FAIL_QUIET_HOURS = 20
-
-DIGEST_HOUR_MSK = 9
 
 TIER_NAMES = {"basic": "Basic", "pro": "Pro", "premium": "Premium"}
 PERIOD_NAMES = {"monthly": "месяц", "yearly": "год", "trial": "пробный период"}
@@ -429,165 +425,3 @@ def dispatch_pending(db: Session, limit: int = 50) -> dict:
     if summary["sent"] or summary["failed"]:
         log.info("billing admin notify: %s", summary)
     return summary
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Утренняя сводка
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _day_bounds_msk(day: date) -> tuple[datetime, datetime]:
-    start = datetime(day.year, day.month, day.day, tzinfo=MSK)
-    return start, start + timedelta(days=1)
-
-
-def build_daily_digest(db: Session, day: date) -> str:
-    """Сводка за день `day` (МСК) + срез на текущий момент."""
-    d0, d1 = _day_bounds_msk(day)
-    m0 = datetime(day.year, day.month, 1, tzinfo=MSK)
-    now = datetime.now(timezone.utc)
-    test_ids = [int(c) for c in (os.getenv("BILLING_TEST_USER_IDS") or "").split(",") if c.strip().isdigit()]
-    p = {"d0": d0, "d1": d1, "m0": m0, "now": now, "week": now + timedelta(days=7),
-         "test": test_ids or [-1]}
-
-    ev = dict(db.execute(text("""
-        SELECT kind, count(*) FROM billing_events
-        WHERE created_at >= :d0 AND created_at < :d1 AND NOT skipped
-          AND (user_id IS NULL OR NOT (user_id = ANY(:test)))
-        GROUP BY kind
-    """), p).all())
-
-    paid = """
-        s.is_trial = FALSE AND s.yk_payment_id IS NOT NULL AND s.amount > 0
-        AND NOT (s.user_id = ANY(:test))
-    """
-    day_pay = db.execute(text(f"""
-        SELECT count(*), COALESCE(sum(s.amount), 0) FROM subscriptions s
-        WHERE {paid} AND s.status IN ('active','expired','cancelled')
-          AND s.started_at >= :d0 AND s.started_at < :d1
-    """), p).one()
-    month_pay = db.execute(text(f"""
-        SELECT count(*), COALESCE(sum(s.amount), 0) FROM subscriptions s
-        WHERE {paid} AND s.status IN ('active','expired','cancelled')
-          AND s.started_at >= :m0 AND s.started_at < :d1
-    """), p).one()
-    month_refund = db.execute(text(f"""
-        SELECT count(*), COALESCE(sum(s.amount), 0) FROM subscriptions s
-        WHERE {paid} AND s.status = 'refunded'
-          AND s.cancelled_at >= :m0 AND s.cancelled_at < :d1
-    """), p).one()
-    abandoned = db.execute(text("""
-        SELECT count(*) FROM subscriptions s
-        WHERE s.status = 'failed' AND s.payment_method_id IS NULL AND s.is_trial = FALSE
-          AND s.created_at >= :d0 AND s.created_at < :d1 AND NOT (s.user_id = ANY(:test))
-    """), p).scalar()
-
-    active = db.execute(text(f"""
-        SELECT s.tier, s.period,
-               count(*) AS n,
-               count(*) FILTER (WHERE s.cancelled_at IS NULL AND s.payment_method_id IS NOT NULL) AS auto,
-               COALESCE(sum(CASE WHEN s.period = 'yearly' THEN s.amount / 12 ELSE s.amount END)
-                        FILTER (WHERE s.cancelled_at IS NULL AND s.payment_method_id IS NOT NULL), 0) AS mrr
-        FROM subscriptions s
-        WHERE {paid} AND s.status = 'active' AND s.expires_at > :now
-        GROUP BY s.tier, s.period ORDER BY s.tier, s.period
-    """), p).all()
-    grants = db.execute(text("""
-        SELECT count(*) FROM subscriptions s
-        WHERE s.status = 'active' AND s.expires_at > :now AND s.yk_payment_id IS NULL
-          AND s.is_trial = FALSE
-    """), p).scalar()
-    upcoming = db.execute(text(f"""
-        SELECT count(*), COALESCE(sum(s.amount), 0) FROM subscriptions s
-        WHERE {paid} AND s.status = 'active' AND s.cancelled_at IS NULL
-          AND s.payment_method_id IS NOT NULL
-          AND s.expires_at > :now AND s.expires_at < :week
-    """), p).one()
-    ending = db.execute(text(f"""
-        SELECT count(*) FROM subscriptions s
-        WHERE {paid} AND s.status = 'active'
-          AND (s.cancelled_at IS NOT NULL OR s.payment_method_id IS NULL)
-          AND s.expires_at > :now AND s.expires_at < :week
-          AND NOT EXISTS (SELECT 1 FROM subscriptions o WHERE o.user_id = s.user_id
-                          AND o.id > s.id AND o.status = 'active')
-    """), p).scalar()
-
-    lines = [f"📊 <b>Биллинг за {day:%d.%m.%Y}</b>", ""]
-    lines.append(f"Оплат: <b>{day_pay[0]}</b> на <b>{_rub(day_pay[1])}</b>")
-    lines.append(
-        f"новых {_count_new(db, d0, d1, test_ids)}, "
-        f"отказов от автопродления {ev.get('autorenew_off', 0)}, "
-        f"закончилось {ev.get('expired', 0)}"
-    )
-    extra = []
-    if ev.get("payment_failed"):
-        extra.append(f"провалов списания {ev['payment_failed']}")
-    if abandoned:
-        extra.append(f"брошенных оформлений {abandoned}")
-    if ev.get("refund"):
-        extra.append(f"возвратов {ev['refund']}")
-    if ev.get("method_unlinked"):
-        extra.append(f"отвязок карт {ev['method_unlinked']}")
-    if extra:
-        lines.append(", ".join(extra))
-
-    lines += ["", f"С начала месяца: <b>{_rub(month_pay[1])}</b> ({month_pay[0]} оплат)"]
-    if month_refund[0]:
-        lines.append(f"Возвраты за месяц: {_rub(month_refund[1])} ({month_refund[0]})")
-
-    total_n = sum(r.n for r in active)
-    total_auto = sum(r.auto for r in active)
-    mrr = sum(float(r.mrr) for r in active)
-    lines += ["", f"Платных подписок сейчас: <b>{total_n}</b>, с автопродлением {total_auto}"]
-    for r in active:
-        lines.append(f"  {TIER_NAMES.get(r.tier, r.tier)} {PERIOD_NAMES.get(r.period, r.period)}: {r.n}")
-    if grants:
-        lines.append(f"  по инвайтам: {grants}")
-    lines.append(f"MRR с автопродлением: <b>{_rub(round(mrr))}</b>")
-    lines += ["", f"Ближайшие 7 дней: продлений {upcoming[0]} на {_rub(upcoming[1])}, закончатся без продления {ending}"]
-    return "\n".join(lines)
-
-
-def _count_new(db: Session, d0, d1, test_ids) -> int:
-    """Первые оплаты за день: у юзера нет более ранних оплаченных подписок."""
-    return db.execute(text("""
-        SELECT count(*) FROM subscriptions s
-        WHERE s.is_trial = FALSE AND s.yk_payment_id IS NOT NULL AND s.amount > 0
-          AND s.status IN ('active','expired','cancelled')
-          AND s.started_at >= :d0 AND s.started_at < :d1
-          AND NOT (s.user_id = ANY(:test))
-          AND NOT EXISTS (
-              SELECT 1 FROM subscriptions o
-              WHERE o.user_id = s.user_id AND o.id < s.id AND o.is_trial = FALSE
-                AND o.yk_payment_id IS NOT NULL AND o.amount > 0
-                AND o.status IN ('active','expired','cancelled','refunded'))
-    """), {"d0": d0, "d1": d1, "test": test_ids or [-1]}).scalar()
-
-
-def send_daily_digest(db: Session, force: bool = False) -> bool:
-    """Отправить сводку за вчера (МСК), один раз в сутки. Маркер — строка
-    digest_sent в billing_events: переживает рестарт оркестратора."""
-    if not _configured():
-        return False
-    now_msk = datetime.now(MSK)
-    if not force and now_msk.hour < DIGEST_HOUR_MSK:
-        return False
-    day = now_msk.date() - timedelta(days=1)
-    marker_start, _ = _day_bounds_msk(now_msk.date())
-    if not force:
-        # Лок на маркер: два параллельных прохода не отправят сводку дважды.
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtext('billing_digest'))"))
-        done = db.execute(text("""
-            SELECT 1 FROM billing_events
-            WHERE kind = 'digest_sent' AND created_at >= :t LIMIT 1
-        """), {"t": marker_start}).first()
-        if done:
-            db.rollback()
-            return False
-    msg = build_daily_digest(db, day)
-    ok = _send(msg)
-    if ok and not force:
-        db.execute(text("""
-            INSERT INTO billing_events (kind, notified_at, skipped) VALUES ('digest_sent', now(), TRUE)
-        """))
-    db.commit()
-    return ok

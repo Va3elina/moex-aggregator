@@ -998,14 +998,13 @@ class MainOrchestrator:
             log.error("sbp-reconcile failed: %s", e, exc_info=True)
 
         # Уведомления о биллинге в @frameadminbot: страховочный проход (основной
-        # путь — NOTIFY-листенер API сразу после коммита) + утренняя сводка за
-        # вчера, раз в сутки после 09:00 МСК (маркер в billing_events).
+        # путь — NOTIFY-листенер API сразу после коммита). Сводок нет, только
+        # события по факту.
         def _billing_notify():
-            from api.billing.admin_notify import dispatch_pending, send_daily_digest
+            from api.billing.admin_notify import dispatch_pending
             db = SessionLocal()
             try:
                 dispatch_pending(db)
-                send_daily_digest(db)
             finally:
                 db.close()
         try:
