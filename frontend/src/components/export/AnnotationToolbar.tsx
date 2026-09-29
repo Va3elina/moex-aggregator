@@ -17,7 +17,8 @@ export const COLOR_PRESETS = [
     { key: 'accent', value: 'var(--accent)', label: 'Акцент' },
     { key: 'primary', value: 'var(--text-primary)', label: 'Основной' },
     { key: 'red', value: '#E63946', label: 'Красный' },
-    { key: 'green', value: '#06A77D', label: 'Зелёный' },
+    // Зелёный = линия покупок «Открытых позиций» (--oi-green в editorial-light).
+    { key: 'green', value: '#0A6B3B', label: 'Зелёный' },
     { key: 'blue', value: '#1D7AB8', label: 'Синий' },
     // Фирменный цвет линии «Открытых позиций» (deep magenta, --oi-red в editorial).
     // Хардкодим, как red/green/blue — цвет рисунка не должен меняться от темы.
