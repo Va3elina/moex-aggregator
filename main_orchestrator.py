@@ -997,6 +997,22 @@ class MainOrchestrator:
         except Exception as e:
             log.error("sbp-reconcile failed: %s", e, exc_info=True)
 
+        # Уведомления о биллинге в @frameadminbot: страховочный проход (основной
+        # путь — NOTIFY-листенер API сразу после коммита) + утренняя сводка за
+        # вчера, раз в сутки после 09:00 МСК (маркер в billing_events).
+        def _billing_notify():
+            from api.billing.admin_notify import dispatch_pending, send_daily_digest
+            db = SessionLocal()
+            try:
+                dispatch_pending(db)
+                send_daily_digest(db)
+            finally:
+                db.close()
+        try:
+            await asyncio.to_thread(_billing_notify)
+        except Exception as e:
+            log.error("billing admin notify failed: %s", e, exc_info=True)
+
         return n
 
     async def run_billing_hourly(self) -> dict:

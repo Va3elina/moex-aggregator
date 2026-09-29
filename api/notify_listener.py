@@ -94,6 +94,7 @@ async def start_notify_listener():
             await conn.add_listener("data_updated", _on_notification)
             await conn.add_listener("anomaly", _on_anomaly)   # лента аномалий → SSE-нудж
             await conn.add_listener("alert_fire", _on_alert_fire)  # сработал алерт юзера → SSE-нудж
+            await conn.add_listener("billing_event", _on_billing_event)  # подписка/платёж → @frameadminbot
 
             # Keepalive loop
             while True:
@@ -119,6 +120,7 @@ async def start_notify_listener():
                     await conn.remove_listener("data_updated", _on_notification)
                     await conn.remove_listener("anomaly", _on_anomaly)
                     await conn.remove_listener("alert_fire", _on_alert_fire)
+                    await conn.remove_listener("billing_event", _on_billing_event)
                     await conn.close()
                 except Exception:
                     pass
@@ -145,6 +147,24 @@ async def _handle_anomaly(payload: str):
     except json.JSONDecodeError:
         data = {}
     await sse_manager.broadcast(json.dumps({"source": "anomaly", "id": data.get("id")}))
+
+
+def _on_billing_event(conn, pid, channel, payload):
+    """Триггер billing_events (миграция 106) → отправка в @frameadminbot.
+    NOTIFY получают все воркеры; дубль исключает SKIP LOCKED в dispatch_pending."""
+    asyncio.ensure_future(asyncio.to_thread(_dispatch_billing_events))
+
+
+def _dispatch_billing_events():
+    from api.database import SessionLocal
+    from api.billing.admin_notify import dispatch_pending
+    db = SessionLocal()
+    try:
+        dispatch_pending(db)
+    except Exception as e:
+        logger.error("billing_event dispatch failed: %s", e, exc_info=True)
+    finally:
+        db.close()
 
 
 def _on_alert_fire(conn, pid, channel, payload):
