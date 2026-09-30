@@ -22,6 +22,7 @@ from api.routers.auth import get_current_user
 # фича → переменная окружения со списком email через запятую
 _FEATURE_ENV = {
     "repaint": "REPAINT_EARLY_ACCESS",
+    "repo": "REPO_EARLY_ACCESS",
 }
 
 

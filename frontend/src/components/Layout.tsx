@@ -61,7 +61,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   // Экспериментальная вкладка — тест гипотезы «объём репо ≈ шорты» (5 бумаг).
   // adminOnly: обкатка перед возможным публичным релизом (сама страница и API
   // тоже гейтятся по role=admin).
-  { path: '/repo', label: 'Репо в акциях', badge: 'Тест', adminOnly: true },
+  { path: '/repo', label: 'Репо в акциях', badge: 'Тест', adminOnly: true, feature: 'repo' },
   // «Перекраска» — % free float, сменивший руки за месяц (CDV 4Ч / free float).
   // adminOnly-обкатка, как и «Репо»: страница и API под role=admin.
   // feature: ключ раннего доступа — пункт видят и юзеры из user.early_access.
