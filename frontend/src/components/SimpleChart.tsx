@@ -87,6 +87,10 @@ interface SimpleChartProps {
   showWatermark?: boolean;
   showDownloadButton?: boolean;
   showNavigator?: boolean;
+  /** Вторая и третья линии встают по X на дату основной, а не растягиваются
+   *  на всю ширину по собственному индексу. Нужно, когда их история короче
+   *  основной (спред к RUSFAR против цены): там, где данных нет, линии нет. */
+  alignSecondaryByTime?: boolean;
   /** Индекс первого видимого элемента при первом рендере и сбросе (смена data).
    *  Для дефолтного окна (напр. «последний год») при showNavigator: навигатор
    *  стартует с этого индекса, пользователь может растянуть назад до полной истории.
@@ -199,6 +203,7 @@ export default function SimpleChart({
   showDownloadButton = true,
   showWatermark = true,
   showNavigator = false,
+  alignSecondaryByTime = false,
   initialStartIndex,
   chartPadding,
   mobilePadRight,
@@ -755,26 +760,39 @@ export default function SimpleChart({
       })
       : [];
 
+    // alignSecondaryByTime: X доп. линии = X основной точки той же даты.
+    // Точки без пары в основном ряду отбрасываем.
+    const dateIndex = alignSecondaryByTime
+      ? new Map(displayData.map((d, i) => [d.time.slice(0, 10), i]))
+      : null;
+    const toOverlayPoints = (series: DataPoint[]) => {
+      if (!dateIndex) {
+        return series.map((d, i) => ({
+          x: scaleX(i, series.length),
+          y: scaleSecondaryY(d.value),
+          value: d.value,
+          time: d.time,
+        }));
+      }
+      const out: typeof points = [];
+      for (const d of series) {
+        const i = dateIndex.get(d.time.slice(0, 10));
+        if (i === undefined) continue;
+        out.push({ x: scaleX(i, displayData.length), y: scaleSecondaryY(d.value), value: d.value, time: d.time });
+      }
+      return out;
+    };
+
     // Secondary points
     let secondaryPoints: typeof points = [];
     if (showSecondary && displaySecondaryData && displaySecondaryData.length > 0) {
-      secondaryPoints = displaySecondaryData.map((d, i) => ({
-        x: scaleX(i, displaySecondaryData.length),
-        y: scaleSecondaryY(d.value),
-        value: d.value,
-        time: d.time,
-      }));
+      secondaryPoints = toOverlayPoints(displaySecondaryData);
     }
 
     // Third points
     let thirdPoints: typeof points = [];
     if (showThird && displayThirdData && displayThirdData.length > 0) {
-      thirdPoints = displayThirdData.map((d, i) => ({
-        x: scaleX(i, displayThirdData.length),
-        y: scaleSecondaryY(d.value),
-        value: d.value,
-        time: d.time,
-      }));
+      thirdPoints = toOverlayPoints(displayThirdData);
     }
 
     // Y ticks (primary - price)
@@ -820,7 +838,7 @@ export default function SimpleChart({
 
     return { points, secondaryPoints, thirdPoints, ohlcPoints, yTicks, secYTicks, xTicks,
              yMinVal, yMaxVal, secYMin, secYMax };
-  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType, axisZoom, yZoom]);
+  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType, axisZoom, yZoom, alignSecondaryByTime]);
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {
@@ -1142,8 +1160,15 @@ export default function SimpleChart({
     const snapX = Math.min(Math.max(mouseX, 0), chartWidth);
 
     const primaryPoint = interpolatePointOnLine(targetCalc.points, snapX);
-    const secondaryPoint = showSecondary ? interpolatePointOnLine(targetCalc.secondaryPoints, snapX) : null;
-    const thirdPoint = showThird ? interpolatePointOnLine(targetCalc.thirdPoints, snapX) : null;
+    // При alignSecondaryByTime линия может не доходить до краёв: вне её
+    // диапазона значения нет, крайнюю точку не подставляем.
+    const overlayPointAt = (pts: typeof targetCalc.points) => {
+      if (alignSecondaryByTime && pts.length > 0 &&
+          (snapX < pts[0].x - 1 || snapX > pts[pts.length - 1].x + 1)) return null;
+      return interpolatePointOnLine(pts, snapX);
+    };
+    const secondaryPoint = showSecondary ? overlayPointAt(targetCalc.secondaryPoints) : null;
+    const thirdPoint = showThird ? overlayPointAt(targetCalc.thirdPoints) : null;
 
     if (!primaryPoint) return;
 
@@ -1166,7 +1191,7 @@ export default function SimpleChart({
       time: primaryPoint.time,
       visible: true,
     });
-  }, [targetCalc, chartWidth, chartHeight, padding, showSecondary, showThird, onCreateAlert, alertAxes, isMobile]);
+  }, [targetCalc, chartWidth, chartHeight, padding, showSecondary, showThird, onCreateAlert, alertAxes, isMobile, alignSecondaryByTime]);
 
   // Mouse events
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
