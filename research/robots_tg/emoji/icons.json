@@ -1,0 +1,78 @@
+{
+ "вход": {
+  "file": "png/00.png",
+  "emoji": "🔵"
+ },
+ "прибыль": {
+  "file": "png/01.png",
+  "emoji": "🟢"
+ },
+ "убыток": {
+  "file": "png/02.png",
+  "emoji": "🔴"
+ },
+ "нет сделок": {
+  "file": "png/03.png",
+  "emoji": "⚪️"
+ },
+ "итоги": {
+  "file": "png/04.png",
+  "emoji": "📊"
+ },
+ "покупка": {
+  "file": "png/05.png",
+  "emoji": "↗️"
+ },
+ "продажа": {
+  "file": "png/06.png",
+  "emoji": "↘️"
+ },
+ "цель": {
+  "file": "png/07.png",
+  "emoji": "🎯"
+ },
+ "таймер": {
+  "file": "png/08.png",
+  "emoji": "⏱️"
+ },
+ "стоп": {
+  "file": "png/09.png",
+  "emoji": "⏹️"
+ },
+ "сбой": {
+  "file": "png/10.png",
+  "emoji": "⚠️"
+ },
+ "внимание": {
+  "file": "png/11.png",
+  "emoji": "ℹ️"
+ },
+ "лесенка 0": {
+  "file": "png/12.png",
+  "emoji": "0️⃣"
+ },
+ "лесенка 1": {
+  "file": "png/13.png",
+  "emoji": "1️⃣"
+ },
+ "лесенка 2": {
+  "file": "png/14.png",
+  "emoji": "2️⃣"
+ },
+ "лесенка 3": {
+  "file": "png/15.png",
+  "emoji": "3️⃣"
+ },
+ "лесенка 4": {
+  "file": "png/16.png",
+  "emoji": "4️⃣"
+ },
+ "лесенка 5": {
+  "file": "png/17.png",
+  "emoji": "5️⃣"
+ },
+ "лесенка 6": {
+  "file": "png/18.png",
+  "emoji": "6️⃣"
+ }
+}
