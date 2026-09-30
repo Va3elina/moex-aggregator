@@ -279,6 +279,8 @@ services:
       # Ранний доступ к тестовому индикатору «Перекраска» по email, через запятую
       # (api/services/early_access.py). Админы проходят без списка.
       - REPAINT_EARLY_ACCESS=${REPAINT_EARLY_ACCESS:-}
+      # То же для «Репо в акциях».
+      - REPO_EARLY_ACCESS=${REPO_EARLY_ACCESS:-}
       # Способ привязки карты для триала: init (1₽+возврат, рабочий по умолчанию)
       # или addcard (0₽, без чеков). addcard включать ТОЛЬКО после настройки
       # Success/Fail Add Card URL на терминале поддержкой T-Bank.

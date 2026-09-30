@@ -16,9 +16,9 @@
  * Источник репо — ISS MOEX (рынок ccp), бэкенд тянет историю on-demand:
  * первая загрузка тикера занимает несколько секунд, дальше из кэша.
  *
- * Admin-only (обкатка перед возможным публичным релизом): не-админ
- * редиректится на главную, nav-таб скрыт (adminOnly в Layout), API под
- * require_admin.
+ * Admin-only (обкатка перед возможным публичным релизом): не-админ без
+ * раннего доступа редиректится на главную, nav-таб скрыт (adminOnly в
+ * Layout), API под require_feature("repo").
  *
  * Структура (упрощённый вариант Buffett-страницы):
  *   • PageHeader
@@ -187,7 +187,8 @@ export default function RepoVolumePage() {
   // Admin-only: гость/не-админ — на главную. Проверка ПОСЛЕ всех хуков
   // (React hooks rule). Пока auth грузится — ничего не рендерим.
   if (authLoading) return null;
-  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  // Ранний доступ по email — early_access с бэка (api/services/early_access.py).
+  if (user?.role !== 'admin' && !user?.early_access?.includes('repo')) return <Navigate to="/" replace />;
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">

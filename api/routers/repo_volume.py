@@ -29,7 +29,8 @@ on-demand и держится в Redis. Холодная загрузка лик
            самой (шорты), а не ради денег. rate ≈ rusfar ⇒ фондирование.
 
 Вкладка admin-only (обкатка гипотезы перед публичным релизом) — оба
-эндпоинта под require_admin.
+эндпоинта под require_feature("repo"): админы и email из REPO_EARLY_ACCESS
+(api/services/early_access.py).
 """
 import asyncio
 from datetime import date
@@ -41,7 +42,7 @@ from sqlalchemy import text
 from api.cache import get_or_set
 from api.database import get_engine
 from api.logger import get_logger
-from api.routers.auth import require_admin
+from api.services.early_access import require_feature
 from api.routers.breadth import _adjust_for_split
 
 log = get_logger()
@@ -194,7 +195,7 @@ def _resolve_stock(ticker: str) -> str | None:
 
 
 @router.get("/assets")
-def get_repo_assets(user=Depends(require_admin)):
+def get_repo_assets(user=Depends(require_feature("repo"))):
     """Акции, по которым вкладка может построить график — те, у кого есть
     дневной спот за последние 2 месяца (репо тянется с ISS уже по факту)."""
     engine = get_engine()
@@ -210,7 +211,7 @@ def get_repo_assets(user=Depends(require_admin)):
 
 
 @router.get("/history")
-async def get_repo_history(ticker: str = "SFIN", user=Depends(require_admin)):
+async def get_repo_history(ticker: str = "SFIN", user=Depends(require_feature("repo"))):
     """
     Объём репо + спот-цена + ставки по одной бумаге.
     repo — ₽ за день (EQRP+PSRP), close — дневное закрытие спота,
