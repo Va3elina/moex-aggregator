@@ -352,6 +352,8 @@ export default function RepoVolumePage() {
               legendPosition="top"
               showDownloadButton={false}
               showNavigator={true}
+              // Ставки и RUSFAR короче цены — линии стоят на своих датах.
+              alignSecondaryByTime
               chartPadding={{ left: 120, right: 120 }}
             />
           )}
