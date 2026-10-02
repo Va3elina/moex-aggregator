@@ -71,6 +71,12 @@ def _send(text_msg: str) -> bool:
             timeout=10,
         )
         resp.raise_for_status()
+        # Релей может ответить 200 с ошибкой Телеграма в теле: верим только ok=true,
+        # иначе событие помечается отправленным, а в чат не попадает.
+        body = resp.json()
+        if not body.get("ok"):
+            log.warning("billing admin notify: telegram rejected: %s", str(body)[:300])
+            return False
         return True
     except Exception as e:
         log.warning("billing admin notify: send failed: %s", e)
