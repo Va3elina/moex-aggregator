@@ -16,7 +16,8 @@ import { useTranslation } from 'react-i18next';
 export const COLOR_PRESETS = [
     { key: 'accent', value: 'var(--accent)', label: 'Акцент' },
     { key: 'primary', value: 'var(--text-primary)', label: 'Основной' },
-    { key: 'red', value: '#E63946', label: 'Красный' },
+    // Красный = падающий столбец гистограммы «Денег в фондах» (--funds-flow-negative в editorial-light).
+    { key: 'red', value: '#C46847', label: 'Красный' },
     // Зелёный = линия покупок «Открытых позиций» (--oi-green в editorial-light).
     { key: 'green', value: '#0A6B3B', label: 'Зелёный' },
     { key: 'blue', value: '#1D7AB8', label: 'Синий' },
