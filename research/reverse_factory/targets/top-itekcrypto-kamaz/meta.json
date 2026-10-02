@@ -1,0 +1,16 @@
+{
+  "name": "ITEKCrypto Kamaz",
+  "source": "bybit",
+  "source_id": "k1cwzhKkWm/8mD/Pdp6nWw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=k1cwzhKkWm/8mD/Pdp6nWw==",
+  "description": "Плечо Х5 : Stop Loss OFF : Интервал сделок 5-10 дней :  т\\г ITEKCryptoS. Торговли может не быть более 5 дней, если нету рынка. Если вы подписались увидев у меня положительные сделки, то скорее всего я буду их вести до закрытия и при этом у вас не будут открываться новые. Нужно ждать нового цикла входа в сделки.\nПопробуй другие стратегии ITEKCrypto, ITEKCrypto R/R, ITEKCrypto Kamaz, ITEKCrypto  Moscvich, ITEKCrypto Niva, ITEKCrypto REINVEST X1, ITEKCrypto x1 Low Risk, ITEKCrypto REINVEST, ItekCrypto Priora. \nТорговля это риск, инвестируй сумму которую готов потерять. ",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 570,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-itekcrypto-kamaz"
+}

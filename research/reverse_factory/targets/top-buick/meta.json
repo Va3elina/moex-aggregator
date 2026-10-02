@@ -1,0 +1,16 @@
+{
+  "name": "Buick",
+  "source": "bybit",
+  "source_id": "EDGeX+g6QOUaMTDIm7gizw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=EDGeX+g6QOUaMTDIm7gizw==",
+  "description": " Do not forget to withdraw profit regularly. If all slots are filled use this link: https://i.bybit.com/1ri0abAd?action=inviteToCopy",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 1079,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-buick"
+}

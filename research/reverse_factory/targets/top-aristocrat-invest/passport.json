@@ -1,0 +1,179 @@
+{
+ "slug": "top-aristocrat-invest",
+ "name": "Aristocrat Invest",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=Sf5GrvLadWM0wzlsrRoKCw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.02",
+   "объём позиции растёт до ×21.5 от базового",
+   "94% сделок в плюс, стопа нет",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (74% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "не ясно, бот или человек",
+  "bot_signs": [],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 35,
+   "n_closed": 35,
+   "start": "2026-05-11",
+   "end": "2026-09-21",
+   "span_days": 133,
+   "per_week": 1.84,
+   "n_sym": 1,
+   "top_sym": {
+    "ETH": 35
+   },
+   "majors_share": 1.0,
+   "short_share": 0.14,
+   "win": 0.943,
+   "avg_win": 1.75,
+   "avg_loss": -30.14,
+   "payoff": 0.06,
+   "expectancy": -0.076,
+   "worst": -60.07,
+   "best": 9.11,
+   "hold_h": {
+    "p10": 1.3,
+    "p50": 17.3,
+    "p90": 86.4
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.4,
+    "15": 0.171,
+    "30": 0.143,
+    "60": 0.114,
+    "120": 0.086,
+    "240": 0.029,
+    "360": 0.057,
+    "480": 0.029,
+    "720": 0.029,
+    "1440": 0.029
+   },
+   "sec_le10_share": 0.26,
+   "top_hours": {
+    "21": 0.14,
+    "2": 0.09,
+    "12": 0.09,
+    "22": 0.09
+   },
+   "top4_hours_share": 0.4
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.8,
+     "share": 0.3
+    },
+    {
+     "level": 1.3,
+     "share": 0.18
+    },
+    {
+     "level": 0.3,
+     "share": 0.09
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.03
+  },
+  "averaging": {
+   "multi_order_share": 0.37,
+   "size_ratio": 1.02,
+   "add_dir": "усреднение вниз",
+   "max_orders": 6,
+   "cost_mult_max": 21.5,
+   "cost_cv": 1.39
+  },
+  "levels": {
+   "round_price_share": 0.02,
+   "repeat_price_share": 0.03,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 4,
+   "same_symbol_overlaps": 34
+  },
+  "context": {
+   "n": 35,
+   "4ч": {
+    "median": 0.72,
+    "with_share": 0.66
+   },
+   "24ч": {
+    "median": 2.34,
+    "with_share": 0.83
+   },
+   "72ч": {
+    "median": 2.02,
+    "with_share": 0.74
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.74
+  }
+ },
+ "equity": {
+  "months_up": 0.33,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.35,
+  "tail_verdict": "не ясно",
+  "total_x": 0.78,
+  "cagr": -0.646,
+  "max_dd": -0.751,
+  "dd_now": -0.658,
+  "days_in_dd_now": 37,
+  "vol": 2.125,
+  "sharpe": 0.68,
+  "by_year": {
+   "2026": -0.224
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.03,
+  "exit_on_candle_close": {
+   "15": 0.17,
+   "60": 0.09,
+   "240": 0.03,
+   "1440": 0.03
+  },
+  "hold_mode_h": 0.14,
+  "hold_mode_share": 0.03,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 1.17,
+   "win_atr_cv": 1.74,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 1.38,
+   "loss_k_median": -34.35
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

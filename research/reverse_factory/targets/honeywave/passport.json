@@ -1,0 +1,196 @@
+{
+ "slug": "honeywave",
+ "name": "honeywave",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=1cpXZFMrNidXorw/E2uPjw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "смешанный",
+  "insurance": "нейтрально",
+  "reasons": [],
+  "who": "не ясно, бот или человек",
+  "bot_signs": [],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 10,
+   "n_closed": 10,
+   "start": "2026-06-26",
+   "end": "2026-09-22",
+   "span_days": 88,
+   "per_week": 0.8,
+   "n_sym": 2,
+   "top_sym": {
+    "ETH": 9,
+    "LINK": 1
+   },
+   "majors_share": 0.9,
+   "short_share": 0.0,
+   "win": 0.8,
+   "avg_win": 8.48,
+   "avg_loss": -0.74,
+   "payoff": 11.45,
+   "expectancy": 6.636,
+   "worst": -1.39,
+   "best": 30.42,
+   "hold_h": {
+    "p10": 12.5,
+    "p50": 166.8,
+    "p90": 429.5
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.5,
+    "15": 0.3,
+    "30": 0.2,
+    "60": 0.0,
+    "120": 0.0,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.3,
+   "top_hours": {
+    "3": 0.2,
+    "4": 0.2,
+    "1": 0.2,
+    "12": 0.2
+   },
+   "top4_hours_share": 0.8
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.1,
+     "share": 0.12
+    },
+    {
+     "level": 0.5,
+     "share": 0.12
+    },
+    {
+     "level": 1.9,
+     "share": 0.12
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.2,
+   "size_ratio": 0.99,
+   "add_dir": "в обе стороны",
+   "max_orders": 4,
+   "cost_mult_max": 4.0,
+   "cost_cv": 0.66
+  },
+  "levels": {
+   "round_price_share": 0.12,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 3,
+   "same_symbol_overlaps": 5
+  },
+  "context": {
+   "n": 9
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.15,
+  "tail_verdict": "не ясно",
+  "total_x": 2.79,
+  "cagr": 66.23,
+  "max_dd": -0.28,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 1.917,
+  "sharpe": 2.87,
+  "by_year": {
+   "2026": 1.788
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 3.78,
+   "beta_down": -0.13,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.78,
+  "corr_full": 0.99,
+  "r2_full": 0.99,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "тренд": 0.4,
+   "возврат к среднему": 0.35,
+   "докупка (продажа страховки)": 0.25
+  },
+  "top_weights": {
+   "ETH [4ч] докупка шаг 2% тейк 2%": 0.168,
+   "BTC [4ч] докупка шаг 1% тейк 1%": 0.082,
+   "BTC [4ч] ход 2": 0.062,
+   "BTC [день] возврат 2": 0.052,
+   "ETH [день] ход 60": 0.051,
+   "BTC [4ч] возврат 1": 0.041,
+   "BTC [день] ход 1": 0.033,
+   "ETH [день] ход 1": 0.032,
+   "SOL [4ч] возврат 2": 0.032,
+   "BTC [4ч] возврат 3": 0.03
+  },
+  "best_single": {
+   "ETH [4ч] докупка шаг 2% тейк 2%": 0.91,
+   "ETH [4ч] докупка шаг 3% тейк 3%": 0.89,
+   "ETH [4ч] докупка шаг 1% тейк 1%": 0.89,
+   "ETH [день] ход 5": 0.83,
+   "ETH [день] EMA5/20": 0.83,
+   "ETH [день] ход 1": 0.83
+  },
+  "worst_single": {
+   "ETH [день] EMA50/200": -0.92,
+   "ETH [день] ход 200": -0.89,
+   "ETH [день] ход 100": -0.89,
+   "ETH [день] EMA20/100": -0.89
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.3,
+   "60": 0.1,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 9.87,
+  "hold_mode_share": 0.1,
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

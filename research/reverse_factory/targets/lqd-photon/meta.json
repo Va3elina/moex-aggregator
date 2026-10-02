@@ -1,0 +1,16 @@
+{
+  "name": "LQD PHOTON",
+  "source": "bybit",
+  "source_id": "ghJc1nSfo/CQ096M4+AETQ==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=ghJc1nSfo/CQ096M4+AETQ==",
+  "description": "PHOTON trading algorithm model with coverage of more than 50 trading pairs, part of the LIQVIDATOR algo trading project. Use standard settings with full duplication of trader’s actions. Oriented towards long-term trading (6-12 months). The minimum recommended subscription amount is 500 USDT. The maximum possible drawdown is approximately -30% (based on backtests over the past 6 years). Only use funds you can afford to lose! Find us: LIQVIDAT / LQDAGENT",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 257,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "lqd-photon"
+}

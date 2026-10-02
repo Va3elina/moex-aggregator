@@ -1,0 +1,236 @@
+{
+ "slug": "quantex",
+ "name": "Quantex",
+ "source": "invvo",
+ "url": "https://invvo.com/strategy/24",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "объём позиции растёт до ×129.6 от базового",
+   "99% сделок в плюс, стопа нет",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (93% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "площадка помечает как алгоритм",
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "тренд",
+   "match": false
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 1097,
+   "n_closed": 1092,
+   "start": "2024-11-04",
+   "end": "2026-02-02",
+   "span_days": 455,
+   "per_week": 16.88,
+   "n_sym": 7,
+   "top_sym": {
+    "XRP": 416,
+    "SOL": 255,
+    "ADA": 209,
+    "BNB": 122,
+    "SOLO": 58,
+    "ETH": 29
+   },
+   "majors_share": 0.76,
+   "short_share": 0.01,
+   "win": 0.999,
+   "avg_win": 1.53,
+   "avg_loss": -0.16,
+   "payoff": 9.81,
+   "expectancy": 1.526,
+   "worst": -0.16,
+   "best": 9.05,
+   "hold_h": {
+    "p10": 0.5,
+    "p50": 6.2,
+    "p90": 67.8
+   },
+   "open_now": 5
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.428,
+    "15": 0.14,
+    "30": 0.14,
+    "60": 0.149,
+    "120": 0.089,
+    "240": 0.047,
+    "360": 0.03,
+    "480": 0.023,
+    "720": 0.017,
+    "1440": 0.01
+   },
+   "sec_le10_share": null,
+   "top_hours": {
+    "14": 0.05,
+    "13": 0.05,
+    "7": 0.05,
+    "15": 0.05
+   },
+   "top4_hours_share": 0.21
+  },
+  "batching": {
+   "batch_share": 0.07,
+   "max_batch": 3,
+   "batches_ge3": 4
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.8,
+     "share": 0.25
+    },
+    {
+     "level": 0.9,
+     "share": 0.27
+    },
+    {
+     "level": 1.1,
+     "share": 0.11
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.03
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 129.6,
+   "cost_cv": 2.16
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.01,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 6,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 600,
+   "4ч": {
+    "median": 1.7,
+    "with_share": 0.92
+   },
+   "24ч": {
+    "median": 3.91,
+    "with_share": 0.94
+   },
+   "72ч": {
+    "median": 5.84,
+    "with_share": 0.89
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.93
+  }
+ },
+ "equity": {
+  "months_up": 0.73,
+  "worst_month_vs_avg_good": -2.9,
+  "dd_to_vol": -0.77,
+  "tail_verdict": "не ясно",
+  "total_x": 2.57,
+  "cagr": 1.089,
+  "max_dd": -0.564,
+  "dd_now": -0.486,
+  "days_in_dd_now": 29,
+  "vol": 0.73,
+  "sharpe": 1.37,
+  "by_year": {
+   "2024": 0.579,
+   "2025": 1.912,
+   "2026": -0.442
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": false,
+  "shape": {
+   "beta_up": 0.71,
+   "beta_down": 0.88,
+   "verdict": "в обычные дни в падениях участвует сильнее, чем в росте"
+  },
+  "corr_in": 0.92,
+  "corr_out": 0.74,
+  "corr_full": 0.87,
+  "r2_full": 0.76,
+  "split": "2025-06-23",
+  "days": 467,
+  "families": {
+   "возврат к среднему": 0.35,
+   "тренд": 0.3,
+   "докупка (продажа страховки)": 0.26,
+   "держание (бета рынка)": 0.09
+  },
+  "top_weights": {
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.208,
+   "XRP [4ч] держать": 0.058,
+   "BNB [4ч] докупка шаг 3% тейк 3%": 0.055,
+   "XRP [день] возврат 3": 0.043,
+   "BNB [день] возврат 3": 0.035,
+   "BTC [4ч] ход 3": 0.034,
+   "SOL [день] возврат 2": 0.029,
+   "ADA [день] ход 3": 0.029,
+   "BTC [4ч] возврат 5": 0.028,
+   "BTC [день] возврат 3": 0.023
+  },
+  "best_single": {
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.76,
+   "BTC [4ч] докупка шаг 2% тейк 2%": 0.7,
+   "BTC [4ч] держать": 0.67,
+   "BTC [день] держать": 0.67,
+   "BTC [4ч] докупка шаг 1% тейк 1%": 0.65,
+   "XRP [4ч] докупка шаг 3% тейк 3%": 0.63
+  },
+  "worst_single": {
+   "XRP [день] EMA5/20": -0.5,
+   "ADA [день] EMA5/20": -0.47,
+   "XRP [день] EMA10/50": -0.45,
+   "BTC [день] EMA5/20": -0.45
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.03,
+  "exit_on_candle_close": {
+   "15": 0.25,
+   "60": 0.08,
+   "240": 0.02,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.48,
+  "hold_mode_share": 0.01,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.47,
+   "win_atr_cv": 0.58,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 1.2,
+   "loss_k_median": -0.1
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

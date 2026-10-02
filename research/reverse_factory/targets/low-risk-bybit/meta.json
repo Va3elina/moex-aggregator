@@ -1,0 +1,25 @@
+{
+  "name": "Low Risk Bybit",
+  "source": "invvo",
+  "source_id": 19,
+  "url": "https://invvo.com/strategy/19",
+  "description": "- -",
+  "tags": [
+    "Микс",
+    "All",
+    "Алго"
+  ],
+  "active": false,
+  "run_date": "2025-04-09 17:09:50",
+  "exchange": "bybit",
+  "market": "futures",
+  "twr_pct": 31.78,
+  "max_dd_pct": -10.76,
+  "real_leverage_max": 1.57,
+  "profitable_pct": 66.57,
+  "time_note": "UTC (проверено сверкой цен со свечами)",
+  "price_note": "p_open = средняя позиции (cost/lots): доливки внутри, при нескольких стратегиях — неттинг",
+  "netted_suspect": false,
+  "history_note": "полная история с запуска",
+  "slug": "low-risk-bybit"
+}

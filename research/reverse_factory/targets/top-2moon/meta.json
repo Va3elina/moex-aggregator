@@ -1,0 +1,16 @@
+{
+  "name": "2Moon",
+  "source": "bybit",
+  "source_id": "BUIrXxYBt14yzj0GGyu2sw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=BUIrXxYBt14yzj0GGyu2sw==",
+  "description": "if there are not enough slots, follow the link: https://i.bybit.com/1abz7yps?action=inviteToCopy",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 544,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-2moon"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "livemore low risk (мои копии)",
+  "source": "bybit-copy-export",
+  "source_id": "livemore low risk",
+  "url": "",
+  "description": "",
+  "time_note": "UTC; вход — точное время ордера из журнала, выход — ближайшее закрывающее исполнение",
+  "price_note": "цены входа/выхода из истории копирования (средние позиции)",
+  "history_note": "только период подписки Вадима",
+  "slug": "copy-livemore-low-risk"
+}

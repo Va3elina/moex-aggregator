@@ -1,0 +1,244 @@
+{
+ "slug": "honest-algo-trader-2",
+ "name": "Honest Algo Trader 2",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=9ack0MY4IcKWNNnWJ6gWRA==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "тренд (вход по ходу движения)",
+  "insurance": "нейтрально",
+  "reasons": [
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (94% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 480 мин (51%)",
+   "66% входов в первые 10 секунд минуты"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 41,
+   "n_closed": 41,
+   "start": "2026-07-14",
+   "end": "2026-09-25",
+   "span_days": 73,
+   "per_week": 3.94,
+   "n_sym": 5,
+   "top_sym": {
+    "ETH": 15,
+    "SOL": 15,
+    "BTC": 6,
+    "XRP": 3,
+    "AVAX": 2
+   },
+   "majors_share": 0.95,
+   "short_share": 0.2,
+   "win": 0.488,
+   "avg_win": 2.79,
+   "avg_loss": -1.6,
+   "payoff": 1.74,
+   "expectancy": 0.539,
+   "worst": -3.36,
+   "best": 20.02,
+   "hold_h": {
+    "p10": 4.0,
+    "p50": 7.5,
+    "p90": 44.0
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 480,
+   "grid": {
+    "share": 0.512,
+    "ratio": 35.1,
+    "lag_min": 0.1
+   },
+   "grid_all": {
+    "5": 1.0,
+    "15": 1.0,
+    "30": 1.0,
+    "60": 1.0,
+    "120": 1.0,
+    "240": 1.0,
+    "360": 0.415,
+    "480": 0.512,
+    "720": 0.415,
+    "1440": 0.098
+   },
+   "sec_le10_share": 0.66,
+   "top_hours": {
+    "16": 0.32,
+    "12": 0.32,
+    "4": 0.12,
+    "0": 0.1
+   },
+   "top4_hours_share": 0.85
+  },
+  "batching": {
+   "batch_share": 0.24,
+   "max_batch": 2,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.3,
+     "share": 0.3
+    },
+    {
+     "level": 0.5,
+     "share": 0.1
+    },
+    {
+     "level": 0.1,
+     "share": 0.05
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.6,
+     "share": 0.24
+    },
+    {
+     "level": -3.1,
+     "share": 0.19
+    },
+    {
+     "level": -1.5,
+     "share": 0.14
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 1.6,
+   "cost_cv": 0.23
+  },
+  "levels": {
+   "round_price_share": 0.02,
+   "repeat_price_share": 0.05,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 4,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 41,
+   "4ч": {
+    "median": 0.73,
+    "with_share": 1.0
+   },
+   "24ч": {
+    "median": 1.25,
+    "with_share": 0.88
+   },
+   "72ч": {
+    "median": 0.35,
+    "with_share": 0.61
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.94
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.25,
+  "tail_verdict": "не ясно",
+  "total_x": 1.05,
+  "cagr": 0.227,
+  "max_dd": -0.055,
+  "dd_now": -0.025,
+  "days_in_dd_now": 4,
+  "vol": 0.222,
+  "sharpe": 1.03,
+  "by_year": {
+   "2026": 0.051
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 0.34,
+   "beta_down": 0.1,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.5,
+  "corr_full": 0.96,
+  "r2_full": 0.92,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "тренд": 0.53,
+   "возврат к среднему": 0.32,
+   "докупка (продажа страховки)": 0.14
+  },
+  "top_weights": {
+   "BTC [4ч] ход 20": 0.082,
+   "SOL [4ч] докупка шаг 2% тейк 2%": 0.065,
+   "BTC [день] ход 1": 0.055,
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.052,
+   "BTC [день] возврат 2": 0.051,
+   "BTC [день] ход 100": 0.047,
+   "SOL [4ч] ход 3": 0.035,
+   "XRP [4ч] возврат 5": 0.033,
+   "SOL [день] EMA50/200": 0.031,
+   "BTC [день] возврат 5": 0.03
+  },
+  "best_single": {
+   "BTC [день] держать": 0.6,
+   "BTC [4ч] ход 200": 0.6,
+   "BTC [4ч] держать": 0.6,
+   "SOL [день] держать": 0.59,
+   "SOL [4ч] держать": 0.58,
+   "BTC [4ч] ход 10": 0.58
+  },
+  "worst_single": {
+   "SOL [день] возврат 1": -0.53,
+   "SOL [4ч] возврат 2": -0.53,
+   "SOL [4ч] возврат 3": -0.51,
+   "XRP [день] EMA50/200": -0.48
+  }
+ },
+ "entry": {
+  "skipped": "мало позиций (41 < 60)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.49,
+   "60": 0.39,
+   "240": 0.39,
+   "1440": 0.02
+  },
+  "hold_mode_h": 4.0,
+  "hold_mode_share": 0.24,
+  "atr": {
+   "interval": "360",
+   "win_pct_cv": 1.74,
+   "win_atr_cv": 2.2,
+   "loss_pct_cv": 0.65,
+   "loss_atr_cv": 0.56,
+   "win_k_median": 0.46,
+   "loss_k_median": -1.05
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "wizard31337",
+  "source": "bybit",
+  "source_id": "pWOCK0qxEm7vvnv0bg8b9g==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=pWOCK0qxEm7vvnv0bg8b9g==",
+  "description": "",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 747,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-wizard31337"
+}

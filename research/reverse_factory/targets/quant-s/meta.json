@@ -1,0 +1,16 @@
+{
+  "name": "Quant-S",
+  "source": "bybit",
+  "source_id": "4Pf1hj/Su6XoH51r/fnIrQ==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=4Pf1hj/Su6XoH51r/fnIrQ==",
+  "description": "TRX Institutional Grid Algo\n\nAsset: TRX/USDT only.\nMethod: Positional Counter-Trend.\nEntries: Initial order is 2.5% to 3.5% of equity, followed by a grid of additional entries (DCA). Order sizes grow proportionally as the account capital increases.\nLeverage: 20x. This allows the strategy to build a grid of positions with low margin usage per trade.\n\nAutomation: All entries and exits via TradingView Webhooks. Zero emotions.\n\nRisks: Occasional losses may occur as the algorithm executes a Stop Loss (SL) to protect capital according to its signals. Equity growth is not linear.\n\nCopying: Use Smart Copy mode. Min. balance: 200 USDT.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 176,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "quant-s"
+}

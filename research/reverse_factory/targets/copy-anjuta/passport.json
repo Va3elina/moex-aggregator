@@ -1,0 +1,190 @@
+{
+ "slug": "copy-anjuta",
+ "name": "Anjuta (мои копии)",
+ "source": "bybit-copy-export",
+ "url": "",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "контртренд (вход против движения)",
+  "insurance": "нейтрально",
+  "reasons": [
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (35% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "не ясно, бот или человек",
+  "bot_signs": [],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 315,
+   "n_closed": 315,
+   "start": "2025-01-29",
+   "end": "2025-03-11",
+   "span_days": 41,
+   "per_week": 54.15,
+   "n_sym": 2,
+   "top_sym": {
+    "XRP": 191,
+    "DOGE": 124
+   },
+   "majors_share": 0.61,
+   "short_share": 0.0,
+   "win": 0.54,
+   "avg_win": 1.02,
+   "avg_loss": -3.72,
+   "payoff": 0.27,
+   "expectancy": -1.165,
+   "worst": -18.62,
+   "best": 8.63,
+   "hold_h": {
+    "p10": 0.1,
+    "p50": 1.3,
+    "p90": 13.7
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.438,
+    "15": 0.184,
+    "30": 0.098,
+    "60": 0.083,
+    "120": 0.041,
+    "240": 0.019,
+    "360": 0.01,
+    "480": 0.013,
+    "720": 0.003,
+    "1440": 0.003
+   },
+   "sec_le10_share": 0.14,
+   "top_hours": {
+    "0": 0.11,
+    "13": 0.08,
+    "2": 0.08,
+    "15": 0.08
+   },
+   "top4_hours_share": 0.35
+  },
+  "batching": {
+   "batch_share": 0.13,
+   "max_batch": 9,
+   "batches_ge3": 12
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.5,
+     "share": 0.31
+    },
+    {
+     "level": 0.7,
+     "share": 0.16
+    },
+    {
+     "level": 1.0,
+     "share": 0.13
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -14.5,
+     "share": 0.07
+    },
+    {
+     "level": -0.9,
+     "share": 0.13
+    },
+    {
+     "level": -0.2,
+     "share": 0.14
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.15
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 48.1,
+   "cost_cv": 2.43
+  },
+  "levels": {
+   "round_price_share": 0.01,
+   "repeat_price_share": 0.12,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 37,
+   "same_symbol_overlaps": 292
+  },
+  "context": {
+   "n": 315,
+   "4ч": {
+    "median": -0.28,
+    "with_share": 0.45
+   },
+   "24ч": {
+    "median": -3.4,
+    "with_share": 0.26
+   },
+   "72ч": {
+    "median": -2.81,
+    "with_share": 0.43
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.35
+  }
+ },
+ "equity": {
+  "months_up": 0.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.39,
+  "tail_verdict": "не ясно",
+  "total_x": 0.91,
+  "cagr": -0.557,
+  "max_dd": -0.09,
+  "dd_now": -0.09,
+  "days_in_dd_now": 6,
+  "vol": 0.232,
+  "sharpe": -3.4,
+  "by_year": {
+   "2025": -0.089
+  }
+ },
+ "equity_approx": true,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.15,
+  "exit_on_candle_close": {
+   "15": 0.09,
+   "60": 0.01,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 44.98,
+  "hold_mode_share": 0.03,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 1.23,
+   "win_atr_cv": 0.9,
+   "loss_pct_cv": 1.26,
+   "loss_atr_cv": 1.48,
+   "win_k_median": 0.34,
+   "loss_k_median": -0.8
+  },
+  "verdict": [
+   "тейк похож на ≈0.34×ATR"
+  ]
+ }
+}

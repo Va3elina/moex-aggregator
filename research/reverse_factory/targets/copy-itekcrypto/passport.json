@@ -1,0 +1,204 @@
+{
+ "slug": "copy-itekcrypto",
+ "name": "ITEKCrypto (мои копии)",
+ "source": "bybit-copy-export",
+ "url": "",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "контртренд (вход против движения)",
+  "insurance": "нейтрально",
+  "reasons": [
+   "часто в плюс (69%), но плюс меньше минуса",
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (33% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "пачки входов по разным монетам"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 2797,
+   "n_closed": 2797,
+   "start": "2024-10-19",
+   "end": "2025-02-03",
+   "span_days": 107,
+   "per_week": 183.7,
+   "n_sym": 13,
+   "top_sym": {
+    "1000PEPE": 1101,
+    "SOL": 777,
+    "DOGE": 669,
+    "SHIB1000": 76,
+    "XRP": 50,
+    "10000SATS": 40
+   },
+   "majors_share": 0.3,
+   "short_share": 0.0,
+   "win": 0.692,
+   "avg_win": 5.48,
+   "avg_loss": -7.11,
+   "payoff": 0.77,
+   "expectancy": 1.599,
+   "worst": -30.76,
+   "best": 38.57,
+   "hold_h": {
+    "p10": 0.7,
+    "p50": 23.0,
+    "p90": 132.9
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.41,
+    "15": 0.133,
+    "30": 0.112,
+    "60": 0.117,
+    "120": 0.058,
+    "240": 0.019,
+    "360": 0.019,
+    "480": 0.007,
+    "720": 0.006,
+    "1440": 0.003
+   },
+   "sec_le10_share": 0.16,
+   "top_hours": {
+    "10": 0.07,
+    "17": 0.07,
+    "15": 0.06,
+    "13": 0.06
+   },
+   "top4_hours_share": 0.26
+  },
+  "batching": {
+   "batch_share": 0.35,
+   "max_batch": 55,
+   "batches_ge3": 264
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.9,
+     "share": 0.07
+    },
+    {
+     "level": 1.5,
+     "share": 0.05
+    },
+    {
+     "level": 1.0,
+     "share": 0.04
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.3,
+     "share": 0.07
+    },
+    {
+     "level": -1.0,
+     "share": 0.05
+    },
+    {
+     "level": -0.1,
+     "share": 0.04
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.02
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 100.4,
+   "cost_cv": 1.41
+  },
+  "levels": {
+   "round_price_share": 0.01,
+   "repeat_price_share": 0.13,
+   "grid": {
+    "sym": "SOL",
+    "step": 0.01,
+    "step_pct": 0.0,
+    "levels": 76,
+    "on_grid": 1.0
+   }
+  },
+  "concurrency": {
+   "max_open": 345,
+   "same_symbol_overlaps": 2556
+  },
+  "context": {
+   "n": 600,
+   "4ч": {
+    "median": -1.08,
+    "with_share": 0.34
+   },
+   "24ч": {
+    "median": -2.45,
+    "with_share": 0.32
+   },
+   "72ч": {
+    "median": -5.32,
+    "with_share": 0.24
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.33
+  }
+ },
+ "equity": {
+  "months_up": 0.75,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.38,
+  "tail_verdict": "не ясно",
+  "total_x": 1.86,
+  "cagr": 7.211,
+  "max_dd": -0.403,
+  "dd_now": -0.403,
+  "days_in_dd_now": 9,
+  "vol": 1.058,
+  "sharpe": 2.51,
+  "by_year": {
+   "2024": 1.249,
+   "2025": -0.171
+  }
+ },
+ "equity_approx": true,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.02,
+  "exit_on_candle_close": {
+   "15": 0.16,
+   "60": 0.04,
+   "240": 0.02,
+   "1440": 0.01
+  },
+  "hold_mode_h": 0.23,
+  "hold_mode_share": 0.01,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.58,
+   "win_atr_cv": 0.58,
+   "loss_pct_cv": 0.42,
+   "loss_atr_cv": 0.61,
+   "win_k_median": 2.32,
+   "loss_k_median": -9.99
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

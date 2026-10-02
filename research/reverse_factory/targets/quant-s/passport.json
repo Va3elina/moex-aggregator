@@ -1,0 +1,189 @@
+{
+ "slug": "quant-s",
+ "name": "Quant-S",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=4Pf1hj/Su6XoH51r/fnIrQ==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.0",
+   "100% сделок в плюс, стопа нет"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "докупка/сетка, контртренд",
+   "match": true
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 3,
+   "n_closed": 3,
+   "start": "2026-06-04",
+   "end": "2026-09-20",
+   "span_days": 108,
+   "per_week": 0.2,
+   "n_sym": 2,
+   "top_sym": {
+    "AKE": 2,
+    "TRX": 1
+   },
+   "majors_share": 0.0,
+   "short_share": 0.33,
+   "win": 1.0,
+   "avg_win": 12.93,
+   "avg_loss": 0.0,
+   "payoff": null,
+   "expectancy": 12.93,
+   "worst": 1.93,
+   "best": 30.83,
+   "hold_h": {
+    "p10": 3.2,
+    "p50": 5.4,
+    "p90": 1338.0
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.667,
+    "15": 0.333,
+    "30": 0.0,
+    "60": 0.0,
+    "120": 0.0,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.33,
+   "top_hours": {
+    "15": 0.33,
+    "17": 0.33,
+    "6": 0.33
+   },
+   "top4_hours_share": 1.0
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.33,
+   "size_ratio": 1.0,
+   "add_dir": "усреднение вниз",
+   "max_orders": 5
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 1,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "skipped": "нет свечей"
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.25,
+  "tail_verdict": "не ясно",
+  "total_x": 1.5,
+  "cagr": 4.328,
+  "max_dd": -0.196,
+  "dd_now": -0.051,
+  "days_in_dd_now": 4,
+  "vol": 0.792,
+  "sharpe": 2.51,
+  "by_year": {
+   "2026": 0.503
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 0.27,
+   "beta_down": 1.98,
+   "verdict": "в обычные дни в падениях участвует сильнее, чем в росте"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.61,
+  "corr_full": 1.0,
+  "r2_full": 0.99,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "держание (бета рынка)": 0.34,
+   "докупка (продажа страховки)": 0.28,
+   "тренд": 0.22,
+   "возврат к среднему": 0.16
+  },
+  "top_weights": {
+   "TRX [4ч] докупка шаг 3% тейк 3%": 0.251,
+   "TRX [4ч] держать": 0.219,
+   "TRX [день] держать": 0.122,
+   "TRX [день] возврат 5": 0.046,
+   "TRX [день] ход 100": 0.036,
+   "BTC [4ч] докупка шаг 2% тейк 2%": 0.023,
+   "TRX [день] ход 20": 0.018,
+   "TRX [4ч] ход 2": 0.016,
+   "TRX [день] ход 1": 0.016,
+   "SOL [день] возврат 3": 0.014
+  },
+  "best_single": {
+   "TRX [день] держать": 0.95,
+   "TRX [4ч] держать": 0.95,
+   "TRX [4ч] докупка шаг 2% тейк 2%": 0.94,
+   "TRX [4ч] докупка шаг 1% тейк 1%": 0.94,
+   "TRX [4ч] докупка шаг 3% тейк 3%": 0.9,
+   "TRX [день] EMA50/200": 0.89
+  },
+  "worst_single": {
+   "TRX [день] возврат 2": -0.45,
+   "BTC [день] EMA50/200": -0.31,
+   "TRX [день] пробой 20": -0.3,
+   "TRX [день] возврат 1": -0.27
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.0,
+   "60": 0.0,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 2.69,
+  "hold_mode_share": 0.33,
+  "verdict": [
+   "выход по времени ≈ через 2.69 ч"
+  ]
+ }
+}

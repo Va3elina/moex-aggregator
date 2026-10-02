@@ -1,0 +1,251 @@
+{
+ "slug": "team-core",
+ "name": "Team Core",
+ "source": "invvo",
+ "url": "https://invvo.com/strategy/8",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "скальпер",
+  "insurance": "нейтрально",
+  "reasons": [
+   "сделка держится ~0 ч, 34.2 сделок в неделю",
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (22% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "пачки входов по разным монетам"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 5325,
+   "n_closed": 5325,
+   "start": "2022-10-16",
+   "end": "2025-10-10",
+   "span_days": 1090,
+   "per_week": 34.2,
+   "n_sym": 277,
+   "top_sym": {
+    "SOL": 171,
+    "PEOPLE": 154,
+    "DOGE": 146,
+    "MASK": 137,
+    "TRB": 124,
+    "APT": 120
+   },
+   "majors_share": 0.07,
+   "short_share": 0.35,
+   "win": 0.448,
+   "avg_win": 1.03,
+   "avg_loss": -0.76,
+   "payoff": 1.35,
+   "expectancy": 0.039,
+   "worst": -14.78,
+   "best": 19.84,
+   "hold_h": {
+    "p10": 0.0,
+    "p50": 0.0,
+    "p90": 0.0
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.428,
+    "15": 0.171,
+    "30": 0.148,
+    "60": 0.137,
+    "120": 0.1,
+    "240": 0.058,
+    "360": 0.045,
+    "480": 0.039,
+    "720": 0.024,
+    "1440": 0.016
+   },
+   "sec_le10_share": null,
+   "top_hours": {
+    "18": 0.08,
+    "19": 0.08,
+    "16": 0.08,
+    "15": 0.07
+   },
+   "top4_hours_share": 0.31
+  },
+  "batching": {
+   "batch_share": 0.39,
+   "max_batch": 65,
+   "batches_ge3": 440
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.1,
+     "share": 0.27
+    },
+    {
+     "level": 0.3,
+     "share": 0.16
+    },
+    {
+     "level": 0.5,
+     "share": 0.13
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.1,
+     "share": 0.34
+    },
+    {
+     "level": -1.1,
+     "share": 0.18
+    },
+    {
+     "level": -0.3,
+     "share": 0.11
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.7
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 15411.4,
+   "cost_cv": 2.1
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.05,
+   "grid": {
+    "sym": "IOTX",
+    "step": 1e-05,
+    "step_pct": 0.07,
+    "levels": 14,
+    "on_grid": 1.0
+   }
+  },
+  "concurrency": {
+   "max_open": 7,
+   "same_symbol_overlaps": 144
+  },
+  "context": {
+   "n": 195,
+   "4ч": {
+    "median": -2.65,
+    "with_share": 0.21
+   },
+   "24ч": {
+    "median": -5.39,
+    "with_share": 0.24
+   },
+   "72ч": {
+    "median": -6.41,
+    "with_share": 0.3
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.22
+  }
+ },
+ "equity": {
+  "months_up": 0.5,
+  "worst_month_vs_avg_good": -0.6,
+  "dd_to_vol": -0.7,
+  "tail_verdict": "хвост умеренный: худший месяц сопоставим с обычным хорошим",
+  "total_x": 5.19,
+  "cagr": 0.532,
+  "max_dd": -0.167,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.238,
+  "sharpe": 1.91,
+  "by_year": {
+   "2022": 0.24,
+   "2023": 1.134,
+   "2024": 0.848,
+   "2025": 0.062,
+   "2026": 0.0
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": false,
+  "shape": {
+   "beta_up": 0.05,
+   "beta_down": -0.13,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 0.41,
+  "corr_out": 0.0,
+  "corr_full": 0.31,
+  "r2_full": 0.09,
+  "split": "2024-09-20",
+  "days": 1410,
+  "families": {
+   "тренд": 0.5,
+   "возврат к среднему": 0.46,
+   "докупка (продажа страховки)": 0.04
+  },
+  "top_weights": {
+   "BTC [4ч] возврат 2": 0.1,
+   "BTC [день] ход 3": 0.09,
+   "BTC [4ч] ход 5": 0.074,
+   "ETH [день] возврат 3": 0.065,
+   "SOL [4ч] возврат 3": 0.062,
+   "BTC [4ч] ход 3": 0.059,
+   "BTC [день] возврат 5": 0.055,
+   "ETH [4ч] ход 10": 0.044,
+   "ETH [4ч] докупка шаг 3% тейк 3%": 0.043,
+   "BTC [день] возврат 2": 0.04
+  },
+  "best_single": {
+   "BTC [4ч] ход 5": 0.1,
+   "SOL [4ч] возврат 3": 0.08,
+   "ETH [4ч] ход 10": 0.07,
+   "SOL [день] ход 1": 0.07,
+   "BTC [4ч] ход 3": 0.07,
+   "SOL [день] ход 2": 0.06
+  },
+  "worst_single": {
+   "BTC [4ч] EMA20/100": -0.13,
+   "BTC [4ч] ход 100": -0.12,
+   "BTC [день] ход 60": -0.1,
+   "BTC [день] ход 40": -0.1
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.7,
+  "exit_on_candle_close": {
+   "15": 0.17,
+   "60": 0.06,
+   "240": 0.02,
+   "1440": 0.01
+  },
+  "hold_mode_h": 0.0,
+  "hold_mode_share": 0.62,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 1.11,
+   "win_atr_cv": 2.01,
+   "loss_pct_cv": 0.93,
+   "loss_atr_cv": 1.49,
+   "win_k_median": 0.13,
+   "loss_k_median": -0.12
+  },
+  "verdict": [
+   "70% выходов сразу сменяются новым входом — переворот или перезапуск бота"
+  ]
+ }
+}

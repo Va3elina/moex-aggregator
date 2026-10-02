@@ -1,0 +1,190 @@
+{
+ "slug": "top-cutemewtrader",
+ "name": "CuteMewTrader",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=LgbhDGwPVRPMBhnC7IAJAA==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.0",
+   "объём позиции растёт до ×17.1 от базового",
+   "выход на фиксированном проценте от средней: +1.0% (74%), +1.2% (17%), +1.5% (9%) прибыльных",
+   "100% сделок в плюс, стопа нет",
+   "контекст входа: вход без выраженной стороны (55% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 60 мин (100%)",
+   "фиксированные уровни выхода"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 35,
+   "n_closed": 35,
+   "start": "2026-06-17",
+   "end": "2026-09-17",
+   "span_days": 92,
+   "per_week": 2.66,
+   "n_sym": 1,
+   "top_sym": {
+    "XRP": 35
+   },
+   "majors_share": 1.0,
+   "short_share": 0.0,
+   "win": 1.0,
+   "avg_win": 1.11,
+   "avg_loss": 0.0,
+   "payoff": null,
+   "expectancy": 1.111,
+   "worst": 1.0,
+   "best": 1.52,
+   "hold_h": {
+    "p10": 0.5,
+    "p50": 8.3,
+    "p90": 170.5
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 60,
+   "grid": {
+    "share": 1.0,
+    "ratio": 10.0,
+    "lag_min": 0.6
+   },
+   "grid_all": {
+    "5": 1.0,
+    "15": 1.0,
+    "30": 1.0,
+    "60": 1.0,
+    "120": 0.0,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.17,
+   "top_hours": {
+    "1": 1.0
+   },
+   "top4_hours_share": 1.0
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.0,
+     "share": 0.74
+    },
+    {
+     "level": 1.2,
+     "share": 0.17
+    },
+    {
+     "level": 1.5,
+     "share": 0.09
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": {
+    "level": 1.0,
+    "share": 0.74
+   },
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.23,
+   "size_ratio": 1.0,
+   "add_dir": "усреднение вниз",
+   "max_orders": 17,
+   "cost_mult_max": 17.1,
+   "cost_cv": 1.54
+  },
+  "levels": {
+   "round_price_share": 0.01,
+   "repeat_price_share": 0.08,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 2,
+   "same_symbol_overlaps": 2
+  },
+  "context": {
+   "n": 35,
+   "4ч": {
+    "median": -0.16,
+    "with_share": 0.4
+   },
+   "24ч": {
+    "median": 0.89,
+    "with_share": 0.71
+   },
+   "72ч": {
+    "median": 1.61,
+    "with_share": 0.63
+   },
+   "verdict": "вход без выраженной стороны",
+   "with_share": 0.55
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.36,
+  "tail_verdict": "не ясно",
+  "total_x": 1.05,
+  "cagr": 0.214,
+  "max_dd": -0.048,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.134,
+  "sharpe": 1.51,
+  "by_year": {
+   "2026": 0.048
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "мало позиций (35 < 60)"
+ },
+ "exits": {
+  "fixed_tp": {
+   "level": 1.0,
+   "share": 0.74
+  },
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.09,
+   "60": 0.0,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 3.07,
+  "hold_mode_share": 0.06,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.13,
+   "win_atr_cv": 0.39,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 1.07,
+   "loss_k_median": null
+  },
+  "verdict": [
+   "тейк фиксированный ≈ +1.0%"
+  ]
+ }
+}

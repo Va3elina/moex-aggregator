@@ -1,0 +1,132 @@
+//@version=5
+// «Спокойный Kamaz» — проверка сигналов и сделок на TradingView.
+// График: 1 МИНУТА, бессрочные контракты Bybit (например BYBIT:NEARUSDT.P). Правила — как в боте:
+//   вход после пролива: RSI(7) на 3-минутках ≤ 15, цена ≥ 3% ниже максимума часа, за 2 часа −2% (пороги × масштаб);
+//   лесенка из 6 докупок ниже цены входа: −1.4 / −2.8 / −4.5 / −6.0 / −7.8 / −9.0% × масштаб,
+//   объёмы 1 : 3.08 : 4.19 : 4.82 : 5.54 : 6.37 : 7.33 (вся лесенка = ячейка);
+//   выход: +1.94% (без докупок) или +1.6% от средней; таймер — 12 ч после последней покупки; стопа нет;
+//   не входить, если монета за сутки упала на 25% × масштаб и больше.
+// Масштаб = медианный дневной размах монеты за 90 дней / такой же у DOGE, в пределах 0.4…1.0 (для спокойных монет
+// уровни ближе). Отличия от бота: TradingView может взять цель в той же минутке, что и докупку, и считает одну
+// комиссию на все заявки (0.04%) — поэтому единичные сделки могут немного расходиться.
+strategy("Спокойный Kamaz", overlay = true, pyramiding = 7, initial_capital = 10000,
+     commission_type = strategy.commission.percent, commission_value = 0.04,
+     process_orders_on_close = false, calc_on_every_tick = false, max_bars_back = 1500)
+
+slot    = input.float(10000, "Ячейка на монету, $")
+rsiThr  = input.float(15,   "RSI(7) на 3-минутках не выше")
+drop1h  = input.float(3.0,  "Ниже максимума часа, %")
+drop2h  = input.float(2.0,  "Падение за 2 часа, %")
+tp1     = input.float(1.94, "Цель без докупок, %")
+tpn     = input.float(1.6,  "Цель после докупок (от средней), %")
+timerH  = input.float(12,   "Таймер после последней покупки, ч")
+useSkip = input.bool(true,  "Не входить после обвала за сутки (−25%)")
+useBtc  = input.bool(false, "Фильтр по биткоину (не входить, пока BTC ниже минимума 12 ч)")
+useScl  = input.bool(true,  "Уровни под размах монеты (к DOGE)")
+
+if timeframe.period != "1"
+    runtime.error("Стратегия рассчитана на 1-минутный график")
+
+// ── масштаб: известен с начала дня (медиана за 90 предыдущих дней)
+f_rng() => ta.median((high - low) / close, 90)[1]
+myRng   = request.security(syminfo.tickerid, "D", f_rng(), lookahead = barmerge.lookahead_on)
+dogeRng = request.security("BYBIT:DOGEUSDT.P", "D", f_rng(), lookahead = barmerge.lookahead_on)
+scl     = useScl and myRng > 0 and dogeRng > 0 ? math.max(0.4, math.min(1.0, myRng / dogeRng)) : 1.0
+
+// ── RSI(7) последней ЗАКРЫТОЙ 3-минутки (сетка Bybit: 3-минутка закрывается вместе с минуткой, открытой в :02, :05, …)
+var float c3prev = na
+var float avgUp  = na
+var float avgDn  = na
+var float r3     = na
+if minute(time) % 3 == 2
+    if not na(c3prev)
+        d = close - c3prev
+        avgUp := na(avgUp) ? math.max(d, 0.0) : (avgUp * 6 + math.max(d, 0.0)) / 7
+        avgDn := na(avgDn) ? math.max(-d, 0.0) : (avgDn * 6 + math.max(-d, 0.0)) / 7
+        r3 := avgDn == 0 ? 100.0 : 100.0 - 100.0 / (1.0 + avgUp / avgDn)
+    c3prev := close
+
+hi60   = ta.highest(high, 60)
+fromHi = (close / hi60 - 1) * 100
+ch120  = (close / close[120] - 1) * 100
+ch1440 = (close / close[1440] - 1) * 100
+btcC   = request.security("BYBIT:BTCUSDT.P", "1", close)
+btcL12 = request.security("BYBIT:BTCUSDT.P", "1", ta.lowest(low[30], 720))
+btcDown = btcC <= btcL12
+
+sig = not na(r3) and r3 <= rsiThr and fromHi <= -drop1h * scl and ch120 <= -drop2h * scl
+if useSkip
+    sig := sig and ch1440 > -25 * scl
+if useBtc
+    sig := sig and not btcDown
+
+// ── сделки
+levels = array.from(1.4, 2.8, 4.5, 6.0, 7.8, 9.0)
+sizes  = array.from(1.0, 3.08, 4.19, 4.82, 5.54, 6.37, 7.33)
+var float p0 = na
+var float bu = na
+var float sclE = na
+var int lastFill = na
+var bool ladderOn = false
+var int nOpen = 0
+inPos = strategy.position_size > 0
+
+// сигнал на закрытой минутке → покупка по открытию следующей
+if sig and not inPos and not ladderOn and strategy.opentrades == 0
+    bu := math.min(slot, strategy.equity) / 32.33
+    sclE := scl
+    strategy.entry("Вход", strategy.long, qty = bu / close)
+
+// вход исполнился: ставим лесенку от цены входа
+if inPos and not ladderOn
+    p0 := strategy.opentrades.entry_price(0)
+    for k = 0 to 5
+        px = p0 * (1 - array.get(levels, k) * sclE / 100)
+        strategy.entry("Ступень " + str.tostring(k + 1), strategy.long, qty = bu * array.get(sizes, k + 1) / px, limit = px)
+    ladderOn := true
+    lastFill := time
+    nOpen := strategy.opentrades
+
+// докупка: таймер считается от неё
+if inPos and ladderOn and strategy.opentrades > nOpen
+    lastFill := time
+    nOpen := strategy.opentrades
+
+// цель и таймер
+float tpPx = na
+if inPos and ladderOn
+    tpPx := strategy.opentrades == 1 ? p0 * (1 + tp1 / 100) : strategy.position_avg_price * (1 + tpn / 100)
+    strategy.exit("Цель", limit = tpPx)
+    if time - lastFill >= timerH * 3600000
+        strategy.cancel_all()
+        strategy.close_all(comment = "Таймер")
+
+// позиция закрылась — снимаем оставшиеся ступени
+if not inPos and ladderOn
+    strategy.cancel_all()
+    ladderOn := false
+    p0 := na
+    nOpen := 0
+
+// ── рисунок
+plotshape(sig, "Сигнал", shape.triangleup, location.belowbar, color.orange, size = size.tiny)
+plot(inPos ? strategy.position_avg_price : na, "Средняя", color.gray, 1, plot.style_linebr)
+plot(tpPx, "Цель", color.green, 2, plot.style_linebr)
+plot(inPos ? p0 * (1 - 1.4 * sclE / 100) : na, "Ступень 1", color.new(color.red, 60), 1, plot.style_linebr)
+plot(inPos ? p0 * (1 - 4.5 * sclE / 100) : na, "Ступень 3", color.new(color.red, 60), 1, plot.style_linebr)
+plot(inPos ? p0 * (1 - 9.0 * sclE / 100) : na, "Ступень 6", color.new(color.red, 40), 1, plot.style_linebr)
+
+var table tb = table.new(position.top_right, 2, 6, bgcolor = color.new(color.black, 80))
+if barstate.islast
+    table.cell(tb, 0, 0, "Масштаб", text_color = color.white)
+    table.cell(tb, 1, 0, str.tostring(scl, "#.##"), text_color = color.white)
+    table.cell(tb, 0, 1, "RSI 3-мин (≤" + str.tostring(rsiThr) + ")", text_color = color.white)
+    table.cell(tb, 1, 1, str.tostring(r3, "#.#"), text_color = color.white)
+    table.cell(tb, 0, 2, "От максимума часа (≤" + str.tostring(-drop1h * scl, "#.#") + "%)", text_color = color.white)
+    table.cell(tb, 1, 2, str.tostring(fromHi, "#.##") + "%", text_color = color.white)
+    table.cell(tb, 0, 3, "За 2 часа (≤" + str.tostring(-drop2h * scl, "#.#") + "%)", text_color = color.white)
+    table.cell(tb, 1, 3, str.tostring(ch120, "#.##") + "%", text_color = color.white)
+    table.cell(tb, 0, 4, "За сутки (пропуск ≤" + str.tostring(-25 * scl, "#") + "%)", text_color = color.white)
+    table.cell(tb, 1, 4, str.tostring(ch1440, "#.#") + "%", text_color = color.white)
+    table.cell(tb, 0, 5, "Биткоин ниже минимума 12 ч", text_color = color.white)
+    table.cell(tb, 1, 5, btcDown ? "да" : "нет", text_color = color.white)

@@ -1,0 +1,242 @@
+{
+ "slug": "low-risk-bybit",
+ "name": "Low Risk Bybit",
+ "source": "invvo",
+ "url": "https://invvo.com/strategy/19",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "возврат к среднему",
+  "insurance": "нейтрально",
+  "reasons": [
+   "часто в плюс (66%), но плюс меньше минуса",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (82% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "пачки входов по разным монетам",
+   "площадка помечает как алгоритм"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 1798,
+   "n_closed": 1796,
+   "start": "2025-04-11",
+   "end": "2025-11-14",
+   "span_days": 217,
+   "per_week": 57.9,
+   "n_sym": 30,
+   "top_sym": {
+    "KAS": 122,
+    "RUNE": 117,
+    "ONDO": 106,
+    "1000PEPE": 93,
+    "LTC": 86,
+    "STX": 82
+   },
+   "majors_share": 0.06,
+   "short_share": 0.17,
+   "win": 0.665,
+   "avg_win": 1.54,
+   "avg_loss": -1.8,
+   "payoff": 0.85,
+   "expectancy": 0.42,
+   "worst": -10.7,
+   "best": 17.64,
+   "hold_h": {
+    "p10": 0.5,
+    "p50": 1.7,
+    "p90": 40.5
+   },
+   "open_now": 2
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.472,
+    "15": 0.174,
+    "30": 0.081,
+    "60": 0.068,
+    "120": 0.054,
+    "240": 0.028,
+    "360": 0.023,
+    "480": 0.012,
+    "720": 0.009,
+    "1440": 0.004
+   },
+   "sec_le10_share": null,
+   "top_hours": {
+    "12": 0.08,
+    "13": 0.07,
+    "0": 0.07,
+    "14": 0.07
+   },
+   "top4_hours_share": 0.3
+  },
+  "batching": {
+   "batch_share": 0.46,
+   "max_batch": 16,
+   "batches_ge3": 97
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.4,
+     "share": 0.15
+    },
+    {
+     "level": 0.2,
+     "share": 0.09
+    },
+    {
+     "level": 1.4,
+     "share": 0.11
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.1,
+     "share": 0.18
+    },
+    {
+     "level": -0.5,
+     "share": 0.11
+    },
+    {
+     "level": -1.0,
+     "share": 0.09
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.03
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 62.8,
+   "cost_cv": 1.26
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.01,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 23,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 379,
+   "4ч": {
+    "median": 1.05,
+    "with_share": 0.82
+   },
+   "24ч": {
+    "median": 1.99,
+    "with_share": 0.83
+   },
+   "72ч": {
+    "median": 1.85,
+    "with_share": 0.66
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.82
+  }
+ },
+ "equity": {
+  "months_up": 0.86,
+  "worst_month_vs_avg_good": -0.5,
+  "dd_to_vol": -0.39,
+  "tail_verdict": "хвост умеренный: худший месяц сопоставим с обычным хорошим",
+  "total_x": 1.32,
+  "cagr": 0.575,
+  "max_dd": -0.108,
+  "dd_now": -0.015,
+  "days_in_dd_now": 12,
+  "vol": 0.275,
+  "sharpe": 1.78,
+  "by_year": {
+   "2025": 0.318
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": false,
+  "shape": {
+   "beta_up": 0.16,
+   "beta_down": -0.25,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 0.99,
+  "corr_out": 0.01,
+  "corr_full": 0.82,
+  "r2_full": 0.68,
+  "split": "2025-07-29",
+  "days": 222,
+  "families": {
+   "тренд": 0.55,
+   "возврат к среднему": 0.27,
+   "докупка (продажа страховки)": 0.18
+  },
+  "top_weights": {
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.049,
+   "BTC [4ч] ход 1": 0.04,
+   "RUNE [4ч] докупка шаг 3% тейк 3%": 0.035,
+   "RUNE [день] EMA50/200": 0.034,
+   "BTC [4ч] пробой 10": 0.033,
+   "BTC [4ч] докупка шаг 2% тейк 2%": 0.029,
+   "BTC [4ч] ход 3": 0.026,
+   "BTC [день] ход 60": 0.024,
+   "1000PEPE [4ч] докупка шаг 3% тейк 3%": 0.023,
+   "BTC [4ч] EMA10/50": 0.023
+  },
+  "best_single": {
+   "1000PEPE [4ч] ход 10": 0.5,
+   "1000PEPE [4ч] EMA5/20": 0.49,
+   "1000PEPE [4ч] пробой 10": 0.47,
+   "RUNE [4ч] ход 10": 0.46,
+   "ONDO [4ч] EMA5/20": 0.46,
+   "BTC [4ч] EMA5/20": 0.46
+  },
+  "worst_single": {
+   "BTC [день] возврат 3": -0.4,
+   "1000PEPE [день] возврат 2": -0.39,
+   "ONDO [4ч] возврат 5": -0.38,
+   "1000PEPE [день] возврат 3": -0.38
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.03,
+  "exit_on_candle_close": {
+   "15": 0.23,
+   "60": 0.11,
+   "240": 0.06,
+   "1440": 0.01
+  },
+  "hold_mode_h": 0.75,
+  "hold_mode_share": 0.02,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.77,
+   "win_atr_cv": 0.89,
+   "loss_pct_cv": 0.75,
+   "loss_atr_cv": 0.74,
+   "win_k_median": 0.97,
+   "loss_k_median": -1.54
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

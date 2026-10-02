@@ -1,0 +1,9 @@
+{
+  "name": "Meridian Trend edge",
+  "source": "csv",
+  "source_id": "inbox/meridian_bybit.csv",
+  "url": "",
+  "description": "",
+  "time_note": "исходное время UTC+0 переведено в UTC",
+  "slug": "meridian-trend-edge"
+}

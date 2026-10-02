@@ -1,0 +1,189 @@
+{
+ "slug": "top-cryptoadventurer",
+ "name": "CryptoAdventurer",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=GUDDfCdQwkFmd8svGwG2Mg==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.5",
+   "объём позиции растёт до ×4.9 от базового",
+   "95% сделок в плюс, стопа нет",
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (30% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "93% входов в первые 10 секунд минуты",
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "скальпинг",
+   "match": false
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 68,
+   "n_closed": 68,
+   "start": "2026-06-28",
+   "end": "2026-09-25",
+   "span_days": 89,
+   "per_week": 5.36,
+   "n_sym": 5,
+   "top_sym": {
+    "HYPE": 19,
+    "TAO": 14,
+    "RENDER": 12,
+    "ASTER": 12,
+    "ICP": 11
+   },
+   "majors_share": 0.0,
+   "short_share": 0.04,
+   "win": 0.956,
+   "avg_win": 2.18,
+   "avg_loss": -6.14,
+   "payoff": 0.35,
+   "expectancy": 1.812,
+   "worst": -14.35,
+   "best": 18.82,
+   "hold_h": {
+    "p10": 0.2,
+    "p50": 3.9,
+    "p90": 49.4
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.471,
+    "15": 0.162,
+    "30": 0.059,
+    "60": 0.088,
+    "120": 0.059,
+    "240": 0.029,
+    "360": 0.029,
+    "480": 0.015,
+    "720": 0.015,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.93,
+   "top_hours": {
+    "18": 0.18,
+    "5": 0.15,
+    "12": 0.06,
+    "16": 0.06
+   },
+   "top4_hours_share": 0.44
+  },
+  "batching": {
+   "batch_share": 0.22,
+   "max_batch": 6,
+   "batches_ge3": 2
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.2,
+     "share": 0.28
+    },
+    {
+     "level": 1.4,
+     "share": 0.15
+    },
+    {
+     "level": 1.6,
+     "share": 0.12
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.06
+  },
+  "averaging": {
+   "multi_order_share": 0.18,
+   "size_ratio": 1.5,
+   "add_dir": "усреднение вниз",
+   "max_orders": 3,
+   "cost_mult_max": 4.9,
+   "cost_cv": 0.61
+  },
+  "levels": {
+   "round_price_share": 0.06,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 5,
+   "same_symbol_overlaps": 4
+  },
+  "context": {
+   "n": 68,
+   "4ч": {
+    "median": -1.57,
+    "with_share": 0.25
+   },
+   "24ч": {
+    "median": -1.19,
+    "with_share": 0.35
+   },
+   "72ч": {
+    "median": 0.52,
+    "with_share": 0.56
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.3
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.1,
+  "tail_verdict": "не ясно",
+  "total_x": 1.12,
+  "cagr": 0.58,
+  "max_dd": -0.008,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.077,
+  "sharpe": 5.98,
+  "by_year": {
+   "2026": 0.118
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.06,
+  "exit_on_candle_close": {
+   "15": 0.93,
+   "60": 0.32,
+   "240": 0.07,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.08,
+  "hold_mode_share": 0.04,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 1.15,
+   "win_atr_cv": 1.31,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 1.06,
+   "loss_k_median": -1.49
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

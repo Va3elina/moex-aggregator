@@ -1,0 +1,207 @@
+{
+ "slug": "h-trendhunter",
+ "name": "H_trendHunter",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=BO2WE5lm2vnXvGLuLpxEUg==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "долгосрочный держатель",
+  "insurance": "нейтрально",
+  "reasons": [
+   "держит в среднем 29 дней"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 720 мин (57%)",
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "тренд",
+   "match": true
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 7,
+   "n_closed": 7,
+   "start": "2026-06-16",
+   "end": "2026-09-20",
+   "span_days": 96,
+   "per_week": 0.51,
+   "n_sym": 2,
+   "top_sym": {
+    "ETH": 6,
+    "HBAR": 1
+   },
+   "majors_share": 0.86,
+   "short_share": 0.0,
+   "win": 0.857,
+   "avg_win": 5.73,
+   "avg_loss": -0.96,
+   "payoff": 5.96,
+   "expectancy": 4.772,
+   "worst": -0.96,
+   "best": 15.42,
+   "hold_h": {
+    "p10": 75.2,
+    "p50": 696.0,
+    "p90": 991.2
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 720,
+   "grid": {
+    "share": 0.571,
+    "ratio": 58.8,
+    "lag_min": 0.1
+   },
+   "grid_all": {
+    "5": 0.571,
+    "15": 0.429,
+    "30": 0.429,
+    "60": 0.571,
+    "120": 0.571,
+    "240": 0.571,
+    "360": 0.571,
+    "480": 0.0,
+    "720": 0.571,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.57,
+   "top_hours": {
+    "12": 0.57,
+    "0": 0.14,
+    "19": 0.14,
+    "13": 0.14
+   },
+   "top4_hours_share": 1.0
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.7,
+     "share": 0.17
+    },
+    {
+     "level": 2.4,
+     "share": 0.17
+    },
+    {
+     "level": 3.7,
+     "share": 0.17
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.43,
+   "size_ratio": 0.99,
+   "add_dir": "усреднение вниз",
+   "max_orders": 3
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 2,
+   "same_symbol_overlaps": 5
+  },
+  "context": {
+   "n": 6
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.15,
+  "tail_verdict": "не ясно",
+  "total_x": 2.07,
+  "cagr": 18.83,
+  "max_dd": -0.149,
+  "dd_now": -0.043,
+  "days_in_dd_now": 4,
+  "vol": 0.987,
+  "sharpe": 3.48,
+  "by_year": {
+   "2026": 1.071
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 2.08,
+   "beta_down": 1.67,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.9,
+  "corr_full": 1.0,
+  "r2_full": 0.99,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "тренд": 0.39,
+   "докупка (продажа страховки)": 0.27,
+   "возврат к среднему": 0.18,
+   "держание (бета рынка)": 0.16
+  },
+  "top_weights": {
+   "ETH [4ч] держать": 0.157,
+   "ETH [4ч] докупка шаг 2% тейк 2%": 0.115,
+   "HBAR [4ч] докупка шаг 3% тейк 3%": 0.081,
+   "BTC [день] возврат 2": 0.052,
+   "BTC [4ч] докупка шаг 1% тейк 1%": 0.051,
+   "ETH [день] пробой 10": 0.047,
+   "BTC [4ч] ход 2": 0.036,
+   "BTC [4ч] ход 10": 0.033,
+   "BTC [4ч] возврат 3": 0.029,
+   "HBAR [день] EMA50/200": 0.027
+  },
+  "best_single": {
+   "ETH [день] держать": 0.97,
+   "ETH [4ч] держать": 0.97,
+   "ETH [4ч] докупка шаг 2% тейк 2%": 0.87,
+   "ETH [4ч] докупка шаг 1% тейк 1%": 0.86,
+   "ETH [4ч] докупка шаг 3% тейк 3%": 0.86,
+   "ETH [4ч] EMA20/100": 0.85
+  },
+  "worst_single": {
+   "ETH [день] возврат 5": -0.75,
+   "ETH [день] EMA50/200": -0.74,
+   "ETH [день] возврат 1": -0.72,
+   "HBAR [день] EMA50/200": -0.66
+  }
+ },
+ "entry": {
+  "skipped": "мало позиций (7 < 60)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.86,
+   "60": 0.86,
+   "240": 0.86,
+   "1440": 0.71
+  },
+  "hold_mode_h": 1.51,
+  "hold_mode_share": 0.14,
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

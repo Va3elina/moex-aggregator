@@ -1,0 +1,192 @@
+{
+ "slug": "algo-executor",
+ "name": "Algo-Executor",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=/wQF7+GkKrFNJGsT/+8rhw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "тренд",
+  "insurance": "покупает страховку",
+  "reasons": [
+   "в плюс 20% сделок, средний плюс в 6.92 раза больше минуса"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 60 мин (80%)",
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "тренд",
+   "match": true
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 5,
+   "n_closed": 5,
+   "start": "2026-05-16",
+   "end": "2026-08-10",
+   "span_days": 86,
+   "per_week": 0.41,
+   "n_sym": 1,
+   "top_sym": {
+    "BTC": 5
+   },
+   "majors_share": 1.0,
+   "short_share": 0.6,
+   "win": 0.2,
+   "avg_win": 14.58,
+   "avg_loss": -2.11,
+   "payoff": 6.92,
+   "expectancy": 1.229,
+   "worst": -3.96,
+   "best": 14.58,
+   "hold_h": {
+    "p10": 73.6,
+    "p50": 169.0,
+    "p90": 1085.8
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 60,
+   "grid": {
+    "share": 0.8,
+    "ratio": 8.0,
+    "lag_min": 0.9
+   },
+   "grid_all": {
+    "5": 0.8,
+    "15": 0.8,
+    "30": 0.8,
+    "60": 0.8,
+    "120": 0.4,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.0,
+   "top_hours": {
+    "14": 0.4,
+    "11": 0.2,
+    "13": 0.2,
+    "17": 0.2
+   },
+   "top4_hours_share": 1.0
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.8
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 1,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 5
+  }
+ },
+ "equity": {
+  "months_up": 0.67,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.39,
+  "tail_verdict": "не ясно",
+  "total_x": 1.16,
+  "cagr": 0.814,
+  "max_dd": -0.24,
+  "dd_now": -0.043,
+  "days_in_dd_now": 4,
+  "vol": 0.61,
+  "sharpe": 1.27,
+  "by_year": {
+   "2026": 0.156
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 1.03,
+   "beta_down": -0.14,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.68,
+  "corr_full": 0.99,
+  "r2_full": 0.97,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "тренд": 0.58,
+   "возврат к среднему": 0.28,
+   "докупка (продажа страховки)": 0.13
+  },
+  "top_weights": {
+   "BTC [день] EMA10/50": 0.21,
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.095,
+   "BTC [день] возврат 2": 0.045,
+   "BTC [4ч] возврат 1": 0.039,
+   "BTC [день] возврат 3": 0.033,
+   "BTC [4ч] возврат 5": 0.032,
+   "ETH [4ч] ход 2": 0.032,
+   "BTC [день] возврат 1": 0.029,
+   "ETH [день] ход 60": 0.028,
+   "BTC [4ч] возврат 2": 0.027
+  },
+  "best_single": {
+   "BTC [день] ход 60": 0.89,
+   "BTC [день] ход 40": 0.82,
+   "SOL [день] EMA10/50": 0.73,
+   "SOL [день] ход 60": 0.72,
+   "ETH [день] ход 60": 0.68,
+   "SOL [день] EMA5/20": 0.66
+  },
+  "worst_single": {
+   "BTC [день] возврат 2": -0.58,
+   "SOL [день] возврат 1": -0.52,
+   "ETH [день] возврат 2": -0.51,
+   "ETH [день] возврат 1": -0.47
+  }
+ },
+ "entry": {
+  "skipped": "мало позиций (5 < 60)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.8,
+  "exit_on_candle_close": {
+   "15": 1.0,
+   "60": 1.0,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 72.0,
+  "hold_mode_share": 0.2,
+  "verdict": [
+   "80% выходов сразу сменяются новым входом — переворот или перезапуск бота"
+  ]
+ }
+}

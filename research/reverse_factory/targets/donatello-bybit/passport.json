@@ -1,0 +1,245 @@
+{
+ "slug": "donatello-bybit",
+ "name": "Donatello Bybit",
+ "source": "invvo",
+ "url": "https://invvo.com/strategy/18",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "тренд (вход по ходу движения)",
+  "insurance": "нейтрально",
+  "reasons": [
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (85% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "площадка помечает как алгоритм",
+   "по описанию — автоматическая торговля"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "тренд, скальпинг",
+   "match": true
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 1175,
+   "n_closed": 1170,
+   "start": "2025-01-26",
+   "end": "2025-11-11",
+   "span_days": 289,
+   "per_week": 28.43,
+   "n_sym": 22,
+   "top_sym": {
+    "RUNE": 340,
+    "KAS": 140,
+    "ALT": 84,
+    "TAO": 81,
+    "TRUMP": 76,
+    "FIL": 70
+   },
+   "majors_share": 0.09,
+   "short_share": 0.52,
+   "win": 0.518,
+   "avg_win": 2.81,
+   "avg_loss": -2.46,
+   "payoff": 1.14,
+   "expectancy": 0.271,
+   "worst": -11.68,
+   "best": 18.1,
+   "hold_h": {
+    "p10": 2.0,
+    "p50": 16.3,
+    "p90": 63.7
+   },
+   "open_now": 5
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.454,
+    "15": 0.18,
+    "30": 0.146,
+    "60": 0.148,
+    "120": 0.103,
+    "240": 0.058,
+    "360": 0.042,
+    "480": 0.032,
+    "720": 0.026,
+    "1440": 0.016
+   },
+   "sec_le10_share": null,
+   "top_hours": {
+    "0": 0.08,
+    "14": 0.07,
+    "12": 0.06,
+    "15": 0.06
+   },
+   "top4_hours_share": 0.25
+  },
+  "batching": {
+   "batch_share": 0.16,
+   "max_batch": 5,
+   "batches_ge3": 16
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 3.7,
+     "share": 0.11
+    },
+    {
+     "level": 3.5,
+     "share": 0.07
+    },
+    {
+     "level": 2.1,
+     "share": 0.07
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -1.6,
+     "share": 0.1
+    },
+    {
+     "level": -1.3,
+     "share": 0.08
+    },
+    {
+     "level": -2.0,
+     "share": 0.08
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 13.0,
+   "cost_cv": 0.78
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.06,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 17,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 582,
+   "4ч": {
+    "median": 1.24,
+    "with_share": 0.86
+   },
+   "24ч": {
+    "median": 2.42,
+    "with_share": 0.85
+   },
+   "72ч": {
+    "median": 2.36,
+    "with_share": 0.74
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.85
+  }
+ },
+ "equity": {
+  "months_up": 0.8,
+  "worst_month_vs_avg_good": -0.1,
+  "dd_to_vol": -0.37,
+  "tail_verdict": "хвост умеренный: худший месяц сопоставим с обычным хорошим",
+  "total_x": 1.56,
+  "cagr": 0.752,
+  "max_dd": -0.14,
+  "dd_now": -0.035,
+  "days_in_dd_now": 7,
+  "vol": 0.374,
+  "sharpe": 1.68,
+  "by_year": {
+   "2025": 0.563
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": false,
+  "shape": {
+   "beta_up": 0.22,
+   "beta_down": -0.37,
+   "verdict": "в обычные дни в росте участвует сильнее, чем в падениях (редкие обвалы тут не видны — см. «хвосты»)"
+  },
+  "corr_in": 0.97,
+  "corr_out": 0.2,
+  "corr_full": 0.85,
+  "r2_full": 0.73,
+  "split": "2025-06-19",
+  "days": 291,
+  "families": {
+   "тренд": 0.57,
+   "возврат к среднему": 0.31,
+   "докупка (продажа страховки)": 0.09,
+   "держание (бета рынка)": 0.03
+  },
+  "top_weights": {
+   "BTC [4ч] докупка шаг 3% тейк 3%": 0.075,
+   "BTC [4ч] ход 3": 0.061,
+   "BTC [день] ход 5": 0.042,
+   "BTC [4ч] возврат 2": 0.031,
+   "SOL [4ч] ход 5": 0.025,
+   "BTC [день] ход 2": 0.024,
+   "BTC [день] возврат 1": 0.023,
+   "BTC [день] возврат 3": 0.022,
+   "TAO [4ч] ход 20": 0.021,
+   "RUNE [день] возврат 1": 0.02
+  },
+  "best_single": {
+   "TRUMP [4ч] EMA5/20": 0.59,
+   "TRUMP [4ч] ход 10": 0.58,
+   "TRUMP [4ч] ход 20": 0.56,
+   "TRUMP [4ч] пробой 10": 0.54,
+   "SOL [4ч] EMA5/20": 0.52,
+   "TRUMP [день] ход 1": 0.51
+  },
+  "worst_single": {
+   "TRUMP [день] возврат 1": -0.51,
+   "TRUMP [4ч] возврат 5": -0.47,
+   "TRUMP [день] возврат 3": -0.46,
+   "ALT [день] возврат 3": -0.46
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.23,
+   "60": 0.12,
+   "240": 0.06,
+   "1440": 0.04
+  },
+  "hold_mode_h": 0.67,
+  "hold_mode_share": 0.0,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.92,
+   "win_atr_cv": 1.33,
+   "loss_pct_cv": 0.66,
+   "loss_atr_cv": 0.63,
+   "win_k_median": 1.58,
+   "loss_k_median": -1.77
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

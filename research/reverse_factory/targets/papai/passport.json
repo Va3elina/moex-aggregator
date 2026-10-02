@@ -1,0 +1,196 @@
+{
+ "slug": "papai",
+ "name": "Papai",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=V61bxMC+BHTIXUbogJUzMA==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "долгая докупка (накопление)",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "держит ~116 дней, 100% позиций набраны частями с доливкой вниз"
+  ],
+  "who": "не ясно, бот или человек",
+  "bot_signs": [],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 7,
+   "n_closed": 7,
+   "start": "2026-03-16",
+   "end": "2026-06-04",
+   "span_days": 80,
+   "per_week": 0.61,
+   "n_sym": 6,
+   "top_sym": {
+    "MNT": 2,
+    "SOL": 1,
+    "BTC": 1,
+    "ETH": 1,
+    "BNB": 1,
+    "HYPE": 1
+   },
+   "majors_share": 0.57,
+   "short_share": 0.0,
+   "win": 0.714,
+   "avg_win": 19.31,
+   "avg_loss": -12.72,
+   "payoff": 1.52,
+   "expectancy": 10.157,
+   "worst": -12.72,
+   "best": 34.28,
+   "hold_h": {
+    "p10": 2462.5,
+    "p50": 2773.5,
+    "p90": 3990.7
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.571,
+    "15": 0.0,
+    "30": 0.0,
+    "60": 0.143,
+    "120": 0.286,
+    "240": 0.143,
+    "360": 0.143,
+    "480": 0.0,
+    "720": 0.143,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.14,
+   "top_hours": {
+    "22": 0.29,
+    "8": 0.14,
+    "16": 0.14,
+    "12": 0.14
+   },
+   "top4_hours_share": 0.71
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 4.4,
+     "share": 0.2
+    },
+    {
+     "level": 13.4,
+     "share": 0.4
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 1.0,
+   "size_ratio": 1.04,
+   "add_dir": "усреднение вниз",
+   "max_orders": 18
+  },
+  "levels": {
+   "round_price_share": 0.11,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 7,
+   "same_symbol_overlaps": 1
+  },
+  "context": {
+   "n": 2
+  }
+ },
+ "equity": {
+  "months_up": 0.67,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.37,
+  "tail_verdict": "не ясно",
+  "total_x": 1.1,
+  "cagr": 0.491,
+  "max_dd": -0.669,
+  "dd_now": -0.656,
+  "days_in_dd_now": 20,
+  "vol": 1.805,
+  "sharpe": 1.42,
+  "by_year": {
+   "2026": 0.102
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 2.12,
+   "beta_down": 2.6,
+   "verdict": "в обычные дни в падениях участвует сильнее, чем в росте"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.6,
+  "corr_full": 0.96,
+  "r2_full": 0.92,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "тренд": 0.47,
+   "возврат к среднему": 0.33,
+   "докупка (продажа страховки)": 0.21
+  },
+  "top_weights": {
+   "BTC [4ч] докупка шаг 1% тейк 1%": 0.063,
+   "BNB [4ч] докупка шаг 3% тейк 3%": 0.052,
+   "MNT [день] EMA50/200": 0.036,
+   "SOL [4ч] возврат 2": 0.036,
+   "BTC [день] возврат 5": 0.033,
+   "BNB [4ч] ход 10": 0.031,
+   "ETH [4ч] ход 1": 0.028,
+   "BNB [4ч] ход 2": 0.028,
+   "BTC [день] ход 1": 0.027,
+   "MNT [день] ход 3": 0.026
+  },
+  "best_single": {
+   "BNB [день] держать": 0.64,
+   "BNB [4ч] держать": 0.64,
+   "BNB [4ч] докупка шаг 2% тейк 2%": 0.6,
+   "BNB [4ч] докупка шаг 1% тейк 1%": 0.59,
+   "SOL [4ч] докупка шаг 3% тейк 3%": 0.59,
+   "SOL [4ч] докупка шаг 1% тейк 1%": 0.59
+  },
+  "worst_single": {
+   "BNB [день] EMA50/200": -0.52,
+   "BTC [день] EMA50/200": -0.47,
+   "ETH [день] EMA50/200": -0.4,
+   "SOL [день] EMA50/200": -0.39
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.0,
+   "60": 0.0,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 2368.78,
+  "hold_mode_share": 0.14,
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

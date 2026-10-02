@@ -1,0 +1,16 @@
+{
+  "name": "honeywave",
+  "source": "bybit",
+  "source_id": "1cpXZFMrNidXorw/E2uPjw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=1cpXZFMrNidXorw/E2uPjw==",
+  "description": "진입은 보통 1차(10~25%) 진입합니다. 스마트 카피 모드로 설정해서 저의 분할법을 따라와주어야 2차 매수로 추가 수익을 만들거나 리스크 관리가 가능합니다. 저의 시나리오와 매매법을 믿고 따라와주신다면 한 달 기준 수익으로 마감시켜드리겠습니다.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 704,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "honeywave"
+}

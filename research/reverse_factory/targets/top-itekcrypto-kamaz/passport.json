@@ -1,0 +1,199 @@
+{
+ "slug": "top-itekcrypto-kamaz",
+ "name": "ITEKCrypto Kamaz",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=k1cwzhKkWm/8mD/Pdp6nWw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.24",
+   "объём позиции растёт до ×7.0 от базового",
+   "88% сделок в плюс, стопа нет",
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (28% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "пачки входов по разным монетам"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 104,
+   "n_closed": 104,
+   "start": "2026-06-08",
+   "end": "2026-09-24",
+   "span_days": 108,
+   "per_week": 6.74,
+   "n_sym": 12,
+   "top_sym": {
+    "BCH": 37,
+    "SUI": 19,
+    "1000PEPE": 10,
+    "ADA": 8,
+    "ZEC": 6,
+    "SOL": 5
+   },
+   "majors_share": 0.1,
+   "short_share": 0.0,
+   "win": 0.885,
+   "avg_win": 8.22,
+   "avg_loss": -2.81,
+   "payoff": 2.93,
+   "expectancy": 6.95,
+   "worst": -5.87,
+   "best": 41.12,
+   "hold_h": {
+    "p10": 0.3,
+    "p50": 182.3,
+    "p90": 746.9
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.471,
+    "15": 0.154,
+    "30": 0.135,
+    "60": 0.067,
+    "120": 0.058,
+    "240": 0.019,
+    "360": 0.029,
+    "480": 0.01,
+    "720": 0.019,
+    "1440": 0.01
+   },
+   "sec_le10_share": 0.2,
+   "top_hours": {
+    "5": 0.21,
+    "14": 0.14,
+    "9": 0.08,
+    "18": 0.08
+   },
+   "top4_hours_share": 0.51
+  },
+  "batching": {
+   "batch_share": 0.35,
+   "max_batch": 17,
+   "batches_ge3": 3
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.8,
+     "share": 0.08
+    },
+    {
+     "level": 4.2,
+     "share": 0.04
+    },
+    {
+     "level": 0.3,
+     "share": 0.04
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -1.8,
+     "share": 0.17
+    },
+    {
+     "level": -0.5,
+     "share": 0.17
+    },
+    {
+     "level": -5.9,
+     "share": 0.08
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.01
+  },
+  "averaging": {
+   "multi_order_share": 0.12,
+   "size_ratio": 1.24,
+   "add_dir": "усреднение вниз",
+   "max_orders": 3,
+   "cost_mult_max": 7.0,
+   "cost_cv": 0.66
+  },
+  "levels": {
+   "round_price_share": 0.11,
+   "repeat_price_share": 0.02,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 21,
+   "same_symbol_overlaps": 65
+  },
+  "context": {
+   "n": 101,
+   "4ч": {
+    "median": -1.06,
+    "with_share": 0.29
+   },
+   "24ч": {
+    "median": -2.15,
+    "with_share": 0.28
+   },
+   "72ч": {
+    "median": -1.15,
+    "with_share": 0.45
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.29
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.21,
+  "tail_verdict": "не ясно",
+  "total_x": 2.2,
+  "cagr": 24.277,
+  "max_dd": -0.159,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.759,
+  "sharpe": 4.63,
+  "by_year": {
+   "2026": 1.197
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.01,
+  "exit_on_candle_close": {
+   "15": 0.23,
+   "60": 0.04,
+   "240": 0.01,
+   "1440": 0.01
+  },
+  "hold_mode_h": 0.33,
+  "hold_mode_share": 0.04,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 1.14,
+   "win_atr_cv": 1.32,
+   "loss_pct_cv": 0.76,
+   "loss_atr_cv": 1.06,
+   "win_k_median": 2.4,
+   "loss_k_median": -1.13
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

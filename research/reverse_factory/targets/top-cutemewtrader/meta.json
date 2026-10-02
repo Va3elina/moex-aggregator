@@ -1,0 +1,16 @@
+{
+  "name": "CuteMewTrader",
+  "source": "bybit",
+  "source_id": "LgbhDGwPVRPMBhnC7IAJAA==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=LgbhDGwPVRPMBhnC7IAJAA==",
+  "description": "https://i.bybit.com/ElCAab2?action=inviteToCopy",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 495,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-cutemewtrader"
+}

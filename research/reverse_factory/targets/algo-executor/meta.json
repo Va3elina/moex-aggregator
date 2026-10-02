@@ -1,0 +1,16 @@
+{
+  "name": "Algo-Executor",
+  "source": "bybit",
+  "source_id": "/wQF7+GkKrFNJGsT/+8rhw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=/wQF7+GkKrFNJGsT/+8rhw==",
+  "description": "Algorithmic BTC trend-following bot focused on asymmetric risk: frequent small losses and occasional large gains. Performance data and methodology explained at alperenlcr.github.io/trade_bot_results/",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 173,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "algo-executor"
+}
