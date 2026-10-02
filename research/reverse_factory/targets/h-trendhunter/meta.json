@@ -1,0 +1,16 @@
+{
+  "name": "H_trendHunter",
+  "source": "bybit",
+  "source_id": "BO2WE5lm2vnXvGLuLpxEUg==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=BO2WE5lm2vnXvGLuLpxEUg==",
+  "description": "- Low Leverage(1.5~2)\n- Low Risk\n- Complete backtest since 2012\n- Guarantee never liquidation\n- Please maintain your investment for at least six months\nyour assets will steadily grow over time.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 281,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "h-trendhunter"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Honest Algo Trader 2",
+  "source": "bybit",
+  "source_id": "9ack0MY4IcKWNNnWJ6gWRA==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=9ack0MY4IcKWNNnWJ6gWRA==",
+  "description": "This is the second strategy of the Honest Algo Trader project.\n",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 44,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "honest-algo-trader-2"
+}

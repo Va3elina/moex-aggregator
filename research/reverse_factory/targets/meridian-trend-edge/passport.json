@@ -1,0 +1,248 @@
+{
+ "slug": "meridian-trend-edge",
+ "name": "Meridian Trend edge",
+ "source": "csv",
+ "url": "",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "сканер с фиксированными тейком и стопом",
+  "insurance": "покупает страховку",
+  "reasons": [
+   "тейк +12.0% / стоп -3.5%",
+   "60% входов пачками по разным монетам",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (95% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 360 мин (99%)",
+   "пачки входов по разным монетам",
+   "фиксированные уровни выхода"
+  ],
+  "human_signs": [],
+  "self_check": {
+   "claimed": "тренд",
+   "match": true
+  }
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 122,
+   "n_closed": 122,
+   "start": "2026-06-23",
+   "end": "2026-09-25",
+   "span_days": 94,
+   "per_week": 9.11,
+   "n_sym": 25,
+   "top_sym": {
+    "OP": 9,
+    "HBAR": 8,
+    "AXS": 6,
+    "LTC": 6,
+    "DYDX": 6,
+    "SOL": 6
+   },
+   "majors_share": 0.09,
+   "short_share": 0.45,
+   "win": 0.467,
+   "avg_win": 9.55,
+   "avg_loss": -2.87,
+   "payoff": 3.33,
+   "expectancy": 2.935,
+   "worst": -3.68,
+   "best": 12.2,
+   "hold_h": {
+    "p10": 9.0,
+    "p50": 44.0,
+    "p90": 174.6
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 360,
+   "grid": {
+    "share": 0.992,
+    "ratio": 51.0,
+    "lag_min": 5.5
+   },
+   "grid_all": {
+    "5": 0.992,
+    "15": 0.0,
+    "30": 0.0,
+    "60": 0.992,
+    "120": 0.992,
+    "240": 0.303,
+    "360": 0.992,
+    "480": 0.18,
+    "720": 0.303,
+    "1440": 0.18
+   },
+   "sec_le10_share": 0.0,
+   "top_hours": {
+    "18": 0.48,
+    "6": 0.22,
+    "0": 0.18,
+    "12": 0.12
+   },
+   "top4_hours_share": 1.0
+  },
+  "batching": {
+   "batch_share": 0.6,
+   "max_batch": 7,
+   "batches_ge3": 8
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 12.0,
+     "share": 0.7
+    },
+    {
+     "level": 0.3,
+     "share": 0.04
+    },
+    {
+     "level": 0.6,
+     "share": 0.04
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -3.5,
+     "share": 0.65
+    },
+    {
+     "level": -3.3,
+     "share": 0.05
+    },
+    {
+     "level": -3.1,
+     "share": 0.03
+    }
+   ],
+   "fixed_tp": {
+    "level": 12.0,
+    "share": 0.7
+   },
+   "fixed_sl": {
+    "level": -3.5,
+    "share": 0.65
+   },
+   "reentry_after_exit_share": 0.04
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1
+  },
+  "levels": {
+   "round_price_share": 0.06,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 12,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 73,
+   "4ч": {
+    "median": 1.65,
+    "with_share": 0.93
+   },
+   "24ч": {
+    "median": 3.18,
+    "with_share": 0.97
+   },
+   "72ч": {
+    "median": 2.04,
+    "with_share": 0.82
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.95
+  }
+ },
+ "equity": {
+  "months_up": 0.67,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.14,
+  "tail_verdict": "не ясно",
+  "total_x": 1.96,
+  "cagr": 12.015,
+  "max_dd": -0.081,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.573,
+  "sharpe": 4.75,
+  "by_year": {
+   "2026": 0.963
+  }
+ },
+ "equity_approx": true,
+ "replicate": {
+  "skipped": "у источника нет своей кривой доходности — по оценочной кривой копию не подбираем"
+ },
+ "entry": {
+  "interval": "360",
+  "symbols": 25,
+  "entries": 116,
+  "best": {
+   "правило": "импульс объём≥1.2× + цена×EMA30 | BTC>EMA200",
+   "совпало": "39",
+   "сработало": "171",
+   "охват": 0.34,
+   "точность": 0.23,
+   "F1": 0.272,
+   "F1_подбор": 0.223,
+   "F1_проверка": 0.395
+  },
+  "best_by_train": {
+   "правило": "Supertrend10/2 | BTC>EMA200",
+   "совпало": "36",
+   "сработало": "173",
+   "охват": 0.31,
+   "точность": 0.21,
+   "F1": 0.249,
+   "F1_подбор": 0.225,
+   "F1_проверка": 0.306
+  },
+  "verdict": "правило найдено частично",
+  "tree_test": {
+   "охват": 0.89,
+   "точность": 0.12,
+   "F1": 0.211
+  }
+ },
+ "exits": {
+  "fixed_tp": {
+   "level": 12.0,
+   "share": 0.7
+  },
+  "fixed_sl": {
+   "level": -3.5,
+   "share": 0.65
+  },
+  "reentry": 0.04,
+  "exit_on_candle_close": {
+   "15": 0.13,
+   "60": 0.04,
+   "240": 0.01,
+   "1440": 0.0
+  },
+  "hold_mode_h": 78.0,
+  "hold_mode_share": 0.03,
+  "atr": {
+   "interval": "360",
+   "win_pct_cv": 0.59,
+   "win_atr_cv": 0.78,
+   "loss_pct_cv": 0.37,
+   "loss_atr_cv": 0.45,
+   "win_k_median": 3.81,
+   "loss_k_median": -1.12
+  },
+  "verdict": [
+   "тейк фиксированный ≈ +12.0%",
+   "стоп фиксированный ≈ -3.5%"
+  ]
+ }
+}

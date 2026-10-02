@@ -1,0 +1,16 @@
+{
+  "name": "CryptoAdventurer",
+  "source": "bybit",
+  "source_id": "GUDDfCdQwkFmd8svGwG2Mg==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=GUDDfCdQwkFmd8svGwG2Mg==",
+  "description": "||| t me: SortOfTrading ||| From the author of HFT. Sort of and TopROI. Sort of bot.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 550,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-cryptoadventurer"
+}

@@ -1,0 +1,7 @@
+.venv/
+data/
+inbox/
+targets/*/trades.parquet
+targets/*/equity.csv
+__pycache__/
+.registry.lock

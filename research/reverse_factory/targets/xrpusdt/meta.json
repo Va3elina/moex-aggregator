@@ -1,0 +1,16 @@
+{
+  "name": "XRPUSDT",
+  "source": "bybit",
+  "source_id": "xENuuOsi1hDR9RN76qH1zw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=xENuuOsi1hDR9RN76qH1zw==",
+  "description": "",
+  "bybit_is_bot": true,
+  "apps": [],
+  "trade_days": 514,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "xrpusdt"
+}

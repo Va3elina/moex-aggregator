@@ -1,0 +1,186 @@
+{
+ "slug": "top-ctmastercopy-controlled-risk",
+ "name": "CTMASTERCOPY | Controlled Risk",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=Gsc9Um9XUQ6ilT4BY+Fa8w==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.0",
+   "объём позиции растёт до ×10.5 от базового",
+   "100% сделок в плюс, стопа нет",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (62% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "Bybit помечает как бота"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 127,
+   "n_closed": 127,
+   "start": "2026-01-15",
+   "end": "2026-09-25",
+   "span_days": 253,
+   "per_week": 3.52,
+   "n_sym": 6,
+   "top_sym": {
+    "HYPE": 46,
+    "ZEC": 42,
+    "BTC": 23,
+    "LINK": 11,
+    "PAXG": 3,
+    "ETH": 2
+   },
+   "majors_share": 0.22,
+   "short_share": 0.0,
+   "win": 1.0,
+   "avg_win": 0.87,
+   "avg_loss": 0.0,
+   "payoff": null,
+   "expectancy": 0.869,
+   "worst": 0.09,
+   "best": 2.14,
+   "hold_h": {
+    "p10": 0.5,
+    "p50": 3.4,
+    "p90": 40.6
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.323,
+    "15": 0.118,
+    "30": 0.079,
+    "60": 0.079,
+    "120": 0.039,
+    "240": 0.016,
+    "360": 0.008,
+    "480": 0.016,
+    "720": 0.008,
+    "1440": 0.008
+   },
+   "sec_le10_share": 0.23,
+   "top_hours": {
+    "15": 0.1,
+    "12": 0.08,
+    "14": 0.08,
+    "16": 0.07
+   },
+   "top4_hours_share": 0.33
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.0,
+     "share": 0.25
+    },
+    {
+     "level": 0.1,
+     "share": 0.13
+    },
+    {
+     "level": 0.8,
+     "share": 0.13
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.05
+  },
+  "averaging": {
+   "multi_order_share": 0.23,
+   "size_ratio": 1.0,
+   "add_dir": "усреднение вниз",
+   "max_orders": 5,
+   "cost_mult_max": 10.5,
+   "cost_cv": 0.74
+  },
+  "levels": {
+   "round_price_share": 0.04,
+   "repeat_price_share": 0.02,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 5,
+   "same_symbol_overlaps": 5
+  },
+  "context": {
+   "n": 127,
+   "4ч": {
+    "median": 0.25,
+    "with_share": 0.59
+   },
+   "24ч": {
+    "median": 1.35,
+    "with_share": 0.66
+   },
+   "72ч": {
+    "median": 2.52,
+    "with_share": 0.72
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.62
+  }
+ },
+ "equity": {
+  "months_up": 0.67,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.44,
+  "tail_verdict": "не ясно",
+  "total_x": 1.11,
+  "cagr": 0.507,
+  "max_dd": -0.194,
+  "dd_now": -0.178,
+  "days_in_dd_now": 30,
+  "vol": 0.442,
+  "sharpe": 1.15,
+  "by_year": {
+   "2026": 0.105
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.05,
+  "exit_on_candle_close": {
+   "15": 0.13,
+   "60": 0.03,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 1.37,
+  "hold_mode_share": 0.02,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.56,
+   "win_atr_cv": 0.82,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 0.61,
+   "loss_k_median": null
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

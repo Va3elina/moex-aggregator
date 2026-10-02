@@ -1,0 +1,211 @@
+{
+ "slug": "copy-dogge-trader",
+ "name": "dogge trader (мои копии)",
+ "source": "bybit-copy-export",
+ "url": "",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "скальпер",
+  "insurance": "нейтрально",
+  "reasons": [
+   "сделка держится ~0.8 ч, 302.0 сделок в неделю",
+   "контекст входа: вход без выраженной стороны (56% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "пачки входов по разным монетам",
+   "фиксированные уровни выхода"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 1211,
+   "n_closed": 1211,
+   "start": "2024-10-14",
+   "end": "2024-11-11",
+   "span_days": 28,
+   "per_week": 302.0,
+   "n_sym": 10,
+   "top_sym": {
+    "POPCAT": 313,
+    "WIF": 202,
+    "SHIB1000": 156,
+    "BOME": 131,
+    "1000FLOKI": 124,
+    "1000BONK": 114
+   },
+   "majors_share": 0.0,
+   "short_share": 0.0,
+   "win": 0.711,
+   "avg_win": 1.11,
+   "avg_loss": -2.49,
+   "payoff": 0.45,
+   "expectancy": 0.071,
+   "worst": -18.32,
+   "best": 9.07,
+   "hold_h": {
+    "p10": 0.1,
+    "p50": 0.8,
+    "p90": 10.6
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.436,
+    "15": 0.15,
+    "30": 0.109,
+    "60": 0.127,
+    "120": 0.069,
+    "240": 0.036,
+    "360": 0.018,
+    "480": 0.025,
+    "720": 0.009,
+    "1440": 0.005
+   },
+   "sec_le10_share": 0.21,
+   "top_hours": {
+    "14": 0.08,
+    "21": 0.06,
+    "16": 0.06,
+    "23": 0.05
+   },
+   "top4_hours_share": 0.25
+  },
+  "batching": {
+   "batch_share": 0.28,
+   "max_batch": 14,
+   "batches_ge3": 59
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.9,
+     "share": 0.4
+    },
+    {
+     "level": 0.5,
+     "share": 0.21
+    },
+    {
+     "level": 1.7,
+     "share": 0.12
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.8,
+     "share": 0.24
+    },
+    {
+     "level": -0.1,
+     "share": 0.11
+    },
+    {
+     "level": -2.5,
+     "share": 0.09
+    }
+   ],
+   "fixed_tp": {
+    "level": 0.9,
+    "share": 0.4
+   },
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.38
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 118.9,
+   "cost_cv": 2.79
+  },
+  "levels": {
+   "round_price_share": 0.03,
+   "repeat_price_share": 0.09,
+   "grid": {
+    "sym": "SILLY",
+    "step": 1e-05,
+    "step_pct": 0.04,
+    "levels": 9,
+    "on_grid": 1.0
+   }
+  },
+  "concurrency": {
+   "max_open": 35,
+   "same_symbol_overlaps": 572
+  },
+  "context": {
+   "n": 600,
+   "4ч": {
+    "median": -0.25,
+    "with_share": 0.48
+   },
+   "24ч": {
+    "median": 4.21,
+    "with_share": 0.65
+   },
+   "72ч": {
+    "median": 10.54,
+    "with_share": 0.74
+   },
+   "verdict": "вход без выраженной стороны",
+   "with_share": 0.56
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.3,
+  "tail_verdict": "не ясно",
+  "total_x": 1.02,
+  "cagr": 0.304,
+  "max_dd": -0.04,
+  "dd_now": -0.002,
+  "days_in_dd_now": 2,
+  "vol": 0.133,
+  "sharpe": 2.07,
+  "by_year": {
+   "2024": 0.021
+  }
+ },
+ "equity_approx": true,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": {
+   "level": 0.9,
+   "share": 0.4
+  },
+  "fixed_sl": null,
+  "reentry": 0.38,
+  "exit_on_candle_close": {
+   "15": 0.16,
+   "60": 0.03,
+   "240": 0.01,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.02,
+  "hold_mode_share": 0.02,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.6,
+   "win_atr_cv": 0.72,
+   "loss_pct_cv": 0.95,
+   "loss_atr_cv": 0.82,
+   "win_k_median": 0.25,
+   "loss_k_median": -0.39
+  },
+  "verdict": [
+   "тейк фиксированный ≈ +0.9%",
+   "38% выходов сразу сменяются новым входом — переворот или перезапуск бота"
+  ]
+ }
+}

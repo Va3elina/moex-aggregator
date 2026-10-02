@@ -1,0 +1,16 @@
+{
+  "name": "digital trading systems ISA",
+  "source": "bybit",
+  "source_id": "q5wPVsX46k3wTEnSO1pq4A==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=q5wPVsX46k3wTEnSO1pq4A==",
+  "description": "Портфелем управляют алгоритмы проекта iSpecAlgo.\nВсе вопросы  можно обсудить в чате, ищите в телеге DTSChat",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 845,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-digital-trading-systems-isa"
+}

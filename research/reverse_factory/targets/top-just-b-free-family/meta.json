@@ -1,0 +1,16 @@
+{
+  "name": "Just B Free Family",
+  "source": "bybit",
+  "source_id": "SulB/0bO3V7XNju3NnFigA==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=SulB/0bO3V7XNju3NnFigA==",
+  "description": "check justbcopytrade.com for more info!",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 570,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-just-b-free-family"
+}

@@ -1,0 +1,160 @@
+{
+ "slug": "top-wizard31337",
+ "name": "wizard31337",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=pWOCK0qxEm7vvnv0bg8b9g==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×0.97",
+   "объём позиции растёт до ×4.0 от базового",
+   "92% сделок в плюс, стопа нет"
+  ],
+  "who": "не ясно, бот или человек",
+  "bot_signs": [],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 13,
+   "n_closed": 13,
+   "start": "2026-03-30",
+   "end": "2026-09-26",
+   "span_days": 180,
+   "per_week": 0.51,
+   "n_sym": 6,
+   "top_sym": {
+    "ETH": 4,
+    "BTC": 4,
+    "ONDO": 2,
+    "ZK": 1,
+    "SOL": 1,
+    "HYPE": 1
+   },
+   "majors_share": 0.69,
+   "short_share": 0.77,
+   "win": 0.923,
+   "avg_win": 2.38,
+   "avg_loss": -4.38,
+   "payoff": 0.54,
+   "expectancy": 1.863,
+   "worst": -4.38,
+   "best": 9.51,
+   "hold_h": {
+    "p10": 1.8,
+    "p50": 72.4,
+    "p90": 2245.3
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.308,
+    "15": 0.231,
+    "30": 0.0,
+    "60": 0.0,
+    "120": 0.0,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.23,
+   "top_hours": {
+    "6": 0.23,
+    "9": 0.15,
+    "2": 0.08,
+    "1": 0.08
+   },
+   "top4_hours_share": 0.54
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.7,
+     "share": 0.17
+    },
+    {
+     "level": 0.4,
+     "share": 0.08
+    },
+    {
+     "level": 1.1,
+     "share": 0.17
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.08,
+   "size_ratio": 0.97,
+   "add_dir": "пирамида по ходу",
+   "max_orders": 2,
+   "cost_mult_max": 4.0,
+   "cost_cv": 0.67
+  },
+  "levels": {
+   "round_price_share": 0.0,
+   "repeat_price_share": 0.29,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 4,
+   "same_symbol_overlaps": 2
+  },
+  "context": {
+   "n": 8
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.2,
+  "tail_verdict": "не ясно",
+  "total_x": 1.65,
+  "cagr": 6.774,
+  "max_dd": -0.127,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.625,
+  "sharpe": 3.59,
+  "by_year": {
+   "2026": 0.648
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.23,
+   "60": 0.0,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 1.19,
+  "hold_mode_share": 0.08,
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

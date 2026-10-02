@@ -1,0 +1,16 @@
+{
+  "name": "Aristocrat Invest",
+  "source": "bybit",
+  "source_id": "Sf5GrvLadWM0wzlsrRoKCw==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=Sf5GrvLadWM0wzlsrRoKCw==",
+  "description": "I trade with a disciplined and risk-controlled approach.\nEach position is opened with a small portion of the deposit (around 0.5).\nIf the market moves temporarily against the position, I manage it by scaling in according to the plan.\nI don’t chase high percentages and I don’t take unnecessary risks.\nQuality setups over frequent trades.\nIf market conditions are not clear, I stay out of the market.\nTransparency, patience and consistency are the core of my strategy.\n",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 559,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-aristocrat-invest"
+}

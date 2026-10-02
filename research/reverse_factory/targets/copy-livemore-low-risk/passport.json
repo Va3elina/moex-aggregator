@@ -1,0 +1,237 @@
+{
+ "slug": "copy-livemore-low-risk",
+ "name": "livemore low risk (мои копии)",
+ "source": "bybit-copy-export",
+ "url": "",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "возврат к среднему",
+  "insurance": "нейтрально",
+  "reasons": [
+   "часто в плюс (74%), но плюс меньше минуса",
+   "контекст входа: вход без выраженной стороны (42% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "входы на закрытии свечи 1440 мин (52%)",
+   "пачки входов по разным монетам"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 358,
+   "n_closed": 358,
+   "start": "2024-09-22",
+   "end": "2024-10-06",
+   "span_days": 14,
+   "per_week": 177.0,
+   "n_sym": 11,
+   "top_sym": {
+    "SHIB1000": 110,
+    "SUI": 52,
+    "RENDER": 44,
+    "1000PEPE": 40,
+    "1000BONK": 34,
+    "1000FLOKI": 30
+   },
+   "majors_share": 0.0,
+   "short_share": 0.0,
+   "win": 0.746,
+   "avg_win": 1.7,
+   "avg_loss": -3.3,
+   "payoff": 0.51,
+   "expectancy": 0.428,
+   "worst": -21.01,
+   "best": 8.92,
+   "hold_h": {
+    "p10": 0.5,
+    "p50": 24.0,
+    "p90": 48.0
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": 1440,
+   "grid": {
+    "share": 0.525,
+    "ratio": 108.0,
+    "lag_min": 0.0
+   },
+   "grid_all": {
+    "5": 0.732,
+    "15": 0.581,
+    "30": 0.559,
+    "60": 0.603,
+    "120": 0.57,
+    "240": 0.547,
+    "360": 0.542,
+    "480": 0.536,
+    "720": 0.534,
+    "1440": 0.525
+   },
+   "sec_le10_share": 0.58,
+   "top_hours": {
+    "0": 0.53,
+    "18": 0.06,
+    "16": 0.06,
+    "2": 0.04
+   },
+   "top4_hours_share": 0.7
+  },
+  "batching": {
+   "batch_share": 0.68,
+   "max_batch": 34,
+   "batches_ge3": 23
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 0.6,
+     "share": 0.3
+    },
+    {
+     "level": 0.8,
+     "share": 0.13
+    },
+    {
+     "level": 1.0,
+     "share": 0.13
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -0.9,
+     "share": 0.15
+    },
+    {
+     "level": -0.5,
+     "share": 0.12
+    },
+    {
+     "level": -7.7,
+     "share": 0.07
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.58
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 78.7,
+   "cost_cv": 2.0
+  },
+  "levels": {
+   "round_price_share": 0.04,
+   "repeat_price_share": 0.09,
+   "grid": {
+    "sym": "SHIB1000",
+    "step": 1e-06,
+    "step_pct": 0.01,
+    "levels": 6,
+    "on_grid": 1.0
+   }
+  },
+  "concurrency": {
+   "max_open": 42,
+   "same_symbol_overlaps": 268
+  },
+  "context": {
+   "n": 352,
+   "4ч": {
+    "median": -0.59,
+    "with_share": 0.43
+   },
+   "24ч": {
+    "median": -1.41,
+    "with_share": 0.41
+   },
+   "72ч": {
+    "median": 2.43,
+    "with_share": 0.55
+   },
+   "verdict": "вход без выраженной стороны",
+   "with_share": 0.42
+  }
+ },
+ "equity": {
+  "months_up": 0.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.16,
+  "tail_verdict": "не ясно",
+  "total_x": 1.07,
+  "cagr": 3.665,
+  "max_dd": -0.039,
+  "dd_now": -0.006,
+  "days_in_dd_now": 6,
+  "vol": 0.25,
+  "sharpe": 6.3,
+  "by_year": {
+   "2024": 0.065
+  }
+ },
+ "equity_approx": true,
+ "replicate": {},
+ "entry": {
+  "interval": "D",
+  "symbols": 10,
+  "entries": 25,
+  "best": {
+   "правило": "импульс тело≥1.2% объём≥1.2× у края канала | BTC>EMA200",
+   "совпало": "14",
+   "сработало": "29",
+   "охват": 0.56,
+   "точность": 0.48,
+   "F1": 0.519,
+   "F1_подбор": 0.533,
+   "F1_проверка": 0.444
+  },
+  "best_by_train": {
+   "правило": "импульс тело≥1.2% объём≥1.2× у края канала | BTC>EMA200",
+   "совпало": "14",
+   "сработало": "29",
+   "охват": 0.56,
+   "точность": 0.48,
+   "F1": 0.519,
+   "F1_подбор": 0.533,
+   "F1_проверка": 0.444
+  },
+  "verdict": "правило найдено частично",
+  "tree_test": {
+   "охват": 0.17,
+   "точность": 1.0,
+   "F1": 0.286
+  }
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.58,
+  "exit_on_candle_close": {
+   "15": 0.06,
+   "60": 0.02,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 23.98,
+  "hold_mode_share": 0.38,
+  "atr": {
+   "interval": "D",
+   "win_pct_cv": 1.02,
+   "win_atr_cv": 0.91,
+   "loss_pct_cv": 1.13,
+   "loss_atr_cv": 1.11,
+   "win_k_median": 0.13,
+   "loss_k_median": -0.27
+  },
+  "verdict": [
+   "57% выходов сразу сменяются новым входом — переворот или перезапуск бота",
+   "выход по времени ≈ через 23.98 ч"
+  ]
+ }
+}

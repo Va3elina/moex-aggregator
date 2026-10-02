@@ -1,0 +1,16 @@
+{
+  "name": "Wasolldas 🏄🏻‍♀️",
+  "source": "bybit",
+  "source_id": "rp9DqDnaeagerRcZXQr8kA==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=rp9DqDnaeagerRcZXQr8kA==",
+  "description": "I run a fully automated Long & Short trend-following system powered by TradingView bots. The past months were challenging and tested both the strategy and my confidence, as profits and drawdowns were often separated by only a few trades. Following extensive optimization and adaptation to recent market changes, the bots have been recalibrated and are now running under updated conditions. No emotions, no manual intervention—just systematic execution based on predefined rules and market trends.",
+  "bybit_is_bot": true,
+  "apps": [],
+  "trade_days": 818,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "wasolldas"
+}

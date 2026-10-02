@@ -1,0 +1,25 @@
+{
+  "name": "Algotoria",
+  "source": "invvo",
+  "source_id": 16,
+  "url": "https://invvo.com/strategy/16",
+  "description": "Algotoria runs 14 uncorrelated long-short strategies on Bitcoin-USDT and Ethereum-USDT Perpetual Futures in Binance USDS-M. This portfolio uses MIXED collateral including USDT, USDC, BTC, ETH and BNB. The expected revenue is 50-100% per year at 50% risk. Algotoria runs 10+ uncorrelated long-short strategies on Bitcoin-USDT, Ethereum-USDT, and other Perpetual Futures in Binance USDS-M. Algotoria is bi-drectional, i.e. the trading strategies are balanced to bull and bear conditions. The expected revenue is 30-60% per year at 30% risk. Learn more at algotoria.com",
+  "tags": [
+    "Тренд",
+    "Тоp 10",
+    "Алго"
+  ],
+  "active": true,
+  "run_date": "2023-10-03 21:00:00",
+  "exchange": "binance",
+  "market": "futures",
+  "twr_pct": 612.95,
+  "max_dd_pct": -34.21,
+  "real_leverage_max": 3.67,
+  "profitable_pct": 31.63,
+  "time_note": "UTC (проверено сверкой цен со свечами)",
+  "price_note": "p_open = средняя позиции (cost/lots): доливки внутри, при нескольких стратегиях — неттинг",
+  "netted_suspect": true,
+  "history_note": "полная история с запуска",
+  "slug": "algotoria"
+}

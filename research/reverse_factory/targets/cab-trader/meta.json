@@ -1,0 +1,16 @@
+{
+  "name": "CAB_Trader",
+  "source": "bybit",
+  "source_id": "c2oAXxd3NVU1tNr+CT7eQA==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=c2oAXxd3NVU1tNr+CT7eQA==",
+  "description": "CAB_Trader operações em mercado perpetuo modo automático para Long e Short, utilizando AI com BOT operando 24H. Acompanhe os BOT em andamento para BTC / ETH / SOL / DOGE. Trades conservadores sem alavancagem.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 546,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "cab-trader"
+}

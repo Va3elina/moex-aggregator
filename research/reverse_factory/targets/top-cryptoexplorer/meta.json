@@ -1,0 +1,16 @@
+{
+  "name": "CryptoExplorer",
+  "source": "bybit",
+  "source_id": "1nj7BISHIY5aXxhWQWAnEQ==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=1nj7BISHIY5aXxhWQWAnEQ==",
+  "description": "|||t me: SortOfTrading |||\nI trade mean reversion on a dynamic whitelist: coins selected by criteria, not just the big names. Same strategy and risk management as HFT. Sort of and TopROI. Sort of, but with more positions open at once. That means drawdowns can go deeper, and if you set a custom stop loss you may get stopped out. If a drawdown gets too deep, risk management closes positions at a loss instead of waiting for a bounce. I will not be adding margin because you have no way of knowing if and when I did that. I don't withdraw profits here – this account is my test bed for new coins and an ROI showcase. But you should: no withdrawal, no profit. Recommended tarting balance: 250 USDT.",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 671,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "top-cryptoexplorer"
+}

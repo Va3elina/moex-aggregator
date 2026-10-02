@@ -1,0 +1,192 @@
+{
+ "slug": "top-2moon",
+ "name": "2Moon",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=BUIrXxYBt14yzj0GGyu2sw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.41",
+   "объём позиции растёт до ×45.5 от базового",
+   "выход на фиксированном проценте от средней: +1.4% (96%) прибыльных",
+   "100% сделок в плюс, стопа нет",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (83% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "93% входов в первые 10 секунд минуты",
+   "фиксированные уровни выхода"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 208,
+   "n_closed": 208,
+   "start": "2026-06-26",
+   "end": "2026-09-24",
+   "span_days": 90,
+   "per_week": 16.14,
+   "n_sym": 1,
+   "top_sym": {
+    "HYPE": 208
+   },
+   "majors_share": 0.0,
+   "short_share": 0.0,
+   "win": 1.0,
+   "avg_win": 1.38,
+   "avg_loss": 0.0,
+   "payoff": null,
+   "expectancy": 1.381,
+   "worst": 0.9,
+   "best": 1.41,
+   "hold_h": {
+    "p10": 0.2,
+    "p50": 3.9,
+    "p90": 31.6
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.409,
+    "15": 0.111,
+    "30": 0.082,
+    "60": 0.082,
+    "120": 0.058,
+    "240": 0.038,
+    "360": 0.019,
+    "480": 0.024,
+    "720": 0.005,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.93,
+   "top_hours": {
+    "14": 0.08,
+    "5": 0.07,
+    "15": 0.06,
+    "8": 0.06
+   },
+   "top4_hours_share": 0.27
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 5,
+   "batches_ge3": 2
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.4,
+     "share": 0.96
+    },
+    {
+     "level": 0.9,
+     "share": 0.04
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": {
+    "level": 1.4,
+    "share": 0.96
+   },
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.98
+  },
+  "averaging": {
+   "multi_order_share": 0.58,
+   "size_ratio": 1.41,
+   "add_dir": "усреднение вниз",
+   "max_orders": 10,
+   "cost_mult_max": 45.5,
+   "cost_cv": 1.65
+  },
+  "levels": {
+   "round_price_share": 0.09,
+   "repeat_price_share": 0.07,
+   "grid": {
+    "sym": "HYPE",
+    "step": 0.01,
+    "step_pct": 0.01,
+    "levels": 17,
+    "on_grid": 0.94
+   }
+  },
+  "concurrency": {
+   "max_open": 3,
+   "same_symbol_overlaps": 13
+  },
+  "context": {
+   "n": 208,
+   "4ч": {
+    "median": 1.37,
+    "with_share": 0.81
+   },
+   "24ч": {
+    "median": 2.95,
+    "with_share": 0.85
+   },
+   "72ч": {
+    "median": 4.39,
+    "with_share": 0.87
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.83
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.21,
+  "tail_verdict": "не ясно",
+  "total_x": 2.51,
+  "cagr": 42.862,
+  "max_dd": -0.194,
+  "dd_now": 0.0,
+  "days_in_dd_now": 0,
+  "vol": 0.903,
+  "sharpe": 4.64,
+  "by_year": {
+   "2026": 1.513
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": {
+   "level": 1.4,
+   "share": 0.96
+  },
+  "fixed_sl": null,
+  "reentry": 0.98,
+  "exit_on_candle_close": {
+   "15": 0.12,
+   "60": 0.04,
+   "240": 0.01,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.01,
+  "hold_mode_share": 0.02,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.07,
+   "win_atr_cv": 0.35,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 1.08,
+   "loss_k_median": null
+  },
+  "verdict": [
+   "тейк фиксированный ≈ +1.4%",
+   "98% выходов сразу сменяются новым входом — переворот или перезапуск бота"
+  ]
+ }
+}

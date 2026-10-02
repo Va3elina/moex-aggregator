@@ -1,0 +1,227 @@
+{
+ "slug": "safemoneymaker",
+ "name": "safemoneymaker",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=keHsDrRVyVZZYz6HubAw8w==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "докупка/мартингейл",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "доливки с множителем ×1.0",
+   "объём позиции растёт до ×24.6 от базового",
+   "98% сделок в плюс, стопа нет",
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (68% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "человек",
+  "bot_signs": [],
+  "human_signs": [
+   "44% цен круглые — лимитки руками"
+  ],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 118,
+   "n_closed": 118,
+   "start": "2026-06-24",
+   "end": "2026-09-25",
+   "span_days": 93,
+   "per_week": 8.92,
+   "n_sym": 2,
+   "top_sym": {
+    "SOL": 108,
+    "XAUT": 10
+   },
+   "majors_share": 1.0,
+   "short_share": 0.0,
+   "win": 0.983,
+   "avg_win": 3.85,
+   "avg_loss": -1.52,
+   "payoff": 2.53,
+   "expectancy": 3.757,
+   "worst": -3.04,
+   "best": 11.92,
+   "hold_h": {
+    "p10": 16.0,
+    "p50": 55.0,
+    "p90": 304.7
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.39,
+    "15": 0.136,
+    "30": 0.102,
+    "60": 0.11,
+    "120": 0.034,
+    "240": 0.0,
+    "360": 0.0,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.22,
+   "top_hours": {
+    "22": 0.09,
+    "21": 0.08,
+    "12": 0.08,
+    "1": 0.08
+   },
+   "top4_hours_share": 0.33
+  },
+  "batching": {
+   "batch_share": 0.02,
+   "max_batch": 6,
+   "batches_ge3": 1
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.7,
+     "share": 0.09
+    },
+    {
+     "level": 2.7,
+     "share": 0.05
+    },
+    {
+     "level": 1.3,
+     "share": 0.07
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.02
+  },
+  "averaging": {
+   "multi_order_share": 0.21,
+   "size_ratio": 1.0,
+   "add_dir": "усреднение вниз",
+   "max_orders": 16,
+   "cost_mult_max": 24.6,
+   "cost_cv": 1.42
+  },
+  "levels": {
+   "round_price_share": 0.44,
+   "repeat_price_share": 0.38,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 22,
+   "same_symbol_overlaps": 101
+  },
+  "context": {
+   "n": 118,
+   "4ч": {
+    "median": 0.57,
+    "with_share": 0.64
+   },
+   "24ч": {
+    "median": 2.44,
+    "with_share": 0.71
+   },
+   "72ч": {
+    "median": 8.51,
+    "with_share": 0.81
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.68
+  }
+ },
+ "equity": {
+  "months_up": 0.67,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.13,
+  "tail_verdict": "не ясно",
+  "total_x": 2.75,
+  "cagr": 62.142,
+  "max_dd": -0.722,
+  "dd_now": -0.014,
+  "days_in_dd_now": 3,
+  "vol": 5.662,
+  "sharpe": 2.09,
+  "by_year": {
+   "2026": 1.746
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 1.88,
+   "beta_down": 2.49,
+   "verdict": "в обычные дни в падениях участвует сильнее, чем в росте"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.84,
+  "corr_full": 0.9,
+  "r2_full": 0.8,
+  "split": "2026-08-13",
+  "days": 88,
+  "families": {
+   "докупка (продажа страховки)": 0.39,
+   "тренд": 0.33,
+   "возврат к среднему": 0.19,
+   "держание (бета рынка)": 0.09
+  },
+  "top_weights": {
+   "XAUT [4ч] докупка шаг 3% тейк 3%": 0.294,
+   "XAUT [день] держать": 0.092,
+   "XAUT [день] EMA50/200": 0.089,
+   "XAUT [4ч] докупка шаг 2% тейк 2%": 0.051,
+   "XAUT [день] ход 200": 0.042,
+   "XAUT [4ч] ход 5": 0.035,
+   "XAUT [день] ход 3": 0.03,
+   "XAUT [день] возврат 1": 0.026,
+   "BTC [4ч] докупка шаг 1% тейк 1%": 0.022,
+   "BTC [4ч] возврат 5": 0.019
+  },
+  "best_single": {
+   "SOL [день] EMA5/20": 0.61,
+   "SOL [4ч] пробой 55": 0.56,
+   "SOL [день] ход 60": 0.54,
+   "BTC [4ч] держать": 0.52,
+   "BTC [день] держать": 0.52,
+   "ETH [день] держать": 0.51
+  },
+  "worst_single": {
+   "ETH [день] возврат 1": -0.46,
+   "SOL [день] возврат 2": -0.44,
+   "BTC [день] возврат 1": -0.44,
+   "BTC [день] возврат 2": -0.44
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.02,
+  "exit_on_candle_close": {
+   "15": 0.12,
+   "60": 0.05,
+   "240": 0.01,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.0,
+  "hold_mode_share": 0.01,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.72,
+   "win_atr_cv": 0.82,
+   "loss_pct_cv": NaN,
+   "loss_atr_cv": NaN,
+   "win_k_median": 2.47,
+   "loss_k_median": -3.53
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

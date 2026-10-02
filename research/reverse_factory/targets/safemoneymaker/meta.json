@@ -1,0 +1,16 @@
+{
+  "name": "safemoneymaker",
+  "source": "bybit",
+  "source_id": "keHsDrRVyVZZYz6HubAw8w==",
+  "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=keHsDrRVyVZZYz6HubAw8w==",
+  "description": "Unlock consistent profits by copying my master trading account! With over 5 years of crypto trading expertise, I master low-risk, low-leverage strategies, focusing primarily on XAUT to deliver steady, sustainable gains. My disciplined approach minimizes risk while maximizing returns, proven by an impeccable 100% win rate. Check my trade history before copying to see the win trades  and join me to build wealth with confidence!",
+  "bybit_is_bot": false,
+  "apps": [],
+  "trade_days": 330,
+  "history_hidden": false,
+  "time_note": "UTC (метки времени в миллисекундах)",
+  "price_note": "p_open = средняя позиции, order_price = цена ордера",
+  "history_note": "только последние 90 дней — выводы о правилах ограничены",
+  "equity_note": "кривая = cumResetRoi за 90 дней (ROI витрины, с плечом)",
+  "slug": "safemoneymaker"
+}

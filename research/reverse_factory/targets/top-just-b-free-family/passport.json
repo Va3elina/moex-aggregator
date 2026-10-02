@@ -1,0 +1,196 @@
+{
+ "slug": "top-just-b-free-family",
+ "name": "Just B Free Family",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=SulB/0bO3V7XNju3NnFigA==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "тренд (вход по ходу движения)",
+  "insurance": "нейтрально",
+  "reasons": [
+   "контекст входа: вход ПО ХОДУ движения (тренд/пробой) (66% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "человек",
+  "bot_signs": [],
+  "human_signs": [
+   "45% цен круглые — лимитки руками"
+  ],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 130,
+   "n_closed": 130,
+   "start": "2026-06-27",
+   "end": "2026-09-24",
+   "span_days": 89,
+   "per_week": 10.21,
+   "n_sym": 51,
+   "top_sym": {
+    "BTC": 19,
+    "ETH": 11,
+    "XAUT": 8,
+    "SOL": 7,
+    "ONDO": 5,
+    "HYPE": 4
+   },
+   "majors_share": 0.38,
+   "short_share": 0.5,
+   "win": 0.554,
+   "avg_win": 3.66,
+   "avg_loss": -4.96,
+   "payoff": 0.74,
+   "expectancy": -0.19,
+   "worst": -10.64,
+   "best": 27.63,
+   "hold_h": {
+    "p10": 5.5,
+    "p50": 45.5,
+    "p90": 170.2
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.431,
+    "15": 0.185,
+    "30": 0.146,
+    "60": 0.131,
+    "120": 0.077,
+    "240": 0.031,
+    "360": 0.015,
+    "480": 0.023,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.27,
+   "top_hours": {
+    "14": 0.12,
+    "9": 0.11,
+    "13": 0.09,
+    "12": 0.08
+   },
+   "top4_hours_share": 0.41
+  },
+  "batching": {
+   "batch_share": 0.02,
+   "max_batch": 2,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.0,
+     "share": 0.11
+    },
+    {
+     "level": 2.8,
+     "share": 0.1
+    },
+    {
+     "level": 1.4,
+     "share": 0.08
+    }
+   ],
+   "sl_modes": [
+    {
+     "level": -3.3,
+     "share": 0.09
+    },
+    {
+     "level": -10.6,
+     "share": 0.05
+    },
+    {
+     "level": -10.0,
+     "share": 0.05
+    }
+   ],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.0,
+   "size_ratio": null,
+   "add_dir": null,
+   "max_orders": 1,
+   "cost_mult_max": 11.5,
+   "cost_cv": 0.87
+  },
+  "levels": {
+   "round_price_share": 0.45,
+   "repeat_price_share": 0.0,
+   "grid": null
+  },
+  "concurrency": {
+   "max_open": 9,
+   "same_symbol_overlaps": 0
+  },
+  "context": {
+   "n": 72,
+   "4ч": {
+    "median": 0.26,
+    "with_share": 0.67
+   },
+   "24ч": {
+    "median": 0.62,
+    "with_share": 0.64
+   },
+   "72ч": {
+    "median": 1.13,
+    "with_share": 0.67
+   },
+   "verdict": "вход ПО ХОДУ движения (тренд/пробой)",
+   "with_share": 0.66
+  }
+ },
+ "equity": {
+  "months_up": 0.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -1.32,
+  "tail_verdict": "не ясно",
+  "total_x": 0.9,
+  "cagr": -0.352,
+  "max_dd": -0.141,
+  "dd_now": -0.133,
+  "days_in_dd_now": 82,
+  "vol": 0.107,
+  "sharpe": -4.0,
+  "by_year": {
+   "2026": -0.1
+  }
+ },
+ "equity_approx": false,
+ "replicate": {},
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.14,
+   "60": 0.03,
+   "240": 0.0,
+   "1440": 0.0
+  },
+  "hold_mode_h": 0.19,
+  "hold_mode_share": 0.01,
+  "atr": {
+   "interval": "60",
+   "win_pct_cv": 0.88,
+   "win_atr_cv": 0.67,
+   "loss_pct_cv": 0.7,
+   "loss_atr_cv": 0.6,
+   "win_k_median": 2.93,
+   "loss_k_median": -4.29
+  },
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

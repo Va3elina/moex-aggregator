@@ -1,0 +1,221 @@
+{
+ "slug": "xrpusdt",
+ "name": "XRPUSDT",
+ "source": "bybit",
+ "url": "https://www.bybit.com/copyTrade/trade-center/detail?leaderMark=xENuuOsi1hDR9RN76qH1zw==",
+ "analyzed": "2026-09-26",
+ "classify": {
+  "archetype": "сетка",
+  "insurance": "продаёт страховку",
+  "reasons": [
+   "заявки на повторяющихся уровнях XRP с шагом 0.04 (~2.92%)",
+   "контекст входа: вход ПРОТИВ движения (контртренд/докупка на проливе) (10% входов по ходу 4–24 ч движения)"
+  ],
+  "who": "бот",
+  "bot_signs": [
+   "Bybit помечает как бота"
+  ],
+  "human_signs": [],
+  "self_check": null
+ },
+ "fingerprint": {
+  "basics": {
+   "n_pos": 19,
+   "n_closed": 19,
+   "start": "2026-03-06",
+   "end": "2026-05-20",
+   "span_days": 75,
+   "per_week": 1.78,
+   "n_sym": 1,
+   "top_sym": {
+    "XRP": 19
+   },
+   "majors_share": 1.0,
+   "short_share": 0.0,
+   "win": 0.789,
+   "avg_win": 6.4,
+   "avg_loss": -2.45,
+   "payoff": 2.62,
+   "expectancy": 4.541,
+   "worst": -4.78,
+   "best": 15.23,
+   "hold_h": {
+    "p10": 3140.5,
+    "p50": 3725.1,
+    "p90": 4328.6
+   },
+   "open_now": 0
+  },
+  "timing": {
+   "grid_tf_min": null,
+   "grid": null,
+   "grid_all": {
+    "5": 0.368,
+    "15": 0.158,
+    "30": 0.211,
+    "60": 0.158,
+    "120": 0.053,
+    "240": 0.0,
+    "360": 0.053,
+    "480": 0.0,
+    "720": 0.0,
+    "1440": 0.0
+   },
+   "sec_le10_share": 0.11,
+   "top_hours": {
+    "11": 0.11,
+    "18": 0.11,
+    "15": 0.11,
+    "7": 0.05
+   },
+   "top4_hours_share": 0.37
+  },
+  "batching": {
+   "batch_share": 0.0,
+   "max_batch": 1,
+   "batches_ge3": 0
+  },
+  "exits": {
+   "tp_modes": [
+    {
+     "level": 1.0,
+     "share": 0.2
+    },
+    {
+     "level": 3.3,
+     "share": 0.13
+    },
+    {
+     "level": 0.5,
+     "share": 0.07
+    }
+   ],
+   "sl_modes": [],
+   "fixed_tp": null,
+   "fixed_sl": null,
+   "reentry_after_exit_share": 0.0
+  },
+  "averaging": {
+   "multi_order_share": 0.05,
+   "size_ratio": 0.5,
+   "add_dir": "усреднение вниз",
+   "max_orders": 2,
+   "cost_mult_max": 49.9,
+   "cost_cv": 3.11
+  },
+  "levels": {
+   "round_price_share": 0.55,
+   "repeat_price_share": 0.55,
+   "grid": {
+    "sym": "XRP",
+    "step": 0.04,
+    "step_pct": 2.92,
+    "levels": 4,
+    "on_grid": 1.0
+   }
+  },
+  "concurrency": {
+   "max_open": 19,
+   "same_symbol_overlaps": 18
+  },
+  "context": {
+   "n": 19,
+   "4ч": {
+    "median": -1.21,
+    "with_share": 0.0
+   },
+   "24ч": {
+    "median": -1.62,
+    "with_share": 0.21
+   },
+   "72ч": {
+    "median": -2.06,
+    "with_share": 0.37
+   },
+   "verdict": "вход ПРОТИВ движения (контртренд/докупка на проливе)",
+   "with_share": 0.1
+  }
+ },
+ "equity": {
+  "months_up": 1.0,
+  "worst_month_vs_avg_good": null,
+  "dd_to_vol": -0.21,
+  "tail_verdict": "не ясно",
+  "total_x": 1.5,
+  "cagr": 4.209,
+  "max_dd": -0.14,
+  "dd_now": -0.0,
+  "days_in_dd_now": 3,
+  "vol": 0.661,
+  "sharpe": 2.82,
+  "by_year": {
+   "2026": 0.495
+  }
+ },
+ "equity_approx": false,
+ "replicate": {
+  "weak": true,
+  "shape": {
+   "beta_up": 1.16,
+   "beta_down": 1.28,
+   "verdict": "в обычные дни в падениях участвует сильнее, чем в росте"
+  },
+  "corr_in": 1.0,
+  "corr_out": 0.99,
+  "corr_full": 1.0,
+  "r2_full": 1.0,
+  "split": "2026-08-12",
+  "days": 89,
+  "families": {
+   "держание (бета рынка)": 0.62,
+   "тренд": 0.15,
+   "докупка (продажа страховки)": 0.14,
+   "возврат к среднему": 0.1
+  },
+  "top_weights": {
+   "XRP [4ч] держать": 0.483,
+   "XRP [день] держать": 0.135,
+   "XRP [4ч] докупка шаг 3% тейк 3%": 0.091,
+   "BTC [4ч] докупка шаг 2% тейк 2%": 0.035,
+   "BTC [день] возврат 2": 0.026,
+   "ETH [4ч] возврат 3": 0.015,
+   "XRP [4ч] возврат 5": 0.014,
+   "BTC [4ч] ход 3": 0.012,
+   "BTC [день] ход 3": 0.011,
+   "BTC [4ч] возврат 1": 0.011
+  },
+  "best_single": {
+   "XRP [день] держать": 1.0,
+   "XRP [4ч] держать": 1.0,
+   "XRP [4ч] докупка шаг 3% тейк 3%": 0.88,
+   "BTC [день] держать": 0.87,
+   "BTC [4ч] держать": 0.87,
+   "XRP [4ч] докупка шаг 2% тейк 2%": 0.84
+  },
+  "worst_single": {
+   "XRP [день] EMA50/200": -0.9,
+   "XRP [день] ход 200": -0.7,
+   "XRP [день] возврат 2": -0.58,
+   "BTC [день] возврат 2": -0.54
+  }
+ },
+ "entry": {
+  "skipped": "у входов нет сетки свечей — входы лимитками/вручную или по тикам; укажите таймфрейм вручную (--tf)"
+ },
+ "exits": {
+  "fixed_tp": null,
+  "fixed_sl": null,
+  "reentry": 0.0,
+  "exit_on_candle_close": {
+   "15": 0.16,
+   "60": 0.05,
+   "240": 0.05,
+   "1440": 0.0
+  },
+  "hold_mode_h": 3082.54,
+  "hold_mode_share": 0.05,
+  "verdict": [
+   "выход плавающий: по сигналу или скользящему стопу"
+  ]
+ }
+}

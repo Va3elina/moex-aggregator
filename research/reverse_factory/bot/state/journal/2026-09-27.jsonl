@@ -1,0 +1,3 @@
+{"kind": "десятка дня", "day": "2026-09-27", "top": ["BTC", "DOGE", "ENA", "ETH", "HYPE", "NEAR", "SOL", "SUI", "XRP", "ZEC"], "scales": {"BTC": 0.61, "DOGE": 1.0, "ENA": 1.0, "ETH": 0.821, "HYPE": 1.0, "NEAR": 1.0, "SOL": 0.875, "SUI": 1.0, "XRP": 0.911, "ZEC": 1.0}, "sec": 32, "at": "2026-09-27 17:50:25"}
+{"kind": "старт", "mode": "paper", "filter": false, "top": ["BTC", "DOGE", "ENA", "ETH", "HYPE", "NEAR", "SOL", "SUI", "XRP", "ZEC"], "at": "2026-09-27 17:50:40"}
+{"kind": "догнали пропуск", "a": "2026-09-27 17:49:00", "b": "2026-09-27 17:49:00", "minutes": 1, "at": "2026-09-27 17:51:03"}
