@@ -62,6 +62,7 @@ from api.routers import content_corpus  # ← /api/internal/content-corpus/* (п
 from api.routers import world_facts  # ← /api/internal/world-facts (второй мозг: что было верно на дату)
 from api.routers import user_settings  # ← /api/settings (синк настроек юзера между устройствами)
 from api.routers import repaint  # ← /api/admin/repaint/* (экспериментальная «Перекраска», admin-only)
+from api.routers import hot  # ← /api/admin/hot (витрина «Главное», admin-only)
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -534,6 +535,7 @@ if _PUBLIC_API_ON:
     app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
 app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
 app.include_router(repaint.router)  # ← /api/admin/repaint/* (экспериментальная «Перекраска», admin-only)
+app.include_router(hot.router)  # ← /api/admin/hot (витрина «Главное», admin-only)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*

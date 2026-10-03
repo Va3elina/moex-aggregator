@@ -66,6 +66,9 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   // adminOnly-обкатка, как и «Репо»: страница и API под role=admin.
   // feature: ключ раннего доступа — пункт видят и юзеры из user.early_access.
   { path: '/admin/repaint', label: 'Перекраска', badge: 'Тест', adminOnly: true, feature: 'repaint' },
+  // «Главное» — витрина находок (позиции физлиц, деньги и сделки фондов, сезонность).
+  // adminOnly-обкатка: страница и API (/api/admin/hot) под role=admin.
+  { path: '/hot', label: 'Главное', badge: 'HOT', adminOnly: true },
 ];
 
 export default function Layout() {

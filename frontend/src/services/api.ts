@@ -3573,3 +3573,39 @@ export const getBrainGraph = (center?: string, depth = 2, news = false, perNode 
 export const getBrainSimilar = (id: string, kind?: string, limit = 12) =>
   brainFetch<{ узел: string; похожие: Array<BrainNode & { сходство: number }> }>('similar', { id, kind, limit });
 export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('path', { a, b });
+
+// ==================== ГЛАВНОЕ (/hot, только админы) ====================
+// Витрина находок: отбор и подписи — api/services/hot.py; графики карточки берёт
+// из тех же ручек, что и страницы индикаторов (getChartData, getFundsFlows, …).
+
+export interface HotChip { text: string; cls: 'up' | 'dn'; sub?: string; old?: boolean }
+export interface HotCompare { label: string; chips: HotChip[] }
+export interface HotEpisode { date: string; after: number; post2022: boolean }
+
+export interface HotOiCard {
+  kind: 'oi'; id: string; sectype: string; name: string; group?: string; section: string; signal: string;
+  tag: { type: 'record'; text: string; all: boolean; move?: string | null } | { type: 'move'; text: string; note: string };
+  date: string; date_label: string; skew_now: number; level: number | null; window_start: string | null;
+  chart_period: string; what: string; has_price: boolean; episodes: HotEpisode[];
+}
+export interface HotFlowsCard {
+  kind: 'flows'; id: string; category: FundCategory; name: string; section: string; case: string; signal: string;
+  amount: number; date_label: string; timeframe: FlowTimeframe; period: FundPeriod; note?: string | null;
+  run?: [string, string] | null; compare?: HotCompare | null;
+}
+export interface HotTradesCard {
+  kind: 'trades'; id: string; isin: string; asset_name: string; secid: string | null; section: string;
+  signal: string; funds: string; amount_rub: number; date_label: string; month: string;
+}
+export interface HotSeasonCard {
+  kind: 'season'; id: string; secid: string; sectype: string; name: string; section: string; signal: string;
+  hits: string; date_label: string; median: number; compare: HotCompare;
+}
+export type HotCard = HotOiCard | HotFlowsCard | HotTradesCard | HotSeasonCard;
+export interface HotResponse { generated_at: string; as_of: string; cards: HotCard[]; errors?: string[] }
+
+export async function getHot(): Promise<HotResponse> {
+  const response = await apiFetch(`${API_BASE}/api/admin/hot`);
+  if (!response.ok) throw new Error(t('Не удалось загрузить витрину'));
+  return response.json();
+}
