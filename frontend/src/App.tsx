@@ -99,6 +99,8 @@ const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 // Репо в акциях — экспериментальная вкладка (тест гипотезы «репо ≈ шорты»),
 // desktop-only: мобильной версии нет, на телефоне отдаётся fallback-chrome.
 const RepoVolumePage = lazy(() => import('./pages/RepoVolumePage'));
+// «Главное» — витрина находок по позициям физлиц и фондам; пока только админам (меню «+»).
+const HotPage = lazy(() => import('./pages/HotPage'));
 
 /** "/" conditional: auth → карта рынка, guest → Landing. */
 function HomeRoute() {
@@ -293,6 +295,7 @@ export default function App() {
               />
             } />
             <Route path="/repo" element={<RepoVolumePage />} />
+            <Route path="/hot" element={<HotPage />} />
             {/* Методология индикаторов */}
             <Route path="/methodology/oi" element={<OIMethodologyPage />} />
             <Route path="/methodology/heatmap" element={<HeatmapMethodologyPage />} />
