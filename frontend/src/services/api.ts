@@ -3583,7 +3583,7 @@ export interface HotLineChart {
   series: [string, number][];
   price?: (number | null)[];
   zone?: { from: string; label: string };
-  level?: { value: number | null; label: string };
+  level?: { value: number | null; label: string; date?: string | null };
   start?: { date: string; value: number };
   peaks?: [string, number][];
   now: { date: string; value: number };

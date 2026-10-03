@@ -279,6 +279,10 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
             ext = prior_extremes(dates, vals, days)
             lo, hi = ext[last]
             level = hi if kind == "high" else lo
+            # день прежнего рекорда — на графике точка (окно то же, что у prior_extremes: [сегодня − days, сегодня))
+            lim = dates[last] - timedelta(days=days) if days else dates[0]
+            k_lv = (max if kind == "high" else min)((k for k in range(last) if dates[k] >= lim),
+                                                     key=lambda k: vals[k], default=None)
             need = days or 365
             hits = [k for k in range(len(vals)) if (dates[k] - dates[0]).days >= need and pts[k][2] >= scr.ATR_MIN_PART
                     and ((ext[k][1] is not None and vals[k] > ext[k][1]) if kind == "high"
@@ -288,13 +292,15 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
             start = dates[last] - timedelta(days=span) if span else dates[0]
             chart.update(zone={"from": (dates[last] - timedelta(days=days)).isoformat() if days else dates[0].isoformat(),
                                "label": ZONE_WORD[period]},
-                         level={"value": _r(level), "label": "прежний " + ("максимум" if kind == "high" else "минимум")})
+                         level={"value": _r(level), "date": dates[k_lv].isoformat() if k_lv is not None else None,
+                                "label": "прежний " + ("максимум" if kind == "high" else "минимум")})
             word = ("Макс " if kind == "high" else "Мин ") + PERIOD_WORD[period]
             tags.append({"tone": "fill" if period == "all" else "accent", "text": word})
             signal = screener_verb(r["net"], r["direction"]) if (c["day"] or c["wk"]) and r.get("direction") \
                 else record_verb(kind, r["net"])
         else:
             peaks = []
+            k_lv = None
             if c["wk"]:
                 k0 = max(0, last - scr.MED_WINDOW)
                 start = dates[last] - timedelta(days=122)
@@ -314,13 +320,16 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
             tags.append({"tone": "pill", "text": f"×{c['day']:.1f}".replace(".", ","), "note": "за день"})
         keep = _thin(dates, dates[last] - timedelta(days=760))
         idx = [i for i in keep if dates[i] >= start]
+        if k_lv is not None and k_lv not in idx:     # прореженная история могла пропустить день рекорда
+            idx = sorted(idx + [k_lv])
         if not c["rec"] and chart.get("start"):
             # сдвиг: с чем сравнить — прежний максимум (минимум) видимого периода до начала сдвига
             before = [i for i in idx if dates[i] < date.fromisoformat(chart["start"]["date"])]
             if before:
                 up = vals[last] >= chart["start"]["value"]
                 k = (max if up else min)(before, key=lambda q: vals[q])
-                chart["level"] = {"value": _r(vals[k]), "label": "прежний " + ("максимум" if up else "минимум")}
+                chart["level"] = {"value": _r(vals[k]), "date": dates[k].isoformat(),
+                                  "label": "прежний " + ("максимум" if up else "минимум")}
                 peaks = [k]
         sel_dates = [dates[i] for i in idx]
         chart["series"] = [[d.isoformat(), _r(vals[i])] for d, i in zip(sel_dates, idx)]
