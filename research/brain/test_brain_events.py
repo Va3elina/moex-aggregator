@@ -61,8 +61,10 @@ def test_name_check_is_shared_and_longest_name_wins():
 
 def test_writer_context_has_the_new_blocks():
     src = inspect.getsource(core.контекст)
-    for k in ('"раскрытия"', '"объявления_биржи"', '"отчёты"'):
+    for k in ('"раскрытия"', '"объявления_биржи"'):
         assert k in src, k
+    # отчёты компаний писателю не отдаём (Вадим 03.10: документы пока не нужны постам)
+    assert '"отчёты"' not in src
 
 
 def _ctx(**extra):
@@ -75,7 +77,7 @@ def _ctx(**extra):
     return {"NVTK": c}
 
 
-def test_brief_shows_disclosures_exchange_news_and_report_figures():
+def test_brief_shows_disclosures_and_exchange_news_but_not_reports():
     ctx = _ctx(
         раскрытия={"всего": 2, "элементы": [{"время": "2026-09-09T10:00", "заголовок": "Отчётность · Новатэк: МСФО за 6 мес."}]},
         объявления_биржи={"всего": 1, "элементы": [{"время": "2026-09-10T09:00", "заголовок": "Изменение базы расчёта индексов", "уровень": "A"}]},
@@ -86,7 +88,9 @@ def test_brief_shows_disclosures_exchange_news_and_report_figures():
     days = CA.BRAIN_CONTEXT_DAYS
     assert блок[f"раскрытия_компании_за_{days}_дней"].startswith("2 [B, FinanceMarker]")
     assert "[A]" in блок[f"объявления_биржи_за_{days}_дней"]
-    assert "Выручка 700 млрд руб (стр. 5)" in блок["отчёты_с_цифрами"][0]
+    # даже если срез принёс отчёты, в бриф они не идут (Вадим 03.10)
+    assert "отчёты_с_цифрами" not in блок
+    assert not any("Выручка 700 млрд" in str(v) for v in блок.values())
 
 
 def test_old_context_without_new_blocks_still_renders():
