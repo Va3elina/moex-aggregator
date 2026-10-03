@@ -4,10 +4,13 @@
  * Оформление — как у графиков сайта (цена — var(--chart-line-1), позиция —
  * var(--oi-cyan) как «Чистая позиция» на «Открытых позициях», потоки —
  * --funds-flow-*, моно-подписи осей, плашка последнего значения), но движок
- * свой и под маленькую карточку: без навигатора и легенды, подсказка не
- * выходит за карточку, подписи не наезжают друг на друга. Событие видно
- * глазами: цветная зона (окно рекорда, две недели, день), кружки прошлых
- * пиков, пунктир прежнего максимума, подсвеченный столбик, скобка серии.
+ * свой и под маленькую карточку: без навигатора, подсказка не выходит за
+ * карточку. Подписи только в строке над графиком (легенда слева, период
+ * события справа) и на осях — на сами линии текст не ложится. Событие видно
+ * глазами: цветная зона со скобкой сверху (окно рекорда, две недели, день,
+ * серия), точки всех заметных минимумов и максимумов, прежний рекорд —
+ * сплошной точкой с пунктиром до сегодняшнего значения, плашка значения —
+ * за правым краем поля.
  *
  * Общие графики сайта (SimpleChart, FlowsHistogram…) не трогаем — этот файл
  * используется только витриной.
@@ -29,12 +32,19 @@ const MUTED = 'var(--text-muted)';
 const INK = 'var(--text-primary)';
 const PANEL = 'var(--bg-secondary)';
 
+const HEAD_Y = 8;        // строка подписей над графиком
+const ZONE_TOP = 18;     // верх зоны события (скобка), поле графика начинается ниже
+const END_GAP = 10;      // последняя точка линии не упирается в плашку значения
+const LINE_M = { l: 42, r: 54, t: 26, b: 22 };
+
 const ts = (d: string) => Date.parse((d.length === 7 ? `${d}-15` : d) + 'T00:00:00Z');
 const monY = (d: string) => `${monthShort(Number(d.slice(5, 7)) - 1)} ${d.slice(2, 4)}`;
 const dayMon = (d: string) => `${Number(d.slice(8, 10))} ${monthShort(Number(d.slice(5, 7)) - 1)} ${d.slice(2, 4)}`;
 const pct = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}%`;
 const num = (v: number, d = 0) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: d })}`;
 const fmtPrice = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: Math.abs(v) < 100 ? 1 : 0 });
+// Примерная ширина подписи 10px: раскладываем строку над графиком без наложений.
+const tw = (s: string) => s.length * 6;
 
 function niceTicks(lo: number, hi: number, n: number): number[] {
   const raw = (hi - lo) / Math.max(n, 1);
@@ -72,6 +82,88 @@ function spaced<T extends { x: number }>(items: T[], minGap: number): T[] {
   return out;
 }
 
+type Swing = { i: number; hi: boolean };
+
+// Зигзаг: разворот засчитывается, когда ряд ушёл от последнего экстремума не меньше чем на thr.
+function zigzag(v: number[], thr: number): Swing[] {
+  const out: Swing[] = [];
+  let dir = 0, lo = 0, hi = 0, ext = 0;
+  for (let i = 1; i < v.length; i++) {
+    if (dir === 0) {
+      if (v[i] > v[hi]) hi = i;
+      if (v[i] < v[lo]) lo = i;
+      if (v[hi] - v[lo] >= thr) {
+        if (hi > lo) { out.push({ i: lo, hi: false }); dir = 1; ext = hi; }
+        else { out.push({ i: hi, hi: true }); dir = -1; ext = lo; }
+      }
+    } else if (dir > 0) {
+      if (v[i] >= v[ext]) ext = i;
+      else if (v[ext] - v[i] >= thr) { out.push({ i: ext, hi: true }); dir = -1; ext = i; }
+    } else if (v[i] <= v[ext]) ext = i;
+    else if (v[i] - v[ext] >= thr) { out.push({ i: ext, hi: false }); dir = 1; ext = i; }
+  }
+  return out;
+}
+
+// Все заметные минимумы и максимумы: разворот от пятой части размаха ряда; не помещаются (больше maxDots) —
+// порог растёт. Края ряда не в счёт: начало окна — не минимум, конец — сегодняшняя точка.
+function swings(vals: number[], maxDots: number): Swing[] {
+  const range = Math.max(...vals) - Math.min(...vals);
+  if (!(range > 0)) return [];
+  for (let f = 0.2; f < 1; f += 0.05) {
+    const out = zigzag(vals, Math.max(range * f, 4)).filter(p => p.i >= 2 && p.i <= vals.length - 4);
+    if (out.length <= maxDots) return out;
+  }
+  return [];
+}
+
+type LegendItem = { color: string; text: string };
+type Head = { legend: { x: number; it: LegendItem }[]; zone: { x: number; anchor: 'start' | 'end' } | null };
+
+// Строка над графиком: легенда слева от x=0, подпись зоны — над её правым концом (не влезает — над левым).
+// Вместе не помещаются — легенда теряет хвост; не помещается и первый пункт — пропадает подпись зоны.
+function headRow(items: LegendItem[], zone: { text: string; a: number; b: number } | null, width: number): Head {
+  const place = (list: LegendItem[]) => {
+    let x = 0;
+    return list.map(it => { const p = { x, it }; x += 21 + tw(it.text); return p; });
+  };
+  const right = (list: LegendItem[]) => (list.length ? list.reduce((s, it) => s + 21 + tw(it.text), 0) + 2 : 0);
+  if (!zone) return { legend: place(items), zone: null };
+  const zw = tw(zone.text), b = Math.min(zone.b, width);
+  for (let k = items.length; k >= Math.min(1, items.length); k--) {
+    const list = items.slice(0, k), r = right(list);
+    if (b - zw >= r) return { legend: place(list), zone: { x: b, anchor: 'end' } };
+    if (zone.a >= r && zone.a + zw <= width) return { legend: place(list), zone: { x: zone.a, anchor: 'start' } };
+  }
+  return { legend: place(items.slice(0, 1)), zone: null };
+}
+
+function HeadRow({ head, zoneText }: { head: Head; zoneText?: string }) {
+  return (
+    <g fontSize={10} fontWeight={600}>
+      {head.legend.map(({ x, it }) => (
+        <g key={it.text}>
+          <circle cx={x + 4} cy={HEAD_Y} r={3.5} fill={it.color} />
+          <text x={x + 11} y={HEAD_Y} fill={MUTED} dominantBaseline="central">{it.text}</text>
+        </g>
+      ))}
+      {head.zone && zoneText && (
+        <text x={head.zone.x} y={HEAD_Y} fill={ACC} fontWeight={700} textAnchor={head.zone.anchor} dominantBaseline="central">{zoneText}</text>
+      )}
+    </g>
+  );
+}
+
+// Зона события: заливка от скобки до оси X, скобка — сверху.
+function Zone({ a, b, bottom }: { a: number; b: number; bottom: number }) {
+  return (
+    <g pointerEvents="none">
+      <rect x={a} y={ZONE_TOP} width={Math.max(0, b - a)} height={bottom - ZONE_TOP} fill={ACC} opacity={0.12} />
+      <line x1={a} x2={b} y1={ZONE_TOP} y2={ZONE_TOP} stroke={ACC} strokeWidth={2} />
+    </g>
+  );
+}
+
 // Подсказка внутри карточки: прижимается к краям, не вылезает наружу.
 function Tip({ x, y, w, rows }: { x: number; y: number; w: number; rows: ReactNode[] }) {
   const boxW = 178;
@@ -88,20 +180,21 @@ function Tip({ x, y, w, rows }: { x: number; y: number; w: number; rows: ReactNo
   );
 }
 
-/** Позиция физлиц (перекос, %) + цена: зона события, прошлые пики, прежний уровень. */
+/** Чистая позиция физлиц (лонг минус шорт, % от всех их позиций — перекос скринера) + цена: зона события,
+ *  точки минимумов и максимумов, прежний рекорд с пунктиром до сегодня, плашка значения справа. */
 export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; priceLabel: string }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
-  const m = { l: 42, r: 46, t: 26, b: 22 };
+  const m = LINE_M;
   const data = chart.series;
   const n = data.length;
+  const xr = w - m.r;              // правый край поля: дальше ось процентов и плашка значения
   const geo = useMemo(() => {
     if (!w || n < 2) return null;
     const x0 = ts(data[0][0]), x1 = ts(data[n - 1][0]);
-    const X = (t: number) => m.l + ((t - x0) / Math.max(x1 - x0, 1)) * (w - m.l - m.r);
+    const X = (t: number) => m.l + ((t - x0) / Math.max(x1 - x0, 1)) * (w - m.l - m.r - END_GAP);
     const vals = data.map(d => d[1]);
-    const extra = [chart.level?.value, chart.now.value].filter((v): v is number => v != null);
-    let lo = Math.min(...vals, ...extra), hi = Math.max(...vals, ...extra);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * 0.12 || 5;
     lo = Math.max(-100, lo - pad); hi = Math.min(100, hi + pad);
     const Y = (v: number) => H - m.b - ((v - lo) / (hi - lo)) * (H - m.t - m.b);
@@ -110,8 +203,16 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
     const ppad = (phi - plo) * 0.1 || 1;
     plo -= ppad; phi += ppad;
     const P = (v: number) => H - m.b - ((v - plo) / (phi - plo)) * (H - m.t - m.b);
-    return { X, Y, P, lo, hi, plo, phi, x0, x1, hasPrice: pr.length > 1 };
-  }, [w, data, n, chart.level?.value, chart.now.value, chart.price]);
+    // точек столько, сколько помещается без толкотни: одна на ~26 px ширины
+    const marks = swings(vals, Math.max(5, Math.floor((w - m.l - m.r) / 26)));
+    return { X, Y, P, lo, hi, plo, phi, x0, x1, hasPrice: pr.length > 1, marks };
+  }, [w, data, n, chart.price, m]);
+
+  const iStart = chart.start ? data.findIndex(d => d[0] >= chart.start!.date) : -1;
+  const iLevel = chart.level?.date ? data.findIndex(d => d[0] === chart.level!.date) : -1;
+  // обычные точки не дублируют прежний рекорд, начало сдвига и сегодняшнее значение
+  const dots = (geo?.marks ?? []).filter(p => Math.abs(p.i - iLevel) > 1 && Math.abs(p.i - iStart) > 1);
+  const snap = [n - 1, iLevel, iStart, ...dots.map(p => p.i)].filter(i => i >= 0);
 
   const onMove = (e: RMouseEvent<SVGRectElement>) => {
     if (!geo) return;
@@ -122,6 +223,8 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
       const d = Math.abs(geo.X(ts(data[i][0])) - px);
       if (d < bd) { bd = d; best = i; }
     }
+    // на точку легко навести: в пределах 6 px подсказка встаёт на неё
+    for (const i of snap) if (Math.abs(geo.X(ts(data[i][0])) - px) <= 6) { best = i; break; }
     setHover(best);
   };
 
@@ -144,52 +247,32 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
   }
   const yt = niceTicks(geo.lo, geo.hi, 3);
   const ptk = geo.hasPrice ? niceTicks(geo.plo, geo.phi, 3) : [];
-  const zx0 = chart.zone ? X(ts(chart.zone.from)) : null;
-  const zx = zx0 == null ? null : Math.min(zx0, w - m.r - 16);
-  const zoneW = zx == null ? 0 : w - m.r - zx;
-  const zoneInside = zoneW >= 76;
+  const zx = chart.zone ? Math.min(X(ts(chart.zone.from)), xr - 8) : null;
   const nowX = X(ts(chart.now.date)), nowY = Y(chart.now.value);
-  const iStart = chart.start ? data.findIndex(d => d[0] >= chart.start!.date) : -1;
-  // подписи пиков: месяц и год, без наложения
-  const peakLabels = spaced((chart.peaks ?? []).map(p => ({ x: X(ts(p[0])), y: Y(p[1]), d: p[0], v: p[1] })), 44);
-  // подпись месяца у пика не кладём на подпись прежнего уровня (она слева, ~150 px)
-  const lvY = chart.level?.value != null ? Y(chart.level.value) + (chart.level.value > chart.now.value ? -5 : 13) : null;
-  const clashes = (p: { x: number; y: number; v: number }) => {
-    if (lvY == null) return false;
-    const ly = p.y + (p.v >= chart.now.value ? -9 : 15);
-    return p.x < m.l + 170 && Math.abs(ly - lvY) < 14;
-  };
+  const pillY = Math.min(Math.max(nowY, m.t), H - m.b);
+  const head = headRow(
+    [{ color: POS, text: 'чистая позиция, %' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
+    zx != null && chart.zone ? { text: chart.zone.label, a: zx, b: xr } : null, xr);
+  // прежний рекорд вплотную к сегодняшней точке (тот же заход) — не рисуем: точка «сегодня» его закрывает
+  const lv = iLevel >= 0 && nowX - pts[iLevel][0] >= 14 ? pts[iLevel] : null;
   const hv = hover != null ? data[hover] : null;
 
   return (
     <div ref={ref} style={{ position: 'relative', height: H }} onMouseLeave={() => setHover(null)}>
       <svg width={w} height={H} style={{ display: 'block' }}>
-        {zx != null && (
-          <g>
-            <rect x={zx} y={m.t - 8} width={zoneW} height={H - m.b - m.t + 8} fill={ACC} opacity={0.12} />
-            <text x={zoneInside ? zx + 4 : zx - 4} y={m.t - 6} fontSize={10} fontWeight={700} fill={ACC}
-              textAnchor={zoneInside ? 'start' : 'end'} dominantBaseline="hanging">{chart.zone!.label}</text>
-          </g>
-        )}
+        <HeadRow head={head} zoneText={chart.zone?.label} />
+        {zx != null && <Zone a={zx} b={xr} bottom={H - m.b} />}
         {yt.map(v => (
           <g key={`y${v}`}>
-            <line x1={m.l} x2={w - m.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? MUTED : GRID} strokeWidth={1} />
-            {Math.abs(Y(v) - nowY) > 13 && (
-              <text x={w - m.r + 6} y={Y(v)} fontSize={10} fontFamily={FONT} fontWeight={700} fill={POS} dominantBaseline="central">{pct(v)}</text>
+            <line x1={m.l} x2={xr} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? MUTED : GRID} strokeWidth={1} />
+            {Math.abs(Y(v) - pillY) > 13 && (
+              <text x={xr + 6} y={Y(v)} fontSize={10} fontFamily={FONT} fontWeight={700} fill={POS} dominantBaseline="central">{pct(v)}</text>
             )}
           </g>
         ))}
         {ptk.map(v => (
           <text key={`p${v}`} x={m.l - 6} y={P(v)} fontSize={10} fontFamily={FONT} fontWeight={700} fill={PRICE} textAnchor="end" dominantBaseline="central">{fmtPrice(v)}</text>
         ))}
-        <g fontSize={10} fontWeight={600}>
-          <circle cx={m.l + 4} cy={7} r={3.5} fill={POS} />
-          <text x={m.l + 11} y={7} fill={MUTED} dominantBaseline="central">позиция физлиц</text>
-          {geo.hasPrice && <>
-            <circle cx={m.l + 112} cy={7} r={3.5} fill={PRICE} />
-            <text x={m.l + 119} y={7} fill={MUTED} dominantBaseline="central">цена</text>
-          </>}
-        </g>
         {spaced(xt, 40).map(t => (
           <text key={`x${t.label}${t.x}`} x={t.x} y={H - 6} fontSize={10} fontFamily={FONT} fill={MUTED} textAnchor="middle">{t.label}</text>
         ))}
@@ -197,34 +280,22 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
           <path d={path((chart.price ?? []).map((v, i) => v == null ? null : [X(ts(data[i][0])), P(v)] as [number, number]).filter((p): p is [number, number] => !!p))}
             fill="none" stroke={PRICE} strokeWidth={1.3} opacity={0.55} />
         )}
-        {chart.level?.value != null && (
-          <g>
-            <line x1={m.l} x2={w - m.r} y1={Y(chart.level.value)} y2={Y(chart.level.value)} stroke={ACC} strokeWidth={1.2} strokeDasharray="5 4" />
-            <text x={m.l + 4} y={Y(chart.level.value) + (chart.level.value > chart.now.value ? -5 : 13)} fontSize={10} fill={ACC} fontWeight={600}
-              paintOrder="stroke" stroke={PANEL} strokeWidth={3}>
-              {chart.level.label} {pct(chart.level.value)}
-            </text>
-          </g>
-        )}
+        {lv && <line x1={lv[0]} x2={nowX} y1={lv[1]} y2={lv[1]} stroke={INK} strokeWidth={1} strokeDasharray="3 3" opacity={0.55} />}
         <path d={path(pts)} fill="none" stroke={POS} strokeWidth={1.9} strokeLinejoin="round" />
         {iStart >= 0 && <path d={path(pts.slice(iStart))} fill="none" stroke={ACC} strokeWidth={3.4} strokeLinejoin="round" strokeLinecap="round" />}
-        {peakLabels.map(p => (
-          <g key={`pk${p.d}`}>
-            <circle cx={p.x} cy={p.y} r={4.5} fill={PANEL} stroke={INK} strokeWidth={1.6} />
-            {!clashes(p) && <text x={p.x} y={p.y + (p.v >= chart.now.value ? -9 : 15)} fontSize={9.5} fill={MUTED} textAnchor="middle">{monY(p.d)}</text>}
-          </g>
-        ))}
+        {dots.map(p => <circle key={`s${p.i}`} cx={pts[p.i][0]} cy={pts[p.i][1]} r={3.2} fill={PANEL} stroke={INK} strokeWidth={1.3} />)}
+        {lv && <circle cx={lv[0]} cy={lv[1]} r={4.5} fill={INK} stroke={PANEL} strokeWidth={1.5} />}
         {iStart >= 0 && <circle cx={pts[iStart][0]} cy={pts[iStart][1]} r={4} fill={PANEL} stroke={ACC} strokeWidth={2} />}
         <circle cx={nowX} cy={nowY} r={5.5} fill={ACC} stroke={INK} strokeWidth={1.6} />
-        <rect x={w - m.r + 2} y={nowY - 9} width={42} height={18} rx={4} fill={POS} />
-        <text x={w - m.r + 23} y={nowY} fontSize={10.5} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{pct(chart.now.value)}</text>
-        {hv && <line x1={X(ts(hv[0]))} x2={X(ts(hv[0]))} y1={m.t - 8} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
-        <rect x={m.l} y={0} width={Math.max(0, w - m.l - m.r)} height={H - m.b} fill="transparent" onMouseMove={onMove} />
+        <rect x={xr + 4} y={pillY - 9} width={46} height={18} rx={4} fill={POS} />
+        <text x={xr + 27} y={pillY} fontSize={10.5} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{pct(chart.now.value)}</text>
+        {hv && <line x1={X(ts(hv[0]))} x2={X(ts(hv[0]))} y1={m.t} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
+        <rect x={m.l} y={0} width={Math.max(0, xr - m.l)} height={H - m.b} fill="transparent" onMouseMove={onMove} />
       </svg>
       {hv && hover != null && (
         <Tip x={X(ts(hv[0]))} y={Y(hv[1])} w={w} rows={[
-          <span style={{ color: MUTED }}>{dayMon(hv[0])}</span>,
-          <span><span style={{ color: POS, fontWeight: 700 }}>●</span> Позиция физлиц {pct(hv[1])}</span>,
+          <span style={{ color: MUTED }}>{dayMon(hv[0])}{hover === iLevel && chart.level ? ` · ${chart.level.label}` : ''}</span>,
+          <span><span style={{ color: POS, fontWeight: 700 }}>●</span> Чистая позиция {pct(hv[1])}</span>,
           ...(chart.price?.[hover] != null ? [<span><span style={{ color: PRICE, fontWeight: 700 }}>●</span> {priceLabel} {fmtPrice(chart.price[hover]!)}</span>] : []),
         ]} />
       )}
@@ -232,11 +303,12 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
   );
 }
 
-/** Столбики потоков: событие оранжевым, прежний рекорд обведён и продлён пунктиром, серия — зоной. */
+/** Столбики потоков: событие оранжевым с цифрой, прежний рекорд обведён и отмечен точкой с пунктиром
+ *  вправо, серия — зоной со скобкой и подписью над графиком. */
 export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
-  const m = { l: 8, r: 8, t: 22, b: 22 };
+  const m = { l: 8, r: 8, t: 26, b: 22 };
   const bars = chart.bars;
   const n = bars.length;
   if (!w || !n) return <div ref={ref} style={{ height: H }} />;
@@ -251,28 +323,22 @@ export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
   const runIdx = bars.map((b, i) => (inRun(key(b)) ? i : -1)).filter(i => i >= 0);
   const hlI = bars.findIndex(b => key(b) === chart.hl);
   const prevI = chart.prev ? bars.findIndex(b => key(b) === chart.prev) : -1;
+  const cx = (i: number) => m.l + i * bw + bw / 2;
   // подписи годов на границах
   const years = spaced(bars.map((b, i) => ({ x: m.l + i * bw, label: b[0].slice(0, 4), i }))
     .filter((t, i, arr) => i > 0 && t.label !== arr[i - 1].label), 36);
   const fmt = (v: number) => num(v, Math.abs(v) >= 10 ? 0 : 2);
-  const label = (i: number, color: string) => {
-    const v = bars[i][1], x = m.l + i * bw + bw / 2;
-    const anchor = x > w - 30 ? 'end' : x < 30 ? 'start' : 'middle';
-    return <text x={anchor === 'end' ? x + bw / 2 : x} y={v >= 0 ? Y(v) - 5 : Y(v) + 13} fontSize={10.5} fontFamily={FONT} fontWeight={800} fill={color} textAnchor={anchor}>{fmt(v)}</text>;
-  };
+  const run = runIdx.length > 0 && chart.run
+    ? { a: m.l + runIdx[0] * bw, b: m.l + (runIdx[runIdx.length - 1] + 1) * bw, label: chart.run.label } : null;
+  const head = headRow([], run ? { text: run.label, a: run.a, b: run.b } : null, w - m.r);
   const hv = hover != null ? bars[hover] : null;
+  const hlV = hlI >= 0 ? bars[hlI][1] : 0, hlX = hlI >= 0 ? cx(hlI) : 0;
+  const hlAnchor = hlX > w - 30 ? 'end' : hlX < 30 ? 'start' : 'middle';
   return (
     <div ref={ref} style={{ position: 'relative', height: H }} onMouseLeave={() => setHover(null)}>
       <svg width={w} height={H} style={{ display: 'block' }}>
-        {runIdx.length > 0 && (() => {
-          const xa = m.l + runIdx[0] * bw, xb = m.l + (runIdx[runIdx.length - 1] + 1) * bw;
-          return (
-            <g>
-              <rect x={xa} y={m.t - 10} width={xb - xa} height={H - m.b - m.t + 10} fill={ACC} opacity={0.1} />
-              <text x={Math.min(xa + 4, w - m.r - 80)} y={m.t - 8} fontSize={10} fontWeight={700} fill={ACC} dominantBaseline="hanging">{chart.run!.label}</text>
-            </g>
-          );
-        })()}
+        <HeadRow head={head} zoneText={run?.label} />
+        {run && <Zone a={run.a} b={run.b} bottom={H - m.b} />}
         <line x1={m.l} x2={w - m.r} y1={Y(0)} y2={Y(0)} stroke={MUTED} strokeWidth={1} />
         {bars.map((b, i) => {
           const v = b[1], x = m.l + i * bw;
@@ -284,22 +350,25 @@ export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
               stroke={isHl || isPrev ? INK : 'none'} strokeWidth={isHl || isPrev ? 1.3 : 0} />
           );
         })}
-        {chart.level != null && (
-          <line x1={m.l} x2={w - m.r} y1={Y(chart.level)} y2={Y(chart.level)} stroke={INK} strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
+        {prevI >= 0 && chart.level != null && <>
+          <line x1={cx(prevI)} x2={w - m.r} y1={Y(chart.level)} y2={Y(chart.level)} stroke={INK} strokeWidth={1} strokeDasharray="3 3" opacity={0.55} />
+          <circle cx={cx(prevI)} cy={Y(chart.level)} r={4} fill={INK} stroke={PANEL} strokeWidth={1.5} />
+        </>}
+        {hlI >= 0 && (
+          <text x={hlAnchor === 'end' ? hlX + bw / 2 : hlX} y={hlV >= 0 ? Y(hlV) - 5 : Y(hlV) + 13} fontSize={10.5} fontFamily={FONT}
+            fontWeight={800} fill={ACC} textAnchor={hlAnchor} paintOrder="stroke" stroke={PANEL} strokeWidth={3}>{fmt(hlV)}</text>
         )}
-        {prevI >= 0 && label(prevI, INK)}
-        {hlI >= 0 && label(hlI, ACC)}
         {years.map(t => <text key={`y${t.i}`} x={t.x + 2} y={H - 6} fontSize={10} fontFamily={FONT} fill={MUTED}>{t.label}</text>)}
         <rect x={m.l} y={0} width={w - m.l - m.r} height={H - m.b} fill="transparent"
           onMouseMove={e => {
             const rect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
             setHover(Math.min(n - 1, Math.max(0, Math.floor((e.clientX - rect.left) / bw))));
           }} />
-        {hv && <rect x={m.l + hover! * bw} y={m.t - 10} width={bw} height={H - m.b - m.t + 10} fill={INK} opacity={0.06} pointerEvents="none" />}
+        {hv && <rect x={m.l + hover! * bw} y={m.t} width={bw} height={H - m.b - m.t} fill={INK} opacity={0.06} pointerEvents="none" />}
       </svg>
       {hv && (
-        <Tip x={m.l + hover! * bw + bw / 2} y={Y(hv[1])} w={w} rows={[
-          <span style={{ color: MUTED }}>{chart.weekly ? `неделя с ${dayMon(hv[0])}` : monY(hv[0])}</span>,
+        <Tip x={cx(hover!)} y={Y(hv[1])} w={w} rows={[
+          <span style={{ color: MUTED }}>{chart.weekly ? `неделя с ${dayMon(hv[0])}` : monY(hv[0])}{hover === prevI ? ' · прежний рекорд' : ''}</span>,
           <span style={{ fontWeight: 700, color: hv[1] >= 0 ? UP : DN }}>{fmt(hv[1])} {chart.unit}</span>,
         ]} />
       )}
@@ -311,7 +380,7 @@ export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
 export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label: string }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
-  const m = { l: 8, r: 42, t: 20, b: 22 };
+  const m = { l: 8, r: 42, t: 26, b: 22 };
   const avg = chart.avg, cur = chart.cur;
   if (!w || !avg.length) return <div ref={ref} style={{ height: H }} />;
   const tdMax = avg[avg.length - 1][0];
@@ -325,13 +394,17 @@ export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label
   const months = spaced(avg.filter((a, i) => i === 0 || a[2] !== avg[i - 1][2]).map(a => ({ x: X(a[0]), label: monthShort(a[2] - 1) })), 30);
   const yt = niceTicks(lo, hi, 3);
   const nowCur = cur[cur.length - 1];
+  const za = X(chart.today), zb = Math.max(za + 3, X(chart.zone_to));
+  const zoneText = '3 месяца';
+  const head = headRow([{ color: MUTED, text: 'в среднем' }, { color: ACC, text: label.toLowerCase() }],
+    { text: zoneText, a: za, b: zb }, w - m.r);
   const hv = hover != null ? avg.find(a => a[0] === hover) : null;
   const hc = hover != null ? cur.find(c => c[0] === hover) : null;
   return (
     <div ref={ref} style={{ position: 'relative', height: H }} onMouseLeave={() => setHover(null)}>
       <svg width={w} height={H} style={{ display: 'block' }}>
-        <rect x={X(chart.today)} y={m.t - 8} width={Math.max(3, X(chart.zone_to) - X(chart.today))} height={H - m.b - m.t + 8} fill={ACC} opacity={0.1} />
-        <text x={X(chart.today) + 4} y={m.t - 8} fontSize={10} fontWeight={700} fill={ACC} dominantBaseline="hanging">3 месяца</text>
+        <HeadRow head={head} zoneText={zoneText} />
+        <Zone a={za} b={zb} bottom={H - m.b} />
         {yt.map(v => (
           <g key={`y${v}`}>
             <line x1={m.l} x2={w - m.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? MUTED : GRID} />
@@ -341,7 +414,7 @@ export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label
         {months.map(t => <text key={`m${t.x}`} x={t.x} y={H - 6} fontSize={10} fontFamily={FONT} fill={MUTED}>{t.label}</text>)}
         <path d={path(avg.map(a => [X(a[0]), Y(a[1])] as [number, number]))} fill="none" stroke={MUTED} strokeWidth={1.8} />
         <path d={path(cur.map(c => [X(c[0]), Y(c[1])] as [number, number]))} fill="none" stroke={ACC} strokeWidth={2} />
-        <line x1={X(chart.today)} x2={X(chart.today)} y1={m.t - 8} y2={H - m.b} stroke={INK} strokeDasharray="3 3" opacity={0.5} />
+        <line x1={za} x2={za} y1={ZONE_TOP} y2={H - m.b} stroke={INK} strokeDasharray="3 3" opacity={0.5} />
         {nowCur && <circle cx={X(nowCur[0])} cy={Y(nowCur[1])} r={5} fill={ACC} stroke={INK} strokeWidth={1.5} />}
         <rect x={m.l} y={0} width={w - m.l - m.r} height={H - m.b} fill="transparent"
           onMouseMove={e => {
@@ -349,7 +422,7 @@ export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label
             const td = Math.round(((e.clientX - rect.left) / (w - m.l - m.r)) * tdMax);
             setHover(Math.min(tdMax, Math.max(0, td)));
           }} />
-        {hover != null && <line x1={X(hover)} x2={X(hover)} y1={m.t - 8} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
+        {hover != null && <line x1={X(hover)} x2={X(hover)} y1={m.t} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
       </svg>
       {hover != null && hv && (
         <Tip x={X(hover)} y={Y(hv[1])} w={w} rows={[
