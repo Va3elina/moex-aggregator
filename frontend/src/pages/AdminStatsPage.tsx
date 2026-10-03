@@ -644,7 +644,11 @@ export default function AdminStatsPage() {
       {tab === 'overview' && (
         <>
           <div className="mb-6 md:mb-8">
-            <StatsInsights items={insights} loading={loading || metricaLoading || growthLoading || featuresLoading} />
+            <StatsInsights
+              items={insights}
+              loading={loading || metricaLoading || growthLoading || featuresLoading}
+              cacheKey={`${range.dateFrom}|${range.dateTo}|${segment}|${device}`}
+            />
           </div>
 
           {/* ═══ Воронка ═══ */}

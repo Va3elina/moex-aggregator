@@ -69,6 +69,9 @@ async function ensureFreshToken(): Promise<string | null> {
  * за которым висящий запрос точно стоит оборвать, чтобы не крутить спиннер
  * вечно. nginx upstream timeout — 60с, мы обрываем раньше и показываем ошибку. */
 const DEFAULT_TIMEOUT_MS = 20000;
+/** Отчёты /admin/stats: страница шлёт их разом, на длинном периоде под нагрузкой
+ * они дольше 20с; nginx держит до 60с. */
+const ADMIN_REPORT_TIMEOUT_MS = 55000;
 
 /** Ошибка таймаута — отличима от AbortError (отмена устаревшего запроса
  * stale-guard'ом) и от сетевых ошибок, чтобы UI показал «превышено время». */
@@ -107,7 +110,8 @@ function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = DEFAULT_T
 /**
  * Обёртка над fetch с авторизацией и проактивным refresh.
  */
-export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+/** timeoutMs — для тяжёлых админских отчётов; по умолчанию DEFAULT_TIMEOUT_MS. */
+export async function apiFetch(url: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
   const token = await ensureFreshToken() || localStorage.getItem('access_token');
   // Вид админа «как пользователь» (services/viewMode) едет с каждым запросом:
   // бэкенд по нему отдаёт админу публичную версию цены.
@@ -115,7 +119,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
-  let response = await fetchWithTimeout(url, { ...init, headers });
+  let response = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
 
   // Если всё равно 401 — пробуем refresh и retry
   if (response.status === 401 && token) {
@@ -124,7 +128,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     if (newToken) {
       const retryHeaders: Record<string, string> = { ...viewHeaders(), Authorization: `Bearer ${newToken}` };
       if (init?.headers) Object.assign(retryHeaders, init.headers);
-      response = await fetchWithTimeout(url, { ...init, headers: retryHeaders });
+      response = await fetchWithTimeout(url, { ...init, headers: retryHeaders }, timeoutMs);
     }
   }
 
@@ -1163,7 +1167,7 @@ export async function getAnalyticsStats(opts: AdminRange & {
   rangeParams(params, opts);
   if (opts.segment) params.set('segment', opts.segment);
   if (opts.device) params.set('device', opts.device);
-  const response = await apiFetch(`${API_BASE}/api/analytics/stats?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/analytics/stats?${params}`, undefined, ADMIN_REPORT_TIMEOUT_MS);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch analytics stats');
@@ -1272,7 +1276,7 @@ export async function getMetrica(range: AdminRange, segment = 'all', device = 'a
   rangeParams(params, range);
   params.set('segment', segment);
   params.set('device', device);
-  const response = await apiFetch(`${API_BASE}/api/analytics/metrica?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/analytics/metrica?${params}`, undefined, ADMIN_REPORT_TIMEOUT_MS);
   if (!response.ok) throw new Error('Не удалось получить данные Метрики');
   return response.json();
 }
@@ -1353,7 +1357,7 @@ export interface GrowthReport {
 export async function getGrowth(range: AdminRange): Promise<GrowthReport> {
   const params = new URLSearchParams();
   rangeParams(params, range);
-  const response = await apiFetch(`${API_BASE}/api/analytics/growth?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/analytics/growth?${params}`, undefined, ADMIN_REPORT_TIMEOUT_MS);
   if (!response.ok) throw new Error('Не удалось посчитать воронку');
   return response.json();
 }
@@ -1590,7 +1594,7 @@ export async function getFeatures(opts: AdminRange & { segment?: string; device?
   rangeParams(params, opts);
   if (opts.segment) params.set('segment', opts.segment);
   if (opts.device) params.set('device', opts.device);
-  const response = await apiFetch(`${API_BASE}/api/analytics/features?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/analytics/features?${params}`, undefined, ADMIN_REPORT_TIMEOUT_MS);
   if (!response.ok) {
     if (response.status === 403) throw new Error(t('Доступ только для администратора'));
     throw new Error('Failed to fetch features');

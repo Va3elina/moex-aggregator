@@ -6,10 +6,16 @@
  * /features), без ИИ и без отдельного запроса: каждая плитка проверяема по
  * блоку ниже. Правило молчит, если данных нет или цифра слишком мала, чтобы
  * о чём-то говорить.
+ *
+ * Плитки ждут самый медленный из четырёх ответов, поэтому последний готовый
+ * набор хранится в браузере по ключу фильтров: при заходе он виден сразу
+ * (приглушённым), а свежий подменяет его, когда придут все ответы. Поэтому
+ * иконка — описание (IconSpec), а не готовая разметка: её можно сохранить.
  */
+import { useEffect, useMemo } from 'react';
 import { TrendingUp, TrendingDown, Users, UserPlus, CreditCard, Flame } from 'lucide-react';
-import type { ReactNode } from 'react';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import HelpTooltip from '../HelpTooltip';
 import { PAGE_NAMES } from './ActivityBlocks';
 import { TERMINAL_PANEL } from './FeaturesBlock';
@@ -32,9 +38,14 @@ const SHORT_SOURCE: [RegExp, string][] = [
 
 type Tone = 'good' | 'bad' | 'flat';
 
+const LUCIDE = { users: Users, userPlus: UserPlus, card: CreditCard, flame: Flame } as const;
+
+/** Иконка плитки: раздел сайта (его глиф) или значок lucide с цветом. */
+type IconSpec = { glyph: string } | { lucide: keyof typeof LUCIDE; color: string };
+
 export interface Insight {
   key: string;
-  icon: ReactNode;
+  icon: IconSpec;
   label: string;
   value: string;
   /** Изменение к прошлому периоду: текст и цвет. */
@@ -51,7 +62,10 @@ function change(cur: number, prev: number | undefined | null): Insight['delta'] 
   return { text: `${p >= 0 ? '+' : '−'}${Math.abs(p)}%`, tone: Math.abs(p) < 5 ? 'flat' : p > 0 ? 'good' : 'bad' };
 }
 
-function roundIcon(Icon: typeof Users, color: string) {
+function renderIcon(spec: IconSpec) {
+  if ('glyph' in spec) return <IndicatorGlyph path={spec.glyph} size={28} />;
+  const Icon = LUCIDE[spec.lucide] ?? Users;
+  const color = spec.color;
   return (
     <span
       className="flex items-center justify-center rounded-md shrink-0"
@@ -77,7 +91,7 @@ export function buildInsights({ metrica, growth, stats, features }: {
     const total = metrica?.sources?.reduce((a, r) => a + r.value, 0) ?? 0;
     const short = src ? SHORT_SOURCE.find(([re]) => re.test(src.label))?.[1] ?? src.label : null;
     out.push({
-      key: 'visitors', icon: roundIcon(Users, 'var(--info)'), label: 'Посетители',
+      key: 'visitors', icon: { lucide: 'users', color: 'var(--info)' }, label: 'Посетители',
       value: fmt(cur.users), delta: change(cur.users, metrica?.prev_summary?.users),
       note: src && total > 0 ? `${pct(src.value, total)}% визитов — ${short}` : undefined,
     });
@@ -87,12 +101,12 @@ export function buildInsights({ metrica, growth, stats, features }: {
   const f = growth?.funnel;
   if (f) {
     out.push({
-      key: 'registered', icon: roundIcon(UserPlus, 'var(--accent)'), label: 'Регистрации',
+      key: 'registered', icon: { lucide: 'userPlus', color: 'var(--accent)' }, label: 'Регистрации',
       value: fmt(f.registered),
       note: f.visitors ? `${fmt((f.registered / f.visitors) * 100)}% посетителей` : undefined,
     });
     out.push({
-      key: 'paid', icon: roundIcon(CreditCard, f.paid > 0 ? 'var(--success)' : 'var(--danger)'), label: 'Оплаты',
+      key: 'paid', icon: { lucide: 'card', color: f.paid > 0 ? 'var(--success)' : 'var(--danger)' }, label: 'Оплаты',
       value: fmt(f.paid),
       delta: f.paid > 0 ? undefined : { text: 'нет', tone: 'bad' },
       note: f.registered > 0 ? `из ${f.registered} новых аккаунтов` : undefined,
@@ -104,7 +118,7 @@ export function buildInsights({ metrica, growth, stats, features }: {
   const allVisitors = stats?.summary.visitors ?? 0;
   if (top && allVisitors > 0) {
     out.push({
-      key: 'section', icon: <IndicatorGlyph path={top.path} size={28} />, label: 'Главный раздел',
+      key: 'section', icon: { glyph: top.path }, label: 'Главный раздел',
       value: PAGE_NAMES[top.path] ?? top.path, note: `открывали ${pct(top.visitors, allVisitors)}% посетителей`,
     });
   }
@@ -122,7 +136,7 @@ export function buildInsights({ metrica, growth, stats, features }: {
       .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))[0];
     if (moved && Math.abs(moved.d) >= 0.2) {
       out.push({
-        key: 'moved', icon: <IndicatorGlyph path={moved.path} size={28} />, label: moved.name,
+        key: 'moved', icon: { glyph: moved.path }, label: moved.name,
         value: `${fmt(moved.v.people)} чел.`, delta: change(moved.v.people, moved.v.prev_people),
         note: 'самый заметный сдвиг',
       });
@@ -132,7 +146,7 @@ export function buildInsights({ metrica, growth, stats, features }: {
     const tt = tm.types[0];
     if (tm.with_panels >= 3 && tt && moved?.path !== '/sandbox') {
       out.push({
-        key: 'terminal', icon: <IndicatorGlyph path="/sandbox" size={28} />, label: 'Терминал',
+        key: 'terminal', icon: { glyph: '/sandbox' }, label: 'Терминал',
         value: `${fmt(tm.with_panels)} чел.`,
         note: `~${fmt(tm.avg_panels)} окон, чаще ${(TERMINAL_PANEL[tt.key] ?? tt.key).toLowerCase()}`,
       });
@@ -143,7 +157,7 @@ export function buildInsights({ metrica, growth, stats, features }: {
   const g = growth?.guests;
   if (g && g.days2 >= 5) {
     out.push({
-      key: 'guests', icon: roundIcon(Flame, 'var(--warning)'), label: 'Тёплые гости',
+      key: 'guests', icon: { lucide: 'flame', color: 'var(--warning)' }, label: 'Тёплые гости',
       value: fmt(g.days2), note: '2+ дня без аккаунта',
     });
   }
@@ -153,7 +167,45 @@ export function buildInsights({ metrica, growth, stats, features }: {
 
 const TONE_COLOR: Record<Tone, string> = { good: 'var(--success)', bad: 'var(--danger)', flat: 'var(--text-muted)' };
 
-export default function StatsInsights({ items, loading }: { items: Insight[]; loading: boolean }) {
+const CACHE_KEY = 'frame:admin:stats:insights';
+const CACHE_MAX = 12;
+
+function readCache(): Record<string, Insight[]> {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCache(filterKey: string, items: Insight[]) {
+  try {
+    const all = readCache();
+    delete all[filterKey];
+    // Свежий ключ — последним; старые вытесняются, чтобы кэш не рос без конца.
+    const entries = [...Object.entries(all), [filterKey, items] as const].slice(-CACHE_MAX);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch { /* приватный режим или переполнение — просто без кэша */ }
+}
+
+export default function StatsInsights({ items: fresh, loading, cacheKey }: {
+  items: Insight[];
+  /** Хоть один из четырёх ответов ещё в пути. */
+  loading: boolean;
+  /** Период + срез: плитки одного набора фильтров не подменяют другой. */
+  cacheKey: string;
+}) {
+  // Читаем при смене фильтров; запись свежего набора ниже его уже не трогает —
+  // после загрузки и так показываются свежие плитки.
+  const cached = useMemo(() => readCache()[cacheKey] ?? null, [cacheKey]);
+  useEffect(() => {
+    if (!loading && fresh.length > 0) writeCache(cacheKey, fresh);
+  }, [loading, fresh, cacheKey]);
+
+  // Пока ответы в пути, полный прошлый набор лучше половины свежего.
+  const stale = loading && !!cached && cached.length > 0;
+  const items = stale ? cached! : fresh;
   if (items.length === 0 && !loading) return null;
   return (
     <Card padding="md" className="md:p-5">
@@ -168,11 +220,17 @@ export default function StatsInsights({ items, loading }: { items: Insight[]; lo
           эксперимент
         </span>
         <HelpTooltip icon="help" title="Как собраны плитки" content={HINT} size={13} />
+        {stale && <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>обновляем…</span>}
       </div>
       {items.length === 0 ? (
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Собираем цифры…</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2" aria-label="Загрузка">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={92} rounded="lg" />)}
+        </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2" style={{ animation: 'fadeIn 0.2s cubic-bezier(.2,0,0,1)' }}>
+        <div
+          className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2"
+          style={{ animation: 'fadeIn 0.2s cubic-bezier(.2,0,0,1)', opacity: stale ? 0.6 : 1, transition: 'opacity 0.12s cubic-bezier(.2,0,0,1)' }}
+        >
           {items.map((it) => (
             <div
               key={it.key}
@@ -184,7 +242,7 @@ export default function StatsInsights({ items, loading }: { items: Insight[]; lo
               }}
             >
               <div className="flex items-center gap-2 mb-1.5">
-                {it.icon}
+                {renderIcon(it.icon)}
                 <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{it.label}</span>
               </div>
               <div className="flex items-baseline gap-1.5 flex-wrap">
