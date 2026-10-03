@@ -1,17 +1,16 @@
 """Витрина «Главное» (/hot, пока только админы).
 
-Самое необычное за последние две недели по данным, которые смотрит завод постов:
-  • позиции физлиц — логика скринера (api/services/oi_screener.py): рекорд перекоса за год и дольше
-    или сдвиг за 2 недели от ×3; прошлые такие же случаи и цена через месяц после каждого;
+Самое необычное на последний день данных по индикаторам, которые смотрит завод постов:
+  • позиции физлиц — то же, что скринер сигналов сегодня (api/services/oi_screener.py): резкий сдвиг
+    за день, за 2 недели и рекорд перекоса (от полугода);
   • деньги в фондах — рекорд недели или месяца, разворот после серии, серия от 4 месяцев;
-    тот же срок в прошлые годы;
   • сделки фондов — бумага, которую ≥10 фондов купили (продали), и никто не шёл против;
   • сезонность — следующие 3 месяца, в которые инструмент рос (падал) в ≥65% лет.
 
-Графики рисует фронт теми же компонентами и ручками, что и страницы индикаторов (SimpleChart,
-FlowsHistogram, CompanyFlowsHistogram, YearlySeasonalityChart) — здесь только отбор и подписи.
-Контракты не показываем: мерка позиции — перекос, как в скринере (чистая позиция в % от всех).
-После 24.02.2022 рынок другой — прошлые случаи помечены, до этой даты или после.
+Карточка на фронте — график, на котором событие видно глазами: цветная зона (окно рекорда, две недели,
+день), точки прошлых таких же пиков, линия прежнего максимума, подсвеченный столбик. Поэтому ручка
+отдаёт не только подписи, но и сами ряды для графика (поле chart).
+Контракты не показываем: позиция — перекос, как в скринере (чистая позиция в % от всех позиций).
 """
 from __future__ import annotations
 
@@ -28,17 +27,15 @@ from api.services import oi_screener as scr
 log = get_logger()
 
 WAR = date(2022, 2, 24)
-RECENT_DAYS = 10                     # торговых дней, в которых ищем свежий сигнал
-EXP_BEFORE, EXP_AFTER = 7, 3         # дни у экспирации: перенос позиций выглядит как рекорд или сброс
 REC_WINDOWS: Tuple[Tuple[str, Optional[int]], ...] = (
-    ("all", None), ("5y", 1825), ("4y", 1460), ("3y", 1095), ("2y", 730), ("1y", 365))
+    ("all", None), ("5y", 1825), ("4y", 1460), ("3y", 1095), ("2y", 730), ("1y", 365), ("6m", 182))
 PERIOD_WORD = {"all": "за всё время", "5y": "за 5 лет", "4y": "за 4 года", "3y": "за 3 года",
-               "2y": "за 2 года", "1y": "за год"}
-MAX_RECORD_CARDS, MAX_MOVE_CARDS = 8, 3
-EP_GAP_REC, EP_GAP_MOVE = 40, 20     # торговых дней: ближе — тот же случай
-SAME_CASE_DAYS = 60                  # прошлый случай ближе 2 месяцев к нынешнему — тот же эпизод
-AFTER_DAYS = 21                      # «через месяц» — 21 торговый день
-TAIL = scr.MED_WINDOW + scr.MED_BASE_WINDOW + 6   # хвост ряда, которого хватает среднесрочному сигналу
+               "2y": "за 2 года", "1y": "за год", "6m": "за полгода"}
+ZONE_WORD = {"all": "вся история", "5y": "5 лет", "4y": "4 года", "3y": "3 года", "2y": "2 года", "1y": "год",
+             "6m": "полгода"}
+MAX_OI_CARDS = 10
+EP_GAP = 40                          # торговых дней: прошлые пики ближе — один эпизод
+SAME_CASE_DAYS = 60                  # прошлый пик ближе 2 месяцев к нынешнему — тот же эпизод
 
 ALLOWED_GROUPS = {"Акции", "Валюта", "Индексы", "Сырьё"}
 # Не наш рынок и экзотика: зарубежные индексы и бумаги, крипта, ставки, редкие валюты, агро.
@@ -58,12 +55,15 @@ PRICE_INDEX = {
 STOCK_ALIAS = {"GAZR": "GAZP", "SBRF": "SBER", "SBPR": "SBERP", "SNGR": "SNGS", "SNGP": "SNGSP", "NOTK": "NVTK",
                "NOTKM": "NVTK", "MTSI": "MTSS", "TATP": "TATNP", "TRNF": "TRNFP", "PLZLM": "PLZL", "CHMFM": "CHMF",
                "BELUGA": "BELU", "BELUGAM": "BELU"}
-WHAT = {"Акции": "Акция", "Валюта": "Курс", "Индексы": "Индекс", "Сырьё": "Цена"}
 MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
 
 
 def _day(d: date) -> str:
     return f"{d.day} {MON[d.month - 1]}"
+
+
+def _r(v: Optional[float], n: int = 1) -> Optional[float]:
+    return None if v is None else round(v, n)
 
 
 def skew(pos_long: float, pos_short: float) -> Optional[float]:
@@ -76,7 +76,7 @@ def skew(pos_long: float, pos_short: float) -> Optional[float]:
 
 def prior_extremes(dates: Sequence[date], vals: Sequence[float], days: Optional[int]) -> List[Tuple[Optional[float], Optional[float]]]:
     """(min, max) значений строго до i: в окне [d_i − days, d_i) или за всю историю (days=None).
-    Скользящие очереди — O(n), как окна _prior_extremes скринера, только на каждый день."""
+    Скользящие очереди — O(n), окна те же, что у _prior_extremes скринера."""
     out: List[Tuple[Optional[float], Optional[float]]] = []
     if days is None:
         lo = hi = None
@@ -104,9 +104,9 @@ def prior_extremes(dates: Sequence[date], vals: Sequence[float], days: Optional[
 
 
 def record_at(v: float, ext_i: Dict[str, Tuple[Optional[float], Optional[float]]]) -> Optional[Tuple[str, str]]:
-    """Сильнейший пробитый рекорд перекоса (≥ года), как _record_for скринера: (kind, period)."""
+    """Сильнейший пробитый рекорд перекоса, как _record_for скринера: (kind, period)."""
     for p, _ in REC_WINDOWS:
-        lo, hi = ext_i[p]
+        lo, hi = ext_i.get(p, (None, None))
         if hi is not None and v > hi:
             return "high", p
         if lo is not None and v < lo:
@@ -115,10 +115,25 @@ def record_at(v: float, ext_i: Dict[str, Tuple[Optional[float], Optional[float]]
 
 
 def verb_for(net_now: float, skew_now: float, skew_before: float) -> str:
-    """Глагол скринера: нога — по знаку чистой позиции, «набрали/сократили» — по ходу перекоса."""
+    """Глагол скринера по ходу перекоса: нога — по знаку чистой позиции."""
     if net_now >= 0:
         return "Физлица набрали лонг" if skew_now >= skew_before else "Физлица сократили лонг"
     return "Физлица нарастили шорт" if skew_now <= skew_before else "Физлица сократили шорт"
+
+
+def screener_verb(net: float, direction: str) -> str:
+    """Глагол ровно как в OiScreenerTable: по модулю чистой позиции (рост |net| — «набрали/нарастили»)."""
+    net_long = net >= 0
+    grew = net_long == (direction == "up")
+    if net_long:
+        return "Физлица набрали лонг" if grew else "Физлица сократили лонг"
+    return "Физлица нарастили шорт" if grew else "Физлица сократили шорт"
+
+
+def record_verb(kind: str, net: float) -> str:
+    if kind == "low":
+        return "Физлица нарастили шорт" if net < 0 else "Физлица сократили лонг"
+    return "Физлица набрали лонг" if net >= 0 else "Физлица сократили шорт"
 
 
 def cluster_firsts(idx: Sequence[int], gap: int) -> List[int]:
@@ -132,7 +147,19 @@ def cluster_firsts(idx: Sequence[int], gap: int) -> List[int]:
     return out
 
 
-def price_after(px: Sequence[Tuple[date, float]], day: date, n: int = AFTER_DAYS) -> Optional[float]:
+def peak_of(vals: Sequence[float], idx: Sequence[int], kind: str, gap: int) -> List[int]:
+    """Вершина каждого эпизода (не первый день): на графике кружок стоит на самом пике."""
+    groups: List[List[int]] = []
+    for i in idx:
+        if groups and i - groups[-1][-1] <= gap:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    pick = min if kind == "low" else max
+    return [pick(g, key=lambda k: vals[k]) for g in groups]
+
+
+def price_after(px: Sequence[Tuple[date, float]], day: date, n: int = 21) -> Optional[float]:
     """Изменение цены за n торговых дней от первого закрытия не раньше day, %."""
     lo, hi = 0, len(px)
     while lo < hi:
@@ -144,21 +171,6 @@ def price_after(px: Sequence[Tuple[date, float]], day: date, n: int = AFTER_DAYS
     if lo + n >= len(px) or px[lo][1] <= 0:
         return None
     return round((px[lo + n][1] / px[lo][1] - 1) * 100, 1)
-
-
-def _expiry_mask(db, sectypes: Sequence[str]) -> Dict[str, List[date]]:
-    rows = db.execute(text("""
-        SELECT sectype, lsttrade FROM futures_contracts
-         WHERE sectype = ANY(:s) AND lsttrade IS NOT NULL AND NOT COALESCE(is_perpetual, false)
-    """), {"s": list(sectypes)}).fetchall()
-    out: Dict[str, List[date]] = {}
-    for s, lt in rows:
-        out.setdefault(s, []).append(lt)
-    return out
-
-
-def _masked(exp: List[date], d: date) -> bool:
-    return any(lt - timedelta(days=EXP_BEFORE) <= d <= lt + timedelta(days=EXP_AFTER) for lt in exp)
 
 
 def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
@@ -182,7 +194,7 @@ def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
 
 
 def _prices(db, sectypes: Sequence[str]) -> Dict[str, List[Tuple[date, float]]]:
-    """Цена базового актива для «что было после»: акция, индекс или курс. Нет — ряда нет."""
+    """Цена базового актива: акция, индекс или курс. Нет — ряда нет (линии цены на графике не будет)."""
     codes = dict(db.execute(text(
         "SELECT sectype, max(assetcode) FROM futures_contracts WHERE sectype = ANY(:s) GROUP BY sectype"),
         {"s": list(sectypes)}).fetchall())
@@ -208,115 +220,119 @@ def _prices(db, sectypes: Sequence[str]) -> Dict[str, List[Tuple[date, float]]]:
     return out
 
 
-def _oi_series_meta(pts: List[tuple]) -> Tuple[List[date], List[Optional[float]]]:
-    return [p[0] for p in pts], [skew(p[4], p[5]) for p in pts]
+def _thin(dates: Sequence[date], keep_daily_from: date) -> List[int]:
+    """Индексы точек графика: до keep_daily_from — по пятницам (длинная история), дальше — каждый день."""
+    return [i for i, d in enumerate(dates) if d >= keep_daily_from or d.weekday() == 4 or i == 0]
 
 
-def scan_positions(db, as_of: Optional[date] = None) -> List[Dict[str, Any]]:
-    """Сигналы скринера за последние RECENT_DAYS торговых дней, по карточке на актив."""
-    base = scr.compute_screener(db, "FIZ", "medium")
-    meta = {r["sectype"]: r for r in base["rows"]
-            if r["status"] != "illiquid" and r.get("group") in ALLOWED_GROUPS and r["sectype"] not in FOREIGN}
-    if not meta:
-        return []
-    series = _positions(db, list(meta))
-    expiry = _expiry_mask(db, list(meta))
-    found: List[Dict[str, Any]] = []
-    for s, pts in series.items():
-        pts = [p for p in pts if skew(p[4], p[5]) is not None]
-        if len(pts) < 300:
+def _price_on(px: Sequence[Tuple[date, float]], dates: Sequence[date]) -> List[Optional[float]]:
+    """Цена на каждую дату графика — последнее известное закрытие не позже даты."""
+    out, j = [], 0
+    for d in dates:
+        while j + 1 < len(px) and px[j + 1][0] <= d:
+            j += 1
+        out.append(px[j][1] if px and px[j][0] <= d else None)
+    return out
+
+
+def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Позиции физлиц — ровно сегодняшние сигналы скринера: день (×2+), 2 недели (×3+), рекорд перекоса."""
+    short = scr.compute_screener(db, "FIZ", "short")
+    medium = scr.compute_screener(db, "FIZ", "medium")
+    srows = {r["sectype"]: r for r in short["rows"]}
+    mrows = {r["sectype"]: r for r in medium["rows"]}
+    shown = {p for p, _ in REC_WINDOWS}
+    rank_of = {p: k for k, (p, _) in enumerate(REC_WINDOWS)}
+    cands = []
+    for s, r in srows.items():
+        if r["status"] == "illiquid" or r.get("group") not in ALLOWED_GROUPS or s in FOREIGN:
+            continue
+        m = mrows.get(s) or {}
+        rec = r.get("record") if (r.get("record") or {}).get("period") in shown else None
+        day = r["ratio"] if r["status"] == "sharp" else None
+        wk = m.get("ratio") if m.get("status") == "sharp" else None
+        if not (rec or day or wk):
+            continue
+        # рекорд сильнее любого сдвига; сдвиги — по силе относительно своего порога «резко»
+        strength = (rank_of[rec["period"]] if rec else 10) - max((day or 0) / 2, (wk or 0) / 3) / 100
+        cands.append({"s": s, "row": r, "mrow": m, "rec": rec, "day": day, "wk": wk, "strength": strength})
+    priced = lambda c: c["s"] in PRICE_INDEX or c["row"].get("group") == "Акции"  # noqa: E731
+    cands.sort(key=lambda c: (c["strength"], not priced(c)))
+    cands = cands[:MAX_OI_CARDS]
+    if not cands:
+        return [], short.get("signal_date")
+    series = _positions(db, [c["s"] for c in cands])
+    px = _prices(db, [c["s"] for c in cands])
+    cards = []
+    for c in cands:
+        s, r = c["s"], c["row"]
+        pts = [p for p in series.get(s, []) if skew(p[4], p[5]) is not None]
+        if len(pts) < 60:
             continue
         dates, vals = [p[0] for p in pts], [skew(p[4], p[5]) for p in pts]
-        ext = {p: prior_extremes(dates, vals, days) for p, days in REC_WINDOWS}
-        best = None
-        for i in range(len(pts) - 1, max(len(pts) - 1 - RECENT_DAYS, scr.MED_WINDOW), -1):
-            d = dates[i]
-            if as_of and d > as_of:
-                continue
-            if _masked(expiry.get(s, []), d) or pts[i][2] < scr.ATR_MIN_PART:
-                continue
-            rec = record_at(vals[i], {p: ext[p][i] for p, _ in REC_WINDOWS})
-            med = scr._row_signal_medium(pts[max(0, i + 1 - TAIL):i + 1], scr.ATR_MIN_PART)
-            cand = None
-            if rec:
-                rank = [p for p, _ in REC_WINDOWS].index(rec[1])
-                cand = {"type": "record", "kind": rec[0], "period": rec[1], "rank": rank, "i": i,
-                        "move": med["ratio"] if med["status"] == "sharp" else None}
-            elif med["status"] == "sharp":
-                # рекорды (ранг 0–5) всегда выше сдвигов; среди сдвигов — сильнее выше
-                cand = {"type": "move", "ratio": med["ratio"], "dir": med["direction"],
-                        "rank": 6 + (10 - min(med["ratio"], 9.9)) / 10, "i": i}
-            if cand and (best is None or (cand["rank"], -cand["i"]) < (best["rank"], -best["i"])):
-                best = cand            # в одном ряду: сильнее, при равенстве — свежее
-        if best:
-            best.update(sectype=s, pts=pts, dates=dates, vals=vals, ext=ext)
-            found.append(best)
-    # между активами — по силе рекорда; при равной силе выше те, у кого есть цена для «что было после»
-    # и заодно резкий сдвиг за 2 недели, потом свежие (номера дней у рядов разные — сравниваем даты)
-    def priced(sec: str) -> bool:
-        return sec in PRICE_INDEX or meta[sec].get("group") == "Акции"
-    found.sort(key=lambda c: (c["rank"], not priced(c["sectype"]), c.get("move") is None,
-                              -c["dates"][c["i"]].toordinal()))
-    # рекорды не вытесняют сдвиги за 2 недели целиком: витрине нужны оба вида
-    found = [c for c in found if c["type"] == "record"][:MAX_RECORD_CARDS] + \
-            [c for c in found if c["type"] == "move"][:MAX_MOVE_CARDS]
-    px = _prices(db, [c["sectype"] for c in found])
-    cards = []
-    for c in found:
-        s, pts, dates, vals, i = c["sectype"], c["pts"], c["dates"], c["vals"], c["i"]
-        m = meta[s]
-        j = max(0, i - scr.MED_WINDOW)
-        verb = verb_for(pts[i][1], vals[i], vals[j])
-        if c["type"] == "record":
-            days = dict(REC_WINDOWS)[c["period"]]
-            lo, hi = c["ext"][c["period"]][i]
-            level = hi if c["kind"] == "high" else lo
-            # прошлый «минимум за 2 года» — только там, где за спиной уже были полные 2 года истории
+        last = len(pts) - 1
+        chart: Dict[str, Any] = {"type": "line"}
+        tags: List[Dict[str, Any]] = []
+        if c["rec"]:
+            kind, period = c["rec"]["kind"], c["rec"]["period"]
+            days = dict(REC_WINDOWS)[period]
+            ext = prior_extremes(dates, vals, days)
+            lo, hi = ext[last]
+            level = hi if kind == "high" else lo
             need = days or 365
-            hits = [k for k in range(len(vals)) if (dates[k] - dates[0]).days >= need
-                    and record_hit(vals[k], c["ext"][c["period"]][k], c["kind"])
-                    and pts[k][2] >= scr.ATR_MIN_PART and not _masked(expiry.get(s, []), dates[k])]
-            firsts = cluster_firsts(hits, EP_GAP_REC)
-            word = PERIOD_WORD[c["period"]]
-            tag = {"type": "record", "text": ("Макс " if c["kind"] == "high" else "Мин ") + word,
-                   "all": c["period"] == "all",
-                   "move": f"×{c['move']:.1f}".replace(".", ",") if c.get("move") else None}
-            window_start = (dates[i] - timedelta(days=days)).isoformat() if days else None
-            chart_period = "all"
+            hits = [k for k in range(len(vals)) if (dates[k] - dates[0]).days >= need and pts[k][2] >= scr.ATR_MIN_PART
+                    and ((ext[k][1] is not None and vals[k] > ext[k][1]) if kind == "high"
+                         else (ext[k][0] is not None and vals[k] < ext[k][0]))]
+            peaks = [k for k in peak_of(vals, hits, kind, EP_GAP) if (dates[last] - dates[k]).days > SAME_CASE_DAYS]
+            span = max(days or 0, 365) * 2 if days else None
+            start = dates[last] - timedelta(days=span) if span else dates[0]
+            chart.update(zone={"from": (dates[last] - timedelta(days=days)).isoformat() if days else dates[0].isoformat(),
+                               "label": ZONE_WORD[period]},
+                         level={"value": _r(level), "label": "прежний " + ("максимум" if kind == "high" else "минимум")})
+            word = ("Макс " if kind == "high" else "Мин ") + PERIOD_WORD[period]
+            tags.append({"tone": "fill" if period == "all" else "accent", "text": word})
+            signal = screener_verb(r["net"], r["direction"]) if (c["day"] or c["wk"]) and r.get("direction") \
+                else record_verb(kind, r["net"])
         else:
-            verbs = []
-            for k in range(len(pts)):
-                med = scr._row_signal_medium(pts[max(0, k + 1 - TAIL):k + 1], scr.ATR_MIN_PART)
-                if med["status"] == "sharp" and pts[k][2] >= scr.ATR_MIN_PART \
-                        and verb_for(pts[k][1], vals[k], vals[max(0, k - scr.MED_WINDOW)]) == verb:
-                    verbs.append(k)
-            firsts = cluster_firsts(verbs, EP_GAP_MOVE)
-            level = None
-            tag = {"type": "move", "text": f"×{c['ratio']:.1f}".replace(".", ","), "note": "за 2 недели"}
-            window_start = dates[j].isoformat()
-            chart_period = "1y"
-        eps = []
-        for k in firsts:
-            if (dates[i] - dates[k]).days <= SAME_CASE_DAYS:
-                continue
-            a = price_after(px[s], dates[k]) if s in px else None
-            if a is None:
-                continue
-            eps.append({"date": dates[k].isoformat(), "after": a, "post2022": dates[k] >= WAR})
+            peaks = []
+            if c["wk"]:
+                k0 = max(0, last - scr.MED_WINDOW)
+                start = dates[last] - timedelta(days=122)
+                chart.update(zone={"from": dates[k0].isoformat(), "label": "2 недели"},
+                             start={"date": dates[k0].isoformat(), "value": _r(vals[k0])})
+                direction = c["mrow"].get("direction") or ("up" if vals[last] >= vals[k0] else "down")
+            else:
+                k0 = max(0, last - 1)
+                start = dates[last] - timedelta(days=92)
+                chart.update(zone={"from": dates[k0].isoformat(), "label": "день"},
+                             start={"date": dates[k0].isoformat(), "value": _r(vals[k0])})
+                direction = r.get("direction") or ("up" if vals[last] >= vals[k0] else "down")
+            signal = screener_verb(r["net"], direction)
+        if c["wk"]:
+            tags.append({"tone": "pill", "text": f"×{c['wk']:.1f}".replace(".", ","), "note": "за 2 недели"})
+        if c["day"]:
+            tags.append({"tone": "pill", "text": f"×{c['day']:.1f}".replace(".", ","), "note": "за день"})
+        keep = _thin(dates, dates[last] - timedelta(days=760))
+        idx = [i for i in keep if dates[i] >= start]
+        if not c["rec"] and chart.get("start"):
+            # сдвиг: с чем сравнить — прежний максимум (минимум) видимого периода до начала сдвига
+            before = [i for i in idx if dates[i] < date.fromisoformat(chart["start"]["date"])]
+            if before:
+                up = vals[last] >= chart["start"]["value"]
+                k = (max if up else min)(before, key=lambda q: vals[q])
+                chart["level"] = {"value": _r(vals[k]), "label": "прежний " + ("максимум" if up else "минимум")}
+                peaks = [k]
+        sel_dates = [dates[i] for i in idx]
+        chart["series"] = [[d.isoformat(), _r(vals[i])] for d, i in zip(sel_dates, idx)]
+        if s in px:
+            chart["price"] = [_r(v, 4) for v in _price_on(px[s], sel_dates)]
+        chart["peaks"] = [[dates[k].isoformat(), _r(vals[k])] for k in peaks if dates[k] >= start]
+        chart["now"] = {"date": dates[last].isoformat(), "value": _r(vals[last])}
         cards.append({
-            "kind": "oi", "id": f"oi:{s}", "sectype": s, "name": m["name"], "group": m.get("group"),
-            "section": "Позиции физлиц", "signal": verb, "tag": tag,
-            "date": dates[i].isoformat(), "date_label": _day(dates[i]),
-            "skew_now": round(vals[-1], 1), "level": round(level, 1) if level is not None else None,
-            "window_start": window_start, "chart_period": chart_period,
-            "what": WHAT.get(m.get("group"), "Цена"), "has_price": s in px, "episodes": eps,
+            "kind": "oi", "id": f"oi:{s}", "sectype": s, "name": r["name"], "signal": signal, "tags": tags,
+            "date": dates[last].isoformat(), "chart": chart,
         })
-    return cards
-
-
-def record_hit(v: float, ext_i: Tuple[Optional[float], Optional[float]], kind: str) -> bool:
-    lo, hi = ext_i
-    return (hi is not None and v > hi) if kind == "high" else (lo is not None and v < lo)
+    return cards, short.get("signal_date")
 
 
 # ── Деньги в фондах ─────────────────────────────────────────────────────────
@@ -324,6 +340,8 @@ def record_hit(v: float, ext_i: Tuple[Optional[float], Optional[float]], kind: s
 FUND_CATS = (("money_market", "Денежные фонды"), ("stocks", "Фонды акций"), ("bonds", "Облигационные фонды"),
              ("gold", "Фонды золота"), ("yuan", "Юаневые фонды"))
 MIN_FLOW_BN = 0.1
+MONTHS_FROM = "2022-01"
+WEEKS_SHOWN = 104
 
 
 def _bn(v: float) -> str:
@@ -345,7 +363,8 @@ def runs(vals: Sequence[float]) -> List[Tuple[int, int, int]]:
 
 
 def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float]], today: date) -> Optional[Dict[str, Any]]:
-    """Сильнейший случай категории: рекорд недели → рекорд месяца → разворот → серия."""
+    """Сильнейший случай категории: рекорд недели → рекорд месяца → разворот → серия.
+    Возвращает подписи и разметку графика (какой столбик подсветить, прежний рекорд, серия)."""
     cur_month = today.strftime("%Y-%m")
     full = [(m, v) for m, v in months if m < cur_month]
     if len(full) < 6:
@@ -360,67 +379,48 @@ def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float
         if abs(v) >= MIN_FLOW_BN and (v < min(prior) or v > max(prior)):
             kind = "отток" if v < 0 else "приток"
             prev = min(range(len(prior)), key=lambda q: prior[q]) if v < 0 else max(range(len(prior)), key=lambda q: prior[q])
-            nxt = [w[2] for w in wk[prev + 1:prev + 5]]
             d0, d1 = date.fromisoformat(wk[k][0]), date.fromisoformat(wk[k][1])
-            return {"case": "week_record", "signal": f"Рекордный {kind} за неделю", "amount": wk[k][2],
-                    "date_label": f"{d0.day}–{d1.day} {MON[d1.month - 1]}", "timeframe": "1w", "period": "3y",
-                    "compare": {"label": f"После прошлого рекорда ({MON[date.fromisoformat(wk[prev][0]).month - 1]} "
-                                         f"{wk[prev][0][2:4]}) за месяц ещё", "chips": [{"text": _bn(sum(nxt)) + " млрд",
-                                         "cls": "up" if sum(nxt) > 0 else "dn"}]} if len(nxt) == 4 else None}
+            first = max(0, min(prev - 4, len(wk) - WEEKS_SHOWN))
+            return {"case": "week_record", "signal": f"Рекордный {kind} за неделю", "amount": v,
+                    "date_label": f"{d0.day}–{d1.day} {MON[d1.month - 1]}",
+                    "chart": {"type": "bars", "unit": "млрд ₽", "weekly": True,
+                              "bars": [[w[0], round(w[2], 3)] for w in wk[first:]],
+                              "hl": wk[k][0], "prev": wk[prev][0], "level": round(prior[prev], 3)}}
     if abs(v_last) < MIN_FLOW_BN:
         return None
     month_word = MON[int(m_last[5:7]) - 1]
     rr = runs(vals)
     sg, a, b = rr[-1]
     length = b - a + 1
-    ytd = _ytd_chips(full, m_last)
     turn = length == 1 and len(rr) >= 2 and rr[-2][0] != 0 and rr[-2][2] - rr[-2][1] + 1 >= 3
     n_prev = rr[-2][2] - rr[-2][1] + 1 if len(rr) >= 2 else 0
     was = ("притока" if rr[-2][0] > 0 else "оттока") if len(rr) >= 2 else ""
+    shown = [(m, v) for m, v in full if m >= MONTHS_FROM]
+    chart: Dict[str, Any] = {"type": "bars", "unit": "млрд ₽", "weekly": False,
+                             "bars": [[m, round(v, 3)] for m, v in shown], "hl": m_last}
     # 2) рекорд месяца (если это ещё и разворот — пометкой)
     if v_last < min(vals[:-1]) or v_last > max(vals[:-1]):
         kind = "отток" if v_last < 0 else "приток"
+        prior = vals[:-1]
+        prev = min(range(len(prior)), key=lambda q: prior[q]) if v_last < 0 else max(range(len(prior)), key=lambda q: prior[q])
+        chart.update(prev=full[prev][0], level=round(prior[prev], 3))
+        if turn:
+            chart["run"] = {"from": full[rr[-2][1]][0], "to": full[rr[-2][2]][0], "label": f"{n_prev} мес {was}"}
         return {"case": "month_record", "signal": f"Рекордный {kind} за месяц", "amount": v_last,
-                "date_label": month_word, "timeframe": "1m", "period": "all", "compare": ytd,
-                "note": f"первый после {n_prev} мес {was}" if turn else None,
-                "run": [full[rr[-2][1]][0], full[rr[-2][2]][0]] if turn else None}
+                "date_label": month_word, "note": f"первый после {n_prev} мес {was}" if turn else None, "chart": chart}
     # 3) разворот после серии от 3 месяцев
     if turn:
         what = "отток" if v_last < 0 else "приток"
-        chips = []
-        for (s0, a0, b0), nxt in zip(rr[:-2], rr[1:-1]):
-            if s0 == rr[-2][0] and b0 - a0 + 1 >= 3 and b0 + 3 < len(vals) - 1:
-                tot = sum(vals[b0 + 1:b0 + 4])
-                yr = full[b0 + 1][0][2:4]
-                chips.append({"text": _bn(tot), "cls": "up" if tot > 0 else "dn", "sub": yr,
-                              "old": full[b0 + 1][0] < "2022-03"})
+        chart["run"] = {"from": full[rr[-2][1]][0], "to": full[rr[-2][2]][0], "label": f"{n_prev} мес {was}"}
         return {"case": "reversal", "signal": f"Первый {what} после {n_prev} мес {was}", "amount": v_last,
-                "date_label": month_word, "timeframe": "1m", "period": "all",
-                "run": [full[rr[-2][1]][0], full[rr[-2][2]][0]],
-                "compare": {"label": "Следующие 3 месяца после прошлых разворотов, млрд ₽", "chips": chips[-4:]}
-                if chips else ytd}
+                "date_label": month_word, "chart": chart}
     # 4) серия от 4 месяцев
     if length >= 4 and sg != 0:
         what = "Приток" if sg > 0 else "Отток"
+        chart["run"] = {"from": full[a][0], "to": full[b][0], "label": f"{length} мес подряд"}
         return {"case": "streak", "signal": f"{what} {length}-й месяц подряд", "amount": v_last,
-                "date_label": month_word, "timeframe": "1m", "period": "all", "run": [full[a][0], full[b][0]],
-                "compare": ytd}
+                "date_label": month_word, "chart": chart}
     return None
-
-
-def _ytd_chips(full: List[Tuple[str, float]], m_last: str) -> Dict[str, Any]:
-    """Тот же срок с начала года по годам: так видно, необычно ли это."""
-    mm = m_last[5:7]
-    per: Dict[str, float] = {}
-    for m, v in full:
-        if m[5:7] <= mm:
-            per[m[:4]] = per.get(m[:4], 0.0) + v
-    years = sorted(per, reverse=True)
-    first_mon, last_mon = "январь", ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август",
-                                     "сентябрь", "октябрь", "ноябрь", "декабрь"][int(mm) - 1]
-    label = f"{first_mon.capitalize()}–{last_mon}, млрд ₽" if mm != "01" else "Январь, млрд ₽"
-    return {"label": label, "chips": [{"text": _bn(per[y]), "cls": "up" if per[y] > 0 else "dn", "sub": y[2:],
-                                       "old": y < "2022"} for y in years[:8]]}
 
 
 def scan_funds(user, today: date) -> List[Dict[str, Any]]:
@@ -437,8 +437,7 @@ def scan_funds(user, today: date) -> List[Dict[str, Any]]:
         weeks = [(r["period_start"], r["period_end"], float(r["flow"])) for r in wk.get("flows", [])]
         case = fund_case(months, weeks, today)
         if case:
-            cards.append({"kind": "flows", "id": f"flows:{cat}", "category": cat, "name": name,
-                          "section": "Деньги в фондах", **case})
+            cards.append({"kind": "flows", "id": f"flows:{cat}", "category": cat, "name": name, **case})
     order = {"week_record": 0, "month_record": 1, "reversal": 2, "streak": 3}
     return sorted(cards, key=lambda c: order[c["case"]])
 
@@ -452,24 +451,31 @@ def scan_trades(db, user) -> List[Dict[str, Any]]:
     from api.routers import fund_trades as T
     r = T.top_movers(period="1m", category="stocks", as_of=None, range_from=None, range_to=None, manager=None,
                      funds=None, sort="amount", limit=100, scope="movers", user=user, db=db)
-    month = r.get("resolved_month") or ""
+    month = (r.get("resolved_month") or "")[:7]
     n = r.get("funds_in_month") or 0
-    cards = []
+    picked = []
     for side, lst in (("buy", r.get("top_accumulated", [])), ("sell", r.get("top_reduced", []))):
         for x in lst:
             yes, no = (x["funds_buying"], x["funds_selling"]) if side == "buy" else (x["funds_selling"], x["funds_buying"])
             if yes >= UNANIMOUS_MIN and no == 0:
-                secid = db.execute(text("SELECT secid FROM securities_ref WHERE isin = :i AND secid IS NOT NULL LIMIT 1"),
-                                   {"i": x["akey"]}).scalar()
-                cards.append({
-                    "kind": "trades", "id": f"trades:{x['akey']}", "isin": x["akey"], "asset_name": x["asset_name"],
-                    "secid": secid, "section": "Сделки фондов",
-                    "signal": "Фонды покупали единодушно" if side == "buy" else "Фонды продавали единодушно",
-                    "funds": f"{yes} из {n} фондов", "amount_rub": x["total_delta_amount"],
-                    "date_label": (MON[int(month[5:7]) - 1] if month else "") + (" · никто не продавал" if side == "buy" else " · никто не покупал"),
-                    "month": month[:7],
-                })
-    return sorted(cards, key=lambda c: -abs(c["amount_rub"]))[:2]
+                picked.append((side, yes, x))
+    picked.sort(key=lambda p: -abs(p[2]["total_delta_amount"]))
+    cards = []
+    for side, yes, x in picked[:2]:
+        secid = db.execute(text("SELECT secid FROM securities_ref WHERE isin = :i AND secid IS NOT NULL LIMIT 1"),
+                           {"i": x["akey"]}).scalar()
+        flows = T.company_flows(isin=x["akey"], asset_name=None, metric="amount", user=user, db=db)
+        ms, tot = flows.get("months", []), flows.get("total", [])
+        first = max(0, len(ms) - 24)
+        bars = [[m, round((v or 0) / 1e6, 1)] for m, v in zip(ms[first:], tot[first:])]
+        cards.append({
+            "kind": "trades", "id": f"trades:{x['akey']}", "isin": x["akey"], "name": x["asset_name"], "secid": secid,
+            "signal": "Фонды покупали единодушно" if side == "buy" else "Фонды продавали единодушно",
+            "funds": f"{yes} из {n} фондов", "amount": round(x["total_delta_amount"] / 1e9, 2),
+            "date_label": MON[int(month[5:7]) - 1] if month else "",
+            "chart": {"type": "bars", "unit": "млн ₽", "weekly": False, "bars": bars, "hl": month},
+        })
+    return cards
 
 
 # ── Сезонность ──────────────────────────────────────────────────────────────
@@ -497,8 +503,9 @@ def season_years(closes: Sequence[Tuple[date, float]], today: date, first_year: 
 
 
 def scan_season(db, today: date) -> List[Dict[str, Any]]:
+    from api.database import get_engine
+    from api.routers.seasonality import _compute_yearly_seasonality   # та же кривая, что на странице «Сезонность»
     cards = []
-    end = today + timedelta(days=SEASON_DAYS)
     for secid, name, sectype, y0 in SEASON_ASSETS:
         rows = db.execute(text("SELECT trade_date, close FROM index_data WHERE secid = :s AND close > 0 ORDER BY 1"),
                           {"s": secid}).fetchall()
@@ -511,17 +518,20 @@ def scan_season(db, today: date) -> List[Dict[str, Any]]:
         if SEASON_EDGE > share > 1 - SEASON_EDGE:
             continue                                   # монетка — карточку не ставим
         rising = share >= SEASON_EDGE
-        med = statistics.median(v for _, v in yrs)
+        data = _compute_yearly_seasonality(get_engine(), secid, {}, since_year=None, exclude_years=[], agg_type="avg",
+                                           live=False) or {}
+        avg = [[p["td"], p["avg_pct"], p["month"]] for p in data.get("average", [])]
+        cur = [[p["td"], p["pct"]] for p in data.get("current", [])]
+        if not avg or not cur:
+            continue
+        today_td = cur[-1][0]
         cards.append({
             "kind": "season", "id": f"season:{secid}", "secid": secid, "sectype": sectype, "name": name,
-            "section": "Сезонность",
-            "signal": f"Следующие 3 месяца {('чаще рос' if rising else 'чаще падал')}" if name != "Индекс МосБиржи"
-                      else f"Следующие 3 месяца индекс {('чаще рос' if rising else 'чаще падал')}",
+            "signal": "Следующие 3 месяца " + ("чаще рос" if rising else "чаще падал"),
             "hits": f"{'рост' if rising else 'падение'} в {up if rising else len(yrs) - up} из {len(yrs)} лет",
-            "date_label": f"{_day(today)} → {_day(end)}", "median": round(med, 1),
-            "compare": {"label": "Те же даты после 2022, %", "chips": [
-                {"text": ("+" if v > 0 else "−" if v < 0 else "") + f"{abs(v):.0f}%", "cls": "up" if v > 0 else "dn",
-                 "sub": str(y)[2:]} for y, v in yrs if y >= 2022]},
+            "date_label": f"{_day(today)} → {_day(today + timedelta(days=SEASON_DAYS))}",
+            "chart": {"type": "season", "avg": avg, "cur": cur, "today": today_td,
+                      "zone_to": min(today_td + 63, avg[-1][0]), "rising": rising},
         })
     return cards
 
@@ -531,10 +541,18 @@ def scan_season(db, today: date) -> List[Dict[str, Any]]:
 def compute_hot(db, user, today: Optional[date] = None) -> Dict[str, Any]:
     today = today or date.today()
     out: Dict[str, Any] = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "cards": []}
-    for name, fn in (("positions", lambda: scan_positions(db)), ("funds", lambda: scan_funds(user, today)),
-                     ("trades", lambda: scan_trades(db, user)), ("season", lambda: scan_season(db, today))):
+    as_of = None
+    for name in ("positions", "funds", "trades", "season"):
         try:
-            out["cards"].extend(fn())
+            if name == "positions":
+                cards, as_of = scan_positions(db)
+            elif name == "funds":
+                cards = scan_funds(user, today)
+            elif name == "trades":
+                cards = scan_trades(db, user)
+            else:
+                cards = scan_season(db, today)
+            out["cards"].extend(cards)
         except Exception as e:  # noqa: BLE001 — один раздел не роняет страницу
             log.exception(f"hot: раздел {name} упал: {e}")
             out.setdefault("errors", []).append(name)
@@ -542,6 +560,5 @@ def compute_hot(db, user, today: Optional[date] = None) -> Dict[str, Any]:
                 db.rollback()
             except Exception:  # noqa: BLE001
                 pass
-    oi_dates = [c["date"] for c in out["cards"] if c["kind"] == "oi"]
-    out["as_of"] = max(oi_dates) if oi_dates else today.isoformat()
+    out["as_of"] = as_of or today.isoformat()
     return out
