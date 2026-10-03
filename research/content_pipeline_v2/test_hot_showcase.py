@@ -36,6 +36,18 @@ def test_record_takes_longest_window_like_screener():
     assert H.record_at(0, ext) is None
 
 
+def test_screener_verb_matches_oi_screener_table():
+    assert H.screener_verb(-100, "down") == "Физлица нарастили шорт"     # |net| вырос в шорте
+    assert H.screener_verb(-100, "up") == "Физлица сократили шорт"
+    assert H.screener_verb(100, "down") == "Физлица сократили лонг"
+    assert H.screener_verb(100, "up") == "Физлица набрали лонг"
+
+
+def test_peaks_sit_on_the_extreme_of_each_episode():
+    vals = [0, -5, -9, -7, 0, 0, -3, -12, -4]
+    assert H.peak_of(vals, [1, 2, 3, 6, 7, 8], "low", 2) == [2, 7]
+
+
 def test_verb_matches_screener_wording():
     assert H.verb_for(-100, -35, -20) == "Физлица нарастили шорт"
     assert H.verb_for(-100, -10, -20) == "Физлица сократили шорт"
@@ -71,7 +83,8 @@ def test_fund_case_streak_reversal_and_month_record():
     # девятый месяц оттока подряд
     streak = _months([2, 3, 1, 2, 4, 1, 2, 3, 2, 1, 3, 2] + [-1] * 9 + [0.5], start=(2025, 1))
     c = H.fund_case(streak[:-1], [], today)
-    assert c and c["case"] == "streak" and c["signal"] == "Отток 9-й месяц подряд" and c["timeframe"] == "1m"
+    assert c and c["case"] == "streak" and c["signal"] == "Отток 9-й месяц подряд" and not c["chart"]["weekly"]
+    assert c["chart"]["run"]["label"] == "9 мес подряд" and c["chart"]["hl"] == "2026-09"
     # первый отток после 5 месяцев притока, не рекорд
     rev = _months([-5, 1, 1, 1, 1, 1, -0.5], start=(2026, 3))
     c = H.fund_case(rev, [], today)
@@ -80,6 +93,7 @@ def test_fund_case_streak_reversal_and_month_record():
     rec = _months([1, 2, 1, 1, 1, 1, -3], start=(2026, 3))
     c = H.fund_case(rec, [], today)
     assert c["case"] == "month_record" and c["note"] == "первый после 6 мес притока"
+    assert c["chart"]["run"]["label"] == "6 мес притока" and c["chart"]["prev"] == "2026-03" and c["chart"]["level"] == 1
 
 
 def test_fund_case_week_record_beats_month_cases():
@@ -92,7 +106,8 @@ def test_fund_case_week_record_beats_month_cases():
         d += timedelta(days=7)
     months = _months([1] * 20, start=(2025, 1))
     c = H.fund_case(months, weeks, today)
-    assert c["case"] == "week_record" and c["signal"] == "Рекордный отток за неделю" and c["timeframe"] == "1w"
+    assert c["case"] == "week_record" and c["signal"] == "Рекордный отток за неделю" and c["chart"]["weekly"]
+    assert c["chart"]["level"] < 0 and c["chart"]["prev"] != c["chart"]["hl"]
 
 
 def test_season_years_window_per_year():

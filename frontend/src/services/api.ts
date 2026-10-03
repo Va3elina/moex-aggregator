@@ -3575,31 +3575,53 @@ export const getBrainSimilar = (id: string, kind?: string, limit = 12) =>
 export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('path', { a, b });
 
 // ==================== ГЛАВНОЕ (/hot, только админы) ====================
-// Витрина находок: отбор и подписи — api/services/hot.py; графики карточки берёт
-// из тех же ручек, что и страницы индикаторов (getChartData, getFundsFlows, …).
+// Витрина находок: отбор, подписи и ряды для компактных графиков карточек —
+// api/services/hot.py. Графики рисует components/hot/HotCharts.tsx.
 
-export interface HotChip { text: string; cls: 'up' | 'dn'; sub?: string; old?: boolean }
-export interface HotCompare { label: string; chips: HotChip[] }
-export interface HotEpisode { date: string; after: number; post2022: boolean }
+export interface HotLineChart {
+  type: 'line';
+  series: [string, number][];
+  price?: (number | null)[];
+  zone?: { from: string; label: string };
+  level?: { value: number | null; label: string };
+  start?: { date: string; value: number };
+  peaks?: [string, number][];
+  now: { date: string; value: number };
+}
+export interface HotBarsChart {
+  type: 'bars';
+  unit: string;
+  weekly: boolean;
+  bars: [string, number][];
+  hl: string;
+  prev?: string;
+  level?: number;
+  run?: { from: string; to: string; label: string };
+}
+export interface HotSeasonChart {
+  type: 'season';
+  avg: [number, number, number][];
+  cur: [number, number][];
+  today: number;
+  zone_to: number;
+}
+export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?: string }
 
 export interface HotOiCard {
-  kind: 'oi'; id: string; sectype: string; name: string; group?: string; section: string; signal: string;
-  tag: { type: 'record'; text: string; all: boolean; move?: string | null } | { type: 'move'; text: string; note: string };
-  date: string; date_label: string; skew_now: number; level: number | null; window_start: string | null;
-  chart_period: string; what: string; has_price: boolean; episodes: HotEpisode[];
+  kind: 'oi'; id: string; sectype: string; name: string; signal: string; tags: HotTag[]; date: string;
+  chart: HotLineChart;
 }
 export interface HotFlowsCard {
-  kind: 'flows'; id: string; category: FundCategory; name: string; section: string; case: string; signal: string;
-  amount: number; date_label: string; timeframe: FlowTimeframe; period: FundPeriod; note?: string | null;
-  run?: [string, string] | null; compare?: HotCompare | null;
+  kind: 'flows'; id: string; category: FundCategory; name: string; case: string; signal: string; amount: number;
+  date_label: string; note?: string | null; chart: HotBarsChart;
 }
 export interface HotTradesCard {
-  kind: 'trades'; id: string; isin: string; asset_name: string; secid: string | null; section: string;
-  signal: string; funds: string; amount_rub: number; date_label: string; month: string;
+  kind: 'trades'; id: string; isin: string; name: string; secid: string | null; signal: string; funds: string;
+  amount: number; date_label: string; chart: HotBarsChart;
 }
 export interface HotSeasonCard {
-  kind: 'season'; id: string; secid: string; sectype: string; name: string; section: string; signal: string;
-  hits: string; date_label: string; median: number; compare: HotCompare;
+  kind: 'season'; id: string; secid: string; sectype: string; name: string; signal: string; hits: string;
+  date_label: string; chart: HotSeasonChart;
 }
 export type HotCard = HotOiCard | HotFlowsCard | HotTradesCard | HotSeasonCard;
 export interface HotResponse { generated_at: string; as_of: string; cards: HotCard[]; errors?: string[] }

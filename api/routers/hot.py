@@ -19,5 +19,6 @@ router = APIRouter(prefix="/api/admin/hot", tags=["hot"])
 
 @router.get("")
 def hot(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Карточки витрины. Пересчёт — раз в 30 минут: позиции и потоки обновляются раз в день."""
-    return get_or_compute(f"hot:v1:{date.today().isoformat()}", lambda: compute_hot(db, admin), ttl=1800)
+    """Карточки витрины с рядами для графиков. Пересчёт — раз в 30 минут: позиции и потоки обновляются
+    раз в день. Версия в ключе кэша — формат ответа (v2: поле chart у карточек)."""
+    return get_or_compute(f"hot:v2:{date.today().isoformat()}", lambda: compute_hot(db, admin), ttl=1800)
