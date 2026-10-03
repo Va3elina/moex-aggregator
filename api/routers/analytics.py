@@ -1388,8 +1388,14 @@ def _ident_events_cte(segment: str, device: str, params: dict[str, Any]) -> str:
     ev_sql = (" AND " + " AND ".join(ev_where)) if ev_where else ""
     return f"""
         WITH vis_user AS (
+            -- Аккаунт браузера ищем только среди браузеров этого периода: по
+            -- всей таблице событий это полный проход на каждый запрос.
             SELECT visitor_id, MAX(user_id) AS uid FROM analytics_events
-            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL GROUP BY visitor_id
+            WHERE visitor_id IS NOT NULL AND user_id IS NOT NULL
+              AND visitor_id IN (
+                  SELECT DISTINCT visitor_id FROM analytics_events
+                  WHERE server_ts >= :start AND server_ts < :end AND visitor_id IS NOT NULL)
+            GROUP BY visitor_id
         ),
         ev AS (
             SELECT COALESCE('u' || COALESCE(a.user_id, vu.uid)::text,
@@ -1424,7 +1430,9 @@ def get_features(
     """
     rng = _resolve_range(days, date_from, date_to)
     key = f"admin:features:v1:{rng['d0']}:{rng['d1']}:{segment}:{device}"
-    return get_or_compute(key, lambda: _compute_features(rng, segment, device), ttl=180)
+    # 10 минут: настройки внутри разделов меняются медленно, а пересчёт —
+    # самый тяжёлый запрос страницы.
+    return get_or_compute(key, lambda: _compute_features(rng, segment, device), ttl=600)
 
 
 _FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox")
@@ -1432,14 +1440,26 @@ _FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox")
 
 def _compute_features(rng: dict, segment: str, device: str) -> dict:
     params: dict[str, Any] = {"start": rng["start"], "end": rng["end"], "paths": list(_FEATURE_PATHS)}
-    base = _ident_events_cte(segment, device, params)
+    ev_cte = _ident_events_cte(segment, device, params)
+    # Все запросы ниже читают одну временную таблицу: события периода выбираются
+    # и склеиваются в людей один раз, а не в каждом из двух десятков запросов.
+    base = "WITH ev AS (SELECT * FROM fev)"
     prev_params: dict[str, Any] = {"start": rng["pstart"], "end": rng["pend"], "paths": list(_FEATURE_PATHS)}
     prev_base = _ident_events_cte(segment, device, prev_params)
 
     def pairs(rows) -> list[dict]:
         return [{"key": r[0], "people": int(r[1])} for r in rows if r[0] is not None]
 
-    with get_engine().connect() as conn:
+    with get_engine().begin() as conn:
+        conn.execute(text(f"""
+            CREATE TEMP TABLE fev ON COMMIT DROP AS
+            {ev_cte}
+            SELECT * FROM ev
+            WHERE event_path = ANY(:paths)
+               OR event_type IN ('funds_view', 'fund_trades_view', 'fund_open',
+                                 'terminal_layout', 'terminal_panel_add')
+        """), params)
+
         def q(sql: str):
             return conn.execute(text(f"{base} {sql}"), params).fetchall()
 
