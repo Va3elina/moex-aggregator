@@ -500,6 +500,12 @@ _ФОНД_СУММА_МАКС = 120   # % фонда: срез, где доли 
 # Водяной знак с версией: смена правил отбора требует пересобрать события целиком, а не
 # дописать новые поверх мнимых. Новая версия ключа = один полный прогон с очисткой.
 _ФОНД_ВЕРСИЯ = "fund_events:2"
+# ⚠️ Водяной знак — дата последнего ДОКУМЕНТА (_ФОНД_ИСТОЧНИКИ), и каждый прогон заново смотрит документы
+# за _ФОНД_ПЕРЕПРОВЕРКА дней до него. 03.10: знак считался по всей таблице составов, где лежат и строки,
+# которые в события не идут (их даты доходили до 01.10), — он ушёл вперёд, и документы Интерфакса за
+# август (дата 31.08, загружены 15–18.09) остались позади: последнее событие в мозге было 31.07.
+# Документы одного месяца приходят пачкой за несколько дней, поэтому одной даты мало — нужен запас.
+_ФОНД_ПЕРЕПРОВЕРКА = 62
 
 _СОБЫТИЯ_ФОНДОВ = """
     -- ⚠️ Пороги — с явным типом: pg8000 выводит тип параметра из соседа, и 0,5 рядом с
@@ -575,7 +581,7 @@ def события_фондов(conn, full: bool) -> int:
         # полная пересборка — с чистого листа; вектора уходят каскадом (brain_embeddings)
         conn.execute(text("DELETE FROM brain_edges WHERE kind = 'событие_фонда'"))
         conn.execute(text("DELETE FROM brain_nodes WHERE kind = 'fund_event'"))
-    п = {"вод": вод or datetime(2000, 1, 1, tzinfo=timezone.utc),
+    п = {"вод": (вод or datetime(2000, 1, 1, tzinfo=timezone.utc)) - timedelta(days=_ФОНД_ПЕРЕПРОВЕРКА),
          "с": datetime.now(timezone.utc) - timedelta(days=_ФОНД_ДНЕЙ),
          "срез": _ФОНД_СРЕЗ_МИН, "вес": _ФОНД_ВЕС_МИН, "изм": _ФОНД_ИЗМ,
          "источники": _ФОНД_ИСТОЧНИКИ, "сумма": _ФОНД_СУММА_МАКС}
@@ -603,6 +609,10 @@ def события_фондов(conn, full: bool) -> int:
           LEFT JOIN brain_nodes c ON c.id = ev.company_id
         ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
                payload = EXCLUDED.payload, updated_at = NOW()
+        -- перепроверка проходит одни и те же срезы каждые 15 минут: неизменённый узел не трогаем,
+        -- иначе сдвиг updated_at гонял бы его в переразметку и пересчёт вектора на каждом прогоне
+         WHERE (brain_nodes.title, brain_nodes.summary, brain_nodes.payload)
+               IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.summary, EXCLUDED.payload)
     """))
     n = r.rowcount
     conn.execute(text(f"""
@@ -614,7 +624,8 @@ def события_фондов(conn, full: bool) -> int:
         ON CONFLICT DO NOTHING
     """))
     _отметить(conn, _ФОНД_ВЕРСИЯ, conn.execute(text(
-        "SELECT CAST(MAX(snapshot_date) AS timestamptz) FROM fund_holdings_history")).scalar(), n)
+        "SELECT CAST(MAX(snapshot_date) AS timestamptz) FROM fund_holdings_history WHERE source = ANY(:источники)"),
+        {"источники": _ФОНД_ИСТОЧНИКИ}).scalar(), n)
     return n
 
 

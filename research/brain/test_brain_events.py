@@ -92,3 +92,17 @@ def test_brief_shows_disclosures_exchange_news_and_report_figures():
 def test_old_context_without_new_blocks_still_renders():
     блок = CA._brain_block(None, {}, _ctx())["NVTK"]
     assert not any(k.startswith(("раскрытия_", "объявления_биржи_", "отчёты_")) for k in блок)
+
+
+def test_fund_events_watermark_follows_documents_only():
+    """03.10.2026: водяной знак событий фондов считался по всей таблице составов и ушёл вперёд
+    документов — август Интерфакса (31.08, загружен 15–18.09) в мозг не попал, последнее событие
+    было 31.07. Знак — только по документам УК, плюс перепроверка последних двух месяцев."""
+    s = _sync()
+    src = inspect.getsource(s.события_фондов)
+    # сделки фондов — только месячные документы УК (Вадим, 03.10)
+    assert s._ФОНД_ИСТОЧНИКИ == ["vim_sdr", "interfax_manual"]
+    assert "FROM fund_holdings_history WHERE source = ANY(:источники)" in src
+    assert "_ФОНД_ПЕРЕПРОВЕРКА" in src and s._ФОНД_ПЕРЕПРОВЕРКА >= 45
+    # перепроверка не двигает неизменённые узлы: иначе переразметка и векторы на каждом прогоне
+    assert "IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.summary, EXCLUDED.payload)" in src
