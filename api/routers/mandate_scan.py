@@ -152,10 +152,19 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
             "inline_keyboard": [[{"text": "Открыть источник", "url": candidate.source_url}]]
         }
     try:
+        # Успех, если дошло хотя бы одному: иначе недоступный второй
+        # получатель заставил бы повторять отправку первому.
+        delivered, last_err = False, None
         for chat_id in chat_ids:
-            resp = requests.post(f"{api_root}/bot{token}/sendMessage",
-                                 json={**payload, "chat_id": chat_id}, timeout=10)
-            resp.raise_for_status()
+            try:
+                resp = requests.post(f"{api_root}/bot{token}/sendMessage",
+                                     json={**payload, "chat_id": chat_id}, timeout=10)
+                resp.raise_for_status()
+                delivered = True
+            except Exception as e:
+                last_err = e
+        if not delivered and last_err is not None:
+            raise last_err
         return True
     except Exception as e:
         body = getattr(e, "response", None)
