@@ -276,30 +276,70 @@ def episodes(arr, i, gap=40, hist=250) -> list:
     return eps
 
 
-def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> list:
+EMA_N = 20      # индикатор «EMA 20» на графиках сайта — им Вадим смотрит тренд позиции и цены
+TURN_DAYS = 3   # разворот — позиция по другую сторону средней три торговых дня подряд, а не одно касание
+
+
+def ema(s: pd.Series, n=EMA_N) -> pd.Series:
+    """EMA как на графике сайта (frontend/src/utils/indicators.ts): первое значение — SMA первых n точек."""
+    v = s.values.astype(float)
+    out = np.full(len(v), np.nan)
+    if len(v) >= n:
+        k, e = 2 / (n + 1), v[:n].mean()
+        out[n - 1] = e
+        for i in range(n, len(v)):
+            e = v[i] * k + e * (1 - k)
+            out[i] = e
+    return pd.Series(out, index=s.index)
+
+
+def trend_side(s: pd.Series) -> pd.Series:
+    """+1 — ряд выше своей EMA 20 (тренд вверх), −1 — ниже, 0 — средней ещё нет. Короткие касания (меньше
+    TURN_DAYS дней) тренд не меняют: их дни получают сторону предыдущего отрезка."""
+    e = ema(s)
+    raw = np.where(e.isna(), 0, np.where(s.values > e.values, 1, -1))
+    out = raw.copy()
+    for i in range(1, len(raw)):
+        if raw[i] != out[i - 1] and out[i - 1] != 0:
+            stay = raw[i:i + TURN_DAYS]
+            out[i] = raw[i] if len(stay) == TURN_DAYS and (stay == raw[i]).all() else out[i - 1]
+    return pd.Series(out, index=s.index)
+
+
+def trend_now(arr, dates) -> int:
+    """Сторона тренда позиции на последний день: +1 вверх, −1 вниз, 0 — истории мало."""
+    return int(trend_side(pd.Series(arr, index=dates)).iloc[-1]) if len(arr) > EMA_N else 0
+
+
+def trend_lines(arr, dates, pser, t, lab, plabel, were) -> list:
     """Тренд вместо пика. Вадим к #2124 (Самолёт, 15.09) и #2216 (АФК, 16.09): «важен не предыдущий
     исторический пик, а тренд: последние месяцы чистая позиция снижается вместе с ценой; в октябре-ноябре
     2024 шорт рос, цена падала, и только когда объём шорта начал снижаться, акция перешла к росту».
 
-    Тренд — знак изменения позиции и цены за W торговых дней (цена — не меньше MIN_PX). Прошлые эпизоды —
-    отрезки после 2022 года с тем же сочетанием знаков; «разворот» — первый день после отрезка, когда
-    позиция за 10 торговых дней пошла в обратную сторону, и от него — цена через месяц и три."""
-    if pser is None or len(arr) < W + 30:
+    Вадим 05.10 (шорт индекса по вечному фьючерсу): «прошлые пики видны спустя время; после нынешнего
+    обновления максимума пика ещё нет — опираться надо на тренд. Цена и позиция выше EMA 20 — тренд вверх, и
+    после обновления максимума стоит ждать его продолжения». Поэтому тренд — сторона ряда относительно его
+    EMA 20 (как на графике сайта), а не знак изменения за два месяца. Прошлые эпизоды — отрезки после 2022 года
+    с тем же сочетанием сторон у позиции и цены; «разворот» — день, когда позиция ушла по другую сторону
+    средней, и от него — цена через месяц и три. Про скользящие средние в посте не пишем — только «растёт»."""
+    if pser is None or len(arr) < EMA_N + 30:
         return []
     s = pd.Series(arr, index=dates)
-    ps = pser.reindex(dates).ffill()
-    dpos, dpx = s.diff(W), ps / ps.shift(W) - 1
-    cp, cx = dpos.iloc[-1], dpx.iloc[-1]
-    if not (np.isfinite(cp) and np.isfinite(cx)) or cp == 0 or abs(cx) < MIN_PX:
+    ps = pser.reindex(pser.index.union(dates)).ffill()
+    px_side = trend_side(ps.dropna()).reindex(dates).ffill().fillna(0).values
+    ps = ps.reindex(dates)
+    side = trend_side(s).values
+    sp, sx = int(side[-1]), int(px_side[-1])
+    if not sp or not sx:
         return []
-    sp, sx = np.sign(cp), np.sign(cx)
     many = lab.startswith("покупки")
     one = lab.startswith("число")
     now_v = ("растут" if many else "растёт") if sp > 0 else ("снижаются" if many else "снижается")
     past_v = (("росли" if many else "росло" if one else "рос") if sp > 0
               else ("снижались" if many else "снижалось" if one else "снижался"))
     turn_v = (("начали" if many else "начало" if one else "начал") + (" снижаться" if sp > 0 else " расти"))
-    ok = ((np.sign(dpos) == sp) & (np.sign(dpx) == sx) & (dpx.abs() >= MIN_PX)).values & (dates >= ERA_START)
+    px_v = "растёт" if sx > 0 else "снижается"
+    ok = (side == sp) & (px_side == sx) & (dates >= ERA_START)
     runs = []
     for i in np.flatnonzero(ok):
         if runs and i - runs[-1][1] <= 5:
@@ -308,21 +348,22 @@ def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> li
             runs.append([i, i])
     n = len(arr) - 1
     cur = runs[-1] if runs and runs[-1][1] >= n - 5 else None
-    past = [r for r in runs if r is not cur and r[1] - r[0] >= 10]
-    d10 = s.diff(10)
-    out = [f"главное - тренд, а не прошлый пик: за последние два месяца {lab} {now_v}, а {plabel} {p_ru(cx)}"
-           + (f"; так идёт с {d_ru(dates[max(cur[0] - W, 0)], t)}" if cur else "")]
+    k0 = n
+    while k0 > 0 and side[k0 - 1] == sp:     # начало нынешнего тренда позиции
+        k0 -= 1
+    out = [f"главное - тренд, а не прошлый пик: {lab} {now_v} с {d_ru(dates[k0], t)} "
+           f"({p_ru(arr[n] / arr[k0] - 1) if arr[k0] > 0 else 'с нуля'}), {plabel} за это время "
+           f"{p_ru(ps.iloc[n] / ps.iloc[k0] - 1)} и сейчас {px_v}"]
     ups = n_after = 0
-    for i0, i1 in past[-4:]:
-        j = next((k for k in range(i1 + 1, n + 1) if np.sign(d10.iloc[k]) == -sp), None)
+    for i0, i1 in [r for r in runs if r is not cur and r[1] - r[0] >= 10][-4:]:
+        j = next((k for k in range(i1 + 1, n + 1) if side[k] == -sp), None)
         if j is None:
             continue
-        a = max(i0 - W, 0)
         r20, r60 = fwd(pser, dates[j], 20), fwd(pser, dates[j], 60)
         tail = ([f"через месяц {p_ru(r20)}"] if r20 is not None else []) + \
                ([f"через три {p_ru(r60)}"] if r60 is not None else [])
-        out.append(f"так же было {d_ru(dates[a], t)} - {d_ru(dates[i1], t)}: {lab} {past_v}, {plabel} "
-                   f"{p_ru(ps.iloc[i1] / ps.iloc[a] - 1)}; {d_ru(dates[j], t)} {lab} {turn_v} - "
+        out.append(f"так же было {d_ru(dates[i0], t)} - {d_ru(dates[i1], t)}: {lab} {past_v}, {plabel} "
+                   f"{p_ru(ps.iloc[i1] / ps.iloc[i0] - 1)}; {d_ru(dates[j], t)} {lab} {turn_v} - "
                    + (f"после этого {plabel} " + ", ".join(tail) if tail else "что было после, ещё не известно"))
         if r20 is not None:
             n_after += 1
@@ -332,7 +373,49 @@ def trend_lines(arr, dates, pser, t, lab, plabel, were, W=40, MIN_PX=0.05) -> li
                    f"{plural(ups, ('случае', 'случаях', 'случаях'))} из {n_after}")
     elif len(out) == 1:
         out.append("похожих эпизодов такого тренда после 2022 года не было - прошлые пики ниже только фон")
+    reg = regime_line(side, dates, pser, lab, plabel, many, one)
+    if reg:
+        out.append(reg)
     return out
+
+
+def net_trend_lines(P, sec, t, pser, plabel) -> list:
+    """Тренд чистой позиции к посту про одну сторону (шорт или покупки). Вадим 05.10: «когда чистые позиции в
+    растущем тренде, индексу сложнее расти» — смотрит на чистую позицию, даже когда пост про шорт."""
+    s = upto(P["net"][sec], t)
+    if pser is None or len(s) < EMA_N + 30:
+        return []
+    lab = "чистый лонг физлиц" if s.iloc[-1] >= 0 else "чистый шорт физлиц"
+    s = s if s.iloc[-1] >= 0 else -s
+    side = trend_side(s).values
+    if not side[-1]:
+        return []
+    k0 = len(side) - 1
+    while k0 > 0 and side[k0 - 1] == side[-1]:
+        k0 -= 1
+    out = [f"{lab} {'растёт' if side[-1] > 0 else 'снижается'} с {d_ru(s.index[k0], t)}"]
+    reg = regime_line(side, s.index, pser, lab, plabel, False, False)
+    return out + [reg.replace("итого по тренду: ", "по чистой позиции: ")] * bool(reg)
+
+
+def regime_line(side, dates, pser, lab, plabel, many, one) -> str:
+    """Что делает цена, пока позиция в тренде вверх и пока вниз, — по всем дням после 2022 года. Вадим 05.10:
+    «на графике видна тенденция: когда чистые позиции в растущем тренде, индексу сложнее расти». Это опора для
+    вывода без «прошлых пиков»: пик виден только задним числом, а тренд — сегодня."""
+    ps = pser.reindex(pser.index.union(dates)).ffill()
+    f20 = (ps.shift(-20) / ps - 1).reindex(dates).values     # цена через 20 торговых дней — только известная
+    ok = (dates >= ERA_START) & np.isfinite(f20)
+    up, dn = ok & (side > 0), ok & (side < 0)
+    if up.sum() < 60 or dn.sum() < 60:
+        return ""
+    a, b = float(np.mean(f20[up])), float(np.mean(f20[dn]))
+    if abs(a - b) < 0.01:
+        return ""
+    grow = "росли" if many else "росло" if one else "рос"
+    fall = "снижались" if many else "снижалось" if one else "снижался"
+    moved = "менялись" if plabel.startswith("акции") else "менялся"
+    return (f"итого по тренду: после 2022 года, пока {lab} {grow}, {plabel} за следующий месяц {moved} в среднем "
+            f"на {p_ru(a)}, а пока {fall} - на {p_ru(b)}; это средний ход, а не прогноз")
 
 
 INTRADAY_NOTE, INTRADAY_SKIP = -0.10, -0.20   # откат к утру: оговорка / находка не идёт в пост
@@ -760,7 +843,13 @@ def positions_card(sec, leg, as_of) -> dict:
                         f"и не тема поста" if crossed else
                         " - картина к утру уже развернулась: без этой оговорки пост писать нельзя"
                         if intraday_chg <= INTRADAY_NOTE else ""))
-    if leg != "net" and st and i >= 5 and arr[i - 5] > 0 and v > arr[i - 5]:
+    up = trend_now(arr, dates) > 0
+    if (st or cur) and up:      # cur — позиция на максимумах за год и больше последние 40 дней (#3600: 1.10 рекорд, 2.10 −1%)
+        # Вадим 05.10, шорт индекса по вечному фьючерсу: прошлые пики видны спустя время, а у нынешнего
+        # обновления максимума пика ещё нет — тренд позиции вверх, и обновление максимума его продолжает
+        facts.append("тренд позиции вверх: обновление максимума в растущем тренде - продолжение тренда, а не пик; "
+                     "пока позиция не пошла вниз, ждём продолжения тренда, а не разворота")
+    elif leg != "net" and st and i >= 5 and arr[i - 5] > 0 and v > arr[i - 5]:
         # #2124 SMLT: писатель объявил «пик пройден», а позиция ещё росла
         facts.append("позиция всё ещё растёт: нынешний эпизод не закончен - «пик пройден» не пиши; "
                      "прошлые эпизоды ниже - это пики, называй их с датами")
@@ -815,6 +904,10 @@ def positions_card(sec, leg, as_of) -> dict:
                            f"за следующий месяц {plabel} {p_ru(best['r20'])}"
                            + (f", за три - {p_ru(best['r60'])}" if best["r60"] is not None else ""))
 
+    if up:
+        # «что было через месяц после прошлых пиков» примеряет к нынешнему дню пик, которого нет: прошлые пики
+        # найдены задним числом, когда тренд уже развернулся (Вадим 05.10). В растущем тренде этот блок не даём
+        after, analogy = [], []
     price = price_lines(pser, t, plabel)
     context = other_legs(P, sec, leg, t)
     angles = position_angles(P, sec, leg, lab, dat, plabel, arr, dates, pser, past, t)
@@ -828,27 +921,35 @@ def positions_card(sec, leg, as_of) -> dict:
     if dates[0] < ERA_START:
         limits.append("до 2022 года был другой рынок, с нерезидентами: пики до 2022 года - не аналогия и в "
                       "пост не нужны; рекорд после 2022-го называй «исторический максимум» без оговорок")
-    if len(r20s) < 4:
+    if len(r20s) < 4 and after:
         limits.append(f"прошлых пиков с известным продолжением всего {len(r20s)} - это история, "
                       f"а не закономерность: не обобщай")
     trend = trend_lines(arr, dates, pser, t, lab, plabel, were)
+    if trend and leg in ("long", "short") and "net" in P and sec in P["net"]:
+        trend += net_trend_lines(P, sec, t, pser, plabel)
     if trend:
         limits.append("пост строится на блоке ТРЕНД: прошлые пики - фон; «пик пройден», сравнение с прошлым пиком "
                       "и число контрактов в пост не нужны")
+    if up:
+        limits.append("нынешнее значение - не пик: прошлые пики видны только задним числом, когда тренд уже "
+                      "развернулся; не пиши «похожие пики были…, после них…» и не примеряй к сегодняшнему дню то, что "
+                      "было после прошлых пиков; тренд определён по скользящей средней - о ней в посте ни слова, "
+                      "только «растёт», «в растущем тренде»")
     win = ser[ser.index >= t - pd.Timedelta(days=3 * 365)]
     chart = {"type": "line2", "title": f"{lab.capitalize()}, {nom}", "x": win.index, "y": win.values,
-             "y_label": unit, "marks": [(r["date"], r["value"]) for r in rows if r["date"] >= win.index[0]]
+             "y_label": unit, "marks": [(r["date"], r["value"]) for r in rows if r["date"] >= win.index[0] and not up]
              + [(t, v)]}
     if pser is not None:
         pw = pser[pser.index >= win.index[0]]
         chart.update({"x2": pw.index, "y2": pw.values, "y2_label": plabel})
+    marks_note = "точкой отмечено текущее значение" if up else "точками отмечены прошлые пики и текущее значение"
     return {"kind": "positions", "spec": {"sec": sec, "leg": leg}, "as_of": t,
             "headline": f"{lab.capitalize()} по {dat} - {q_ru(v, unit)}" + (f", {st}" if st else ""),
             "facts": [f for f in facts if f], "trend": trend, "after": after, "analogy": analogy, "price": price,
             "intraday_change": intraday_chg, "angles": angles,
             "context": context, "limits": limits, "chart": chart,
             "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} "
-                           f"(серая); точками отмечены прошлые пики и текущее значение"],
+                           f"(серая); {marks_note}"],
             "hashtag": HASHTAG["positions"]}
 
 
@@ -914,7 +1015,12 @@ def positions_low_card(sec, base, as_of) -> dict:
         intraday_chg = iv / v - 1
         facts.append(f"утром {d_ru(iday, t)} к {str(itime)[:5]} МСК {lab} - {q_ru(iv, unit)} "
                      f"({p_ru(intraday_chg)} к закрытию {d_ru(t, t)})")
-    if st and i >= 5 and v < arr[i - 5]:
+    down = trend_now(arr, dates) < 0
+    if st and down:
+        # зеркало Вадима 05.10: минимум в снижающемся тренде — продолжение тренда, а не дно
+        facts.append("тренд позиции вниз: обновление минимума в снижающемся тренде - продолжение тренда, а не дно; "
+                     "пока позиция не пошла вверх, ждём продолжения тренда, «разворот» и «дно пройдено» не пиши")
+    elif st and i >= 5 and v < arr[i - 5]:
         facts.append("позиция всё ещё снижается: дно не пройдено - «разворот» и «дно пройдено» не пиши")
     eps = episodes(-arr, i)
     cur = eps[-1] if eps and i - eps[-1]["end"] <= 40 else None
@@ -935,10 +1041,16 @@ def positions_low_card(sec, base, as_of) -> dict:
         k = sum(r > 0 for r in r20s)
         after.append(f"итого после {len(r20s)} прошлых минимумов {plabel} через месяц {were} выше в {k} "
                      f"{plural(k, ('случае', 'случаях', 'случаях'))} из {len(r20s)}")
+    if down:    # прошлые минимумы найдены задним числом — к сегодняшнему дню, где дна ещё нет, их не примеряем
+        after, r20s, marks = [], [], []
     trend = trend_lines(arr, dates, pser, t, lab, plabel, were)
     limits = [f"данные дневные, на закрытие торгов {d_ru(t, t)}; что было внутри дня, не видно",
               f"данные по {dat} начинаются в {dates[0].year} году", NO_FORECAST,
               "минимум позиции - не прогноз цены: «толпа ушла» не значит, что цена развернётся"]
+    if down:
+        limits.append("нынешнее значение - не дно: прошлые минимумы видны только задним числом; не примеряй к "
+                      "сегодняшнему дню то, что было после них; тренд определён по скользящей средней - о ней в "
+                      "посте ни слова, только «снижается», «в снижающемся тренде»")
     from signals.insights.expiry import expiry_note
     # у вечного фьючерса экспирации нет: оговорка «перед экспирацией позиции снижаются сами» к нему не относится
     if expiry_note(t) and "вечн" not in nom:
@@ -1527,9 +1639,12 @@ def focus_lines(card: dict) -> list:
     if k == "positions" and card.get("trend"):
         trend = card["trend"]
         story = next((x for x in trend if x.startswith("так же было")), None)
-        stat = next((x for x in trend if x.startswith("итого")), None)
+        # опора — что цена делает, пока тренд позиции идёт (он идёт сейчас), а не после разворота, которого нет
+        stat = next((x for x in trend if x.startswith("итого по тренду")), None) \
+            or next((x for x in trend if x.startswith("итого")), None)
+        net = [x for x in trend[1:] if x.startswith(("чистый", "по чистой позиции"))]
         return ([f"находка: {card['headline']}", f"тренд: {trend[0]}"] + [f"одна история: {story}"] * bool(story)
-                + [f"опора для вывода: {stat}"] * bool(stat))
+                + [f"опора для вывода: {stat}"] * bool(stat) + [f"чистая позиция: {x}" for x in net])
     if k == "positions":
         story = analogy[0] if analogy else (after[-2] if len(after) >= 2 else None)
         stat = after[-1] if after and after[-1].startswith("итого") else None

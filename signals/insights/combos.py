@@ -621,7 +621,7 @@ def brief(story: dict) -> tuple:
         if card.get("facts"):       # масштаб «сейчас» рядом с прошлыми пиками
             lines = [f"сейчас: {card['facts'][0]}"] + lines
             lines += [x for x in card["facts"] if x.startswith("утром ")]   # сверка с утром
-        if leg.get("type") in SHIFT_TYPES:
+        if leg.get("type") in SHIFT_TYPES and card.get("after"):
             lines = ["важно: прошлые эпизоды ниже - ПИКИ этой позиции, «через месяц» считается от дня пика; "
                      "нынешняя находка - резкий сдвиг, а не пик"] + lines
         mv = usual_move(leg, t)
