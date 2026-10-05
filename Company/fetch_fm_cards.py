@@ -95,11 +95,21 @@ def notify(текст: str) -> bool:
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     try:
         import requests
-        r = requests.post("%s/bot%s/sendMessage" % (api_root, token),
-                          json={"chat_id": chat, "text": текст[:4000],
-                                "parse_mode": "HTML", "disable_web_page_preview": True},
-                          timeout=15)
-        r.raise_for_status()
+        # ADMIN_CHAT_ID — один id или список через запятую.
+        # Успех, если дошло хотя бы одному получателю.
+        delivered, last_err = False, None
+        for chat_id in [c.strip() for c in chat.split(",") if c.strip()]:
+            try:
+                r = requests.post("%s/bot%s/sendMessage" % (api_root, token),
+                                  json={"chat_id": chat_id, "text": текст[:4000],
+                                        "parse_mode": "HTML", "disable_web_page_preview": True},
+                                  timeout=15)
+                r.raise_for_status()
+                delivered = True
+            except Exception as e:
+                last_err = e
+        if not delivered and last_err is not None:
+            raise last_err
         # ⚠️ Пишем и УСПЕХ тоже. Без этой строки лог молчит одинаково и когда пуш
         # ушёл, и когда его не было вовсе, — а «тихий успех» неотличим от «тихого
         # ничего», и именно так уведомления в этом проекте уже терялись.

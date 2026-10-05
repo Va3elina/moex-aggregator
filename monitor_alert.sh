@@ -52,10 +52,14 @@ send_msg() {
     log "WARN: BOT_TOKEN/ADMIN_CHAT_ID не заданы — пропускаю отправку"
     return 0
   fi
-  curl -6 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d "chat_id=${ADMIN_CHAT_ID}" \
-    --data-urlencode "text=$1" \
-    -d "parse_mode=Markdown" > /dev/null || log "WARN: send_msg curl failed"
+  local chat
+  # ADMIN_CHAT_ID — один id или список через запятую.
+  for chat in ${ADMIN_CHAT_ID//,/ }; do
+    curl -6 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+      -d "chat_id=${chat}" \
+      --data-urlencode "text=$1" \
+      -d "parse_mode=Markdown" > /dev/null || log "WARN: send_msg curl failed"
+  done
 }
 
 # Текущие проблемные пайплайны: строки «name|status|lag_h».

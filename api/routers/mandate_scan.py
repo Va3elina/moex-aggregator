@@ -130,8 +130,9 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
     ли notified_at; сбой не должен молча теряться (тот же урок, что и с
     hype_filter_dispatch_attempts, db/migrations/035_*.sql)."""
     token = os.environ.get("BOT_TOKEN", "")
-    chat_id = os.environ.get("ADMIN_CHAT_ID", "")
-    if not token or not chat_id:
+    # ADMIN_CHAT_ID — один id или список через запятую.
+    chat_ids = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
+    if not token or not chat_ids:
         return False
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     trigger_line = f"\n⚙️ Триггер: {candidate.trigger_description}" if candidate.trigger_description else ""
@@ -145,14 +146,25 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
         f"Pine-тестируемость: <b>{candidate.pine_testable}</b>{trigger_line}\n\n"
         f"{candidate.hypothesis}"
     )
-    payload = {"chat_id": chat_id, "text": text_msg[:4000], "parse_mode": "HTML"}
+    payload = {"text": text_msg[:4000], "parse_mode": "HTML"}
     if candidate.source_url:
         payload["reply_markup"] = {
             "inline_keyboard": [[{"text": "Открыть источник", "url": candidate.source_url}]]
         }
     try:
-        resp = requests.post(f"{api_root}/bot{token}/sendMessage", json=payload, timeout=10)
-        resp.raise_for_status()
+        # Успех, если дошло хотя бы одному: иначе недоступный второй
+        # получатель заставил бы повторять отправку первому.
+        delivered, last_err = False, None
+        for chat_id in chat_ids:
+            try:
+                resp = requests.post(f"{api_root}/bot{token}/sendMessage",
+                                     json={**payload, "chat_id": chat_id}, timeout=10)
+                resp.raise_for_status()
+                delivered = True
+            except Exception as e:
+                last_err = e
+        if not delivered and last_err is not None:
+            raise last_err
         return True
     except Exception as e:
         body = getattr(e, "response", None)

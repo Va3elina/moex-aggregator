@@ -11,7 +11,8 @@ from sqlalchemy import create_engine, text
 from datetime import datetime
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])
+# Один id или список через запятую: все они админы бота.
+ADMIN_CHAT_IDS = {int(c) for c in os.environ["ADMIN_CHAT_ID"].split(",") if c.strip()}
 # pg8000 driver (already in requirements)
 _raw_url = os.environ["DB_URL_SYNC"]  # postgresql://user:pass@host/db
 DB_URL = _raw_url.replace("postgresql://", "postgresql+pg8000://")
@@ -92,7 +93,8 @@ def cmd_stats():
 
 
 def cmd_backup():
-    send(ADMIN_CHAT_ID, "⏳ Запускаю бэкап, подожди пару минут...")
+    for admin_id in ADMIN_CHAT_IDS:
+        send(admin_id, "⏳ Запускаю бэкап, подожди пару минут...")
     try:
         result = subprocess.run(
             ["bash", "/app/backup_db.sh"],
@@ -120,7 +122,7 @@ def process_update(update):
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
-        if chat_id != ADMIN_CHAT_ID:
+        if chat_id not in ADMIN_CHAT_IDS:
             send(chat_id, "⛔ Нет доступа")
             return
         text = msg.get("text", "")
@@ -137,7 +139,7 @@ def process_update(update):
     elif "callback_query" in update:
         cb = update["callback_query"]
         chat_id = cb["message"]["chat"]["id"]
-        if chat_id != ADMIN_CHAT_ID:
+        if chat_id not in ADMIN_CHAT_IDS:
             answer_callback(cb["id"])
             return
         data = cb.get("data", "")
@@ -152,7 +154,7 @@ def process_update(update):
 
 
 def main():
-    print(f"[{datetime.now()}] Bot started, admin={ADMIN_CHAT_ID}")
+    print(f"[{datetime.now()}] Bot started, admin={sorted(ADMIN_CHAT_IDS)}")
     offset = None
     while True:
         try:
