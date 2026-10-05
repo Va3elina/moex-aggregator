@@ -316,6 +316,10 @@ export default function PricingPage() {
     if (!pendingPlanId) return;
     const planId = pendingPlanId;
     const isPhone = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    // Телефон: банк открываем сразу, без лишнего тапа на /billing/sbp. Вкладку
+    // заводим синхронно, пока жив жест клика — после await браузер заблокирует
+    // её как попап. Не открылась (in-app webview) → на экране останется кнопка.
+    const bankWin = isPhone ? window.open('', '_blank') : null;
     setCheckoutLoading(planId);
     setError(null);
     track('checkout_start', { plan: planId, rail: 'sbp_bind' });
@@ -332,6 +336,12 @@ export default function PricingPage() {
       if (!resp.ok || !body.payload) {
         throw new Error(body.detail || body.error?.message || t('Не удалось начать привязку счёта'));
       }
+      if (bankWin && body.data_type !== 'IMAGE') {
+        bankWin.opener = null;
+        bankWin.location.href = body.payload;
+      } else {
+        bankWin?.close();
+      }
       navigate('/billing/sbp', {
         state: {
           subscription_id: body.subscription_id,
@@ -342,6 +352,7 @@ export default function PricingPage() {
         },
       });
     } catch (e) {
+      bankWin?.close();
       setError(e instanceof Error ? e.message : t('Ошибка'));
       setCheckoutLoading(null);
       setPendingPlanId(null);
