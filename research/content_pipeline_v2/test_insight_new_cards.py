@@ -494,3 +494,45 @@ def test_surge_card_has_its_own_headline_and_chart_point():
     assert c["headline"] != card["headline"], "иначе проверка «такой заголовок уже был» снимает рывок"
     assert list(c["chart"]["y"])[-1] == 115651.0 and c["chart"]["x"][-1] == pd.Timestamp("2026-09-28")
     assert any("к 12:05" in x for x in c["limits"]) and not any(x.startswith("данные дневные") for x in c["limits"])
+
+
+# ── тренд по EMA 20 вместо прошлых пиков (Вадим 05.10, шорт индекса по вечному фьючерсу) ─────────────────────────
+def test_ema_matches_site_indicator():
+    s = pd.Series([1.0, 2, 3, 4, 5, 6], index=pd.bdate_range("2026-01-01", periods=6))
+    e = cards.ema(s, 3).values
+    assert np.isnan(e[:2]).all() and e[2] == 2.0, "старт — SMA первых n точек, как frontend/src/utils/indicators.ts"
+    assert e[3] == 4 * 0.5 + 2 * 0.5 and e[5] == 6 * 0.5 + e[4] * 0.5
+
+
+def test_short_touch_does_not_flip_trend():
+    up = np.linspace(100, 200, 60)
+    arr = np.r_[up, [150, 205, 210]]         # один день под средней — касание, не разворот
+    side = cards.trend_side(pd.Series(arr, index=pd.bdate_range("2025-01-01", periods=len(arr)))).values
+    assert side[-1] == 1 and side[-3] == 1
+
+
+def test_record_in_rising_trend_is_not_a_peak(monkeypatch):
+    """Рекорд в растущем тренде: блока «что было после прошлых пиков» нет, в фактах — «продолжение, а не пик»."""
+    d = pd.bdate_range("2023-01-02", periods=700)
+    wave = np.r_[np.linspace(10, 100, 150), np.linspace(100, 20, 150), np.linspace(20, 110, 200), np.linspace(110, 140, 200)]
+    pos = pd.Series(wave * 1000, index=d)
+    px = pd.Series(np.linspace(2000, 3000, 700), index=d)
+    monkeypatch.setattr(cards, "data", lambda: ({"short": {"IMOEXF": pos}}, {}, {}, {}, {}, {}, {}, None))
+    monkeypatch.setattr(cards, "human_name", lambda sec: ("вечный фьючерс на индекс", "вечному фьючерсу на индекс"))
+    monkeypatch.setattr(cards, "price_for", lambda sec: ("индекс Мосбиржи", px))
+    monkeypatch.setattr(cards, "intraday_now", lambda *a: None)
+    monkeypatch.setattr(cards, "price_lines", lambda *a: [])
+    monkeypatch.setattr(cards, "other_legs", lambda *a: [])
+    monkeypatch.setattr(cards, "position_angles", lambda *a: [])
+    c = cards.positions_card("IMOEXF", "short", d[-1])
+    assert c["after"] == [] and c["analogy"] == [], "прошлые пики найдены задним числом — к сегодняшнему не примеряем"
+    assert any("продолжение тренда, а не пик" in f for f in c["facts"])
+    assert any("нынешнее значение - не пик" in x for x in c["limits"])
+    assert c["trend"] and c["trend"][0].startswith("главное - тренд") and "растёт с" in c["trend"][0]
+    assert c["chart"]["marks"] == [(d[-1], float(pos.iloc[-1]))]
+
+
+def test_focus_prefers_trend_regime_stat():
+    c = {"kind": "positions", "headline": "h", "trend": ["главное - тренд…", "итого: когда такой тренд позиции "
+         "разворачивался…", "итого по тренду: после 2022 года, пока шорт физлиц рос, индекс…"]}
+    assert cards.focus_lines(c)[-1].startswith("опора для вывода: итого по тренду")
