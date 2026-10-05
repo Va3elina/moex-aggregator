@@ -91,6 +91,10 @@ interface BillingStatus {
   subscription_id: number | null;
   plan_id: string | null;
   cancelled_at: string | null;
+  // Продлится ли подписка сама. false без cancelled_at = оплата без привязки
+  // (СБП на форме банка, SberPay): тот же план можно продлить досрочно.
+  // Нет в ответе у старого API → считаем по cancelled_at, как раньше.
+  auto_renew?: boolean;
   expires_at: string | null;
   trial_eligible?: boolean;   // можно ли предложить бесплатный пробный период
   // Персональный подарочный оффер (whitelist через env). Fallback для баннера:
@@ -537,12 +541,14 @@ export default function PricingPage() {
           const isCurrent = effectiveTier === tier.tier;
           // Тот же тариф + тот же plan_id (period) = «текущий план», нельзя купить
           // повторно. Pro yearly + пытается купить Pro yearly → blocked.
-          // НО: cancelled подписка → разрешаем продление (восстановление авто-продл).
+          // НО: подписка, которая сама не продлится (отменена или оплачена без
+          // привязки) → разрешаем продление, новый период встанет в хвост текущему.
+          const renewsItself = billing?.auto_renew ?? !billing?.cancelled_at;
           const isSamePlan =
             isCurrent &&
             !!variant &&
             billing?.plan_id === variant.plan_id &&
-            !billing?.cancelled_at;
+            renewsItself;
           // Tier ниже текущего → blocked (downgrade недоступен пока активная).
           const isLowerTier = !isAdmin && billing?.is_active && cardLevel < effectiveLevel;
           // Tier выше текущего ИЛИ same-tier-other-period → можно покупать.
@@ -623,7 +629,7 @@ export default function PricingPage() {
                 >
                   {checkoutLoading === variant?.plan_id
                     ? t('Создаём...')
-                    : (isCurrent && billing?.cancelled_at)
+                    : (isCurrent && !renewsItself)
                       ? t('Продлить')
                       : (isCurrent && cardLevel === effectiveLevel)
                         ? t('Сменить период')

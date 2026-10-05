@@ -228,6 +228,75 @@ def send_trial_ending_email(
     return _send(to_email, subject, text_body, html_body)
 
 
+def send_subscription_ending_email(
+    to_email: str,
+    tier_ru: str,
+    end_date: str,
+    reason: str,
+    display_name: str | None = None,
+) -> bool:
+    """Подписка заканчивается и сама не продлится: ссылка на продление.
+
+    end_date — уже отформатированная дата («6 октября»). reason:
+    'no_payment_method' — оплата прошла без привязки карты или счёта;
+    'autorenew_off' — юзер сам выключил автопродление.
+    Досрочное продление не съедает оставшиеся дни (renewal_rules.renewal_start),
+    поэтому в письме это обещано прямо.
+    """
+    greeting = f"Здравствуйте, {display_name}!" if display_name else "Здравствуйте!"
+    subject = f"Подписка {tier_ru} заканчивается {end_date}"
+    pricing_url = f"{SITE_URL}/pricing"
+    why = (
+        "Автопродление у вас выключено, поэтому сама подписка не продлится."
+        if reason == "autorenew_off"
+        else "Оплата прошла без привязки карты или счёта, поэтому сама подписка не продлится."
+    )
+    keep = "Продлить можно уже сейчас: оставшиеся дни сохранятся, новый период начнётся после текущего."
+
+    text_body = (
+        f"{greeting}\n\n"
+        f"Ваша подписка {tier_ru} действует до {end_date}.\n"
+        f"{why}\n\n"
+        f"{keep}\n{pricing_url}\n\n"
+        f"FRAME\n{SITE_URL}\n"
+    )
+
+    html_body = f"""\
+<!doctype html>
+<html lang="ru"><body style="margin:0;padding:0;background:#0B0D12;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0D12;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+{EMAIL_HEADER}
+        <tr><td style="padding:8px 32px 0;">
+          <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
+          <p style="font-size:15px;color:#2A241B;margin:0 0 12px;line-height:1.5;">
+            Ваша подписка <b>{tier_ru}</b> действует до <b>{end_date}</b>. {why}
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 32px;">
+          <div style="background:#15110B;border-radius:12px;padding:18px 20px;">
+            <span style="font-size:15px;color:#F4F1EA;">Доступ до</span>
+            <span style="font-size:22px;font-weight:700;color:#FF5C2B;float:right;">{end_date}</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:18px 32px 0;">
+          <p style="font-size:13px;color:#6B6357;margin:0 0 16px;line-height:1.5;">{keep}</p>
+          <a href="{pricing_url}" style="display:inline-block;background:#FF5C2B;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 22px;border-radius:10px;">Продлить подписку</a>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px;">
+          <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">framedata.ru</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    return _send(to_email, subject, text_body, html_body)
+
+
 def send_password_reset_email(to_email: str, code: str, display_name: str | None = None) -> bool:
     """Письмо с 6-значным кодом для восстановления пароля.
 
