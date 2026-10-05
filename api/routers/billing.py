@@ -31,6 +31,7 @@ from api.billing.factory import (
     get_yookassa_provider,
 )
 from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
+from api.billing.renewal_rules import will_auto_renew
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.payment_method import UserPaymentMethod
@@ -77,6 +78,9 @@ class StatusResponse(BaseModel):
     started_at: str | None = None
     expires_at: str | None = None
     cancelled_at: str | None = None      # NULL → активна и продлится, NOT NULL → отменена, доступ до expires_at
+    # Продлится ли подписка сама. False и без cancelled_at: оплата прошла без
+    # привязки (СБП на форме банка, SberPay). Такой план можно продлить досрочно.
+    auto_renew: bool = False
     retention_eligible: bool = False     # можно ли предложить retention-скидку 40% (active + автопродление + не использована)
     # === Trial ===
     is_trial: bool = False               # текущая подписка — пробный период
@@ -207,6 +211,7 @@ async def my_status(
         started_at=sub.started_at.isoformat() if sub and sub.started_at else None,
         expires_at=sub.expires_at.isoformat() if sub and sub.expires_at else None,
         cancelled_at=sub.cancelled_at.isoformat() if sub and sub.cancelled_at else None,
+        auto_renew=bool(sub and will_auto_renew(sub)),
         retention_eligible=retention_eligible,
         is_trial=is_trial,
         trial_ends_at=next_at,
