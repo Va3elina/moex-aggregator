@@ -55,9 +55,16 @@ def _send(text_msg: str) -> bool:
     """Та же связка, что у mandate_scan._notify_admin: BOT_TOKEN/ADMIN_CHAT_ID +
     TELEGRAM_API_ROOT (прямой api.telegram.org с прода закрыт)."""
     token = os.environ.get("BOT_TOKEN", "")
-    chat_id = os.environ.get("ADMIN_CHAT_ID", "")
-    if not token or not chat_id:
+    # ADMIN_CHAT_ID — один id или список через запятую (всем админам бота).
+    chat_ids = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
+    if not token or not chat_ids:
         return False
+    # Успех, если дошло хотя бы одному: иначе недоступный второй получатель
+    # зациклил бы повторную отправку первому.
+    return any([_send_one(token, chat_id, text_msg) for chat_id in chat_ids])
+
+
+def _send_one(token: str, chat_id: str, text_msg: str) -> bool:
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     try:
         resp = requests.post(
@@ -75,7 +82,7 @@ def _send(text_msg: str) -> bool:
         # иначе событие помечается отправленным, а в чат не попадает.
         body = resp.json()
         if not body.get("ok"):
-            log.warning("billing admin notify: telegram rejected: %s", str(body)[:300])
+            log.warning("billing admin notify: telegram rejected chat %s: %s", chat_id, str(body)[:300])
             return False
         return True
     except Exception as e:

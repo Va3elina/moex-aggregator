@@ -51,10 +51,14 @@ log() {
 # дамп остаётся (offsite — best-effort). Если IPv6 отрубят — менять источник.
 send_msg() {
   if [ -n "${BOT_TOKEN:-}" ] && [ -n "${ADMIN_CHAT_ID:-}" ]; then
-    curl -6 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-      -d "chat_id=${ADMIN_CHAT_ID}" \
-      -d "text=$1" \
-      -d "parse_mode=Markdown" > /dev/null || true
+    local chat
+    # ADMIN_CHAT_ID — один id или список через запятую.
+    for chat in ${ADMIN_CHAT_ID//,/ }; do
+      curl -6 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d "chat_id=${chat}" \
+        -d "text=$1" \
+        -d "parse_mode=Markdown" > /dev/null || true
+    done
   fi
 }
 
@@ -65,14 +69,23 @@ send_msg() {
 # 0/5/15/30с. -w пишет http-код для диагностики (429=rate-limit, пусто=сеть).
 # Возврат: 0 = успех, 1 = все попытки исчерпаны.
 send_doc() {
-  local file="$1"
-  local caption="$2"
+  local chat ok=1
+  for chat in ${ADMIN_CHAT_ID//,/ }; do
+    send_doc_to "$chat" "$1" "$2" && ok=0
+  done
+  return $ok
+}
+
+send_doc_to() {
+  local chat="$1"
+  local file="$2"
+  local caption="$3"
   local delays=(0 5 15 30)
   local attempt resp http
   for attempt in "${!delays[@]}"; do
     if [ "${delays[$attempt]}" -gt 0 ]; then sleep "${delays[$attempt]}"; fi
     resp=$(curl -6 -s --max-time 120 -w '\n%{http_code}' \
-      -F "chat_id=${ADMIN_CHAT_ID}" \
+      -F "chat_id=${chat}" \
       -F "document=@${file}" \
       -F "caption=${caption}" \
       "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" 2>/dev/null) || true
