@@ -140,5 +140,12 @@
   "Форма банка. Автопродление включится само.": "Bank form. Auto-renewal turns on by itself.",
   "Счёт по СБП": "Account via SBP",
   "Один раз подтвердите счёт в банке — дальше без подтверждений.": "Confirm the account once in your bank — no confirmations after that.",
-  "Назад": "Back"
+  "Назад": "Back",
+  "Тариф {{tier}}. Выберите период и подтвердите согласие:": "{{tier}} plan. Choose a billing period and confirm your consent:",
+  "Период оплаты": "Billing period",
+  "Ежегодно": "Yearly",
+  "Выгоднее": "Best value",
+  "Экономия {{sum}} ₽ в год": "Save {{sum}} ₽ a year",
+  "Спишется сегодня": "Charged today",
+  "Оплатить {{sum}} ₽": "Pay {{sum}} ₽"
 }

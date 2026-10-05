@@ -17,7 +17,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { dateLocale } from '../i18n';
 import {
-  X, Heart,
+  X, Heart, Check,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings, Loader2,
   type LucideIcon,
@@ -688,6 +688,27 @@ export default function PricingPage() {
           случайных списаний. */}
       {pendingPlanId && (
         <ConsentModal
+          planChoice={(() => {
+            // Выбор периода прямо в модалке: карточка показывает годовой тариф
+            // в пересчёте на месяц, а списывается сразу год — полную сумму
+            // человек должен увидеть и подтвердить ДО ухода на форму банка.
+            const tcard = data.tiers.find(
+              (x) => x.monthly?.plan_id === pendingPlanId || x.yearly?.plan_id === pendingPlanId,
+            );
+            if (!tcard) return undefined;
+            // Активный (не отменённый) план повторно купить нельзя — как isSamePlan на карточке.
+            const activePlanId = billing?.is_active && !billing.cancelled_at ? billing.plan_id : null;
+            return {
+              title: tcard.title,
+              selectedPlanId: pendingPlanId,
+              monthly: tcard.monthly && tcard.monthly.plan_id !== activePlanId ? tcard.monthly : null,
+              yearly: tcard.yearly && tcard.yearly.plan_id !== activePlanId ? tcard.yearly : null,
+              onSelect: (planId: string) => {
+                setPendingPlanId(planId);
+                setPeriod(planId === tcard.yearly?.plan_id ? 'yearly' : 'monthly');
+              },
+            };
+          })()}
           agreementConsent={agreementConsent}
           onAgreementChange={setAgreementConsent}
           onConfirm={() => confirmCheckout('card')}
@@ -757,7 +778,16 @@ function ConsentModal({
   isLoading,
   canConfirm,
   trialInfo,
+  planChoice,
 }: {
+  // Checkout-режим: выбор периода с полной суммой списания (см. PeriodOption).
+  planChoice?: {
+    title: string;
+    selectedPlanId: string;
+    monthly: PlanVariant | null;
+    yearly: PlanVariant | null;
+    onSelect: (planId: string) => void;
+  };
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
   onConfirm: () => void;
@@ -773,6 +803,13 @@ function ConsentModal({
 }) {
   const { t } = useTranslation();
   const amountStr = trialInfo ? trialInfo.amount.toLocaleString('ru-RU') : '';
+  const fmt = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  const chosen = planChoice
+    ? (planChoice.yearly?.plan_id === planChoice.selectedPlanId ? planChoice.yearly : planChoice.monthly)
+    : null;
+  const yearlySaving = planChoice?.monthly && planChoice.yearly
+    ? planChoice.monthly.amount * 12 - planChoice.yearly.amount
+    : 0;
   // Второй шаг «как платим». Появляется только когда доступна СБП-привязка:
   // форма банка и привязка счёта — два РАЗНЫХ сценария у T-Bank, одним вызовом
   // их не объединить, выбор должен произойти до ухода с сайта. Чтобы в модалке
@@ -842,7 +879,9 @@ function ConsentModal({
           >
             {trialInfo
               ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
-              : t('Перед оплатой подтвердите согласие со следующими условиями:')}
+              : planChoice
+                ? t('Тариф {{tier}}. Выберите период и подтвердите согласие:', { tier: planChoice.title })
+                : t('Перед оплатой подтвердите согласие со следующими условиями:')}
           </p>
         )}
 
@@ -892,6 +931,45 @@ function ConsentModal({
             {t('Тариф')} <b>{trialInfo.tierRu}</b> — {t('бесплатно')} <b>{t('{{n}} дней', { n: trialInfo.days })}</b>. {t('Для привязки карты спишется')}{' '}
             <b>1&nbsp;₽</b> {t('и сразу вернётся. Первое полное списание')}{' '}
             <b>{amountStr} ₽</b> {t('за {{period}}', { period: trialInfo.periodRu })} — <b>{trialInfo.chargeDate}</b>, {t('и только если до этой даты не отмените. Отменить и отвязать карту можно в любой момент в профиле.')}
+          </div>
+        )}
+
+        {planChoice && chosen && (
+          <div role="radiogroup" aria-label={t('Период оплаты')} className="mb-4">
+            {planChoice.yearly && (
+              <PeriodOption
+                selected={chosen === planChoice.yearly}
+                disabled={isLoading}
+                onSelect={() => planChoice.onSelect(planChoice.yearly!.plan_id)}
+                title={t('Ежегодно')}
+                badge={yearlySaving > 0 ? t('Выгоднее') : null}
+                note={yearlySaving > 0
+                  ? t('Экономия {{sum}} ₽ в год', { sum: fmt(yearlySaving) })
+                  : null}
+                price={`${fmt(planChoice.yearly.amount)} ₽ ${t('/год')}`}
+                subPrice={`${fmt(Math.round(planChoice.yearly.amount / 12))} ₽ ${t('/мес')}`}
+              />
+            )}
+            {planChoice.monthly && (
+              <PeriodOption
+                selected={chosen === planChoice.monthly}
+                disabled={isLoading}
+                onSelect={() => planChoice.onSelect(planChoice.monthly!.plan_id)}
+                title={t('Помесячно')}
+                price={`${fmt(planChoice.monthly.amount)} ₽ ${t('/мес')}`}
+              />
+            )}
+            <div
+              className="flex items-baseline justify-between gap-3 mt-3 pt-3"
+              style={{ borderTop: '1px solid var(--border-color)' }}
+            >
+              <span style={{ fontSize: 'var(--fs-sm, 13px)', color: 'var(--text-secondary)' }}>
+                {t('Спишется сегодня')}
+              </span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                {fmt(chosen.amount)} ₽
+              </span>
+            </div>
           </div>
         )}
 
@@ -962,7 +1040,11 @@ function ConsentModal({
           >
             {isLoading
               ? (trialInfo ? t('Открываем…') : t('Создаём…'))
-              : (trialInfo ? t('Начать бесплатно') : t('Оплатить'))}
+              : trialInfo
+                ? t('Начать бесплатно')
+                : chosen
+                  ? t('Оплатить {{sum}} ₽', { sum: fmt(chosen.amount) })
+                  : t('Оплатить')}
           </button>
         </div>
 
@@ -1009,8 +1091,97 @@ function PaySpinner() {
 }
 
 /**
- * ConsentRow — одна строка с toggle-switch и подписью.
- * Toggle сделан на чистом CSS через label + scaled checkbox для accessibility.
+ * PeriodOption — радио-карточка периода оплаты в consent-модалке: слева
+ * название и пояснение, справа полная сумма списания за период.
+ */
+function PeriodOption({
+  selected,
+  disabled,
+  onSelect,
+  title,
+  badge,
+  note,
+  price,
+  subPrice,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  title: string;
+  badge?: string | null;
+  note?: string | null;
+  price: string;
+  subPrice?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onSelect}
+      className="w-full flex items-start gap-3 text-left mb-2 p-3 rounded-xl border transition-colors"
+      style={{
+        borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
+        background: selected ? 'rgba(255,92,43,0.06)' : 'transparent',
+      }}
+    >
+      <span
+        className="flex-shrink-0 flex items-center justify-center"
+        style={{
+          width: 18,
+          height: 18,
+          marginTop: 1,
+          borderRadius: '50%',
+          border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border-color)'}`,
+        }}
+      >
+        {selected && (
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
+        )}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 flex-wrap">
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
+          {badge && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                padding: '2px 6px',
+                borderRadius: 6,
+                background: 'var(--accent)',
+                color: 'var(--bg-primary)',
+              }}
+            >
+              {badge}
+            </span>
+          )}
+        </span>
+        {note && (
+          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+            {note}
+          </span>
+        )}
+      </span>
+      <span className="flex-shrink-0 text-right">
+        <span className="block" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          {price}
+        </span>
+        {subPrice && (
+          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            {subPrice}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * ConsentRow — одна строка с галочкой и подписью.
  */
 function ConsentRow({
   checked,
@@ -1030,28 +1201,18 @@ function ConsentRow({
       }}
     >
       <span
-        className="relative inline-flex flex-shrink-0 mt-0.5"
+        className="relative inline-flex flex-shrink-0 items-center justify-center mt-0.5"
         style={{
-          width: 36,
-          height: 20,
-          borderRadius: 999,
-          background: checked ? 'var(--accent)' : 'var(--bg-tertiary)',
+          width: 18,
+          height: 18,
+          borderRadius: 5,
+          background: checked ? 'var(--accent)' : 'transparent',
           border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
+          color: 'var(--bg-primary)',
           transition: 'background 0.18s ease, border-color 0.18s ease',
         }}
       >
-        <span
-          style={{
-            position: 'absolute',
-            top: 1,
-            left: checked ? 17 : 1,
-            width: 14,
-            height: 14,
-            borderRadius: '50%',
-            background: 'var(--bg-primary)',
-            transition: 'left 0.18s ease',
-          }}
-        />
+        {checked && <Check size={13} strokeWidth={3} />}
         <input
           type="checkbox"
           checked={checked}
