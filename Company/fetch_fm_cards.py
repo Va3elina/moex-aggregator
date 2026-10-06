@@ -87,7 +87,8 @@ def notify(текст: str) -> bool:
     закрыт (РКН, инцидент 2026-07-15) — без релея запрос просто виснет.
     """
     token = os.environ.get("BOT_TOKEN", "")
-    chat = os.environ.get("ADMIN_CHAT_ID", "")
+    # Технический отчёт: только разработчику (ADMIN_TECH_CHAT_ID), не всем админам.
+    chat = os.environ.get("ADMIN_TECH_CHAT_ID") or os.environ.get("ADMIN_CHAT_ID", "")
     if not token or not chat:
         log.error("УВЕДОМЛЕНИЕ НЕ УШЛО (нет BOT_TOKEN/ADMIN_CHAT_ID): %s",
                   текст.replace("\n", " ")[:200])

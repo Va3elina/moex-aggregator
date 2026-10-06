@@ -39,6 +39,8 @@ if [ -f /opt/frame/.env ]; then
   source /opt/frame/.env
   set +a
 fi
+# Технические алерты: только разработчику (ADMIN_TECH_CHAT_ID), не всем админам.
+ADMIN_CHAT_ID="${ADMIN_TECH_CHAT_ID:-${ADMIN_CHAT_ID:-}}"
 
 CONTAINER="frame-db-1"
 STATE_FILE="/opt/frame/logs/monitor_alert_state"
