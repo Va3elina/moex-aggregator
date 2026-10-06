@@ -7,8 +7,9 @@ set -euo pipefail
 #
 # Архитектура:
 #   1) pg_dump через docker exec → gzip → GPG AES-256 → .sql.gz.gpg
-#   2) split на части по 48 МБ (под Telegram bot API limit 50 МБ)
-#   3) sendDocument каждой части в Telegram (с caption «N/M»)
+#   2) ОДНИМ файлом в «Избранное» Вадима через MTProto (аккаунт с Premium,
+#      лимит 4 ГБ) — backup_tg_upload.py
+#   3) Фолбэк: split по 48 МБ + sendDocument ботом (Bot API limit 50 МБ)
 #   4) Если все части ушли → удалить старые дампы (retention=1)
 #   5) Если упало на отправке → оставить старый дамп как safety net
 #
@@ -17,8 +18,9 @@ set -euo pipefail
 # password manager + физическая копия (на случай потери .env).
 #
 # Restore (если когда-то понадобится):
-#   1) Скачать все .part_* из Telegram (вручную через клиент, не через bot).
-#   2) cat moex_db_YYYYMMDD_HHMM.sql.gz.gpg.part_* > moex_db.sql.gz.gpg
+#   1) Скачать .sql.gz.gpg из «Избранного» (или все .part_*, если сработал фолбэк,
+#      и склеить: cat moex_db_YYYYMMDD_HHMM.sql.gz.gpg.part_* > moex_db.sql.gz.gpg).
+#   2) —
 #   3) gpg --batch --pinentry-mode loopback --passphrase 'PASSPHRASE' \
 #          --decrypt moex_db.sql.gz.gpg > moex_db.sql.gz
 #   4) gunzip moex_db.sql.gz
@@ -155,7 +157,25 @@ mv "$BACKUP_FILE.tmp" "$BACKUP_FILE"
 SIZE_HUMAN=$(du -h "$BACKUP_FILE" | cut -f1)
 log "Encrypted backup OK: $BACKUP_FILE ($SIZE_HUMAN)"
 
-# ─── 3) Split на части ≤48 МБ ───
+# ─── 3) Одним файлом от аккаунта Вадима (Telegram Premium, MTProto, до 4 ГБ) ───
+# Bot API режет файлы до 50 МБ даже при Premium у получателя — поэтому основной
+# путь не бот, а пользовательская сессия сканера хайпа (см. backup_tg_upload.py).
+# Файл уходит в «Избранное» Вадима. Если не вышло — откат на части через бота.
+MODE=""
+log "Uploading as one file via MTProto (Premium)..."
+if timeout -k 30 2700 /opt/frame/signals/.venv/bin/python /opt/frame/backup_tg_upload.py \
+     "$BACKUP_FILE" "🔐 ${BASENAME} (${SIZE_HUMAN}) — целиком" >> /opt/frame/backups/backup.log 2>&1; then
+  MODE="one"
+  TOTAL=1
+  ALL_OK=true
+  log "  ✓ Sent as one file to Saved Messages"
+else
+  log "  ⚠ one-file upload failed — fallback на части через бота"
+fi
+
+if [ -z "$MODE" ]; then
+MODE="parts"
+# ─── 3b) Split на части ≤48 МБ ───
 log "Splitting into chunks of $SPLIT_SIZE..."
 split -b "$SPLIT_SIZE" "$BACKUP_FILE" "$BACKUP_FILE.part_"
 mapfile -t PARTS < <(ls "$BACKUP_FILE".part_*)
@@ -183,6 +203,7 @@ done
 
 # ─── 5) Cleanup частей (всегда) ───
 rm -f "$BACKUP_FILE".part_*
+fi
 
 # ─── 6) Финал ───
 if $ALL_OK; then
@@ -190,7 +211,7 @@ if $ALL_OK; then
   find "$BACKUP_DIR" -maxdepth 1 -name "moex_db_*.sql.gz*" -not -name "$BASENAME" -delete
   log "Retention: removed previous dumps (kept only $BASENAME)"
   send_msg "✅ *Frame backup OK (encrypted)*
-Все \`${TOTAL}\` частей отправлены.
+$( [ "$MODE" = one ] && echo "Одним файлом в «Избранное» Вадима." || echo "Все \`${TOTAL}\` частей отправлены ботом." )
 Размер: \`${SIZE_HUMAN}\` (AES-256 + gzip)
 Дата: \`$(date '+%d.%m.%Y %H:%M')\`
 
