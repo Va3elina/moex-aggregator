@@ -203,7 +203,9 @@ def run_once(offsets, since: date, dry_run: bool = False) -> dict:
         print(f"[fm_disclosure_scan] сбой: {type(e).__name__}: {e}")
     finally:
         db.close()
-    if итог["карточки"] and not dry_run:
+    # Подписка на API FM кончилась 04.10.2026 — без FM_API_ENABLED=1 карточки не дёргаем
+    # (фетчер всё равно выйдет), лента раскрытия с сайта идёт как обычно.
+    if итог["карточки"] and not dry_run and os.environ.get("FM_API_ENABLED", "0") == "1":
         обновить_карточки(итог["карточки"])
     return итог
 
