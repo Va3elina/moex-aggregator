@@ -388,7 +388,16 @@ def загрузить_компанию(db, secid: str, payload: dict, today: da
     return итог
 
 
+# ⚠️ ВЫКЛЮЧАТЕЛЬ API. Подписка FM кончилась 04.10.2026 — дальше каждый запрос отвечает
+# 403, а прогон шлёт «⛔️ ПРОГОН ОСТАНОВЛЕН». По умолчанию выключено; продлили подписку —
+# FM_API_ENABLED=1 в .env. Сканер раскрытия ходит на сайт, не в API, и работает без этого.
+FM_API_ENABLED = os.environ.get("FM_API_ENABLED", "0") == "1"
+
+
 def main():
+    if not FM_API_ENABLED:
+        print("[fetch_fm_cards] API FinanceMarker выключен (FM_API_ENABLED != 1) — пропуск")
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="сколько компаний (для пробы)")
     ap.add_argument("--dry-run", action="store_true",
