@@ -211,7 +211,7 @@ if $ALL_OK; then
   find "$BACKUP_DIR" -maxdepth 1 -name "moex_db_*.sql.gz*" -not -name "$BASENAME" -delete
   log "Retention: removed previous dumps (kept only $BASENAME)"
   send_msg "✅ *Frame backup OK (encrypted)*
-$( [ "$MODE" = one ] && echo "Одним файлом в «Избранное» Вадима." || echo "Все \`${TOTAL}\` частей отправлены ботом." )
+$( [ "$MODE" = one ] && echo "Одним файлом в «Избранное» Вадима." || echo "⚠️ Один файл через MTProto НЕ прошёл (см. backup.log) — фолбэк: все \`${TOTAL}\` частей отправлены ботом." )
 Размер: \`${SIZE_HUMAN}\` (AES-256 + gzip)
 Дата: \`$(date '+%d.%m.%Y %H:%M')\`
 
