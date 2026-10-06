@@ -40,6 +40,8 @@ if [ -f /opt/frame/.env ]; then
   source /opt/frame/.env
   set +a
 fi
+# Бэкап и его отчёты: только разработчику (ADMIN_TECH_CHAT_ID), не всем админам.
+ADMIN_CHAT_ID="${ADMIN_TECH_CHAT_ID:-${ADMIN_CHAT_ID:-}}"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"

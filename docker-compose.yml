@@ -450,6 +450,7 @@ services:
       # ⚠️ Прямой api.telegram.org с сервера закрыт — только через релей.
       - BOT_TOKEN=${BOT_TOKEN:-}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
+      - ADMIN_TECH_CHAT_ID=${ADMIN_TECH_CHAT_ID:-}
       - TELEGRAM_API_ROOT=${TELEGRAM_API_ROOT:-}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
