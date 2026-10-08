@@ -22,6 +22,7 @@ import type { HotBarsChart, HotLegsChart, HotPastCase, HotSeasonChart } from '..
 const H = 200;
 const FONT = 'var(--font-mono)';
 const LONG = 'var(--funds-flow-positive)';
+const LEG_NAME = { long: 'Лонги', short: 'Шорты', nl: 'Людей в лонге', ns: 'Людей в шорте' } as const;
 const SHORT = 'var(--funds-flow-negative)';
 const PRICE = 'var(--chart-line-1)';
 const UP = 'var(--funds-flow-positive)';
@@ -167,7 +168,7 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
   const data = useMemo(() => chart.series.slice(i0, i1 + 1), [chart.series, i0, i1]);
   const price = useMemo(() => chart.price?.slice(i0, i1 + 1), [chart.price, i0, i1]);
   const n = data.length;
-  const ev = chart.leg === 'long' ? 1 : 2;              // колонка ноги сигнала в series
+  const ev = 1;
   const xr = w - m.r;
   const geo = useMemo(() => {
     if (!w || n < 2) return null;
@@ -206,7 +207,8 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
 
   if (!geo) return <div ref={ref} style={{ height: H }} />;
   const { X, Y, P } = geo;
-  const color = chart.leg === 'long' ? LONG : SHORT;
+  const color = chart.leg === 'long' || chart.leg === 'nl' ? LONG : SHORT;
+  const legName = LEG_NAME[chart.leg];
   const pts = data.map(d => [X(ts(d[0])), Y(d[ev])] as [number, number]);
   const span = (geo.x1 - geo.x0) / 864e5;
   const xt: { x: number; label: string }[] = [];
@@ -225,12 +227,12 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
   const ptk = geo.hasPrice ? niceTicks(geo.plo, geo.phi, 3) : [];
   const zx = zoneFrom ? Math.min(X(ts(zoneFrom)), xr - 8) : null;
   const zEnd = past && iEnd >= 0 ? Math.min(pts[iEnd][0] + 3, xr) : xr;
-  const nowV = chart.leg === 'long' ? chart.now.long : chart.now.short;
+  const nowV = chart.now.value;
   const shownV = past && iEnd >= 0 ? data[iEnd][ev] : nowV;      // при показе прошлого — его значение
   const nowY = Y(shownV);
   const pillY = Math.min(Math.max(nowY, m.t), H - m.b);
   const head = headRow(
-    [{ color, text: chart.leg === 'long' ? 'лонги' : 'шорты' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
+    [{ color, text: legName.toLowerCase() }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
     zx != null && zoneLabel ? { text: zoneLabel, a: zx, b: zEnd } : null, xr);
   const hv = hover != null ? data[hover] : null;
 
@@ -269,7 +271,7 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
       {hv && hover != null && (
         <Tip x={X(ts(hv[0]))} y={Y(hv[ev])} w={w} rows={[
           <span style={{ color: MUTED }}>{dayMon(hv[0])}</span>,
-          <span><span style={{ color, fontWeight: 700 }}>●</span> {chart.leg === 'long' ? 'Лонги' : 'Шорты'} {kfmt(hv[ev])}</span>,
+          <span><span style={{ color, fontWeight: 700 }}>●</span> {legName} {kfmt(hv[ev])}</span>,
           ...(price?.[hover] != null ? [<span><span style={{ color: PRICE, fontWeight: 700 }}>●</span> {priceLabel} {fmtPrice(price[hover]!)}</span>] : []),
         ]} />
       )}

@@ -152,9 +152,16 @@ def test_fund_past_finds_earlier_streak_not_current():
     assert len(past) == 1 and past[0][1]["chart"]["run"]["from"] == "2023-07"
 
 
-def test_legs_words_and_series():
-    assert H.leg_verb("long", True) == "Физлица набрали лонг" and H.leg_verb("long", False) == "Физлица сократили лонг"
-    assert H.leg_verb("short", True) == "Физлица нарастили шорт" and H.leg_verb("short", False) == "Физлица сократили шорт"
-    pts = [(date(2024, 1, 1), -50.0, 60, 0.0, 100.0, -150.0)]
-    assert H.leg_pts(pts, "long")[0][1] == 100.0 and H.leg_pts(pts, "short")[0][1] == 150.0
+def test_legs_words_and_detectors():
+    assert H.leg_verb("long", True) == "Физлица набрали лонг" and H.leg_verb("nl", False) == "Физлица сократили лонг"
+    assert H.leg_verb("short", True) == "Физлица нарастили шорт" and H.leg_verb("ns", False) == "Физлица сократили шорт"
     assert H.thousands(32231) == "32 тыс" and H.thousands(2733) == "2,7 тыс"
+    d = _days(800)
+    v = [10.0] * 500 + [20.0] + [5.0] * 298 + [15.0]
+    yrs, since = H.since_years(v, d, 799, True)
+    assert since == d[500] and round(yrs, 2) == round(299 / 365, 2)      # максимум с дня 500
+    yrs, since = H.since_years(v, d, 500, True)
+    assert since is None                                                 # выше всего за историю
+    fr = [date(2024, 1, 5) + timedelta(days=7 * k) for k in range(6)]    # пятницы
+    assert H.weekly_streak([1, 2, 3, 4, 3, 5], fr, 5) == 1
+    assert H.weekly_streak([1, 2, 3, 4, 5, 6], fr, 5) == 5
