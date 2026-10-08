@@ -164,6 +164,7 @@ export function HotCardView({ card }: { card: HotCard }) {
   const [picked, setPicked] = useState<HotPastCase | null>(null);   // прошлый случай под курсором в списке
   const icon = card.kind === 'flows' ? <CategoryIcon category={card.category} />
     : card.kind === 'trades' ? (card.secid ? <TickerLogo ticker={card.secid} size={34} rounded="md" /> : null)
+    : card.kind === 'season' && card.stock ? <TickerLogo ticker={card.secid} size={34} rounded="md" />
     : <InstrumentIcon sectype={card.sectype} size={34} rounded="md" />;
 
   let plaques: ReactNode;

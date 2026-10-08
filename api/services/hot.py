@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from bisect import bisect_right
 from collections import deque
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -593,6 +594,28 @@ def runs(vals: Sequence[float]) -> List[Tuple[int, int, int]]:
     return out
 
 
+SMALL_AGAINST_BN = 0.5                # месяц против серии меньше этого (и 10% её среднего) серию не рвёт
+
+
+def runs_tolerant(vals: Sequence[float]) -> List[Tuple[int, int, int, int]]:
+    """Серии одного знака, где одиночный крошечный месяц против течения серию не рвёт:
+    отток 2 года с декабрьским +0,2 млрд — один отток, а не «9-й месяц подряд». (знак, начало, конец, против)."""
+    rr = [(sg, a, b, 0) for sg, a, b in runs(vals)]
+    merged = True
+    while merged:
+        merged = False
+        for k in range(1, len(rr) - 1):
+            (s0, a0, b0, x0), (s1, a1, b1, _), (s2, a2, b2, x2) = rr[k - 1], rr[k], rr[k + 1]
+            if s0 == s2 != 0 and b1 == a1:
+                around = [abs(v) for v in vals[a0:b0 + 1]] + [abs(v) for v in vals[a2:b2 + 1]]
+                tol = max(SMALL_AGAINST_BN, 0.1 * sum(around) / len(around))
+                if abs(vals[a1]) < tol:
+                    rr[k - 1:k + 2] = [(s0, a0, b2, x0 + x2 + 1)]
+                    merged = True
+                    break
+    return rr
+
+
 def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float]], today: date) -> Optional[Dict[str, Any]]:
     """Сильнейший случай категории: рекорд недели → рекорд месяца → разворот → серия.
     Возвращает подписи и разметку графика (какой столбик подсветить, прежний рекорд, серия)."""
@@ -620,10 +643,11 @@ def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float
     if abs(v_last) < MIN_FLOW_BN:
         return None
     month_word = MON[int(m_last[5:7]) - 1]
-    rr = runs(vals)
-    sg, a, b = rr[-1]
+    rr = runs_tolerant(vals)
+    sg, a, b, against = rr[-1]
     length = b - a + 1
-    turn = length == 1 and len(rr) >= 2 and rr[-2][0] != 0 and rr[-2][2] - rr[-2][1] + 1 >= 3
+    turn = (length == 1 and len(rr) >= 2 and rr[-2][0] != 0 and rr[-2][2] - rr[-2][1] + 1 >= 3
+            and abs(v_last) >= SMALL_AGAINST_BN)       # крошечный месяц против серии — не разворот
     n_prev = rr[-2][2] - rr[-2][1] + 1 if len(rr) >= 2 else 0
     was = ("притока" if rr[-2][0] > 0 else "оттока") if len(rr) >= 2 else ""
     shown = [(m, v) for m, v in full if m >= MONTHS_FROM]
@@ -648,8 +672,13 @@ def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float
     # 4) серия от 4 месяцев
     if length >= 4 and sg != 0:
         what = "Приток" if sg > 0 else "Отток"
-        chart["run"] = {"from": full[a][0], "to": full[b][0], "label": f"{length} мес подряд"}
-        return {"case": "streak", "signal": f"{what} {length}-й месяц подряд", "amount": v_last,
+        if against:                                # с крошечными перерывами — честно: «25 из 27 месяцев»
+            chart["run"] = {"from": full[a][0], "to": full[b][0], "label": f"{length - against} из {length} мес"}
+            signal = f"{what} {length - against} из {length} месяцев"
+        else:
+            chart["run"] = {"from": full[a][0], "to": full[b][0], "label": f"{length} мес подряд"}
+            signal = f"{what} {length}-й месяц подряд"
+        return {"case": "streak", "signal": signal, "amount": v_last,
                 "date_label": month_word, "chart": chart}
     return None
 
@@ -748,14 +777,19 @@ def scan_trades(db, user) -> List[Dict[str, Any]]:
 
 # ── Сезонность ──────────────────────────────────────────────────────────────
 
-SEASON_ASSETS = (("IMOEX", "Индекс МосБиржи", "MX", 1997), ("USD000UTSTOM", "Доллар", "Si", 2003),
-                 ("CNYRUB_TOM", "Юань", "CR", 2014), ("GLDRUB_TOM", "Золото", "GD", 2014))
+SEASON_INDEXES = (("IMOEX", "Индекс МосБиржи", "MX"), ("RTSI", "Индекс РТС", "RI"), ("RGBI", "Индекс гособлигаций", "RB"),
+                  ("USD000UTSTOM", "Доллар", "Si"), ("CNYRUB_TOM", "Юань", "CR"), ("EUR_RUB__TOM", "Евро", "Eu"),
+                  ("GLDRUB_TOM", "Золото", "GD"))
 SEASON_DAYS = 91
-SEASON_EDGE = 0.65
+SEASON_MIN_YEARS = 10                  # меньше 10 лет — не история, а случай
+SEASON_EDGE = 0.75                     # активов ~90: порог строже, иначе «закономерность» найдётся случайно
+SEASON_MIN_MOVE = 3.0                  # типичное (медианное) движение за 3 месяца, %
+SEASON_MAX_CARDS = 4
 
 
 def season_years(closes: Sequence[Tuple[date, float]], today: date, first_year: int) -> List[Tuple[int, float]]:
     """Доходность окна [та же дата, +SEASON_DAYS] по каждому полному году, %."""
+    ds = [d for d, _ in closes]
     out = []
     for y in range(first_year, today.year):
         try:
@@ -763,55 +797,102 @@ def season_years(closes: Sequence[Tuple[date, float]], today: date, first_year: 
         except ValueError:                       # 29 февраля
             d0 = today.replace(year=y, day=28)
         d1 = d0 + timedelta(days=SEASON_DAYS)
-        c0 = [c for d, c in closes if d <= d0]
-        c1 = [c for d, c in closes if d <= d1]
-        if c0 and c1 and (d0 - next(d for d, _ in closes)).days > 0:
-            out.append((y, round((c1[-1] / c0[-1] - 1) * 100, 1)))
+        i0, i1 = bisect_right(ds, d0) - 1, bisect_right(ds, d1) - 1
+        if i0 >= 0 and i1 >= 0 and (d0 - ds[0]).days > 0:
+            out.append((y, round((closes[i1][1] / closes[i0][1] - 1) * 100, 1)))
+    return out
+
+
+def unsplit(closes: List[Tuple[date, float]]) -> List[Tuple[date, float]]:
+    """Склейка сплитов: дневной скачок больше чем в 2,5 раза — не рынок (Норникель 1:100 в 2024); старые цены
+    пересчитываем в новый масштаб, иначе путь года и сезонность ломаются."""
+    out = list(closes)
+    for i in range(len(out) - 1, 0, -1):
+        k = out[i][1] / out[i - 1][1]
+        if k > 2.5 or k < 0.4:
+            out[:i] = [(d, c * k) for d, c in out[:i]]
+    return out
+
+
+def season_paths(closes: Sequence[Tuple[date, float]], step: int = 2) -> Dict[int, List[Tuple[int, float]]]:
+    """Путь каждого года по календарю: (день года, % от первого закрытия года) через step дней. По календарю, а не
+    по торговым дням — с торгами выходного дня в году стало больше сессий, и счёт по ним съезжал."""
+    by: Dict[int, List[Tuple[date, float]]] = {}
+    for d, c in closes:
+        by.setdefault(d.year, []).append((d, c))
+    out: Dict[int, List[Tuple[int, float]]] = {}
+    for y, rows in by.items():
+        base, j, pts = rows[0][1], 0, []
+        last_doy = (rows[-1][0] - date(y, 1, 1)).days
+        for doy in range(0, last_doy + 1, step):
+            while j + 1 < len(rows) and (rows[j + 1][0] - date(y, 1, 1)).days <= doy:
+                j += 1
+            pts.append((doy, (rows[j][1] / base - 1) * 100))
+        out[y] = pts
     return out
 
 
 def scan_season(db, today: date) -> List[Dict[str, Any]]:
-    from api.database import get_engine
-    from api.routers.seasonality import _compute_yearly_seasonality   # та же кривая, что на странице «Сезонность»
-    cards = []
-    for secid, name, sectype, y0 in SEASON_ASSETS:
-        rows = db.execute(text("SELECT trade_date, close FROM index_data WHERE secid = :s AND close > 0 ORDER BY 1"),
-                          {"s": secid}).fetchall()
-        closes = [(r[0], float(r[1])) for r in rows if r[0].year >= y0]
-        yrs = season_years(closes, today, y0)
-        if len(yrs) < 12:
+    """Сезонность по всем активам с длинной историей (индексы, валюты, золото, ~80 акций): карточка — только
+    там, где следующие 3 месяца в истории шли в одну сторону минимум в 3 годах из 4 и движение заметное."""
+    assets = [(secid, name, sectype, False) for secid, name, sectype in SEASON_INDEXES]
+    stocks = db.execute(text("""
+        SELECT c.secid, coalesce(max(m.display_name), max(r.short_name)) FROM candles c
+          LEFT JOIN ticker_futures_map m ON m.stock_ticker = c.secid
+          LEFT JOIN securities_ref r ON r.secid = c.secid
+         WHERE c.interval = 24 AND c.type = 'stock'
+         GROUP BY c.secid HAVING min(c.begin_time) <= :old AND max(c.begin_time) >= :fresh"""),
+        {"old": date(today.year - SEASON_MIN_YEARS - 1, 12, 31), "fresh": today - timedelta(days=10)}).fetchall()
+    assets += [(sec, nm or sec, sec, True) for sec, nm in stocks]
+    found = []
+    for secid, name, sectype, stock in assets:
+        if stock:
+            rows = db.execute(text("""SELECT begin_time::date, close FROM candles
+                                       WHERE secid = :s AND interval = 24 AND type = 'stock' AND close > 0 ORDER BY 1"""),
+                              {"s": secid}).fetchall()
+        else:
+            rows = db.execute(text("SELECT trade_date, close FROM index_data WHERE secid = :s AND close > 0 ORDER BY 1"),
+                              {"s": secid}).fetchall()
+        closes = unsplit([(r[0], float(r[1])) for r in rows])
+        if len(closes) < 250 * SEASON_MIN_YEARS:
+            continue
+        yrs = season_years(closes, today, closes[0][0].year + 1)
+        if len(yrs) < SEASON_MIN_YEARS:
             continue
         up = sum(1 for _, v in yrs if v > 0)
         share = up / len(yrs)
-        if SEASON_EDGE > share > 1 - SEASON_EDGE:
-            continue                                   # монетка — карточку не ставим
-        rising = share >= SEASON_EDGE
-        data = _compute_yearly_seasonality(get_engine(), secid, {}, since_year=None, exclude_years=[], agg_type="avg",
-                                           live=False) or {}
-        avg = [[p["td"], p["avg_pct"], p["month"]] for p in data.get("average", [])]
-        cur = [[p["td"], p["pct"]] for p in data.get("current", [])]
-        if not avg or not cur:
+        med = statistics.median(v for _, v in yrs)
+        rising = share >= SEASON_EDGE and med > 0
+        if not (rising or (share <= 1 - SEASON_EDGE and med < 0)) or abs(med) < SEASON_MIN_MOVE:
             continue
-        today_td = cur[-1][0]
-        # история по годам: тот же отрезок в прошлые годы и путь года целиком (по наведению — вместо текущего)
-        by_year: Dict[int, List[Tuple[date, float]]] = {}
-        for d, v in closes:
-            by_year.setdefault(d.year, []).append((d, v))
+        found.append((abs(share - 0.5) * min(abs(med), 15), secid, name, sectype, stock, closes, yrs, up, med, rising))
+    cards = []
+    for _, secid, name, sectype, stock, closes, yrs, up, med, rising in sorted(found, key=lambda f: -f[0])[:SEASON_MAX_CARDS]:
+        paths = season_paths(closes)
+        cur = paths.pop(today.year, [])
+        full = [dict(v) for y, v in paths.items() if v and v[-1][0] >= 355]
+        if not cur or not full:
+            continue
+        avg = []
+        for doy in range(0, 365, 2):                # медиана по годам: один выдающийся год не тянет путь
+            col = [v[doy] for v in full if doy in v]
+            if len(col) >= 0.7 * len(full):         # конец декабря есть не у всех лет — меньшинство не тянет путь
+                avg.append([doy, round(statistics.median(col), 2), (date(2025, 1, 1) + timedelta(days=doy)).month])
+        today_td = (today - date(today.year, 1, 1)).days
         hist = []
         for y, v in sorted(yrs, reverse=True)[:PAST_MAX]:
-            row = by_year.get(y, [])
-            if len(row) < 100:
-                continue
-            base = row[0][1]
-            hist.append({"date": f"{y}-{today.month:02d}-{today.day:02d}", "label": str(y), "r": [v],
-                         "curve": [[k, round((c / base - 1) * 100, 2)] for k, (_, c) in enumerate(row) if k % 2 == 0]})
+            pth = paths.get(y)
+            if pth and len(pth) >= 100:
+                hist.append({"date": f"{y}-{today.month:02d}-{today.day:02d}", "label": str(y), "r": [v],
+                             "curve": [[k, round(x, 2)] for k, x in pth]})
+        n_dir = up if rising else len(yrs) - up
         cards.append({
-            "kind": "season", "id": f"season:{secid}", "secid": secid, "sectype": sectype, "name": name,
+            "kind": "season", "id": f"season:{secid}", "secid": secid, "sectype": sectype, "stock": stock, "name": name,
             "signal": "Следующие 3 месяца " + ("чаще рос" if rising else "чаще падал"),
-            "hits": f"{'рост' if rising else 'падение'} в {up if rising else len(yrs) - up} из {len(yrs)} лет",
-            "date_label": f"{_day(today)} → {_day(today + timedelta(days=SEASON_DAYS))}",
-            "chart": {"type": "season", "avg": avg, "cur": cur, "today": today_td,
-                      "zone_to": min(today_td + 63, avg[-1][0]), "rising": rising},
+            "hits": f"{'рост' if rising else 'падение'} в {n_dir} из {len(yrs)} лет",
+            "date_label": f"{_day(today)} → {_day(today + timedelta(days=SEASON_DAYS))} · обычно {'+' if med > 0 else '−'}{abs(med):.1f}%".replace(".", ","),
+            "chart": {"type": "season", "avg": avg, "cur": [[k, round(x, 2)] for k, x in cur], "today": today_td,
+                      "zone_to": min(today_td + SEASON_DAYS, avg[-1][0]), "rising": rising},
             "past": {"title": "История", "horizons": ["за 3 месяца"], "cases": hist, "base_up": None},
         })
     return cards

@@ -165,3 +165,17 @@ def test_legs_words_and_detectors():
     fr = [date(2024, 1, 5) + timedelta(days=7 * k) for k in range(6)]    # пятницы
     assert H.weekly_streak([1, 2, 3, 4, 3, 5], fr, 5) == 1
     assert H.weekly_streak([1, 2, 3, 4, 5, 6], fr, 5) == 5
+
+
+def test_tiny_month_against_does_not_break_streak():
+    vals = [-3, -2, -4, 0.2, -3, -2, -1, -2, -3]
+    assert H.runs_tolerant(vals) == [(-1, 0, 8, 1)]
+    assert H.runs_tolerant([-3, -2, 2.5, -3]) == [(-1, 0, 1, 0), (1, 2, 2, 0), (-1, 3, 3, 0)]   # крупный — рвёт
+    c = H.fund_case(_months([1, 1, 1, 1, 1, 1] + vals, start=(2025, 1)), [], date(2026, 4, 3))
+    assert c["case"] == "streak" and c["signal"] == "Отток 8 из 9 месяцев" and c["chart"]["run"]["label"] == "8 из 9 мес"
+
+
+def test_unsplit_rescales_history_before_split():
+    d = _days(4)
+    out = H.unsplit([(d[0], 15000.0), (d[1], 15300.0), (d[2], 153.0), (d[3], 150.0)])
+    assert [round(c, 2) for _, c in out] == [150.0, 153.0, 153.0, 150.0]

@@ -3627,7 +3627,7 @@ export interface HotTradesCard {
   amount: number; date_label: string; chart: HotBarsChart;
 }
 export interface HotSeasonCard {
-  kind: 'season'; id: string; secid: string; sectype: string; name: string; signal: string; hits: string;
+  kind: 'season'; id: string; secid: string; sectype: string; stock?: boolean; name: string; signal: string; hits: string;
   date_label: string; chart: HotSeasonChart; past?: HotPast;
 }
 export type HotCard = HotOiCard | HotFlowsCard | HotTradesCard | HotSeasonCard;
